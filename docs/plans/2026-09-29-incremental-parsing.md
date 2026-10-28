@@ -7,7 +7,8 @@ with `finalize`, and the settle point of an open paragraph. On 2026-10-14 the ow
 narrowed the requirement to one workload, appending tokens from a language
 model, and this revision replaces the general-edit engine that steps 4 to 8
 of the previous revision specified. Steps 4 to 8 now build a streaming
-engine.
+engine. On 2026-10-27 the owner added edits on a finalized session that
+re-read only the damaged block (section 12); step E0 is next.
 
 This document specifies how a Markdown Core session turns text appended to
 its end into a new AST, while reading again only the text whose meaning is
@@ -23,7 +24,8 @@ design gives it the ids and equality it needs and nothing else.
 Sections 1–3 state requirements and ground them in the current parser.
 Section 4 is the public model. Sections 5–6 are the engine and binding
 design. Sections 7–10 cover complexity, testing, rollout and the owner's
-decisions. Section 11 records rejected alternatives.
+decisions. Section 11 records rejected alternatives. Section 12 specifies edits on a
+finalized session.
 
 ## 1. Requirements
 
@@ -938,6 +940,8 @@ activates for it.
    `finalize` in C and every binding (4.4, 5.10), container folds (5.6) and
    pipe and simple tables read a row at a time (5.7).
 - [x] **Step 8: Settle point.** The settle point of an open paragraph (5.8).
+- [ ] **Steps E0 to E3: Edits.** Gates, the C edit, the bindings and the LSP
+   server's edit step (12.9).
 
 ## 10. Decisions for the owner
 
@@ -1006,6 +1010,11 @@ activates for it.
   reverse indexes and order labels, inline reuse, shared subtrees) is
   dropped, and "Edit删掉": `session.edit`, `TextEdit` and the edit workloads
   are removed (step 5).
+  Revised 2026-10-27: a finalized session takes edits (section 12).
+  Streaming stays the only workload that appends, and the parse and append
+  paths do no work for edits. The general-edit engine stays rejected: an
+  edit re-reads only the damaged block and splices the rest by the line
+  machine's determinism (5.11), with no edit records on nodes.
 - **D8 Lookups while streaming. Decided 2026-10-14.** The owner: "对于llm
   session streaming，你甚至可以在session finalize时再去做definition look up，因为token streaming过程中的文本跳变本来就是无法避免的。", and "你需要加一个session.finalize的API，由调用方显式结束当前session。" A snapshot's lookups
   see the definitions written before the asking root, and `finalize` applies
@@ -1031,7 +1040,8 @@ activates for it.
   required, on every node, an entry and a reach, persistent children trees,
   ordered registry facts and inline reuse records. Writing them cost every
   fresh parse about 1.7 times `main`'s AST stage, and the only workload that
-  needs real-time updates is streaming (D7).
+  needs real-time updates is streaming (D7). Section 12 edits a finalized session without
+  any of these records.
 - **Re-parsing the last top-level block on every append.** A model often
   writes a whole answer as one list, and then the last top-level block is the
   whole text.
@@ -1059,3 +1069,277 @@ activates for it.
   closing sequences, cell padding, escaped pipes, tab expansion). That
   copies the grammar into three languages. The runs the parser records carry
   the mapping as data (4.3).
+
+## 12. Edits on a finalized session
+
+### 12.1 Requirement and the constraint from #432
+
+An editor replaces a range of a document's text with new text, anywhere in
+the text. The editor is the notebook, and the LSP server through `didChange`.
+After the edit:
+
+- the document must equal `Document.parse` of the new text, ids aside;
+- the nodes the edit did not touch keep their ids;
+- **re-parsing is limited to the damaged block**: the block whose own bytes
+  the edit touched, plus the sibling before it (12.3). Its ancestors are
+  rebuilt from their children without parsing anything. All other blocks
+  are kept as they are, at any depth.
+
+The constraint comes from the previous general-edit engine (#432, section
+11). It made every fresh parse cost about 1.7 times `main`'s AST stage,
+because it wrote edit records on every node and kept persistent children
+trees, ordered registry facts and inline reuse records, all on the parse
+path. So the one rule of this section is:
+
+**An edit uses only what a parse already keeps. The parse path and the
+append path do no work for edits.** The parse and stream gates (1.02 times
+the base, in Ir) prove this on every PR.
+
+### 12.2 Why this can be cheap now
+
+Three things the streaming engine already has turn an edit into a splice:
+
+- **Relative positions.** Extents and runs are relative (4.3). A node's
+  `lead` counts from the end of its previous sibling, so a block after the
+  edit keeps all of its values when text before it grows or shrinks. Only
+  the first kept sibling after the damage, at each level, gets a new `lead`.
+  No offset shifts through the tree.
+- **A deterministic line machine.** The line machine is a function of its
+  state and the bytes it reads (5.11). Two readings that reach the same
+  state with the same bytes left give the same blocks from there on.
+- **Owned, immutable nodes.** Settled nodes are immutable and owned by the
+  session (5.2), so the session can keep the ones the edit did not reach.
+
+### 12.3 The edit
+
+**A session's life.** A session streams by `append` until `finalize`, and
+takes edits only after `finalize`. Streaming and editing are two phases of
+one session, not two options: no workload edits text while it streams, and
+no session is copied to do both (E-D1). An edit on a session that is still
+streaming fails with `MARKDOWN_CORE_SESSION_STREAMING`, a new status. An
+append after `finalize` still fails with the finalized status.
+
+**The call.** `markdown_core_session_edit(session, start, end, text, length)`
+replaces the bytes from `start` to `end` with `text` and publishes a final
+document. Bindings take positions in the session's unit, as `locate` does.
+Let `delta = length - (end - start)`.
+
+**Rest points.** A rest point is the start of a child of a container:
+- the document;
+- a block quote, list, list item, callout, footnote or specimen definition,
+  or block directive;
+- a table, whose pipe and simple rows are its children (5.7).
+
+At that point no candidate (5.3) is live, so the builder stack holds exactly
+the open chain of ancestors. Each ancestor's builder state at a rest point
+is a function of its node and of the children before the point. Its
+continuation parameters are on the node (a list item's marker offset and
+padding, a callout's marker, a fence). Its folded values come from those
+children (5.6). Each container element gains one function, `reopen`. It
+rebuilds that builder from the node and a child index. It runs only on the
+edit path.
+
+The edit runs in five steps:
+
+1. **Damaged block.** Walk down from the document to the deepest child that
+   holds the edit range inside its own runs (4.3). The runs tell a child's
+   bytes from its container's own: the `>` prefixes, list markers and
+   fences. The walk stops at a block whose container syntax the edit
+   touches. Typing a `>` or a list marker therefore damages the container
+   at that level, not the leaf inside it.
+2. **Checkpoint.** The checkpoint is the rest point at the start of the
+   damaged block's **previous sibling**. Every rule of the grammar that
+   writes backwards reaches only the block before:
+   - a Setext underline;
+   - a definition list's `:` line;
+   - a caption before a table;
+   - a block identifier line;
+   - a pipe table's header line;
+   - a lazy continuation line.
+
+   If a candidate's span covers that point, the checkpoint moves back to
+   the candidate's opener. The session keeps a small log for this: an
+   opening offset and a deciding offset per candidate (E-D3).
+3. **Re-read.**
+   - Reopen the ancestor chain at the checkpoint with `reopen`.
+   - Truncate the line index, and roll the registry log back to the first
+     record at or after the checkpoint. The log is in source order and
+     already rolls back to marks.
+   - Run the ordinary commit (5.3) over the new text from the checkpoint.
+
+   The edit reuses the append path's line machine unchanged.
+4. **Resync.** Once the commit has passed `start + length`, check two things
+   at each new child start `b`, at any depth:
+   - the old document has a child at `b - delta` under the same ancestor
+     chain;
+   - `reopen` of that old child gives the builder state that the new
+     reading has at `b`.
+
+   When both hold, the new reading from `b` on is the old reading from
+   `b - delta` on (12.6). The commit stops there, and every level is
+   spliced:
+   - the old children after the resync point are kept under each
+     ancestor, up to the document;
+   - each ancestor is rebuilt as a new value with its id, from its kept
+     prefix, its re-read children and its kept suffix;
+   - folds, such as `List.tight`, are recomputed from the children without
+     parsing.
+
+   The old document has a child at `b - delta` when a binary search over
+   each level's children starts finds it, which is O(depth · log children).
+   If no point qualifies, the commit goes on, at worst to the end of the
+   text. That happens when the edit opens a fence, a comment or an HTML
+   block that nothing closes. The language makes that cost, not the design
+   (7.2).
+5. **Finish.** As `finalize` does (5.10), but only over what changed:
+   - **Inline roots.** Complete the inline roots of the re-read blocks, with
+     every definition visible.
+   - **Definitions.** If the edit added, removed or changed a definition (a
+     `Reference`, a footnote or specimen definition, or a heading, which is
+     a label), the winners of those labels may change. The roots that can
+     name a changed label are parsed again. The edit path finds them with a
+     byte filter over the kept roots' content: `[` plus the case-folded
+     first word of the label (E-D2). Typing inside a paragraph changes no
+     definition and skips this step.
+   - **Anchors.** If a heading or an explicit anchor changed, reassign the
+     automatic anchors by `main`'s rule. This is O(headings) and parses
+     nothing. A heading whose anchor changes keeps its id.
+   - **Registry.** Re-index the records after the splice, and add `delta` to
+     their `start`. This is O(records after): definitions, not nodes.
+   - **Publish.**
+
+### 12.4 Text and memory
+
+- **Text.** Some settled literals may view the session's text buffer (a
+  chunk with `alloc == 0`). Step E0 checks which ones do. If any do, the edit
+  writes the new text into a new buffer and keeps the old buffer alive while
+  a kept node views it. Otherwise it moves the suffix in place with one
+  `memmove`.
+- **Nodes.** The dropped nodes and the replaced ancestors go back to the
+  node pool's slabs, as a released subtree does today.
+- **Compaction.** When old buffers and slab holes exceed the live size, the
+  next edit parses the whole text again (E-D4).
+
+### 12.5 Identity
+
+- Kept nodes keep their ids, at every depth.
+- Rebuilt ancestors keep their ids, because only their children and folded
+  values changed.
+- The re-read blocks match the old ones by 5.9's rule. Old offsets after
+  `end` are shifted by `delta`, so a paragraph the user types into keeps
+  its id.
+- Gone nodes retire their ids, and a kind change is a new id, as now.
+
+### 12.6 Why the results are right
+
+- **Before the checkpoint.** The bytes are unchanged. The checkpoint comes
+  before any block that a rule writing backwards could reach, and no
+  candidate spans it. So the reading up to the checkpoint is that of a
+  fresh parse of the new text, and `reopen` gives the state that a fresh
+  parse has there. Lookups and anchors are redone in step 5.
+- **The re-read blocks.** The same commit reads them as a fresh parse does,
+  from the same state.
+- **After the resync point.** At `b`, the new reading's state equals the old
+  reading's state at `b - delta`. A child starts there, so no claimed line
+  covers it: a candidate that was live there in the old reading was later
+  rejected. Both readings then continue as the main reading from equal
+  states, with equal bytes left. By 5.11 they give the same blocks,
+  including how each ancestor ends.
+- **Ancestors.** An ancestor's value is its parameters plus a fold over its
+  children. Both are recomputed from the final children.
+- **Inline content.** Completion is a function of a root's content and the
+  visible definitions. Every definition is visible in this phase, so a kept
+  root stays right unless a label it can name changed winner, and step 5
+  parses those roots again. Anchors are reassigned whole.
+
+So every field equals `Document.parse` of the new text. This argument is
+also the test oracle.
+
+### 12.7 Testing
+
+The differential oracle, extending section 8:
+
+- **Edit oracle.** After every edit, compare against a fresh
+  `Document.parse` of the new text: the canonical dump, every scope, the
+  definition queries, and the context at every slot cue. This runs in C and
+  in each binding, in both units.
+- **Inputs.** The corpus and the conformance fixtures, with:
+  - every single-byte deletion and insertion at scalar boundaries on small
+    documents;
+  - generated random replacements on large ones;
+  - scripted edits for each hard case:
+    - opening and closing a fence, a comment and an HTML block;
+    - typing and deleting `>`, list markers and indentation, which changes
+      the container chain;
+    - adding, removing and renaming a definition or a heading label;
+    - the text of a heading that has an automatic anchor;
+    - splitting and joining paragraphs and list items;
+    - a Setext underline, a definition list term, a caption, a block
+      identifier line, a pipe table header and delimiter row, and a lazy
+      continuation line;
+    - the Properties envelope;
+    - a loose list turning tight and back.
+- **Damage bound.** The harness counts the blocks each edit re-reads. For
+  scripted edits it asserts the exact set: the damaged block and its
+  previous sibling. A regression that re-reads a whole container fails.
+- **Identity.** Kept and rebuilt nodes keep their ids. A node keeps its id
+  exactly when its value is unchanged, except a rebuilt ancestor, which
+  keeps its id.
+- **Faulty-subject self-tests.** The harness must fail against subjects that
+  skip:
+  - the resync state check;
+  - the previous-sibling rule;
+  - the candidate log;
+  - the definition step;
+  - the anchor step;
+  - the fold recomputation.
+- **Allocator sweep.** An edit that fails at any allocation either leaves the
+  session as it was, or reports the failure and frees cleanly.
+- **Benchmarks.** Each edit reports its Ir next to a fresh parse of the same
+  text. The parse and stream gates stay at 1.02 times the base.
+
+### 12.8 Complexity
+
+Let `k` be the damaged block plus its previous sibling, `d` the depth, and
+`c` the children of the ancestors.
+
+| Case | Work |
+| --- | --- |
+| Typing inside a paragraph, at any depth | O(k + d · log c + c for the splice and folds + text move) |
+| An edit that changes a definition | the above + the filtered roots |
+| An edit that changes a heading or an anchor | the above + O(headings) |
+| An edit that changes a container's syntax | the above, with that container as the damaged block |
+| An edit that opens an unclosed fence or comment | up to O(n), as the language requires |
+
+The `c` term copies child pointers and folds flags. It parses nothing. For a
+list of 10,000 items, it is about 10,000 pointer copies.
+
+### 12.9 Rollout
+
+- **E0: Gates and model check.**
+  - The edit oracle with the damage-bound counter.
+  - The edit benchmark, restoring the edit workloads that step 5 removed.
+  - The faulty-subject self-tests.
+  - The check of which literals view the session text.
+  - This section and the revisions of 12.11 land in the plans.
+- **E1: C edit.** `markdown_core_session_edit`, `reopen` for every container
+  element, nested resync, the candidate log, definitions, anchors and
+  compaction.
+- **E2: Bindings.** `session.edit` on Swift, Kotlin and ES, in one PR.
+- **E3: LSP server.** One session per open document: `didOpen` parses and
+  finalizes it, `didChange` edits it, and completion locates it.
+
+### 12.10 Decisions for the owner
+
+- **E-D1 Phases. Decided 2026-10-27.** A session streams until `finalize`
+  and takes edits only after it. The owner: "我们显然streaming的时候不能编辑，编辑的时候不能streaming，session的复制本身就是个伪命题".
+- **E-D2 Definition changes. Decided 2026-10-27: the byte filter on the edit
+  path.** Rejected: recording every lookup on the parse path, which was part
+  of what made #432 1.7 times slower.
+- **E-D3 Candidate log. Decided 2026-10-27:** two integers per candidate on
+  the parse path, gated as noise.
+- **E-D4 Compaction. Decided 2026-10-27:** parse the whole text again when
+  the garbage exceeds the live size.
+- **E-D5 Damage bound. Decided 2026-10-27: re-parse only the damaged block,
+  at any depth, in the first version.** The owner: "我希望能够实现将重解析限制在破坏的block内". Rejected: resync at top-level children only, which
+  re-reads a whole list for an edit in one item.

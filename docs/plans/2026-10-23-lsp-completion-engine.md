@@ -72,8 +72,8 @@ owner's decisions, and section 11 records rejected alternatives.
   JSON or a managed runtime on the request path: Swift on iOS and macOS
   first, then Kotlin on Android and WebAssembly on the web (section 4.1). A completion request answers in time proportional
   to the document's length with the parser's constant: one parse of the
-  text before the cursor and, at most once per document version, one parse
-  of the whole document (section 6). Section 7 sets the budget.
+  text before the cursor, and the document's session, which each change
+  edits by re-reading only the damaged block (section 6). Section 7 sets the budget.
 - **R6 Bindings stay in step.** Every new parser query lands in C and in the
   Swift, Kotlin and ECMAScript bindings in the same step, as every public
   query has so far. The engine's own API follows the platforms' order
@@ -187,8 +187,8 @@ extension MarkdownSession {
   completion's edit replaces the whole token when the user completes inside
   one. `prefix` carries the fields before the slot that scope its candidates,
   such as `Note` in `[[Note#`.
-- The query is a method of the whole document, which the server parses once
-  per version (section 6). It runs a session over the source up to the
+- The query is a method of the whole document, which the server keeps in one
+  session per open document, edited in place (section 6). It runs a session over the source up to the
   cursor's byte and reads its open state. It then confirms each provisional
   opener against the document it is called on, so that no request parses
   the text after the cursor. An opener at offset `o` survives only if the
@@ -493,8 +493,8 @@ links the parser directly, so the context query, the cached documents and
 the providers share one address space and one allocator, and no request
 copies a document across a boundary. It owns:
 
-- the **document store**: each open document's text, version and cached
-  parse (section 6);
+- the **document store**: each open document's version and its session,
+  which holds the text and its parse (section 6);
 - the **workspace index** of section 5.2;
 - the **providers** of section 5, which turn slots into candidates;
 - the **LSP types** of the surface below, as C structs whose strings and
@@ -777,24 +777,22 @@ reads, needs an XML reader and stays out of this plan.
 
 ## 6. Documents and edits
 
-The incremental plan made sessions append-only (D7), and an editor changes
-text anywhere. This plan does not revive general edits. Instead:
+An editor changes text anywhere. The incremental plan's section 12 gives a
+finalized session edits that re-read only the damaged block (its D7, revised
+2026-10-27), so the server keeps each open document's parse current:
 
-- The server holds each open document's text as a string and applies
-  `didChange` edits to it. Text editing is the server's work; parsing is the
-  parser's.
-- A document version is parsed with `Document.parse` at most once, lazily,
-  on the first request that needs the whole document, and the result is
-  cached by version.
-- A completion request locates the version's session at the cursor and
-  reads its context. Its cost is one session over the text before the cursor, the
-  confirmation lookups in the cached document, and the forward scan for
-  `after`. A completion request is therefore one of the requests that need
-  the whole document, and the first one after a change pays for its parse.
+- The server holds one session per open document. `didOpen` makes it from
+  the text and finalizes it. Each `didChange` content change is one edit of
+  that session, and `didClose` frees it. Text editing and parsing are both
+  the session's work, so the server holds no second copy of the text.
+- A completion request locates the document's session at the cursor and
+  reads its context. Its cost is one session over the text before the
+  cursor, the confirmation lookups in the session's document, and the
+  forward scan for `after`. No request parses the whole document: the edits
+  since the last request have already kept it current.
 - The workspace index parses a file when it changes on disk or closes in the
-  editor, never per keystroke. While a file is open, its current version's
-  cached parse answers for it instead (5.2), and is parsed only when a
-  request needs it.
+  editor, never per keystroke. While a file is open, its session's document
+  answers for it instead (5.2).
 
 Section 7 bounds what this costs. If the budget fails on documents the owner
 cares about, the remedy is a measured change to the shared algorithm, not a
@@ -805,9 +803,8 @@ second parse path (AGENTS.md).
 - A completion request costs O(p) for the parse of the text before the
   cursor, where p is its length. Confirmation is a path lookup in the cached
   document, O(depth + log n) with the runs indexed per version, or O(n)
-  with one walk as `nodeAt` does today. On top of that comes O(n) once per
-  document version for the whole parse, which the first request after a
-  change pays, plus the providers' lookups, which are hash-table reads in
+  with one walk as `nodeAt` does today. On top of that comes each change's edit,
+  which re-reads the damaged block (incremental plan 12.8), plus the providers' lookups, which are hash-table reads in
   the index and in the overlays' last parsed versions. A request never
   parses another document (5.2): the overlays' parses, O(total length of
   the open documents with unparsed edits), run in the idle entry point, and
@@ -815,7 +812,7 @@ second parse path (AGENTS.md).
 - **Budget.** Measured in C, the engine's work for a completion request on
   the benchmark grammar corpus stays under 1 ms p95 for documents up to
   16 KiB, the size of a notebook's command input, and under 10 ms for
-  documents up to 256 KiB, including the version's whole parse. The figures
+  documents up to 256 KiB, including the edits since the last request. The figures
   are a proposal for the owner (D5). The measurement lands in the existing
   benchmark workflow in step 4 as a report, in callgrind Ir as the parser's
   gates count, with wall time on an iPhone and a Mac as the device check.
@@ -889,7 +886,7 @@ it (D6).
    holds the native parse of its text and a release (Swift's deinit,
    Kotlin's `close()`, ECMAScript's `dispose()`), so the document stays a
    value, no query parses the text again or takes the source, and an editor
-   holds a finalized session per version. The context is the session's
+   holds a finalized session per open document. The context is the session's
    state at its cursor, which `locate` updates, so a spelling parses nothing
    and no binding holds a native context. 3a and 3b merged, were
    removed with 3c unmerged when the queries were kept in C, and came back
@@ -902,10 +899,9 @@ it (D6).
    4.2), 4b the engine's Swift, Kotlin and ECMAScript bindings in one pull
    request (owner, 2026-10-27), each replaying the transcripts, and 4c the
    latency report. The server holds one session per open document of its
-   workspace (owner, 2026-10-27): the first request after open or a change
-   makes the version's session from its text, a completion locates it, and
-   a change or close frees it. Sessions stay append-only (D3): a change
-   makes a new session of the new version, never an edit of the old one.
+   workspace (owner, 2026-10-27). Until step E3 of the incremental plan
+   lands edits in the server, a change makes a new session from the new
+   text; after it, a change edits the session in place (D3).
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with
@@ -943,13 +939,14 @@ it (D6).
   ... The product targets Android/Windows and web in the future, all are
   designed for best perf. Thus I do not think TS version is a correct
   choice." Rejected: a TypeScript server on the WebAssembly binding.
-- **D3 Edits. Decided 2026-10-24: whole-document parses per version, no
-  general-edit engine** (section 6). This keeps D7 of the incremental plan:
-  sessions stay append-only, because Markdown's context-dependent grammar
-  and backtracking make random-edit reuse irreconcilable with one-shot and
-  streaming performance. The owner: "仓库现在的增量语意是为streaming优化的，因为markdown的highly contextual语法和backtracking问题导致random optimize与one shot perf+streaming perf之间是不可调和的矛盾。" Rejected: a
-  new edit API on sessions for the server, a concrete syntax tree, and
-  tree-sitter, which would be a second Markdown grammar (R1).
+- **D3 Edits. Decided 2026-10-24, revised 2026-10-27: one session per open
+  document, edited in place** (section 6, and section 12 of the incremental
+  plan). `didOpen` parses and finalizes it, `didChange` applies each content
+  change as an edit, and `didClose` frees it. Decided 2026-10-24 and
+  rejected 2026-10-27: a whole-document parse per version. The owner first
+  kept sessions append-only: "仓库现在的增量语意是为streaming优化的，因为markdown的highly contextual语法和backtracking问题导致random optimize与one shot perf+streaming perf之间是不可调和的矛盾。" On 2026-10-27 the owner replaced that
+  with edits limited to the damaged block: "我希望能够实现将重解析限制在破坏的block内". Still rejected: a concrete syntax tree, and tree-sitter, which
+  would be a second Markdown grammar (R1).
 - **D4 Context model. Decided 2026-10-24: the open state of a prefix parse**
   (sections 2 and 3), a streaming append from the start to the cursor, which
   makes step 8 of the incremental plan a prerequisite. It stands in for a
