@@ -135,7 +135,6 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     markdown_core_status status = session_take(session, source, size);
     if (status == MARKDOWN_CORE_OK) {
         markdown_core_parser_start(session->committed, &session->revision);
-        markdown_core_parser_edits(session->committed);
     }
     return status;
 }
@@ -159,6 +158,8 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
     markdown_core_status status =
         made->context ? session_open(made, source, size, unit) : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK) {
+        /* Only a session takes edits; a one-off parse keeps no reach. */
+        markdown_core_parser_edits(made->committed);
         status = session_snapshot(made);
     }
     if (status != MARKDOWN_CORE_OK) {
