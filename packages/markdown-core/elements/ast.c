@@ -2345,8 +2345,8 @@ typedef struct {
 } reopen_gone;
 
 static int reopen_order(const void *a, const void *b) {
-    const uintptr_t left = (uintptr_t) * (const markdown_core_node *const *)a;
-    const uintptr_t right = (uintptr_t) * (const markdown_core_node *const *)b;
+    const uintptr_t left = (uintptr_t)*(const markdown_core_node *const *)a;
+    const uintptr_t right = (uintptr_t)*(const markdown_core_node *const *)b;
     return (left > right) - (left < right);
 }
 
