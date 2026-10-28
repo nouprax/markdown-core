@@ -779,7 +779,10 @@ function markerScripts(document) {
           })();
     return starts.map(([kind, at]) => {
         const script = editing(`markers-${kind}`, "markers", document.text);
-        const line = linesOf(script.buffer).find((candidate) => candidate.start <= at && at <= candidate.next);
+        /* The line that holds `at`; a start of line belongs to the line it starts. */
+        const line = linesOf(script.buffer).find(
+            (candidate) => candidate.start <= at && (at < candidate.next || candidate.next === script.buffer.length)
+        );
         for (const [marker, placement] of MARKERS) script.toggle(placement === "prefix" ? at : line.next, marker);
         return script;
     });

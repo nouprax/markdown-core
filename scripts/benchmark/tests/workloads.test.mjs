@@ -300,3 +300,19 @@ test("a narrowed benchmark set writes and identifies only the named workloads", 
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+
+test("a marker that belongs after a block's first line goes after it, also for a block at a line start", () => {
+    const document = {
+        text: "one\n\ntwo\n",
+        sites: [{ kind: "start:paragraph", start: 5, end: 5 }],
+        alphabet: "ascii"
+    };
+    const [script] = editScripts(document, ["markers"]);
+    const after = script.steps.filter(
+        (step) => step.kind === "edit" && ["===\n", "| --- |\n", ": x\n"].includes(step.text)
+    );
+    assert.deepEqual(
+        after.map((step) => step.start),
+        [9, 9, 9]
+    );
+});
