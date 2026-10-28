@@ -410,7 +410,7 @@ static int case_deep_list_session(pc_context *context) {
         return -1;
     }
     if (markdown_core_session_append(session, (const uint8_t *)"n\n", 2, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
         ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") == 0 &&
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") == 0) {
@@ -423,7 +423,7 @@ static int case_deep_list_session(pc_context *context) {
         result = text && length == tail + 4 && same == tail && memcmp(text + tail, "lean", 4) == 0 ? 0 : -1;
         free(text);
     }
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
     return result;
 }
 

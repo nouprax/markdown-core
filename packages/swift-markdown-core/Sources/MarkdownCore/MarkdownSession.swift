@@ -8,14 +8,14 @@ import MarkdownCoreC
 /// each step; it borrows nothing from the session, so it is safe to hold, copy
 /// and send across isolation boundaries.
 ///
-/// Until ``finalize()``, each document is a snapshot of the text so far: a
+/// Until ``flush()``, each document is a snapshot of the text so far: a
 /// lookup of a reference, footnote or specimen sees only the definitions that
 /// start before the inline root asking.
 ///
-/// The caller ends the text with ``finalize()``, which returns the final
+/// The caller ends the text with ``flush()``, which returns the final
 /// document; nothing ends a session implicitly. Afterwards ``document`` and
-/// ``text`` stay readable, and ``append(_:)`` and ``finalize()`` throw
-/// ``ErrorCode/sessionFinalized``.
+/// ``text`` stay readable, and ``append(_:)`` and ``flush()`` throw
+/// ``ErrorCode/sessionFlushed``.
 ///
 /// A session has one writer. It is not `Sendable`.
 public final class MarkdownSession {
@@ -28,7 +28,7 @@ public final class MarkdownSession {
     /// The syntactic context at the session's cursor, which
     /// ``locate(_:)`` moves: the session's state, which it updates in place.
     /// It is ``Context`` with nothing open until the first locate, and an
-    /// append or ``finalize()`` empties it again, since they change the text
+    /// append or ``flush()`` empties it again, since they change the text
     /// it was read from.
     public internal(set) var context = Context.blank
     /// Counts the steps that replace ``context``: a slot spells only in the
@@ -58,7 +58,7 @@ public final class MarkdownSession {
     }
 
     deinit {
-        markdown_core_session_free(session)
+        markdown_core_session_close(session)
     }
 
     /// The session's current text, read from the engine on each call.
@@ -78,7 +78,7 @@ public final class MarkdownSession {
     /// - Returns: the new ``document``, a snapshot.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
     ///   when an allocation fails or the text would exceed 1 GiB of UTF-8,
-    ///   and with ``ErrorCode/sessionFinalized`` after ``finalize()``.
+    ///   and with ``ErrorCode/sessionFlushed`` after ``flush()``.
     @discardableResult
     public func append(_ text: String) throws -> Document {
         var native: OpaquePointer?
@@ -94,21 +94,21 @@ public final class MarkdownSession {
     ///
     /// - Returns: the final ``document``.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
-    ///   when an allocation fails, and with ``ErrorCode/sessionFinalized``
-    ///   when the session was already finalized.
+    ///   when an allocation fails, and with ``ErrorCode/sessionFlushed``
+    ///   when the session was already flushed.
     @discardableResult
-    public func finalize() throws -> Document {
+    public func flush() throws -> Document {
         var native: OpaquePointer?
-        let status = markdown_core_session_finalize(session, &native)
+        let status = markdown_core_session_flush(session, &native)
         return try publish(status, native)
     }
 
     /// Builds the document a step returned, which borrows from the session
     /// until its next step.
     private func publish(_ status: markdown_core_status, _ native: OpaquePointer?) throws -> Document {
-        // A step of a session not yet finalized empties the native context,
+        // A step of a session not yet flushed empties the native context,
         // whether or not it succeeds.
-        if status != MARKDOWN_CORE_SESSION_FINALIZED {
+        if status != MARKDOWN_CORE_SESSION_FLUSHED {
             turn += 1
             context = .blank
         }

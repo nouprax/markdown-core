@@ -190,28 +190,28 @@ const session = new MarkdownSession("# Hello\n\nwor");
 session.append("ld\n");
 session.append("more\n");
 console.log(session.document.dump(session.text));
-const final = session.finalize();             // equals Document.parse(session.text), ids aside
+const final = session.flush();             // equals Document.parse(session.text), ids aside
 session.dispose();
 ```
 
 A session's documents count scope columns in its `unit`, `"utf16"` by default,
 the unit of JavaScript strings, or `"utf8"`, chosen with
 `new MarkdownSession(source, { unit })`. Every document the session returns is
-an immutable value. Until `finalize()`, each document is a snapshot of the text
+an immutable value. Until `flush()`, each document is a snapshot of the text
 so far: a lookup of a reference, footnote or specimen sees only the definitions
-that start before the inline root asking. The caller ends the text with `finalize()`, which returns
-the final document; afterwards `append` and `finalize` throw
-`sessionFinalized`, and `document` and `text` stay readable. The session
+that start before the inline root asking. The caller ends the text with `flush()`, which returns
+the final document; afterwards `append` and `flush` throw
+`sessionFlushed`, and `document` and `text` stay readable. The session
 itself lives in WebAssembly memory: `dispose()` releases it, and a session
 collected without it is released then.
 
 A session also answers an editor's queries from the engine's parse of its
 text, which it holds, so no query parses the text again or takes the source.
-An editor holds a finalized session per version of a text.
+An editor holds a flushed session per version of a text.
 
 ```js
 const session = new MarkdownSession("See [[Field notes]]\n");
-session.finalize();
+session.flush();
 session.locate({ line: 1, column: 12 });       // the session's cursor moves there
 const [slot] = session.context.slots;          // a "dest" of a "crossLink"
 session.spell(slot, "Old notes");              // { text: "Old notes", cursor: 9 }
@@ -224,7 +224,7 @@ session.dispose();
 The `context` is the session's state at its cursor: `locate` moves the cursor
 and updates it in place to the blocks and inline constructs the text before
 the cursor leaves open and the `Slot`s the cursor may be writing, and adding
-text or `finalize()` clears it. `session.spell(slot, value)` writes a value in
+text or `flush()` clears it. `session.spell(slot, value)` writes a value in
 a slot of the current context in the slot's own syntax, with the closer an
 open construct needs, as an `Edit` whose caret counts columns in the
 session's unit; a slot of a context a later step replaced throws
@@ -249,8 +249,8 @@ Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
 - `"kindMismatch"`: the engine's status for a value that is not of the kind a
   call reads. The binding decodes the whole tree into typed values, so none of
   its calls reports it today; the code keeps the set equal to the engine's.
-- `"sessionFinalized"`: a session's `append` or `finalize` after its
-  `finalize`.
+- `"sessionFlushed"`: a session's `append` or `flush` after its
+  `flush`.
 
 A node of another document is not checked: pass the document's own nodes.
 

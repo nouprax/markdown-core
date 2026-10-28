@@ -171,7 +171,7 @@ static void check_session_shared_resource(void) {
         after = message_length(message);
     }
     markdown_core_wire_free(message);
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
     check(before != 0 && after > before && after - before < size,
           "a session's new occurrence of a definition shares the resource of the occurrence it took");
 }
@@ -198,18 +198,18 @@ static void check_session(void) {
         markdown_core_session_text(session, text);
     }
     check(size == strlen(expected) && memcmp(text, expected, size) == 0, "the session's text follows its steps");
-    message = markdown_core_wire_session_finalize(session);
-    check(message != NULL && message_status(message) == 0, "finalize answers with the final document");
+    message = markdown_core_wire_session_flush(session);
+    check(message != NULL && message_status(message) == 0, "flush answers with the final document");
     markdown_core_wire_free(message);
     message = markdown_core_wire_session_append(session, (const uint8_t *)"x", 1);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FINALIZED,
-          "an append after finalize answers SESSION_FINALIZED");
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FLUSHED,
+          "an append after flush answers SESSION_FLUSHED");
     markdown_core_wire_free(message);
-    message = markdown_core_wire_session_finalize(session);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FINALIZED,
-          "a finalize after finalize answers SESSION_FINALIZED");
+    message = markdown_core_wire_session_flush(session);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FLUSHED,
+          "a flush after flush answers SESSION_FLUSHED");
     markdown_core_wire_free(message);
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
 }
 
 static int32_t read_i32(const uint8_t *bytes) { return (int32_t)read_u32(bytes); }
@@ -262,7 +262,7 @@ static void check_parts(const markdown_core_session *session, const uint8_t *tex
     markdown_core_scopes_free(scopes);
 }
 
-/* Every node a finalized session's document holds a byte of, asked through
+/* Every node a flushed session's document holds a byte of, asked through
  * the wire at the first byte that names it, answers its field and marker
  * queries as the facade does; an identifier the path at that byte lacks is
  * OUT_OF_BOUNDS. Columns count UTF-8 bytes, so a byte's position is its
@@ -274,10 +274,10 @@ static void check_queries(const uint8_t *source, size_t length, const char *name
     size_t limit = 0, offset, start = 0;
     int32_t line = 1;
     if (markdown_core_session_new(source, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
-        markdown_core_session_finalize(session, &document) != MARKDOWN_CORE_OK) {
+        markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "FAILED: %s: no session\n", name);
         failures++;
-        markdown_core_session_free(session);
+        markdown_core_session_close(session);
         return;
     }
     for (offset = 0; offset < length; ++offset) {
@@ -318,7 +318,7 @@ static void check_queries(const uint8_t *source, size_t length, const char *name
         markdown_core_wire_free(message);
     }
     free(seen);
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
 }
 
 /* A locate answers the session's context as it leaves it, and spelling
@@ -369,7 +369,7 @@ static void check_context(void) {
     message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
     check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS, "an append empties the context");
     markdown_core_wire_free(message);
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
 }
 
 /* The dialect's message lists the metadata field names, then the cues. */

@@ -5,7 +5,7 @@ package com.nouprax.markdown.core
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TEXT_UNIT_UTF16
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TEXT_UNIT_UTF8
 import com.nouprax.markdown.core.internal.capi.markdown_core_position
-import com.nouprax.markdown.core.internal.capi.markdown_core_session_free
+import com.nouprax.markdown.core.internal.capi.markdown_core_session_close
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_text
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_text_size
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_dialect
@@ -15,7 +15,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_wire_locate
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_markers
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_append
-import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_finalize
+import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_flush
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_new
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_spell
 import kotlinx.cinterop.COpaquePointer
@@ -129,7 +129,7 @@ private class CSession(
     override fun append(text: ByteArray): Document =
         publish(text.withAddress { markdown_core_wire_session_append(session?.reinterpret(), it, text.size.convert()) })
 
-    override fun end(): Document = publish(markdown_core_wire_session_finalize(session?.reinterpret()))
+    override fun end(): Document = publish(markdown_core_wire_session_flush(session?.reinterpret()))
 
     override fun text(): ByteArray {
         val bytes = ByteArray(markdown_core_session_text_size(session?.reinterpret()).convert<Int>())
@@ -140,7 +140,7 @@ private class CSession(
     }
 
     override fun free() {
-        markdown_core_session_free(session?.reinterpret())
+        markdown_core_session_close(session?.reinterpret())
         session = null
     }
 

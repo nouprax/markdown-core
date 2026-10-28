@@ -105,7 +105,7 @@ import Testing
     func path() throws {
         let source = "> a *b*\n"
         let session = try MarkdownSession(source)
-        let document = try session.finalize()
+        let document = try session.flush()
         for column in Int32(1)...8 {
             let position = Position(line: 1, column: column)
             let path = try session.path(at: position)
@@ -120,7 +120,7 @@ import Testing
     @Test("a link's fields and markers divide its own source")
     func fields() throws {
         let session = try MarkdownSession("[a](doc.md#part)\n")
-        let document = try session.finalize()
+        let document = try session.flush()
         let link = try #require((document.content.first as? Paragraph)?.content.first as? Link)
         #expect(try session.scope(of: link, field: .dest) == [place((1, 5), (1, 10))])
         #expect(try session.scope(of: link, field: .anchor) == [place((1, 12), (1, 15))])
@@ -161,7 +161,7 @@ import Testing
         #expect(try session.scope(of: text, field: .label).isEmpty)
         try session.locate(Position(line: 1, column: 2))
         #expect(session.context.blocks.map(\.kind) == [.paragraph])
-        let final = try session.finalize()
+        let final = try session.flush()
         let link = try #require((final.content.first as? Paragraph)?.content.first as? Link)
         #expect(try !session.markers(of: link).isEmpty)
     }

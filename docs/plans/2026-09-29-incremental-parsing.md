@@ -331,7 +331,7 @@ public final class MarkdownSession {           // one writer; not Sendable
   ends the session explicitly; nothing ends it implicitly.
 - **After `finalize`** the session is read-only: `document` and `text` stay
   readable, and `append` and `finalize` throw the finalized error. C answers
-  `MARKDOWN_CORE_SESSION_FINALIZED`.
+  `MARKDOWN_CORE_SESSION_FLUSHED`.
 
 Kotlin has the same shape as an `AutoCloseable` class. ECMAScript exports
 `class MarkdownSession` with `dispose()` (and a `FinalizationRegistry`

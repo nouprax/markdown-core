@@ -91,26 +91,26 @@ MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by defaul
     session.append("st\n")
     session.append("\n> quote\n")
     val document = session.document             // a snapshot of the text so far
-    val final = session.finalize()              // the tree of Document.parse(session.text), ids aside
+    val final = session.flush()              // the tree of Document.parse(session.text), ids aside
 }
 ```
 
-Until `finalize`, each document is a snapshot of the text so far: a lookup of
+Until `flush`, each document is a snapshot of the text so far: a lookup of
 a reference, footnote or specimen sees only the definitions that start before
 the inline root asking. A session's `unit` is how its documents count scope
-columns. The caller ends the text with `finalize`, which returns the final
-document; afterwards `append` and `finalize` throw
-`ErrorCode.SESSION_FINALIZED`, and `document` and `text` stay readable.
+columns. The caller ends the text with `flush`, which returns the final
+document; afterwards `append` and `flush` throw
+`ErrorCode.SESSION_FLUSHED`, and `document` and `text` stay readable.
 `close` releases the engine's session; the documents it returned stay complete
 values.
 
 A session also answers an editor's queries from the engine's parse of its
 text, which it holds, so no query parses the text again or takes the source.
-An editor holds a finalized session per version of a text.
+An editor holds a flushed session per version of a text.
 
 ```kotlin
 MarkdownSession("See [[Field notes]]\n").use { session ->
-    session.finalize()
+    session.flush()
     session.locate(Position(1, 12))                          // the session's cursor moves there
     val slot = session.context.slots.single()                // SlotKind.DEST of a NodeKind.CROSS_LINK
     session.spell(slot, "Old notes")                         // Insertion(text = "Old notes", cursor = 9)
@@ -123,7 +123,7 @@ MarkdownSession("See [[Field notes]]\n").use { session ->
 The `context` is the session's state at its cursor: `locate` moves the cursor
 and updates it in place to the blocks and inline constructs the text before
 the cursor leaves open and the `Slot`s the cursor may be writing, and an append
-or `finalize` clears it. `session.spell(slot, value)` writes a value in a slot
+or `flush` clears it. `session.spell(slot, value)` writes a value in a slot
 of the current context in the slot's own syntax, with the closer an open
 construct needs, and its caret counts columns in the session's unit; a slot of
 a context a later step replaced throws `OUT_OF_BOUNDS`. Nothing is handed out
@@ -182,8 +182,8 @@ why:
   position past the source, or one no node holds, answers `null`.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
-- `ErrorCode.SESSION_FINALIZED`: a session's `append` or `finalize` after its
-  `finalize`.
+- `ErrorCode.SESSION_FLUSHED`: a session's `append` or `flush` after its
+  `flush`.
 
 A node of another document is not checked, and the answer for it means
 nothing.

@@ -86,7 +86,7 @@ const exported = [
     "markdown_core_wire_parse",
     "markdown_core_wire_session_new",
     "markdown_core_wire_session_append",
-    "markdown_core_wire_session_finalize",
+    "markdown_core_wire_session_flush",
     "markdown_core_wire_dialect",
     "markdown_core_wire_locate",
     "markdown_core_wire_spell",
@@ -95,7 +95,7 @@ const exported = [
     "markdown_core_wire_free",
     "markdown_core_session_text_size",
     "markdown_core_session_text",
-    "markdown_core_session_free"
+    "markdown_core_session_close"
 ].map((name) => `_${name}`);
 const result = spawnSync(
     "emcc",

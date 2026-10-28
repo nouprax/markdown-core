@@ -29,12 +29,12 @@ call returns.
 uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                         markdown_core_session **session);
 uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
-uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session);
+uint8_t *markdown_core_wire_session_flush(markdown_core_session *session);
 ```
 
 A session's steps answer the same way: each returns one caller-owned message
 of the document the step published, or of the step's failure. The binding
-holds the C session itself and releases it with `markdown_core_session_free`.
+holds the C session itself and releases it with `markdown_core_session_close`.
 Every message is a whole document: the binding builds its value tree from it
 as it does after a parse.
 
@@ -62,10 +62,10 @@ a reader that received only a pointer knows where the message ends.
 
 - Status 1 is a failure. The body is one `u32`, the facade's
   `markdown_core_status` (`ALLOCATION_FAILED` 1, `OUT_OF_BOUNDS` 2,
-  `KIND_MISMATCH` 3, `SESSION_FINALIZED` 4), and the message ends. A parse
+  `KIND_MISMATCH` 3, `SESSION_FLUSHED` 4), and the message ends. A parse
   fails only with `ALLOCATION_FAILED`, which also reports a document too
-  large for the message length; a session's append or finalize after its
-  finalize fails with `SESSION_FINALIZED`.
+  large for the message length; a session's append or flush after its
+  flush fails with `SESSION_FLUSHED`.
 - Status 0 is a document. The body is a sequence of node records in
   **post-order**, ending with the `Document`'s record, followed by the
   document's definition tables.
@@ -182,7 +182,7 @@ the session's current document and text, so none takes the source.
 - **Spell**: spells in slot `slot` of the session's context as it stands: an
   `Insertion?`, which is `text: String` and a `u32` cursor, the bytes of the
   text before the caret; absent when the slot holds the value in no
-  spelling. An append or the finalize clears the context, and a slot it no
+  spelling. An append or the flush clears the context, and a slot it no
   longer has is `OUT_OF_BOUNDS`.
 - **Field** and **Markers**: `[Scope]`. The binding names the node by its
   identifier and the position of a byte the node holds, and the encoder finds

@@ -138,7 +138,7 @@ extension MarkdownSession {
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
     ///   `slot` is not a slot of ``context``: another session's, or one a
-    ///   later locate, append or finalize replaced the context of, and
+    ///   later locate, append or flush replaced the context of, and
     ///   ``ErrorCode/allocationFailed`` when an allocation fails.
     public func spell(_ values: [String], in slot: Slot) throws -> [Slot.Insertion?] {
         guard slot.session === token, slot.turn == turn else {

@@ -290,7 +290,7 @@ export function streamSection(report) {
     const lines = [
         "### Streams",
         "",
-        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S runs every stream R runs at every step (those of at most 1,024 chunks, and the shapes 6.2 leaves to 6.3 at their smallest size) and every longer stream of a shape the language keeps local, and B the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the flush, R counting the two parse stages of each \`Document.parse\`; S runs every stream R runs at every step (those of at most 1,024 chunks, and the shapes 6.2 leaves to 6.3 at their smallest size) and every longer stream of a shape the language keeps local, and B the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
     ];
     if (report.baseline) {
         lines.push(

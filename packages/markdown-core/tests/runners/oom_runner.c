@@ -404,7 +404,7 @@ static int sweep_context(void) {
         markdown_core_session_locate(session, OOM_CONTEXT_CURSORS[0]) != MARKDOWN_CORE_OK) {
         fputs("context: parse for the context sweep failed\n", stderr);
         markdown_core_document_free(document);
-        markdown_core_session_free(session);
+        markdown_core_session_close(session);
         return -1;
     }
     const markdown_core_context *state = markdown_core_session_context(session);
@@ -455,7 +455,7 @@ static int sweep_context(void) {
         }
     }
     markdown_core_document_free(document);
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
     return result;
 }
 

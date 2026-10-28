@@ -1034,7 +1034,7 @@ static void check_context_query(void) {
 
 /* A session keeps its context as its state: the state stays where the
  * session lends it, a locate updates it in place and a failed one keeps it,
- * spelling reads it as it stands, and an append and the finalize empty it. */
+ * spelling reads it as it stands, and an append and the flush empty it. */
 static void check_session_context(void) {
     static const char source[] = "\xc3\xa9 [[No";
     markdown_core_session *session = NULL;
@@ -1073,13 +1073,13 @@ static void check_session_context(void) {
     check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
               markdown_core_context_slot_count(context) == 1 &&
               markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK && slot.closed &&
-              markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
+              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
               markdown_core_context_slot_count(context) == 0,
-          "a locate reads the appended text, and the finalize empties the context");
+          "a locate reads the appended text, and the flush empties the context");
     check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
               markdown_core_context_slot_count(context) == 1,
-          "a finalized session still locates");
-    markdown_core_session_free(session);
+          "a flushed session still locates");
+    markdown_core_session_close(session);
 }
 
 /* Whether `scopes` hold one scope on line 1 from `start` to `end`. */

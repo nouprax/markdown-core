@@ -11,7 +11,7 @@ export interface NativeExports extends WebAssembly.Exports {
      * zero with a failure message. */
     markdown_core_wire_session_new(source: number, length: number, unit: number, session: number): number;
     markdown_core_wire_session_append(session: number, text: number, size: number): number;
-    markdown_core_wire_session_finalize(session: number): number;
+    markdown_core_wire_session_flush(session: number): number;
     /** The answers of a session's queries (docs/architecture/wire-format.md,
      * Queries), each one owned MCB3 message as a step's is. A position is
      * passed as the address of its two i32s. A locate moves the session's
@@ -25,7 +25,7 @@ export interface NativeExports extends WebAssembly.Exports {
     markdown_core_wire_free(message: number): void;
     markdown_core_session_text_size(session: number): number;
     markdown_core_session_text(session: number, bytes: number): void;
-    markdown_core_session_free(session: number): void;
+    markdown_core_session_close(session: number): void;
 }
 
 const wasmURL = new URL("../markdown-core.wasm", import.meta.url);

@@ -78,7 +78,7 @@ import {
     sameCompileOptions
 } from "./compile-identity.mjs";
 import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
-import { BINDING_ENTRIES, SESSION_STEPS, STEP_ENTRIES } from "./stream-gates.mjs";
+import { BINDING_ENTRIES, FORMER_NAMES, SESSION_STEPS, STEP_ENTRIES } from "./stream-gates.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -812,7 +812,7 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     fs.copyFileSync(path.join(root, "CMakePresets.json"), path.join(source, "CMakePresets.json"));
     const built = { ...profile, binaryDir: path.join(directory, "build") };
     buildRunners(built, MEASURED_BINARIES, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
-    verifyStageSymbols(built);
+    verifyStageSymbols(built, true);
     verifyBuildProvenance(built, MEASURED_BINARIES, versions);
     const compiled = Object.fromEntries(
         [["markdown-core", "libmarkdown-core-public-static"]].map(([engine, target]) => [
@@ -898,7 +898,7 @@ function verifyBuildProvenance(profile, runners, versions) {
  * and the MCB3 entries and session steps its `binding` windows read are
  * checked the same way.
  */
-function verifyStageSymbols(profile) {
+function verifyStageSymbols(profile, base = false) {
     const symbolsOf = (engine, runner) => {
         const binary = path.join(profile.binaryDir, runner);
         if (!fs.existsSync(binary)) fail(`${engine}: ${runner} was not built`);
@@ -924,7 +924,7 @@ function verifyStageSymbols(profile) {
     }
     const streamSymbols = symbolsOf("markdown-core streams", STREAM_RUNNER);
     for (const name of [...STEP_ENTRIES, ...PARSE_BOUNDARIES, ...BINDING_ENTRIES, ...SESSION_STEPS]) {
-        if (!streamSymbols.has(name)) {
+        if (!streamSymbols.has(name) && !(base && streamSymbols.has(FORMER_NAMES[name]))) {
             fail(
                 `markdown-core streams: ${name} is absent from ${STREAM_RUNNER}. The profile build must keep the ` +
                     `stream windows' entries out of line; check CMAKE_C_FLAGS_RELEASE in the benchmark preset.`

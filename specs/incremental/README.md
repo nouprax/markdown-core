@@ -25,12 +25,12 @@ sources and never edited by hand: run the generator to rewrite the set, and
 A script file starts with the line `markdown-core incremental script 2`.
 Each script is a `script NAME FAMILY` line followed by its steps, one per
 line. FAMILY is an edit family of section 3.3, `identity` or `ids` (4.5), or
-`rejections` (4.13). A script that never says `finalize` finalizes after its
+`rejections` (4.13). A script that never says `flush` flushes after its
 last step.
 
 - `append TEXT` is one `append` call; TEXT is hexadecimal UTF-8, and `-` is
   the empty text.
-- `finalize` ends the stream. Every edit comes after it.
+- `flush` ends the stream. Every edit comes after it.
 - `edit START END TEXT` replaces the bytes from START to END with TEXT.
   Offsets are UTF-8 bytes of the text before the edit; a runner in UTF-16
   converts them through its text model.

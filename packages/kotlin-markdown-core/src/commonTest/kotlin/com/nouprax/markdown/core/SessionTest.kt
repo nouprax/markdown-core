@@ -64,23 +64,23 @@ class SessionTest {
     }
 
     @Test
-    fun finalizeReturnsTheFinalDocumentAndEndsTheSession() {
+    fun flushReturnsTheFinalDocumentAndEndsTheSession() {
         for (unit in listOf(TextUnit.UTF8, TextUnit.UTF16)) {
             MarkdownSession("[a]\n\n", unit).use { session ->
                 val snapshot = session.append("[a]: /url\n")
                 // A snapshot's lookup sees only the definitions written before it.
                 assertNotEquals(Document.parse(session.text, unit).dump(session.text), snapshot.dump(session.text))
-                val final = session.finalize()
+                val final = session.flush()
                 val text = session.text
                 assertEquals(final, session.document)
                 assertEquals(Document.parse(text, unit).dump(text), final.dump(text))
                 assertEquals(
-                    ErrorCode.SESSION_FINALIZED,
+                    ErrorCode.SESSION_FLUSHED,
                     assertFailsWith<MarkdownCoreException> { session.append("more") }.code,
                 )
                 assertEquals(
-                    ErrorCode.SESSION_FINALIZED,
-                    assertFailsWith<MarkdownCoreException> { session.finalize() }.code,
+                    ErrorCode.SESSION_FLUSHED,
+                    assertFailsWith<MarkdownCoreException> { session.flush() }.code,
                 )
                 assertEquals(text, session.text)
                 assertEquals(final, session.document)
@@ -94,7 +94,7 @@ class SessionTest {
         session.close()
         session.close()
         assertFailsWith<IllegalStateException> { session.append("more") }
-        assertFailsWith<IllegalStateException> { session.finalize() }
+        assertFailsWith<IllegalStateException> { session.flush() }
         assertFailsWith<IllegalStateException> { session.text }
         assertEquals(1, session.document.content.size)
     }

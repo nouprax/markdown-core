@@ -6,7 +6,7 @@
  *   3.1  a composite document's fresh parse has as many root children as its
  *        parts' fresh parses together
  *   4.1  the subject's text equals the harness's text model; the canonical
- *        dump of its finalized document equals the dump of a fresh parse of
+ *        dump of its flushed document equals the dump of a fresh parse of
  *        that text in the same unit, and so do its extents in walk order, its
  *        scope and hit-test answers and its definition tables; a snapshot
  *        equals the fresh parse in all of these but where plan 5.5 lets it
@@ -22,8 +22,8 @@
  *   4.6  the snapshot the open and every append return equals the snapshot
  *        a new subject returns for one append of the text, ids aside, in
  *        all of the above
- *   4.7  after the script's `finalize`, an append or a finalize fails with
- *        the finalized status
+ *   4.7  after the script's `flush`, an append or a flush fails with
+ *        the flushed status
  *   4.11 after every edit, 4.1 to 4.5 hold against the document before it,
  *        with each old node's anchor at its image under the edit
  *   4.12 the bytes an edit reads again hold the bytes it wrote, and are the
@@ -86,8 +86,8 @@ bool stopped(const run *state);
 markdown_core_text_unit unit_of(ih_unit unit);
 
 /* The run's subject, opened in `unit` on `opened`, given `steps`, and
- * finalized at the end unless a step did: 4.6 and 4.2 to 4.5 hold after the
- * open and after every append, 4.1 to 4.5 after the finalize, 4.7 after
+ * flushed at the end unless a step did: 4.6 and 4.2 to 4.5 hold after the
+ * open and after every append, 4.1 to 4.5 after the flush, 4.7 after
  * that, 4.11 and 4.12 after every edit, and 4.13 for every edit it must
  * refuse. 4.2 to 4.5 hold only for a subject that keeps ids. */
 void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,

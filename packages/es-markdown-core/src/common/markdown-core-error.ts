@@ -9,10 +9,10 @@
  * - `"kindMismatch"`: a value is not of the kind the call reads; no call of
  *   this binding reads a kind the tree has not already typed, so none reports
  *   it;
- * - `"sessionFinalized"`: a session was asked for another step after its
- *   `finalize()`.
+ * - `"sessionFlushed"`: a session was asked for another step after its
+ *   `flush()`.
  */
-export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch" | "sessionFinalized";
+export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch" | "sessionFlushed";
 
 /** The one error every public call of the library throws, carrying its code. */
 export class MarkdownCoreError extends Error {

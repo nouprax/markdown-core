@@ -161,7 +161,7 @@ test("scripts survive their text format unchanged", () => {
 test("every identity case states what each append or edit keeps or changes", () => {
     for (const { name, text, script } of identityScripts()) {
         assert.equal(Buffer.from(text).toString("utf8"), text, name);
-        const edits = script.steps[0].kind === "finalize";
+        const edits = script.steps[0].kind === "flush";
         assert.equal(script.family, edits ? "ids" : "identity", name);
         for (const step of script.steps.slice(edits ? 1 : 0)) {
             assert.equal(step.kind, edits ? "edit" : "append", name);
@@ -171,14 +171,14 @@ test("every identity case states what each append or edit keeps or changes", () 
     }
 });
 
-test("an edit script finalizes before its first edit and edits inside the text", () => {
+test("an edit script flushes before its first edit and edits inside the text", () => {
     const document = smallest("prose", "utf8");
     const scripts = editScripts(document);
     assert.deepEqual([...new Set(scripts.map((script) => script.family))].sort(), [...EDIT_FAMILIES].sort());
     assert.equal(scripts.filter((script) => script.family === "random").length, RANDOM_SEEDS);
     const cases = [...scripts.map((script) => ({ script, text: document.text })), ...hardScripts()];
     for (const { script, text: opened } of cases) {
-        assert.equal(script.steps[0].kind, "finalize", script.name);
+        assert.equal(script.steps[0].kind, "flush", script.name);
         assert.ok(script.steps.length > 1, script.name);
         let text = Buffer.from(opened);
         for (const step of script.steps.slice(1)) {
@@ -215,7 +215,7 @@ test("the refused edits stream first, then fall inside the wide scalar in both u
     const text = `ab\u{20000}\n`;
     const script = rejectionScript(text);
     const kinds = script.steps.map((step) => step.kind);
-    assert.deepEqual(kinds.slice(0, 3), ["reject", "reject", "finalize"]);
+    assert.deepEqual(kinds.slice(0, 3), ["reject", "reject", "flush"]);
     assert.deepEqual(
         script.steps.slice(0, 2).map((step) => step.status),
         ["streaming", "streaming"]
@@ -329,7 +329,7 @@ test("the edit workloads run every family but undo with one seed, and a shape's 
             stepwise ? ["random-1"] : []
         );
         for (const script of workload.scripts) {
-            assert.equal(script.steps[0].kind, "finalize", `${workload.name} ${script.name}`);
+            assert.equal(script.steps[0].kind, "flush", `${workload.name} ${script.name}`);
             assert.ok(
                 script.steps.slice(1).every((step) => step.kind === "edit"),
                 `${workload.name} ${script.name}`

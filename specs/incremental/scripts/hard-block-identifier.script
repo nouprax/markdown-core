@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-block-identifier hard
-finalize
+flush
 edit 11 11 2023696423
 edit 11 16 -
 edit 12 12 236964230a0a

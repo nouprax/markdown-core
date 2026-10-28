@@ -69,7 +69,7 @@ static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length)
 static const size_t stream_tails[] = {1, 3};
 
 /* Whether a session that opens with the first `cut` bytes of the example,
- * takes the next `tail` in one append and the rest in another, finalizes to
+ * takes the next `tail` in one append and the rest in another, flushes to
  * a document that dumps as the expected block. */
 static int streams_as_expected(const ts_spec_case *test_case, size_t cut, size_t tail) {
     const char *expected = test_case->expected;
@@ -84,12 +84,12 @@ static int streams_as_expected(const ts_spec_case *test_case, size_t cut, size_t
                markdown_core_session_append(session, source + cut, next - cut, &document) == MARKDOWN_CORE_OK &&
                (next == size ||
                 markdown_core_session_append(session, source + next, size - next, &document) == MARKDOWN_CORE_OK) &&
-               markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
+               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
                markdown_core_document_dump(document, markdown_core_document_root(document), source, size, &dump,
                                            &dump_size) == MARKDOWN_CORE_OK;
     same = same && strlen(expected) == dump_size && memcmp(expected, dump, dump_size) == 0;
     markdown_core_dump_free(dump);
-    markdown_core_session_free(session);
+    markdown_core_session_close(session);
     return same;
 }
 

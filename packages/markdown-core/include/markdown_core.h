@@ -86,13 +86,13 @@ typedef struct markdown_core_node markdown_core_node;
  * - OUT_OF_BOUNDS: an index, position or source length names something that
  *   is not there.
  * - KIND_MISMATCH: the node or value is not of the kind the accessor reads.
- * - SESSION_FINALIZED: the session was finalized, and takes no more text. */
+ * - SESSION_FLUSHED: the session was flushed, and takes no more text. */
 typedef enum markdown_core_status {
     MARKDOWN_CORE_OK = 0,
     MARKDOWN_CORE_ALLOCATION_FAILED = 1,
     MARKDOWN_CORE_OUT_OF_BOUNDS = 2,
     MARKDOWN_CORE_KIND_MISMATCH = 3,
-    MARKDOWN_CORE_SESSION_FINALIZED = 4,
+    MARKDOWN_CORE_SESSION_FLUSHED = 4,
 } markdown_core_status;
 
 /** A read-only run of UTF-8 bytes that this library owns.
@@ -426,10 +426,10 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const mark
  * each append adds to the end of both: the new document continues the
  * previous one, so a node that continues an old node keeps its identifier,
  * and one whose value is unchanged is the old node. The document a session
- * returns borrows from the session until its next append, its finalize or
- * its release.
+ * returns borrows from the session until its next append, its flush or
+ * its close.
  *
- * Until finalize, each document is a snapshot of the text so far: a lookup
+ * Until flush, each document is a snapshot of the text so far: a lookup
  * of a reference, footnote or specimen sees only the definitions that start
  * before the inline root asking.
  *
@@ -443,26 +443,30 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_session_new(const uint8_t *
 /** Appends `size` bytes of `text` to the text and parses it; `*document`
  * receives the new snapshot. The bytes are stored as given, so a scalar may
  * be split between two appends. ALLOCATION_FAILED when an allocation fails
- * or the text would exceed the 1 GiB a document can hold; SESSION_FINALIZED
- * after markdown_core_session_finalize. */
+ * or the text would exceed the 1 GiB a document can hold; SESSION_FLUSHED
+ * after markdown_core_session_flush. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text,
                                                                     size_t size,
                                                                     const markdown_core_document **document);
 /** Ends the session's text; `*document` receives the final document, which
  * equals markdown_core_document_parse_in of the text in everything but node
- * identifiers. The caller ends a session explicitly: nothing ends it
- * implicitly. Afterwards the session's document and text stay readable, and
- * markdown_core_session_append and markdown_core_session_finalize answer
- * SESSION_FINALIZED. ALLOCATION_FAILED when an allocation fails. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_session_finalize(markdown_core_session *session,
-                                                                      const markdown_core_document **document);
+ * identifiers. The caller ends the text explicitly: nothing ends it
+ * implicitly. Afterwards the session's document and text stay readable, the
+ * session keeps its parse state until markdown_core_session_close, and
+ * markdown_core_session_append and markdown_core_session_flush answer
+ * SESSION_FLUSHED. ALLOCATION_FAILED when an allocation fails. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_flush(markdown_core_session *session,
+                                                                   const markdown_core_document **document);
 MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
 MARKDOWN_CORE_API markdown_core_text_unit markdown_core_session_unit(const markdown_core_session *session);
 /** The size of the session's text in bytes, and a copy of it into `bytes`,
  * which holds that many. */
 MARKDOWN_CORE_API size_t markdown_core_session_text_size(const markdown_core_session *session);
 MARKDOWN_CORE_API void markdown_core_session_text(const markdown_core_session *session, uint8_t *bytes);
-MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
+/** Destroys the session: its text, its parse state, its documents and its
+ * context go with it, and nothing it lent may be read afterwards. A session
+ * may be closed at any point of its life, flushed or not. */
+MARKDOWN_CORE_API void markdown_core_session_close(markdown_core_session *session);
 
 /** Return the immutable semantic root owned by `document`.
  *
@@ -664,8 +668,8 @@ MARKDOWN_CORE_API void markdown_core_context_free(markdown_core_context *context
  * ALLOCATION_FAILED leave the state as it was. `markdown_core_session_context`
  * lends the state for the session's whole life: the context accessors and
  * markdown_core_slot_spell read it as it stands, and the strings they hand
- * out stand until the next locate, append or finalize. It holds no blocks,
- * inlines or slots before the first locate, and an append or the finalize
+ * out stand until the next locate, append or flush. It holds no blocks,
+ * inlines or slots before the first locate, and an append or the flush
  * empty it again. It is never passed to markdown_core_context_free. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_locate(markdown_core_session *session,
                                                                     markdown_core_position position);

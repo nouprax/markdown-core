@@ -48,7 +48,7 @@ Document.parse("# typed", { tables: true });
 const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
 const session = new MarkdownSession("# typed", { unit: "utf16" });
 const appended: Document = session.append("\n");
-const final: Document = session.finalize();
+const final: Document = session.flush();
 const sessionText: string = session.text;
 const sessionUnit: TextUnit = session.unit;
 session.locate({ line: 1, column: 3 });
@@ -92,7 +92,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "sessionFinalized"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "sessionFlushed"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly

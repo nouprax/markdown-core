@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script identity-typing-paragraph-5-of-1000 ids
-finalize
+flush
 edit 21 21 78
 expect changed Document 0
 expect changed Paragraph 20

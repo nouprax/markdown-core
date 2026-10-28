@@ -926,7 +926,7 @@ uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, ma
     /* The session is the caller's only with its document's message. */
     uint8_t *message = document_bytes(markdown_core_session_document(made));
     if (!message) {
-        markdown_core_session_free(made);
+        markdown_core_session_close(made);
         return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
     }
     *session = made;
@@ -939,9 +939,9 @@ uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const
     return step_message(status, document);
 }
 
-uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session) {
+uint8_t *markdown_core_wire_session_flush(markdown_core_session *session) {
     const markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_session_finalize(session, &document);
+    markdown_core_status status = markdown_core_session_flush(session, &document);
     return step_message(status, document);
 }
 
