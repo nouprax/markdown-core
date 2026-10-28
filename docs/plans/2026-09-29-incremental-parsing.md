@@ -1172,8 +1172,13 @@ The edit runs in five steps:
   things at each new child start `b`, at any depth:
   - the old document has a child at `b - delta` under the same ancestor
     chain;
-  - `reopen` of that old child gives the builder state that the new
-    reading has at `b`;
+  - `reopen` of that old child gives the **continuation state** that the
+    new reading has at `b`: each ancestor's kind, its continuation
+    parameters, and the open state that decides how its later lines are
+    read, such as whether its last line was blank. Folded values such as
+    `List.tight` are not compared, because the splice recomputes them and
+    no later line reads them. Making one early item loose must not stop
+    the resync at every later item;
   - no candidate is live in the new reading at `b`. The main reading goes
     on making ordinary children while a candidate is undecided (5.3), so a
     child start alone does not rule one out: deleting `x` from
@@ -1252,8 +1257,9 @@ The edit runs in five steps:
 - **The re-read blocks.** The same commit reads them as a fresh parse does,
   from the same state.
 - **After the resync point.** At `b`, the new reading's state equals the old
-  reading's state at `b - delta`, and no candidate is live in the new
-  reading. A child starts there, so no claimed line
+  reading's state at `b - delta` in everything a later line reads, and no
+  candidate is live in the new reading. The folds differ at most, and the
+  splice recomputes them. A child starts there, so no claimed line
   covers it: a candidate that was live there in the old reading was later
   rejected. Both readings then continue as the main reading from equal
   states, with equal bytes left. By 5.11 they give the same blocks,
@@ -1294,13 +1300,18 @@ The differential oracle, extending section 8:
       identifier line, a pipe table header and delimiter row, and a lazy
       continuation line;
     - the Properties envelope;
-    - a loose list turning tight and back.
+    - a loose list turning tight and back, including an early item made
+      loose in a long list, whose later items must be spliced and not
+      re-read.
 - **Damage bound.** The harness counts the blocks each edit re-reads. For
   scripted edits it asserts the exact set: the damaged block and its
   previous sibling. A regression that re-reads a whole container fails.
-- **Identity.** Kept and rebuilt nodes keep their ids. A node keeps its id
-  exactly when its value is unchanged, except a rebuilt ancestor, which
-  keeps its id.
+- **Identity.** Kept nodes keep their ids and values, and rebuilt
+  ancestors keep their ids. Every re-read node takes its id by 5.9's
+  matching rule, with old offsets after `end` shifted by `delta`. A
+  paragraph the user types into therefore keeps its id with a new value.
+  Scripted cases assert the exact sets of kept, matched, new and retired
+  ids.
 - **Faulty-subject self-tests.** The harness must fail against subjects that
   skip:
   - the resync state check;
@@ -1310,7 +1321,9 @@ The differential oracle, extending section 8:
   - the candidate log;
   - the definition step;
   - the anchor step;
-  - the fold recomputation.
+  - the fold recomputation;
+  - leaving folds out of the continuation state: a subject that compares
+    them is still right, so the damage bound must be the test that fails.
 - **Allocator sweep.** An edit that fails at any allocation either leaves the
   session as it was, or reports the failure and frees cleanly.
 - **Benchmarks.** Each edit reports its Ir next to a fresh parse of the same
