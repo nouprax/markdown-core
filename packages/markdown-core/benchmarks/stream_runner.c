@@ -1,10 +1,10 @@
 /* The stream benchmark's process: open a subject on an empty text, append one
  * document through it in the chunks of one stream family, report; or open it
- * on a document, finalize, run each edit script of one file, report.
+ * on a document, flush, run each edit script of one file, report.
  *
  * Nothing here is timed. The driver reads each window's cost out of the
  * callgrind call graph, from the edges into `bench_apply_step` and
- * `bench_finalize` or, for `reparse`, the parse stages under them, and the
+ * `bench_flush` or, for `reparse`, the parse stages under them, and the
  * runner marks the windows with `CALLGRIND_DUMP_STATS` and
  * `CALLGRIND_ZERO_STATS`, no-ops outside valgrind
  * (docs/plans/2026-09-29-incremental-gates.md, section 5.1). The subject is
@@ -16,14 +16,14 @@
  * at most one. The `reparse` subject is measured at each window's last
  * chunk: the chunks before it only extend its text, because reparsing after
  * every chunk of a long stream is the quadratic cost the design removes. The
- * `session` subject takes every chunk in its window. The stream's finalize is
+ * `session` subject takes every chunk in its window. The stream's flush is
  * one more window, after the last chunk's.
  *
  * An edit script splits its edits into windows the same way, each script on
- * its own: the subject opens on the document and finalizes before the counts
+ * its own: the subject opens on the document and flushes before the counts
  * are zeroed, so neither is in a window, and `reparse` replaces the text of
  * every edit but a window's last without parsing it. A script has no
- * finalize window. Only a subject that takes edits runs scripts.
+ * flush window. Only a subject that takes edits runs scripts.
  *
  * The `binding` subject is the session stepped through the MCB3 entries, as
  * the bindings that read messages step it: the driver reads what its
@@ -89,8 +89,8 @@ static markdown_core_status binding_append(void *handle, const uint8_t *text, si
     return binding_step(handle, markdown_core_wire_session_append(ih_session_of(handle), text, length), document);
 }
 
-static markdown_core_status binding_finalize(void *handle, const markdown_core_document **document) {
-    return binding_step(handle, markdown_core_wire_session_finalize(ih_session_of(handle)), document);
+static markdown_core_status binding_flush(void *handle, const markdown_core_document **document) {
+    return binding_step(handle, markdown_core_wire_session_flush(ih_session_of(handle)), document);
 }
 
 static const uint8_t *binding_text(const void *handle, size_t *length) { return ih_session.text(handle, length); }
@@ -100,7 +100,7 @@ static void binding_close(void *handle) { ih_session.close(handle); }
 static const ih_subject_class binding = {.name = "binding",
                                          .open = binding_open,
                                          .append = binding_append,
-                                         .finalize = binding_finalize,
+                                         .flush = binding_flush,
                                          .text = binding_text,
                                          .close = binding_close};
 
@@ -108,16 +108,16 @@ static const measured_subject SUBJECTS[] = {
     {&ih_reparse, ih_reparse_extend, ih_reparse_replace}, {&ih_session, NULL, NULL}, {&binding, NULL, NULL}};
 
 /* The measured edges: one chunk or edit, from its bytes to the subject's new
- * document, and the finalize, to the final document. */
+ * document, and the flush, to the final document. */
 __attribute__((noinline)) bool bench_apply_step(const ih_subject_class *subject, void *handle, const ih_step *step,
                                                 const markdown_core_document **document) {
     return (step->kind == IH_EDIT ? subject->edit(handle, step->start, step->end, step->text, step->length, document)
                                   : subject->append(handle, step->text, step->length, document)) == MARKDOWN_CORE_OK;
 }
 
-__attribute__((noinline)) bool bench_finalize(const ih_subject_class *subject, void *handle,
-                                              const markdown_core_document **document) {
-    return subject->finalize(handle, document) == MARKDOWN_CORE_OK;
+__attribute__((noinline)) bool bench_flush(const ih_subject_class *subject, void *handle,
+                                           const markdown_core_document **document) {
+    return subject->flush(handle, document) == MARKDOWN_CORE_OK;
 }
 
 static int usage(void) {
@@ -128,7 +128,7 @@ static int usage(void) {
 }
 
 /* One edit script on the document, in at most `most` windows of its edits,
- * then its receipt. The script finalizes, then edits: the generator's edit
+ * then its receipt. The script flushes, then edits: the generator's edit
  * families take no other step. */
 static bool run_script(const measured_subject *measured, const uint8_t *document, size_t length,
                        const ih_script *script, size_t most) {
@@ -146,8 +146,8 @@ static bool run_script(const measured_subject *measured, const uint8_t *document
             break;
         }
     }
-    if (!count || script->steps[0].kind != IH_FINALIZE || index != count) {
-        fprintf(stderr, "stream_runner: %s does not finalize and then edit\n", script->name);
+    if (!count || script->steps[0].kind != IH_FLUSH || index != count) {
+        fprintf(stderr, "stream_runner: %s does not flush and then edit\n", script->name);
         return false;
     }
     handle = measured->subject->open(IH_UTF8, document, length, &current);
@@ -155,9 +155,8 @@ static bool run_script(const measured_subject *measured, const uint8_t *document
         fprintf(stderr, "stream_runner: %s did not open\n", measured->subject->name);
         return false;
     }
-    if (measured->subject->finalize(handle, &current) != MARKDOWN_CORE_OK ||
-        !ih_text_assign(&model, document, length)) {
-        fprintf(stderr, "stream_runner: %s did not finalize\n", script->name);
+    if (measured->subject->flush(handle, &current) != MARKDOWN_CORE_OK || !ih_text_assign(&model, document, length)) {
+        fprintf(stderr, "stream_runner: %s did not flush\n", script->name);
         goto close;
     }
     CALLGRIND_ZERO_STATS;
@@ -305,8 +304,8 @@ int main(int argc, char **argv) {
         }
         CALLGRIND_DUMP_STATS;
     }
-    if (!bench_finalize(measured->subject, handle, &current)) {
-        fputs("stream_runner: the finalize failed\n", stderr);
+    if (!bench_flush(measured->subject, handle, &current)) {
+        fputs("stream_runner: the flush failed\n", stderr);
         goto close;
     }
     CALLGRIND_DUMP_STATS;
@@ -326,7 +325,7 @@ int main(int argc, char **argv) {
         fputs("stream_runner: cannot read the final document's receipt\n", stderr);
         goto close;
     }
-    /* The windows of the chunks and the finalize's. */
+    /* The windows of the chunks and the flush's. */
     printf("stream-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count,
            windows + 1, final_length, root_children);
     status = 0;

@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-automatic-anchor hard
-finalize
+flush
 edit 7 7 73
 edit 7 8 -
 edit 2 7 4f74686572

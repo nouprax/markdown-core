@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script identity-line-at-top ids
-finalize
+flush
 edit 0 0 6e6577206c696e650a
 expect changed Document 0
 expect changed Paragraph 0

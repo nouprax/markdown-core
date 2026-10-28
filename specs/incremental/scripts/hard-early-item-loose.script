@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-early-item-loose hard
-finalize
+flush
 edit 12 12 0a
 expect within 0 19
 edit 12 13 -

@@ -22,7 +22,7 @@ final enum class com.nouprax.markdown.core/ErrorCode : kotlin/Enum<com.nouprax.m
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ErrorCode.ALLOCATION_FAILED|null[0]
     enum entry KIND_MISMATCH // com.nouprax.markdown.core/ErrorCode.KIND_MISMATCH|null[0]
     enum entry OUT_OF_BOUNDS // com.nouprax.markdown.core/ErrorCode.OUT_OF_BOUNDS|null[0]
-    enum entry SESSION_FINALIZED // com.nouprax.markdown.core/ErrorCode.SESSION_FINALIZED|null[0]
+    enum entry SESSION_FLUSHED // com.nouprax.markdown.core/ErrorCode.SESSION_FLUSHED|null[0]
 
     final val entries // com.nouprax.markdown.core/ErrorCode.entries|#static{}entries[0]
         final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/ErrorCode> // com.nouprax.markdown.core/ErrorCode.entries.<get-entries>|<get-entries>#static(){}[0]
@@ -1051,7 +1051,7 @@ final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { /
 
     final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.append|append(kotlin.String){}[0]
     final fun close() // com.nouprax.markdown.core/MarkdownSession.close|close(){}[0]
-    final fun finalize(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.finalize|finalize(){}[0]
+    final fun flush(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.flush|flush(){}[0]
     final fun locate(com.nouprax.markdown.core/Position) // com.nouprax.markdown.core/MarkdownSession.locate|locate(com.nouprax.markdown.core.Position){}[0]
     final fun markers(com.nouprax.markdown.core/Markup): kotlin.collections/List<com.nouprax.markdown.core/Scope> // com.nouprax.markdown.core/MarkdownSession.markers|markers(com.nouprax.markdown.core.Markup){}[0]
     final fun path(com.nouprax.markdown.core/Position): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/MarkdownSession.path|path(com.nouprax.markdown.core.Position){}[0]

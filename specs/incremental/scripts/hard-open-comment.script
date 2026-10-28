@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-open-comment hard
-finalize
+flush
 edit 5 5 25250a
 edit 13 13 25250a
 edit 5 8 -

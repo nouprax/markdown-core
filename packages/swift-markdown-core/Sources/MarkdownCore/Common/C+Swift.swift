@@ -7,7 +7,7 @@ extension MarkdownCoreError {
         switch status {
         case MARKDOWN_CORE_ALLOCATION_FAILED: self.init(code: .allocationFailed)
         case MARKDOWN_CORE_OUT_OF_BOUNDS: self.init(code: .outOfBounds)
-        case MARKDOWN_CORE_SESSION_FINALIZED: self.init(code: .sessionFinalized)
+        case MARKDOWN_CORE_SESSION_FLUSHED: self.init(code: .sessionFlushed)
         // A C enum switch is never exhaustive in Swift; the one failure left
         // is MARKDOWN_CORE_KIND_MISMATCH.
         default: self.init(code: .kindMismatch)

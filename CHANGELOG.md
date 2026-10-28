@@ -6,6 +6,17 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Rename the session's end of text and its release, ahead of edits
+  (incremental edits plan, step E1): `markdown_core_session_finalize` is
+  `markdown_core_session_flush`, `markdown_core_session_free` is
+  `markdown_core_session_close`, the wire's
+  `markdown_core_wire_session_finalize` is `markdown_core_wire_session_flush`,
+  and the status `SESSION_FINALIZED` is `SESSION_FLUSHED`. The Swift, Kotlin
+  and ECMAScript sessions' `finalize()` is `flush()`, and their error code
+  `sessionFinalized` (Kotlin `SESSION_FINALIZED`) is `sessionFlushed`
+  (`SESSION_FLUSHED`). A flush keeps the parse state, which the edits will
+  read; the close releases it with the rest of the session.
+
 - Start the language engine (language engine plan, step 4a):
   `markdown-core-lsp`, a C library in `packages/markdown-core/lsp`, serves
   the Language Server Protocol's lifecycle, position encoding negotiation

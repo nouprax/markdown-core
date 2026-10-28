@@ -54,7 +54,7 @@ export const errorCodes: { readonly [status: number]: ErrorCode } = {
     1: "allocationFailed",
     2: "outOfBounds",
     3: "kindMismatch",
-    4: "sessionFinalized"
+    4: "sessionFlushed"
 };
 
 /** The document's members that are not contract fields: the decoder adds them

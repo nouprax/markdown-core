@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-properties hard
-finalize
+flush
 edit 0 0 2d2d2d0a
 edit 12 12 2d2d2d0a
 edit 12 16 -

@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-table-header hard
-finalize
+flush
 edit 11 11 7c2d2d2d7c0a
 edit 11 17 -
 edit 5 10 7c206a207c

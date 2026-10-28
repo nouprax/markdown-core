@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-container-markers hard
-finalize
+flush
 edit 0 0 3e20
 edit 0 2 -
 edit 0 0 2d20

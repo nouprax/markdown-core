@@ -26,7 +26,7 @@ class QueriesAstTest {
 }
 
 /**
- * Every query at [position] of [source], asked of a finalized session of it
+ * Every query at [position] of [source], asked of a flushed session of it
  * and rendered as specs/context's README says.
  */
 private fun render(
@@ -35,7 +35,7 @@ private fun render(
     position: Position,
 ): String =
     MarkdownSession(source, unit).use { session ->
-        val document = session.finalize()
+        val document = session.flush()
         session.locate(position)
         val context = session.context
         val lines = mutableListOf<String>()

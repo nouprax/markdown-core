@@ -89,7 +89,7 @@ static jbyteArray JNICALL native_session_new(JNIEnv *environment, jobject receiv
     result = message_array(environment, message);
     /* The session is Kotlin's only with its document's message. */
     if (result == NULL) {
-        markdown_core_session_free(made);
+        markdown_core_session_close(made);
         return NULL;
     }
     address = (jlong)(intptr_t)made;
@@ -111,9 +111,9 @@ static jbyteArray JNICALL native_session_append(JNIEnv *environment, jobject rec
     return message_array(environment, message);
 }
 
-static jbyteArray JNICALL native_session_finalize(JNIEnv *environment, jobject receiver, jlong session) {
+static jbyteArray JNICALL native_session_flush(JNIEnv *environment, jobject receiver, jlong session) {
     (void)receiver;
-    return message_array(environment, markdown_core_wire_session_finalize(session_address(session)));
+    return message_array(environment, markdown_core_wire_session_flush(session_address(session)));
 }
 
 /* A copy of the session's text, which the 1 GiB limit keeps within a JVM
@@ -140,10 +140,10 @@ static jbyteArray JNICALL native_session_text(JNIEnv *environment, jobject recei
     return result;
 }
 
-static void JNICALL native_session_free(JNIEnv *environment, jobject receiver, jlong session) {
+static void JNICALL native_session_close(JNIEnv *environment, jobject receiver, jlong session) {
     (void)environment;
     (void)receiver;
-    markdown_core_session_free(session_address(session));
+    markdown_core_session_close(session_address(session));
 }
 
 static jbyteArray JNICALL native_dialect(JNIEnv *environment, jobject receiver) {
@@ -194,9 +194,9 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"parsePayload", "([B)[B", (void *)native_parse},
         {"sessionNewPayload", "([BZ[J)[B", (void *)native_session_new},
         {"sessionAppendPayload", "(J[B)[B", (void *)native_session_append},
-        {"sessionFinalizePayload", "(J)[B", (void *)native_session_finalize},
+        {"sessionFlushPayload", "(J)[B", (void *)native_session_flush},
         {"sessionText", "(J)[B", (void *)native_session_text},
-        {"sessionFree", "(J)V", (void *)native_session_free},
+        {"sessionClose", "(J)V", (void *)native_session_close},
         {"dialectAnswer", "()[B", (void *)native_dialect},
         {"sessionLocateAnswer", "(JII)[B", (void *)native_session_locate},
         {"sessionSpellAnswer", "(JI[B)[B", (void *)native_session_spell},

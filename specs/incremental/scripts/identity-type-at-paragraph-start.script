@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script identity-type-at-paragraph-start ids
-finalize
+flush
 edit 0 0 78
 expect kept Paragraph 0 0
 expect kept Paragraph 12 13

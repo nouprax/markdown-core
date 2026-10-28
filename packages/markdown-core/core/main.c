@@ -92,8 +92,8 @@ static const char *status_text(markdown_core_status status) {
         return "out of bounds";
     case MARKDOWN_CORE_KIND_MISMATCH:
         return "kind mismatch";
-    case MARKDOWN_CORE_SESSION_FINALIZED:
-        return "session finalized";
+    case MARKDOWN_CORE_SESSION_FLUSHED:
+        return "session flushed";
     }
     return "no error";
 }

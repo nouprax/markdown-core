@@ -1454,10 +1454,13 @@ markdown_core_parser *markdown_core_parser_create(const markdown_core_element *c
  * every block still open closes, the closed blocks complete, and the tree is
  * published and returned, or NULL when the transaction failed. `discard`
  * ends a transaction and returns nothing. Both release the transaction's
- * state, so an instance runs any number of them, each as the first. */
+ * state, so an instance runs any number of them, each as the first.
+ * `flush` is `finalize` without the release: the state stays, for a
+ * session's edits, until a `discard` releases it. */
 void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision);
 bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, bool ends);
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
+markdown_core_node *markdown_core_parser_flush(markdown_core_parser *parser);
 void markdown_core_parser_discard(markdown_core_parser *parser);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the

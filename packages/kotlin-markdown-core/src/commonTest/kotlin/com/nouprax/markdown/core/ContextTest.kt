@@ -114,7 +114,7 @@ class ContextTest {
     fun thePathHoldsEveryNodeOverAByteRootFirstAndEndsAtTheNodeThere() {
         val source = "> a *b*\n"
         MarkdownSession(source).use { session ->
-            val document = session.finalize()
+            val document = session.flush()
             for (column in 1..8) {
                 val position = Position(1, column)
                 val path = session.path(position)
@@ -129,7 +129,7 @@ class ContextTest {
     @Test
     fun aLinksFieldsAndMarkersDivideItsOwnSource() {
         MarkdownSession("[a](doc.md#part)\n").use { session ->
-            val document = session.finalize()
+            val document = session.flush()
             val link = assertIs<Link>(assertIs<Paragraph>(document.content.first()).content.first())
             assertEquals(listOf(place(1 to 5, 1 to 10)), session.scope(link, SlotKind.DEST))
             assertEquals(listOf(place(1 to 12, 1 to 15)), session.scope(link, SlotKind.ANCHOR))
@@ -174,7 +174,7 @@ class ContextTest {
             assertTrue(session.scope(text, SlotKind.LABEL).isEmpty())
             session.locate(Position(1, 2))
             assertEquals(listOf(NodeKind.PARAGRAPH), session.context.blocks.map { it.kind })
-            val final = session.finalize()
+            val final = session.flush()
             val link = assertIs<Link>(assertIs<Paragraph>(final.content.first()).content.first())
             assertTrue(session.markers(link).isNotEmpty())
         }

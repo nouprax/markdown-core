@@ -29,7 +29,7 @@ interface Engine {
 const sessions = new FinalizationRegistry<Engine>(release);
 
 function release(engine: Engine): void {
-    native.markdown_core_session_free(engine.session);
+    native.markdown_core_session_close(engine.session);
     engine.session = 0;
 }
 
@@ -49,14 +49,14 @@ function valid({ line, column }: Position): boolean {
  * continues an old node keeps its `id`. Every document a session returns is an
  * immutable value that borrows nothing.
  *
- * Until `finalize()`, a document's lookups of a reference, footnote or
+ * Until `flush()`, a document's lookups of a reference, footnote or
  * specimen see only the definitions that start before the inline root
  * asking.
  *
- * The caller ends the text with `finalize()`, which returns the final
+ * The caller ends the text with `flush()`, which returns the final
  * document; nothing ends a session implicitly. Afterwards `document` and
- * `text` stay readable, and adding text or finalizing again throws
- * `MarkdownCoreError` `sessionFinalized`.
+ * `text` stay readable, and adding text or flushing again throws
+ * `MarkdownCoreError` `sessionFlushed`.
  *
  * The session also answers the queries of an editor: the `context` at its
  * cursor, which `locate` moves, the `path` of nodes that hold a byte, and the
@@ -110,7 +110,7 @@ export class MarkdownSession {
 
     /** The syntactic context at the session's cursor, which `locate` moves:
      * the session's state, which it updates in place. Nothing is open in it
-     * until the first locate, and adding text or `finalize()` clears it
+     * until the first locate, and adding text or `flush()` clears it
      * again, since they change the text it was read from. */
     get context(): Context {
         return this.#context;
@@ -123,7 +123,7 @@ export class MarkdownSession {
 
     /** Appends `text` and parses the text so far. Throws `MarkdownCoreError`
      * `allocationFailed` when an allocation fails or the text would exceed
-     * 1 GiB, and `sessionFinalized` after `finalize()`. */
+     * 1 GiB, and `sessionFlushed` after `flush()`. */
     append(text: string): Document {
         const session = this.#open();
         const bytes = utf8Encoder.encode(text);
@@ -140,9 +140,9 @@ export class MarkdownSession {
     /** Ends the text and returns the final document, which equals
      * `Document.parse` of `text` in everything but ids. Throws
      * `MarkdownCoreError` `allocationFailed` when an allocation fails, and
-     * `sessionFinalized` when the session was already finalized. */
-    finalize(): Document {
-        const message = native.markdown_core_wire_session_finalize(this.#open());
+     * `sessionFlushed` when the session was already flushed. */
+    flush(): Document {
+        const message = native.markdown_core_wire_session_flush(this.#open());
         return (this.#document = this.#step(message));
     }
 
@@ -154,7 +154,7 @@ export class MarkdownSession {
      *
      * The query parses the text before the cursor and confirms what it leaves
      * open against the session's current `document`, whose engine parse the
-     * session holds. Before `finalize()` it confirms as the document resolves:
+     * session holds. Before `flush()` it confirms as the document resolves:
      * a label sees only the definitions before the inline root asking. Throws
      * `MarkdownCoreError` `outOfBounds` when the position names no place of
      * the text or its line or column is not an integer of at least 1, which
@@ -191,7 +191,7 @@ export class MarkdownSession {
      * The session spells from its context as the last locate left it, so a
      * spelling parses nothing. Throws `MarkdownCoreError` `outOfBounds` when
      * `slot` is not one of `context.slots`, because a later locate, text or
-     * `finalize()` replaced the context that held it, `allocationFailed` when
+     * `flush()` replaced the context that held it, `allocationFailed` when
      * an allocation fails, and an `Error` once the session is disposed.
      */
     spell(slot: Slot, value: string): Edit | null;
@@ -304,17 +304,17 @@ export class MarkdownSession {
     }
 
     /** The document of a step's `message`. A step of a session not yet
-     * finalized clears the engine's context whether or not it succeeds, and
+     * flushed clears the engine's context whether or not it succeeds, and
      * so `context`. */
     #step(message: number): Document {
-        let finalized = false;
+        let flushed = false;
         try {
             return decodeMessage(native, message, this.unit);
         } catch (failure) {
-            finalized = failure instanceof MarkdownCoreError && failure.code === "sessionFinalized";
+            flushed = failure instanceof MarkdownCoreError && failure.code === "sessionFlushed";
             throw failure;
         } finally {
-            if (!finalized) this.#context = blank;
+            if (!flushed) this.#context = blank;
         }
     }
 

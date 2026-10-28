@@ -48,12 +48,12 @@ private class JniSession(
 
     override fun append(text: ByteArray): Document = publish(JniParser.sessionAppendPayload(session[0], text))
 
-    override fun end(): Document = publish(JniParser.sessionFinalizePayload(session[0]))
+    override fun end(): Document = publish(JniParser.sessionFlushPayload(session[0]))
 
     override fun text(): ByteArray = JniParser.sessionText(session[0])
 
     override fun free() {
-        JniParser.sessionFree(session[0])
+        JniParser.sessionClose(session[0])
         session[0] = 0
     }
 
@@ -113,9 +113,9 @@ private object JniParser {
         text: ByteArray,
     ): ByteArray?
 
-    /** The MCB3 message of finalizing [session]; null as for [parsePayload]. */
+    /** The MCB3 message of flushing [session]; null as for [parsePayload]. */
     @JvmSynthetic
-    external fun sessionFinalizePayload(session: Long): ByteArray?
+    external fun sessionFlushPayload(session: Long): ByteArray?
 
     /** A copy of [session]'s UTF-8 text. */
     @JvmSynthetic
@@ -123,7 +123,7 @@ private object JniParser {
 
     /** Releases [session]; 0 releases nothing. */
     @JvmSynthetic
-    external fun sessionFree(session: Long)
+    external fun sessionClose(session: Long)
 
     /** The MCB3 answer of the dialect's names and characters; null as for [parsePayload]. */
     @JvmSynthetic

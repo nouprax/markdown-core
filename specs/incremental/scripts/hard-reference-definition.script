@@ -1,6 +1,6 @@
 markdown-core incremental script 2
 script hard-reference-definition hard
-finalize
+flush
 edit 26 29 74776f
 edit 21 22 71
 edit 21 22 72

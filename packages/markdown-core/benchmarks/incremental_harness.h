@@ -9,7 +9,7 @@
  * script means.
  *
  * A subject opens in a coordinate unit with an initial text, takes `append`
- * steps and one `finalize`, then `edit` steps (plan 12.3), each of which
+ * steps and one `flush`, then `edit` steps (plan 12.3), each of which
  * returns the new document, and closes. A document a subject returns is the
  * subject's, and is valid until its next step or its close. This file holds
  * the two subjects: `session`, the engine's session, and `reparse`, which
@@ -23,6 +23,18 @@
 #include <stdint.h>
 
 #include <markdown_core.h>
+
+/* THE BASE'S NAMES. The stream benchmark rebuilds this harness against its
+ * base revision (scripts/benchmark/run.mjs, buildBaseline), whose session may
+ * still name its flush `finalize` and its close `free`; CMakeLists.txt finds
+ * out and defines MARKDOWN_CORE_BENCH_SESSION_FINALIZE. Gone once no base
+ * predates the rename. */
+#ifdef MARKDOWN_CORE_BENCH_SESSION_FINALIZE
+#define markdown_core_session_flush markdown_core_session_finalize
+#define markdown_core_session_close markdown_core_session_free
+#define markdown_core_wire_session_flush markdown_core_wire_session_finalize
+#define MARKDOWN_CORE_SESSION_FLUSHED MARKDOWN_CORE_SESSION_FINALIZED
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -80,9 +92,9 @@ typedef struct ih_expectation {
     size_t from; /* kept: the old position */
 } ih_expectation;
 
-/* What a step does: append `text`, finalize, edit, or make an edit the
+/* What a step does: append `text`, flush, edit, or make an edit the
  * subject must refuse (gates 4.13). */
-typedef enum ih_step_kind { IH_APPEND = 0, IH_FINALIZE, IH_EDIT, IH_REJECT } ih_step_kind;
+typedef enum ih_step_kind { IH_APPEND = 0, IH_FLUSH, IH_EDIT, IH_REJECT } ih_step_kind;
 
 /* One step. `length` bytes at `text`, which the step's owner holds, are an
  * append's text or the text an edit puts in place of [start, end). An edit's
@@ -186,16 +198,16 @@ typedef struct ih_subject_class {
     void *(*open)(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document);
     /* Each step answers MARKDOWN_CORE_OK with the new document, or the
      * status of its failure and no document: `append` adds to the end of the
-     * text, and `finalize` ends it; after `finalize` both answer
-     * MARKDOWN_CORE_SESSION_FINALIZED. */
+     * text, and `flush` ends it; after `flush` both answer
+     * MARKDOWN_CORE_SESSION_FLUSHED. */
     markdown_core_status (*append)(void *subject, const uint8_t *text, size_t length,
                                    const markdown_core_document **document);
-    markdown_core_status (*finalize)(void *subject, const markdown_core_document **document);
+    markdown_core_status (*flush)(void *subject, const markdown_core_document **document);
     /* The subject's text, as UTF-8. */
     const uint8_t *(*text)(const void *subject, size_t *length);
     void (*close)(void *subject);
-    /* Replaces [start, end) of the finalized text, in the subject's unit,
-     * with `length` bytes: IH_STREAMING before `finalize`, and
+    /* Replaces [start, end) of the flushed text, in the subject's unit,
+     * with `length` bytes: IH_STREAMING before `flush`, and
      * MARKDOWN_CORE_OUT_OF_BOUNDS for a range that is reversed, ends past the
      * text or has an offset that is no scalar boundary. NULL for a subject
      * that takes no edits. */
@@ -223,7 +235,7 @@ extern const ih_subject_class ih_reparse;
 
 /* The reparse subject's two halves, for the harness that measures it: extend
  * its text, and parse the whole text, releasing the previous document.
- * `append` is exactly the one followed by the other, and `finalize` the parse
+ * `append` is exactly the one followed by the other, and `flush` the parse
  * alone. */
 bool ih_reparse_extend(void *subject, const uint8_t *text, size_t length);
 bool ih_reparse_parse(void *subject, const markdown_core_document **document);

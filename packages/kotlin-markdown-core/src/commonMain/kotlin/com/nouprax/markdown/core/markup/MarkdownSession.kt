@@ -9,14 +9,14 @@ import kotlin.jvm.JvmOverloads
  * session has never issued. Every column a scope query of its documents takes
  * or returns counts in [unit].
  *
- * Until [finalize], each document is a snapshot of the text so far: a lookup
+ * Until [flush], each document is a snapshot of the text so far: a lookup
  * of a reference, footnote or specimen sees only the definitions that start
  * before the inline root asking.
  *
- * The caller ends the text with [finalize], which returns the final
+ * The caller ends the text with [flush], which returns the final
  * document; nothing ends a session implicitly. Afterwards [document] and
- * [text] stay readable, and [append] and [finalize] throw
- * [MarkdownCoreException] with [ErrorCode.SESSION_FINALIZED].
+ * [text] stay readable, and [append] and [flush] throw
+ * [MarkdownCoreException] with [ErrorCode.SESSION_FLUSHED].
  *
  * The session also answers the queries of an editor: the [context] at its
  * cursor, which [locate] moves, the [path] of nodes that hold a byte, and the
@@ -50,7 +50,7 @@ public class MarkdownSession
          * The syntactic context at the session's cursor, which [locate]
          * moves: the session's state, which it updates in place. It is a
          * context with nothing open until the first locate, and an append or
-         * [finalize] empties it again, since they change the text it was read
+         * [flush] empties it again, since they change the text it was read
          * from.
          */
         public var context: Context = blank
@@ -70,8 +70,8 @@ public class MarkdownSession
          * @return the new [document], a snapshot.
          * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
          *   engine cannot allocate, the text would exceed 1 GiB of UTF-8, or the
-         *   tree a byte array's capacity; [ErrorCode.SESSION_FINALIZED] after
-         *   [finalize].
+         *   tree a byte array's capacity; [ErrorCode.SESSION_FLUSHED] after
+         *   [flush].
          */
         public fun append(text: String): Document = step { append(text.encodeToByteArray()) }
 
@@ -82,10 +82,10 @@ public class MarkdownSession
          * @return the final [document].
          * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
          *   engine cannot allocate or the tree exceeds a byte array's capacity;
-         *   [ErrorCode.SESSION_FINALIZED] when the session was already
-         *   finalized.
+         *   [ErrorCode.SESSION_FLUSHED] when the session was already
+         *   flushed.
          */
-        public fun finalize(): Document = step { end() }
+        public fun flush(): Document = step { end() }
 
         /**
          * Moves the session's cursor to [position] of [text], which stands
@@ -137,7 +137,7 @@ public class MarkdownSession
          *
          * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [slot]
          *   is not a slot of [context]: another session's, or one a later
-         *   locate, append or finalize replaced the context of, and
+         *   locate, append or flush replaced the context of, and
          *   [ErrorCode.ALLOCATION_FAILED] when an allocation fails.
          * @throws IllegalStateException when the session is closed.
          */
@@ -221,19 +221,19 @@ public class MarkdownSession
         }
 
         /**
-         * A step of the text. A step of a session not yet finalized empties
+         * A step of the text. A step of a session not yet flushed empties
          * the engine's context whether or not it succeeds, and so [context].
          */
         private inline fun step(run: PlatformSession.() -> Document): Document {
             val platform = open()
-            var finalized = false
+            var flushed = false
             try {
                 return platform.run()
             } catch (failure: MarkdownCoreException) {
-                finalized = failure.code == ErrorCode.SESSION_FINALIZED
+                flushed = failure.code == ErrorCode.SESSION_FLUSHED
                 throw failure
             } finally {
-                if (!finalized) {
+                if (!flushed) {
                     turn++
                     context = blank
                 }

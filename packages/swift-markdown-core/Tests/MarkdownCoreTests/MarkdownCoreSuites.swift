@@ -319,7 +319,7 @@ import Testing
             (MARKDOWN_CORE_ALLOCATION_FAILED, .allocationFailed),
             (MARKDOWN_CORE_OUT_OF_BOUNDS, .outOfBounds),
             (MARKDOWN_CORE_KIND_MISMATCH, .kindMismatch),
-            (MARKDOWN_CORE_SESSION_FINALIZED, .sessionFinalized),
+            (MARKDOWN_CORE_SESSION_FLUSHED, .sessionFlushed),
         ]
         for (status, code) in cases {
             #expect(MarkdownCoreError(status).code == code)

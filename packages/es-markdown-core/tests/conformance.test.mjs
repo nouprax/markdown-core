@@ -245,12 +245,12 @@ const slotKinds = [
     null
 ];
 
-/** Every query at `position` of `source`, asked of a finalized session of it
+/** Every query at `position` of `source`, asked of a flushed session of it
  * and rendered as specs/context's README says. */
 function renderQueries(source, unit, position) {
     const session = new MarkdownSession(source, { unit });
     try {
-        const document = session.finalize();
+        const document = session.flush();
         session.locate(position);
         const context = session.context;
         const lines = [];

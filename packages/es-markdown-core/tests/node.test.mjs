@@ -705,20 +705,20 @@ test("robustness: a session continues a deep document", () => {
     }
 });
 
-test("api: a session's finalize returns the final document and ends the session", () => {
+test("api: a session's flush returns the final document and ends the session", () => {
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession("[a]\n\n", { unit });
         try {
             const snapshot = session.append("[a]: /url\n");
             // A snapshot's lookup sees only the definitions written before it.
             assert.notEqual(snapshot.dump(session.text), Document.parse(session.text, { unit }).dump(session.text));
-            const final = session.finalize();
+            const final = session.flush();
             const text = session.text;
             assert.equal(final, session.document);
             assert.equal(final.dump(text), Document.parse(text, { unit }).dump(text));
-            const finalized = (error) => error instanceof MarkdownCoreError && error.code === "sessionFinalized";
-            assert.throws(() => session.append("more"), finalized);
-            assert.throws(() => session.finalize(), finalized);
+            const flushed = (error) => error instanceof MarkdownCoreError && error.code === "sessionFlushed";
+            assert.throws(() => session.append("more"), flushed);
+            assert.throws(() => session.flush(), flushed);
             assert.equal(session.text, text);
             assert.equal(session.document, final);
         } finally {
@@ -734,7 +734,7 @@ test("api: a session's first document is a snapshot of its source", () => {
             const text = session.text;
             // The source is the first append, so the use before its definition stays unresolved.
             assert.notEqual(session.document.dump(text), Document.parse(text, { unit }).dump(text));
-            assert.equal(session.finalize().dump(text), Document.parse(text, { unit }).dump(text));
+            assert.equal(session.flush().dump(text), Document.parse(text, { unit }).dump(text));
         } finally {
             session.dispose();
         }
@@ -746,14 +746,14 @@ test("errors: a disposed session takes no further call", () => {
     session.dispose();
     session.dispose();
     assert.throws(() => session.append("more"), Error);
-    assert.throws(() => session.finalize(), Error);
+    assert.throws(() => session.flush(), Error);
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
 });
 
 test("api: a session's context lists what the text before the cursor leaves open, and its slots spell", () => {
     const session = new MarkdownSession("[[No\n");
-    session.finalize();
+    session.flush();
     session.locate({ line: 1, column: 5 });
     const context = session.context;
     assert.deepEqual(context.blocks, [{ kind: "paragraph", scope: scope(1, 1, 1, 4) }]);
@@ -798,11 +798,11 @@ test("api: the context is the session's state, which a locate replaces and text 
     assert.throws(() => session.spell(next, "x"), { code: "outOfBounds" });
     session.locate({ line: 1, column: 5 });
     assert.equal(session.context.slots[0].closed, true);
-    session.finalize();
+    session.flush();
     assert.deepEqual(session.context.slots, []);
     session.locate({ line: 1, column: 5 });
     const [last] = session.context.slots;
-    assert.throws(() => session.finalize(), { code: "sessionFinalized" });
+    assert.throws(() => session.flush(), { code: "sessionFlushed" });
     assert.equal(session.context.slots[0], last);
     assert.deepEqual(session.spell(last, "x"), { text: "x", cursor: 1 });
     const other = new MarkdownSession("[[No te]]\n");
@@ -834,7 +834,7 @@ test("api: the lexicons are the dialect's metadata fields and slot cues", () => 
 test("api: a session's path, field and marker queries divide a node's own source", () => {
     const source = '**a** [t](/x "T")\n';
     const session = new MarkdownSession(source, { unit: "utf8" });
-    const document = session.finalize();
+    const document = session.flush();
     const [strong, , link] = document.content[0].content;
     assert.deepEqual(
         session.path({ line: 1, column: 2 }).map((node) => node.kind),
@@ -1124,7 +1124,7 @@ test("errors: a native failure maps its status by value across the WASM boundary
         [1, "allocationFailed"],
         [2, "outOfBounds"],
         [3, "kindMismatch"],
-        [4, "sessionFinalized"]
+        [4, "sessionFlushed"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),

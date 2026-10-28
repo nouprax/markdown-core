@@ -2636,6 +2636,8 @@ bool markdown_core_parser_commit(markdown_core_parser *parser, const char *sourc
     return !parser->error;
 }
 
+markdown_core_node *markdown_core_parser_flush(markdown_core_parser *parser) { return S_finish_parse(parser); }
+
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) {
     markdown_core_node *document = S_finish_parse(parser);
     S_release_parse(parser);

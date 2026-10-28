@@ -24,11 +24,11 @@ import Testing
     }
 }
 
-/// Every query at `position` of `source`, asked of a finalized session of
+/// Every query at `position` of `source`, asked of a flushed session of
 /// it and rendered as specs/context's README says.
 private func render(_ source: String, unit: TextUnit, at position: Position, values: [String]) throws -> String {
     let session = try MarkdownSession(source, unit: unit)
-    let document = try session.finalize()
+    let document = try session.flush()
     try session.locate(position)
     let context = session.context
     var lines: [String] = []

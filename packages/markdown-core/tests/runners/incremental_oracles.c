@@ -652,7 +652,7 @@ static size_t view_at(const view *taken, const char *kind, size_t at) {
 /* Where an old node's anchor lies in the new text (4.4): its first byte that
  * survived the step, at the image of that byte. A byte before an edit keeps
  * its offset, a byte after it moves by the edit's change in length, and an
- * append or a finalize moves no byte. False for a node with no source or
+ * append or a flush moves no byte. False for a node with no source or
  * none of whose bytes survived. */
 static bool anchor_of(const view_node *old, const ih_step *entry, int64_t *at) {
     int64_t start, end;
@@ -775,7 +775,7 @@ static void check_identity(run *state, const char *where, size_t step, history *
         }
         changed[index] = !equal;
     }
-    /* 4.5: the script's expectations, by position; `finalize` has none. */
+    /* 4.5: the script's expectations, by position; `flush` has none. */
     if (entry) {
         bool *named = (bool *)calloc(after->count, sizeof(bool));
         bool only = false;
@@ -1361,7 +1361,7 @@ done:
  * it takes of the document into `after`, 4.2 to 4.5 against the previous
  * view. A snapshot, which the open and every append return, is checked by
  * 4.6: it equals the snapshot a new subject returns for one append of the
- * text, and the fresh parse but where plan 5.5 lets it differ. The finalized
+ * text, and the fresh parse but where plan 5.5 lets it differ. The flushed
  * document is checked by 4.1. */
 static bool check_document(run *state, const char *where, size_t step, ih_unit unit, void *subject,
                            const markdown_core_document *document, const ih_text *model, history *ids,
@@ -1422,30 +1422,30 @@ done:
 
 /* ------------------------------------------------------------------ runs */
 
-/* The script's last step, `finalize`: 4.1 to 4.4 hold against the last
- * snapshot, and then an append or a finalize fails with the finalized status
+/* The script's last step, `flush`: 4.1 to 4.4 hold against the last
+ * snapshot, and then an append or a flush fails with the flushed status
  * and leaves the text as it was (4.7). */
-static void check_finalize(run *state, const char *where, size_t step, ih_unit unit, void *subject,
-                           const ih_text *model, history *ids, view *previous) {
+static void check_flush(run *state, const char *where, size_t step, ih_unit unit, void *subject, const ih_text *model,
+                        history *ids, view *previous) {
     const markdown_core_document *final = NULL, *refused = NULL;
     size_t length = 0;
     view after;
-    if (state->subject->finalize(subject, &final) != MARKDOWN_CORE_OK) {
-        fail(state, "harness", "%s: finalize failed", where);
+    if (state->subject->flush(subject, &final) != MARKDOWN_CORE_OK) {
+        fail(state, "harness", "%s: flush failed", where);
         return;
     }
     if (check_document(state, where, step, unit, subject, final, model, ids, previous, &after, NULL, false)) {
         view_free(previous);
         *previous = after;
     }
-    if (state->subject->append(subject, (const uint8_t *)"x", 1, &refused) != MARKDOWN_CORE_SESSION_FINALIZED ||
+    if (state->subject->append(subject, (const uint8_t *)"x", 1, &refused) != MARKDOWN_CORE_SESSION_FLUSHED ||
         refused) {
-        fail(state, "4.7", "%s: an append after finalize did not fail with the finalized status", where);
+        fail(state, "4.7", "%s: an append after flush did not fail with the flushed status", where);
     } else if (!state->subject->text(subject, &length) || length != model->length) {
-        fail(state, "4.7", "%s: an append after finalize changed the text", where);
+        fail(state, "4.7", "%s: an append after flush changed the text", where);
     }
-    if (state->subject->finalize(subject, &refused) != MARKDOWN_CORE_SESSION_FINALIZED || refused) {
-        fail(state, "4.7", "%s: a finalize after finalize did not fail with the finalized status", where);
+    if (state->subject->flush(subject, &refused) != MARKDOWN_CORE_SESSION_FLUSHED || refused) {
+        fail(state, "4.7", "%s: a flush after flush did not fail with the flushed status", where);
     }
 }
 
@@ -1473,7 +1473,7 @@ static size_t position_in(const ih_text *model, ih_unit unit, size_t offset) {
     return unit == IH_UTF16 ? ih_utf16_units(model->bytes, offset) : offset;
 }
 
-/* An edit after the finalize: 4.1 to 4.5 against the previous document, with
+/* An edit after the flush: 4.1 to 4.5 against the previous document, with
  * 4.4's anchors at their image (4.11), and 4.12. */
 static bool check_edit(run *state, const char *where, size_t step, ih_unit unit, void *subject, ih_text *model,
                        history *ids, view *previous, const ih_step *entry) {
@@ -1494,7 +1494,7 @@ static bool check_edit(run *state, const char *where, size_t step, ih_unit unit,
                                   entry->text, entry->length, &next);
     if (status != MARKDOWN_CORE_OK || !next) {
         fail(state, status == MARKDOWN_CORE_ALLOCATION_FAILED ? "harness" : "4.11",
-             "%s step %zu: an edit after finalize failed with status %d", where, step, (int)status);
+             "%s step %zu: an edit after flush failed with status %d", where, step, (int)status);
         return false;
     }
     if (!ih_text_replace(model, entry->start, entry->end, entry->text, entry->length)) {
@@ -1545,7 +1545,7 @@ void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opene
     view previous = {0};
     void *subject = state->subject->open(unit, opened, opened_length, &current);
     size_t index;
-    bool viewed, finalized = false;
+    bool viewed, flushed = false;
     if (!subject || !ih_text_assign(&model, opened, opened_length)) {
         fail(state, "harness", "%s: the subject did not open", where);
         if (subject) {
@@ -1559,15 +1559,15 @@ void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opene
         const ih_step *step = &steps[index];
         const markdown_core_document *next = NULL;
         view after;
-        if (step->kind == IH_FINALIZE || (step->kind == IH_EDIT && !finalized)) {
-            /* A script finalizes once, before its first edit. */
-            if (finalized) {
-                fail(state, "harness", "%s step %zu: the script finalizes twice", where, index + 1);
+        if (step->kind == IH_FLUSH || (step->kind == IH_EDIT && !flushed)) {
+            /* A script flushes once, before its first edit. */
+            if (flushed) {
+                fail(state, "harness", "%s step %zu: the script flushes twice", where, index + 1);
                 break;
             }
-            finalized = true;
-            check_finalize(state, where, index + 1, unit, subject, &model, &ids, &previous);
-            if (step->kind == IH_FINALIZE) {
+            flushed = true;
+            check_flush(state, where, index + 1, unit, subject, &model, &ids, &previous);
+            if (step->kind == IH_FLUSH) {
                 continue;
             }
         }
@@ -1579,8 +1579,8 @@ void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opene
             check_refusal(state, where, index + 1, unit, subject, &model, step);
             continue;
         }
-        if (finalized) {
-            fail(state, "harness", "%s step %zu: the script appends after finalize", where, index + 1);
+        if (flushed) {
+            fail(state, "harness", "%s step %zu: the script appends after flush", where, index + 1);
             break;
         }
         if (state->subject->append(subject, step->text, step->length, &next) != MARKDOWN_CORE_OK ||
@@ -1595,8 +1595,8 @@ void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opene
         view_free(&previous);
         previous = after;
     }
-    if (viewed && !finalized && !stopped(state)) {
-        check_finalize(state, where, count + 1, unit, subject, &model, &ids, &previous);
+    if (viewed && !flushed && !stopped(state)) {
+        check_flush(state, where, count + 1, unit, subject, &model, &ids, &previous);
     }
     view_free(&previous);
     history_free(&ids);

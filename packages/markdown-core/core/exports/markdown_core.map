@@ -101,8 +101,8 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_append;
     markdown_core_session_context;
     markdown_core_session_document;
-    markdown_core_session_finalize;
-    markdown_core_session_free;
+    markdown_core_session_flush;
+    markdown_core_session_close;
     markdown_core_session_locate;
     markdown_core_session_new;
     markdown_core_session_text;
