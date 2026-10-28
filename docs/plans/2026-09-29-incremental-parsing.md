@@ -1168,14 +1168,21 @@ The edit runs in five steps:
   - Run the ordinary commit (5.3) over the new text from the checkpoint.
 
   The edit reuses the append path's line machine unchanged.
-- **Step 4: Resync.** Once the commit has passed `start + length`, check two things
-  at each new child start `b`, at any depth:
+- **Step 4: Resync.** Once the commit has passed `start + length`, check three
+  things at each new child start `b`, at any depth:
   - the old document has a child at `b - delta` under the same ancestor
     chain;
   - `reopen` of that old child gives the builder state that the new
-    reading has at `b`.
+    reading has at `b`;
+  - no candidate is live in the new reading at `b`. The main reading goes
+    on making ordinary children while a candidate is undecided (5.3), so a
+    child start alone does not rule one out: deleting `x` from
+    `%%x\n\nbody\n\n%%\n` opens a comment candidate that a later line
+    accepts, and the `body` paragraph is not the old one. The new reading
+    knows its own live candidates, which include any opener the edit
+    wrote.
 
-  When both hold, the new reading from `b` on is the old reading from
+  When all three hold, the new reading from `b` on is the old reading from
   `b - delta` on (12.6). The commit stops there, and every level is
   spliced:
   - the old children after the resync point are kept under each
@@ -1198,8 +1205,13 @@ The edit runs in five steps:
     `Reference`, a footnote or specimen definition, or a heading, which is
     a label), the winners of those labels may change. The roots that can
     name a changed label are parsed again. The edit path finds them with a
-    byte filter over the kept roots' content: `[` plus the case-folded
-    first word of the label (E-D2). Typing inside a paragraph changes no
+    byte filter over the kept roots' content that is conservative for every
+    reference family: a root is parsed again when it holds the opener of
+    the changed label's family and the label's first word, compared under
+    full case folding. The opener is `[` for a reference, a footnote and a
+    heading label, and `@` for a specimen, which is cited as `@label` and
+    `(@label)`; a specimen definition changes whether `(@label)` is a
+    specimen or a bibliography citation (E-D2). Typing inside a paragraph changes no
     definition and skips this step.
   - **Anchors.** If a heading or an explicit anchor changed, reassign the
     automatic anchors by `main`'s rule. This is O(headings) and parses
@@ -1240,7 +1252,8 @@ The edit runs in five steps:
 - **The re-read blocks.** The same commit reads them as a fresh parse does,
   from the same state.
 - **After the resync point.** At `b`, the new reading's state equals the old
-  reading's state at `b - delta`. A child starts there, so no claimed line
+  reading's state at `b - delta`, and no candidate is live in the new
+  reading. A child starts there, so no claimed line
   covers it: a candidate that was live there in the old reading was later
   rejected. Both readings then continue as the main reading from equal
   states, with equal bytes left. By 5.11 they give the same blocks,
@@ -1271,7 +1284,10 @@ The differential oracle, extending section 8:
     - opening and closing a fence, a comment and an HTML block;
     - typing and deleting `>`, list markers and indentation, which changes
       the container chain;
-    - adding, removing and renaming a definition or a heading label;
+    - adding, removing and renaming a definition or a heading label,
+      including a specimen definition cited as `@label` and `(@label)`;
+    - an edit that opens a candidate before unchanged children, such as
+      `%%` with its closer further down;
     - the text of a heading that has an automatic anchor;
     - splitting and joining paragraphs and list items;
     - a Setext underline, a definition list term, a caption, a block
@@ -1288,6 +1304,8 @@ The differential oracle, extending section 8:
 - **Faulty-subject self-tests.** The harness must fail against subjects that
   skip:
   - the resync state check;
+  - the live-candidate check at the resync point;
+  - the specimen forms of the definition filter;
   - the previous-sibling rule;
   - the candidate log;
   - the definition step;
