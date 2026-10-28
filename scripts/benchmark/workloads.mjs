@@ -34,7 +34,7 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const CORRECTNESS_SET = "specs/incremental";
 const CANONICAL = "specs/canonical-ast";
 
-export const WORKLOAD_VERSION = "incremental-workloads-v3";
+export const WORKLOAD_VERSION = "incremental-workloads-v4";
 export const SCRIPT_HEADER = "markdown-core incremental script 2";
 export const MANIFEST_HEADER = "markdown-core incremental manifest 2";
 export const SIZES = Object.freeze([16384, 65536, 262144, 1048576]);
@@ -963,9 +963,9 @@ function randomScript(document, letters, seed) {
 
 /**
  * Every edit script of one document, each finalizing before its first edit.
- * `families` narrows the set.
+ * `families` narrows the set, and `random` runs `seeds` seeds.
  */
-export function editScripts(document, families = EDIT_FAMILIES) {
+export function editScripts(document, families = EDIT_FAMILIES, seeds = RANDOM_SEEDS) {
     const letters = alphabets[document.alphabet ?? "ascii"];
     const wanted = new Set(families);
     const base = [];
@@ -984,7 +984,7 @@ export function editScripts(document, families = EDIT_FAMILIES) {
     const result = scripts.filter((script) => wanted.has(script.family));
     if (all) result.push(...scripts.map((script) => undoScript(script, document.text)));
     if (wanted.has("random"))
-        for (let seed = 1; seed <= RANDOM_SEEDS; seed++) result.push(randomScript(document, letters, seed));
+        for (let seed = 1; seed <= seeds; seed++) result.push(randomScript(document, letters, seed));
     return result;
 }
 
@@ -1391,20 +1391,40 @@ export function correctnessSet() {
  * `stepwise` when 6.3 measures it at every step however long it is: a shape
  * 6.2 leaves to 6.3, at the shape's smallest size (decision G17).
  *
+ * The edit workloads (5.1) are one document each and its edit scripts:
+ * every grammar corpus document and every shape at its smallest size with
+ * the families of `BENCHMARK_EDITS`, one random seed, measured at every
+ * edit, and the larger sizes with `typing` and `far` alone, measured in at
+ * most `EDIT_WINDOWS` windows a script, because each `reparse` edit there
+ * parses up to a megabyte. `undo` replays the other families' edits
+ * backwards, and is left to the correctness set.
+ *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all.
  */
 export const BENCHMARK_SETS = Object.freeze(["all", "corpus"]);
+export const BENCHMARK_EDITS = Object.freeze(EDIT_FAMILIES.filter((family) => family !== "undo"));
+const LARGE_EDITS = Object.freeze(["typing", "far"]);
+export const EDIT_WINDOWS = 4;
 
 export function benchmarkWorkloads(set = "all") {
     assert.ok(BENCHMARK_SETS.includes(set), `unknown workload set ${set}`);
     const documents = [];
     const workloads = [];
+    const edits = [];
+    const edited = (document, stepwise) =>
+        edits.push({
+            document,
+            name: `${document.name}.edits`,
+            scripts: editScripts(document, stepwise ? BENCHMARK_EDITS : LARGE_EDITS, 1),
+            stepwise
+        });
     for (const entry of buildGrammarCorpus().cases.filter((item) => item.side === "dialect")) {
-        const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, parts: null };
+        const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, parts: null, sites: [] };
         documents.push(document);
         for (const family of ["tokens", "scalars"])
             workloads.push({ document, family, name: `${document.name}.${family}`, local: false, stepwise: false });
+        edited(document, true);
     }
     for (const shape of set === "all" ? [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)] : [])
         for (const alphabet of Object.keys(alphabets))
@@ -1419,33 +1439,43 @@ export function benchmarkWorkloads(set = "all") {
                         local: LOCAL_SHAPES.includes(shape),
                         stepwise: !LOCAL_SHAPES.includes(shape) && size === shapeSizes(shape)[0]
                     });
+                edited(document, size === shapeSizes(shape)[0]);
             }
-    return { documents, workloads };
+    return { documents, workloads, edits: edits.filter((entry) => entry.scripts.length) };
 }
 
 /**
  * Write the benchmark workloads of `set` under `directory`, or only those
- * `names` lists: each document and the token sizes. Returns the index of what
- * it wrote, whose digest identifies the workload the way the corpus digest
+ * `names` lists, stream and edit workloads alike: each document, each edit
+ * workload's scripts and the token sizes. Returns the index of what it
+ * wrote, whose digest identifies the workload the way the corpus digest
  * identifies the one-shot benchmark's.
  */
 export function writeBenchmarkWorkloads(directory, set = "all", names = []) {
     const generated = benchmarkWorkloads(set);
     const wanted = new Set(names);
-    const unknown = names.filter((name) => !generated.workloads.some((workload) => workload.name === name));
+    const known = new Set([...generated.workloads, ...generated.edits].map((workload) => workload.name));
+    const unknown = names.filter((name) => !known.has(name));
     if (unknown.length) throw new Error(`the ${set} set has no workload named ${unknown.join(", ")}`);
-    const workloads = wanted.size
-        ? generated.workloads.filter((workload) => wanted.has(workload.name))
-        : generated.workloads;
-    const used = new Set(workloads.map((workload) => workload.document));
+    const chosen = (list) => (wanted.size ? list.filter((workload) => wanted.has(workload.name)) : list);
+    const workloads = chosen(generated.workloads);
+    const edits = chosen(generated.edits);
+    const used = new Set([...workloads, ...edits].map((workload) => workload.document));
     const documents = generated.documents.filter((document) => used.has(document));
     fs.rmSync(directory, { recursive: true, force: true });
     fs.mkdirSync(path.join(directory, "documents"), { recursive: true });
+    fs.mkdirSync(path.join(directory, "scripts"), { recursive: true });
     for (const document of documents) {
         document.path = `documents/${document.name}.md`;
         document.sha256 = hash(document.text);
         document.bytes = bytes(document.text);
         fs.writeFileSync(path.join(directory, document.path), document.text);
+    }
+    for (const workload of edits) {
+        const text = formatScripts(workload.scripts);
+        workload.path = `scripts/${workload.document.name}.script`;
+        workload.sha256 = hash(text);
+        fs.writeFileSync(path.join(directory, workload.path), text);
     }
     fs.writeFileSync(path.join(directory, "token-sizes.txt"), `${TOKEN_SIZES.join(" ")}\n`);
     return {
@@ -1454,11 +1484,13 @@ export function writeBenchmarkWorkloads(directory, set = "all", names = []) {
         digest: hash(
             JSON.stringify([
                 TOKEN_SIZES,
-                workloads.map((workload) => [workload.name, workload.document.sha256, workload.family])
+                workloads.map((workload) => [workload.name, workload.document.sha256, workload.family]),
+                edits.map((workload) => [workload.name, workload.document.sha256, workload.sha256])
             ])
         ),
         documents,
-        workloads
+        workloads,
+        edits
     };
 }
 

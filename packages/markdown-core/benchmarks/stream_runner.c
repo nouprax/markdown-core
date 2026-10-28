@@ -1,5 +1,6 @@
 /* The stream benchmark's process: open a subject on an empty text, append one
- * document through it in the chunks of one stream family, report.
+ * document through it in the chunks of one stream family, report; or open it
+ * on a document, finalize, run each edit script of one file, report.
  *
  * Nothing here is timed. The driver reads each window's cost out of the
  * callgrind call graph, from the edges into `bench_apply_step` and
@@ -18,6 +19,12 @@
  * `session` subject takes every chunk in its window. The stream's finalize is
  * one more window, after the last chunk's.
  *
+ * An edit script splits its edits into windows the same way, each script on
+ * its own: the subject opens on the document and finalizes before the counts
+ * are zeroed, so neither is in a window, and `reparse` replaces the text of
+ * every edit but a window's last without parsing it. A script has no
+ * finalize window. Only a subject that takes edits runs scripts.
+ *
  * The `binding` subject is the session stepped through the MCB3 entries, as
  * the bindings that read messages step it: the driver reads what its
  * messages add to the session's steps, the C side of building each published
@@ -25,9 +32,11 @@
  *
  *   stream_runner --subject reparse|session|binding --document PATH
  *                 --stream FAMILY --tokens FILE --windows N [--final PATH]
+ *   stream_runner --subject NAME --document PATH --scripts FILE --windows N
  *
  * `--final` writes the subject's final text, whose one-shot parse the driver
- * measures for `oneshot_ir`.
+ * measures for `oneshot_ir`. A script run prints one receipt per script, in
+ * the file's order.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,11 +50,12 @@
 #include "markdown_core_receipt.h"
 #include "markdown_core_wire.h"
 
-/* A subject the runner can measure, and how a chunk that ends no window
- * advances it: NULL when every chunk goes through `bench_apply_step`. */
+/* A subject the runner can measure, and how a chunk or an edit that ends no
+ * window advances it: NULL when every one goes through `bench_apply_step`. */
 typedef struct measured_subject {
     const ih_subject_class *subject;
     bool (*advance)(void *subject, const uint8_t *text, size_t length);
+    markdown_core_status (*replace)(void *subject, size_t start, size_t end, const uint8_t *text, size_t length);
 } measured_subject;
 
 /* THE BINDING SUBJECT: the `session` subject's session, each step answering
@@ -94,13 +104,15 @@ static const ih_subject_class binding = {.name = "binding",
                                          .text = binding_text,
                                          .close = binding_close};
 
-static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&ih_session, NULL}, {&binding, NULL}};
+static const measured_subject SUBJECTS[] = {
+    {&ih_reparse, ih_reparse_extend, ih_reparse_replace}, {&ih_session, NULL, NULL}, {&binding, NULL, NULL}};
 
-/* The measured edges: one chunk, from its bytes to the subject's new
+/* The measured edges: one chunk or edit, from its bytes to the subject's new
  * document, and the finalize, to the final document. */
 __attribute__((noinline)) bool bench_apply_step(const ih_subject_class *subject, void *handle, const ih_step *step,
                                                 const markdown_core_document **document) {
-    return subject->append(handle, step->text, step->length, document) == MARKDOWN_CORE_OK;
+    return (step->kind == IH_EDIT ? subject->edit(handle, step->start, step->end, step->text, step->length, document)
+                                  : subject->append(handle, step->text, step->length, document)) == MARKDOWN_CORE_OK;
 }
 
 __attribute__((noinline)) bool bench_finalize(const ih_subject_class *subject, void *handle,
@@ -109,15 +121,107 @@ __attribute__((noinline)) bool bench_finalize(const ih_subject_class *subject, v
 }
 
 static int usage(void) {
-    fputs("usage: stream_runner --subject NAME --document PATH --stream FAMILY --tokens FILE --windows N "
-          "[--final PATH]\n",
+    fputs("usage: stream_runner --subject NAME --document PATH (--stream FAMILY --tokens FILE --windows N [--final "
+          "PATH] | --scripts FILE --windows N)\n",
           stderr);
     return 2;
 }
 
+/* One edit script on the document, in at most `most` windows of its edits,
+ * then its receipt. The script finalizes, then edits: the generator's edit
+ * families take no other step. */
+static bool run_script(const measured_subject *measured, const uint8_t *document, size_t length,
+                       const ih_script *script, size_t most) {
+    const markdown_core_document *current = NULL;
+    const ih_step *edits = script->steps + 1;
+    const size_t count = script->count ? script->count - 1 : 0;
+    const uint8_t *text;
+    ih_text model = {0};
+    size_t windows, window, index, final_length = 0, root_children = 0;
+    bool done = false;
+    void *handle;
+
+    for (index = 0; index < count; index++) {
+        if (edits[index].kind != IH_EDIT) {
+            break;
+        }
+    }
+    if (!count || script->steps[0].kind != IH_FINALIZE || index != count) {
+        fprintf(stderr, "stream_runner: %s does not finalize and then edit\n", script->name);
+        return false;
+    }
+    handle = measured->subject->open(IH_UTF8, document, length, &current);
+    if (!handle) {
+        fprintf(stderr, "stream_runner: %s did not open\n", measured->subject->name);
+        return false;
+    }
+    if (measured->subject->finalize(handle, &current) != MARKDOWN_CORE_OK ||
+        !ih_text_assign(&model, document, length)) {
+        fprintf(stderr, "stream_runner: %s did not finalize\n", script->name);
+        goto close;
+    }
+    CALLGRIND_ZERO_STATS;
+    windows = count < most ? count : most;
+    for (window = 0, index = 0; window < windows; window++) {
+        size_t end = (window + 1) * count / windows;
+        for (; index < end; index++) {
+            const ih_step *step = &edits[index];
+            const markdown_core_document *next = NULL;
+            bool edited =
+                index + 1 < end && measured->replace
+                    ? measured->replace(handle, step->start, step->end, step->text, step->length) == MARKDOWN_CORE_OK
+                    : bench_apply_step(measured->subject, handle, step, &next);
+            if (!edited || !ih_text_replace(&model, step->start, step->end, step->text, step->length)) {
+                fprintf(stderr, "stream_runner: %s edit %zu failed\n", script->name, index + 1);
+                goto close;
+            }
+            if (next) {
+                current = next;
+            }
+        }
+        CALLGRIND_DUMP_STATS;
+    }
+    text = measured->subject->text(handle, &final_length);
+    if (final_length != model.length || memcmp(text, model.bytes, final_length) != 0) {
+        fprintf(stderr, "stream_runner: %s did not end in its edits' text\n", script->name);
+        goto close;
+    }
+    if (!bench_root_children(current, text, final_length, &root_children)) {
+        fprintf(stderr, "stream_runner: cannot read the receipt of %s\n", script->name);
+        goto close;
+    }
+    printf("stream-runner subject=%s script=%s edits=%zu windows=%zu bytes=%zu root_children=%zu\n",
+           measured->subject->name, script->name, count, windows, final_length, root_children);
+    done = true;
+close:
+    measured->subject->close(handle);
+    ih_text_free(&model);
+    return done;
+}
+
+/* Every script of `path`, each on the document. */
+static int run_scripts(const measured_subject *measured, const uint8_t *document, size_t length, const char *path,
+                       size_t most) {
+    ih_scripts scripts = {0};
+    size_t index;
+    int status = 0;
+    if (!measured->subject->edit) {
+        fprintf(stderr, "stream_runner: %s takes no edits\n", measured->subject->name);
+        return 2;
+    }
+    if (!ih_scripts_load(path, &scripts)) {
+        return 1;
+    }
+    for (index = 0; index < scripts.count && !status; index++) {
+        status = run_script(measured, document, length, &scripts.scripts[index], most) ? 0 : 1;
+    }
+    ih_scripts_free(&scripts);
+    return status;
+}
+
 int main(int argc, char **argv) {
     const char *subject_name = NULL, *document_path = NULL, *family = NULL, *tokens_path = NULL, *final_path = NULL,
-               *windows_text = NULL;
+               *windows_text = NULL, *scripts_path = NULL;
     const measured_subject *measured = NULL;
     const markdown_core_document *current = NULL;
     const uint8_t *text;
@@ -137,13 +241,15 @@ int main(int argc, char **argv) {
                             : strcmp(argv[i], "--tokens") == 0   ? &tokens_path
                             : strcmp(argv[i], "--windows") == 0  ? &windows_text
                             : strcmp(argv[i], "--final") == 0    ? &final_path
+                            : strcmp(argv[i], "--scripts") == 0  ? &scripts_path
                                                                  : NULL;
         if (!slot || *slot) {
             return usage();
         }
         *slot = argv[i + 1];
     }
-    if (i != argc || !subject_name || !document_path || !family || !tokens_path || !windows_text) {
+    if (i != argc || !subject_name || !document_path || !windows_text ||
+        (scripts_path ? family || tokens_path || final_path : !family || !tokens_path)) {
         return usage();
     }
     most = strtoul(windows_text, &windows_end, 10);
@@ -163,6 +269,11 @@ int main(int argc, char **argv) {
     if (!document) {
         fprintf(stderr, "stream_runner: cannot read %s\n", document_path);
         return 1;
+    }
+    if (scripts_path) {
+        status = run_scripts(measured, document, length, scripts_path, most);
+        free(document);
+        return status;
     }
     if (!ih_sizes_load(tokens_path, &tokens) || !ih_stream_ends(document, length, family, &tokens, &ends, &count) ||
         !(steps = ih_chunks(document, ends, count))) {

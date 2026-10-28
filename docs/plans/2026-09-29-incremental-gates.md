@@ -9,7 +9,7 @@ requirement to streaming ([plan](2026-09-29-incremental-parsing.md) section 1,
 D7). On 2026-10-27 edits came back, on a finalized session and re-reading
 only the damaged block (plan 12). Step E0 of that rollout added the edit
 gates: the edit scripts (3.3), the edit oracles 4.11 to 4.13 and their faulty
-subjects. Until step E1 gives the session its edit, the edit scripts run on
+subjects, and the edit benchmark's R column (5.1). Until step E1 gives the session its edit, the edit scripts run on
 the `reparse` subject. This document specifies the
 correctness suite and the benchmarks that decide whether each step of
 [incremental parsing](2026-09-29-incremental-parsing.md) is done.
@@ -393,7 +393,10 @@ data-reference counts, the benchmark preset, the same build provenance and
 isolation, and a measured edge instead of a timer. The stream runner loads a
 document and a stream family, opens the subject on an empty text outside the
 measurement, calls `bench_apply_step` once per chunk and then
-`bench_finalize` once.
+`bench_finalize` once. For an edit workload it loads a document and its edit
+scripts, and for each script opens the subject on the document and
+finalizes outside the measurement, then calls `bench_apply_step` once per
+edit.
 
 Costs come from callgrind client requests (`CALLGRIND_DUMP_STATS`), which are
 no-ops outside valgrind. The runner dumps after each of at most 1,024
@@ -411,6 +414,15 @@ its two stages `source_to_buffer` and `buffer_to_ast` as the one-shot
 benchmark reads them. Creating the parser, starting and releasing its
 transaction and freeing the document of the step before are not parsing, and
 are in no window.
+
+An edit script splits into windows the same way, each script on its own,
+with no finalize window. The grammar corpus documents and each shape at its
+smallest size run every edit family but `undo` (one `random` seed), one edit
+per window, and a shape's larger sizes run `typing` and `far` in at most four
+windows a script, because each `reparse` edit there parses up to a megabyte.
+A `reparse` window counts the parse of its last edit, a fresh parse of that
+edit's text; the edits before it in the window only replace the text. Until
+step E1 only `reparse` takes edits, and edits are reported without a gate.
 
 The gates measure the C engine. A binding builds its platform values from what
 the engine returns (plan 6.1); bindings are gated for correctness (section 4).
@@ -578,7 +590,8 @@ so the set stays small enough to track.
 **The benchmark workloads** are the generator's large output, built when the
 benchmark runs, as the grammar corpus is: every grammar corpus document with
 `tokens` and `scalars`, and every scale and adversarial shape at all four
-sizes with `tokens` and `rows`.
+sizes with `tokens` and `rows`; and the edit workloads of 5.1, a document and
+its edit scripts each.
 
 The benchmarks run as `pnpm benchmark:streams`, sharing `run.mjs`'s build,
 provenance, isolation and callgrind code, and with `--baseline-ref` they
@@ -588,7 +601,8 @@ workloads and the raw profiles. CI runs a job, "Measure - streams", in the
 benchmark workflow against the pull request's base, and the trusted publisher
 adds its tables to the existing PR comment. The report shows, per workload,
 the S column (session), the R column (reparse), the highest S / R of one step,
-the workloads that pass 6.4, and the B column (binding) beside S.
+the workloads that pass 6.4, the B column (binding) beside S, and the edits'
+R column by family and size.
 
 ## 10. Work items
 
@@ -615,7 +629,7 @@ Step E0 (plan 12.9) is these items:
 - [x] The harness's `edit` step and the damage bound of its subjects, the
       `reparse` subject's edit, and oracles 4.11 to 4.13 with 4.4's image.
 - [x] The edit faults of section 8.
-- [ ] The edit benchmark: each edit's Ir for `reparse`, reported.
+- [x] The edit benchmark: each edit's Ir for `reparse`, reported.
 
 ## 11. Owner decisions
 

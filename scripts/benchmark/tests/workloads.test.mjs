@@ -7,7 +7,9 @@ import test from "node:test";
 
 import {
     ADVERSARIAL_SHAPES,
+    BENCHMARK_EDITS,
     EDIT_FAMILIES,
+    EDIT_WINDOWS,
     RANDOM_SEEDS,
     benchmarkWorkloads,
     LOCAL_SHAPES,
@@ -289,6 +291,7 @@ test("a narrowed benchmark set writes and identifies only the named workloads", 
             narrowed.workloads.map((workload) => workload.name),
             [first.name, second.name]
         );
+        assert.deepEqual(narrowed.edits, []);
         assert.deepEqual(
             narrowed.documents.map((document) => document.name),
             [...new Set([first.document.name, second.document.name])]
@@ -296,6 +299,69 @@ test("a narrowed benchmark set writes and identifies only the named workloads", 
         assert.notEqual(narrowed.digest, whole.digest);
         assert.deepEqual(fs.readdirSync(path.join(directory, "documents")), [`${first.document.name}.md`]);
         assert.throws(() => writeBenchmarkWorkloads(directory, "corpus", ["no-such-workload"]), /no workload named/);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("the edit workloads run every family but undo with one seed, and a shape's larger sizes typing and far alone", () => {
+    assert.deepEqual(
+        BENCHMARK_EDITS,
+        EDIT_FAMILIES.filter((family) => family !== "undo")
+    );
+    assert.ok(EDIT_WINDOWS < 16);
+    const { documents, edits } = benchmarkWorkloads();
+    const corpus = documents.filter((document) => !document.shape);
+    assert.deepEqual(
+        edits.filter((workload) => !workload.document.shape).map((workload) => workload.document),
+        corpus
+    );
+    for (const workload of edits) {
+        const { shape, size } = workload.document;
+        const stepwise = !shape || size === shapeSizes(shape)[0];
+        assert.equal(workload.stepwise, stepwise, workload.name);
+        assert.equal(workload.name, `${workload.document.name}.edits`);
+        const families = new Set(workload.scripts.map((script) => script.family));
+        for (const family of families)
+            assert.ok((stepwise ? BENCHMARK_EDITS : ["typing", "far"]).includes(family), `${workload.name} ${family}`);
+        assert.deepEqual(
+            workload.scripts.filter((script) => script.family === "random").map((script) => script.name),
+            stepwise ? ["random-1"] : []
+        );
+        for (const script of workload.scripts) {
+            assert.equal(script.steps[0].kind, "finalize", `${workload.name} ${script.name}`);
+            assert.ok(
+                script.steps.slice(1).every((step) => step.kind === "edit"),
+                `${workload.name} ${script.name}`
+            );
+        }
+    }
+    assert.ok(edits.some((workload) => workload.name === "prose-ascii-1024k.edits"));
+});
+
+test("an edit workload writes its scripts beside its document, and its scripts enter the digest", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "workloads-"));
+    try {
+        const whole = writeBenchmarkWorkloads(directory, "corpus");
+        const [workload] = whole.edits;
+        const narrowed = writeBenchmarkWorkloads(directory, "corpus", [workload.name]);
+        assert.deepEqual(narrowed.workloads, []);
+        assert.deepEqual(
+            narrowed.edits.map((entry) => entry.name),
+            [workload.name]
+        );
+        assert.equal(narrowed.edits[0].path, `scripts/${workload.document.name}.script`);
+        const text = fs.readFileSync(path.join(directory, narrowed.edits[0].path), "utf8");
+        assert.equal(text, formatScripts(workload.scripts));
+        assert.deepEqual(
+            parseScripts(text).map((script) => script.name),
+            workload.scripts.map((script) => script.name)
+        );
+        assert.deepEqual(fs.readdirSync(path.join(directory, "documents")), [`${workload.document.name}.md`]);
+        assert.notEqual(
+            narrowed.digest,
+            writeBenchmarkWorkloads(directory, "corpus", [whole.workloads[0].name]).digest
+        );
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }
