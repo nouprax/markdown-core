@@ -388,16 +388,27 @@ static const char OOM_CONTEXT_SOURCE[] = "---\ntitle: Hi\n---\n"
 static const markdown_core_position OOM_CONTEXT_CURSORS[] = {{2, 3}, {2, 9}, {4, 14}, {4, 29}, {4, 34}, {4, 39},
                                                              {5, 7}, {6, 6}, {6, 14}, {8, 10}, {9, 12}, {9, 19}};
 
+/* Each allocation of a context query fails it, and each of a session's
+ * locate fails the locate and keeps the session's context as the last
+ * locate left it: here, the slots at the first cursor. */
 static int sweep_context(void) {
     const size_t length = sizeof(OOM_CONTEXT_SOURCE) - 1;
     markdown_core_document *document = NULL;
+    markdown_core_session *session = NULL;
     int result = 0;
     allocation_count = 0;
     fail_at = 0;
-    if (markdown_core_document_parse((const uint8_t *)OOM_CONTEXT_SOURCE, length, &document) != MARKDOWN_CORE_OK) {
+    if (markdown_core_document_parse((const uint8_t *)OOM_CONTEXT_SOURCE, length, &document) != MARKDOWN_CORE_OK ||
+        markdown_core_session_new((const uint8_t *)OOM_CONTEXT_SOURCE, length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) != MARKDOWN_CORE_OK ||
+        markdown_core_session_locate(session, OOM_CONTEXT_CURSORS[0]) != MARKDOWN_CORE_OK) {
         fputs("context: parse for the context sweep failed\n", stderr);
+        markdown_core_document_free(document);
+        markdown_core_session_free(session);
         return -1;
     }
+    const markdown_core_context *state = markdown_core_session_context(session);
+    const size_t kept = markdown_core_context_slot_count(state);
     for (size_t cursor = 0; result == 0 && cursor < sizeof(OOM_CONTEXT_CURSORS) / sizeof(*OOM_CONTEXT_CURSORS);
          cursor++) {
         const markdown_core_position position = OOM_CONTEXT_CURSORS[cursor];
@@ -427,9 +438,24 @@ static int sweep_context(void) {
                 markdown_core_context_free(context);
                 result = -1;
             }
+            if (cursor == 0) {
+                continue;
+            }
+            allocation_count = 0;
+            fail_at = allocation;
+            failure_fired = 0;
+            status = markdown_core_session_locate(session, position);
+            fail_at = 0;
+            if (!failure_fired || status != MARKDOWN_CORE_ALLOCATION_FAILED ||
+                markdown_core_context_slot_count(state) != kept) {
+                fprintf(stderr, "context %d:%d: a locate failing at allocation %lu / %lu did not keep the state\n",
+                        position.line, position.column, allocation, total);
+                result = -1;
+            }
         }
     }
     markdown_core_document_free(document);
+    markdown_core_session_free(session);
     return result;
 }
 

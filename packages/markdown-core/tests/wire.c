@@ -75,6 +75,8 @@ static void check_document(const uint8_t *source, size_t length, const char *nam
     markdown_core_wire_free(second);
 }
 
+static void check_queries(const uint8_t *source, size_t length, const char *name);
+
 static void check_fixture(const char *fixture_dir, const char *name) {
     char path[1024];
     size_t length = 0;
@@ -87,6 +89,7 @@ static void check_fixture(const char *fixture_dir, const char *name) {
         return;
     }
     check_document(source, length, name);
+    check_queries(source, length, name);
     free(source);
 }
 
@@ -209,6 +212,184 @@ static void check_session(void) {
     markdown_core_session_free(session);
 }
 
+static int32_t read_i32(const uint8_t *bytes) { return (int32_t)read_u32(bytes); }
+
+/* Whether `message` is a [Scope] answer that lists exactly `count` `scopes`. */
+static int same_scopes(const uint8_t *message, const markdown_core_scope *scopes, size_t count) {
+    size_t index;
+    const uint8_t *at = message + 13;
+    if (message == NULL || message_status(message) != 0 || read_u32(message + 9) != count ||
+        message_length(message) != 13 + 16 * count) {
+        return 0;
+    }
+    for (index = 0; index < count; ++index, at += 16) {
+        if (read_i32(at) != scopes[index].start.line || read_i32(at + 4) != scopes[index].start.column ||
+            read_i32(at + 8) != scopes[index].end.line || read_i32(at + 12) != scopes[index].end.column) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The field and marker queries of `node`, asked through the wire by its
+ * identifier and the byte at `position`, answer as the facade's do. */
+static void check_parts(const markdown_core_session *session, const uint8_t *text, size_t size,
+                        const markdown_core_node *node, markdown_core_position position, const char *name) {
+    const markdown_core_document *document = markdown_core_session_document(session);
+    uint64_t id = markdown_core_node_id(node);
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
+    int slot;
+    uint8_t *message;
+    for (slot = MARKDOWN_CORE_SLOT_NONE; slot <= MARKDOWN_CORE_SLOT_VALUE; ++slot) {
+        markdown_core_document_field(document, node, (markdown_core_slot_kind)slot, text, size, &scopes, &count);
+        message = markdown_core_wire_field(session, id, position, (markdown_core_slot_kind)slot);
+        if (!same_scopes(message, scopes, count)) {
+            fprintf(stderr, "FAILED: %s: node %llu's field %d differs through the wire\n", name, (unsigned long long)id,
+                    slot);
+            failures++;
+        }
+        markdown_core_wire_free(message);
+        markdown_core_scopes_free(scopes);
+    }
+    markdown_core_document_markers(document, node, text, size, &scopes, &count);
+    message = markdown_core_wire_markers(session, id, position);
+    if (!same_scopes(message, scopes, count)) {
+        fprintf(stderr, "FAILED: %s: node %llu's markers differ through the wire\n", name, (unsigned long long)id);
+        failures++;
+    }
+    markdown_core_wire_free(message);
+    markdown_core_scopes_free(scopes);
+}
+
+/* Every node a finalized session's document holds a byte of, asked through
+ * the wire at the first byte that names it, answers its field and marker
+ * queries as the facade does; an identifier the path at that byte lacks is
+ * OUT_OF_BOUNDS. Columns count UTF-8 bytes, so a byte's position is its
+ * line and its offset in the line. */
+static void check_queries(const uint8_t *source, size_t length, const char *name) {
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document;
+    uint8_t *seen = NULL, *message;
+    size_t limit = 0, offset, start = 0;
+    int32_t line = 1;
+    if (markdown_core_session_new(source, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
+        markdown_core_session_finalize(session, &document) != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "FAILED: %s: no session\n", name);
+        failures++;
+        markdown_core_session_free(session);
+        return;
+    }
+    for (offset = 0; offset < length; ++offset) {
+        markdown_core_position position = {line, (int32_t)(offset - start + 1)};
+        const markdown_core_node **path = NULL;
+        size_t count = 0, index;
+        markdown_core_document_path(document, position, source, length, &path, &count);
+        for (index = 0; index < count; ++index) {
+            uint64_t id = markdown_core_node_id(path[index]);
+            if (id >= limit) {
+                size_t wider = (size_t)id * 2 + 1;
+                uint8_t *more = (uint8_t *)realloc(seen, wider);
+                if (more == NULL) {
+                    check(0, "the seen table allocates");
+                    break;
+                }
+                memset(more + limit, 0, wider - limit);
+                seen = more;
+                limit = wider;
+            }
+            if (!seen[id]) {
+                seen[id] = 1;
+                check_parts(session, source, length, path[index], position, name);
+            }
+        }
+        markdown_core_path_free(path);
+        if (source[offset] == '\n' ||
+            (source[offset] == '\r' && !(offset + 1 < length && source[offset + 1] == '\n'))) {
+            line++;
+            start = offset + 1;
+        }
+    }
+    if (length != 0) {
+        markdown_core_position first = {1, 1};
+        message = markdown_core_wire_markers(session, 0, first);
+        check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+              "an identifier the path lacks is OUT_OF_BOUNDS");
+        markdown_core_wire_free(message);
+    }
+    free(seen);
+    markdown_core_session_free(session);
+}
+
+/* A locate answers the session's context as it leaves it, and spelling
+ * reads that state in place: the open cross link of `[[No` has one dest
+ * slot, which spells `x` with its closer and refuses a `|`. A failed locate
+ * keeps the state, and an append empties it. */
+static void check_context(void) {
+    static const uint8_t expected[] = {
+        1, 0, 0, 0, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 4, 0, 0, 0, /* block Paragraph 1:1..1:4 */
+    };
+    markdown_core_session *session = NULL;
+    markdown_core_position cursor = {1, 5}, outside = {3, 1};
+    uint8_t *message =
+        markdown_core_wire_session_new((const uint8_t *)"[[No", 4, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session);
+    markdown_core_wire_free(message);
+    if (session == NULL) {
+        check(0, "a session starts with a document");
+        return;
+    }
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "a session not yet located has no slot");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_locate(session, cursor);
+    check(message != NULL && message_status(message) == 0, "a locate answers");
+    check(message != NULL && message_length(message) > 9 + sizeof(expected) &&
+              memcmp(message + 9, expected, sizeof(expected)) == 0,
+          "a context's first block is the open paragraph");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_locate(session, outside);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "a cursor outside the text is OUT_OF_BOUNDS");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == 0 && message_length(message) == 21 && message[9] == 1 &&
+              read_u32(message + 10) == 3 && memcmp(message + 14, "x]]", 3) == 0 && read_u32(message + 17) == 1,
+          "a slot spells its value and closer, and a failed locate kept it");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"a|b", 3);
+    check(message != NULL && message_status(message) == 0 && message_length(message) == 10 && message[9] == 0,
+          "a value the slot holds in no spelling answers none");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_spell(session, 1, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "a slot the context lacks is OUT_OF_BOUNDS");
+    markdown_core_wire_free(message);
+    markdown_core_wire_free(markdown_core_wire_session_append(session, (const uint8_t *)"te]]\n", 5));
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS, "an append empties the context");
+    markdown_core_wire_free(message);
+    markdown_core_session_free(session);
+}
+
+/* The dialect's message lists the metadata field names, then the cues. */
+static void check_dialect(void) {
+    uint8_t *message = markdown_core_wire_dialect();
+    markdown_core_string cues = markdown_core_slot_cues();
+    size_t count = markdown_core_metadata_field_count(), index, at = 13;
+    int same = message != NULL && message_status(message) == 0 && read_u32(message + 9) == count;
+    for (index = 0; same && index < count; ++index) {
+        markdown_core_string name;
+        markdown_core_metadata_field_at(index, &name);
+        same = read_u32(message + at) == name.length && memcmp(message + at + 4, name.data, name.length) == 0;
+        at += 4 + name.length;
+    }
+    same = same && read_u32(message + at) == cues.length && memcmp(message + at + 4, cues.data, cues.length) == 0 &&
+           message_length(message) == at + 4 + cues.length;
+    check(same, "the dialect's message lists the metadata field names and the cues");
+    markdown_core_wire_free(message);
+}
+
 int main(int argc, char **argv) {
     int i;
     if (argc < 4 || strcmp(argv[1], "--fixtures") != 0) {
@@ -218,6 +399,8 @@ int main(int argc, char **argv) {
     check_shared_resource();
     check_session();
     check_session_shared_resource();
+    check_context();
+    check_dialect();
     check_document((const uint8_t *)"", 0, "the empty document");
     check_document(NULL, 0, "the empty document from a NULL source");
     for (i = 3; i < argc; i++) {

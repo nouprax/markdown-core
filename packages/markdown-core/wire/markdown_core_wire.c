@@ -945,4 +945,189 @@ uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session) {
     return step_message(status, document);
 }
 
+/* ---- Queries ------------------------------------------------------------- */
+
+/* The message `buffer` holds, or ALLOCATION_FAILED's when it could not be
+ * made. */
+static uint8_t *answer_message(wire_buffer *buffer) {
+    seal(buffer);
+    if (!buffer->failed) {
+        return buffer->data;
+    }
+    free(buffer->data);
+    return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
+}
+
+/* Scope { start, end }, each Position { line: Int32, column: Int32 }. */
+static void put_scope(wire_buffer *buffer, markdown_core_scope scope) {
+    put_i32(buffer, scope.start.line);
+    put_i32(buffer, scope.start.column);
+    put_i32(buffer, scope.end.line);
+    put_i32(buffer, scope.end.column);
+}
+
+static void put_scopes(wire_buffer *buffer, const markdown_core_scope *scopes, size_t count) {
+    size_t index;
+    put_count(buffer, count);
+    for (index = 0; index < count && !buffer->failed; ++index) {
+        put_scope(buffer, scopes[index]);
+    }
+}
+
+/* Opener { kind: u8 ordinal, 0 while still open; scope: Scope }. */
+static void put_opener(wire_buffer *buffer, markdown_core_opener opener) {
+    put_u8(buffer, (uint8_t)opener.kind);
+    put_scope(buffer, opener.scope);
+}
+
+/* Each block opener, or each inline one, as `at` reads them. */
+typedef size_t (*opener_count)(const markdown_core_context *);
+typedef markdown_core_status (*opener_at)(const markdown_core_context *, size_t, markdown_core_opener *);
+
+static void put_openers(wire_buffer *buffer, const markdown_core_context *context, opener_count count, opener_at at) {
+    size_t total = count(context), index;
+    put_count(buffer, total);
+    for (index = 0; index < total && !buffer->failed; ++index) {
+        markdown_core_opener opener;
+        at(context, index, &opener);
+        put_opener(buffer, opener);
+    }
+}
+
+/* Slot { kind: u8 ordinal, owner: u8 ordinal, before: Scope, after: Scope,
+ * closed: Bool, prefix: [String] }. */
+static void put_slots(wire_buffer *buffer, const markdown_core_context *context) {
+    size_t total = markdown_core_context_slot_count(context), index, part;
+    put_count(buffer, total);
+    for (index = 0; index < total && !buffer->failed; ++index) {
+        markdown_core_slot slot;
+        markdown_core_context_slot_at(context, index, &slot);
+        put_u8(buffer, (uint8_t)slot.kind);
+        put_u8(buffer, (uint8_t)slot.owner);
+        put_scope(buffer, slot.before);
+        put_scope(buffer, slot.after);
+        put_bool(buffer, slot.closed);
+        put_count(buffer, slot.prefix_count);
+        for (part = 0; part < slot.prefix_count && !buffer->failed; ++part) {
+            markdown_core_string prefix;
+            markdown_core_context_slot_prefix_at(context, index, part, &prefix);
+            put_string(buffer, prefix);
+        }
+    }
+}
+
+/* A copy of the session's text, which a query reads as its source, in
+ * `*text`; NULL in `*text` when it cannot be allocated. A query copies it
+ * because the facade hands the text out only as a copy. */
+static size_t session_text(const markdown_core_session *session, uint8_t **text) {
+    size_t size = markdown_core_session_text_size(session);
+    /* One byte more, so an empty text is an allocation too. */
+    *text = (uint8_t *)malloc(size + 1);
+    if (*text != NULL) {
+        markdown_core_session_text(session, *text);
+    }
+    return size;
+}
+
+uint8_t *markdown_core_wire_dialect(void) {
+    wire_buffer buffer = {0};
+    size_t count = markdown_core_metadata_field_count(), index;
+    /* fields: [String], cues: String. */
+    put_header(&buffer, WIRE_STATUS_DOCUMENT);
+    put_count(&buffer, count);
+    for (index = 0; index < count; ++index) {
+        markdown_core_string name;
+        markdown_core_metadata_field_at(index, &name);
+        put_string(&buffer, name);
+    }
+    put_string(&buffer, markdown_core_slot_cues());
+    return answer_message(&buffer);
+}
+
+uint8_t *markdown_core_wire_locate(markdown_core_session *session, markdown_core_position position) {
+    wire_buffer buffer = {0};
+    const markdown_core_context *context = markdown_core_session_context(session);
+    markdown_core_status status = markdown_core_session_locate(session, position);
+    if (status != MARKDOWN_CORE_OK) {
+        return error_message(status);
+    }
+    put_header(&buffer, WIRE_STATUS_DOCUMENT);
+    put_openers(&buffer, context, markdown_core_context_block_count, markdown_core_context_block_at);
+    put_openers(&buffer, context, markdown_core_context_inline_count, markdown_core_context_inline_at);
+    put_slots(&buffer, context);
+    return answer_message(&buffer);
+}
+
+uint8_t *markdown_core_wire_spell(const markdown_core_session *session, size_t slot, const uint8_t *value,
+                                  size_t size) {
+    wire_buffer buffer = {0};
+    markdown_core_insertion *insertion = NULL;
+    markdown_core_status status =
+        markdown_core_slot_spell(markdown_core_session_context(session), slot, value, size, &insertion);
+    if (status != MARKDOWN_CORE_OK) {
+        return error_message(status);
+    }
+    /* Insertion? { text: String, cursor: u32 bytes of the text before the caret }. */
+    put_header(&buffer, WIRE_STATUS_DOCUMENT);
+    put_bool(&buffer, insertion != NULL);
+    if (insertion != NULL) {
+        markdown_core_string text = {insertion->text, insertion->size};
+        put_string(&buffer, text);
+        put_count(&buffer, insertion->cursor);
+        markdown_core_insertion_free(insertion);
+    }
+    return answer_message(&buffer);
+}
+
+/* A field or marker query of the node with identifier `id` that holds the
+ * byte at `position`: the field of slot kind `slot`, or the markers when
+ * `markers` is set. */
+static uint8_t *part_message(const markdown_core_session *session, uint64_t id, markdown_core_position position,
+                             markdown_core_slot_kind slot, bool markers) {
+    const markdown_core_document *document = markdown_core_session_document(session);
+    wire_buffer buffer = {0};
+    const markdown_core_node **path = NULL, *node = NULL;
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0, index;
+    uint8_t *text;
+    size_t size = session_text(session, &text);
+    markdown_core_status status;
+    if (text == NULL) {
+        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
+    }
+    status = markdown_core_document_path(document, position, text, size, &path, &count);
+    for (index = 0; status == MARKDOWN_CORE_OK && index < count; ++index) {
+        if (markdown_core_node_id(path[index]) == id) {
+            node = path[index];
+        }
+    }
+    markdown_core_path_free(path);
+    if (status == MARKDOWN_CORE_OK && node == NULL) {
+        status = MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    if (status == MARKDOWN_CORE_OK) {
+        status = markers ? markdown_core_document_markers(document, node, text, size, &scopes, &count)
+                         : markdown_core_document_field(document, node, slot, text, size, &scopes, &count);
+    }
+    free(text);
+    if (status != MARKDOWN_CORE_OK) {
+        return error_message(status);
+    }
+    /* [Scope]. */
+    put_header(&buffer, WIRE_STATUS_DOCUMENT);
+    put_scopes(&buffer, scopes, count);
+    markdown_core_scopes_free(scopes);
+    return answer_message(&buffer);
+}
+
+uint8_t *markdown_core_wire_field(const markdown_core_session *session, uint64_t id, markdown_core_position position,
+                                  markdown_core_slot_kind slot) {
+    return part_message(session, id, position, slot, false);
+}
+
+uint8_t *markdown_core_wire_markers(const markdown_core_session *session, uint64_t id,
+                                    markdown_core_position position) {
+    return part_message(session, id, position, MARKDOWN_CORE_SLOT_NONE, true);
+}
+
 void markdown_core_wire_free(uint8_t *message) { free(message); }

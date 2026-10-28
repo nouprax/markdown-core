@@ -3,6 +3,7 @@ import { SourceLines } from "../common/source-lines.js";
 import type { Document } from "../markup/document.js";
 import type { Markup } from "../markup/markup.js";
 import type { Position, Scope } from "../markup/values.js";
+import { markupEquals } from "./markup-equals.js";
 import { traverse } from "./markup-walker.js";
 import { holds, placesOf, type Place } from "./source-places.js";
 
@@ -41,4 +42,32 @@ export function nodeAt(document: Document, position: Position, source: string): 
         if (phase === "enter" && holds(node, anchor, offset)) found = node;
     });
     return found;
+}
+
+/** Every node of `document` one of whose source ranges holds the byte at
+ * `offset`, in canonical walk order, found by one walk. */
+export function holdersOf(document: Document, offset: number): Markup[] {
+    const found: Markup[] = [];
+    traverse(document, (node, phase, anchor) => {
+        if (phase === "enter" && holds(node, anchor, offset)) found.push(node);
+    });
+    return found;
+}
+
+/** The offset of the first byte `target` holds, found by one walk: the node
+ * of `document` that is `target` or, with its id, equals it. Null when it
+ * holds no byte. The public boundary: `outOfBounds` when `document` holds no
+ * such node. */
+export function leadOf(document: Document, target: Markup): number | null {
+    let held: Markup | undefined;
+    let lead: number | null = null;
+    traverse(document, (node, phase, anchor) => {
+        if (phase !== "enter" || held !== undefined || node.id !== target.id) return;
+        held = node;
+        lead = placesOf(node, anchor).find(({ start, end }) => start < end)?.start ?? null;
+    });
+    if (held === undefined || !(held === target || markupEquals(held, target))) {
+        throw new MarkdownCoreError("outOfBounds");
+    }
+    return lead;
 }

@@ -58,7 +58,7 @@ private class MessageWriter {
 
     /** A record's kind and inherited fields; its own fields follow. */
     fun record(
-        kind: WireNodeKind,
+        kind: NodeKind,
         anchor: String? = null,
         classes: kotlin.collections.List<String> = emptyList(),
     ) = record(kind.rawValue, anchor, classes)
@@ -83,7 +83,7 @@ private class MessageWriter {
         attributes(classes)
     }
 
-    fun text(literal: String) = record(WireNodeKind.TEXT).string(literal)
+    fun text(literal: String) = record(NodeKind.TEXT).string(literal)
 
     /** A document record over the `content` nodes written before it, and its definition tables. */
     fun root(
@@ -92,7 +92,7 @@ private class MessageWriter {
         specimens: kotlin.collections.List<Long> = emptyList(),
         references: kotlin.collections.List<Long> = emptyList(),
         labels: kotlin.collections.List<Pair<String, Long>> = emptyList(),
-    ) = record(WireNodeKind.DOCUMENT)
+    ) = record(NodeKind.DOCUMENT)
         .u32(content)
         .bool(false)
         .table(footnotes)
@@ -149,13 +149,13 @@ class WireDecoderTest {
                     MessageWriter()
                         .text("T")
                         .text("b")
-                        .record(WireNodeKind.DEFINITION)
+                        .record(NodeKind.DEFINITION)
                         .u32(1)
                         .u32(2)
                         .u32(0)
                         .u32(1)
                         .bool(true)
-                        .record(WireNodeKind.DEFINITION_LIST)
+                        .record(NodeKind.DEFINITION_LIST)
                         .u32(1)
                         .root(1),
                 ).content.single(),
@@ -178,7 +178,7 @@ class WireDecoderTest {
             assertIs<List>(
                 decode(
                     MessageWriter()
-                        .record(WireNodeKind.LIST)
+                        .record(NodeKind.LIST)
                         .u8(1)
                         .optional(7L) { int(it) }
                         .apply(write)
@@ -232,25 +232,25 @@ class WireDecoderTest {
             decode(
                 MessageWriter()
                     .text("a")
-                    .record(WireNodeKind.LINK)
+                    .record(NodeKind.LINK)
                     .u8(0)
                     .string("/u")
                     .optional("t") { string(it) }
                     .u32(1)
-                    .record(WireNodeKind.LINK, anchor = "own", classes = listOf("mine"))
+                    .record(NodeKind.LINK, anchor = "own", classes = listOf("mine"))
                     .u8(2)
                     .string("r")
                     .optional<String>(null) { string(it) }
                     .u32(0)
-                    .record(WireNodeKind.EMBEDDED)
+                    .record(NodeKind.EMBEDDED)
                     .u8(2)
                     .string("r")
                     .optional<String>(null) { string(it) }
                     .optional<Long>(null) { int(it) }
                     .u32(0)
-                    .record(WireNodeKind.PARAGRAPH)
+                    .record(NodeKind.PARAGRAPH)
                     .u32(3)
-                    .record(WireNodeKind.REFERENCE, anchor = "definition", classes = listOf("shared"))
+                    .record(NodeKind.REFERENCE, anchor = "definition", classes = listOf("shared"))
                     .string("r")
                     .u8(0)
                     .string("/r")
@@ -292,11 +292,11 @@ class WireDecoderTest {
             decode(
                 MessageWriter()
                     .text("T")
-                    .record(WireNodeKind.HEADING)
+                    .record(NodeKind.HEADING)
                     .int(1)
                     .u32(1)
                     .text("p")
-                    .record(WireNodeKind.PARAGRAPH)
+                    .record(NodeKind.PARAGRAPH)
                     .u32(1)
                     .root(2, labels = listOf("t" to id)),
             )
@@ -318,9 +318,9 @@ class WireDecoderTest {
         val document =
             decode(
                 MessageWriter()
-                    .record(WireNodeKind.TEXT.rawValue, id = 7, lead = -2, span = 0xffff_ffffL)
+                    .record(NodeKind.TEXT.rawValue, id = 7, lead = -2, span = 0xffff_ffffL)
                     .string("t")
-                    .record(WireNodeKind.PARAGRAPH.rawValue, runs = runs)
+                    .record(NodeKind.PARAGRAPH.rawValue, runs = runs)
                     .u32(1)
                     .root(1),
             )
@@ -341,16 +341,16 @@ class WireDecoderTest {
             decode(
                 MessageWriter()
                     .text("n")
-                    .record(WireNodeKind.FOOTNOTE)
+                    .record(NodeKind.FOOTNOTE)
                     .bool(false)
                     .u32(1)
                     .text("p")
-                    .record(WireNodeKind.CITATION)
+                    .record(NodeKind.CITATION)
                     .u8(1)
                     .u8(1)
                     .u32(1)
                     .u32(0)
-                    .record(WireNodeKind.CITE)
+                    .record(NodeKind.CITE)
                     .u32(1)
                     .root(1, footnotes = listOf(2)),
             )
@@ -371,14 +371,14 @@ class WireDecoderTest {
             specimens: kotlin.collections.List<Long>,
         ) = decode(
             MessageWriter()
-                .record(WireNodeKind.FOOTNOTE)
+                .record(NodeKind.FOOTNOTE)
                 .optional("a") { string(it) }
                 .u32(0)
-                .record(WireNodeKind.SPECIMEN)
+                .record(NodeKind.SPECIMEN)
                 .optional("s") { string(it) }
                 .optional(3L) { int(it) }
                 .u32(0)
-                .record(WireNodeKind.FOOTNOTE)
+                .record(NodeKind.FOOTNOTE)
                 .optional("a") { string(it) }
                 .u32(0)
                 .root(3, footnotes, specimens),

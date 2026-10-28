@@ -2,7 +2,6 @@ import {
     Document,
     Attributes,
     type Record,
-    type Metadata,
     type MetadataValue,
     type MetadataScalar,
     type MetadataListItem,
@@ -34,7 +33,13 @@ import {
     type TableCell,
     type TableRow,
     type MarkupVisitor,
-    type MarkupVisitPhase
+    type MarkupVisitPhase,
+    type Context,
+    type Opener,
+    type Edit,
+    type SlotKind,
+    Metadata,
+    Slot
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
@@ -46,6 +51,22 @@ const appended: Document = session.append("\n");
 const final: Document = session.finalize();
 const sessionText: string = session.text;
 const sessionUnit: TextUnit = session.unit;
+session.locate({ line: 1, column: 3 });
+const context: Context = session.context;
+const openers: readonly Opener[] = [...context.blocks, ...context.inlines];
+const opened: Markup["kind"] | null = openers[0]!.kind;
+const slots: readonly Slot[] = context.slots;
+const slotKind: SlotKind = slots[0]!.kind;
+const edit: Edit | null = session.spell(slots[0]!, "value");
+const edits: (Edit | null)[] = session.spell(slots[0]!, ["a", "b"]);
+const path: Markup[] = session.path({ line: 1, column: 1 });
+const fields: Scope[] = session.scope(final, "dest");
+const others: Scope[] = session.scope(final, null);
+const markers: Scope[] = session.markers(final);
+// @ts-expect-error a field is a slot kind or null
+session.scope(final, "title");
+const lexicon: readonly string[] = [...Metadata.fields, ...Slot.cues];
+void [opened, slotKind, edit, edits, path, fields, others, markers, lexicon];
 session.dispose();
 // @ts-expect-error a unit is UTF-8 or UTF-16
 Document.parse("# typed", { unit: "utf32" });

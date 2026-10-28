@@ -6,6 +6,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -30,8 +31,94 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
     @get:OutputFile
     abstract val outputFile: RegularFileProperty
 
+    /** The bindings' query corpus, specs/context/queries.json. */
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val queriesFile: RegularFileProperty
+
+    @get:OutputFile
+    abstract val queriesOutputFile: RegularFileProperty
+
     @TaskAction
     fun generate() {
+        generateCanonicalAst()
+        generateQueries()
+    }
+
+    /**
+     * The query corpus as Kotlin data: each case's source and, per unit, its
+     * cursor and expected rendering. The cases are split into functions of a
+     * few each, so no method outgrows the JVM's 64 KiB.
+     */
+    private fun generateQueries() {
+        val corpus = JsonSlurper().parse(queriesFile.get().asFile) as? Map<*, *> ?: error("queries must be an object")
+        require((corpus["schemaVersion"] as? Number)?.toInt() == 1) { "the query corpus must use schemaVersion 1" }
+        val values = corpus["values"] as? kotlin.collections.List<*> ?: error("queries values must be an array")
+        val cases = corpus["cases"] as? kotlin.collections.List<*> ?: error("queries cases must be an array")
+        require(cases.isNotEmpty()) { "the query corpus must contain at least one case" }
+        val parts = cases.chunked(20)
+        val lines =
+            mutableListOf(
+                "package com.nouprax.markdown.core",
+                "",
+                "internal class ContextAnswer(",
+                "    val line: Int,",
+                "    val column: Int,",
+                "    val expected: String,",
+                ")",
+                "",
+                "internal class ContextCase(",
+                "    val line: Int,",
+                "    val source: String,",
+                "    val utf8: ContextAnswer,",
+                "    val utf16: ContextAnswer,",
+                ")",
+                "",
+                "internal val contextValues: kotlin.collections.List<String> =",
+                "    listOf(",
+            )
+        for (value in values) {
+            lines +=
+                "        ${kotlinLiteral(value as? String ?: error("a value must be a string"))},"
+        }
+        lines += "    )"
+        lines += ""
+        lines += "internal val contextCases: kotlin.collections.List<ContextCase> ="
+        lines += "    listOf("
+        for (index in parts.indices) lines += "        contextPart$index(),"
+        lines += "    ).flatten()"
+        for ((index, part) in parts.withIndex()) {
+            lines += ""
+            lines += "private fun contextPart$index(): kotlin.collections.List<ContextCase> ="
+            lines += "    listOf("
+            for (rawCase in part) {
+                val testCase = rawCase as? Map<*, *> ?: error("every query case must be an object")
+                val line = (testCase["line"] as? Number)?.toInt() ?: error("a query case's line must be a number")
+                lines += "        ContextCase("
+                lines += "            line = $line,"
+                appendStringProperty(lines, "source", testCase["source"] as? String ?: error("$line source"), 3)
+                for (unit in listOf("utf8", "utf16")) {
+                    val answer = testCase[unit] as? Map<*, *> ?: error("$line $unit must be an object")
+                    val cursor = answer["cursor"] as? kotlin.collections.List<*> ?: error("$line $unit cursor")
+                    lines += "            $unit ="
+                    lines += "                ContextAnswer("
+                    lines += "                    line = ${(cursor[0] as Number).toInt()},"
+                    lines += "                    column = ${(cursor[1] as Number).toInt()},"
+                    appendStringProperty(lines, "expected", answer["expected"] as? String ?: error("$line expected"), 5)
+                    lines += "                ),"
+                }
+                lines += "        ),"
+            }
+            lines += "    )"
+        }
+        lines += ""
+
+        val destination = queriesOutputFile.get().asFile
+        destination.parentFile.mkdirs()
+        destination.writeText(lines.joinToString("\n"))
+    }
+
+    private fun generateCanonicalAst() {
         val root =
             specDirectory
                 .get()
@@ -94,17 +181,20 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
         destination.writeText(lines.joinToString("\n"))
     }
 
+    /** A property `name = buildString { ... }` of a constructor call, its name indented [depth] levels. */
     private fun appendStringProperty(
         lines: MutableList<String>,
         name: String,
         value: String,
+        depth: Int = 3,
     ) {
-        lines += "            $name ="
-        lines += "                buildString {"
+        val indent = "    ".repeat(depth)
+        lines += "$indent$name ="
+        lines += "$indent    buildString {"
         for (chunk in chunkedOnCodePoints(value, 30)) {
-            lines += "                    append(${kotlinLiteral(chunk)})"
+            lines += "$indent        append(${kotlinLiteral(chunk)})"
         }
-        lines += "                },"
+        lines += "$indent    },"
     }
 
     /**
@@ -235,6 +325,12 @@ val generateCanonicalAstCommonTest =
         description = "Generates common-test conformance data from the root canonical AST manifest."
         specDirectory.set(canonicalAstSpecDirectory)
         outputFile.set(generatedCanonicalAstSource)
+        queriesFile.set(repositoryRoot.file("specs/context/queries.json"))
+        queriesOutputFile.set(
+            layout.buildDirectory.file(
+                "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/ContextCases.kt",
+            ),
+        )
     }
 
 fun KotlinNativeTarget.configureNativeFacade() {

@@ -657,6 +657,20 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_context_slot_prefix_at(cons
                                                                             markdown_core_string *prefix);
 MARKDOWN_CORE_API void markdown_core_context_free(markdown_core_context *context);
 
+/** THE SESSION'S CONTEXT: the context a session keeps as its state at its
+ * cursor. `markdown_core_session_locate` moves the cursor to `position` of
+ * the session's current text and updates the state in place to the context
+ * there, as markdown_core_document_context reads it; OUT_OF_BOUNDS and
+ * ALLOCATION_FAILED leave the state as it was. `markdown_core_session_context`
+ * lends the state for the session's whole life: the context accessors and
+ * markdown_core_slot_spell read it as it stands, and the strings they hand
+ * out stand until the next locate, append or finalize. It holds no blocks,
+ * inlines or slots before the first locate, and an append or the finalize
+ * empty it again. It is never passed to markdown_core_context_free. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_locate(markdown_core_session *session,
+                                                                    markdown_core_position position);
+MARKDOWN_CORE_API const markdown_core_context *markdown_core_session_context(const markdown_core_session *session);
+
 /** AN INSERTION: `size` bytes at `text` that replace a slot's `before` and
  * `after`, and `cursor`, the bytes of `text` before the caret. */
 typedef struct markdown_core_insertion {

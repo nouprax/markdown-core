@@ -146,6 +146,49 @@ static void JNICALL native_session_free(JNIEnv *environment, jobject receiver, j
     markdown_core_session_free(session_address(session));
 }
 
+static jbyteArray JNICALL native_dialect(JNIEnv *environment, jobject receiver) {
+    (void)receiver;
+    return message_array(environment, markdown_core_wire_dialect());
+}
+
+/* Locates the session at `line` and `column` and answers its context. */
+static jbyteArray JNICALL native_session_locate(JNIEnv *environment, jobject receiver, jlong session, jint line,
+                                                jint column) {
+    markdown_core_position position = {line, column};
+    (void)receiver;
+    return message_array(environment, markdown_core_wire_locate(session_address(session), position));
+}
+
+static jbyteArray JNICALL native_session_spell(JNIEnv *environment, jobject receiver, jlong session, jint slot,
+                                               jbyteArray value) {
+    jbyte *value_bytes;
+    uint8_t *message;
+    (void)receiver;
+
+    if (!pin_bytes(environment, value, &value_bytes)) {
+        return NULL;
+    }
+    message = markdown_core_wire_spell(session_address(session), (size_t)slot, (const uint8_t *)value_bytes,
+                                       (size_t)(*environment)->GetArrayLength(environment, value));
+    unpin_bytes(environment, value, value_bytes);
+    return message_array(environment, message);
+}
+
+static jbyteArray JNICALL native_session_field(JNIEnv *environment, jobject receiver, jlong session, jlong id,
+                                               jint line, jint column, jint slot) {
+    markdown_core_position position = {line, column};
+    (void)receiver;
+    return message_array(environment, markdown_core_wire_field(session_address(session), (uint64_t)id, position,
+                                                               (markdown_core_slot_kind)slot));
+}
+
+static jbyteArray JNICALL native_session_markers(JNIEnv *environment, jobject receiver, jlong session, jlong id,
+                                                 jint line, jint column) {
+    markdown_core_position position = {line, column};
+    (void)receiver;
+    return message_array(environment, markdown_core_wire_markers(session_address(session), (uint64_t)id, position));
+}
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
     static const JNINativeMethod methods[] = {
         {"parsePayload", "([B)[B", (void *)native_parse},
@@ -154,6 +197,11 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"sessionFinalizePayload", "(J)[B", (void *)native_session_finalize},
         {"sessionText", "(J)[B", (void *)native_session_text},
         {"sessionFree", "(J)V", (void *)native_session_free},
+        {"dialectAnswer", "()[B", (void *)native_dialect},
+        {"sessionLocateAnswer", "(JII)[B", (void *)native_session_locate},
+        {"sessionSpellAnswer", "(JI[B)[B", (void *)native_session_spell},
+        {"sessionFieldAnswer", "(JJIII)[B", (void *)native_session_field},
+        {"sessionMarkersAnswer", "(JJII)[B", (void *)native_session_markers},
     };
     JNIEnv *environment;
     jclass parser_class;

@@ -1,4 +1,5 @@
 import type { MarkupBase } from "./base.js";
+import { dialect } from "../wire/answer-decoder.js";
 
 export interface Metadata extends MarkupBase<"metadata"> {
     readonly name: MetadataValue | null;
@@ -12,6 +13,16 @@ export interface Metadata extends MarkupBase<"metadata"> {
     readonly state: MetadataValue | null;
     readonly comment: MetadataValue | null;
 }
+
+export const Metadata: {
+    /** The field names the properties envelope reads, in the order of the
+     * dialect spec. The envelope drops a member with any other name. */
+    readonly fields: readonly string[];
+} = {
+    get fields() {
+        return dialect().fields;
+    }
+};
 export type MetadataValue =
     | { readonly kind: "scalar"; readonly value: MetadataScalar }
     | { readonly kind: "list"; readonly items: readonly MetadataListItem[] };

@@ -149,3 +149,45 @@ and branch ranges, definition table ids, reference label ids, and integers that
 its own model cannot represent. The semantic invariants of the AST (heading levels, table spans,
 list facts) are the parser's to keep and the C suites' to test; a reader does
 not re-derive them.
+
+## Queries
+
+```c
+uint8_t *markdown_core_wire_dialect(void);
+uint8_t *markdown_core_wire_locate(markdown_core_session *session, markdown_core_position position);
+uint8_t *markdown_core_wire_spell(const markdown_core_session *session, size_t slot, const uint8_t *value,
+                                  size_t size);
+uint8_t *markdown_core_wire_field(const markdown_core_session *session, uint64_t id, markdown_core_position position,
+                                  markdown_core_slot_kind slot);
+uint8_t *markdown_core_wire_markers(const markdown_core_session *session, uint64_t id,
+                                    markdown_core_position position);
+```
+
+A session's queries (docs/plans/2026-10-23-lsp-completion-engine.md, step 3)
+answer the same way, one caller-owned message each: status 1 with the
+failure's status, or status 0 with the query's answer as its body. Each asks
+the session's current document and text, so none takes the source.
+
+- **Dialect**: `fields: [String]`, the metadata field names, then `cues:
+  String`, the slot cues; it asks no session.
+- **Locate**: moves the session's cursor (`markdown_core_session_locate`) and
+  answers the context it leaves as the session's state: `blocks: [Opener]`,
+  `inlines: [Opener]`, `slots: [Slot]`. An `Opener` is a `u8` node kind
+  ordinal, 0 for an inline opener whose kind is still open, and a `Scope`. A
+  `Slot` is a `u8` slot kind ordinal, a `u8` owner kind ordinal, its `before`
+  and `after` scopes, `closed: Bool` and `prefix: [String]`. `OUT_OF_BOUNDS` keeps
+  the state; after `ALLOCATION_FAILED`, which the answer itself may meet, a
+  binding drops the slots it read before. The context lives and goes with the session, so the
+  binding holds nothing to release.
+- **Spell**: spells in slot `slot` of the session's context as it stands: an
+  `Insertion?`, which is `text: String` and a `u32` cursor, the bytes of the
+  text before the caret; absent when the slot holds the value in no
+  spelling. An append or the finalize clears the context, and a slot it no
+  longer has is `OUT_OF_BOUNDS`.
+- **Field** and **Markers**: `[Scope]`. The binding names the node by its
+  identifier and the position of a byte the node holds, and the encoder finds
+  the node with that identifier on the path at that byte; `OUT_OF_BOUNDS`
+  when it is not there.
+
+A `Scope` is four `i32`: the start's line and column, then the end's, as the
+facade's `markdown_core_scope` holds them, with columns in the session's unit.

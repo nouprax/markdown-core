@@ -43,14 +43,14 @@ import { kinds, type NativeKind } from "./kinds.js";
 /** The byte offset of the u32 message length, after the magic. */
 export const lengthOffset = 4;
 /** The byte offset of the u8 status, after the message length. */
-const statusOffset = 8;
+export const statusOffset = 8;
 
 const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
 /** `markdown_core_status` by value; 0, success, is never a failure message's. */
-const errorCodes: { readonly [status: number]: ErrorCode } = {
+export const errorCodes: { readonly [status: number]: ErrorCode } = {
     1: "allocationFailed",
     2: "outOfBounds",
     3: "kindMismatch",

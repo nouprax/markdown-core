@@ -28,13 +28,22 @@
  * revision lends the session's pool and counts the ids it issued. The
  * document is the committed parse's tree, published in place (ast.c,
  * PUBLISHING IN PLACE), and the session lends it until the next append or
- * the finalize; the finalize returns the last document. */
+ * the finalize; the finalize returns the last document.
+ *
+ * THE CONTEXT is the session's state at its cursor: the context query at the
+ * position it was last located at, which every read of the context and every
+ * spelling reads in place (context.c, THE SESSION'S CONTEXT). The session
+ * lends it for its whole life. It is empty until the first locate, and an
+ * append or the finalize, which change the document, empty it again. A fresh
+ * parse's session has none. */
 struct markdown_core_session {
     MARKDOWN_CORE_ARRAY(uint8_t) text;
     markdown_core_parser *committed;
     markdown_core_node_pool pool;
     markdown_core_revision revision;
     markdown_core_document document;
+    markdown_core_context *context;
+    bool located;
     bool finalized;
 };
 
@@ -108,6 +117,7 @@ static void session_close(markdown_core_session *session) {
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_array_free(&session->text);
+    markdown_core_context_free(session->context);
 }
 
 /* Opens a zeroed session in place: makes its parser, takes the source and,
@@ -127,13 +137,24 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     return status;
 }
 
+/* Empties the context a locate left, so a step that never follows one
+ * costs no more than it did. */
+static void session_forget(markdown_core_session *session) {
+    if (session->located) {
+        markdown_core_context_clear(session->context);
+        session->located = false;
+    }
+}
+
 markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size, markdown_core_text_unit unit,
                                                markdown_core_session **session) {
     markdown_core_session *made = markdown_core_alloc(1, sizeof(*made));
     if (!made) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    markdown_core_status status = session_open(made, source, size, unit);
+    made->context = markdown_core_context_new();
+    markdown_core_status status =
+        made->context ? session_open(made, source, size, unit) : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK) {
         status = session_snapshot(made);
     }
@@ -151,6 +172,7 @@ markdown_core_status markdown_core_session_append(markdown_core_session *session
     if (session->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
+    session_forget(session);
     markdown_core_status status = session_take(session, text, size);
     if (status == MARKDOWN_CORE_OK) {
         status = session_snapshot(session);
@@ -166,11 +188,23 @@ markdown_core_status markdown_core_session_finalize(markdown_core_session *sessi
     if (session->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
+    session_forget(session);
     markdown_core_status status = session_finalize(session);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
     }
     return status;
+}
+
+markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
+    markdown_core_status status = markdown_core_context_locate(
+        session->context, &session->document, (const uint8_t *)session_source(session), session->text.count, position);
+    session->located |= status == MARKDOWN_CORE_OK;
+    return status;
+}
+
+const markdown_core_context *markdown_core_session_context(const markdown_core_session *session) {
+    return session->context;
 }
 
 const markdown_core_document *markdown_core_session_document(const markdown_core_session *session) {

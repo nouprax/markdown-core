@@ -17,7 +17,15 @@ public class Metadata internal constructor(
     override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
-) : Markup()
+) : Markup() {
+    public companion object {
+        /**
+         * The field names the properties envelope reads, in the order of the
+         * dialect spec. The envelope drops a member with any other name.
+         */
+        public val fields: kotlin.collections.List<String> by lazy { dialect.first }
+    }
+}
 
 public sealed interface MetadataValue {
     public data class Scalar(
