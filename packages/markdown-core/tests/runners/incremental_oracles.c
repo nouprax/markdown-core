@@ -1473,21 +1473,68 @@ static size_t position_in(const ih_text *model, ih_unit unit, size_t offset) {
     return unit == IH_UTF16 ? ih_utf16_units(model->bytes, offset) : offset;
 }
 
-/* An edit after the flush: 4.1 to 4.5 against the previous document, with
- * 4.4's anchors at their image (4.11), and 4.12. */
+/* Whether `offset` of `model` stands between the CR and the LF of a CRLF. */
+static bool inside_crlf(const ih_text *model, size_t offset) {
+    return offset && offset < model->length && model->bytes[offset - 1] == '\r' && model->bytes[offset] == '\n';
+}
+
+/* The script's edit `entry` as a cursor names it, in `*edit`: a cursor stands
+ * at no offset between the CR and the LF of a CRLF, so a start there takes
+ * the CR in and writes it back, and an end there the LF, in the text
+ * `*joined` holds, which the caller frees; the edit itself otherwise. False
+ * when storage could not be had. */
+static bool cursor_edit(const ih_text *model, const ih_step *entry, ih_step *edit, uint8_t **joined) {
+    const bool before = inside_crlf(model, entry->start), after = inside_crlf(model, entry->end);
+    *edit = *entry;
+    *joined = NULL;
+    if (!before && !after) {
+        return true;
+    }
+    *joined = malloc(entry->length + 2);
+    if (!*joined) {
+        return false;
+    }
+    size_t length = 0;
+    if (before) {
+        (*joined)[length++] = '\r';
+        edit->start--;
+    }
+    if (entry->length) {
+        memcpy(*joined + length, entry->text, entry->length);
+    }
+    length += entry->length;
+    if (after) {
+        (*joined)[length++] = '\n';
+        edit->end++;
+    }
+    edit->text = *joined;
+    edit->length = length;
+    return true;
+}
+
+/* An edit after the flush, as a cursor names it (cursor_edit): 4.1 to 4.5
+ * against the previous document, with 4.4's anchors at their image (4.11),
+ * and 4.12. */
 static bool check_edit(run *state, const char *where, size_t step, ih_unit unit, void *subject, ih_text *model,
-                       history *ids, view *previous, const ih_step *entry) {
+                       history *ids, view *previous, const ih_step *script) {
     const markdown_core_document *next = NULL;
     markdown_core_status status;
     view after;
+    ih_step cursor;
+    uint8_t *joined;
+    const ih_step *entry = &cursor;
     if (!state->subject->edit) {
         fail(state, "harness", "%s step %zu: the %s subject takes no edits", where, step, state->subject->name);
         return false;
     }
-    if (entry->start > entry->end || entry->end > model->length ||
-        !ih_utf8_boundary(model->bytes, model->length, entry->start) ||
-        !ih_utf8_boundary(model->bytes, model->length, entry->end)) {
+    if (script->start > script->end || script->end > model->length ||
+        !ih_utf8_boundary(model->bytes, model->length, script->start) ||
+        !ih_utf8_boundary(model->bytes, model->length, script->end)) {
         fail(state, "harness", "%s step %zu: the script's edit names no range of the text", where, step);
+        return false;
+    }
+    if (!cursor_edit(model, script, &cursor, &joined)) {
+        fail(state, "harness", "%s step %zu: out of memory", where, step);
         return false;
     }
     status = state->subject->edit(subject, position_in(model, unit, entry->start), position_in(model, unit, entry->end),
@@ -1495,13 +1542,16 @@ static bool check_edit(run *state, const char *where, size_t step, ih_unit unit,
     if (status != MARKDOWN_CORE_OK || !next) {
         fail(state, status == MARKDOWN_CORE_ALLOCATION_FAILED ? "harness" : "4.11",
              "%s step %zu: an edit after flush failed with status %d", where, step, (int)status);
+        free(joined);
         return false;
     }
     if (!ih_text_replace(model, entry->start, entry->end, entry->text, entry->length)) {
         fail(state, "harness", "%s step %zu: out of memory", where, step);
+        free(joined);
         return false;
     }
     if (!check_document(state, where, step, unit, subject, next, model, ids, previous, &after, entry, false)) {
+        free(joined);
         return false;
     }
     view_free(previous);
@@ -1509,6 +1559,7 @@ static bool check_edit(run *state, const char *where, size_t step, ih_unit unit,
     if (!stopped(state)) {
         check_reread(state, where, step, subject, entry, model);
     }
+    free(joined);
     return true;
 }
 

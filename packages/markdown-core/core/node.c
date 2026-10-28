@@ -309,7 +309,7 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 /* A document's definition tables, but a snapshot's, which it borrows (ast.c,
  * A SNAPSHOT'S TABLES). Out of line, so that the free of every other kind
  * keeps its own registers. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void free_document_tables(markdown_core_document_value *document) {
+MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown_core_document_value *document) {
     if (document->committed) {
         return;
     }
@@ -366,7 +366,7 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         break;
 
     case MARKDOWN_CORE_NODE_DOCUMENT:
-        free_document_tables(node->as.document);
+        markdown_core_node_free_tables(node->as.document);
         break;
     case MARKDOWN_CORE_NODE_HEADING:
         if (node->as.heading->label.len) {

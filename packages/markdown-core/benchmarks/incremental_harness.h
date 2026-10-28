@@ -24,17 +24,11 @@
 
 #include <markdown_core.h>
 
-/* THE BASE'S NAMES. The stream benchmark rebuilds this harness against its
- * base revision (scripts/benchmark/run.mjs, buildBaseline), whose session may
- * still name its flush `finalize` and its close `free`; CMakeLists.txt finds
- * out and defines MARKDOWN_CORE_BENCH_SESSION_FINALIZE. Gone once no base
- * predates the rename. */
-#ifdef MARKDOWN_CORE_BENCH_SESSION_FINALIZE
-#define markdown_core_session_flush markdown_core_session_finalize
-#define markdown_core_session_close markdown_core_session_free
-#define markdown_core_wire_session_flush markdown_core_wire_session_finalize
-#define MARKDOWN_CORE_SESSION_FLUSHED MARKDOWN_CORE_SESSION_FINALIZED
-#endif
+/* THE BASE'S EDITS. The stream benchmark rebuilds this harness against its
+ * base revision (scripts/benchmark/run.mjs, buildBaseline), whose session
+ * may take no edits yet; CMakeLists.txt finds out and defines
+ * MARKDOWN_CORE_BENCH_SESSION_EDITLESS, and the session subject then has no
+ * `edit`. Gone once no base predates the edit. */
 
 #ifdef __cplusplus
 extern "C" {

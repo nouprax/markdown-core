@@ -27,15 +27,6 @@ export const BINDING_ENTRIES = Object.freeze([
 ]);
 /** The session's own steps inside those entries: the S column's work. */
 export const SESSION_STEPS = Object.freeze(["markdown_core_session_append", "markdown_core_session_flush"]);
-/**
- * The names a base revision from before the rename may give those entries
- * (incremental_harness.h, THE BASE'S NAMES); only the base's build answers
- * to them. Gone once no base predates the rename.
- */
-export const FORMER_NAMES = Object.freeze({
-    markdown_core_session_flush: "markdown_core_session_finalize",
-    markdown_core_wire_session_flush: "markdown_core_wire_session_finalize"
-});
 /** The most windows a stream 6.3 does not measure at every step is split into (5.1). */
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */

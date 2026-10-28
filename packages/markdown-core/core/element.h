@@ -206,6 +206,13 @@ struct markdown_core_element {
      * (markdown_core_publish_candidate). A failure fails the parse. */
     void (*publish_candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                               markdown_core_node *, uint32_t);
+    /* An edit reopens the flushed document `root` (blocks.c, THE REOPEN):
+     * its children from `child` on go, and every state the document keeps
+     * of them -- what its publish matches against, its definitions -- stays
+     * only for what starts before `start`. False when storage could not be
+     * had. */
+    bool (*reopen_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                            uint32_t, uint32_t);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,

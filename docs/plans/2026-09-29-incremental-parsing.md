@@ -1160,6 +1160,25 @@ The edit runs in five steps:
   If a candidate's span covers that point, the checkpoint moves back to
   the candidate's opener. The session keeps a small log for this: an
   opening offset and a deciding offset per candidate (E-D3).
+
+  The previous sibling's own reading can also reach one block further
+  back, so the log, the **reach** (`core/blocks.c`), records every reading
+  of the document that decided what starts at one offset from bytes past a
+  later one:
+  - a child of the document that closed as a later line was read. It was
+    still open when that line began, so a definition term on the line goes
+    on in the definition list before it;
+  - a block identifier line, which names the block before it and is
+    decided by the line after it;
+  - a lookahead that read past the line after its own, such as a comment
+    opener's search for its closer;
+  - a candidate that a later line rejected;
+  - the properties envelope's search for its closing fence.
+
+  A point that such a reading spans is no rest point. The checkpoint moves
+  back to the child before the one where that reading began, and the test
+  repeats. The log costs one entry per top-level block and per long
+  lookahead, and only a session keeps it: a one-shot parse writes none.
 - **Step 3: Re-read.**
   - Reopen the ancestor chain at the checkpoint with `reopen`.
   - Truncate the line index, and roll the registry log back to the first

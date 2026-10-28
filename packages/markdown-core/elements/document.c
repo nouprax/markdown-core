@@ -33,17 +33,29 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
         markdown_core_headings_prepare(headings, parser);
     }
 }
-/* The headings take their anchors at each snapshot and at the finalize, and
- * a snapshot's commit keeps them for the next: only the finalize, the parse's
+/* The headings take their anchors at each snapshot and at the flush, and
+ * a snapshot's commit keeps them for the next: the flush of a parse that
+ * takes edits keeps them for its edits, which reopen them, and the parse's
+ * release lets them go (dispose_document); any other flush, the parse's
  * last, lets them go. */
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
     if (!parser->error && headings) {
         markdown_core_headings_finish(headings, parser);
     }
-    if (headings && !parser->snapshot) {
+    if (headings && !parser->snapshot && !markdown_core_parser_takes_edits(parser)) {
         markdown_core_headings_dispose(headings);
     }
+}
+/* AN EDIT REOPENS THE DOCUMENT (blocks.c, THE REOPEN): the published tree
+ * keeps the children before `child`, and the headings those that start
+ * before `start`; what goes is matched against what the edit reads (ast.c,
+ * A DOCUMENT REOPENED FOR AN EDIT). */
+static bool reopen_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *root, uint32_t child, uint32_t start) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    return markdown_core_publish_reopen(parser, root, child) &&
+           (!headings || markdown_core_headings_reopen(headings, parser, start));
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
@@ -127,6 +139,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .candidate_state_size = sizeof(bool),
     .prepare_document = prepare_document,
     .finish_document = finish_document,
+    .reopen_document = reopen_document,
     .publish_document = publish_document,
     .publish_candidate = publish_candidate,
 };

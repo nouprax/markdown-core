@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include "alloc.h"
 #include "registry.h"
@@ -251,4 +252,67 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
     }
     registry->block_used = mark.block_used;
     registry->block_size = mark.block_size;
+}
+
+bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start) {
+    markdown_core_registry kept;
+    markdown_core_registry_init(&kept);
+    bool ok = true;
+    for (size_t i = 0; ok && i < registry->count; i++) {
+        const markdown_core_registry_record *record = registry->records[i];
+        if (record->start >= start) {
+            continue;
+        }
+        const markdown_core_registry_kind kind = (markdown_core_registry_kind)record->key[0];
+        ok = S_append(&kept, kind, record->key + 1, record->key_len - 1, record->start, record->withdraws) &&
+             (!record->withdraws || S_index_space(&kept, kind));
+    }
+    if (!ok) {
+        markdown_core_registry_free(&kept);
+        return false;
+    }
+    markdown_core_registry_free(registry);
+    *registry = kept;
+    return true;
+}
+
+/* Two declarations' keys in byte order, the shorter first on a common
+ * prefix. */
+static int S_key_order(const void *a, const void *b) {
+    const markdown_core_registry_record *left = *(const markdown_core_registry_record *const *)a;
+    const markdown_core_registry_record *right = *(const markdown_core_registry_record *const *)b;
+    const bufsize_t common = left->key_len < right->key_len ? left->key_len : right->key_len;
+    const int order = memcmp(left->key, right->key, (size_t)common);
+    return order ? order : (left->key_len > right->key_len) - (left->key_len < right->key_len);
+}
+
+bool markdown_core_registry_labels_from(const markdown_core_registry *registry, uint32_t start,
+                                        markdown_core_strbuf *labels) {
+    const markdown_core_registry_record **found = NULL;
+    size_t count = 0, capacity = 0;
+    for (size_t i = 0; i < registry->count; i++) {
+        const markdown_core_registry_record *record = registry->records[i];
+        if (record->start < start || record->withdraws || record->key[0] == MARKDOWN_CORE_REGISTRY_ANCHOR) {
+            continue;
+        }
+        const markdown_core_registry_record **grown =
+            markdown_core_reserve(found, &capacity, count + 1, sizeof(*found));
+        if (!grown) {
+            markdown_core_free(found);
+            return false;
+        }
+        found = grown;
+        found[count++] = record;
+    }
+    if (count) {
+        qsort(found, count, sizeof(*found), S_key_order);
+    }
+    markdown_core_strbuf_clear(labels);
+    for (size_t i = 0; i < count; i++) {
+        if (!i || S_key_order(&found[i], &found[i - 1])) {
+            markdown_core_strbuf_put(labels, found[i]->key, found[i]->key_len + 1);
+        }
+    }
+    markdown_core_free(found);
+    return !labels->oom;
 }

@@ -86,13 +86,15 @@ typedef struct markdown_core_node markdown_core_node;
  * - OUT_OF_BOUNDS: an index, position or source length names something that
  *   is not there.
  * - KIND_MISMATCH: the node or value is not of the kind the accessor reads.
- * - SESSION_FLUSHED: the session was flushed, and takes no more text. */
+ * - SESSION_FLUSHED: the session was flushed, and takes no more text.
+ * - SESSION_STREAMING: the session was not flushed, and takes no edit. */
 typedef enum markdown_core_status {
     MARKDOWN_CORE_OK = 0,
     MARKDOWN_CORE_ALLOCATION_FAILED = 1,
     MARKDOWN_CORE_OUT_OF_BOUNDS = 2,
     MARKDOWN_CORE_KIND_MISMATCH = 3,
     MARKDOWN_CORE_SESSION_FLUSHED = 4,
+    MARKDOWN_CORE_SESSION_STREAMING = 5,
 } markdown_core_status;
 
 /** A read-only run of UTF-8 bytes that this library owns.
@@ -457,6 +459,28 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_session_append(markdown_cor
  * SESSION_FLUSHED. ALLOCATION_FAILED when an allocation fails. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_flush(markdown_core_session *session,
                                                                    const markdown_core_document **document);
+/** Replaces the text from the cursor at `start` to the cursor at `end` with
+ * `length` bytes of `text`, and parses it; `*document` receives the new
+ * final document, which equals markdown_core_document_parse_in of the new
+ * text in everything but node identifiers, and continues the previous one:
+ * a node the edit did not reach is the old node, and one the edit read again
+ * continues the old node its source holds the image of. A cursor is a
+ * position of the text in the session's unit that stands between bytes, so
+ * it may also stand at its line's end, before the line's terminator, or at
+ * the text's end. SESSION_STREAMING before markdown_core_session_flush;
+ * OUT_OF_BOUNDS when a cursor stands nowhere in the text or `end` is before
+ * `start`; ALLOCATION_FAILED when an allocation fails or the text would
+ * exceed the 1 GiB a document can hold. A failed allocation fails the
+ * session's parse, and every later edit answers ALLOCATION_FAILED. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_edit(markdown_core_session *session,
+                                                                  markdown_core_position start,
+                                                                  markdown_core_position end, const uint8_t *text,
+                                                                  size_t length,
+                                                                  const markdown_core_document **document);
+/** The bytes of the session's text, from `*from` to `*to`, that its last
+ * edit read again: the rest of its text was not read. Both 0 before the
+ * first edit. */
+MARKDOWN_CORE_API void markdown_core_session_reread(const markdown_core_session *session, size_t *from, size_t *to);
 MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
 MARKDOWN_CORE_API markdown_core_text_unit markdown_core_session_unit(const markdown_core_session *session);
 /** The size of the session's text in bytes, and a copy of it into `bytes`,

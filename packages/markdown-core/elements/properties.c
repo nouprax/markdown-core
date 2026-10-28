@@ -610,6 +610,9 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
         close = at + 1;
     }
     work->line_work += fence_work;
+    /* The envelope's reading decides the document's start from every line
+     * up to its fence, or to the text's end (blocks.c, THE REACH). */
+    markdown_core_parser_reach(parser, 0, closed ? close + 3 : length);
     *fence = close;
     return closed;
 }

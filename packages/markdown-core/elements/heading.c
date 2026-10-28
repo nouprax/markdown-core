@@ -9,6 +9,7 @@
 #include "attributes.h"
 #include "topic.h"
 #include "parts.h"
+#include "ast_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { HEADING_CITATION };
@@ -152,6 +153,48 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
         entry->holds_name = false;
     }
     entry->name = NULL;
+}
+
+/* A flushed parse names every heading and parses each, so its headings
+ * are in source order: those from the first that starts at or past `start`
+ * go, with the names their entries hold. */
+bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   uint32_t start) {
+    markdown_core_heading_state *state = self->state;
+    markdown_core_heading_collection *headings = &state->headings;
+    assert(headings->parsed == headings->count);
+    size_t low = 0, high = headings->count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (headings->values[middle].start < start) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    for (size_t i = low; i < headings->count; i++) {
+        markdown_core_dispose_heading(&headings->values[i]);
+        if (headings->values[i].holds_name) {
+            markdown_core_free((void *)headings->values[i].name);
+        }
+    }
+    headings->count = headings->parsed = low;
+    size_t renamed = 0;
+    for (size_t i = 0; i < state->renamed_count; i++) {
+        if (state->renamed[i] < low) {
+            state->renamed[renamed++] = state->renamed[i];
+        }
+    }
+    state->renamed_count = renamed;
+    if (state->named > low) {
+        state->named = low;
+    }
+    for (size_t i = 0; i < low; i++) {
+        if (!markdown_core_publish_keep_heading(parser, headings->values[i].node, (uint32_t)i)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /* Release the headings and the names they took, with the committed names

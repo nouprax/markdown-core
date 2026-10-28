@@ -87,9 +87,10 @@ if (declared.join("\n") !== exported.join("\n")) {
 if (declared.join("\n") !== machOExported.join("\n")) {
     throw new Error("C header declarations and the Mach-O export list differ");
 }
-// A session is the one object that changes: its text takes appends
-// (docs/plans/2026-09-29-incremental-parsing.md, R6 and R8).
-const sessionText = /^markdown_core_session_(?:new|append)$/;
+// A session is the one object that changes: its text takes appends, and
+// edits once flushed (docs/plans/2026-09-29-incremental-parsing.md, R6, R8
+// and 12.3).
+const sessionText = /^markdown_core_session_(?:new|append|edit)$/;
 for (const symbol of declared) {
     if (
         (!sessionText.test(symbol) && /_(?:set|insert|append|prepend|replace|unlink|edit|new|render)(?:_|$)/.test(symbol)) ||

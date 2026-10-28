@@ -199,20 +199,10 @@ set(_markdown_core_incremental_shards_tokens 8)
 set(_markdown_core_incremental_shards_rows 2)
 set(_markdown_core_incremental_shards_undo 4)
 set(_markdown_core_incremental_shards_random 4)
-# The families that edit run on the `reparse` subject until the session takes
-# edits (plan 12.9, step E1).
-set(_markdown_core_incremental_edits
-    ids
-    hard
-    rejections
-    typing
-    lines
-    markers
-    ranges
-    far
-    declarations
-    undo
-    random)
+# The families that edit run on the session, but `hard`, whose damage bounds
+# (4.12) hold once an edit stops where its reading meets the old one: it runs
+# on the `reparse` subject until then (plan 12.3, step 4).
+set(_markdown_core_incremental_edits hard)
 foreach(family IN LISTS _markdown_core_incremental_families)
     set(_markdown_core_incremental_shards "${_markdown_core_incremental_shards_${family}}")
     set(_markdown_core_incremental_arguments --set "${MARKDOWN_CORE_INCREMENTAL_DIR}" --family "${family}")

@@ -11189,6 +11189,69 @@ static void session_appends(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* An edit after the flush: refused while the session streams and at a cursor
+ * that stands nowhere, and otherwise the parse of the new text, keeping the
+ * ids of what it did not change (plan 12.3). */
+static void session_edits(test_batch_runner *runner) {
+    static const char source[] = "one\n\ntw\xf0\xa0\x80\x80o\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
+                                 &session) == MARKDOWN_CORE_OK,
+       "a session opens");
+    if (!session) {
+        return;
+    }
+    const markdown_core_position at = {3, 6};
+    OK(runner,
+       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) ==
+               MARKDOWN_CORE_SESSION_STREAMING &&
+           !document,
+       "an edit before the flush is SESSION_STREAMING");
+    OK(runner, markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK, "the session flushes");
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const uint64_t first = markdown_core_node_id(facade_child(root, 0));
+    const uint64_t second = markdown_core_node_id(facade_child(root, 1));
+    const markdown_core_position nowhere[][2] = {
+        {{0, 1}, {0, 1}}, {{1, 5}, {1, 5}}, {{3, 4}, {3, 4}}, {{5, 1}, {5, 1}}, {{3, 2}, {3, 1}}};
+    bool refused = true;
+    for (size_t i = 0; i < sizeof(nowhere) / sizeof(nowhere[0]); i++) {
+        document = NULL;
+        refused = refused &&
+                  markdown_core_session_edit(session, nowhere[i][0], nowhere[i][1], (const uint8_t *)"x", 1,
+                                             &document) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+                  !document;
+    }
+    OK(runner, refused && markdown_core_session_text_size(session) == sizeof(source) - 1,
+       "an edit at a cursor that stands nowhere, or reversed, is OUT_OF_BOUNDS and changes nothing");
+    OK(runner,
+       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
+           document == markdown_core_session_document(session),
+       "an edit after the surrogate pair answers the session's document");
+    uint8_t text[64];
+    markdown_core_session_text(session, text);
+    OK(runner,
+       markdown_core_session_text_size(session) == sizeof(source) &&
+           memcmp(text, "one\n\ntw\xf0\xa0\x80\x80os\n", sizeof(source)) == 0,
+       "the edit lands in the text");
+    root = markdown_core_document_root(document);
+    OK(runner,
+       markdown_core_node_id(facade_child(root, 0)) == first && markdown_core_node_id(facade_child(root, 1)) == second,
+       "both paragraphs keep their ids");
+    size_t from = 0, to = 0;
+    markdown_core_session_reread(session, &from, &to);
+    OK(runner, from <= 5 && to == sizeof(source), "the edit read the text again from the paragraph before it");
+    const markdown_core_position start = {1, 1}, end = {3, 1};
+    OK(runner,
+       markdown_core_session_edit(session, start, end, (const uint8_t *)"# ", 2, &document) == MARKDOWN_CORE_OK &&
+           markdown_core_node_get_kind(facade_child(markdown_core_document_root(document), 0)) ==
+               MARKDOWN_CORE_KIND_HEADING &&
+           !facade_child(markdown_core_document_root(document), 1),
+       "an edit across lines reads the new text");
+    markdown_core_session_close(session);
+}
+
 /* The anchor `node` has, compared with `expected`. */
 static bool anchor_is(const markdown_core_node *node, const char *expected) {
     markdown_core_optional_string anchor = node ? markdown_core_node_anchor(node) : (markdown_core_optional_string){0};
@@ -12415,6 +12478,7 @@ int main(void) {
     inline_dispatch_orders_every_precedence(runner);
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
+    session_edits(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
     session_snapshot_tables(runner);

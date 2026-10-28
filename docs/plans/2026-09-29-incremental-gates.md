@@ -175,7 +175,11 @@ An edit script opens a session on its document, finalizes it, and then
 edits it (plan 12.3). An edit is `edit(start, end, text)`. Its offsets are
 UTF-8 bytes of the text before the edit, and they fall on scalar boundaries.
 A runner in UTF-16 converts them through the text model, so the same script
-tests both units. A session takes one edit per call, so the multi-cursor
+tests both units. A session's edit takes cursors, and no cursor stands
+between the CR and the LF of a CRLF: the runner edits from before the CR,
+writing it back, an edit that starts there, and to after the LF, writing
+it back, one that ends there, and 4.4's images follow that edit. A session
+takes one edit per call, so the multi-cursor
 `batch` family of the edit engine that step 5 removed is not restored.
 
 | Family | Edits | Positions |
