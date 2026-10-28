@@ -2793,8 +2793,15 @@ bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t l
  * began: the line's reading may yet go on in it, as a definition term goes
  * on in the definition list before it. */
 void markdown_core_parser_edits(markdown_core_parser *parser) {
-    if (parser->stream) {
-        parser->stream->edits = true;
+    markdown_core_stream *stream = parser->stream;
+    if (stream) {
+        stream->edits = true;
+        /* Room for the log up front, so a step it grows in pays no
+         * allocation; a refusal here leaves the step to grow it. */
+        markdown_core_place *reach = markdown_core_reserve(stream->reach, &stream->reach_capacity, 64, sizeof(*reach));
+        if (reach) {
+            stream->reach = reach;
+        }
     }
 }
 
