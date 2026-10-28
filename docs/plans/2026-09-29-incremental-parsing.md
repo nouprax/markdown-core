@@ -1227,10 +1227,11 @@ The edit runs in five steps:
 
 ### 12.4 Text and memory
 
-- **Text.** Some settled literals may view the session's text buffer (a
-  chunk with `alloc == 0`). Step E0 checks which ones do. If any do, the edit
-  writes the new text into a new buffer and keeps the old buffer alive while
-  a kept node views it. Otherwise it moves the suffix in place with one
+- **Text.** No settled node views the session's text buffer. Step E0
+  checked it: the buffer is a growing array that moves when an append
+  outgrows it (`core/array.h`), so a node that kept a view would already
+  break on append. A chunk with `alloc == 0` views a line only while the
+  line is read. The edit therefore moves the suffix in place with one
   `memmove`.
 - **Nodes.** The dropped nodes and the replaced ancestors go back to the
   node pool's slabs, as a released subtree does today.

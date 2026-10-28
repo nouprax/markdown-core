@@ -1,0 +1,17 @@
+markdown-core incremental script 2
+script rejections rejections
+reject utf8 streaming 0 0 61
+reject utf16 streaming 0 0 61
+finalize
+reject utf8 out-of-bounds 178 178 61
+reject utf8 out-of-bounds 0 178 61
+reject utf8 out-of-bounds 2 1 61
+reject utf16 out-of-bounds 176 176 61
+reject utf16 out-of-bounds 0 176 61
+reject utf16 out-of-bounds 2 1 61
+reject utf8 out-of-bounds 173 173 61
+reject utf8 out-of-bounds 0 175 61
+reject utf16 out-of-bounds 173 173 61
+reject utf16 out-of-bounds 0 173 61
+edit 0 0 61
+edit 173 177 -

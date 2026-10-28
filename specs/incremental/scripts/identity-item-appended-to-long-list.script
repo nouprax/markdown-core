@@ -1,4 +1,4 @@
-markdown-core stream script 1
+markdown-core incremental script 2
 script identity-item-appended-to-long-list identity
 append 2d206c6173740a
 expect changed Document 0

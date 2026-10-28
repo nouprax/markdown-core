@@ -1,0 +1,6 @@
+markdown-core incremental script 2
+script identity-merge-paragraphs ids
+finalize
+edit 4 5 -
+expect kept Paragraph 0 0
+expect retired Paragraph 5

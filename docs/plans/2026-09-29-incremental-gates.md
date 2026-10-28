@@ -6,7 +6,11 @@ rules 6.3 and 6.4, the `buffer_to_ast` rule of the one-shot gate, `finalize`,
 the stream oracles of 4.6 and, with step 8, rule 6.2 on the paragraph of
 short lines. On 2026-10-14 the owner narrowed the
 requirement to streaming ([plan](2026-09-29-incremental-parsing.md) section 1,
-D7). This document specifies the
+D7). On 2026-10-27 edits came back, on a finalized session and re-reading
+only the damaged block (plan 12). Step E0 of that rollout added the edit
+gates: the edit scripts (3.3), the edit oracles 4.11 to 4.13 and their faulty
+subjects. Until step E1 gives the session its edit, the edit scripts run on
+the `reparse` subject. This document specifies the
 correctness suite and the benchmarks that decide whether each step of
 [incremental parsing](2026-09-29-incremental-parsing.md) is done.
 
@@ -45,6 +49,8 @@ Every gate below checks one of these properties for tail streaming:
   changed.
 - **Minimal re-parse.** The Ir of an append does not grow with the text
   already streamed, and no step costs more than parsing the whole text again.
+  An edit re-reads only the damaged block and the sibling before it (plan
+  12.3, 4.12).
 
 The existing one-shot benchmark (`packages/markdown-core/benchmarks/README.md`)
 answers "what does a parse cost". The gate therefore has the one-shot and
@@ -81,8 +87,8 @@ changes the subject under test, not the harness.
 
 The harness drives a **subject** through one interface: open a session in a
 coordinate unit with an initial text, call `append` and, from step 7,
-`finalize`, each of which returns the new document, and close. There
-are three subjects:
+`finalize`, then from step E1 `edit`, each of which returns the new document,
+and close. There are three subjects:
 
 | Subject | What it does | Role |
 | --- | --- | --- |
@@ -97,8 +103,13 @@ already produces every baseline number and exercises the scripts, the text
 model and the reports.
 
 The harness keeps its own **text model**: a plain byte buffer to which it
-appends every script step, independent of the subject. The subject's text
+applies every script step, independent of the subject. The subject's text
 must equal it after every step.
+
+Until step E1, the edit scripts run on `reparse`. It numbers every parse from
+1, so it keeps no lineage, and the runner checks 4.1, 4.7 and 4.13 on it and
+skips 4.2 to 4.5. The faulty subjects of section 8 prove that the edit
+oracles can fail.
 
 ## 3. Workloads
 
@@ -157,6 +168,29 @@ whole scalars, on every platform.
 | `scalars` | One scalar per chunk | Grammar corpus |
 | `rows` | One physical line per chunk | Scale families |
 | `splits` | Two chunks, split at every scalar boundary | Grammar corpus documents up to 2 KB |
+
+### 3.3 Edit scripts
+
+An edit script opens a session on its document, finalizes it, and then
+edits it (plan 12.3). An edit is `edit(start, end, text)`. Its offsets are
+UTF-8 bytes of the text before the edit, and they fall on scalar boundaries.
+A runner in UTF-16 converts them through the text model, so the same script
+tests both units. A session takes one edit per call, so the multi-cursor
+`batch` family of the edit engine that step 5 removed is not restored.
+
+| Family | Edits | Positions |
+| --- | --- | --- |
+| `typing` | One scalar per edit, 64 edits, with runs of backspace | Inside a paragraph, a list item at depth 3, a pipe table cell, a heading, a code block, a quote leaf, a footnote body |
+| `lines` | Enter inside a paragraph; insert and delete a blank line between blocks; join two lines of a paragraph; merge two paragraphs | Beginning, middle and end of the document |
+| `markers` | Add and remove `> `, `- `, `1. `, `# `, four spaces, a fence opener, a Setext underline, a table delimiter row, a definition term marker | Each block kind of the shape |
+| `ranges` | Paste a 2 KB section; delete a section; select a paragraph's whole text and type a replacement | Middle of the document |
+| `far` | Alternate single-scalar edits at the end of the first and the last text, 64 edits | Both ends |
+| `declarations` | Change a reference destination; add and remove a duplicate reference label; add and remove a heading whose label collides; add and remove a footnote definition and an inline note | Declaration sites of `refs` and `prose` |
+| `undo` | Each edit of `typing` to `declarations` followed by its inverse and then by itself again | As the original edit |
+| `random` | Seeded mixture of inserts, deletes and replacements at line and byte granularity, including CR/LF splits and NUL, 16 seeds of 64 edits | Uniform over the text |
+| `hard` | One script per hard case of plan 12.7: fences, comments, HTML blocks and directives opened and closed; a candidate opened before unchanged children; `>`, list markers and indentation typed and deleted; references, footnotes, heading labels and specimens added, renamed and removed; a heading with an automatic anchor; split and joined paragraphs and items; the rules that write backwards; the Properties envelope; a loose list made tight and an early item made loose in a long list | Small documents written for the case |
+
+Every document of the correctness set gets every family but `hard`.
 
 ## 4. Correctness oracles
 
@@ -225,12 +259,15 @@ view state. The plan states which old node each new node continues (5.9) in
 terms the harness evaluates from the public model alone: the absolute scopes
 of the snapshot and of `scope(of:in:)` on the new document, kinds, values and
 owner relations. An append moves no byte, so a position of the old text is the
-same position of the new one. The harness computes the expected id itself for
-every node of every step:
+same position of the new one. An edit moves a byte by its **image**: a byte
+before the edit keeps its offset, a byte after it moves by the edit's change
+in length, and a byte it replaced has no image (plan 12.5). The harness
+computes the expected id itself for every node of every step:
 
 - The new document continues the old document.
-- An old node's anchor is the first byte of its source. A node with no source
-  bytes has no anchor.
+- An old node's anchor is the first byte of its source that the step kept,
+  at its image. A node with no source bytes, or whose bytes the edit
+  replaced, has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
   source range contains an old sibling's anchor continues the earliest such
   sibling. A node's source range runs from the start of its first scope to
@@ -253,6 +290,20 @@ id; a paragraph that becomes a Setext heading and then a paragraph again
 takes a new id each time; a row appended to a table changes only the table,
 the new row and the Document; an item appended to a long list changes only
 the list, the new item and the Document.
+
+The edit cases, the `ids` family, are those the edit engine that step 5
+removed held, with one edit per step: typing at the start of a paragraph
+keeps its id; inserting `new\n\n` before a paragraph gives the new one a new
+id and keeps the old one's; deleting a first word keeps the id; deleting a
+sibling retires its id and does not hand it to the next; merging two
+paragraphs keeps the first id; a paragraph that becomes a Setext heading is
+a new node; a paragraph moved into a new quote is a new node; deleting a
+nested inline note's outer closer makes the inner note a new node, and
+deleting the outer opener then keeps it; inserting a line at the top of a
+long document changes only the Document and the edited paragraph; changing
+a heading anchor that links target changes only the Document and the
+heading; typing in paragraph 5 of 1,000 changes exactly that paragraph, its
+Text node and the Document.
 
 ### 4.6 Streaming
 
@@ -301,6 +352,37 @@ values.
 
 A fuzz target decodes its input as a document and the appends that follow it
 and checks 4.1–4.4 and 4.7 after every step. The current fuzz corpus seeds the document half.
+From step E1 the input also decodes edits after the appends.
+
+### 4.11 Edits
+
+After every edit, 4.1 holds against a fresh parse of the model text, the
+dump, every scope, the queries and the definition tables, and 4.2 to 4.5
+hold against the document before the edit, with 4.4's anchors at their
+image. An edit after `finalize` that names a range of the text succeeds.
+
+### 4.12 Damage bound
+
+A subject that states a damage bound reports, after each edit, the bytes of
+the new text it read again. They hold the bytes the edit wrote and lie in
+the text. A script states the bound of an edit whose re-read plan 12.3 fixes:
+exactly (`reread FROM TO`), from the start of the damaged block's previous
+sibling, or its own start when it has none, to the start of the first block
+after the edit that the new reading shares with the old one; or as an upper
+bound (`within FROM TO`), where the plan fixes the blocks around the edit but
+not which of them is the damaged one. A regression that re-reads a whole
+container fails either. `reparse` reads the whole text, so it states no
+bound.
+
+### 4.13 Edit errors
+
+An edit while the session streams fails with
+`MARKDOWN_CORE_SESSION_STREAMING` (plan 12.3). After `finalize`, an edit
+whose range is reversed or ends past the text, or has an offset that is no
+scalar boundary in the session's unit, fails with the out-of-bounds status:
+in UTF-8 an offset at a continuation byte, in UTF-16 one between the two
+units of a scalar. A refused edit answers no document and leaves the text as
+it was, and the edit after it applies to that text.
 
 ## 5. Measurement
 
@@ -429,6 +511,8 @@ its numbers are reported with the `reparse` subject.
 | 6 Builders | Unchanged | As step 5 |
 | 7 Streaming session | 4.6 and 4.7 for streams and `finalize`, every platform, both units; 4.1 after `finalize`; the streaming adversarial shapes | 6.2 for `tokens` and `rows` on every scale shape and adversarial shape that 6.2 does not exclude; 6.3 and 6.4 as step 5; the binding's cost per append reported (plan D5) |
 | 8 Settle point | Unchanged | 6.2 for the paragraph of short lines too |
+| E0 Edit gates | The edit scripts (3.3), 4.11 and 4.13 with `reparse`; the faulty subjects of the edit oracles | The edit benchmark reports the R column |
+| E1 C edit | 4.1–4.5 and 4.11–4.13 on the edit scripts with the session, both units; edits in the fuzz input | Each edit's Ir beside a fresh parse of its text; the parse and stream gates stay at 1.02 |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
@@ -451,7 +535,16 @@ named oracle:
 | Re-reads the whole document on every step | 6.2 |
 | From step 7: answers a snapshot's lookup from a definition that arrived in an earlier append, wherever it was written | 4.6 chunking independence |
 | From step 7: accepts an `append` after `finalize` | 4.7 |
+| From step E0: renumbers every id on an edit | 4.4 |
+| From step E0: answers an edit with the document before it | 4.1 |
+| From step E0: re-reads the whole text on an edit while it states a bound | 4.12 |
+| From step E0: takes an edit while it streams | 4.13 |
+| From step E0: cuts an edit that names no range of the text to the text | 4.13 |
 
+The edit faults wrap the session, which takes no edits before step E1: their
+edit opens a new session on the new text and finalizes it. Step E1 adds the
+faults plan 12.7 lists, which only an engine that re-reads part of the text
+can have, such as a resync that skips the state check.
 The faulty subjects wrap `reparse` (and, from step 1, fresh ids), live only in
 the harness's test sources, and are never linked into a product target. The
 benchmark driver's tests also feed synthetic profiles that violate each Ir rule
@@ -468,13 +561,15 @@ inputs.
 `specs/incremental/` and kept current by a `--check` audit, as the node-kind
 tables are. Its documents are the canonical AST cases, which every platform
 already consumes, and the scale and adversarial shapes at their smallest size.
-It holds every stream family, `splits` on every document up to 2 KB, and the
-scripted-identity cases of 4.5. Streams are rules over the documents and
-scripts are short texts, so the set stays small enough to track.
+It holds every stream family, `splits` on every document up to 2 KB, every
+edit family of 3.3, the scripted-identity cases of 4.5 and the refused edits
+of 4.13. Streams are rules over the documents and scripts are short texts,
+so the set stays small enough to track.
 
 - C runs it as `incremental_runner` under the `incremental` label, with
-  4.1–4.8: one test per family the set's manifest declares, run in parallel,
-  with a long family dealt into shards of one test each.
+  4.1–4.8 and 4.11–4.13: one test per family the set's manifest declares, run
+  in parallel, with a long family dealt into shards of one test each. Until
+  step E1 the edit families run with `--subject reparse`.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
   with 4.1–4.9 except the allocator sweep of 4.7.
@@ -512,6 +607,15 @@ their own pull requests.
 - [x] The `buffer_to_ast` regression rule in the one-shot gate (6.4, G1).
 - [x] The "Measure - edits and streams" CI job and its tables in the PR
       comment.
+
+Step E0 (plan 12.9) is these items:
+
+- [x] The edit scripts of 3.3 in the generator and the correctness set, with
+      the `ids`, `hard` and `rejections` families.
+- [x] The harness's `edit` step and the damage bound of its subjects, the
+      `reparse` subject's edit, and oracles 4.11 to 4.13 with 4.4's image.
+- [x] The edit faults of section 8.
+- [ ] The edit benchmark: each edit's Ir for `reparse`, reported.
 
 ## 11. Owner decisions
 

@@ -1,0 +1,5 @@
+markdown-core incremental script 2
+script identity-delete-first-word ids
+finalize
+edit 0 6 -
+expect kept Paragraph 0 0

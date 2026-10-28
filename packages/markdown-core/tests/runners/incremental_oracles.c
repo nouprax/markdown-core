@@ -649,8 +649,34 @@ static size_t view_at(const view *taken, const char *kind, size_t at) {
     return SIZE_MAX;
 }
 
-/* 4.2 to 4.5 for one append from `before` to `after`, then the lineage
- * takes the step. */
+/* Where an old node's anchor lies in the new text (4.4): its first byte that
+ * survived the step, at the image of that byte. A byte before an edit keeps
+ * its offset, a byte after it moves by the edit's change in length, and an
+ * append or a finalize moves no byte. False for a node with no source or
+ * none of whose bytes survived. */
+static bool anchor_of(const view_node *old, const ih_step *entry, int64_t *at) {
+    int64_t start, end;
+    if (old->range.start >= old->range.end) {
+        return false;
+    }
+    if (!entry || entry->kind != IH_EDIT) {
+        *at = old->range.start;
+        return true;
+    }
+    start = (int64_t)entry->start;
+    end = (int64_t)entry->end;
+    if (old->range.start < start) {
+        *at = old->range.start;
+    } else if (old->range.start >= end || old->range.end > end) {
+        *at = (old->range.start > end ? old->range.start : end) - end + start + (int64_t)entry->length;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/* 4.2 to 4.5 for one step from `before` to `after`, then the lineage takes
+ * the step. */
 static void check_identity(run *state, const char *where, size_t step, history *ids, const view *before,
                            const view *after, const ih_step *entry) {
     id_index old_ids = {0}, new_ids = {0};
@@ -681,8 +707,9 @@ static void check_identity(run *state, const char *where, size_t step, history *
     /* 4.4: the root continues the root; within the relation of a matched
      * owner, a node continues the earliest old sibling of its kind whose
      * anchor it holds. An old node's anchor is the first byte of its source,
-     * which an append leaves at its offset; a node with no source has none.
-     * One cursor per new owner walks the matched old owner's items, which
+     * which an append leaves at its offset and an edit moves to its image
+     * (anchor_of); a node with no source, or whose bytes the edit removed,
+     * has none. One cursor per new owner walks the matched old owner's items, which
      * are in relation and source order, and stands at the earliest not yet
      * passed: a node that continues one passes it and every old sibling
      * before it, and the ones after it its source holds remain for the next
@@ -698,14 +725,15 @@ static void check_identity(run *state, const char *where, size_t step, history *
         } else if (continues[node->owner] != SIZE_MAX) {
             const view_node *owner = &before->nodes[continues[node->owner]];
             size_t *at = &cursor[node->owner], scan;
+            int64_t anchor = 0;
             for (scan = *at; scan < owner->item_count; scan++) {
                 const view_node *old = &before->nodes[before->items[owner->items + scan]];
-                const bool anchored = old->range.start < old->range.end;
+                const bool anchored = anchor_of(old, entry, &anchor);
                 if (old->relation > node->relation ||
-                    (old->relation == node->relation && anchored && old->range.start >= node->range.end)) {
+                    (old->relation == node->relation && anchored && anchor >= node->range.end)) {
                     break;
                 }
-                if (old->relation == node->relation && anchored && old->range.start >= node->range.start &&
+                if (old->relation == node->relation && anchored && anchor >= node->range.start &&
                     old->kind == node->kind) {
                     match = before->items[owner->items + scan];
                     *at = scan + 1;
@@ -714,8 +742,7 @@ static void check_identity(run *state, const char *where, size_t step, history *
             }
             while (match == SIZE_MAX && *at < scan) {
                 const view_node *old = &before->nodes[before->items[owner->items + *at]];
-                if (old->relation == node->relation && old->range.start < old->range.end &&
-                    old->range.start >= node->range.start) {
+                if (old->relation == node->relation && anchor_of(old, entry, &anchor) && anchor >= node->range.start) {
                     break;
                 }
                 ++*at;
@@ -1377,7 +1404,9 @@ static bool check_document(run *state, const char *where, size_t step, ih_unit u
     if (stopped(state)) {
         goto done;
     }
-    if (before) {
+    if (!state->subject->keeps) {
+        /* A subject that numbers every parse from 1 has no lineage. */
+    } else if (before) {
         check_identity(state, where, step, ids, before, after, entry);
     } else {
         history_open(state, where, ids, after);
@@ -1420,15 +1449,103 @@ static void check_finalize(run *state, const char *where, size_t step, ih_unit u
     }
 }
 
-void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
-                 const ih_step *steps, size_t count) {
+/* 4.12: the bytes the edit read again hold the bytes it wrote, lie in the
+ * text, and keep to the script's bound when it states one. */
+static void check_reread(run *state, const char *where, size_t step, void *subject, const ih_step *entry,
+                         const ih_text *model) {
+    size_t from = 0, to = 0;
+    if (!state->subject->reread) {
+        return;
+    }
+    state->subject->reread(subject, &from, &to);
+    if (from > to || to > model->length || from > entry->start || to < entry->start + entry->length) {
+        fail(state, "4.12", "%s step %zu: the edit read again [%zu, %zu), which does not hold the [%zu, %zu) it wrote",
+             where, step, from, to, entry->start, entry->start + entry->length);
+    } else if (entry->bounded &&
+               (entry->exact ? from != entry->from || to != entry->to : from < entry->from || to > entry->to)) {
+        fail(state, "4.12", "%s step %zu: the edit read again [%zu, %zu), not %s [%zu, %zu)", where, step, from, to,
+             entry->exact ? "exactly" : "within", entry->from, entry->to);
+    }
+}
+
+/* A position of the text model in `unit`. */
+static size_t position_in(const ih_text *model, ih_unit unit, size_t offset) {
+    return unit == IH_UTF16 ? ih_utf16_units(model->bytes, offset) : offset;
+}
+
+/* An edit after the finalize: 4.1 to 4.5 against the previous document, with
+ * 4.4's anchors at their image (4.11), and 4.12. */
+static bool check_edit(run *state, const char *where, size_t step, ih_unit unit, void *subject, ih_text *model,
+                       history *ids, view *previous, const ih_step *entry) {
+    const markdown_core_document *next = NULL;
+    markdown_core_status status;
+    view after;
+    if (!state->subject->edit) {
+        fail(state, "harness", "%s step %zu: the %s subject takes no edits", where, step, state->subject->name);
+        return false;
+    }
+    if (entry->start > entry->end || entry->end > model->length ||
+        !ih_utf8_boundary(model->bytes, model->length, entry->start) ||
+        !ih_utf8_boundary(model->bytes, model->length, entry->end)) {
+        fail(state, "harness", "%s step %zu: the script's edit names no range of the text", where, step);
+        return false;
+    }
+    status = state->subject->edit(subject, position_in(model, unit, entry->start), position_in(model, unit, entry->end),
+                                  entry->text, entry->length, &next);
+    if (status != MARKDOWN_CORE_OK || !next) {
+        fail(state, status == MARKDOWN_CORE_ALLOCATION_FAILED ? "harness" : "4.11",
+             "%s step %zu: an edit after finalize failed with status %d", where, step, (int)status);
+        return false;
+    }
+    if (!ih_text_replace(model, entry->start, entry->end, entry->text, entry->length)) {
+        fail(state, "harness", "%s step %zu: out of memory", where, step);
+        return false;
+    }
+    if (!check_document(state, where, step, unit, subject, next, model, ids, previous, &after, entry, false)) {
+        return false;
+    }
+    view_free(previous);
+    *previous = after;
+    if (!stopped(state)) {
+        check_reread(state, where, step, subject, entry, model);
+    }
+    return true;
+}
+
+/* 4.13: an edit the subject must refuse fails with its status, answers no
+ * document and leaves the text as it was. */
+static void check_refusal(run *state, const char *where, size_t step, ih_unit unit, void *subject, const ih_text *model,
+                          const ih_step *entry) {
+    const markdown_core_document *refused = NULL;
+    const uint8_t *text;
+    size_t length = 0;
+    markdown_core_status status;
+    if (entry->unit != unit) {
+        return;
+    }
+    if (!state->subject->edit) {
+        fail(state, "harness", "%s step %zu: the %s subject takes no edits", where, step, state->subject->name);
+        return;
+    }
+    status = state->subject->edit(subject, entry->start, entry->end, entry->text, entry->length, &refused);
+    text = state->subject->text(subject, &length);
+    if (status != entry->refusal || refused) {
+        fail(state, "4.13", "%s step %zu: the edit was answered with status %d, not %d", where, step, (int)status,
+             (int)entry->refusal);
+    } else if (!text || !same(text, length, model->bytes, model->length)) {
+        fail(state, "4.13", "%s step %zu: a refused edit changed the text", where, step);
+    }
+}
+
+void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
+               const ih_step *steps, size_t count) {
     ih_text model = {0};
     const markdown_core_document *current = NULL;
     history ids = {0};
     view previous = {0};
     void *subject = state->subject->open(unit, opened, opened_length, &current);
     size_t index;
-    bool viewed;
+    bool viewed, finalized = false;
     if (!subject || !ih_text_assign(&model, opened, opened_length)) {
         fail(state, "harness", "%s: the subject did not open", where);
         if (subject) {
@@ -1442,6 +1559,30 @@ void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *ope
         const ih_step *step = &steps[index];
         const markdown_core_document *next = NULL;
         view after;
+        if (step->kind == IH_FINALIZE || (step->kind == IH_EDIT && !finalized)) {
+            /* A script finalizes once, before its first edit. */
+            if (finalized) {
+                fail(state, "harness", "%s step %zu: the script finalizes twice", where, index + 1);
+                break;
+            }
+            finalized = true;
+            check_finalize(state, where, index + 1, unit, subject, &model, &ids, &previous);
+            if (step->kind == IH_FINALIZE) {
+                continue;
+            }
+        }
+        if (step->kind == IH_EDIT) {
+            viewed = check_edit(state, where, index + 1, unit, subject, &model, &ids, &previous, step);
+            continue;
+        }
+        if (step->kind == IH_REJECT) {
+            check_refusal(state, where, index + 1, unit, subject, &model, step);
+            continue;
+        }
+        if (finalized) {
+            fail(state, "harness", "%s step %zu: the script appends after finalize", where, index + 1);
+            break;
+        }
         if (state->subject->append(subject, step->text, step->length, &next) != MARKDOWN_CORE_OK ||
             !ih_text_append(&model, step->text, step->length)) {
             fail(state, "harness", "%s step %zu: an append failed", where, index + 1);
@@ -1454,7 +1595,7 @@ void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *ope
         view_free(&previous);
         previous = after;
     }
-    if (viewed && !stopped(state)) {
+    if (viewed && !finalized && !stopped(state)) {
         check_finalize(state, where, count + 1, unit, subject, &model, &ids, &previous);
     }
     view_free(&previous);

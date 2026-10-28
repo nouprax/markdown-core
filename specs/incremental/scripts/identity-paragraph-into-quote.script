@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script identity-paragraph-into-quote ids
+finalize
+edit 0 0 3e20
+expect new Callout 0
+expect new Paragraph 2
+expect retired Paragraph 0

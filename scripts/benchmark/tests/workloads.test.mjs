@@ -7,6 +7,8 @@ import test from "node:test";
 
 import {
     ADVERSARIAL_SHAPES,
+    EDIT_FAMILIES,
+    RANDOM_SEEDS,
     benchmarkWorkloads,
     LOCAL_SHAPES,
     SCALE_SHAPES,
@@ -14,9 +16,12 @@ import {
     STREAM_FAMILIES,
     TOKEN_SIZES,
     correctnessSet,
+    editScripts,
     formatScripts,
+    hardScripts,
     identityScripts,
     parseScripts,
+    rejectionScript,
     scalarBoundaries,
     shapeDocument,
     shapeSizes,
@@ -144,19 +149,78 @@ test("6.3 measures every step of each shape 6.2 leaves to it, at the shape's sma
 });
 
 test("scripts survive their text format unchanged", () => {
-    const text = formatScripts(identityScripts().map((entry) => entry.script));
+    const text = formatScripts([...identityScripts(), ...hardScripts()].map((entry) => entry.script));
     assert.equal(formatScripts(parseScripts(text)), text);
+    const refused = `x\u{20000}\n`;
+    const rejections = formatScripts([rejectionScript(refused)]);
+    assert.equal(formatScripts(parseScripts(rejections)), rejections);
 });
 
-test("every identity case appends well-formed text and states what each step keeps or changes", () => {
+test("every identity case states what each append or edit keeps or changes", () => {
     for (const { name, text, script } of identityScripts()) {
         assert.equal(Buffer.from(text).toString("utf8"), text, name);
-        assert.ok(script.steps.length, name);
-        for (const step of script.steps) {
-            assert.ok(step.text.length, `${name}: an empty append`);
+        const edits = script.steps[0].kind === "finalize";
+        assert.equal(script.family, edits ? "ids" : "identity", name);
+        for (const step of script.steps.slice(edits ? 1 : 0)) {
+            assert.equal(step.kind, edits ? "edit" : "append", name);
+            if (!edits) assert.ok(step.text.length, `${name}: an empty append`);
             assert.ok(step.expect?.length, `${name}: a step without expectations`);
         }
     }
+});
+
+test("an edit script finalizes before its first edit and edits inside the text", () => {
+    const document = smallest("prose", "utf8");
+    const scripts = editScripts(document);
+    assert.deepEqual([...new Set(scripts.map((script) => script.family))].sort(), [...EDIT_FAMILIES].sort());
+    assert.equal(scripts.filter((script) => script.family === "random").length, RANDOM_SEEDS);
+    const cases = [...scripts.map((script) => ({ script, text: document.text })), ...hardScripts()];
+    for (const { script, text: opened } of cases) {
+        assert.equal(script.steps[0].kind, "finalize", script.name);
+        assert.ok(script.steps.length > 1, script.name);
+        let text = Buffer.from(opened);
+        for (const step of script.steps.slice(1)) {
+            assert.equal(step.kind, "edit", script.name);
+            assert.ok(step.start <= step.end && step.end <= text.length, script.name);
+            const boundaries = scalarBoundaries(text);
+            assert.ok(boundaries.includes(step.start) && boundaries.includes(step.end), script.name);
+            text = Buffer.concat([text.subarray(0, step.start), Buffer.from(step.text), text.subarray(step.end)]);
+        }
+    }
+});
+
+test("each undo edit is followed by its inverse and by itself again", () => {
+    const document = smallest("prose", "ascii");
+    for (const script of editScripts(document, ["undo"])) {
+        const edits = script.steps.slice(1);
+        assert.equal(edits.length % 3, 0, script.name);
+        let text = Buffer.from(document.text);
+        for (let index = 0; index < edits.length; index += 3) {
+            const [edit, inverse, again] = edits.slice(index, index + 3);
+            const before = text;
+            const apply = (step) =>
+                (text = Buffer.concat([text.subarray(0, step.start), Buffer.from(step.text), text.subarray(step.end)]));
+            apply(edit);
+            apply(inverse);
+            assert.deepEqual(text, before, script.name);
+            assert.deepEqual(again, edit);
+            apply(again);
+        }
+    }
+});
+
+test("the refused edits stream first, then fall inside the wide scalar in both units", () => {
+    const text = `ab\u{20000}\n`;
+    const script = rejectionScript(text);
+    const kinds = script.steps.map((step) => step.kind);
+    assert.deepEqual(kinds.slice(0, 3), ["reject", "reject", "finalize"]);
+    assert.deepEqual(
+        script.steps.slice(0, 2).map((step) => step.status),
+        ["streaming", "streaming"]
+    );
+    assert.ok(script.steps.some((step) => step.unit === "utf8" && step.start === 3));
+    assert.ok(script.steps.some((step) => step.unit === "utf16" && step.start === 3));
+    assert.deepEqual(kinds.slice(-2), ["edit", "edit"]);
 });
 
 test("the correctness set declares exactly the families its cases belong to", () => {
@@ -172,7 +236,15 @@ test("the correctness set declares exactly the families its cases belong to", ()
         if (kind === "script") for (const script of parseScripts(files.get(family))) used.add(script.family);
     }
     assert.deepEqual([...used].sort(), [...declared].sort());
-    assert.deepEqual(declared, ["documents", "identity", ...STREAM_FAMILIES]);
+    assert.deepEqual(declared, [
+        "documents",
+        "identity",
+        "ids",
+        "hard",
+        "rejections",
+        ...EDIT_FAMILIES,
+        ...STREAM_FAMILIES
+    ]);
 });
 
 test("the correctness set streams every document, splits the short ones and runs every identity case", () => {
@@ -201,7 +273,7 @@ test("the correctness set streams every document, splits the short ones and runs
     assert.ok([...streams.values()].some((families) => families.includes("splits")));
     for (const entry of identityScripts()) {
         assert.equal(files.get(`documents/${entry.name}.md`), entry.text);
-        assert.ok(manifest.includes(`script documents/${entry.name}.md scripts/${entry.name}.stream`), entry.name);
+        assert.ok(manifest.includes(`script documents/${entry.name}.md scripts/${entry.name}.script`), entry.name);
     }
 });
 
@@ -227,4 +299,20 @@ test("a narrowed benchmark set writes and identifies only the named workloads", 
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }
+});
+
+test("a marker that belongs after a block's first line goes after it, also for a block at a line start", () => {
+    const document = {
+        text: "one\n\ntwo\n",
+        sites: [{ kind: "start:paragraph", start: 5, end: 5 }],
+        alphabet: "ascii"
+    };
+    const [script] = editScripts(document, ["markers"]);
+    const after = script.steps.filter(
+        (step) => step.kind === "edit" && ["===\n", "| --- |\n", ": x\n"].includes(step.text)
+    );
+    assert.deepEqual(
+        after.map((step) => step.start),
+        [9, 9, 9]
+    );
 });

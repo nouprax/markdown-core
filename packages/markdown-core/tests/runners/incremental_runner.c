@@ -4,12 +4,16 @@
  * It drives the `session` subject through every workload of the tracked
  * correctness set, `specs/incremental/`, in both coordinate units, and checks
  * the oracles of incremental_oracles.h after the open and after every step.
+ * Until step E1 gives the session its edit (plan 12.9), the edit families run
+ * on the `reparse` subject, which keeps no ids, so they check 4.1, 4.7 and
+ * 4.13 and the self-test proves the rest can fail.
  *
- *   incremental_runner --set DIR [--family F [--shard K/N]]
- *                                             check the `session` subject
- *                                             on every case, or on the cases
- *                                             of one declared family, or on
- *                                             the Kth of N shards of them
+ *   incremental_runner --set DIR [--subject S] [--family F [--shard K/N]]
+ *                                             check the `session` subject,
+ *                                             or `reparse`, on every case,
+ *                                             or on the cases of one
+ *                                             declared family, or on the
+ *                                             Kth of N shards of them
  *   incremental_runner --set DIR --self-test   require every faulty subject
  *                                             to fail with its oracle
  *   incremental_runner --fuzz COUNT FILE...    check COUNT seeded inputs on
@@ -126,7 +130,7 @@ static void run_set(run *state, const char *directory) {
                     }
                     for (unit = IH_UTF8; unit <= IH_UTF16 && !stopped(state); unit = (ih_unit)(unit + 1)) {
                         snprintf(where, sizeof(where), "%s %s (%s)", entry->script, script->name, ih_unit_name(unit));
-                        run_appends(state, where, unit, document, length, script->steps, script->count);
+                        run_steps(state, where, unit, document, length, script->steps, script->count);
                     }
                 }
                 ih_scripts_free(&scripts);
@@ -137,12 +141,13 @@ static void run_set(run *state, const char *directory) {
             size_t point;
             for (unit = IH_UTF8; unit <= IH_UTF16 && !stopped(state); unit = (ih_unit)(unit + 1)) {
                 for (point = 1; point < length && !stopped(state); point++) {
-                    const ih_step halves[2] = {{document, point, NULL, 0}, {document + point, length - point, NULL, 0}};
+                    const ih_step halves[2] = {{.text = document, .length = point},
+                                               {.text = document + point, .length = length - point}};
                     if (!ih_utf8_boundary(document, length, point)) {
                         continue;
                     }
                     snprintf(where, sizeof(where), "%s splits at %zu (%s)", entry->document, point, ih_unit_name(unit));
-                    run_appends(state, where, unit, document, 0, halves, 2);
+                    run_steps(state, where, unit, document, 0, halves, 2);
                 }
             }
         } else {
@@ -154,7 +159,7 @@ static void run_set(run *state, const char *directory) {
             } else {
                 for (unit = IH_UTF8; unit <= IH_UTF16 && !stopped(state); unit = (ih_unit)(unit + 1)) {
                     snprintf(where, sizeof(where), "%s %s (%s)", entry->document, entry->script, ih_unit_name(unit));
-                    run_appends(state, where, unit, document, 0, chunks, count);
+                    run_steps(state, where, unit, document, 0, chunks, count);
                 }
             }
             free(chunks);
@@ -186,7 +191,8 @@ static void run_set(run *state, const char *directory) {
 typedef struct faulty {
     ih_unit unit;
     void *inner, *other;
-    size_t steps;
+    size_t steps, edits;
+    bool finalized;
     ih_text text;
     markdown_core_document *made;
 } faulty;
@@ -239,7 +245,73 @@ static markdown_core_status faulty_status(bool done) {
 
 /* A faulty subject ends its text as its session does. */
 static markdown_core_status faulty_finalize(void *handle, const markdown_core_document **document) {
-    return ih_session.finalize(((faulty *)handle)->inner, document);
+    faulty *subject = (faulty *)handle;
+    markdown_core_status status = ih_session.finalize(subject->inner, document);
+    subject->finalized = subject->finalized || status == MARKDOWN_CORE_OK;
+    return status;
+}
+
+/* The UTF-8 offset of `position` in the subject's unit, or false where it
+ * names no scalar boundary of `text`. */
+static bool faulty_offset(const faulty *subject, const ih_text *text, size_t position, size_t *offset) {
+    if (subject->unit == IH_UTF16) {
+        return ih_utf8_offset(text->bytes, text->length, position, offset);
+    }
+    *offset = position;
+    return ih_utf8_boundary(text->bytes, text->length, position);
+}
+
+/* The session takes no edits before step E1, so a faulty subject edits by
+ * opening a new session on the new text and finalizing it: the edit renumbers
+ * every id. The old session stays as `other` until the next edit. With
+ * `clamp`, a range that names no part of the text is cut to the text. */
+static markdown_core_status faulty_reopen(faulty *subject, size_t start, size_t end, const uint8_t *text, size_t length,
+                                          bool clamp, const markdown_core_document **document) {
+    size_t before = 0, from, to;
+    const uint8_t *current = ih_session.text(subject->inner, &before);
+    void *reopened;
+    *document = NULL;
+    if (!current || !ih_text_assign(&subject->text, current, before)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (clamp) {
+        size_t most = subject->unit == IH_UTF16 ? ih_utf16_units(current, before) : before;
+        end = end < most ? end : most;
+        start = start < end ? start : end;
+        while (!faulty_offset(subject, &subject->text, start, &from)) {
+            start--;
+        }
+        while (!faulty_offset(subject, &subject->text, end, &to)) {
+            end--;
+        }
+    } else if (start > end || !faulty_offset(subject, &subject->text, start, &from) ||
+               !faulty_offset(subject, &subject->text, end, &to)) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    if (!ih_text_replace(&subject->text, from, to, text, length)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    reopened = ih_session.open(subject->unit, subject->text.bytes, subject->text.length, document);
+    if (!reopened || ih_session.finalize(reopened, document) != MARKDOWN_CORE_OK) {
+        ih_session.close(reopened);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    ih_session.close(subject->other);
+    subject->other = subject->inner;
+    subject->inner = reopened;
+    subject->edits++;
+    return MARKDOWN_CORE_OK;
+}
+
+/* Renumbers every id on an edit. */
+static markdown_core_status faulty_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
+                                        const markdown_core_document **document) {
+    faulty *subject = (faulty *)handle;
+    if (!subject->finalized) {
+        *document = NULL;
+        return IH_STREAMING;
+    }
+    return faulty_reopen(subject, start, end, text, length, false, document);
 }
 
 /* Returns the previous document for one step: its third, in every run. */
@@ -259,12 +331,14 @@ static markdown_core_status stale_append(void *handle, const uint8_t *text, size
                          faulty_fresh(subject, subject->text.bytes, subject->text.length, document));
 }
 
-static const ih_subject_class stale = {"returns the previous document for one step",
-                                       faulty_open,
-                                       stale_append,
-                                       faulty_finalize,
-                                       faulty_text,
-                                       faulty_close};
+static const ih_subject_class stale = {.name = "returns the previous document for one step",
+                                       .open = faulty_open,
+                                       .append = stale_append,
+                                       .finalize = faulty_finalize,
+                                       .text = faulty_text,
+                                       .close = faulty_close,
+                                       .edit = faulty_edit,
+                                       .keeps = true};
 
 /* Renumbers every id on every step: a fresh parse of the session's text. */
 static markdown_core_status renumber_append(void *handle, const uint8_t *text, size_t length,
@@ -280,8 +354,14 @@ static markdown_core_status renumber_append(void *handle, const uint8_t *text, s
     return faulty_status(current && faulty_fresh(subject, current, after, document));
 }
 
-static const ih_subject_class renumber = {
-    "renumbers every id on every step", faulty_open, renumber_append, faulty_finalize, faulty_text, faulty_close};
+static const ih_subject_class renumber = {.name = "renumbers every id on every step",
+                                          .open = faulty_open,
+                                          .append = renumber_append,
+                                          .finalize = faulty_finalize,
+                                          .text = faulty_text,
+                                          .close = faulty_close,
+                                          .edit = faulty_edit,
+                                          .keeps = true};
 
 /* Keeps a node whose text changed: a second session takes every step but
  * the second the first accepts, and the subject answers with its document
@@ -322,8 +402,14 @@ static markdown_core_status keep_append(void *handle, const uint8_t *text, size_
     return MARKDOWN_CORE_OK;
 }
 
-static const ih_subject_class keep = {
-    "keeps a node whose text changed", keep_open, keep_append, faulty_finalize, faulty_text, faulty_close};
+static const ih_subject_class keep = {.name = "keeps a node whose text changed",
+                                      .open = keep_open,
+                                      .append = keep_append,
+                                      .finalize = faulty_finalize,
+                                      .text = faulty_text,
+                                      .close = faulty_close,
+                                      .edit = faulty_edit,
+                                      .keeps = true};
 
 /* Reuses a retired id for a new node: from its second step the subject is a
  * new session on the text, whose ids start again from 1. */
@@ -353,8 +439,14 @@ static markdown_core_status revive_append(void *handle, const uint8_t *text, siz
     return MARKDOWN_CORE_OK;
 }
 
-static const ih_subject_class revive = {
-    "reuses a retired id for a new node", faulty_open, revive_append, faulty_finalize, faulty_text, faulty_close};
+static const ih_subject_class revive = {.name = "reuses a retired id for a new node",
+                                        .open = faulty_open,
+                                        .append = revive_append,
+                                        .finalize = faulty_finalize,
+                                        .text = faulty_text,
+                                        .close = faulty_close,
+                                        .edit = faulty_edit,
+                                        .keeps = true};
 
 /* Answers a snapshot's lookup from a definition that arrived in an earlier
  * append, wherever it was written: from its second append on it returns the
@@ -371,13 +463,15 @@ static markdown_core_status early_append(void *handle, const uint8_t *text, size
     return faulty_status(current && faulty_fresh(subject, current, after, document));
 }
 
-static const ih_subject_class early = {"answers a snapshot's lookup from a definition that arrived in an earlier "
-                                       "append, wherever it was written",
-                                       faulty_open,
-                                       early_append,
-                                       faulty_finalize,
-                                       faulty_text,
-                                       faulty_close};
+static const ih_subject_class early = {.name = "answers a snapshot's lookup from a definition that arrived in an "
+                                               "earlier append, wherever it was written",
+                                       .open = faulty_open,
+                                       .append = early_append,
+                                       .finalize = faulty_finalize,
+                                       .text = faulty_text,
+                                       .close = faulty_close,
+                                       .edit = faulty_edit,
+                                       .keeps = true};
 
 /* Accepts an append after finalize: it answers with the final document and
  * takes none of the text. */
@@ -410,15 +504,115 @@ static markdown_core_status lenient_append(void *handle, const uint8_t *text, si
 
 static markdown_core_status lenient_finalize(void *handle, const markdown_core_document **document) {
     lenient_subject *subject = (lenient_subject *)handle;
-    markdown_core_status status = ih_session.finalize(subject->base.inner, document);
+    markdown_core_status status = faulty_finalize(&subject->base, document);
     if (status == MARKDOWN_CORE_OK) {
         subject->final = *document;
     }
     return status;
 }
 
-static const ih_subject_class lenient = {
-    "accepts an append after finalize", lenient_open, lenient_append, lenient_finalize, faulty_text, faulty_close};
+static const ih_subject_class lenient = {.name = "accepts an append after finalize",
+                                         .open = lenient_open,
+                                         .append = lenient_append,
+                                         .finalize = lenient_finalize,
+                                         .text = faulty_text,
+                                         .close = faulty_close,
+                                         .edit = faulty_edit,
+                                         .keeps = true};
+
+/* The edit faults: each takes its appends and its finalize as the session
+ * does. */
+
+static markdown_core_status faulty_append(void *handle, const uint8_t *text, size_t length,
+                                          const markdown_core_document **document) {
+    return ih_session.append(((faulty *)handle)->inner, text, length, document);
+}
+
+static const ih_subject_class reopen = {.name = "renumbers every id on an edit",
+                                        .open = faulty_open,
+                                        .append = faulty_append,
+                                        .finalize = faulty_finalize,
+                                        .text = faulty_text,
+                                        .close = faulty_close,
+                                        .edit = faulty_edit,
+                                        .keeps = true};
+
+/* Answers its second edit with the document before it. */
+static markdown_core_status drift_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
+                                       const markdown_core_document **document) {
+    faulty *subject = (faulty *)handle;
+    const markdown_core_document *previous =
+        subject->inner ? markdown_core_session_document(ih_session_of(subject->inner)) : NULL;
+    markdown_core_status status = faulty_edit(handle, start, end, text, length, document);
+    if (status == MARKDOWN_CORE_OK && subject->edits == 2) {
+        *document = previous;
+    }
+    return status;
+}
+
+static const ih_subject_class drift = {.name = "answers an edit with the document before it",
+                                       .open = faulty_open,
+                                       .append = faulty_append,
+                                       .finalize = faulty_finalize,
+                                       .text = faulty_text,
+                                       .close = faulty_close,
+                                       .edit = drift_edit,
+                                       .keeps = true};
+
+/* Reads the whole text again on every edit while it states a bound. */
+static void wide_reread(const void *handle, size_t *from, size_t *to) {
+    *from = 0;
+    faulty_text(handle, to);
+}
+
+static const ih_subject_class wide = {.name = "reads the whole text again on an edit",
+                                      .open = faulty_open,
+                                      .append = faulty_append,
+                                      .finalize = faulty_finalize,
+                                      .text = faulty_text,
+                                      .close = faulty_close,
+                                      .edit = faulty_edit,
+                                      .reread = wide_reread,
+                                      .keeps = true};
+
+/* Takes an edit while it streams: it finalizes first. */
+static markdown_core_status rash_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
+                                      const markdown_core_document **document) {
+    faulty *subject = (faulty *)handle;
+    if (!subject->finalized && faulty_finalize(handle, document) != MARKDOWN_CORE_OK) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    return faulty_edit(handle, start, end, text, length, document);
+}
+
+static const ih_subject_class rash = {.name = "takes an edit while it streams",
+                                      .open = faulty_open,
+                                      .append = faulty_append,
+                                      .finalize = faulty_finalize,
+                                      .text = faulty_text,
+                                      .close = faulty_close,
+                                      .edit = rash_edit,
+                                      .keeps = true};
+
+/* Cuts a range that names no part of the text to the text. */
+static markdown_core_status loose_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
+                                       const markdown_core_document **document) {
+    faulty *subject = (faulty *)handle;
+    if (!subject->finalized) {
+        *document = NULL;
+        return IH_STREAMING;
+    }
+    return faulty_reopen(subject, start, end, text, length, true, document);
+}
+
+static const ih_subject_class loose = {.name = "cuts an edit that names no range to the text",
+                                       .open = faulty_open,
+                                       .append = faulty_append,
+                                       .finalize = faulty_finalize,
+                                       .text = faulty_text,
+                                       .close = faulty_close,
+                                       .edit = loose_edit,
+                                       .keeps = true};
 
 /* ------------------------------------------------------------ unit checks */
 
@@ -435,12 +629,24 @@ static int check_harness(void) {
         failures += ih_utf16_units(text, utf8[index]) != utf16[index];
         failures += !ih_utf8_boundary(text, length, utf8[index]);
     }
+    for (index = 0; index < 6; index++) {
+        size_t offset = SIZE_MAX;
+        failures += !ih_utf8_offset(text, length, utf16[index], &offset) || offset != utf8[index];
+    }
+    {
+        /* Between the two units of 𠀀, and past the end. */
+        size_t offset;
+        failures += ih_utf8_offset(text, length, 4, &offset) || ih_utf8_offset(text, length, 7, &offset);
+    }
     failures += ih_utf8_boundary(text, length, 2) || ih_utf8_boundary(text, length, 7);
     /* Bytes that are no scalar count by the same rule. */
     failures += ih_utf16_units((const uint8_t *)"\x7f\x80\xc3", 3) != 2;
     failures += !ih_text_assign(&model, (const uint8_t *)"he", 2) ||
                 !ih_text_append(&model, (const uint8_t *)"llo", 3) || !ih_text_append(&model, NULL, 0) ||
                 model.length != 5 || memcmp(model.bytes, "hello", 6) != 0;
+    failures += !ih_text_replace(&model, 1, 4, (const uint8_t *)"ipp", 3) || !ih_text_replace(&model, 0, 1, NULL, 0) ||
+                !ih_text_replace(&model, 4, 4, (const uint8_t *)"!", 1) || ih_text_replace(&model, 3, 2, NULL, 0) ||
+                ih_text_replace(&model, 0, 6, NULL, 0) || model.length != 5 || memcmp(model.bytes, "ippo!", 6) != 0;
     ih_text_free(&model);
     if (failures) {
         fprintf(stderr, "FAILED [harness] the text model or a unit conversion is wrong (%d)\n", failures);
@@ -494,6 +700,7 @@ int main(int argc, char **argv) {
     const char *directory = NULL;
     bool self_test = false;
     const char *family = NULL;
+    const ih_subject_class *subject = &ih_session;
     size_t shard = 0, shards = 0;
     int index;
     if (argc > 3 && strcmp(argv[1], "--fuzz") == 0) {
@@ -504,6 +711,15 @@ int main(int argc, char **argv) {
             directory = argv[++index];
         } else if (strcmp(argv[index], "--self-test") == 0) {
             self_test = true;
+        } else if (strcmp(argv[index], "--subject") == 0 && index + 1 < argc) {
+            const char *name = argv[++index];
+            subject = strcmp(name, ih_session.name) == 0   ? &ih_session
+                      : strcmp(name, ih_reparse.name) == 0 ? &ih_reparse
+                                                           : NULL;
+            if (!subject) {
+                directory = NULL;
+                break;
+            }
         } else if (strcmp(argv[index], "--family") == 0 && index + 1 < argc && !family) {
             family = argv[++index];
         } else if (strcmp(argv[index], "--shard") == 0 && index + 1 < argc && !shards) {
@@ -520,8 +736,9 @@ int main(int argc, char **argv) {
             break;
         }
     }
-    if (!directory || (self_test && family) || (shards && !family)) {
-        fputs("usage: incremental_runner --set DIR [--family F [--shard K/N] | --self-test] | --fuzz COUNT FILE...\n",
+    if (!directory || (self_test && (family || subject != &ih_session)) || (shards && !family)) {
+        fputs("usage: incremental_runner --set DIR [--subject S] [--family F [--shard K/N]] | --set DIR --self-test | "
+              "--fuzz COUNT FILE...\n",
               stderr);
         return 2;
     }
@@ -534,8 +751,9 @@ int main(int argc, char **argv) {
         static const struct {
             const ih_subject_class *subject;
             const char *oracle;
-        } faulty[] = {{&stale, "4.1"}, {&renumber, "4.2 4.4 4.5"}, {&keep, "4.1"}, {&revive, "4.2"},
-                      {&early, "4.6"}, {&lenient, "4.7"}};
+        } faulty[] = {{&stale, "4.1"},   {&renumber, "4.2 4.4 4.5"}, {&keep, "4.1"},  {&revive, "4.2"}, {&early, "4.6"},
+                      {&lenient, "4.7"}, {&reopen, "4.4"},           {&drift, "4.1"}, {&wide, "4.12"},  {&rash, "4.13"},
+                      {&loose, "4.13"}};
         int failures = 0;
         size_t which;
         for (which = 0; which < sizeof(faulty) / sizeof(faulty[0]); which++) {
@@ -560,7 +778,7 @@ int main(int argc, char **argv) {
     {
         run state;
         memset(&state, 0, sizeof(state));
-        state.subject = &ih_session;
+        state.subject = subject;
         state.family = family;
         state.shard = shards ? shard - 1 : 0;
         state.shards = shards;
@@ -569,8 +787,8 @@ int main(int argc, char **argv) {
             fprintf(stderr, "%zu incremental check(s) failed\n", state.failures);
             return 1;
         }
-        printf("incremental correctness set passed with the %s subject: %zu case(s)%s%s", ih_session.name,
-               state.checked, family ? " of family " : "", family ? family : "");
+        printf("incremental correctness set passed with the %s subject: %zu case(s)%s%s", subject->name, state.checked,
+               family ? " of family " : "", family ? family : "");
         if (shards) {
             printf(", shard %zu of %zu", shard, shards);
         }

@@ -24,6 +24,12 @@
  *        all of the above
  *   4.7  after the script's `finalize`, an append or a finalize fails with
  *        the finalized status
+ *   4.11 after every edit, 4.1 to 4.5 hold against the document before it,
+ *        with each old node's anchor at its image under the edit
+ *   4.12 the bytes an edit reads again hold the bytes it wrote, and are the
+ *        script's bound where it states one
+ *   4.13 an edit while the subject streams, or one that names no range of
+ *        the text, fails with its status and changes nothing
  *
  * Scope and hit-test queries each walk the document, so 4.1 asks them for a
  * sample of the nodes spread evenly over the walk rather than for every node.
@@ -79,11 +85,13 @@ bool failed_all(const run *state);
 bool stopped(const run *state);
 markdown_core_text_unit unit_of(ih_unit unit);
 
-/* The run's subject, opened in `unit` on `opened`, given `steps` and then
- * finalized: 4.6 and 4.2 to 4.5 hold after the open and after every append,
- * 4.1 to 4.5 after the finalize, and 4.7 after that. */
-void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
-                 const ih_step *steps, size_t count);
+/* The run's subject, opened in `unit` on `opened`, given `steps`, and
+ * finalized at the end unless a step did: 4.6 and 4.2 to 4.5 hold after the
+ * open and after every append, 4.1 to 4.5 after the finalize, 4.7 after
+ * that, 4.11 and 4.12 after every edit, and 4.13 for every edit it must
+ * refuse. 4.2 to 4.5 hold only for a subject that keeps ids. */
+void run_steps(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
+               const ih_step *steps, size_t count);
 /* 3.1: parts that keep their meaning when joined. */
 void check_parts(run *state, const char *where, const uint8_t *document, size_t length, const ih_case *entry);
 /* 4.10: `size` bytes of `data` decoded as a document and the appends that

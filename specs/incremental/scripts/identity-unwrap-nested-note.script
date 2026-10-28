@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script identity-unwrap-nested-note ids
+finalize
+edit 11 12 -
+expect new Footnote 5
+edit 1 3 -
+expect kept Footnote 5 3

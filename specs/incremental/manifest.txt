@@ -1,320 +1,478 @@
 markdown-core incremental manifest 2
 family documents
 family identity
+family ids
+family hard
+family rejections
+family typing
+family lines
+family markers
+family ranges
+family far
+family declarations
+family undo
+family random
 family tokens
 family scalars
 family rows
 family splits
 document documents/identity-type-at-paragraph-end.md
-script documents/identity-type-at-paragraph-end.md scripts/identity-type-at-paragraph-end.stream
+script documents/identity-type-at-paragraph-end.md scripts/identity-type-at-paragraph-end.script
 document documents/identity-paragraph-to-setext-and-back.md
-script documents/identity-paragraph-to-setext-and-back.md scripts/identity-paragraph-to-setext-and-back.stream
+script documents/identity-paragraph-to-setext-and-back.md scripts/identity-paragraph-to-setext-and-back.script
 document documents/identity-row-appended-to-table.md
-script documents/identity-row-appended-to-table.md scripts/identity-row-appended-to-table.stream
+script documents/identity-row-appended-to-table.md scripts/identity-row-appended-to-table.script
 document documents/identity-item-appended-to-long-list.md
-script documents/identity-item-appended-to-long-list.md scripts/identity-item-appended-to-long-list.stream
+script documents/identity-item-appended-to-long-list.md scripts/identity-item-appended-to-long-list.script
+document documents/identity-type-at-paragraph-start.md
+script documents/identity-type-at-paragraph-start.md scripts/identity-type-at-paragraph-start.script
+document documents/identity-insert-before-paragraph.md
+script documents/identity-insert-before-paragraph.md scripts/identity-insert-before-paragraph.script
+document documents/identity-delete-first-word.md
+script documents/identity-delete-first-word.md scripts/identity-delete-first-word.script
+document documents/identity-delete-sibling.md
+script documents/identity-delete-sibling.md scripts/identity-delete-sibling.script
+document documents/identity-merge-paragraphs.md
+script documents/identity-merge-paragraphs.md scripts/identity-merge-paragraphs.script
+document documents/identity-paragraph-to-setext.md
+script documents/identity-paragraph-to-setext.md scripts/identity-paragraph-to-setext.script
+document documents/identity-paragraph-into-quote.md
+script documents/identity-paragraph-into-quote.md scripts/identity-paragraph-into-quote.script
+document documents/identity-unwrap-nested-note.md
+script documents/identity-unwrap-nested-note.md scripts/identity-unwrap-nested-note.script
+document documents/identity-line-at-top.md
+script documents/identity-line-at-top.md scripts/identity-line-at-top.script
+document documents/identity-heading-anchor-targets.md
+script documents/identity-heading-anchor-targets.md scripts/identity-heading-anchor-targets.script
+document documents/identity-typing-paragraph-5-of-1000.md
+script documents/identity-typing-paragraph-5-of-1000.md scripts/identity-typing-paragraph-5-of-1000.script
+document documents/hard-type-in-middle-paragraph.md
+script documents/hard-type-in-middle-paragraph.md scripts/hard-type-in-middle-paragraph.script
+document documents/hard-open-fence.md
+script documents/hard-open-fence.md scripts/hard-open-fence.script
+document documents/hard-open-comment.md
+script documents/hard-open-comment.md scripts/hard-open-comment.script
+document documents/hard-open-html.md
+script documents/hard-open-html.md scripts/hard-open-html.script
+document documents/hard-open-directive.md
+script documents/hard-open-directive.md scripts/hard-open-directive.script
+document documents/hard-candidate-before-children.md
+script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
+document documents/hard-container-markers.md
+script documents/hard-container-markers.md scripts/hard-container-markers.script
+document documents/hard-reference-definition.md
+script documents/hard-reference-definition.md scripts/hard-reference-definition.script
+document documents/hard-footnote-definition.md
+script documents/hard-footnote-definition.md scripts/hard-footnote-definition.script
+document documents/hard-heading-label.md
+script documents/hard-heading-label.md scripts/hard-heading-label.script
+document documents/hard-specimen-definition.md
+script documents/hard-specimen-definition.md scripts/hard-specimen-definition.script
+document documents/hard-automatic-anchor.md
+script documents/hard-automatic-anchor.md scripts/hard-automatic-anchor.script
+document documents/hard-split-and-join.md
+script documents/hard-split-and-join.md scripts/hard-split-and-join.script
+document documents/hard-setext-underline.md
+script documents/hard-setext-underline.md scripts/hard-setext-underline.script
+document documents/hard-definition-term.md
+script documents/hard-definition-term.md scripts/hard-definition-term.script
+document documents/hard-table-caption.md
+script documents/hard-table-caption.md scripts/hard-table-caption.script
+document documents/hard-block-identifier.md
+script documents/hard-block-identifier.md scripts/hard-block-identifier.script
+document documents/hard-table-header.md
+script documents/hard-table-header.md scripts/hard-table-header.script
+document documents/hard-lazy-continuation.md
+script documents/hard-lazy-continuation.md scripts/hard-lazy-continuation.script
+document documents/hard-properties.md
+script documents/hard-properties.md scripts/hard-properties.script
+document documents/hard-loose-and-tight.md
+script documents/hard-loose-and-tight.md scripts/hard-loose-and-tight.script
+document documents/hard-early-item-loose.md
+script documents/hard-early-item-loose.md scripts/hard-early-item-loose.script
+document documents/hard-type-in-early-item.md
+script documents/hard-type-in-early-item.md scripts/hard-type-in-early-item.script
+document documents/rejections.md
+script documents/rejections.md scripts/rejections.script
 document ../canonical-ast/block-identifiers.md
+script ../canonical-ast/block-identifiers.md scripts/block-identifiers.script
 stream ../canonical-ast/block-identifiers.md tokens
 stream ../canonical-ast/block-identifiers.md scalars
 stream ../canonical-ast/block-identifiers.md rows
 stream ../canonical-ast/block-identifiers.md splits
 document ../canonical-ast/blocks.md
+script ../canonical-ast/blocks.md scripts/blocks.script
 stream ../canonical-ast/blocks.md tokens
 stream ../canonical-ast/blocks.md scalars
 stream ../canonical-ast/blocks.md rows
 stream ../canonical-ast/blocks.md splits
 document ../canonical-ast/completeness.md
+script ../canonical-ast/completeness.md scripts/completeness.script
 stream ../canonical-ast/completeness.md tokens
 stream ../canonical-ast/completeness.md scalars
 stream ../canonical-ast/completeness.md rows
 stream ../canonical-ast/completeness.md splits
 document ../canonical-ast/formulas.md
+script ../canonical-ast/formulas.md scripts/formulas.script
 stream ../canonical-ast/formulas.md tokens
 stream ../canonical-ast/formulas.md scalars
 stream ../canonical-ast/formulas.md rows
 stream ../canonical-ast/formulas.md splits
 document ../canonical-ast/inlines.md
+script ../canonical-ast/inlines.md scripts/inlines.script
 stream ../canonical-ast/inlines.md tokens
 stream ../canonical-ast/inlines.md scalars
 stream ../canonical-ast/inlines.md rows
 stream ../canonical-ast/inlines.md splits
 document ../canonical-ast/scopes.md
+script ../canonical-ast/scopes.md scripts/scopes.script
 stream ../canonical-ast/scopes.md tokens
 stream ../canonical-ast/scopes.md scalars
 stream ../canonical-ast/scopes.md rows
 stream ../canonical-ast/scopes.md splits
 document ../canonical-ast/structure.md
+script ../canonical-ast/structure.md scripts/structure.script
 stream ../canonical-ast/structure.md tokens
 stream ../canonical-ast/structure.md scalars
 stream ../canonical-ast/structure.md rows
 stream ../canonical-ast/structure.md splits
 document ../canonical-ast/comments.md
+script ../canonical-ast/comments.md scripts/comments.script
 stream ../canonical-ast/comments.md tokens
 stream ../canonical-ast/comments.md scalars
 stream ../canonical-ast/comments.md rows
 stream ../canonical-ast/comments.md splits
 document ../canonical-ast/destinations.md
+script ../canonical-ast/destinations.md scripts/destinations.script
 stream ../canonical-ast/destinations.md tokens
 stream ../canonical-ast/destinations.md scalars
 stream ../canonical-ast/destinations.md rows
 stream ../canonical-ast/destinations.md splits
 document ../canonical-ast/references.md
+script ../canonical-ast/references.md scripts/references.script
 stream ../canonical-ast/references.md tokens
 stream ../canonical-ast/references.md scalars
 stream ../canonical-ast/references.md rows
 stream ../canonical-ast/references.md splits
 document ../canonical-ast/cross-links.md
+script ../canonical-ast/cross-links.md scripts/cross-links.script
 stream ../canonical-ast/cross-links.md tokens
 stream ../canonical-ast/cross-links.md scalars
 stream ../canonical-ast/cross-links.md rows
 stream ../canonical-ast/cross-links.md splits
 document ../canonical-ast/marks.md
+script ../canonical-ast/marks.md scripts/marks.script
 stream ../canonical-ast/marks.md tokens
 stream ../canonical-ast/marks.md scalars
 stream ../canonical-ast/marks.md rows
 stream ../canonical-ast/marks.md splits
 document ../canonical-ast/inline-footnotes.md
+script ../canonical-ast/inline-footnotes.md scripts/inline-footnotes.script
 stream ../canonical-ast/inline-footnotes.md tokens
 stream ../canonical-ast/inline-footnotes.md scalars
 stream ../canonical-ast/inline-footnotes.md rows
 stream ../canonical-ast/inline-footnotes.md splits
 document ../canonical-ast/task-markers.md
+script ../canonical-ast/task-markers.md scripts/task-markers.script
 stream ../canonical-ast/task-markers.md tokens
 stream ../canonical-ast/task-markers.md scalars
 stream ../canonical-ast/task-markers.md rows
 stream ../canonical-ast/task-markers.md splits
 document ../canonical-ast/properties.md
+script ../canonical-ast/properties.md scripts/properties.script
 stream ../canonical-ast/properties.md tokens
 stream ../canonical-ast/properties.md scalars
 stream ../canonical-ast/properties.md rows
 stream ../canonical-ast/properties.md splits
 document ../canonical-ast/properties-empty.md
+script ../canonical-ast/properties-empty.md scripts/properties-empty.script
 stream ../canonical-ast/properties-empty.md tokens
 stream ../canonical-ast/properties-empty.md scalars
 stream ../canonical-ast/properties-empty.md rows
 stream ../canonical-ast/properties-empty.md splits
 document ../canonical-ast/properties-boundaries.md
+script ../canonical-ast/properties-boundaries.md scripts/properties-boundaries.script
 stream ../canonical-ast/properties-boundaries.md tokens
 stream ../canonical-ast/properties-boundaries.md scalars
 stream ../canonical-ast/properties-boundaries.md rows
 stream ../canonical-ast/properties-boundaries.md splits
 document ../canonical-ast/properties-forms.md
+script ../canonical-ast/properties-forms.md scripts/properties-forms.script
 stream ../canonical-ast/properties-forms.md tokens
 stream ../canonical-ast/properties-forms.md scalars
 stream ../canonical-ast/properties-forms.md rows
 stream ../canonical-ast/properties-forms.md splits
 document ../canonical-ast/properties-lists.md
+script ../canonical-ast/properties-lists.md scripts/properties-lists.script
 stream ../canonical-ast/properties-lists.md tokens
 stream ../canonical-ast/properties-lists.md scalars
 stream ../canonical-ast/properties-lists.md rows
 stream ../canonical-ast/properties-lists.md splits
 document ../canonical-ast/callouts.md
+script ../canonical-ast/callouts.md scripts/callouts.script
 stream ../canonical-ast/callouts.md tokens
 stream ../canonical-ast/callouts.md scalars
 stream ../canonical-ast/callouts.md rows
 stream ../canonical-ast/callouts.md splits
 document ../canonical-ast/embedded-dimensions.md
+script ../canonical-ast/embedded-dimensions.md scripts/embedded-dimensions.script
 stream ../canonical-ast/embedded-dimensions.md tokens
 stream ../canonical-ast/embedded-dimensions.md scalars
 stream ../canonical-ast/embedded-dimensions.md rows
 stream ../canonical-ast/embedded-dimensions.md splits
 document ../canonical-ast/obsidian-integration.md
+script ../canonical-ast/obsidian-integration.md scripts/obsidian-integration.script
 stream ../canonical-ast/obsidian-integration.md tokens
 stream ../canonical-ast/obsidian-integration.md scalars
 stream ../canonical-ast/obsidian-integration.md rows
 stream ../canonical-ast/obsidian-integration.md splits
 document ../canonical-ast/insertion.md
+script ../canonical-ast/insertion.md scripts/insertion.script
 stream ../canonical-ast/insertion.md tokens
 stream ../canonical-ast/insertion.md scalars
 stream ../canonical-ast/insertion.md rows
 stream ../canonical-ast/insertion.md splits
 document ../canonical-ast/attribute-sites.md
+script ../canonical-ast/attribute-sites.md scripts/attribute-sites.script
 stream ../canonical-ast/attribute-sites.md tokens
 stream ../canonical-ast/attribute-sites.md scalars
 stream ../canonical-ast/attribute-sites.md rows
 stream ../canonical-ast/attribute-sites.md splits
 document ../canonical-ast/bracketed-spans.md
+script ../canonical-ast/bracketed-spans.md scripts/bracketed-spans.script
 stream ../canonical-ast/bracketed-spans.md tokens
 stream ../canonical-ast/bracketed-spans.md scalars
 stream ../canonical-ast/bracketed-spans.md rows
 stream ../canonical-ast/bracketed-spans.md splits
 document ../canonical-ast/superscript-and-subscript.md
+script ../canonical-ast/superscript-and-subscript.md scripts/superscript-and-subscript.script
 stream ../canonical-ast/superscript-and-subscript.md tokens
 stream ../canonical-ast/superscript-and-subscript.md scalars
 stream ../canonical-ast/superscript-and-subscript.md rows
 stream ../canonical-ast/superscript-and-subscript.md splits
 document ../canonical-ast/heading-anchors.md
+script ../canonical-ast/heading-anchors.md scripts/heading-anchors.script
 stream ../canonical-ast/heading-anchors.md tokens
 stream ../canonical-ast/heading-anchors.md scalars
 stream ../canonical-ast/heading-anchors.md rows
 stream ../canonical-ast/heading-anchors.md splits
 document ../canonical-ast/span-script-headings.md
+script ../canonical-ast/span-script-headings.md scripts/span-script-headings.script
 stream ../canonical-ast/span-script-headings.md tokens
 stream ../canonical-ast/span-script-headings.md scalars
 stream ../canonical-ast/span-script-headings.md rows
 stream ../canonical-ast/span-script-headings.md splits
 document ../canonical-ast/citations.md
+script ../canonical-ast/citations.md scripts/citations.script
 stream ../canonical-ast/citations.md tokens
 stream ../canonical-ast/citations.md scalars
 stream ../canonical-ast/citations.md rows
 stream ../canonical-ast/citations.md splits
 document ../canonical-ast/specimens.md
+script ../canonical-ast/specimens.md scripts/specimens.script
 stream ../canonical-ast/specimens.md tokens
 stream ../canonical-ast/specimens.md scalars
 stream ../canonical-ast/specimens.md rows
 stream ../canonical-ast/specimens.md splits
 document ../canonical-ast/fancy-lists.md
+script ../canonical-ast/fancy-lists.md scripts/fancy-lists.script
 stream ../canonical-ast/fancy-lists.md tokens
 stream ../canonical-ast/fancy-lists.md scalars
 stream ../canonical-ast/fancy-lists.md rows
 stream ../canonical-ast/fancy-lists.md splits
 document ../canonical-ast/nameless-directives.md
+script ../canonical-ast/nameless-directives.md scripts/nameless-directives.script
 stream ../canonical-ast/nameless-directives.md tokens
 stream ../canonical-ast/nameless-directives.md scalars
 stream ../canonical-ast/nameless-directives.md rows
 stream ../canonical-ast/nameless-directives.md splits
 document ../canonical-ast/definition-lists.md
+script ../canonical-ast/definition-lists.md scripts/definition-lists.script
 stream ../canonical-ast/definition-lists.md tokens
 stream ../canonical-ast/definition-lists.md scalars
 stream ../canonical-ast/definition-lists.md rows
 stream ../canonical-ast/definition-lists.md splits
 document ../canonical-ast/table-syntax.md
+script ../canonical-ast/table-syntax.md scripts/table-syntax.script
 stream ../canonical-ast/table-syntax.md tokens
 stream ../canonical-ast/table-syntax.md scalars
 stream ../canonical-ast/table-syntax.md rows
 stream ../canonical-ast/table-syntax.md splits
 document ../canonical-ast/table-sparse.md
+script ../canonical-ast/table-sparse.md scripts/table-sparse.script
 stream ../canonical-ast/table-sparse.md tokens
 stream ../canonical-ast/table-sparse.md scalars
 stream ../canonical-ast/table-sparse.md rows
 stream ../canonical-ast/table-sparse.md splits
 document ../canonical-ast/table-mapped.md
+script ../canonical-ast/table-mapped.md scripts/table-mapped.script
 stream ../canonical-ast/table-mapped.md tokens
 stream ../canonical-ast/table-mapped.md scalars
 stream ../canonical-ast/table-mapped.md rows
 stream ../canonical-ast/table-mapped.md splits
 document ../canonical-ast/topics.md
+script ../canonical-ast/topics.md scripts/topics.script
 stream ../canonical-ast/topics.md tokens
 stream ../canonical-ast/topics.md scalars
 stream ../canonical-ast/topics.md rows
 stream ../canonical-ast/topics.md splits
 document documents/prose-ascii-16k.md parts 128 131 131 131 131 131 131 131 131 134 151 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 166 166 166 166
+script documents/prose-ascii-16k.md scripts/prose-ascii-16k.script
 stream documents/prose-ascii-16k.md tokens
 stream documents/prose-ascii-16k.md rows
 document documents/prose-utf8-16k.md parts 228 224 229 229 228 230 228 238 233 227 270 310 310 308 314 311 312 310 306 310 306 316 332 335 342 339 339 329 334 334 333 327 313 286 283 286 282 285 285 283 289 286 286 295 301 308 309 310 307 310 317 314 314 304 314 323
+script documents/prose-utf8-16k.md scripts/prose-utf8-16k.script
 stream documents/prose-utf8-16k.md tokens
 stream documents/prose-utf8-16k.md rows
 document documents/list-ascii-16k.md parts 16399
+script documents/list-ascii-16k.md scripts/list-ascii-16k.script
 stream documents/list-ascii-16k.md tokens
 stream documents/list-ascii-16k.md rows
 document documents/list-utf8-16k.md parts 16440
+script documents/list-utf8-16k.md scripts/list-utf8-16k.script
 stream documents/list-utf8-16k.md tokens
 stream documents/list-utf8-16k.md rows
 document documents/quote-ascii-16k.md parts 16432
+script documents/quote-ascii-16k.md scripts/quote-ascii-16k.script
 stream documents/quote-ascii-16k.md tokens
 stream documents/quote-ascii-16k.md rows
 document documents/quote-utf8-16k.md parts 16578
+script documents/quote-utf8-16k.md scripts/quote-utf8-16k.script
 stream documents/quote-utf8-16k.md tokens
 stream documents/quote-utf8-16k.md rows
 document documents/table-ascii-16k.md parts 8208 8205
+script documents/table-ascii-16k.md scripts/table-ascii-16k.script
 stream documents/table-ascii-16k.md tokens
 stream documents/table-ascii-16k.md rows
 document documents/table-utf8-16k.md parts 8211 8210
+script documents/table-utf8-16k.md scripts/table-utf8-16k.script
 stream documents/table-utf8-16k.md tokens
 stream documents/table-utf8-16k.md rows
 document documents/refs-ascii-16k.md parts 87 70 70 70 70 70 70 70 70 70 71 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+script documents/refs-ascii-16k.md scripts/refs-ascii-16k.script
 stream documents/refs-ascii-16k.md tokens
 stream documents/refs-ascii-16k.md rows
 document documents/refs-utf8-16k.md parts 133 107 113 112 108 108 111 113 110 107 109 140 140 138 142 141 135 138 137 143 139 138 147 152 151 148 147 147 153 152 148 148 151 133 128 128 129 130 130 128 132 131 125 128 132 141 140 142 137 142 141 138 137 137 143 144 149 152 152 151 148 148 149 150 150 148 134 129 132 126 128 131 130 132 127 132 131 129 138 141 138 140 139 142 142 141 138 138 137 154 151 149 150 149 152 146 148 151 150 136 134 130 129 129 128 131 128 130 129 132 129 142 136 136 137 144 141 139 140 139
+script documents/refs-utf8-16k.md scripts/refs-utf8-16k.script
 stream documents/refs-utf8-16k.md tokens
 stream documents/refs-utf8-16k.md rows
 document documents/flat-ascii-16k.md parts 22 24 24 24 24 24 24 24 24 24 24 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34 34
+script documents/flat-ascii-16k.md scripts/flat-ascii-16k.script
 stream documents/flat-ascii-16k.md tokens
 stream documents/flat-ascii-16k.md rows
 document documents/flat-utf8-16k.md parts 36 40 49 50 44 39 42 48 46 40 40 58 61 64 59 56 52 60 60 59 58 57 61 63 68 62 60 60 69 70 64 59 62 52 55 55 52 53 56 59 54 51 47 55 52 64 63 59 56 58 63 57 55 55 64 62 69 64 61 61 65 65 62 63 66 69 56 56 52 51 51 59 58 54 51 53 58 52 60 57 54 61 64 59 56 56 60 60 57 68 65 62 63 66 62 61 61 69 68 64 56 49 51 57 55 52 49 56 59 54 51 58 56 56 62 63 60 57 58 61 57 56 60 59 67 69 66 59 61 67 65 62 59 55 52 53 56 53 51 51 57 58 55 52 54 57 62 61 55 54 62 64 61 54 56 57 61 67 64 65 62 63 66 63 61 61 51 57 60 54 49 52 57 56 50 49 57 55 66 59 58 52 56 62 59 60 57 58 58 68 66 60 60 67 70 64 59 62 67 58 55 54 53 52 61 54 53 47 51 57 54 65 59 54 57 63 61 55 55 62 65 59 64 61 57 65 65 64 63 62 71 64 63 52 50 50 59 60 54 49 52 58 56 50 57 58 61 64 59 56 52 60 60 59 58 64 61 63 68 62 60 60 69 70 64 59 51 51 55 55 52 53 56 59 54 51 47 56 56 64 63 59 56
+script documents/flat-utf8-16k.md scripts/flat-utf8-16k.script
 stream documents/flat-utf8-16k.md tokens
 stream documents/flat-utf8-16k.md rows
 document documents/opener-fence-ascii-16k.md parts 16458
+script documents/opener-fence-ascii-16k.md scripts/opener-fence-ascii-16k.script
 stream documents/opener-fence-ascii-16k.md tokens
 stream documents/opener-fence-ascii-16k.md rows
 document documents/opener-fence-utf8-16k.md parts 16515
+script documents/opener-fence-utf8-16k.md scripts/opener-fence-utf8-16k.script
 stream documents/opener-fence-utf8-16k.md tokens
 stream documents/opener-fence-utf8-16k.md rows
 document documents/opener-html-ascii-16k.md parts 16460
+script documents/opener-html-ascii-16k.md scripts/opener-html-ascii-16k.script
 stream documents/opener-html-ascii-16k.md tokens
 stream documents/opener-html-ascii-16k.md rows
 document documents/opener-html-utf8-16k.md parts 16517
+script documents/opener-html-utf8-16k.md scripts/opener-html-utf8-16k.script
 stream documents/opener-html-utf8-16k.md tokens
 stream documents/opener-html-utf8-16k.md rows
 document documents/opener-comment-ascii-16k.md parts 16457
+script documents/opener-comment-ascii-16k.md scripts/opener-comment-ascii-16k.script
 stream documents/opener-comment-ascii-16k.md tokens
 stream documents/opener-comment-ascii-16k.md rows
 document documents/opener-comment-utf8-16k.md parts 16514
+script documents/opener-comment-utf8-16k.md scripts/opener-comment-utf8-16k.script
 stream documents/opener-comment-utf8-16k.md tokens
 stream documents/opener-comment-utf8-16k.md rows
 document documents/opener-directive-ascii-16k.md parts 16462
+script documents/opener-directive-ascii-16k.md scripts/opener-directive-ascii-16k.script
 stream documents/opener-directive-ascii-16k.md tokens
 stream documents/opener-directive-ascii-16k.md rows
 document documents/opener-directive-utf8-16k.md parts 16519
+script documents/opener-directive-utf8-16k.md scripts/opener-directive-utf8-16k.script
 stream documents/opener-directive-utf8-16k.md tokens
 stream documents/opener-directive-utf8-16k.md rows
 document documents/long-list-ascii-16k.md parts 16652
+script documents/long-list-ascii-16k.md scripts/long-list-ascii-16k.script
 stream documents/long-list-ascii-16k.md tokens
 stream documents/long-list-ascii-16k.md rows
 document documents/long-list-utf8-16k.md parts 17262
+script documents/long-list-utf8-16k.md scripts/long-list-utf8-16k.script
 stream documents/long-list-utf8-16k.md tokens
 stream documents/long-list-utf8-16k.md rows
 document documents/deep-quotes-ascii-16k.md parts 128 131 131 131 131 131 131 131 131 134 151 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 2009 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161
+script documents/deep-quotes-ascii-16k.md scripts/deep-quotes-ascii-16k.script
 stream documents/deep-quotes-ascii-16k.md tokens
 stream documents/deep-quotes-ascii-16k.md rows
 document documents/deep-quotes-utf8-16k.md parts 228 224 229 229 228 230 228 238 233 227 270 310 310 308 314 311 312 310 306 310 306 316 332 335 342 339 339 329 334 2024 333 327 313 286 283 286 282 285 285 283 289 286 286 295 301 308 309 310 307 310 317
+script documents/deep-quotes-utf8-16k.md scripts/deep-quotes-utf8-16k.script
 stream documents/deep-quotes-utf8-16k.md tokens
 stream documents/deep-quotes-utf8-16k.md rows
 document documents/wide-definition-ascii-16k.md parts 9 851 851 851 851 851 851 851 851 851 851 850 850 850 850 850 850 850 850 850 850
+script documents/wide-definition-ascii-16k.md scripts/wide-definition-ascii-16k.script
 stream documents/wide-definition-ascii-16k.md tokens
 stream documents/wide-definition-ascii-16k.md rows
 document documents/wide-definition-utf8-16k.md parts 10 842 844 844 856 845 846 841 843 843 852 854 850 865 851 863 848 851 852 843 855
+script documents/wide-definition-utf8-16k.md scripts/wide-definition-utf8-16k.script
 stream documents/wide-definition-utf8-16k.md tokens
 stream documents/wide-definition-utf8-16k.md rows
 document documents/late-definition-ascii-16k.md parts 851 851 851 851 851 851 851 851 851 851 850 850 850 850 850 850 850 850 850 850 8
+script documents/late-definition-ascii-16k.md scripts/late-definition-ascii-16k.script
 stream documents/late-definition-ascii-16k.md tokens
 stream documents/late-definition-ascii-16k.md rows
 document documents/late-definition-utf8-16k.md parts 842 844 844 856 845 846 841 843 843 852 854 850 865 851 863 848 851 852 843 855 9
+script documents/late-definition-utf8-16k.md scripts/late-definition-utf8-16k.script
 stream documents/late-definition-utf8-16k.md tokens
 stream documents/late-definition-utf8-16k.md rows
 document documents/repeated-heading-ascii-16k.md parts 26 26 26 26 26 26 26 26 26 26 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32
+script documents/repeated-heading-ascii-16k.md scripts/repeated-heading-ascii-16k.script
 stream documents/repeated-heading-ascii-16k.md tokens
 stream documents/repeated-heading-ascii-16k.md rows
 document documents/repeated-heading-utf8-16k.md parts 42 47 46 42 41 46 48 44 40 42 50 55 54 53 52 50 56 52 53 50 51 53 59 60 56 52 54 59 58 54 53 58 52 53 49 48 47 52 51 50 49 47 53 48 56 53 51 50 56 57 53 49 51 56 54 57 56 55 57 59 55 54 53 58 57 56 52 50 47 49 53 50 48 47 53 54 50 52 51 50 55 54 53 52 54 56 52 51 56 55 54 59 58 56 53 55 59 56 54 50 47 51 53 49 48 47 52 51 50 49 54 50 52 54 53 52 51 56 55 53 50 52 53 59 57 56 53 57 59 55 54 53 49 48 53 52 51 47 49 51 50 49 48 50 55 56 53 49 50 56 54 53 50 54 53 55 57 56 55 54 59 58 57 53 55 49 53 52 48 47 52 53 50 46 47 53 49 56 53 54 50 52 54 53 52 51 56 54 60 56 52 54 59 58 54 53 58 59 56 49 50 47 48 53 50 51 47 49 51 50 55 51 50 55 57 53 49 51 56 55 51 56 55 53 59 55 56 53 54 59 56 57 50 46 48 53 52 48 47 52 54 50 46 51 50 55 54 53 52 50 56 52 53 50 54 53 59 60 56 52 54 59 58 54 53 49 51 53 49 48 47 52 51 50 49 47 50 52 56 53 51 50 56 57 53 49 51 56 61 60 59 58 60 62 58 57 56 61 58 65 64 62 59 61 65 62 60 59 65
+script documents/repeated-heading-utf8-16k.md scripts/repeated-heading-utf8-16k.script
 stream documents/repeated-heading-utf8-16k.md tokens
 stream documents/repeated-heading-utf8-16k.md rows
 document documents/unclosed-strong-ascii-64k.md parts 65551
+script documents/unclosed-strong-ascii-64k.md scripts/unclosed-strong-ascii-64k.script
 stream documents/unclosed-strong-ascii-64k.md tokens
 stream documents/unclosed-strong-ascii-64k.md rows
 document documents/unclosed-strong-utf8-64k.md parts 65577
+script documents/unclosed-strong-utf8-64k.md scripts/unclosed-strong-utf8-64k.script
 stream documents/unclosed-strong-utf8-64k.md tokens
 stream documents/unclosed-strong-utf8-64k.md rows
 document documents/single-line-ascii-64k.md parts 65541
+script documents/single-line-ascii-64k.md scripts/single-line-ascii-64k.script
 stream documents/single-line-ascii-64k.md tokens
 stream documents/single-line-ascii-64k.md rows
 document documents/single-line-utf8-64k.md parts 65540
+script documents/single-line-utf8-64k.md scripts/single-line-utf8-64k.script
 stream documents/single-line-utf8-64k.md tokens
 stream documents/single-line-utf8-64k.md rows
 document documents/short-lines-ascii-64k.md parts 65549
+script documents/short-lines-ascii-64k.md scripts/short-lines-ascii-64k.script
 stream documents/short-lines-ascii-64k.md tokens
 stream documents/short-lines-ascii-64k.md rows
 document documents/short-lines-utf8-64k.md parts 65575
+script documents/short-lines-utf8-64k.md scripts/short-lines-utf8-64k.script
 stream documents/short-lines-utf8-64k.md tokens
 stream documents/short-lines-utf8-64k.md rows
 document documents/unclosed-properties-ascii-16k.md parts 16385
+script documents/unclosed-properties-ascii-16k.md scripts/unclosed-properties-ascii-16k.script
 stream documents/unclosed-properties-ascii-16k.md tokens
 stream documents/unclosed-properties-ascii-16k.md rows
 document documents/unclosed-properties-utf8-16k.md parts 16420
+script documents/unclosed-properties-utf8-16k.md scripts/unclosed-properties-utf8-16k.script
 stream documents/unclosed-properties-utf8-16k.md tokens
 stream documents/unclosed-properties-utf8-16k.md rows
 document documents/unclosed-grid-ascii-16k.md parts 16464
+script documents/unclosed-grid-ascii-16k.md scripts/unclosed-grid-ascii-16k.script
 stream documents/unclosed-grid-ascii-16k.md tokens
 stream documents/unclosed-grid-ascii-16k.md rows
 document documents/unclosed-grid-utf8-16k.md parts 16448
+script documents/unclosed-grid-utf8-16k.md scripts/unclosed-grid-utf8-16k.script
 stream documents/unclosed-grid-utf8-16k.md tokens
 stream documents/unclosed-grid-utf8-16k.md rows

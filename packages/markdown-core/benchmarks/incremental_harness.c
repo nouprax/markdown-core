@@ -53,6 +53,24 @@ bool ih_text_append(ih_text *text, const uint8_t *bytes, size_t length) {
     return true;
 }
 
+bool ih_text_replace(ih_text *text, size_t start, size_t end, const uint8_t *bytes, size_t length) {
+    size_t grown;
+    if (start > end || end > text->length) {
+        return false;
+    }
+    grown = text->length - (end - start) + length;
+    if (!text_reserve(text, grown)) {
+        return false;
+    }
+    memmove(text->bytes + start + length, text->bytes + end, text->length - end);
+    if (length) {
+        memcpy(text->bytes + start, bytes, length);
+    }
+    text->length = grown;
+    text->bytes[grown] = 0;
+    return true;
+}
+
 void ih_text_free(ih_text *text) {
     free(text->bytes);
     text->bytes = NULL;
@@ -74,6 +92,19 @@ size_t ih_utf16_units(const uint8_t *bytes, size_t offset) {
         }
     }
     return units;
+}
+
+bool ih_utf8_offset(const uint8_t *bytes, size_t length, size_t units, size_t *offset) {
+    size_t at, counted = 0;
+    for (at = 0; at < length; at++) {
+        size_t width = (bytes[at] & 0xc0) == 0x80 ? 0 : bytes[at] >= 0xf0 ? 2 : 1;
+        if (width && counted >= units) {
+            break;
+        }
+        counted += width;
+    }
+    *offset = at;
+    return counted == units;
 }
 
 /* ------------------------------------------------------------------ files */
@@ -196,7 +227,7 @@ static char *copy_string(const char *value) {
 
 /* ---------------------------------------------------------------- scripts */
 
-static const char SCRIPT_HEADER[] = "markdown-core stream script 1";
+static const char SCRIPT_HEADER[] = "markdown-core incremental script 2";
 static const char MANIFEST_HEADER[] = "markdown-core incremental manifest 2";
 
 static void script_free(ih_script *script) {
@@ -260,6 +291,15 @@ static bool parse_expectation(char **fields, size_t count, ih_step *step) {
     if (!count) {
         return false;
     }
+    if (strcmp(fields[0], "reread") == 0 || strcmp(fields[0], "within") == 0) {
+        /* The damage bound of an edit, once: exact, or an upper bound. */
+        if (count != 3 || step->kind != IH_EDIT || step->bounded) {
+            return false;
+        }
+        step->bounded = true;
+        step->exact = strcmp(fields[0], "reread") == 0;
+        return parse_size(fields[1], &step->from) && parse_size(fields[2], &step->to) && step->from <= step->to;
+    }
     only = strcmp(fields[0], "only") == 0;
     if (only ? count != 1 : count != (strcmp(fields[0], "kept") == 0 ? 4u : 3u)) {
         return false;
@@ -292,23 +332,64 @@ static bool parse_expectation(char **fields, size_t count, ih_step *step) {
     return parse_size(fields[2], &expectation->at);
 }
 
-/* An `append HEX` line, whose bytes the script keeps, or an `expect` line,
- * which belongs to the step before it. */
+static bool parse_unit(const char *field, ih_unit *unit) {
+    if (strcmp(field, "utf8") == 0) {
+        *unit = IH_UTF8;
+    } else if (strcmp(field, "utf16") == 0) {
+        *unit = IH_UTF16;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static bool parse_refusal(const char *field, markdown_core_status *refusal) {
+    if (strcmp(field, "out-of-bounds") == 0) {
+        *refusal = MARKDOWN_CORE_OUT_OF_BOUNDS;
+    } else if (strcmp(field, "streaming") == 0) {
+        *refusal = IH_STREAMING;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/* A step line: `append HEX`, `finalize`, `edit START END HEX` or `reject
+ * UNIT STATUS START END HEX`, whose bytes the script keeps, or an `expect`
+ * line, which belongs to the step before it. */
 static bool parse_step(char **fields, size_t count, ih_script *script) {
     ih_step *grown;
+    ih_step *step;
     if (strcmp(fields[0], "expect") == 0) {
         return script->count && parse_expectation(fields + 1, count - 1, &script->steps[script->count - 1]);
-    }
-    if (strcmp(fields[0], "append") != 0 || count != 2) {
-        return false;
     }
     grown = (ih_step *)realloc(script->steps, (script->count + 1) * sizeof(*grown));
     if (!grown) {
         return false;
     }
     script->steps = grown;
-    memset(&script->steps[script->count], 0, sizeof(*grown));
-    return append_hex(fields[1], &script->bytes, &script->steps[script->count++].length);
+    step = &script->steps[script->count++];
+    memset(step, 0, sizeof(*step));
+    if (strcmp(fields[0], "append") == 0 && count == 2) {
+        step->kind = IH_APPEND;
+        return append_hex(fields[1], &script->bytes, &step->length);
+    }
+    if (strcmp(fields[0], "finalize") == 0 && count == 1) {
+        step->kind = IH_FINALIZE;
+        return true;
+    }
+    if (strcmp(fields[0], "edit") == 0 && count == 4) {
+        step->kind = IH_EDIT;
+        return parse_size(fields[1], &step->start) && parse_size(fields[2], &step->end) &&
+               append_hex(fields[3], &script->bytes, &step->length);
+    }
+    if (strcmp(fields[0], "reject") == 0 && count == 6) {
+        step->kind = IH_REJECT;
+        return parse_unit(fields[1], &step->unit) && parse_refusal(fields[2], &step->refusal) &&
+               parse_size(fields[3], &step->start) && parse_size(fields[4], &step->end) &&
+               append_hex(fields[5], &script->bytes, &step->length);
+    }
+    return false;
 }
 
 static bool parse_line(char **fields, size_t count, ih_scripts *scripts) {
@@ -345,7 +426,7 @@ bool ih_scripts_load(const char *path, ih_scripts *scripts) {
     }
     line = next_line(&cursor);
     if (!line || strcmp(line, SCRIPT_HEADER) != 0) {
-        fprintf(stderr, "%s:1: not a stream script\n", path);
+        fprintf(stderr, "%s:1: not an incremental script\n", path);
         free(text);
         return false;
     }
@@ -693,12 +774,14 @@ static void session_close(void *handle) {
 
 markdown_core_session *ih_session_of(void *handle) { return ((session_subject *)handle)->session; }
 
+/* The session takes edits from step E1 on (plan 12.9). */
 const ih_subject_class ih_session = {.name = "session",
                                      .open = session_open,
                                      .append = session_append,
                                      .finalize = session_finalize,
                                      .text = session_text,
-                                     .close = session_close};
+                                     .close = session_close,
+                                     .keeps = true};
 
 /* ---------------------------------------------------------------- reparse */
 
@@ -770,6 +853,38 @@ static markdown_core_status reparse_finalize(void *handle, const markdown_core_d
     return MARKDOWN_CORE_OK;
 }
 
+/* The UTF-8 offset of `position` in the subject's unit, or false where it
+ * names no scalar boundary of the text. */
+static bool reparse_offset(const reparse_subject *subject, size_t position, size_t *offset) {
+    if (subject->unit == IH_UTF16) {
+        return ih_utf8_offset(subject->text.bytes, subject->text.length, position, offset);
+    }
+    *offset = position;
+    return ih_utf8_boundary(subject->text.bytes, subject->text.length, position);
+}
+
+markdown_core_status ih_reparse_replace(void *handle, size_t start, size_t end, const uint8_t *text, size_t length) {
+    reparse_subject *subject = (reparse_subject *)handle;
+    size_t from, to;
+    if (!subject->finalized) {
+        return IH_STREAMING;
+    }
+    if (start > end || !reparse_offset(subject, start, &from) || !reparse_offset(subject, end, &to)) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    return ih_text_replace(&subject->text, from, to, text, length) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+}
+
+static markdown_core_status reparse_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
+                                         const markdown_core_document **document) {
+    markdown_core_status status = ih_reparse_replace(handle, start, end, text, length);
+    *document = NULL;
+    if (status != MARKDOWN_CORE_OK) {
+        return status;
+    }
+    return ih_reparse_parse(handle, document) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+}
+
 static const uint8_t *reparse_text(const void *handle, size_t *length) {
     const reparse_subject *subject = (const reparse_subject *)handle;
     *length = subject->text.length;
@@ -785,9 +900,11 @@ static void reparse_close(void *handle) {
     }
 }
 
+/* It reads the whole text on every edit, so it states no damage bound. */
 const ih_subject_class ih_reparse = {.name = "reparse",
                                      .open = reparse_open,
                                      .append = reparse_append,
                                      .finalize = reparse_finalize,
                                      .text = reparse_text,
-                                     .close = reparse_close};
+                                     .close = reparse_close,
+                                     .edit = reparse_edit};

@@ -58,7 +58,7 @@ void check_script_bytes(run *state, const uint8_t *data, size_t size) {
         steps[count].length = read_bytes(&input, read_u8(&input) % 32, &steps[count].text);
         count++;
     }
-    run_appends(state, "fuzz input", IH_UTF8, document, length, steps, count);
-    run_appends(state, "fuzz input", IH_UTF16, document, length, steps, count);
+    run_steps(state, "fuzz input", IH_UTF8, document, length, steps, count);
+    run_steps(state, "fuzz input", IH_UTF16, document, length, steps, count);
     free(steps);
 }

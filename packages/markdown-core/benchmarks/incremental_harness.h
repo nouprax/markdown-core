@@ -9,11 +9,11 @@
  * script means.
  *
  * A subject opens in a coordinate unit with an initial text, takes `append`
- * steps and one `finalize`, each of which returns the new document, and
- * closes. A document a subject returns is the subject's, and is valid until
- * its next step or its close. This file holds the two subjects: `session`, the engine's session,
- * and `reparse`, which keeps the text and parses the whole of it on every
- * step.
+ * steps and one `finalize`, then `edit` steps (plan 12.3), each of which
+ * returns the new document, and closes. A document a subject returns is the
+ * subject's, and is valid until its next step or its close. This file holds
+ * the two subjects: `session`, the engine's session, and `reparse`, which
+ * keeps the text and parses the whole of it on every step.
  */
 #ifndef MARKDOWN_CORE_INCREMENTAL_HARNESS_H
 #define MARKDOWN_CORE_INCREMENTAL_HARNESS_H
@@ -40,6 +40,8 @@ typedef struct ih_text {
 
 bool ih_text_assign(ih_text *text, const uint8_t *bytes, size_t length);
 bool ih_text_append(ih_text *text, const uint8_t *bytes, size_t length);
+/* Replaces [start, end) with `length` bytes. The range must lie in the text. */
+bool ih_text_replace(ih_text *text, size_t start, size_t end, const uint8_t *bytes, size_t length);
 void ih_text_free(ih_text *text);
 
 /* The coordinate unit a subject counts the columns of its scope queries in. */
@@ -53,9 +55,19 @@ const char *ih_unit_name(ih_unit unit);
  * as scope queries count columns. */
 size_t ih_utf16_units(const uint8_t *bytes, size_t offset);
 
+/* The byte offset of `units` UTF-16 code units: the first byte that begins a
+ * scalar with `units` before it, or the end. False when `units` falls
+ * between the two units of one scalar or past the end. */
+bool ih_utf8_offset(const uint8_t *bytes, size_t length, size_t units, size_t *offset);
+
 /* Whether `offset` is a scalar boundary of `bytes`: the end, or a byte that
  * begins a scalar. */
 bool ih_utf8_boundary(const uint8_t *bytes, size_t length, size_t offset);
+
+/* The status an edit fails with while its subject still streams (plan 12.3):
+ * MARKDOWN_CORE_SESSION_STREAMING, which the public header names from step
+ * E1 on. */
+#define IH_STREAMING ((markdown_core_status)5)
 
 /* ---------------------------------------------------------------- scripts */
 
@@ -68,10 +80,26 @@ typedef struct ih_expectation {
     size_t from; /* kept: the old position */
 } ih_expectation;
 
-/* One append: `length` bytes at `text`, which the step's owner holds. */
+/* What a step does: append `text`, finalize, edit, or make an edit the
+ * subject must refuse (gates 4.13). */
+typedef enum ih_step_kind { IH_APPEND = 0, IH_FINALIZE, IH_EDIT, IH_REJECT } ih_step_kind;
+
+/* One step. `length` bytes at `text`, which the step's owner holds, are an
+ * append's text or the text an edit puts in place of [start, end). An edit's
+ * offsets are UTF-8 bytes of the text before it, and a runner in UTF-16
+ * converts them through its text model; a refused edit's are in `unit`, and
+ * only a subject opened in `unit` runs it. With `bounded`, the bytes of the
+ * new text the edit reads again lie in [from, to), and with `exact` they are
+ * those bytes (gates 4.12). */
 typedef struct ih_step {
+    ih_step_kind kind;
     const uint8_t *text;
     size_t length;
+    size_t start, end;
+    ih_unit unit;
+    markdown_core_status refusal;
+    bool bounded, exact;
+    size_t from, to;
     ih_expectation *expectations;
     size_t expectation_count;
 } ih_step;
@@ -166,6 +194,19 @@ typedef struct ih_subject_class {
     /* The subject's text, as UTF-8. */
     const uint8_t *(*text)(const void *subject, size_t *length);
     void (*close)(void *subject);
+    /* Replaces [start, end) of the finalized text, in the subject's unit,
+     * with `length` bytes: IH_STREAMING before `finalize`, and
+     * MARKDOWN_CORE_OUT_OF_BOUNDS for a range that is reversed, ends past the
+     * text or has an offset that is no scalar boundary. NULL for a subject
+     * that takes no edits. */
+    markdown_core_status (*edit)(void *subject, size_t start, size_t end, const uint8_t *text, size_t length,
+                                 const markdown_core_document **document);
+    /* The bytes [*from, *to) of its new text the last edit read again: the
+     * damage bound of gates 4.12. NULL for a subject that states none. */
+    void (*reread)(const void *subject, size_t *from, size_t *to);
+    /* Whether the subject's ids follow the lineage (4.2 to 4.5); `reparse`
+     * numbers every parse from 1. */
+    bool keeps;
 } ih_subject_class;
 
 /* The `session` subject (gates section 2): the engine's session, opened in
@@ -177,7 +218,7 @@ extern const ih_subject_class ih_session;
 markdown_core_session *ih_session_of(void *subject);
 
 /* The `reparse` subject: it keeps the text and calls the one parse entry on
- * the whole of it on every step. */
+ * the whole of it on every step, an edit too. */
 extern const ih_subject_class ih_reparse;
 
 /* The reparse subject's two halves, for the harness that measures it: extend
@@ -186,6 +227,9 @@ extern const ih_subject_class ih_reparse;
  * alone. */
 bool ih_reparse_extend(void *subject, const uint8_t *text, size_t length);
 bool ih_reparse_parse(void *subject, const markdown_core_document **document);
+/* The edit's half that changes the text: the edit is exactly it followed by
+ * the parse. */
+markdown_core_status ih_reparse_replace(void *subject, size_t start, size_t end, const uint8_t *text, size_t length);
 
 #ifdef __cplusplus
 }

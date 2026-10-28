@@ -1,4 +1,4 @@
-markdown-core stream script 1
+markdown-core incremental script 2
 script identity-type-at-paragraph-end identity
 append 67616d6d61
 expect kept Paragraph 0 0
