@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-type-in-middle-paragraph hard
+finalize
+edit 6 6 78
+expect reread 0 11
+edit 6 7 -
+expect reread 0 10

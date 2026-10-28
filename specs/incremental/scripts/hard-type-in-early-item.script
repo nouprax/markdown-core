@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-type-in-early-item hard
+finalize
+edit 15 15 78
+expect within 6 19
+edit 15 16 -
+expect within 6 18

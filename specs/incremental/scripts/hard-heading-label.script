@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-heading-label hard
+finalize
+edit 30 35 4f74686572
+edit 30 35 5469746c65
+edit 28 28 23205469746c650a0a
+edit 28 37 -

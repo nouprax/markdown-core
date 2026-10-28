@@ -1,0 +1,8 @@
+markdown-core incremental script 2
+script hard-split-and-join hard
+finalize
+edit 5 5 0a0a
+edit 5 7 -
+edit 18 18 0a2d20
+edit 18 21 -
+edit 21 23 -

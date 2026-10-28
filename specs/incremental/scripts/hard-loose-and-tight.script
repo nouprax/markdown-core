@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-loose-and-tight hard
+finalize
+edit 8 9 -
+edit 8 8 0a
+edit 4 8 -
+edit 4 4 2d20620a

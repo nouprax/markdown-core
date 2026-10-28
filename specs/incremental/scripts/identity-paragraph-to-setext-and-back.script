@@ -1,4 +1,4 @@
-markdown-core stream script 1
+markdown-core incremental script 2
 script identity-paragraph-to-setext-and-back identity
 append 3d3d
 expect new Heading 0

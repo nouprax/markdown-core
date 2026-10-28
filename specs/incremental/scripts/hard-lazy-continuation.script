@@ -1,0 +1,6 @@
+markdown-core incremental script 2
+script hard-lazy-continuation hard
+finalize
+edit 8 9 -
+edit 8 8 0a
+edit 9 9 3e20

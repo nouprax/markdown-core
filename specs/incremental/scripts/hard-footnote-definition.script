@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-footnote-definition hard
+finalize
+edit 24 24 0a5b5e6e5d3a20626f64790a
+edit 27 28 6d
+edit 27 28 6e
+edit 24 36 -

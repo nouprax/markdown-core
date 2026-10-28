@@ -1,0 +1,6 @@
+markdown-core incremental script 2
+script hard-open-directive hard
+finalize
+edit 5 5 3a3a3a6e6f74650a
+edit 18 18 3a3a3a0a
+edit 5 13 -

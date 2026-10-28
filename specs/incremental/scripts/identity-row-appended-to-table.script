@@ -1,4 +1,4 @@
-markdown-core stream script 1
+markdown-core incremental script 2
 script identity-row-appended-to-table identity
 append 7c2065207c2066207c0a
 expect changed Document 0

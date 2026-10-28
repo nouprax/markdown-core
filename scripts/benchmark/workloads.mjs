@@ -8,13 +8,16 @@
  * dependency; `--check` keeps it current. The benchmark workloads are large
  * and written when the benchmark runs, as the grammar corpus is.
  *
- * A workload is a document and a stream. Documents are generated here from
- * tracked sources: the dialect encoding of every grammar corpus certificate,
- * the canonical AST cases (correctness set), and the scale and adversarial
- * shapes built with the corpus's word generator in both alphabets. A stream
- * is a rule over the document (the chunkings of section 3.2), so a stream
- * never repeats the document's bytes. The scripted identity cases (4.5) are
- * scripts: a document a session opens on, and the appends that follow it.
+ * A workload is a document and a stream or a script. Documents are generated
+ * here from tracked sources: the dialect encoding of every grammar corpus
+ * certificate, the canonical AST cases (correctness set), and the scale and
+ * adversarial shapes built with the corpus's word generator in both
+ * alphabets. A stream is a rule over the document (the chunkings of section
+ * 3.2), so a stream never repeats the document's bytes. A script is a
+ * document a session opens on and the steps that follow it: the edit
+ * families of section 3.3, which finalize and then edit, the scripted
+ * identity cases (4.5), the hard cases of plan 12.7 and the refused edits
+ * (4.13).
  *
  *   node scripts/benchmark/workloads.mjs            write specs/incremental
  *   node scripts/benchmark/workloads.mjs --check    fail if it is stale
@@ -31,8 +34,8 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const CORRECTNESS_SET = "specs/incremental";
 const CANONICAL = "specs/canonical-ast";
 
-export const WORKLOAD_VERSION = "incremental-workloads-v2";
-export const SCRIPT_HEADER = "markdown-core stream script 1";
+export const WORKLOAD_VERSION = "incremental-workloads-v3";
+export const SCRIPT_HEADER = "markdown-core incremental script 2";
 export const MANIFEST_HEADER = "markdown-core incremental manifest 2";
 export const SIZES = Object.freeze([16384, 65536, 262144, 1048576]);
 export const STREAM_FAMILIES = Object.freeze(["tokens", "scalars", "rows", "splits"]);
@@ -114,20 +117,33 @@ export function streamChunks(buffer, family) {
 /* ------------------------------------------------------------ documents */
 
 /**
- * A document under construction: its text and the parts it joins. Byte
- * lengths are tracked as the text grows, so a megabyte document is built in
- * linear time.
+ * A document under construction: its text, the parts it joins and the named
+ * sites its scripts edit. A site is a byte range; a position is a range of
+ * length zero. Byte lengths are tracked as the text grows, so a megabyte
+ * document is built in linear time.
  */
 class Writer {
     constructor() {
         this.chunks = [];
         this.bytes = 0;
+        this.sites = [];
         this.parts = [];
         this.partStart = 0;
     }
     put(text) {
         this.chunks.push(text);
         this.bytes += bytes(text);
+        return this;
+    }
+    /** Write `text` as the range of site `kind`. */
+    site(kind, text) {
+        const start = this.bytes;
+        this.put(text);
+        this.sites.push({ kind, start, end: this.bytes });
+        return this;
+    }
+    at(kind) {
+        this.sites.push({ kind, start: this.bytes, end: this.bytes });
         return this;
     }
     part() {
@@ -149,42 +165,73 @@ const wordsOf =
  * sections where the shape needs them. A section is a part when the shape
  * joins independent blocks, and the whole document is one part when the
  * shape is one construct. */
-function proseSection(out, i, letters, prefix = "") {
+function proseSection(out, i, letters, prefix = "", paragraph = "paragraph") {
     const w = wordsOf(i, letters);
-    const line = (text) => out.put(`${prefix}${text}\n`);
+    const line = (write) => {
+        out.put(prefix);
+        write();
+        out.put("\n");
+    };
     const gap = () => out.put(`${prefix.trimEnd()}\n`);
-    line(`## ${w(1)} ${w(2, 2)}`);
+    line(() =>
+        out
+            .put("## ")
+            .at("start:heading")
+            .site("heading", `${w(1)} ${w(2, 2)}`)
+    );
     gap();
-    line(`${w(3)} *${w(4)}* **${w(5, 2)}** \`${w(6)}\` [${w(7)}][r${i}] ${w(8)}[^f${i}] ${w(9)}`);
-    line(`${w(10, 3)} ${w(11)} [^m${i}] ${w(12)}.`);
+    line(() =>
+        out
+            .at("start:paragraph")
+            .site(paragraph, `${w(3)} *${w(4)}* **${w(5, 2)}** \`${w(6)}\` [${w(7)}][r${i}] ${w(8)}[^f${i}] ${w(9)}`)
+    );
+    line(() => out.site(paragraph, `${w(10, 3)} ${w(11)} [^m${i}] ${w(12)}.`));
     gap();
-    line(`- ${w(13)} ${w(14)}`);
-    line(`- ${w(15, 2)}`);
+    line(() =>
+        out
+            .put("- ")
+            .at("start:item")
+            .site("item", `${w(13)} ${w(14)}`)
+    );
+    line(() => out.put("- ").site("item", w(15, 2)));
     gap();
-    line("```");
-    line(`${w(16)} ${w(17)}`);
-    line("```");
+    line(() => out.at("start:code").put("```"));
+    line(() => out.site("code", `${w(16)} ${w(17)}`));
+    line(() => out.put("```"));
     gap();
-    line(`[r${i}]: /${w(18)}`);
+    line(() => out.put(`[r${i}]: /`).site("destination", w(18)));
     gap();
-    line(`[^f${i}]: ${w(19)} ${w(20)}`);
+    line(() => out.put(`[^f${i}]: `).site("footnote", `${w(19)} ${w(20)}`));
     gap();
 }
 
 function listSection(out, i, letters) {
     const w = wordsOf(i, letters);
-    out.put(`- ${w(1)} ${w(2)}\n`);
-    out.put(`  ${w(3, 2)}\n\n`);
-    out.put(`  - ${w(4)}\n`);
-    out.put(`    - ${w(5)} ${w(6)}\n\n`);
-    out.put(`  \`\`\`\n  ${w(7)} ${w(8)}\n  \`\`\`\n\n`);
+    out.put("- ")
+        .at("start:item")
+        .site("paragraph", `${w(1)} ${w(2)}`)
+        .put("\n");
+    out.put("  ").site("paragraph", w(3, 2)).put("\n\n");
+    out.put("  - ").site("item", w(4)).put("\n");
+    out.put("    - ")
+        .site("item3", `${w(5)} ${w(6)}`)
+        .put("\n\n");
+    out.put("  ```\n  ")
+        .site("code", `${w(7)} ${w(8)}`)
+        .put("\n  ```\n\n");
 }
 
 const QUOTE_PREFIX = "> > > > ";
 
 function tableRow(out, i, letters) {
     const w = wordsOf(i, letters);
-    out.put(`| ${w(1)} *${w(2)}* | ${w(3)} | ${w(4)} |\n`);
+    out.put("| ")
+        .site("cell", `${w(1)} *${w(2)}*`)
+        .put(" | ")
+        .site("cell", w(3))
+        .put(" | ")
+        .site("cell", w(4))
+        .put(" |\n");
 }
 
 /* A grid cell is a fixed number of characters: geometry counts scalars. */
@@ -192,28 +239,45 @@ const GRID = 12;
 const gridCell = (text) => `${text}${" ".repeat(GRID - 1 - [...text].length)}`;
 function gridRow(out, i, letters) {
     const w = wordsOf(i, letters);
-    out.put(`| ${gridCell(w(1))}| ${gridCell(w(2))}|\n`);
+    out.put("| ")
+        .site("cell", gridCell(w(1)))
+        .put("| ")
+        .site("cell", gridCell(w(2)))
+        .put("|\n");
     out.put(`+${"-".repeat(GRID)}+${"-".repeat(GRID)}+\n`);
 }
 
 function refsHead(out, letters) {
     const w = wordsOf(0, letters);
-    for (let k = 0; k < 4; k++) out.put(`[d${k}]: /${w(k + 1)} "${w(k + 5)}"\n`);
+    for (let k = 0; k < 4; k++)
+        out.put(`[d${k}]: /`)
+            .site("destination", w(k + 1))
+            .put(` "${w(k + 5)}"\n`);
     out.put("\n");
-    for (let k = 0; k < 2; k++) out.put(`[^n${k}]: ${w(k + 9)} ${w(k + 11)}\n\n`);
+    for (let k = 0; k < 2; k++)
+        out.put(`[^n${k}]: `)
+            .site("footnote", `${w(k + 9)} ${w(k + 11)}`)
+            .put("\n\n");
 }
 
 function refsSection(out, i, letters) {
     const w = wordsOf(i + 1, letters);
-    out.put(`## ${w(1, 2)}\n\n`);
-    out.put(`${w(2)} [${w(3)}][d0] ${w(4)} [${w(5)}][d1] [^n0] ${w(6)} [${w(7)}][d2] [${w(8)}][d3] ${w(9)}[^n1].\n\n`);
+    out.put("## ").at("start:heading").site("heading", w(1, 2)).put("\n\n");
+    out.at("start:paragraph")
+        .site(
+            "paragraph",
+            `${w(2)} [${w(3)}][d0] ${w(4)} [${w(5)}][d1] [^n0] ${w(6)} [${w(7)}][d2] [${w(8)}][d3] ${w(9)}[^n1].`
+        )
+        .put("\n\n");
 }
 
 function flatSection(out, i, letters) {
     const w = wordsOf(i, letters);
-    out.put(`${w(1)} ${w(2)}\n\n`);
-    out.put(`# ${w(3)}\n\n`);
-    out.put(`${w(4, 2)}\n\n`);
+    out.at("start:paragraph")
+        .site("paragraph", `${w(1)} ${w(2)}`)
+        .put("\n\n");
+    out.put("# ").at("start:heading").site("heading", w(3)).put("\n\n");
+    out.at("start:paragraph").site("paragraph", w(4, 2)).put("\n\n");
     out.put("***\n\n");
 }
 
@@ -240,8 +304,8 @@ export const SCALE_SHAPES = Object.freeze({
         out.part();
     },
     quote(out, size, letters) {
-        out.put(`> [!note] ${wordsOf(0, letters)(1)}\n`);
-        fill(out, size, (i) => proseSection(out, i + 1, letters, QUOTE_PREFIX));
+        out.put("> [!note] ").site("heading", wordsOf(0, letters)(1)).put("\n");
+        fill(out, size, (i) => proseSection(out, i + 1, letters, QUOTE_PREFIX, "quote"));
         out.part();
     },
     table(out, size, letters) {
@@ -434,7 +498,8 @@ export function shapeDocument(shape, alphabet, size) {
         alphabet,
         size,
         text,
-        parts: out.parts
+        parts: out.parts,
+        sites: out.sites
     };
 }
 
@@ -442,39 +507,504 @@ export function shapeSizes(shape) {
     return FIXED_SIZES[shape] ?? SIZES;
 }
 
+/* ----------------------------------------------------- generic analysis */
+
+/** Lines with their byte ranges; `end` excludes and `next` includes the line ending. */
+function linesOf(buffer) {
+    const lines = [];
+    let start = 0;
+    for (let at = 0; at < buffer.length; at++) {
+        const byte = buffer[at];
+        if (byte === 0x0a || byte === 0x0d) {
+            const next = byte === 0x0d && buffer[at + 1] === 0x0a ? at + 2 : at + 1;
+            lines.push({ start, end: at, next });
+            start = next;
+            at = next - 1;
+        }
+    }
+    if (start < buffer.length) lines.push({ start, end: buffer.length, next: buffer.length });
+    return lines;
+}
+
+const ending = (byte) => byte === 0x0a || byte === 0x0d;
+
+/** The line holding byte `at` of a non-empty text, found without reading the rest of the text. */
+function lineAt(buffer, at) {
+    /* The LF of a CR LF ends the line its CR ends. */
+    if (buffer[at] === 0x0a && at > 0 && buffer[at - 1] === 0x0d) at--;
+    let start = at;
+    while (start > 0 && !ending(buffer[start - 1])) start--;
+    let end = at;
+    while (end < buffer.length && !ending(buffer[end])) end++;
+    const next = end === buffer.length ? end : buffer[end] === 0x0d && buffer[end + 1] === 0x0a ? end + 2 : end + 1;
+    return { start, end, next };
+}
+
+const blank = (buffer, line) => /^[ \t]*$/u.test(buffer.subarray(line.start, line.end).toString("latin1"));
+const letter = /\p{L}/u;
+
+/** Every position between two letters. */
+function letterJoints(buffer) {
+    const joints = [];
+    let previous = false;
+    let offset = 0;
+    for (const scalar of buffer.toString("utf8")) {
+        const current = letter.test(scalar);
+        if (previous && current) joints.push(offset);
+        previous = current;
+        offset += bytes(scalar);
+    }
+    return joints;
+}
+
+/** The position between two letters closest to `fraction` of the document. */
+function wordPosition(buffer, fraction, joints = letterJoints(buffer)) {
+    if (!joints.length) return null;
+    const target = fraction * buffer.length;
+    let low = 0;
+    let high = joints.length - 1;
+    while (low < high) {
+        const middle = (low + high) >> 1;
+        if (joints[middle] < target) low = middle + 1;
+        else high = middle;
+    }
+    const before = joints[Math.max(0, low - 1)];
+    return Math.abs(before - target) <= Math.abs(joints[low] - target) ? before : joints[low];
+}
+
+const pick = (items, fraction) => items[Math.min(items.length - 1, Math.floor(fraction * items.length))];
+const POSITIONS = Object.freeze({ beginning: 0, middle: 0.5, end: 0.999 });
+
+/** Snap a byte offset back to the nearest scalar boundary. */
+function snap(buffer, at) {
+    while (!isBoundary(buffer, at)) at--;
+    return at;
+}
+
 /* ------------------------------------------------------------- scripts */
 
-/** A script: the appends a session takes after it opens on its document. */
+/**
+ * A script: the steps a subject takes after it opens on its document. It
+ * keeps the text each step applies to, so each edit's offsets are computed
+ * against the text before that edit. A session streams until it finalizes
+ * and takes edits only after (plan 12.3), so an edit script finalizes first.
+ */
 class Script {
-    constructor(name, family) {
+    constructor(name, family, text) {
         this.name = name;
         this.family = family;
+        this.buffer = Buffer.from(text);
         this.steps = [];
     }
     append(text) {
-        this.steps.push({ text });
+        this.steps.push({ kind: "append", text });
+        this.buffer = Buffer.concat([this.buffer, Buffer.from(text)]);
+        return this;
+    }
+    finalize() {
+        this.steps.push({ kind: "finalize" });
+        return this;
+    }
+    edit(start, end, text) {
+        assert.ok(start <= end && end <= this.buffer.length, `${this.name}: an edit past the text`);
+        assert.ok(isBoundary(this.buffer, start) && isBoundary(this.buffer, end), `${this.name}: an edit in a scalar`);
+        this.steps.push({ kind: "edit", start, end, text });
+        this.buffer = Buffer.concat([this.buffer.subarray(0, start), Buffer.from(text), this.buffer.subarray(end)]);
+        return this;
+    }
+    insert(at, text) {
+        return this.edit(at, at, text);
+    }
+    remove(start, end) {
+        return this.edit(start, end, "");
+    }
+    /** Insert `text` at `at`, then remove it again. */
+    toggle(at, text) {
+        return this.insert(at, text).remove(at, at + bytes(text));
+    }
+    /** An edit the subject refuses with `status`, its offsets in `unit`. */
+    reject(unit, status, start, end, text) {
+        this.steps.push({ kind: "reject", unit, status, start, end, text });
         return this;
     }
     expect(...values) {
         this.steps.at(-1).expect = [...(this.steps.at(-1).expect ?? []), values.join(" ")];
         return this;
     }
+    /** The bytes [from, to) of the new text the edit above reads again (gates 4.12). */
+    reread(from, to) {
+        assert.equal(this.steps.at(-1).kind, "edit");
+        return this.expect("reread", from, to);
+    }
+    /** The bytes of the new text the edit above reads again lie in [from, to) (gates 4.12). */
+    within(from, to) {
+        assert.equal(this.steps.at(-1).kind, "edit");
+        return this.expect("within", from, to);
+    }
+    /** The step as the text before it: where an undo puts the text back. */
+    inverse(step, before) {
+        return {
+            start: step.start,
+            end: step.start + bytes(step.text),
+            text: before.subarray(step.start, step.end).toString("utf8")
+        };
+    }
+}
+
+/* -------------------------------------------------- edit families (3.3) */
+
+export const EDIT_FAMILIES = Object.freeze([
+    "typing",
+    "lines",
+    "markers",
+    "ranges",
+    "far",
+    "declarations",
+    "undo",
+    "random"
+]);
+export const RANDOM_SEEDS = 16;
+const RANDOM_STEPS = 64;
+const TYPING_STEPS = 64;
+const FAR_STEPS = 64;
+const PASTE_BYTES = 2048;
+
+/** A script of `family` on `text` that has finalized, ready for its edits. */
+const editing = (name, family, text) => new Script(name, family, text).finalize();
+
+/** The scalars a script types, spelled in the document's alphabet. */
+const typed = (letters, index) => letters[(index * 7 + 3) % letters.length];
+
+function typingScript(name, text, at, letters) {
+    const script = editing(name, "typing", text);
+    let cursor = at;
+    let typedCount = 0;
+    for (let step = 0; step < TYPING_STEPS; step++) {
+        /* Eight scalars forward, then a run of three backspaces. */
+        if (step % 11 >= 8 && typedCount > 0) {
+            const start = snap(script.buffer, cursor - 1);
+            script.remove(start, cursor);
+            cursor = start;
+            typedCount--;
+        } else {
+            const scalar = typed(letters, step);
+            script.insert(cursor, scalar);
+            cursor += bytes(scalar);
+            typedCount++;
+        }
+    }
+    return script;
+}
+
+/** The sites of `kind`. */
+const sitesOf = (document, kind) => document.sites.filter((site) => site.kind === kind);
+
+/** Where `typing` types: the middle of one site of each kind, or a word in the middle of the text. */
+function typingSites(document) {
+    const kinds = ["paragraph", "item3", "item", "cell", "heading", "code", "quote", "footnote"];
+    const found = kinds.filter((kind) => sitesOf(document, kind).length);
+    if (found.length)
+        return found.map((kind) => {
+            const site = pick(sitesOf(document, kind), 0.5);
+            return { kind, at: site.start + Math.floor((site.end - site.start) / 2) };
+        });
+    const buffer = Buffer.from(document.text);
+    const at = wordPosition(buffer, 0.5);
+    return at === null ? [] : [{ kind: "word", at }];
+}
+
+function linesScripts(document) {
+    const scripts = [];
+    for (const [where, fraction] of Object.entries(POSITIONS)) {
+        const script = editing(`lines-${where}`, "lines", document.text);
+        const lines = () => linesOf(script.buffer);
+        /* Enter inside a paragraph, and back. */
+        const inside = wordPosition(script.buffer, fraction);
+        if (inside !== null) script.toggle(inside, "\n");
+        /* A blank line between two blocks, inserted and deleted. */
+        const blanks = lines().filter(
+            (line, index, all) => blank(script.buffer, line) && index > 0 && !blank(script.buffer, all[index - 1])
+        );
+        if (blanks.length) script.toggle(pick(blanks, fraction).start, "\n");
+        /* Join two lines of one paragraph. */
+        const joins = lines().filter(
+            (line, index, all) =>
+                index + 1 < all.length && !blank(script.buffer, line) && !blank(script.buffer, all[index + 1])
+        );
+        if (joins.length) {
+            const line = pick(joins, fraction);
+            script.edit(line.end, line.next, " ");
+        }
+        /* Merge two paragraphs by deleting the blank line between them. */
+        const merges = lines().filter(
+            (line, index, all) =>
+                index > 0 &&
+                index + 1 < all.length &&
+                blank(script.buffer, line) &&
+                !blank(script.buffer, all[index - 1]) &&
+                !blank(script.buffer, all[index + 1])
+        );
+        if (merges.length) {
+            const line = pick(merges, fraction);
+            script.remove(line.start, line.next);
+        }
+        if (script.steps.length > 1) scripts.push(script);
+    }
+    return scripts;
+}
+
+/* Section 3.3's markers, each added at the start of a block and removed. A
+ * marker that belongs on its own line goes on the line after the block's
+ * first line. */
+const MARKERS = Object.freeze([
+    ["> ", "prefix"],
+    ["- ", "prefix"],
+    ["1. ", "prefix"],
+    ["# ", "prefix"],
+    ["    ", "prefix"],
+    ["```\n", "prefix"],
+    ["===\n", "after"],
+    ["| --- |\n", "after"],
+    [": x\n", "after"]
+]);
+
+function markerScripts(document) {
+    const kinds = [...new Set(document.sites.map((site) => site.kind).filter((kind) => kind.startsWith("start:")))];
+    const buffer = Buffer.from(document.text);
+    const starts = kinds.length
+        ? kinds.map((kind) => [kind.slice("start:".length), pick(sitesOf(document, kind), 0.5).start])
+        : (() => {
+              const lines = linesOf(buffer).filter((line) => !blank(buffer, line));
+              return lines.length ? [["line", pick(lines, 0.5).start]] : [];
+          })();
+    return starts.map(([kind, at]) => {
+        const script = editing(`markers-${kind}`, "markers", document.text);
+        const line = linesOf(script.buffer).find((candidate) => candidate.start <= at && at <= candidate.next);
+        for (const [marker, placement] of MARKERS) script.toggle(placement === "prefix" ? at : line.next, marker);
+        return script;
+    });
+}
+
+/** A section to paste: prose in the document's alphabet, at least 2 KB. */
+function pasteText(letters) {
+    const out = new Writer();
+    fill(out, PASTE_BYTES, (i) => proseSection(out, 100000 + i, letters));
+    return out.text();
+}
+
+function rangesScript(document, letters) {
+    const script = editing("ranges", "ranges", document.text);
+    const blocks = () => {
+        const result = [];
+        let open = null;
+        for (const line of linesOf(script.buffer)) {
+            if (blank(script.buffer, line)) {
+                if (open) result.push(open);
+                open = null;
+            } else if (open) open.next = line.next;
+            else open = { start: line.start, next: line.next };
+        }
+        if (open) result.push(open);
+        return result;
+    };
+    /* Paste a 2 KB section at a block boundary in the middle. */
+    const middle = pick(blocks(), 0.5);
+    if (middle) script.insert(middle.start, pasteText(letters));
+    /* Delete a section. */
+    const doomed = pick(blocks(), 0.5);
+    if (doomed) script.remove(doomed.start, doomed.next);
+    /* Select a paragraph's whole text and type a replacement. The two edits
+     * above moved it, so its text is found again. */
+    const paragraph = pick(sitesOf(document, "paragraph"), 0.5);
+    const line = pick(
+        linesOf(script.buffer).filter((candidate) => !blank(script.buffer, candidate)),
+        0.5
+    );
+    const found = paragraph
+        ? script.buffer.indexOf(Buffer.from(document.text).subarray(paragraph.start, paragraph.end))
+        : -1;
+    const target =
+        found >= 0
+            ? { start: found, end: found + paragraph.end - paragraph.start }
+            : line && { start: line.start, end: line.end };
+    if (target && target.end > target.start) {
+        let cursor = target.start;
+        for (let index = 0; index < 8; index++) {
+            const scalar = typed(letters, index);
+            script.edit(cursor, index ? cursor : target.end, scalar);
+            cursor += bytes(scalar);
+        }
+    }
+    return script;
+}
+
+function farScript(document, letters) {
+    const script = editing("far", "far", document.text);
+    for (let step = 0; step < FAR_STEPS; step++) {
+        const buffer = script.buffer;
+        /* The first or the last line that is not blank, read from its end of the text. */
+        let line = buffer.length ? lineAt(buffer, step % 2 ? buffer.length - 1 : 0) : null;
+        while (line && blank(buffer, line))
+            line =
+                step % 2
+                    ? line.start > 0
+                        ? lineAt(buffer, line.start - 1)
+                        : null
+                    : line.next < buffer.length
+                      ? lineAt(buffer, line.next)
+                      : null;
+        if (!line) break;
+        script.insert(line.end, typed(letters, step));
+    }
+    return script;
+}
+
+function declarationsScript(document, letters) {
+    const destinations = sitesOf(document, "destination");
+    if (!destinations.length) return null;
+    const script = editing("declarations", "declarations", document.text);
+    const w = wordsOf(999983, letters);
+    /* Change a reference destination. */
+    const destination = pick(destinations, 0.5);
+    script.edit(destination.start, destination.end, w(1));
+    /* A duplicate reference label, ahead of the original so that it wins. */
+    const label = /\[([^\]]+)\]: \/$/u.exec(
+        script.buffer.subarray(Math.max(0, destination.start - 64), destination.start).toString("utf8")
+    )?.[1];
+    if (label) script.toggle(0, `[${label}]: /${w(2)}\n\n`);
+    /* A heading whose label collides with an existing one. */
+    const heading = pick(sitesOf(document, "heading"), 0.5);
+    if (heading) {
+        const text = Buffer.from(document.text).subarray(heading.start, heading.end);
+        const at = script.buffer.indexOf(text);
+        const line = linesOf(script.buffer).find((candidate) => candidate.start <= at && at <= candidate.end);
+        if (line) script.toggle(line.start, `## ${text.toString("utf8")}\n\n`);
+    }
+    /* A footnote definition for a label the text references but never defines. */
+    const undefinedLabel = /\[\^(m[0-9]+)\]/u.exec(script.buffer.toString("utf8"));
+    if (undefinedLabel) script.toggle(script.buffer.length, `\n[^${undefinedLabel[1]}]: ${w(3)}\n`);
+    /* An inline note in a paragraph. */
+    const paragraph = pick(sitesOf(document, "paragraph"), 0.5) ?? pick(sitesOf(document, "quote"), 0.5);
+    if (paragraph) {
+        const text = Buffer.from(document.text).subarray(paragraph.start, paragraph.end);
+        const at = script.buffer.indexOf(text);
+        if (at >= 0) script.toggle(at + text.length, `^[${w(4)} ${w(5)}]`);
+    }
+    return script;
+}
+
+/** Each edit of a script followed by its inverse, then by itself again so the next edit's offsets hold. */
+function undoScript(script, text) {
+    const undo = editing(`undo-${script.name}`, "undo", text);
+    for (const step of script.steps) {
+        if (step.kind !== "edit") continue;
+        const before = undo.buffer;
+        undo.edit(step.start, step.end, step.text);
+        const inverse = undo.inverse(step, before);
+        undo.edit(inverse.start, inverse.end, inverse.text);
+        undo.edit(step.start, step.end, step.text);
+    }
+    return undo;
+}
+
+/* What random steps insert: letters, the characters that open and close
+ * constructs, and the line endings, including a bare CR, a CR LF split across
+ * steps, and NUL. */
+const RANDOM_PIECES = [
+    ..."*_`[]()#>-|:!^{}<~$%=+\\@",
+    " ",
+    "  ",
+    "\n",
+    "\n\n",
+    "\r",
+    "\r\n",
+    "\0",
+    "1. ",
+    "- ",
+    "> ",
+    "```",
+    "    "
+];
+
+function randomScript(document, letters, seed) {
+    const script = editing(`random-${seed}`, "random", document.text);
+    const draw = random(0x72616e64 + seed);
+    const piece = () =>
+        draw.below(3) ? typed(letters, draw.below(letters.length)) : RANDOM_PIECES[draw.below(RANDOM_PIECES.length)];
+    const insertion = () => Array.from({ length: 1 + draw.below(8) }, piece).join("");
+    for (let step = 0; step < RANDOM_STEPS; step++) {
+        const buffer = script.buffer;
+        const operation = buffer.length ? draw.below(3) : 0;
+        let start;
+        let end;
+        if (draw.below(2)) {
+            /* Line granularity: whole lines, from the line holding a uniformly
+             * drawn byte through up to two more. */
+            let line = buffer.length ? lineAt(buffer, draw.below(buffer.length)) : { start: 0, next: 0 };
+            start = line.start;
+            for (let more = draw.below(3); more > 0 && line.next < buffer.length; more--)
+                line = lineAt(buffer, line.next);
+            end = operation ? line.next : start;
+        } else {
+            /* Byte granularity, moved back to a scalar boundary. */
+            start = snap(buffer, draw.below(buffer.length + 1));
+            end = operation ? snap(buffer, Math.min(buffer.length, start + 1 + draw.below(16))) : start;
+            if (end < start) end = start;
+        }
+        const text = operation === 1 ? "" : insertion();
+        if (start === end && text === "") continue;
+        script.edit(start, end, text);
+    }
+    return script;
 }
 
 /**
- * The appends whose outcome the plan states exactly (sections 5.9 and 8),
- * written as the ids kept, made and retired by position. `kept KIND OLD NEW`
- * names a node that keeps its id; `new KIND AT` a node with a fresh id;
- * `retired KIND AT` an old node nothing continues; `changed KIND AT` a node
- * whose value changed, and `only` that no node outside the `changed` lines
- * changed. Positions are the byte offset where a node's source starts, in the
- * text before the step for `retired` and after it otherwise.
+ * Every edit script of one document, each finalizing before its first edit.
+ * `families` narrows the set.
+ */
+export function editScripts(document, families = EDIT_FAMILIES) {
+    const letters = alphabets[document.alphabet ?? "ascii"];
+    const wanted = new Set(families);
+    const base = [];
+    const all = wanted.has("undo");
+    if (wanted.has("typing") || all)
+        for (const site of typingSites(document))
+            base.push(
+                typingScript(`typing-${site.kind}`, document.text, snap(Buffer.from(document.text), site.at), letters)
+            );
+    if (wanted.has("lines") || all) base.push(...linesScripts(document));
+    if (wanted.has("markers") || all) base.push(...markerScripts(document));
+    if (wanted.has("ranges") || all) base.push(rangesScript(document, letters));
+    if (wanted.has("far") || all) base.push(farScript(document, letters));
+    if (wanted.has("declarations") || all) base.push(declarationsScript(document, letters));
+    const scripts = base.filter((script) => script && script.steps.length > 1);
+    const result = scripts.filter((script) => wanted.has(script.family));
+    if (all) result.push(...scripts.map((script) => undoScript(script, document.text)));
+    if (wanted.has("random"))
+        for (let seed = 1; seed <= RANDOM_SEEDS; seed++) result.push(randomScript(document, letters, seed));
+    return result;
+}
+
+/* ------------------------------- scripted identity (4.5) and 4.12, 4.13 */
+
+/**
+ * The steps whose outcome the plan states exactly (sections 5.9, 8 and
+ * 12.5), written as the ids kept, made and retired by position. `kept KIND
+ * OLD NEW` names a node that keeps its id; `new KIND AT` a node with a fresh
+ * id; `retired KIND AT` an old node nothing continues; `changed KIND AT` a
+ * node whose value changed, and `only` that no node outside the `changed`
+ * lines changed. Positions are the byte offset where a node's source starts,
+ * in the text before the step for `retired` and after it otherwise. The
+ * append cases stream; the edit cases finalize first.
  */
 export function identityScripts() {
     const cases = [];
+    /* The edit cases are the `ids` family: they run once the session takes
+     * edits (plan 12.9), and the append cases run now. */
     const add = (name, text, build) => {
-        const script = new Script(`identity-${name}`, "identity");
+        const script = new Script(`identity-${name}`, "identity", text);
         build(script);
+        if (script.steps[0].kind === "finalize") script.family = "ids";
         cases.push({ name: `identity-${name}`, text, script });
     };
     add("type-at-paragraph-end", "alpha beta\n\n", (s) =>
@@ -529,12 +1059,205 @@ export function identityScripts() {
                 .expect("only")
         );
     }
+    add("type-at-paragraph-start", "alpha beta\n\ngamma delta\n", (s) =>
+        s.finalize().insert(0, "x").expect("kept", "Paragraph", 0, 0).expect("kept", "Paragraph", 12, 13)
+    );
+    add("insert-before-paragraph", "alpha\n", (s) =>
+        s.finalize().insert(0, "new\n\n").expect("new", "Paragraph", 0).expect("kept", "Paragraph", 0, 5)
+    );
+    add("delete-first-word", "alpha beta\n", (s) => s.finalize().remove(0, 6).expect("kept", "Paragraph", 0, 0));
+    add("delete-sibling", "one\n\ntwo\n\nthree\n", (s) =>
+        s
+            .finalize()
+            .remove(5, 10)
+            .expect("kept", "Paragraph", 0, 0)
+            .expect("retired", "Paragraph", 5)
+            .expect("kept", "Paragraph", 10, 5)
+    );
+    add("merge-paragraphs", "one\n\ntwo\n", (s) =>
+        s.finalize().remove(4, 5).expect("kept", "Paragraph", 0, 0).expect("retired", "Paragraph", 5)
+    );
+    add("paragraph-to-setext", "title\n", (s) =>
+        s.finalize().insert(6, "===\n").expect("new", "Heading", 0).expect("retired", "Paragraph", 0)
+    );
+    add("paragraph-into-quote", "text\n", (s) =>
+        s
+            .finalize()
+            .insert(0, "> ")
+            .expect("new", "Callout", 0)
+            .expect("new", "Paragraph", 2)
+            .expect("retired", "Paragraph", 0)
+    );
+    /* Deleting the outer note's closer moves the inner note to the
+     * paragraph, a new owner; deleting its opener then moves the inner note
+     * within the paragraph. */
+    add("unwrap-nested-note", "a^[b ^[c] d] e\n", (s) =>
+        s.finalize().remove(11, 12).expect("new", "Footnote", 5).remove(1, 3).expect("kept", "Footnote", 5, 3)
+    );
+    {
+        const text = Array.from({ length: 200 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`).join("");
+        add("line-at-top", text, (s) =>
+            s
+                .finalize()
+                .insert(0, "new line\n")
+                .expect("changed", "Document", 0)
+                .expect("changed", "Paragraph", 0)
+                .expect("changed", "Text", 0)
+                .expect("changed", "SoftBreak", 8)
+                .expect("only")
+        );
+    }
+    /* The links name the heading's label, which the document resolves to
+     * the heading, so a new anchor changes only the heading and the
+     * Document. */
+    add("heading-anchor-targets", "# Target {#one}\n\nsee [a][Target] and [b][Target]\n", (s) =>
+        s.finalize().edit(11, 14, "two").expect("changed", "Document", 0).expect("changed", "Heading", 0).expect("only")
+    );
+    {
+        const paragraphs = Array.from({ length: 1000 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);
+        const text = paragraphs.join("");
+        const at = bytes(paragraphs.slice(0, 4).join(""));
+        add("typing-paragraph-5-of-1000", text, (s) =>
+            s
+                .finalize()
+                .insert(at + 1, "x")
+                .expect("changed", "Document", 0)
+                .expect("changed", "Paragraph", at)
+                .expect("changed", "Text", at)
+                .expect("only")
+        );
+    }
     return cases;
+}
+
+/**
+ * The hard cases of plan 12.7, one script each, in the `hard` family. Every
+ * one runs every oracle; the ones whose re-read the plan fixes state it with
+ * `reread` (exact) or `within` (an upper bound), as 4.12 reads them.
+ */
+export function hardScripts() {
+    const cases = [];
+    const add = (name, text, build) => {
+        const script = editing(`hard-${name}`, "hard", text);
+        build(script);
+        cases.push({ name: `hard-${name}`, text, script });
+    };
+    const items = (count) => Array.from({ length: count }, (_, i) => `- i${String(i).padStart(2, "0")}\n`).join("");
+    /* Typing in a paragraph re-reads it and the paragraph before it, and
+     * resyncs at the next. */
+    add("type-in-middle-paragraph", "one\n\ntwo\n\nthree\n", (s) =>
+        s.insert(6, "x").reread(0, 11).remove(6, 7).reread(0, 10)
+    );
+    /* Fences, comments and HTML blocks opened before unchanged text and
+     * closed again. */
+    for (const [kind, opener, closer] of [
+        ["fence", "```\n", "```\n"],
+        ["comment", "%%\n", "%%\n"],
+        ["html", "<pre>\n", "</pre>\n"],
+        ["directive", ":::note\n", ":::\n"]
+    ])
+        add(`open-${kind}`, "one\n\ntwo\n\nthree\n\nfour\n", (s) =>
+            s
+                .insert(5, opener)
+                .insert(5 + bytes(opener) + 5, closer)
+                .remove(5, 5 + bytes(opener))
+        );
+    /* An edit that opens a candidate before unchanged children: deleting `x`
+     * makes `%%` a comment opener that the last line closes (12.3). */
+    add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
+    /* Container syntax: `>`, a list marker and indentation, typed and
+     * deleted, at the top level and inside a list item. */
+    add("container-markers", "one\n\n- two\n\n  three\n\nfour\n", (s) =>
+        s
+            .toggle(0, "> ")
+            .toggle(0, "- ")
+            .toggle(0, "    ")
+            .toggle(7, "> ")
+            .toggle(7, "- ")
+            .toggle(12, "  ")
+            .remove(12, 14)
+            .insert(12, "  ")
+    );
+    /* Definitions: a reference, a footnote, a heading label and a specimen
+     * added, renamed and removed, with their uses before and after them. */
+    add("reference-definition", "see [a][r] and [r]\n\n[r]: /one\n\nafter [r]\n", (s) =>
+        s.edit(26, 29, "two").edit(21, 22, "q").edit(21, 22, "r").remove(20, 31).insert(20, "[r]: /three\n\n")
+    );
+    add("footnote-definition", "note[^n] here\n\nmore[^n]\n", (s) =>
+        s.insert(24, "\n[^n]: body\n").edit(27, 28, "m").edit(27, 28, "n").remove(24, 36)
+    );
+    add("heading-label", "see [Title] and [x][Title]\n\n# Title\n\n# Other\n", (s) =>
+        s.edit(30, 35, "Other").edit(30, 35, "Title").toggle(28, "# Title\n\n")
+    );
+    add("specimen-definition", "see @spec and (@spec)\n\nbody\n", (s) =>
+        s
+            .insert(0, "(@spec) Defined.\n\n")
+            .edit(2, 6, "spek")
+            .edit(2, 6, "spec")
+            .insert(bytes("(@spec) Defined.\n\nsee @spec and (@spec)\n\nbody\n"), "\n(@spec) Again.\n")
+            .remove(0, 18)
+    );
+    /* The text of a heading with an automatic anchor that a link targets. */
+    add("automatic-anchor", "# Title\n\nsee [x](#title)\n\n# Title\n", (s) =>
+        s.insert(7, "s").remove(7, 8).edit(2, 7, "Other")
+    );
+    /* Splitting and joining paragraphs and list items. */
+    add("split-and-join", "alpha beta\n\n- one two\n- three\n", (s) =>
+        s.insert(5, "\n\n").remove(5, 7).insert(18, "\n- ").remove(18, 21).remove(21, 23)
+    );
+    /* The rules that write backwards, each reaching the block before. */
+    add("setext-underline", "one\n\ntitle\n\ntwo\n", (s) => s.insert(11, "===\n").remove(11, 15).insert(11, "---\n"));
+    add("definition-term", "one\n\nTerm\n\ntwo\n", (s) => s.insert(10, ": def\n").remove(10, 16));
+    add("table-caption", "one\n\n| h |\n|---|\n| v |\n\ntwo\n", (s) => s.insert(5, "Table: cap\n\n").remove(5, 17));
+    add("block-identifier", "one\n\nA para\n\ntwo\n", (s) =>
+        s.insert(11, " #id#").remove(11, 16).insert(12, "#id#\n\n")
+    );
+    add("table-header", "one\n\n| h |\n| v |\n\ntwo\n", (s) =>
+        s.insert(11, "|---|\n").remove(11, 17).edit(5, 10, "| j |")
+    );
+    add("lazy-continuation", "> quote\n\nlazy\n\ntwo\n", (s) => s.remove(8, 9).insert(8, "\n").insert(9, "> "));
+    /* The Properties envelope, opened and closed at the top. */
+    add("properties", "name: x\n\ntext\n", (s) => s.insert(0, "---\n").insert(12, "---\n").remove(12, 16).remove(0, 4));
+    /* A loose list turning tight and back; an early item made loose in a
+     * long list re-reads only the items around it. */
+    add("loose-and-tight", "- a\n- b\n\n- c\n", (s) => s.remove(8, 9).insert(8, "\n").remove(4, 8).insert(4, "- b\n"));
+    add("early-item-loose", items(50), (s) => s.insert(12, "\n").within(0, 19).remove(12, 13).within(0, 18));
+    add("type-in-early-item", items(50), (s) => s.insert(15, "x").within(6, 19).remove(15, 16).within(6, 18));
+    return cases;
+}
+
+/**
+ * The refused edits of 4.13, against a document that ends in a four-byte
+ * scalar, so an offset can fall inside one in either unit: an edit while the
+ * subject streams, and after the finalize a range past the end, a reversed
+ * range, and an offset inside that scalar at one of its continuation bytes
+ * in UTF-8 and between its two units in UTF-16. An edit that holds follows
+ * them all.
+ */
+export function rejectionScript(text) {
+    const script = new Script("rejections", "rejections", text);
+    const buffer = Buffer.from(text);
+    const wide = scalarBoundaries(buffer).find((at, index, all) => all[index + 1] - at === 4);
+    const lengths = { utf8: buffer.length, utf16: text.length };
+    for (const unit of Object.keys(lengths)) script.reject(unit, "streaming", 0, 0, "a");
+    script.finalize();
+    for (const [unit, length] of Object.entries(lengths)) {
+        script.reject(unit, "out-of-bounds", length + 1, length + 1, "a");
+        script.reject(unit, "out-of-bounds", 0, length + 1, "a");
+        script.reject(unit, "out-of-bounds", 2, 1, "a");
+    }
+    script.reject("utf8", "out-of-bounds", wide + 1, wide + 1, "a");
+    script.reject("utf8", "out-of-bounds", 0, wide + 3, "a");
+    const units = buffer.subarray(0, wide).toString("utf8").length;
+    script.reject("utf16", "out-of-bounds", units + 1, units + 1, "a");
+    script.reject("utf16", "out-of-bounds", 0, units + 1, "a");
+    return script.insert(0, "a").remove(wide + 1, wide + 5);
 }
 
 /* ------------------------------------------------------------ encoding */
 
 const hex = (text) => (text === "" ? "-" : Buffer.from(text).toString("hex"));
+const unhex = (value) => (value === "-" ? "" : Buffer.from(value, "hex").toString("utf8"));
 
 /** Scripts in the tracked text format: a `script NAME FAMILY` line, then one step per line. */
 export function formatScripts(scripts) {
@@ -542,7 +1265,10 @@ export function formatScripts(scripts) {
     for (const script of scripts) {
         lines.push(`script ${script.name} ${script.family}`);
         for (const step of script.steps) {
-            lines.push(`append ${hex(step.text)}`);
+            if (step.kind === "append") lines.push(`append ${hex(step.text)}`);
+            else if (step.kind === "finalize") lines.push("finalize");
+            else if (step.kind === "edit") lines.push(`edit ${step.start} ${step.end} ${hex(step.text)}`);
+            else lines.push(`reject ${step.unit} ${step.status} ${step.start} ${step.end} ${hex(step.text)}`);
             for (const expectation of step.expect ?? []) lines.push(`expect ${expectation}`);
         }
     }
@@ -563,9 +1289,25 @@ export function parseScripts(text) {
             scripts.push({ name: fields[0], family: fields[1], steps: [] });
         } else if (kind === "append") {
             assert.ok(steps && fields.length === 1, `malformed append: ${line}`);
-            steps.push({ text: fields[0] === "-" ? "" : Buffer.from(fields[0], "hex").toString("utf8") });
+            steps.push({ kind, text: unhex(fields[0]) });
+        } else if (kind === "finalize") {
+            assert.ok(steps && !fields.length, `malformed finalize: ${line}`);
+            steps.push({ kind });
+        } else if (kind === "edit") {
+            assert.ok(steps && fields.length === 3, `malformed edit: ${line}`);
+            steps.push({ kind, start: Number(fields[0]), end: Number(fields[1]), text: unhex(fields[2]) });
+        } else if (kind === "reject") {
+            assert.ok(steps && fields.length === 5, `malformed reject: ${line}`);
+            steps.push({
+                kind,
+                unit: fields[0],
+                status: fields[1],
+                start: Number(fields[2]),
+                end: Number(fields[3]),
+                text: unhex(fields[4])
+            });
         } else if (kind === "expect") {
-            assert.ok(steps?.length, `an expectation before any append: ${line}`);
+            assert.ok(steps?.length, `an expectation before any step: ${line}`);
             steps.at(-1).expect = [...(steps.at(-1).expect ?? []), fields.join(" ")];
         } else {
             throw new Error(`unknown script line: ${line}`);
@@ -581,19 +1323,27 @@ const canonicalNames = () =>
 
 /**
  * The correctness set (section 9): the canonical AST cases and the scale and
- * adversarial shapes at their smallest size, with every stream family,
- * `splits` on every document up to 2 KB, and the scripted identity cases.
- * Returns the files to write, keyed by their path under `specs/incremental/`.
+ * adversarial shapes at their smallest size, with every edit family, every
+ * stream family, `splits` on every document up to 2 KB, the scripted
+ * identity cases, the hard cases and the refused edits. Returns the files to
+ * write, keyed by their path under `specs/incremental/`.
  */
 export function correctnessSet() {
     const files = new Map();
     const manifest = [];
     const documents = [];
+    const script = (name, text, scripts) => {
+        files.set(`documents/${name}.md`, text);
+        files.set(`scripts/${name}.script`, formatScripts(scripts));
+        manifest.push(`document documents/${name}.md`, `script documents/${name}.md scripts/${name}.script`);
+    };
     for (const name of canonicalNames()) {
         documents.push({
             name,
             path: `../canonical-ast/${name}.md`,
             text: fs.readFileSync(path.join(root, CANONICAL, `${name}.md`), "utf8"),
+            alphabet: "ascii",
+            sites: [],
             parts: null
         });
     }
@@ -604,13 +1354,16 @@ export function correctnessSet() {
             files.set(`documents/${document.name}.md`, document.text);
         }
     /* The targeted cases run first, then the sweeps. */
-    for (const { name, text, script } of identityScripts()) {
-        files.set(`documents/${name}.md`, text);
-        files.set(`scripts/${name}.stream`, formatScripts([script]));
-        manifest.push(`document documents/${name}.md`, `script documents/${name}.md scripts/${name}.stream`);
-    }
+    for (const { name, text, script: steps } of [...identityScripts(), ...hardScripts()]) script(name, text, [steps]);
+    /* The refused edits run against a document that ends in a four-byte
+     * scalar, so an offset can fall inside one in either unit. */
+    const refused = `${fs.readFileSync(path.join(root, CANONICAL, "inlines.md"), "utf8")}\u{20000}\n`;
+    script("rejections", refused, [rejectionScript(refused)]);
     for (const document of documents) {
         manifest.push(`document ${document.path}${document.parts ? ` parts ${document.parts.join(" ")}` : ""}`);
+        const file = `scripts/${document.name}.script`;
+        files.set(file, formatScripts(editScripts(document)));
+        manifest.push(`script ${document.path} ${file}`);
         const buffer = Buffer.from(document.text);
         const streams = document.shape
             ? ["tokens", "rows"]
@@ -619,8 +1372,10 @@ export function correctnessSet() {
     }
     files.set("token-sizes.txt", `${TOKEN_SIZES.join(" ")}\n`);
     /* The manifest declares the families in the order of sections 3.1 to
-     * 3.2 and 4.5, and the C tests run one family each. */
-    const declared = ["documents", "identity", ...STREAM_FAMILIES].map((family) => `family ${family}`);
+     * 3.3, 4.5 and 4.13, and the C tests run one family each. */
+    const declared = ["documents", "identity", "ids", "hard", "rejections", ...EDIT_FAMILIES, ...STREAM_FAMILIES].map(
+        (family) => `family ${family}`
+    );
     files.set("manifest.txt", `${[MANIFEST_HEADER, ...declared, ...manifest].join("\n")}\n`);
     return files;
 }

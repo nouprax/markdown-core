@@ -12,24 +12,36 @@ sources and never edited by hand: run the generator to rewrite the set, and
   document and, for a composite, the byte length of each part it joins (3.1),
   in the `documents` family;
   `script PATH SCRIPTS` opens a session on the document and runs every script
-  of a script file after it;
+  of a script file on it;
   `stream PATH FAMILY` streams the document by one family of section 3.2.
   Paths are relative to this directory. The canonical AST cases are read from
   `../canonical-ast/`, and the other documents live under `documents/`.
-- `scripts/NAME.stream` holds the scripts of one document, in the format
+- `scripts/NAME.script` holds the scripts of one document, in the format
   below.
 - `token-sizes.txt` is the fixed sequence of `tokens` chunk sizes. The
   `tokens`, `scalars`, `rows` and `splits` streams are rules over the document
   and this sequence, so no stream repeats the document's bytes.
 
-A script file starts with the line `markdown-core stream script 1`. Each
-script is a `script NAME FAMILY` line followed by its steps, one per line.
-FAMILY is `identity` (4.5).
+A script file starts with the line `markdown-core incremental script 2`.
+Each script is a `script NAME FAMILY` line followed by its steps, one per
+line. FAMILY is an edit family of section 3.3, `identity` or `ids` (4.5), or
+`rejections` (4.13). A script that never says `finalize` finalizes after its
+last step.
 
-- `append TEXT` is one `append` call; TEXT is hexadecimal UTF-8.
+- `append TEXT` is one `append` call; TEXT is hexadecimal UTF-8, and `-` is
+  the empty text.
+- `finalize` ends the stream. Every edit comes after it.
+- `edit START END TEXT` replaces the bytes from START to END with TEXT.
+  Offsets are UTF-8 bytes of the text before the edit; a runner in UTF-16
+  converts them through its text model.
+- `reject UNIT STATUS START END TEXT` is an edit that a subject opened in
+  UNIT refuses with STATUS (4.13): `streaming` or `out-of-bounds`. Offsets
+  are UTF-8 bytes or UTF-16 code units.
 - `expect kept KIND OLD NEW`, `expect new KIND AT`, `expect retired KIND AT`,
   `expect changed KIND AT` and `expect only` state the identities of the step
   above them (4.5), by the byte offset where a node's scope starts.
+- `expect reread FROM TO` and `expect within FROM TO` state the bytes of the
+  new text the edit above reads again (4.12): exactly, or within those bytes.
 
 The C `incremental_runner` runs this set as one test per declared family,
 under the `incremental` label.

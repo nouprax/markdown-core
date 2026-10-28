@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script identity-delete-sibling ids
+finalize
+edit 5 10 -
+expect kept Paragraph 0 0
+expect retired Paragraph 5
+expect kept Paragraph 10 5

@@ -1,0 +1,6 @@
+markdown-core incremental script 2
+script hard-setext-underline hard
+finalize
+edit 11 11 3d3d3d0a
+edit 11 15 -
+edit 11 11 2d2d2d0a

@@ -1,0 +1,5 @@
+markdown-core incremental script 2
+script hard-candidate-before-children hard
+finalize
+edit 2 3 -
+edit 2 2 78
