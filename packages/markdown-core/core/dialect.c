@@ -292,7 +292,8 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                            (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
                            (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
                            (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
-                           (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
+                           (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0) |
+                           (structure->trailed ? MARKDOWN_CORE_KIND_TRAILED : 0));
             record.complete = structure->complete_node;
         }
         if (markdown_core_kind_owns_fields(kind)) {

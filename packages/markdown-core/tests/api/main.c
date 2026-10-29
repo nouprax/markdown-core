@@ -11277,6 +11277,75 @@ static void session_edits(test_batch_runner *runner) {
        "an edit across lines reads the new text");
     markdown_core_session_close(session);
 
+    /* An edit reads the new text up to the first old child after it that
+     * reads as it did, and takes that child and those after it back as
+     * they were (plan 12.3, step 4). */
+    static const char middle[] = "one\n\ntwo\n\nthree\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)middle, sizeof(middle) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+               MARKDOWN_CORE_OK &&
+           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
+       "a session flushes three paragraphs");
+    if (!session) {
+        return;
+    }
+    const uint64_t third = markdown_core_node_id(facade_child(markdown_core_document_root(document), 2));
+    const markdown_core_position typed = {3, 2}, past = {3, 3};
+    OK(runner,
+       markdown_core_session_edit(session, typed, typed, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK &&
+           session_as_parsed(session) &&
+           markdown_core_node_id(facade_child(markdown_core_document_root(document), 2)) == third,
+       "an edit in the middle paragraph takes the last one back");
+    markdown_core_session_reread(session, &from, &to);
+    OK(runner, from == 0 && to == 11, "it reads the text again only up to the last paragraph");
+    OK(runner,
+       markdown_core_session_edit(session, typed, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "an edit that takes the typed byte away takes the last paragraph back again");
+    markdown_core_session_reread(session, &from, &to);
+    OK(runner, from == 0 && to == 10, "it reads the text again only up to where the last paragraph starts");
+    const markdown_core_position later = {5, 3};
+    OK(runner,
+       markdown_core_session_edit(session, later, later, (const uint8_t *)"\n\n# t", 5, &document) ==
+               MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "an edit in a paragraph taken back reads it as any other");
+    markdown_core_session_close(session);
+
+    /* What the children taken back hold stands: their headings, numbered
+     * after the new ones, their definitions and the links to them. */
+    static const char held[] = "# a\n\nb\n\n# a\n\n[x]: /u\n\n[x] [^n]\n\n[^n]: n\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)held, sizeof(held) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+               MARKDOWN_CORE_OK &&
+           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
+       "a session flushes headings, definitions and links");
+    if (!session) {
+        return;
+    }
+    const markdown_core_position into_b = {3, 2};
+    OK(runner,
+       markdown_core_session_edit(session, into_b, into_b, (const uint8_t *)"\n\n# a", 5, &document) ==
+               MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "a heading the edit adds names those taken back after it");
+    markdown_core_session_reread(session, &from, &to);
+    OK(runner, to < markdown_core_session_text_size(session), "that edit took the children after it back");
+    const markdown_core_position link = {11, 2};
+    OK(runner,
+       markdown_core_session_edit(session, link, link, (const uint8_t *)"y", 1, &document) == MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "an edit among the children taken back reads them as any other");
+    const markdown_core_position head = {1, 3};
+    OK(runner,
+       markdown_core_session_edit(session, head, head, (const uint8_t *)"\n\n[x]: /v", 9, &document) ==
+               MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "an edit that declares a label anew reads the whole text again");
+    markdown_core_session_close(session);
+
     /* A block whose definitions were cut from its front starts past them,
      * and an edit reads it again from where they began. */
     static const char cut[] = "[x]: /a\n    a\na | b\n[x]: /a\n---\n";
@@ -11348,6 +11417,72 @@ static void session_edits(test_batch_runner *runner) {
         sound = sound && payload_live == 0;
     }
     OK(runner, sound && done, "an edit refused at any allocation leaves the session sound");
+
+    /* The same of an edit that takes children back, with what they hold:
+     * a heading, a definition and a link to it. */
+    static const char spliced[] = "a\n\nb\n\n# h\n\n[x]: /u\n\n[x]\n";
+    sound = true;
+    done = false;
+    for (size_t fail = 1; fail < 1000 && sound && !done; fail++) {
+        payload_probe_arm();
+        session = NULL;
+        const markdown_core_position into = {3, 1};
+        if (markdown_core_session_new((const uint8_t *)spliced, sizeof(spliced) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK ||
+            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            sound = false;
+        } else {
+            payload_fail_at = payload_allocations + fail;
+            done =
+                markdown_core_session_edit(session, into, into, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
+            payload_fail_at = 0;
+            from = to = 0;
+            markdown_core_session_reread(session, &from, &to);
+            sound = !done || to < markdown_core_session_text_size(session);
+            const markdown_core_position back = {9, 2};
+            const markdown_core_status again =
+                markdown_core_session_edit(session, back, back, (const uint8_t *)"y", 1, &document);
+            sound = sound && (again == MARKDOWN_CORE_ALLOCATION_FAILED
+                                  ? !done
+                                  : again == MARKDOWN_CORE_OK && session_as_parsed(session));
+        }
+        markdown_core_session_close(session);
+        payload_probe_disarm();
+        sound = sound && payload_live == 0;
+    }
+    OK(runner, sound && done, "an edit that takes children back, refused at any allocation, leaves the session sound");
+
+    /* After an edit that took children back, an edit anywhere reads as a
+     * fresh parse does: what it took back holds its lines, its reach, its
+     * declarations and its headings in the new text's terms. */
+    static const char twice[] = "# a\n\nb\n\n# a\n\n> q\n\n[x]: /u\n\n[x] [^n]\n\n[^n]: n\n";
+    session = NULL;
+    bool fresh = markdown_core_session_new((const uint8_t *)twice, sizeof(twice) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                           &session) == MARKDOWN_CORE_OK &&
+                 markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_position seed = {3, 2};
+    fresh = fresh &&
+            markdown_core_session_edit(session, seed, seed, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
+    size_t lines = 0;
+    for (size_t i = 0; i < sizeof(twice); i++) {
+        lines += twice[i] == '\n';
+    }
+    for (int line = 1; fresh && line <= (int)lines; line++) {
+        for (int column = 1; fresh; column++) {
+            const markdown_core_position at = {line, column};
+            const markdown_core_status status =
+                markdown_core_session_edit(session, at, at, (const uint8_t *)"\n", 1, &document);
+            if (status == MARKDOWN_CORE_OUT_OF_BOUNDS) {
+                break;
+            }
+            const markdown_core_position next = {line + 1, 1};
+            fresh = status == MARKDOWN_CORE_OK && session_as_parsed(session) &&
+                    markdown_core_session_edit(session, at, next, NULL, 0, &document) == MARKDOWN_CORE_OK &&
+                    session_as_parsed(session);
+        }
+    }
+    OK(runner, fresh, "an edit anywhere after one that took children back reads as a fresh parse");
+    markdown_core_session_close(session);
 }
 
 /* The anchor `node` has, compared with `expected`. */

@@ -57,6 +57,16 @@ static bool reopen_document(const markdown_core_element_instance *self, markdown
     return markdown_core_publish_reopen(parser, root, child) &&
            (!headings || markdown_core_headings_reopen(headings, parser, start));
 }
+/* THE EDIT TAKES THE OLD CHILDREN BACK (blocks.c, THE SPLICE): the
+ * headings take theirs back first, and the publish's records let the
+ * children go last, once nothing else can fail. */
+static bool splice_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *root, uint32_t child, uint32_t start, uint32_t point) {
+    (void)root;
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    return (!headings || markdown_core_headings_splice(headings, parser, start, point)) &&
+           markdown_core_publish_splice(parser, child, point);
+}
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     if (!markdown_core_publish_tree(parser)) {
@@ -140,6 +150,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .prepare_document = prepare_document,
     .finish_document = finish_document,
     .reopen_document = reopen_document,
+    .splice_document = splice_document,
     .publish_document = publish_document,
     .publish_candidate = publish_candidate,
 };

@@ -2340,22 +2340,28 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
  * first (publish_prefill); the headings list theirs themselves
  * (markdown_core_publish_keep_heading). */
 
-/* The definitions of the subtrees the reopen lets go, as pointers in
- * order, which a search reads. */
+/* The definitions of the subtrees the reopen lets go, each with the index
+ * of the subtree among them, in the order of their nodes' addresses, which
+ * a search reads. */
 typedef struct {
-    const markdown_core_node **nodes;
+    const markdown_core_node *node;
+    uint32_t child;
+} reopen_entry;
+
+typedef struct {
+    reopen_entry *entries;
     size_t count, capacity;
 } reopen_gone;
 
 static int reopen_order(const void *a, const void *b) {
-    const uintptr_t left = (uintptr_t)*(const markdown_core_node *const *)a;
-    const uintptr_t right = (uintptr_t)*(const markdown_core_node *const *)b;
+    const uintptr_t left = (uintptr_t)((const reopen_entry *)a)->node;
+    const uintptr_t right = (uintptr_t)((const reopen_entry *)b)->node;
     return (left > right) - (left < right);
 }
 
-/* The definitions below `node`, `node` among them, added to `gone`. False
- * when the walk or the list could not grow. */
-static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node) {
+/* The definitions below `node`, `node` among them, added to `gone` as the
+ * subtree `child`'s. False when the walk or the list could not grow. */
+static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node, uint32_t child) {
     markdown_core_walk walk;
     markdown_core_walk_item item;
     bool grown = true;
@@ -2366,12 +2372,12 @@ static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node) {
                        found->kind != MARKDOWN_CORE_NODE_REFERENCE)) {
             continue;
         }
-        const markdown_core_node **nodes =
-            markdown_core_reserve(gone->nodes, &gone->capacity, gone->count + 1, sizeof(*nodes));
-        grown = nodes != NULL;
-        if (nodes) {
-            gone->nodes = nodes;
-            nodes[gone->count++] = found;
+        reopen_entry *entries =
+            markdown_core_reserve(gone->entries, &gone->capacity, gone->count + 1, sizeof(*entries));
+        grown = entries != NULL;
+        if (entries) {
+            gone->entries = entries;
+            entries[gone->count++] = (reopen_entry){found, child};
         }
     }
     const bool failed = walk.failed || !grown;
@@ -2407,14 +2413,23 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     markdown_core_stream *stream = parser->stream;
     markdown_core_document_value *value = root->as.document;
     markdown_core_node *metadata = child ? NULL : value->metadata;
+    markdown_core_edit *edit = stream->edit;
     reopen_gone gone = {0};
-    bool ok = !metadata || reopen_collect(&gone, metadata);
+    /* The metadata is no child the edit's reading takes back. */
+    bool ok = !metadata || reopen_collect(&gone, metadata, UINT32_MAX);
     for (uint32_t i = child; ok && i < root->child_count; i++) {
-        ok = reopen_collect(&gone, root->children[i]);
+        ok = reopen_collect(&gone, root->children[i], i - child);
     }
     if (gone.count) {
-        qsort(gone.nodes, gone.count, sizeof(*gone.nodes), reopen_order);
+        qsort(gone.entries, gone.count, sizeof(*gone.entries), reopen_order);
     }
+    if (ok && gone.count > edit->gone_capacity) {
+        markdown_core_defined *defined =
+            markdown_core_reserve(edit->gone, &edit->gone_capacity, gone.count, sizeof(*defined));
+        ok = defined != NULL;
+        edit->gone = ok ? defined : edit->gone;
+    }
+    edit->gone_count = 0;
     for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_key_tree_free(&stream->committed.starts[table]);
     }
@@ -2429,13 +2444,17 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     for (size_t table = 0; ok && table < sizeof(tables) / sizeof(*tables); table++) {
         uint32_t kept = 0;
         for (size_t i = 0; ok && i < tables[table]->all.count; i++) {
-            const markdown_core_node *node = tables[table]->all.nodes[i];
-            if (!gone.count || !bsearch(&node, gone.nodes, gone.count, sizeof(*gone.nodes), reopen_order)) {
-                ok = committed_keep(&stream->committed, (uint32_t)table, node, kept++);
+            const reopen_entry key = {tables[table]->all.nodes[i], 0};
+            const reopen_entry *found =
+                gone.count ? bsearch(&key, gone.entries, gone.count, sizeof(*gone.entries), reopen_order) : NULL;
+            if (!found) {
+                ok = committed_keep(&stream->committed, (uint32_t)table, key.node, kept++);
+            } else if (found->child != UINT32_MAX) {
+                edit->gone[edit->gone_count++] = (markdown_core_defined){found->child, (uint32_t)table, key.node};
             }
         }
     }
-    markdown_core_free(gone.nodes);
+    markdown_core_free(gone.entries);
     markdown_core_tail_records *records = &stream->records;
     ok = ok && (records->count || record_root(records));
     if (!ok) {
@@ -2471,6 +2490,62 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     for (uint32_t i = 0; i < child; i++) {
         root->children[i]->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
+    return true;
+}
+
+/* The places of the blocks below `node`, `node` among them, moved by
+ * `delta`; an inline node's place is in its root's content, and stays.
+ * False when the walk could not grow. */
+static bool splice_move(markdown_core_node *node, int64_t delta) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, node);
+    while (markdown_core_walk_next(&walk, &item)) {
+        markdown_core_node *found = (markdown_core_node *)item.node;
+        if (found && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(found->kind)) {
+            found->place.start = (uint32_t)((int64_t)found->place.start + delta);
+            found->place.end = (uint32_t)((int64_t)found->place.end + delta);
+        }
+    }
+    const bool failed = walk.failed;
+    markdown_core_walk_end(&walk);
+    return !failed;
+}
+
+/* THE OLD CHILDREN TAKEN BACK (blocks.c, THE SPLICE). Their definitions
+ * are listed as committed from `point` on, one place each in the order the
+ * old document listed them, past every definition the reading listed,
+ * which all start before it: a publish lists them where they fall, as
+ * their publish placed them, and their tables put them in source order. */
+bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_edit *edit = stream->edit;
+    uint32_t key = point;
+    for (size_t i = 0; i < edit->gone_count; i++) {
+        const markdown_core_defined *gone = &edit->gone[i];
+        if (gone->start >= child && !committed_keep(&stream->committed, gone->table, gone->node, key++)) {
+            return false;
+        }
+    }
+    for (uint32_t i = child; i < edit->count; i++) {
+        if (!splice_move(edit->children[i], edit->delta)) {
+            return false;
+        }
+    }
+    /* The records of the root's old children are in their order, and those
+     * of the children taken back are the last. */
+    markdown_core_tail_records *records = &stream->records;
+    uint32_t *link = &records->items[0].held;
+    while (*link && records->items[*link - 1].node != edit->children[child]) {
+        link = &records->items[*link - 1].next;
+    }
+    assert(*link);
+    const uint32_t at = *link;
+    *link = 0;
+    for (uint32_t record = at; record; record = records->items[record - 1].next) {
+        records->items[record - 1].node = NULL;
+    }
+    records_free(parser, at, false);
     return true;
 }
 

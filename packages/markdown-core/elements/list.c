@@ -328,6 +328,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .name = "list",
     .continue_container = continue_container,
     .propagates_child_blank = true,
+    /* A block identifier line after it names it (block_identifier.c). */
+    .trailed = true,
     .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
     .maximum_block_indent = 3,

@@ -185,6 +185,10 @@ struct markdown_core_element {
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
+    /* A later line may write the block once it closed -- a block identifier
+     * its anchor, a caption its table -- so an edit's reading takes no old
+     * blocks back after one (blocks.c, THE SPLICE). */
+    bool trailed;
     int maximum_block_indent;
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -213,6 +217,15 @@ struct markdown_core_element {
      * had. */
     bool (*reopen_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                             uint32_t, uint32_t);
+    /* The edit's reading takes the old children the reopen let go back
+     * (blocks.c, THE SPLICE), from the one at `child` among them on, whose
+     * line started at `start` of the old text and starts at `point` of the
+     * new: the root holds them again, and every state the document kept of
+     * what they hold -- their definitions, their headings -- is back, moved
+     * to the new text. False when storage could not be had, with the
+     * children still the records'. */
+    bool (*splice_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                            uint32_t, uint32_t, uint32_t);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
@@ -288,7 +301,6 @@ struct markdown_core_element {
      * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
      * fold hook declares at least one, and one without declares NULL. */
     const markdown_core_node_type *fold_kinds;
-
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
     /* What `scan_block_start` needs on a non-indented line before it is worth

@@ -200,8 +200,10 @@ set(_markdown_core_incremental_shards_rows 2)
 set(_markdown_core_incremental_shards_undo 4)
 set(_markdown_core_incremental_shards_random 4)
 # The families that edit run on the session, but `hard`, whose damage bounds
-# (4.12) hold once an edit stops where its reading meets the old one: it runs
-# on the `reparse` subject until then (plan 12.3, step 4).
+# (4.12) hold once an edit stops where its reading meets the old one inside
+# a list: an edit stops at the top level now (plan 12.3, step 4), which the
+# API tests bound, and `hard` runs on the `reparse` subject until nested
+# resync (step E1b).
 set(_markdown_core_incremental_edits hard)
 foreach(family IN LISTS _markdown_core_incremental_families)
     set(_markdown_core_incremental_shards "${_markdown_core_incremental_shards_${family}}")

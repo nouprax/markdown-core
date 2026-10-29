@@ -254,26 +254,47 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
     registry->block_size = mark.block_size;
 }
 
-bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start) {
+/* `record` appended to `registry` at `start`. */
+static inline bool S_append_record(markdown_core_registry *registry, const markdown_core_registry_record *record,
+                                   uint32_t start) {
+    const markdown_core_registry_kind kind = (markdown_core_registry_kind)record->key[0];
+    return S_append(registry, kind, record->key + 1, record->key_len - 1, start, record->withdraws) &&
+           (!record->withdraws || S_index_space(registry, kind));
+}
+
+bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start,
+                                        markdown_core_registry *tail) {
     markdown_core_registry kept;
     markdown_core_registry_init(&kept);
+    markdown_core_registry_free(tail);
+    markdown_core_registry_init(tail);
     bool ok = true;
     for (size_t i = 0; ok && i < registry->count; i++) {
         const markdown_core_registry_record *record = registry->records[i];
-        if (record->start >= start) {
-            continue;
-        }
-        const markdown_core_registry_kind kind = (markdown_core_registry_kind)record->key[0];
-        ok = S_append(&kept, kind, record->key + 1, record->key_len - 1, record->start, record->withdraws) &&
-             (!record->withdraws || S_index_space(&kept, kind));
+        /* The tail only holds its records: nothing looks them up there. */
+        ok = record->start < start ? S_append_record(&kept, record, record->start)
+                                   : S_append(tail, (markdown_core_registry_kind)record->key[0], record->key + 1,
+                                              record->key_len - 1, record->start, record->withdraws);
     }
     if (!ok) {
         markdown_core_registry_free(&kept);
+        markdown_core_registry_free(tail);
+        markdown_core_registry_init(tail);
         return false;
     }
     markdown_core_registry_free(registry);
     *registry = kept;
     return true;
+}
+
+bool markdown_core_registry_take(markdown_core_registry *registry, const markdown_core_registry *tail, uint32_t start,
+                                 int64_t delta) {
+    bool ok = true;
+    for (size_t i = 0; ok && i < tail->count; i++) {
+        const markdown_core_registry_record *record = tail->records[i];
+        ok = record->start < start || S_append_record(registry, record, (uint32_t)((int64_t)record->start + delta));
+    }
+    return ok;
 }
 
 /* Two declarations' keys in byte order, the shorter first on a common

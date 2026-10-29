@@ -192,7 +192,10 @@ enum {
     MARKDOWN_CORE_KIND_BLANK_ASK = 1u << 9,
     MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10,
     MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11,
-    MARKDOWN_CORE_KIND_FOLDS = 1u << 12
+    MARKDOWN_CORE_KIND_FOLDS = 1u << 12,
+    /* A later line may write a block of the kind once it closed
+     * (element.h, `trailed`). */
+    MARKDOWN_CORE_KIND_TRAILED = 1u << 13
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
