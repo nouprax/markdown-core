@@ -3405,8 +3405,12 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
     memset(workspace, 0, sizeof(*workspace));
 }
 
+/* A caption line after a table writes it (table_preceding). */
+static const markdown_core_node_type CAPTIONED_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .dispose_parser = dispose_parser,
+    .trail_kinds = CAPTIONED_KINDS,
     .state_size = sizeof(table_workspace),
 
     .try_interrupting_block = try_interrupting_block,

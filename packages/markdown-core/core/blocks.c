@@ -2694,9 +2694,9 @@ static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
  * of its own, the reading stands in the root with no block open and no
  * candidate live, and no reading of the old text that began past the rest
  * point read across the line from before it. What reads backwards across a
- * line -- a block identifier, a caption, writing the block before -- only
- * writes a List, a Callout or a Table, and a reading after one of those
- * goes on as it is. The children taken back stand as their publish left
+ * line -- a block identifier, a caption, writing the block before -- writes
+ * only the kinds the elements declare (element.h, `trail_kinds`), and a
+ * reading after one of those goes on as it is. The children taken back stand as their publish left
  * them, and so do their lines, the reach of their readings, their
  * registry records, their headings and their definitions, moved by the
  * edit's delta; their facts and content runs are their completion's, which
@@ -2899,8 +2899,7 @@ static bool S_resumes(const markdown_core_parser *parser, size_t start) {
         return false;
     }
     const markdown_core_node *last = root->child_count ? root->children[root->child_count - 1] : NULL;
-    if (last && (last->kind == MARKDOWN_CORE_NODE_LIST || last->kind == MARKDOWN_CORE_NODE_CALLOUT ||
-                 last->kind == MARKDOWN_CORE_NODE_TABLE)) {
+    if (last && (markdown_core_parser_block_kind(parser, last)->flags & MARKDOWN_CORE_KIND_TRAILED)) {
         return false;
     }
     const size_t old = (size_t)((int64_t)start - edit->delta);

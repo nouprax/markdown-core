@@ -73,8 +73,13 @@ static void begin_inline(const markdown_core_element_instance *self, markdown_co
     }
 }
 
+/* The blocks an identifier line after them names (block_identifier.c). */
+static const markdown_core_node_type IDENTIFIED_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_CALLOUT,
+                                                           MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .begin_inline = begin_inline,
+    .trail_kinds = IDENTIFIED_KINDS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,

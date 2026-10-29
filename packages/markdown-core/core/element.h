@@ -297,6 +297,12 @@ struct markdown_core_element {
      * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
      * fold hook declares at least one, and one without declares NULL. */
     const markdown_core_node_type *fold_kinds;
+    /* The block kinds a later line this element reads may write once the
+     * block closed, while it is pending -- a block identifier the block's
+     * anchor, a caption its table -- terminated by MARKDOWN_CORE_NODE_NONE,
+     * or NULL: an edit's reading takes no old blocks back after one
+     * (blocks.c, THE SPLICE). */
+    const markdown_core_node_type *trail_kinds;
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
