@@ -1525,6 +1525,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
 /* Where the last reading of an edit took the old children back, in the new
  * text: 0 when it took none back. */
 size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
+/* The root's child the old children it took back begin at, when it took
+ * some back. */
+uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
 /* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
  * holds `offset`, and line `line`'s start and the start of the line after
  * it, or the text's end -- false when the text has no such line. A text

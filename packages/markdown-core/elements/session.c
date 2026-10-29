@@ -37,6 +37,23 @@
  * lends it for its whole life. It is empty until the first locate, and an
  * append or the flush, which change the document, empty it again. A fresh
  * parse's session has none. */
+/* THE WIDTHS: where the root's children are, from their extents alone
+ * (docs/plans/relative-positions.md). The children are counted in chunks of
+ * SESSION_CHUNK, and each chunk keeps the bytes from where the child before
+ * it ends to where its last ends: a child's start is the chunks before its
+ * own and the children before it in its own, and an edit, which moves no
+ * child it takes back, makes again only the chunks of the children it read
+ * and of the first it took back -- all from there on when the count of
+ * children changed. They are made at the first edit, and an edit that could
+ * not have their storage leaves them to the next to make again. */
+#define SESSION_CHUNK 64
+
+typedef struct {
+    uint32_t *chunks;
+    size_t count, capacity;
+    bool made;
+} session_widths;
+
 struct markdown_core_session {
     MARKDOWN_CORE_ARRAY(uint8_t) text;
     markdown_core_parser *committed;
@@ -48,7 +65,98 @@ struct markdown_core_session {
     bool flushed;
     /* The bytes of the text the last edit read again. */
     size_t reread_from, reread_to;
+    session_widths widths;
 };
+
+/* The bytes from where the child before `child` ends to where it ends. */
+static inline uint32_t child_width(const markdown_core_node *child) {
+    return (uint32_t)((int64_t)child->extent.lead + child->extent.span);
+}
+
+/* Makes the chunks of the root's children from `first` to `last` again,
+ * and all of them from `first` on when `last` is past the root's children.
+ * False, with the widths to be made again, when storage could not be had. */
+static bool widths_mend(session_widths *widths, const markdown_core_node *root, size_t first, size_t last) {
+    const size_t count = (root->child_count + SESSION_CHUNK - 1) / SESSION_CHUNK;
+    if (last >= root->child_count) {
+        uint32_t *chunks = markdown_core_reserve(widths->chunks, &widths->capacity, count, sizeof(*chunks));
+        if (count && !chunks) {
+            widths->made = false;
+            return false;
+        }
+        widths->chunks = chunks;
+        widths->count = count;
+        last = root->child_count ? root->child_count - 1 : 0;
+    }
+    for (size_t chunk = first / SESSION_CHUNK; chunk < count && chunk <= last / SESSION_CHUNK; chunk++) {
+        const size_t end =
+            (chunk + 1) * SESSION_CHUNK < root->child_count ? (chunk + 1) * SESSION_CHUNK : root->child_count;
+        uint32_t width = 0;
+        for (size_t i = chunk * SESSION_CHUNK; i < end; i++) {
+            width += child_width(root->children[i]);
+        }
+        widths->chunks[chunk] = width;
+    }
+    return true;
+}
+
+/* Makes the widths when they are not made. */
+static bool widths_make(session_widths *widths, const markdown_core_node *root) {
+    widths->made = widths->made || widths_mend(widths, root, 0, SIZE_MAX);
+    return widths->made;
+}
+
+/* Where the root's child `child` starts. */
+static size_t widths_start(const session_widths *widths, const markdown_core_node *root, size_t child) {
+    int64_t at = root->extent.lead;
+    for (size_t chunk = 0; chunk < child / SESSION_CHUNK; chunk++) {
+        at += widths->chunks[chunk];
+    }
+    for (size_t i = child / SESSION_CHUNK * SESSION_CHUNK; i < child; i++) {
+        at += child_width(root->children[i]);
+    }
+    return (size_t)(at + root->children[child]->extent.lead);
+}
+
+/* Where the root's child `child` ends. */
+static size_t widths_end(const session_widths *widths, const markdown_core_node *root, size_t child) {
+    return widths_start(widths, root, child) + root->children[child]->extent.span;
+}
+
+/* The child of `root` before the first that ends past `offset`, or its
+ * first. */
+static uint32_t widths_child(const session_widths *widths, const markdown_core_node *root, size_t offset) {
+    int64_t at = root->extent.lead;
+    size_t chunk = 0;
+    while (chunk < widths->count && at + widths->chunks[chunk] <= (int64_t)offset) {
+        at += widths->chunks[chunk++];
+    }
+    uint32_t child = chunk < widths->count ? (uint32_t)(chunk * SESSION_CHUNK) : root->child_count;
+    while (child < root->child_count && at + child_width(root->children[child]) <= (int64_t)offset) {
+        at += child_width(root->children[child++]);
+    }
+    return child ? child - 1 : 0;
+}
+
+#ifndef NDEBUG
+/* The widths an edit mended are the widths of its root made anew, and
+ * each child stands where its place says. */
+static void widths_check(const session_widths *widths, const markdown_core_node *root) {
+    session_widths fresh = {0};
+    if (!widths_mend(&fresh, root, 0, SIZE_MAX)) {
+        return;
+    }
+    assert(fresh.count == widths->count);
+    for (size_t i = 0; i < fresh.count; i++) {
+        assert(fresh.chunks[i] == widths->chunks[i]);
+    }
+    for (size_t i = 0; i < root->child_count; i++) {
+        assert(widths_start(widths, root, i) == root->children[i]->place.start);
+        assert(widths_end(widths, root, i) == root->children[i]->place.end);
+    }
+    markdown_core_free(fresh.chunks);
+}
+#endif
 
 /* The text a parser reads: an empty text is the empty buffer. */
 static const char *session_source(const markdown_core_session *session) {
@@ -119,6 +227,7 @@ static void session_close(markdown_core_session *session) {
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_array_free(&session->text);
+    markdown_core_free(session->widths.chunks);
     markdown_core_context_free(session->context);
 }
 
@@ -211,21 +320,6 @@ static bool session_offset(const markdown_core_session *session, markdown_core_p
                                        session->document.unit, true, offset);
 }
 
-/* The child of `root` before the first that ends past `offset`, or its
- * first. */
-static uint32_t session_child(const markdown_core_node *root, size_t offset) {
-    uint32_t low = 0, high = root->child_count;
-    while (low < high) {
-        const uint32_t middle = low + (high - low) / 2;
-        if (root->children[middle]->place.end > offset) {
-            high = middle;
-        } else {
-            low = middle + 1;
-        }
-    }
-    return low ? low - 1 : 0;
-}
-
 /* The rest point the edit reads from, before the root's child `*child`, at
  * the start of input line `*line`: the start of the child before the first
  * that ends past the start of `line`, where the edit begins -- every rule of
@@ -237,18 +331,19 @@ static uint32_t session_child(const markdown_core_node *root, size_t offset) {
  * otherwise. */
 static void session_rest(const markdown_core_session *session, size_t edited, uint32_t *child, size_t *line) {
     const markdown_core_node *root = session->document.root;
+    const session_widths *widths = &session->widths;
     size_t start, end;
     markdown_core_parser_sort_reach(session->committed);
     markdown_core_parser_line_span(session->committed, edited, &start, &end);
-    uint32_t at = session_child(root, start);
+    uint32_t at = widths_child(widths, root, start);
     size_t from = 0;
     while (at) {
-        from = markdown_core_parser_line_of(session->committed, root->children[at]->place.start);
+        from = markdown_core_parser_line_of(session->committed, widths_start(widths, root, at));
         markdown_core_parser_line_span(session->committed, from, &start, &end);
         size_t reached;
         if (markdown_core_parser_spanned(session->committed, start, &reached)) {
-            at = session_child(root, reached);
-        } else if (root->children[at - 1]->place.end > start) {
+            at = widths_child(widths, root, reached);
+        } else if (widths_end(widths, root, at - 1) > start) {
             at--;
         } else {
             break;
@@ -290,6 +385,7 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
 static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t from,
                                            size_t to, int64_t delta, bool whole) {
     markdown_core_node *root = session->document.root;
+    const size_t count = root->child_count;
     session->document.root = NULL;
     size_t start, end;
     markdown_core_parser_line_span(session->committed, line, &start, &end);
@@ -302,6 +398,20 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     const size_t resumed = markdown_core_parser_resumed(session->committed);
     session->reread_from = start;
     session->reread_to = resumed ? resumed : session->text.count;
+    if (status != MARKDOWN_CORE_OK) {
+        session->widths.made = false;
+    } else if (session->widths.made) {
+        /* The children it read, and the first it took back, whose lead is
+         * from the last it read. */
+        root = session->document.root;
+        const size_t last =
+            resumed && root->child_count == count ? markdown_core_parser_tail(session->committed) : SIZE_MAX;
+        if (widths_mend(&session->widths, root, child, last)) {
+#ifndef NDEBUG
+            widths_check(&session->widths, root);
+#endif
+        }
+    }
     return status;
 }
 
@@ -318,7 +428,8 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (!session_offset(session, start, &from) || !session_offset(session, end, &to) || from > to) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    if (length > MARKDOWN_CORE_SOURCE_CAPACITY - (session->text.count - (to - from))) {
+    if (length > MARKDOWN_CORE_SOURCE_CAPACITY - (session->text.count - (to - from)) ||
+        !widths_make(&session->widths, session->document.root)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     session_forget(session);

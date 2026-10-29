@@ -3023,6 +3023,8 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser) {
     return parser->stream && parser->stream->edit ? parser->stream->edit->resumed : 0;
 }
 
+uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return parser->stream->edit->tail; }
+
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
     const markdown_core_parser_input *input = &parser->input;
     size_t low = 0, high = input->lines.count;
