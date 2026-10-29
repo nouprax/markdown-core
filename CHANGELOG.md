@@ -6,6 +6,18 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Edit a flushed session (incremental edits plan, step E1a):
+  `markdown_core_session_edit(session, start, end, text, length, &document)`
+  replaces the text between two cursors, given as positions in the
+  session's unit, and answers the parse of the new text. The edit reads the
+  text again from a rest point before the damaged top-level block, on the
+  parse state the flush kept, so the nodes before that point are the old
+  nodes, and the nodes it reads again keep the ids of the old nodes they
+  continue. `markdown_core_session_reread` reports the bytes the last edit
+  read again. A new status, `MARKDOWN_CORE_SESSION_STREAMING` (5), answers
+  an edit before the flush. The re-read goes to the end of the text for
+  now; stopping where the new reading meets the old one comes next.
+
 - Rename the session's end of text and its release, ahead of edits
   (incremental edits plan, step E1): `markdown_core_session_finalize` is
   `markdown_core_session_flush`, `markdown_core_session_free` is

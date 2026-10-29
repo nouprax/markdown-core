@@ -37,6 +37,15 @@ bool markdown_core_publish_tree(markdown_core_parser *parser);
  * allocation failed. */
 bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core_node *candidate,
                                      markdown_core_node *root, uint32_t holder_start);
+/* A DOCUMENT REOPENED FOR AN EDIT (ast.c): the flushed `root` keeps its
+ * children before `child` and lets the others go, its metadata with them
+ * when `child` is 0, each an old node the next publish matches against,
+ * and lists the definitions that stay as committed. False, with nothing
+ * changed, when storage could not be had. */
+bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child);
+/* A heading that stays in a reopened document listed as committed, `key`
+ * its place among those that stay. False when storage could not be had. */
+bool markdown_core_publish_keep_heading(markdown_core_parser *parser, const markdown_core_node *node, uint32_t key);
 
 /* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,
  * after CR, or after CRLF, which is one terminator. */
@@ -56,6 +65,10 @@ markdown_core_scope markdown_core_source_scope(const markdown_core_source_lines 
 bool markdown_core_position_offset(const markdown_core_source_lines *lines, const uint8_t *source, size_t length,
                                    markdown_core_position position, markdown_core_text_unit unit, bool cursor,
                                    size_t *offset);
+/* The same on one line, which runs from `at` to `end`, the start of the
+ * line after it or the source's end, for the column `column`. */
+bool markdown_core_column_offset(const uint8_t *source, size_t at, size_t end, int32_t column,
+                                 markdown_core_text_unit unit, bool cursor, size_t *offset);
 /* The nodes that hold the byte at `offset`, root first (ast.c, THE NODES
  * THAT HOLD A BYTE). */
 bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, const markdown_core_node ***nodes,

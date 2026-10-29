@@ -208,6 +208,18 @@ markdown_core_registry_mark markdown_core_registry_mark_now(const markdown_core_
  * storage they were carved from. */
 void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_core_registry_mark mark);
 
+/* AN EDIT KEEPS WHAT STARTS BEFORE IT (blocks.c, THE REOPEN): the log holds
+ * only the records whose definitions start before `start`, in the order it
+ * held them, and the index is taken again as lookups ask. False, with the
+ * log as it was, when storage could not be had. */
+bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start);
+/* The keys every reference, footnote and specimen declaration from `start`
+ * on declares, each once and in byte order, each with its NUL, into
+ * `labels`: two texts declare the same labels there when the bytes are the
+ * same. False when storage could not be had. */
+bool markdown_core_registry_labels_from(const markdown_core_registry *registry, uint32_t start,
+                                        markdown_core_strbuf *labels);
+
 #ifdef __cplusplus
 }
 #endif

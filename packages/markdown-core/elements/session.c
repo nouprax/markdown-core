@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,6 +46,8 @@ struct markdown_core_session {
     markdown_core_context *context;
     bool located;
     bool flushed;
+    /* The bytes of the text the last edit read again. */
+    size_t reread_from, reread_to;
 };
 
 /* The text a parser reads: an empty text is the empty buffer. */
@@ -155,6 +158,8 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
     markdown_core_status status =
         made->context ? session_open(made, source, size, unit) : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK) {
+        /* Only a session takes edits; a one-off parse keeps no reach. */
+        markdown_core_parser_edits(made->committed);
         status = session_snapshot(made);
     }
     if (status != MARKDOWN_CORE_OK) {
@@ -193,6 +198,165 @@ markdown_core_status markdown_core_session_flush(markdown_core_session *session,
         *document = &session->document;
     }
     return status;
+}
+
+/* THE EDIT (docs/plans/2026-09-29-incremental-parsing.md, 12.3). */
+
+/* The byte a cursor at `position` of the flushed text stands before, in
+ * `*offset`: false when it stands at none. */
+static bool session_offset(const markdown_core_session *session, markdown_core_position position, size_t *offset) {
+    size_t start, end;
+    return position.line >= 1 && position.column >= 1 &&
+           markdown_core_parser_line_span(session->committed, (size_t)position.line - 1, &start, &end) &&
+           markdown_core_column_offset((const uint8_t *)session_source(session), start, end, position.column,
+                                       session->document.unit, true, offset);
+}
+
+/* The child of `root` before the first that ends past `offset`, or its
+ * first. */
+static uint32_t session_child(const markdown_core_node *root, size_t offset) {
+    uint32_t low = 0, high = root->child_count;
+    while (low < high) {
+        const uint32_t middle = low + (high - low) / 2;
+        if (root->children[middle]->place.end > offset) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    return low ? low - 1 : 0;
+}
+
+/* The rest point the edit reads from, before the root's child `*child`, at
+ * the start of input line `*line`: the start of the child before the first
+ * that ends past the start of `line`, where the edit begins -- every rule of
+ * the grammar that writes backwards reaches only the block before -- or the
+ * document's start. A child that starts on a line the child before it ends
+ * on has no rest point of its own, nor one whose start a reading from
+ * before it read past (blocks.c, THE REACH): the rest point moves back to
+ * the child before the one that reading began in, as that child may read
+ * otherwise. */
+static void session_rest(const markdown_core_session *session, size_t edited, uint32_t *child, size_t *line) {
+    const markdown_core_node *root = session->document.root;
+    size_t start, end;
+    markdown_core_parser_sort_reach(session->committed);
+    markdown_core_parser_line_span(session->committed, edited, &start, &end);
+    uint32_t at = session_child(root, start);
+    size_t from = 0;
+    while (at) {
+        from = markdown_core_parser_line_of(session->committed, root->children[at]->place.start);
+        markdown_core_parser_line_span(session->committed, from, &start, &end);
+        size_t reached;
+        if (markdown_core_parser_spanned(session->committed, start, &reached)) {
+            at = session_child(root, reached);
+        } else if (root->children[at - 1]->place.end > start) {
+            at--;
+        } else {
+            break;
+        }
+        from = 0;
+    }
+    *child = at;
+    *line = from;
+}
+
+/* Replaces the bytes from `from` to `to` of the text with `size` bytes of
+ * `text`. False, with the text as it was, when storage could not be had. */
+static bool session_replace(markdown_core_session *session, size_t from, size_t to, const uint8_t *text, size_t size) {
+    const size_t rest = session->text.count - to;
+    uint8_t *suffix = rest ? markdown_core_alloc(rest, 1) : NULL;
+    if (rest && !suffix) {
+        return false;
+    }
+    if (rest) {
+        memcpy(suffix, session->text.values + to, rest);
+    }
+    const size_t total = from + size + rest;
+    bool ok = markdown_core_array_reserve(&session->text, total);
+    if (ok) {
+        markdown_core_array_truncate(&session->text, from);
+        ok = (!size || markdown_core_array_append(&session->text, text, size)) &&
+             (!rest || markdown_core_array_append(&session->text, suffix, rest));
+        assert(ok);
+    }
+    markdown_core_free(suffix);
+    return ok;
+}
+
+/* The flushed parse put back before the root's child `child`, at input line
+ * `line`, reads the text, in which an edit replaced the old text from `from`
+ * to `to` and moved what follows by `delta`, to its end and is flushed
+ * again. */
+static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t from,
+                                           size_t to, int64_t delta) {
+    markdown_core_node *root = session->document.root;
+    session->document.root = NULL;
+    size_t start, end;
+    markdown_core_parser_line_span(session->committed, line, &start, &end);
+    if (!markdown_core_parser_reopen(session->committed, root, child, line, from, to, delta, session_source(session))) {
+        markdown_core_node_pool_release(&session->pool, root);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    session->reread_from = start;
+    session->reread_to = session->text.count;
+    return session_flush(session);
+}
+
+markdown_core_status markdown_core_session_edit(markdown_core_session *session, markdown_core_position start,
+                                                markdown_core_position end, const uint8_t *text, size_t length,
+                                                const markdown_core_document **document) {
+    if (!session->flushed) {
+        return MARKDOWN_CORE_SESSION_STREAMING;
+    }
+    if (!session->document.root) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    size_t from, to;
+    if (!session_offset(session, start, &from) || !session_offset(session, end, &to) || from > to) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    if (length > MARKDOWN_CORE_SOURCE_CAPACITY - (session->text.count - (to - from))) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    session_forget(session);
+    uint32_t child;
+    size_t line;
+    session_rest(session, (size_t)start.line - 1, &child, &line);
+    size_t rest_start, rest_end;
+    markdown_core_parser_line_span(session->committed, line, &rest_start, &rest_end);
+    /* The labels the text from the rest point declares: when the new text
+     * declares others, a lookup of the children that stay may answer
+     * otherwise, and the whole text is read again. */
+    markdown_core_strbuf before = MARKDOWN_CORE_BUF_INIT(), after = MARKDOWN_CORE_BUF_INIT();
+    if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &before) ||
+        !session_replace(session, from, to, text, length)) {
+        markdown_core_strbuf_free(&before);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    const int64_t delta = (int64_t)length - (int64_t)(to - from);
+    markdown_core_status status = session_reread(session, child, line, from, to, delta);
+    if (status == MARKDOWN_CORE_OK && child) {
+        if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &after)) {
+            /* The children that stay may read otherwise, and no edit after
+             * this one may take them as they are. */
+            markdown_core_node_pool_release(&session->pool, session->document.root);
+            session->document.root = NULL;
+            status = MARKDOWN_CORE_ALLOCATION_FAILED;
+        } else if ((before.size != after.size || (before.size && memcmp(before.ptr, after.ptr, before.size)))) {
+            status = session_reread(session, 0, 0, 0, 0, 0);
+        }
+    }
+    markdown_core_strbuf_free(&before);
+    markdown_core_strbuf_free(&after);
+    if (status == MARKDOWN_CORE_OK) {
+        *document = &session->document;
+    }
+    return status;
+}
+
+void markdown_core_session_reread(const markdown_core_session *session, size_t *from, size_t *to) {
+    *from = session->reread_from;
+    *to = session->reread_to;
 }
 
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {

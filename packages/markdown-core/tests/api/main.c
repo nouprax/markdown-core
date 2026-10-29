@@ -11189,6 +11189,167 @@ static void session_appends(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* Whether the session's document dumps as a fresh parse of its text does. */
+static bool session_as_parsed(markdown_core_session *session) {
+    uint8_t text[256];
+    const size_t size = markdown_core_session_text_size(session);
+    if (size > sizeof(text)) {
+        return false;
+    }
+    markdown_core_session_text(session, text);
+    markdown_core_document *fresh = facade_parse(text, size);
+    const markdown_core_document *document = markdown_core_session_document(session);
+    uint8_t *left = NULL, *right = NULL;
+    size_t left_length = 0, right_length = 0;
+    const bool same = fresh &&
+                      markdown_core_document_dump(document, markdown_core_document_root(document), text, size, &left,
+                                                  &left_length) == MARKDOWN_CORE_OK &&
+                      markdown_core_document_dump(fresh, markdown_core_document_root(fresh), text, size, &right,
+                                                  &right_length) == MARKDOWN_CORE_OK &&
+                      left_length == right_length && memcmp(left, right, left_length) == 0;
+    markdown_core_dump_free(left);
+    markdown_core_dump_free(right);
+    if (fresh) {
+        markdown_core_document_free(fresh);
+    }
+    return same;
+}
+
+/* An edit after the flush: refused while the session streams and at a cursor
+ * that stands nowhere, and otherwise the parse of the new text, keeping the
+ * ids of what it did not change (plan 12.3). */
+static void session_edits(test_batch_runner *runner) {
+    static const char source[] = "one\n\ntw\xf0\xa0\x80\x80o\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
+                                 &session) == MARKDOWN_CORE_OK,
+       "a session opens");
+    if (!session) {
+        return;
+    }
+    const markdown_core_position at = {3, 6};
+    OK(runner,
+       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) ==
+               MARKDOWN_CORE_SESSION_STREAMING &&
+           !document,
+       "an edit before the flush is SESSION_STREAMING");
+    OK(runner, markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK, "the session flushes");
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const uint64_t first = markdown_core_node_id(facade_child(root, 0));
+    const uint64_t second = markdown_core_node_id(facade_child(root, 1));
+    const markdown_core_position nowhere[][2] = {
+        {{0, 1}, {0, 1}}, {{1, 5}, {1, 5}}, {{3, 4}, {3, 4}}, {{5, 1}, {5, 1}}, {{3, 2}, {3, 1}}};
+    bool refused = true;
+    for (size_t i = 0; i < sizeof(nowhere) / sizeof(nowhere[0]); i++) {
+        document = NULL;
+        refused = refused &&
+                  markdown_core_session_edit(session, nowhere[i][0], nowhere[i][1], (const uint8_t *)"x", 1,
+                                             &document) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+                  !document;
+    }
+    OK(runner, refused && markdown_core_session_text_size(session) == sizeof(source) - 1,
+       "an edit at a cursor that stands nowhere, or reversed, is OUT_OF_BOUNDS and changes nothing");
+    OK(runner,
+       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
+           document == markdown_core_session_document(session),
+       "an edit after the surrogate pair answers the session's document");
+    uint8_t text[64];
+    markdown_core_session_text(session, text);
+    OK(runner,
+       markdown_core_session_text_size(session) == sizeof(source) &&
+           memcmp(text, "one\n\ntw\xf0\xa0\x80\x80os\n", sizeof(source)) == 0,
+       "the edit lands in the text");
+    root = markdown_core_document_root(document);
+    OK(runner,
+       markdown_core_node_id(facade_child(root, 0)) == first && markdown_core_node_id(facade_child(root, 1)) == second,
+       "both paragraphs keep their ids");
+    size_t from = 0, to = 0;
+    markdown_core_session_reread(session, &from, &to);
+    OK(runner, from <= 5 && to == sizeof(source), "the edit read the text again from the paragraph before it");
+    const markdown_core_position start = {1, 1}, end = {3, 1};
+    OK(runner,
+       markdown_core_session_edit(session, start, end, (const uint8_t *)"# ", 2, &document) == MARKDOWN_CORE_OK &&
+           markdown_core_node_get_kind(facade_child(markdown_core_document_root(document), 0)) ==
+               MARKDOWN_CORE_KIND_HEADING &&
+           !facade_child(markdown_core_document_root(document), 1),
+       "an edit across lines reads the new text");
+    markdown_core_session_close(session);
+
+    /* A block whose definitions were cut from its front starts past them,
+     * and an edit reads it again from where they began. */
+    static const char cut[] = "[x]: /a\n    a\na | b\n[x]: /a\n---\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)cut, sizeof(cut) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+               MARKDOWN_CORE_OK &&
+           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
+       "a session flushes a heading whose definitions were cut");
+    if (!session) {
+        return;
+    }
+    const markdown_core_position last = {6, 1};
+    OK(runner,
+       markdown_core_session_edit(session, last, last, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "an edit after the heading reads it again from its definitions");
+    markdown_core_session_close(session);
+
+    /* An edit refused at any allocation leaves nothing behind once the
+     * session closes, the blocks the edit took from the tree included. */
+    static const char kept[] = "# a\n\nb\n\nc\n";
+    bool clean = true, done = false;
+    for (size_t fail = 1; fail < 400 && clean && !done; fail++) {
+        payload_probe_arm();
+        session = NULL;
+        if (markdown_core_session_new((const uint8_t *)kept, sizeof(kept) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK ||
+            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            clean = false;
+        } else {
+            const markdown_core_position into = {5, 1};
+            payload_fail_at = payload_allocations + fail;
+            done = markdown_core_session_edit(session, into, into, (const uint8_t *)"abc\n", 4, &document) ==
+                   MARKDOWN_CORE_OK;
+            payload_fail_at = 0;
+        }
+        markdown_core_session_close(session);
+        payload_probe_disarm();
+        clean = clean && payload_live == 0;
+    }
+    OK(runner, clean && done, "an edit refused at any allocation leaks nothing");
+
+    /* An edit refused at any allocation leaves the session as a fresh
+     * parse of its text has it, or refusing every edit after it, a label it
+     * declares for the children before it included. */
+    static const char labeled[] = "[x]\n\na\n\nb\n\nc\n";
+    bool sound = true;
+    done = false;
+    for (size_t fail = 1; fail < 1000 && sound && !done; fail++) {
+        payload_probe_arm();
+        session = NULL;
+        const markdown_core_position into = {8, 1};
+        if (markdown_core_session_new((const uint8_t *)labeled, sizeof(labeled) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK ||
+            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            sound = false;
+        } else {
+            payload_fail_at = payload_allocations + fail;
+            done = markdown_core_session_edit(session, into, into, (const uint8_t *)"\n[x]: /a\n", 9, &document) ==
+                   MARKDOWN_CORE_OK;
+            payload_fail_at = 0;
+            const markdown_core_status again = markdown_core_session_edit(session, into, into, NULL, 0, &document);
+            sound = again == MARKDOWN_CORE_ALLOCATION_FAILED ? !done
+                                                             : again == MARKDOWN_CORE_OK && session_as_parsed(session);
+        }
+        markdown_core_session_close(session);
+        payload_probe_disarm();
+        sound = sound && payload_live == 0;
+    }
+    OK(runner, sound && done, "an edit refused at any allocation leaves the session sound");
+}
+
 /* The anchor `node` has, compared with `expected`. */
 static bool anchor_is(const markdown_core_node *node, const char *expected) {
     markdown_core_optional_string anchor = node ? markdown_core_node_anchor(node) : (markdown_core_optional_string){0};
@@ -12415,6 +12576,7 @@ int main(void) {
     inline_dispatch_orders_every_precedence(runner);
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
+    session_edits(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
     session_snapshot_tables(runner);

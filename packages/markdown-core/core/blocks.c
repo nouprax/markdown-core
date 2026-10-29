@@ -1317,6 +1317,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
     return true;
 }
 
+/* A child of the document closes as the line at `line_start` is read. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_close(markdown_core_parser *parser,
+                                                              const markdown_core_node *closing) {
+    markdown_core_parser_reach(parser, closing->place.start, (size_t)parser->at.line_start + 1);
+}
+
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_lend_below(markdown_core_parser *parser, markdown_core_node *block);
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_candidate_drops(markdown_core_parser *parser,
                                                                   const markdown_core_node *block);
@@ -1337,6 +1343,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, closing);
     S_settle_pending_as(parser, closing, kind);
     S_shut(parser, closing);
+    if (parent == parser->root && markdown_core_parser_reaches(parser)) {
+        S_reach_close(parser, closing);
+    }
     const bool kept = S_close(parser, closing, kind, parent);
     parser->at.current = parent;
     parser->at.pending = kept ? closing : NULL;
@@ -2646,6 +2655,224 @@ markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) 
 
 void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_parse(parser); }
 
+/* THE REOPEN (docs/plans/2026-09-29-incremental-parsing.md, 12.3): an edit
+ * puts a flushed parse back at the start of input line `line`, where the
+ * flushed document `root` has a child start, its rest point, and reads the
+ * new text `source` from there with the ordinary commit. The children of
+ * the root that start before the line stay, closed, settled and complete,
+ * and the reading stands where a parse of the text before the line, all of
+ * its blocks closed, stands: the root open and current, nothing pending and
+ * no candidate live. The rest goes with the children after it -- the lines
+ * from the line on, their facts and normalized bytes, the declarations,
+ * the headings and the definitions listed from there (the document's
+ * reopen), the lookups the commits found nothing for, which the flush has
+ * asked again, and the cells it read -- and the input is the new text, a new
+ * epoch, complete up to the line. `child` is the root's first
+ * child that goes, the first at or past the line; the edit replaced the old
+ * text from `from` to `to` and moved what follows by `delta`, which the
+ * flush's publish follows (ast.c, THE IMAGE OF AN OLD ANCHOR). False, with
+ * the parse failed, when storage could not be had. */
+bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
+                                 size_t from, size_t to, int64_t delta, const char *source) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_parser_input *input = &parser->input;
+    assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
+    assert(line <= input->lines.count);
+    const size_t start = line < input->lines.count ? input->lines.values[line].start : input->scanned;
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    if (!document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
+        !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    S_settled_release(parser, &stream->settled);
+    for (size_t i = 0; i < stream->miss_root_count; i++) {
+        if (stream->miss_roots[i].position.places) {
+            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
+        }
+    }
+    stream->miss_count = stream->miss_root_count = stream->miss_published = 0;
+    stream->miss_root = NULL;
+    markdown_core_strbuf_clear(&stream->miss_labels);
+    stream->defined_count = 0;
+    size_t kept = 0;
+    for (size_t i = 0; i < stream->reach_count; i++) {
+        if (stream->reach[i].start < start) {
+            assert(stream->reach[i].end <= start);
+            stream->reach[kept++] = stream->reach[i];
+        }
+    }
+    stream->reach_count = kept;
+    stream->edit_from = (uint32_t)from;
+    stream->edit_to = (uint32_t)to;
+    stream->edit_delta = delta;
+    stream->stop = (markdown_core_line_stop){0};
+    stream->ends = false;
+    parser->block_input_count = parser->block_input_cursor = 0;
+
+    /* The normalized lines that go are named by their facts, which let go
+     * of them, and leave the list in one walk: a normalized line names no
+     * facts once it goes. */
+    for (size_t i = line; i < input->lines.count; i++) {
+        const uint32_t fact = input->lines.values[i].facts;
+        markdown_core_normalized_line *normalized = fact ? input->facts[fact - 1].normalized : NULL;
+        if (normalized) {
+            normalized->fact = 0;
+            input->facts[fact - 1].normalized = NULL;
+        }
+    }
+    for (markdown_core_normalized_line **link = &input->normalized; *link;) {
+        markdown_core_normalized_line *normalized = *link;
+        if (normalized->fact) {
+            link = &normalized->next;
+        } else {
+            *link = normalized->next;
+            markdown_core_free(normalized);
+        }
+    }
+    /* The facts past the last a kept line names, and the content runs from
+     * the end back to the last that begins before the line, name nothing
+     * that stays, and go: storage keeps to the text, however many edits
+     * read it again. */
+    uint32_t facts = 0;
+    for (size_t i = 0; i < line; i++) {
+        facts = input->lines.values[i].facts > facts ? input->lines.values[i].facts : facts;
+    }
+    input->fact_count = facts;
+    size_t marks = parser->line_marks.count;
+    while (marks > 1 && parser->line_marks.values[marks - 1].source >= (bufsize_t)start) {
+        marks--;
+    }
+    markdown_core_array_truncate(&parser->line_marks, marks);
+    markdown_core_array_truncate(&input->lines, line);
+    input->scanned = input->size = input->complete = start;
+    input->source = (const unsigned char *)source;
+    input->epoch = ++parser->epochs;
+    input->last_line_ready = false;
+
+    const markdown_core_input_line *last = line ? &input->lines.values[line - 1] : NULL;
+    parser->at = (markdown_core_parser_at){
+        .block_root = root,
+        .current = root,
+        .line_number = (int)line + input->first_line - 1,
+        .line_start = last ? (bufsize_t)last->start : 0,
+        .line_end = last ? (bufsize_t)last->end : 0,
+        .last_line_end = last ? (bufsize_t)last->end : 0,
+        .lookahead_cursor = (const unsigned char *)source + start,
+    };
+    parser->claimed_cursor = NULL;
+    parser->reading = false;
+    root->flags |= MARKDOWN_CORE_NODE__OPEN;
+    parser->root = root;
+    return true;
+}
+
+size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
+    const markdown_core_parser_input *input = &parser->input;
+    size_t low = 0, high = input->lines.count;
+    while (low + 1 < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (input->lines.values[middle].start <= offset) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end) {
+    const markdown_core_parser_input *input = &parser->input;
+    if (line < input->lines.count) {
+        *start = input->lines.values[line].start;
+        *end = line + 1 < input->lines.count ? input->lines.values[line + 1].start : input->size;
+        return true;
+    }
+    /* The empty line after a text's last line ending, or the empty text's
+     * one line. */
+    const size_t size = input->size;
+    if (line == input->lines.count && (!size || input->source[size - 1] == '\n' || input->source[size - 1] == '\r')) {
+        *start = *end = size;
+        return true;
+    }
+    return false;
+}
+
+/* THE REACH (parser.h): what a reading of the document decided before an
+ * offset from bytes past it, which a reading from that offset does not read
+ * again -- the rest point an edit reads from is one no such reading spans
+ * (docs/plans/2026-09-29-incremental-parsing.md, 12.3, E-D3). A child of
+ * the document that closes as a later line is read was open as the line
+ * began: the line's reading may yet go on in it, as a definition term goes
+ * on in the definition list before it. */
+void markdown_core_parser_edits(markdown_core_parser *parser) {
+    markdown_core_stream *stream = parser->stream;
+    if (stream) {
+        stream->edits = true;
+        /* Room for the log up front, so a step it grows in pays no
+         * allocation; a refusal here leaves the step to grow it. */
+        markdown_core_place *reach = markdown_core_reserve(stream->reach, &stream->reach_capacity, 64, sizeof(*reach));
+        if (reach) {
+            stream->reach = reach;
+        }
+    }
+}
+
+bool markdown_core_parser_takes_edits(const markdown_core_parser *parser) {
+    return parser->stream && parser->stream->edits;
+}
+
+void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_place *reach =
+        markdown_core_reserve(stream->reach, &stream->reach_capacity, stream->reach_count + 1, sizeof(*reach));
+    if (!reach) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    stream->reach = reach;
+    reach[stream->reach_count++] = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+}
+
+/* The log in order of start, each entry's end raised to the furthest of
+ * those that start no later: the first start of a reading that spans a
+ * point is then the first entry that ends past it, when that one starts
+ * before it, and an edit reads from no point either log spans. */
+static int S_reach_order(const void *a, const void *b) {
+    const uint32_t left = ((const markdown_core_place *)a)->start, right = ((const markdown_core_place *)b)->start;
+    return (left > right) - (left < right);
+}
+
+void markdown_core_parser_sort_reach(markdown_core_parser *parser) {
+    markdown_core_stream *stream = parser->stream;
+    if (stream->reach_count > 1) {
+        qsort(stream->reach, stream->reach_count, sizeof(*stream->reach), S_reach_order);
+    }
+    for (size_t i = 1; i < stream->reach_count; i++) {
+        if (stream->reach[i].end < stream->reach[i - 1].end) {
+            stream->reach[i].end = stream->reach[i - 1].end;
+        }
+    }
+}
+
+bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start) {
+    const markdown_core_stream *stream = parser->stream;
+    size_t low = 0, high = stream->reach_count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (stream->reach[middle].end > point) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    if (low == stream->reach_count || stream->reach[low].start >= point) {
+        return false;
+    }
+    *start = stream->reach[low].start;
+    return true;
+}
+
 /* THE SNAPSHOT (docs/plans/2026-09-29-incremental-parsing.md, 5.3; step 7,
  * 4.4): the committed parse, read on to the end of the text and published in
  * place, then put back as its commit left it. Its work is the tail's -- the
@@ -2697,6 +2924,7 @@ typedef struct markdown_core_parser_mark {
     markdown_core_registry_mark registry;
     markdown_core_node *completion_first, *completion_last;
     size_t block_input_count, block_input_cursor;
+    size_t reach_count;
     unsigned char *kept;
 } S_snapshot_mark;
 
@@ -2723,6 +2951,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
         .completion_last = parser->completion_last,
         .block_input_count = parser->block_input_count,
         .block_input_cursor = parser->block_input_cursor,
+        .reach_count = parser->stream ? parser->stream->reach_count : 0,
         .kept = mark->kept,
     };
     if (parser->line_marks.count) {
@@ -2754,6 +2983,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
     }
     parser->block_input_count = mark->block_input_count;
     parser->block_input_cursor = mark->block_input_cursor;
+    if (parser->stream) {
+        parser->stream->reach_count = mark->reach_count;
+    }
 }
 
 /* The container and table facts of input lines `first` up to `end`, which
@@ -2830,6 +3062,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         }
     }
     markdown_core_free(stream->miss_roots);
+    markdown_core_free(stream->reach);
     markdown_core_settled *settled = &stream->settled;
     S_settled_release(parser, settled);
     markdown_core_array_free(&settled->nodes);
@@ -4303,6 +4536,16 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                             : S_lookahead_next(lookahead, line, first_nonspace, indent, blank_lines, false);
 }
 
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_parser *parser,
+                                                                  const markdown_core_block_lookahead *lookahead) {
+    size_t end;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &end);
+    if (lookahead->cursor) {
+        end = (size_t)(lookahead->cursor - source);
+    }
+    markdown_core_parser_reach(parser, (size_t)lookahead->saved.line_start, end);
+}
+
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead) {
     markdown_core_parser *parser = lookahead->parser;
     int i;
@@ -4316,6 +4559,13 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
         unsigned mask = structure ? structure->element->speculative_flags : 0;
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_containers[i].flags & mask));
+    }
+    /* A reading of the document past the line after its own (THE REACH):
+     * one that read no further decides nothing past the block that starts
+     * there, which an edit reads from before. */
+    if (markdown_core_parser_reaches(parser) && lookahead->line > lookahead->saved.line_number + 2 &&
+        lookahead->saved.block_root == parser->root) {
+        S_reach_lookahead(parser, lookahead);
     }
     parser->at = lookahead->saved;
     lookahead->active = false;
@@ -5050,9 +5300,12 @@ static void S_mark_unlend(markdown_core_parser *parser, size_t m) {
 /* A REJECT: the call at `index` of the mark at `m` is decided, and what the
  * commit read stays. The mark goes with its last call that waits, its
  * storage kept at the end of the marks. */
-static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t index) {
+static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t index, size_t end) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
+    const int line = mark->calls[index].line;
+    const markdown_core_parser_input *input = &parser->input;
+    markdown_core_parser_reach(parser, line ? input->lines.values[line - input->first_line].start : 0, end);
     mark->calls[index].decided = true;
     mark->live--;
     if (index == mark->first) {
@@ -5139,7 +5392,7 @@ static bool S_feed(markdown_core_parser *parser, int through, const unsigned cha
                 return true;
             case MARKDOWN_CORE_CANDIDATE_REJECT:
                 gone = mark->live == 1;
-                S_candidate_drop(parser, m, k);
+                S_candidate_drop(parser, m, k, (size_t)(limit - parser->input.source));
                 if (!gone) {
                     k = S_call_next(mark, k);
                 }
@@ -5167,7 +5420,9 @@ static bool S_candidates_end(markdown_core_parser *parser) {
             S_candidate_undo(parser, 0, first);
             return true;
         }
-        S_candidate_drop(parser, 0, first);
+        size_t end;
+        markdown_core_parser_input_text(parser, &end);
+        S_candidate_drop(parser, 0, first, end);
     }
     return false;
 }

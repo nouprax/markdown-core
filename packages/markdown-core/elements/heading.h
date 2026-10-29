@@ -7,6 +7,12 @@
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_dispose(const markdown_core_element_instance *self);
+/* The headings of a flushed parse that start before `start`, which an edit
+ * reopens there: the others go, and the next finish names them all again.
+ * Each that stays is listed as committed (ast.c, A DOCUMENT REOPENED FOR AN
+ * EDIT). False when storage could not be had. */
+bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   uint32_t start);
 /* The attribute tails a heading's last line, which the content's end cuts
  * short, may hold, to the run's context sink; `declares` when the line is
  * a heading's only if the document finishes it as one. */

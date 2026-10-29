@@ -71,6 +71,11 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * unread. Taking the answer from the surviving run rather than from the
      * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
+        /* A block of the document read from where its definitions began
+         * (blocks.c, THE REACH): an edit reads it from there. */
+        if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
+            markdown_core_parser_reach(parser, b->place.start, (size_t)source + 1);
+        }
         b->place.start = (uint32_t)source;
     }
     return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);

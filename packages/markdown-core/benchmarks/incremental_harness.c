@@ -774,6 +774,53 @@ static void session_close(void *handle) {
 
 markdown_core_session *ih_session_of(void *handle) { return ((session_subject *)handle)->session; }
 
+#ifndef MARKDOWN_CORE_BENCH_SESSION_EDITLESS
+/* The cursor at UTF-8 offset `at` of `bytes`, `length` of them, as the
+ * session's position in `unit`: its line and the units from the line's
+ * start, plus one. */
+static void session_position(const uint8_t *bytes, size_t length, ih_unit unit, size_t at,
+                             markdown_core_position *position) {
+    size_t line = 1, start = 0;
+    for (size_t i = 0; i < at; i++) {
+        if (bytes[i] == '\n' || (bytes[i] == '\r' && (i + 1 >= length || bytes[i + 1] != '\n'))) {
+            line++;
+            start = i + 1;
+        }
+    }
+    const size_t column = unit == IH_UTF16 ? ih_utf16_units(bytes, at) - ih_utf16_units(bytes, start) : at - start;
+    position->line = (int32_t)line;
+    position->column = (int32_t)(column + 1);
+}
+
+/* An edit at offsets of the text model, as positions: an offset past the
+ * text, or none in UTF-16, goes as position {0, 0}, which the session
+ * refuses, as it refuses one between the CR and the LF of a CRLF. */
+static markdown_core_status session_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
+                                         const markdown_core_document **document) {
+    session_subject *subject = (session_subject *)handle;
+    const ih_unit unit =
+        markdown_core_session_unit(subject->session) == MARKDOWN_CORE_TEXT_UNIT_UTF16 ? IH_UTF16 : IH_UTF8;
+    markdown_core_position from = {0, 0}, to = {0, 0};
+    size_t size, first = start, last = end;
+    const uint8_t *bytes = session_text(handle, &size);
+    *document = NULL;
+    if (!bytes) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    const bool known =
+        unit == IH_UTF8 || (ih_utf8_offset(bytes, size, start, &first) && ih_utf8_offset(bytes, size, end, &last));
+    if (known && first <= size && last <= size) {
+        session_position(bytes, size, unit, first, &from);
+        session_position(bytes, size, unit, last, &to);
+    }
+    return markdown_core_session_edit(subject->session, from, to, text, length, document);
+}
+
+static void session_reread(const void *handle, size_t *from, size_t *to) {
+    markdown_core_session_reread(((const session_subject *)handle)->session, from, to);
+}
+#endif
+
 /* The session takes edits from step E1 on (plan 12.9). */
 const ih_subject_class ih_session = {.name = "session",
                                      .open = session_open,
@@ -781,6 +828,10 @@ const ih_subject_class ih_session = {.name = "session",
                                      .flush = session_flush,
                                      .text = session_text,
                                      .close = session_close,
+#ifndef MARKDOWN_CORE_BENCH_SESSION_EDITLESS
+                                     .edit = session_edit,
+                                     .reread = session_reread,
+#endif
                                      .keeps = true};
 
 /* ---------------------------------------------------------------- reparse */

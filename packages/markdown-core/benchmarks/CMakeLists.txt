@@ -94,12 +94,12 @@ add_executable(markdown_core_stream_runner stream_runner.c incremental_harness.c
 target_include_directories(markdown_core_stream_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
                                                                "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(markdown_core_stream_runner PRIVATE libmarkdown-core-wire libmarkdown-core-public-static)
-# A base revision from before the session's flush and close took their names
-# (incremental_harness.h, THE BASE'S NAMES).
+# A base revision from before the session's edit (incremental_harness.h, THE
+# BASE'S EDITS).
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../include/markdown_core.h" _markdown_core_facade)
-string(FIND "${_markdown_core_facade}" "markdown_core_session_flush(" _markdown_core_flush)
-if(_markdown_core_flush EQUAL -1)
-    target_compile_definitions(markdown_core_stream_runner PRIVATE MARKDOWN_CORE_BENCH_SESSION_FINALIZE)
+string(FIND "${_markdown_core_facade}" "markdown_core_session_edit(" _markdown_core_edit)
+if(_markdown_core_edit EQUAL -1)
+    target_compile_definitions(markdown_core_stream_runner PRIVATE MARKDOWN_CORE_BENCH_SESSION_EDITLESS)
 endif()
 
 # The attribute comparison's two runners.

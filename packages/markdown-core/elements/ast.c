@@ -708,6 +708,35 @@ static inline publish_relation publish_next(const publish_frame *frame, const pu
  * PLACE). */
 typedef enum { DECIDED, UNDECIDED, HOLDER } publish_decided;
 
+/* THE IMAGE OF AN OLD ANCHOR. An edit replaced the old text from `from` to
+ * `to` and moved what follows by `delta` (parser.h, `edit_from`): an old
+ * node's anchor is the first byte of its source the edit kept, at its
+ * place in the new text -- a byte before the edit where it was, one after it
+ * moved, and the first byte after the edit when the edit replaced the
+ * node's first bytes and not all of them. A node the edit replaced whole,
+ * and one with no source, has none. Every other publish follows no edit,
+ * the zero one, which keeps every byte where it was. */
+typedef struct {
+    uint32_t from, to;
+    int64_t delta;
+} publish_edit;
+
+static inline bool publish_anchor(const publish_edit *edit, markdown_core_place window, uint32_t *anchor) {
+    if (window.start >= window.end) {
+        return false;
+    }
+    if (!edit || window.start < edit->from) {
+        *anchor = window.start;
+    } else if (window.start >= edit->to) {
+        *anchor = (uint32_t)((int64_t)window.start + edit->delta);
+    } else if (window.end > edit->to) {
+        *anchor = (uint32_t)((int64_t)edit->to + edit->delta);
+    } else {
+        return false;
+    }
+    return true;
+}
+
 /* What one publish carries through its walks: the walk stack, the lookup
  * tables, the last id issued, how many committed definitions it lists, and
  * whether it keeps what a later publish reads (THE LAST PUBLISH). */
@@ -727,6 +756,10 @@ typedef struct {
      * in place places may lie in the content of a holder. */
     uint8_t decided;
     bool keeps;
+    /* The edit the publish follows (parser.h, `edit_from`), and it again
+     * where it moves a byte: NULL for the zero edit. */
+    publish_edit edit;
+    const publish_edit *moved;
 } publish_walk;
 
 /* Where a node published from `hand` lies: its range, in the content of the
@@ -1339,17 +1372,19 @@ static inline void publish_relation_begin(const markdown_core_parser *parser, co
  * that span rows start inside the sources of the cells before them (plan
  * 5.9). A node that continues none passes the old nodes whose anchors lie
  * before its source, which no later node, starting no earlier, holds. */
-static const markdown_core_node *publish_match(publish_match_frame *owner, const markdown_core_node *node,
-                                               markdown_core_place source, uint32_t *old_start) {
+static const markdown_core_node *publish_match(const publish_edit *edit, publish_match_frame *owner,
+                                               const markdown_core_node *node, markdown_core_place source,
+                                               uint32_t *old_start) {
     uint32_t from = owner->old_source;
     for (markdown_core_node **slot = owner->old_item; slot != owner->old_end; slot++) {
         const markdown_core_node *old = *slot;
         const markdown_core_place window = runs_window(old, from);
-        const bool anchored = window.start < window.end;
-        if (anchored && window.start >= source.end) {
+        uint32_t anchor;
+        const bool anchored = publish_anchor(edit, window, &anchor);
+        if (anchored && anchor >= source.end) {
             break;
         }
-        if (anchored && window.start >= source.start && old->kind == node->kind) {
+        if (anchored && anchor >= source.start && old->kind == node->kind) {
             owner->old_item = slot + 1;
             owner->old_source = window.end;
             *old_start = window.start;
@@ -1359,7 +1394,8 @@ static const markdown_core_node *publish_match(publish_match_frame *owner, const
     }
     while (owner->old_item != owner->old_end) {
         const markdown_core_place window = runs_window(*owner->old_item, owner->old_source);
-        if (window.start < window.end && window.start >= source.start) {
+        uint32_t anchor;
+        if (publish_anchor(edit, window, &anchor) && anchor >= source.start) {
             break;
         }
         owner->old_source = window.end;
@@ -1373,18 +1409,20 @@ static const markdown_core_node *publish_match(publish_match_frame *owner, const
  * relation by relation, each in source order, with where each one's source
  * lay: the record of the old node `node` continues, or NULL. */
 static const markdown_core_tail_record *publish_record_match(const markdown_core_tail_records *records,
-                                                             publish_match_frame *owner, const markdown_core_node *node,
-                                                             markdown_core_place source, uint32_t *old_start) {
+                                                             const publish_edit *edit, publish_match_frame *owner,
+                                                             const markdown_core_node *node, markdown_core_place source,
+                                                             uint32_t *old_start) {
     while (owner->record && records->items[owner->record - 1].field < (uint32_t)owner->field) {
         owner->record = records->items[owner->record - 1].next;
     }
     for (uint32_t at = owner->record; at;) {
         const markdown_core_tail_record *record = &records->items[at - 1];
-        const bool anchored = record->start < record->end;
-        if (record->field != (uint32_t)owner->field || (anchored && record->start >= source.end)) {
+        uint32_t anchor;
+        const bool anchored = publish_anchor(edit, (markdown_core_place){record->start, record->end}, &anchor);
+        if (record->field != (uint32_t)owner->field || (anchored && anchor >= source.end)) {
             break;
         }
-        if (anchored && record->start >= source.start && record->kind == node->kind) {
+        if (anchored && anchor >= source.start && record->kind == node->kind) {
             owner->record = record->next;
             *old_start = record->start;
             return record;
@@ -1393,7 +1431,10 @@ static const markdown_core_tail_record *publish_record_match(const markdown_core
     }
     while (owner->record) {
         const markdown_core_tail_record *record = &records->items[owner->record - 1];
-        if (record->field != (uint32_t)owner->field || (record->start < record->end && record->start >= source.start)) {
+        uint32_t anchor;
+        if (record->field != (uint32_t)owner->field ||
+            (publish_anchor(edit, (markdown_core_place){record->start, record->end}, &anchor) &&
+             anchor >= source.start)) {
             break;
         }
         owner->record = record->next;
@@ -1733,14 +1774,15 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             hand.anchor = placed.place.end;
             hand.source = placed.source.end;
             if (frame->old == OLD_LIVE) {
-                old = publish_match(frame, child, placed.source, &old_start);
+                old = publish_match(walk->moved, frame, child, placed.source, &old_start);
                 old_entries = old ? OLD_LIVE : OLD_NONE;
                 held = 0;
                 child->id = old ? old->id : ++walk->next_id;
             } else {
                 const markdown_core_tail_record *record =
-                    frame->old == OLD_RECORDS ? publish_record_match(records, frame, child, placed.source, &old_start)
-                                              : NULL;
+                    frame->old == OLD_RECORDS
+                        ? publish_record_match(records, walk->moved, frame, child, placed.source, &old_start)
+                        : NULL;
                 /* An open or lent block continues itself or nothing
                  * (PUBLISHING IN PLACE), and an old node that stayed in the
                  * tree has its records, one the snapshot made its relations
@@ -2154,6 +2196,12 @@ static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
     walk->pool = parser->pool;
     walk->decided = DECIDED;
     walk->keeps = true;
+    const markdown_core_stream *stream = parser->stream;
+    walk->moved = NULL;
+    if (stream->edit_to || stream->edit_delta) {
+        walk->edit = (publish_edit){stream->edit_from, stream->edit_to, stream->edit_delta};
+        walk->moved = &walk->edit;
+    }
 }
 
 static void publish_end(const publish_walk *walk, markdown_core_parser *parser) {
@@ -2207,6 +2255,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     const uint32_t record = records->count ? 1 : 0;
     uint32_t old = 0;
     ok = ok && (snapshot || publish_prefill(&walk, parser));
+    const bool walked = ok;
     if (ok) {
         assert(snapshot || !markdown_core_parser_undecided(parser));
         if (record) {
@@ -2221,10 +2270,17 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     if (ok) {
         parser->revision->last_id = walk.next_id;
     }
-    if (record) {
+    /* A walk that never started took no records: those the root holds stay,
+     * owning what a reopen took from the tree. */
+    if (record && walked) {
         markdown_core_tail_record *kept = &records->items[0];
         records_free(parser, ok ? old : kept->held, ok);
         kept->held = ok ? kept->held : old;
+    }
+    /* The flush an edit reads to follows it, and no publish after it. */
+    if (!snapshot) {
+        parser->stream->edit_from = parser->stream->edit_to = 0;
+        parser->stream->edit_delta = 0;
     }
     publish_end(&walk, parser);
     return ok;
@@ -2270,6 +2326,156 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
     }
     publish_end(&walk, parser);
     return ok;
+}
+
+/* A DOCUMENT REOPENED FOR AN EDIT (docs/plans/2026-09-29-incremental-parsing.md,
+ * 12.3): the flushed root keeps the children before `child`, which the
+ * next publish passes as its FINAL prefix, and lets the others go, the
+ * document's metadata with them when `child` is 0. Each one that goes
+ * becomes an old node of the root, owned by its record (THE RECORDS); the
+ * next publish matches the nodes the edit reads against them, by the image
+ * of their anchors (THE IMAGE OF AN OLD ANCHOR), and lets them go. Every definition
+ * the document listed that stays is listed again as committed, in source
+ * order and before anything the edit reads, so the next publish lists it
+ * first (publish_prefill); the headings list theirs themselves
+ * (markdown_core_publish_keep_heading). */
+
+/* The definitions of the subtrees the reopen lets go, as pointers in
+ * order, which a search reads. */
+typedef struct {
+    const markdown_core_node **nodes;
+    size_t count, capacity;
+} reopen_gone;
+
+static int reopen_order(const void *a, const void *b) {
+    const uintptr_t left = (uintptr_t)*(const markdown_core_node *const *)a;
+    const uintptr_t right = (uintptr_t)*(const markdown_core_node *const *)b;
+    return (left > right) - (left < right);
+}
+
+/* The definitions below `node`, `node` among them, added to `gone`. False
+ * when the walk or the list could not grow. */
+static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    bool grown = true;
+    markdown_core_walk_begin(&walk, node);
+    while (grown && markdown_core_walk_next(&walk, &item)) {
+        const markdown_core_node *found = item.node;
+        if (!found || (found->kind != MARKDOWN_CORE_NODE_FOOTNOTE && found->kind != MARKDOWN_CORE_NODE_SPECIMEN &&
+                       found->kind != MARKDOWN_CORE_NODE_REFERENCE)) {
+            continue;
+        }
+        const markdown_core_node **nodes =
+            markdown_core_reserve(gone->nodes, &gone->capacity, gone->count + 1, sizeof(*nodes));
+        grown = nodes != NULL;
+        if (nodes) {
+            gone->nodes = nodes;
+            nodes[gone->count++] = found;
+        }
+    }
+    const bool failed = walk.failed || !grown;
+    markdown_core_walk_end(&walk);
+    return !failed;
+}
+
+/* `node`, which the root lets go from its relation `field`, recorded where
+ * its source lay, after the record `*last`, plus one, or first below the
+ * root's when that is 0. */
+static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, uint32_t field,
+                          uint32_t *last) {
+    const uint32_t at = record_take(records);
+    if (!at) {
+        return false;
+    }
+    records->items[at - 1] = (markdown_core_tail_record){.node = node,
+                                                         .id = node->id,
+                                                         .start = node->place.start,
+                                                         .end = node->place.end,
+                                                         .field = field,
+                                                         .kind = node->kind};
+    if (*last) {
+        records->items[*last - 1].next = at;
+    } else {
+        records->items[0].held = at;
+    }
+    *last = at;
+    return true;
+}
+
+bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_document_value *value = root->as.document;
+    markdown_core_node *metadata = child ? NULL : value->metadata;
+    reopen_gone gone = {0};
+    bool ok = !metadata || reopen_collect(&gone, metadata);
+    for (uint32_t i = child; ok && i < root->child_count; i++) {
+        ok = reopen_collect(&gone, root->children[i]);
+    }
+    if (gone.count) {
+        qsort(gone.nodes, gone.count, sizeof(*gone.nodes), reopen_order);
+    }
+    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        markdown_core_key_tree_free(&stream->committed.starts[table]);
+    }
+    for (size_t table = 0; table < MARKDOWN_CORE_LABEL_TABLES; table++) {
+        markdown_core_key_tree_free(&stream->committed.labels[table]);
+    }
+    /* What stays keeps its order, each table's entries counted from 0:
+     * every definition that stays starts before the first the edit reads,
+     * and no two of a table start at one place, so the count is below
+     * where any of them starts. */
+    const markdown_core_definitions *const tables[] = {&value->footnotes, &value->specimens, &value->references};
+    for (size_t table = 0; ok && table < sizeof(tables) / sizeof(*tables); table++) {
+        uint32_t kept = 0;
+        for (size_t i = 0; ok && i < tables[table]->all.count; i++) {
+            const markdown_core_node *node = tables[table]->all.nodes[i];
+            if (!gone.count || !bsearch(&node, gone.nodes, gone.count, sizeof(*gone.nodes), reopen_order)) {
+                ok = committed_keep(&stream->committed, (uint32_t)table, node, kept++);
+            }
+        }
+    }
+    markdown_core_free(gone.nodes);
+    markdown_core_tail_records *records = &stream->records;
+    ok = ok && (records->count || record_root(records));
+    if (!ok) {
+        return false;
+    }
+    assert(!records->items[0].held);
+    uint32_t last = 0;
+    ok = !metadata || reopen_record(records, metadata, 0, &last);
+    for (uint32_t i = child; ok && i < root->child_count; i++) {
+        ok = reopen_record(records, root->children[i], 1, &last);
+    }
+    if (!ok) {
+        /* The records taken own their nodes, which stay in the tree. */
+        for (uint32_t at = records->items[0].held; at; at = records->items[at - 1].next) {
+            records->items[at - 1].node = NULL;
+        }
+        records_free(parser, records->items[0].held, false);
+        records->items[0].held = 0;
+        return false;
+    }
+    markdown_core_node_free_tables(value);
+    publish_clear(value);
+    root->child_count = child;
+    if (metadata) {
+        value->metadata = NULL;
+    }
+    /* What stays is as the last publish left it, the FINAL prefix of each
+     * of the root's relations, which the last publish, which keeps nothing,
+     * need not have marked. */
+    if (value->metadata) {
+        value->metadata->flags |= MARKDOWN_CORE_NODE__FINAL;
+    }
+    for (uint32_t i = 0; i < child; i++) {
+        root->children[i]->flags |= MARKDOWN_CORE_NODE__FINAL;
+    }
+    return true;
+}
+
+bool markdown_core_publish_keep_heading(markdown_core_parser *parser, const markdown_core_node *node, uint32_t key) {
+    return committed_keep(&parser->stream->committed, TABLE_HEADINGS, node, key);
 }
 
 void markdown_core_document_free(markdown_core_document *document) {
@@ -2747,24 +2953,29 @@ bool markdown_core_position_offset(const markdown_core_source_lines *lines, cons
     if (line >= lines->count) {
         return false;
     }
-    size_t at = lines->starts[line];
-    size_t end = line + 1 < lines->count ? lines->starts[line + 1] : length;
+    return markdown_core_column_offset(source, lines->starts[line],
+                                       line + 1 < lines->count ? lines->starts[line + 1] : length, position.column,
+                                       unit, cursor, offset);
+}
+
+bool markdown_core_column_offset(const uint8_t *source, size_t at, size_t end, int32_t column,
+                                 markdown_core_text_unit unit, bool cursor, size_t *offset) {
     if (cursor) {
         while (end > at && (source[end - 1] == '\n' || source[end - 1] == '\r')) {
             end--;
         }
     }
-    int64_t column = 1;
-    while (column < position.column && at < end) {
+    int64_t walked = 1;
+    while (walked < column && at < end) {
         size_t next = at + 1;
         while (next < end && (source[next] & 0xC0) == 0x80) {
             next++;
         }
-        column += (int64_t)source_columns(source, at, next, unit);
+        walked += (int64_t)source_columns(source, at, next, unit);
         at = next;
     }
     *offset = at;
-    return column == position.column && (cursor ? at <= end : at < end);
+    return walked == column && (cursor ? at <= end : at < end);
 }
 
 /* THE NODES THAT HOLD A BYTE: every node one of whose source ranges holds

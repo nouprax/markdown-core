@@ -448,6 +448,24 @@ typedef struct markdown_core_stream {
     size_t request_ask;
     bool request_ends, requested;
     struct markdown_core_parser_mark *snapshot_mark;
+    /* THE EDIT the next publish follows (blocks.c, THE REOPEN): it replaced
+     * the old text from `edit_from` to `edit_to` and moved what follows by
+     * `edit_delta`; all zero for every other publish (ast.c, THE IMAGE OF AN
+     * OLD ANCHOR). */
+    uint32_t edit_from, edit_to;
+    int64_t edit_delta;
+    /* THE REACH (blocks.c): each reading of the document that decided what
+     * starts at `start` from the bytes up to `end` -- a child of the
+     * document that closed as the line at `end - 1` was read, a lookahead
+     * that read past the line after its own, a candidate a later line
+     * rejected -- in the order the readings ran. An edit reads from no
+     * point such a reading spans. */
+    markdown_core_place *reach;
+    size_t reach_count, reach_capacity;
+    /* Whether edits read the parse again after its flush: a session's
+     * (markdown_core_parser_edits), which keeps the reach and the headings'
+     * state; a one-shot parse keeps neither. */
+    bool edits;
     /* THE SETTLE POINT (blocks.c). */
     markdown_core_settled settled;
     markdown_core_state_alignment candidate_room[];
@@ -1462,6 +1480,46 @@ bool markdown_core_parser_commit(markdown_core_parser *parser, const char *sourc
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
 markdown_core_node *markdown_core_parser_flush(markdown_core_parser *parser);
 void markdown_core_parser_discard(markdown_core_parser *parser);
+/* A flushed transaction put back at input line `line`, a rest point of
+ * the flushed document `root` before its child `child`, to read the new
+ * text `source` of an edit that replaced the old text from `from` to `to`
+ * and moved what follows by `delta`: a commit that ends the text and a `flush` read
+ * it from there (blocks.c, THE REOPEN). False, with the transaction failed,
+ * when storage could not be had. */
+bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
+                                 size_t from, size_t to, int64_t delta, const char *source);
+/* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
+ * holds `offset`, and line `line`'s start and the start of the line after
+ * it, or the text's end -- false when the text has no such line. A text
+ * that ends with a line ending, or is empty, has an empty last line at its
+ * end. */
+size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset);
+/* The parse just started takes edits after its flush (markdown_core_stream,
+ * `edits`). */
+void markdown_core_parser_edits(markdown_core_parser *parser);
+/* Whether it does. */
+bool markdown_core_parser_takes_edits(const markdown_core_parser *parser);
+/* A reading of the document decided what starts at `start` from the bytes up
+ * to `end` (THE REACH). The parse fails when storage could not be had. A
+ * parse that takes no edits pays the test and nothing more, and so does a
+ * snapshot, whose readings its rollback takes back. */
+void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end);
+static inline bool markdown_core_parser_reaches(const markdown_core_parser *parser) {
+    return parser->stream && parser->stream->edits && !parser->stream->snapshot_mark;
+}
+static inline void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end) {
+    if (markdown_core_parser_reaches(parser) && end > start) {
+        markdown_core_parser_note_reach(parser, start, end);
+    }
+}
+/* Puts the reach of the flushed document in the order its queries need;
+ * it reads as it did. */
+void markdown_core_parser_sort_reach(markdown_core_parser *parser);
+/* The first start of a reading of the flushed document that spans `point`,
+ * reading past it from before it, in `*start`: false when none does. The
+ * reach is sorted (markdown_core_parser_sort_reach). */
+bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start);
+bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the
  * headings that settled, and the completion queue is completed with a

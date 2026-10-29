@@ -220,6 +220,10 @@ typedef struct {
     const struct markdown_core_committed_tables *committed;
 } markdown_core_document_value;
 
+/* The document's definition tables freed, but a snapshot's, which it
+ * borrows; the value still names them. */
+void markdown_core_node_free_tables(markdown_core_document_value *document);
+
 /* A node's source extent in UTF-8 bytes (the published form of its place). */
 #ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
 #define MARKDOWN_CORE_EXTENT_TYPEDEF

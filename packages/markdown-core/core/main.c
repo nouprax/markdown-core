@@ -94,6 +94,8 @@ static const char *status_text(markdown_core_status status) {
         return "kind mismatch";
     case MARKDOWN_CORE_SESSION_FLUSHED:
         return "session flushed";
+    case MARKDOWN_CORE_SESSION_STREAMING:
+        return "session streaming";
     }
     return "no error";
 }
