@@ -2766,7 +2766,7 @@ static void S_reach_move(markdown_core_parser *parser, size_t start) {
  * rest point `start`, kept aside before the reopen lets it go. False when
  * storage could not be had. */
 static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *root, uint32_t child, size_t line,
-                        size_t start, size_t to, int64_t delta) {
+                        uint32_t prior, size_t start, size_t to, int64_t delta) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     const markdown_core_parser_input *input = &parser->input;
@@ -2817,7 +2817,9 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
     S_reach_move(parser, start);
     edit->count = count;
     edit->next = 0;
-    edit->prior = child ? root->children[child - 1]->place.end : root->place.start;
+    edit->prior = edit->before = prior;
+    edit->rest = child;
+    edit->reading = true;
     edit->gone_count = 0;
     edit->at = parser->at;
     edit->complete = input->complete;
@@ -2850,14 +2852,22 @@ static size_t S_edit_line(const markdown_core_edit *edit, size_t start) {
 static void S_edit_next(markdown_core_edit *edit) {
     for (; edit->next < edit->count; edit->next++) {
         const markdown_core_node *child = edit->children[edit->next];
-        const uint32_t before = edit->next ? edit->children[edit->next - 1]->place.end : edit->prior;
-        const size_t line = S_back_start(edit, S_edit_line(edit, child->place.start));
-        if (before <= line && line >= edit->to && (int64_t)line + edit->delta > 0) {
+        const uint32_t start = (uint32_t)((int64_t)edit->before + child->extent.lead);
+        const size_t line = S_back_start(edit, S_edit_line(edit, start));
+        if (edit->before <= line && line >= edit->to && (int64_t)line + edit->delta > 0) {
             edit->point = (size_t)((int64_t)line + edit->delta);
             return;
         }
+        edit->before = start + child->extent.span;
     }
     edit->point = SIZE_MAX;
+}
+
+/* The reading passes the old tail's child `next`, and tries the next. */
+static void S_edit_pass(markdown_core_edit *edit) {
+    const markdown_core_node *child = edit->children[edit->next++];
+    edit->before = (uint32_t)((int64_t)edit->before + child->extent.lead + child->extent.span);
+    S_edit_next(edit);
 }
 
 /* THE REOPEN (docs/plans/2026-09-29-incremental-parsing.md, 12.3): an edit
@@ -2879,7 +2889,8 @@ static void S_edit_next(markdown_core_edit *edit) {
  * flush's publish follows (ast.c, THE IMAGE OF AN OLD ANCHOR). False, with
  * the parse failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 size_t from, size_t to, int64_t delta, const char *source, bool whole) {
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source,
+                                 bool whole) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
@@ -2889,7 +2900,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
                          : line - input->lines.count < back->line_count ? S_back_start(back, line - input->lines.count)
                                                                         : input->scanned;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (!S_edit_keep(parser, root, child, line, start, to, delta) ||
+    if (!S_edit_keep(parser, root, child, line, prior, start, to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
         !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)stream->edit->end,
                                             &stream->edit->registry)) {
@@ -2991,8 +3002,11 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     if (parser->error) {
         return false;
     }
-    const uint32_t joined = root->child_count ? root->children[root->child_count - 1]->place.end : root->place.start;
-    const uint32_t before = first ? edit->children[first - 1]->place.end : edit->prior;
+    /* The reading's last child is its own, whose place is the new text's,
+     * or the last before the old tail, which ends before the edit. */
+    const uint32_t joined =
+        root->child_count > edit->rest ? root->children[root->child_count - 1]->place.end : edit->prior;
+    const uint32_t before = edit->before;
     /* The back's lines and reach before the line are the old text's the
      * reading read again, and go; the rest stand where they stood from the
      * end, which is the new text's. */
@@ -3065,8 +3079,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *parser, size_t start, size_t index) {
     markdown_core_edit *edit = parser->stream->edit;
     while (edit->point < start) {
-        edit->next++;
-        S_edit_next(edit);
+        S_edit_pass(edit);
     }
     if (edit->point != start) {
         return false;
@@ -3075,8 +3088,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
         S_splice(parser, start, index);
         return true;
     }
-    edit->next++;
-    S_edit_next(edit);
+    S_edit_pass(edit);
     return false;
 }
 
@@ -6959,6 +6971,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         if (!edit->resumed) {
             edit->line_count = edit->reach_count = 0;
         }
+        edit->reading = false;
         edit->count = 0;
         edit->point = SIZE_MAX;
     }

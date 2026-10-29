@@ -140,7 +140,7 @@ static uint32_t widths_child(const session_widths *widths, const markdown_core_n
 
 #ifndef NDEBUG
 /* The widths an edit mended are the widths of its root made anew, and
- * each child stands where its place says. */
+ * each child stands where the walk finds it. */
 static void widths_check(const session_widths *widths, const markdown_core_node *root) {
     session_widths fresh = {0};
     if (!widths_mend(&fresh, root, 0, SIZE_MAX)) {
@@ -150,11 +150,21 @@ static void widths_check(const session_widths *widths, const markdown_core_node 
     for (size_t i = 0; i < fresh.count; i++) {
         assert(fresh.chunks[i] == widths->chunks[i]);
     }
-    for (size_t i = 0; i < root->child_count; i++) {
-        assert(widths_start(widths, root, i) == root->children[i]->place.start);
-        assert(widths_end(widths, root, i) == root->children[i]->place.end);
-    }
     markdown_core_free(fresh.chunks);
+    /* The walk measures each child from the one before. */
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, root);
+    size_t child = 0;
+    while (markdown_core_walk_next(&walk, &item)) {
+        if (item.node && item.level == 1 && child < root->child_count && item.node == root->children[child]) {
+            assert(widths_start(widths, root, child) == item.place.start);
+            assert(widths_end(widths, root, child) == item.place.end);
+            child++;
+        }
+    }
+    assert(walk.failed || child == root->child_count);
+    markdown_core_walk_end(&walk);
 }
 #endif
 
@@ -389,8 +399,10 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     session->document.root = NULL;
     size_t start, end;
     markdown_core_parser_line_span(session->committed, line, &start, &end);
-    if (!markdown_core_parser_reopen(session->committed, root, child, line, from, to, delta, session_source(session),
-                                     whole)) {
+    const uint32_t prior =
+        child ? (uint32_t)widths_end(&session->widths, root, child - 1) : (uint32_t)root->extent.lead;
+    if (!markdown_core_parser_reopen(session->committed, root, child, line, prior, from, to, delta,
+                                     session_source(session), whole)) {
         markdown_core_node_pool_release(&session->pool, root);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }

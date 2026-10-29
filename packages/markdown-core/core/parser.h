@@ -546,7 +546,14 @@ typedef struct markdown_core_parser_at {
 typedef struct markdown_core_edit {
     struct markdown_core_node **children;
     size_t children_capacity;
-    uint32_t count, next, tail, prior;
+    /* Where the child before the old tail ends, and where the child before
+     * `next` does, in the old text: the old children are measured from
+     * there by their extents, as nothing moves their places (THE SPLICE). */
+    uint32_t count, next, tail, prior, before;
+    /* The root's child the reading began at. */
+    uint32_t rest;
+    /* Whether the parse is an edit's reading. */
+    bool reading;
     /* THE BACK (docs/plans/relative-positions.md): the lines of the flushed
      * text past the input's, from its last to the first, each measured back
      * from `end`, the text's end: an edit before them moves none of them.
@@ -1522,10 +1529,11 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * and moved what follows by `delta`: a commit that ends the text and a `flush` read
  * it from there (blocks.c, THE REOPEN), and take the old children after the
  * edit back where they read as they did (THE SPLICE), unless `whole` says
- * to read all of it. False, with the transaction failed, when storage could
- * not be had. */
+ * to read all of it. `prior` is where the child before `child` ends, or the
+ * root starts. False, with the transaction failed, when storage could not
+ * be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 size_t from, size_t to, int64_t delta, const char *source, bool whole);
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole);
 /* Where the last reading of an edit took the old children back, in the new
  * text: 0 when it took none back. */
 size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
