@@ -462,6 +462,9 @@ typedef struct markdown_core_stream {
      * point such a reading spans. */
     markdown_core_place *reach;
     size_t reach_count, reach_capacity;
+    /* The log's first entries, in the stream itself, so a small document's
+     * log takes no allocation of its own. */
+    markdown_core_place reach_room[16];
     /* Whether edits read the parse again after its flush: a session's
      * (markdown_core_parser_edits), which keeps the reach and the headings'
      * state; a one-shot parse keeps neither. */
