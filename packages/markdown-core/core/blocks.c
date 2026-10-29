@@ -2809,9 +2809,11 @@ void markdown_core_parser_edits(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     if (stream) {
         stream->edits = true;
-        if (!stream->reach) {
-            stream->reach = stream->reach_room;
-            stream->reach_capacity = sizeof(stream->reach_room) / sizeof(*stream->reach_room);
+        /* Room for the log up front, so a step it grows in pays no
+         * allocation; a refusal here leaves the step to grow it. */
+        markdown_core_place *reach = markdown_core_reserve(stream->reach, &stream->reach_capacity, 64, sizeof(*reach));
+        if (reach) {
+            stream->reach = reach;
         }
     }
 }
@@ -2822,18 +2824,8 @@ bool markdown_core_parser_takes_edits(const markdown_core_parser *parser) {
 
 void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end) {
     markdown_core_stream *stream = parser->stream;
-    /* The log leaves the stream's room for storage of its own, which it
-     * grows from there. */
-    markdown_core_place *reach = stream->reach;
-    if (reach == stream->reach_room && stream->reach_count == stream->reach_capacity) {
-        reach = markdown_core_alloc(stream->reach_capacity * 2, sizeof(*reach));
-        if (reach) {
-            memcpy(reach, stream->reach_room, sizeof(stream->reach_room));
-            stream->reach_capacity *= 2;
-        }
-    } else {
-        reach = markdown_core_reserve(reach, &stream->reach_capacity, stream->reach_count + 1, sizeof(*reach));
-    }
+    markdown_core_place *reach =
+        markdown_core_reserve(stream->reach, &stream->reach_capacity, stream->reach_count + 1, sizeof(*reach));
     if (!reach) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -3044,9 +3036,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         }
     }
     markdown_core_free(stream->miss_roots);
-    if (stream->reach != stream->reach_room) {
-        markdown_core_free(stream->reach);
-    }
+    markdown_core_free(stream->reach);
     markdown_core_settled *settled = &stream->settled;
     S_settled_release(parser, settled);
     markdown_core_array_free(&settled->nodes);
