@@ -396,7 +396,7 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
                             size_t level, size_t edited, size_t base, session_rest_point *rest) {
     const markdown_core_parser *parser = session->committed;
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    if (level == SESSION_DEPTH || !structure || !structure->element->reopens || block->child_count < 2 ||
+    if (level == SESSION_DEPTH || !structure || !structure->element->reopens || !block->child_count ||
         markdown_core_parser_line_of(parser, window.start) >= edited) {
         return false;
     }
@@ -412,6 +412,11 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     }
     uint32_t at = window.start;
     for (size_t i = 0; i < count; i++) {
+        /* A child that is not published (a definition's body) has no
+         * source of its own to measure: no rest point is found below. */
+        if (!block->children[i]->source.runs) {
+            return false;
+        }
         edits->windows[base + i] = markdown_core_node_window(block->children[i], at);
         at = edits->windows[base + i].end;
     }
@@ -528,15 +533,12 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
         return true;
     }
     /* Its close, noted as a line after it was read, from the first after
-     * its last to the next child's first, or as the input ended
-     * (blocks.c, S_reach_close). */
+     * its last to the next child's first, or as its last line, when its own
+     * end condition or the input's end closes it (blocks.c, S_reach_close). */
     rest->close = window.start;
     rest->ends[0] = window.end + 1;
     rest->ends[1] = (held + 1 < root->child_count ? widths_start(widths, root, held + 1) : session->text.count) + 1;
-    rest->ends[2] =
-        held + 1 < root->child_count
-            ? SIZE_MAX
-            : session_line_start(session, markdown_core_parser_line_of(session->committed, window.end - 1)) + 1;
+    rest->ends[2] = session_line_start(session, markdown_core_parser_line_of(session->committed, window.end - 1)) + 1;
     if (session_rest_in(session, root->children[held], window, 0, edited, 0, rest)) {
         rest->path[0] = held;
         *child = held + 1;

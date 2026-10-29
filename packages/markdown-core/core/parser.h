@@ -1606,8 +1606,8 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
  * starts at `close` and ends from `ends[0]` to `ends[1]`, or at `ends[2]`:
  * the close of a child of the root reopened below it (THE NESTED REOPEN),
  * noted as a line after it was read, the first of the next child or one of
- * the blank lines before, or as the input ended on its last line (blocks.c,
- * S_reach_close). */
+ * the blank lines before, or on its last line, when its own end condition
+ * or the input's end closed it (blocks.c, S_reach_close). */
 bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
                                          const size_t ends[3], size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
