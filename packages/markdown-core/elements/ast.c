@@ -1349,9 +1349,9 @@ static void publish_relation_decided(const markdown_core_parser *parser, publish
  * relation before when it goes on from it, its decided content, and, for a
  * persisting node, its FINAL prefix passed when a publish placed the node
  * before, and a definition's body FINAL when it is COMMITTED and DECIDED. */
-static inline void publish_relation_begin(const markdown_core_parser *parser, const content_places *places,
-                                          publish_match_frame *frame, publish_relation *hand,
-                                          const markdown_core_node *holder, relation_shape shape, bool continues) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void publish_relation_begin(
+    const markdown_core_parser *parser, const content_places *places, publish_match_frame *frame,
+    publish_relation *hand, const markdown_core_node *holder, relation_shape shape, bool continues) {
     frame->holder = holder;
     if (!continues) {
         frame->field = shape == SHAPE_CHILDREN ? 0 : relation_field(&frame->walk.cursor);
