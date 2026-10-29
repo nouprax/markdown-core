@@ -11295,6 +11295,30 @@ static void session_edits(test_batch_runner *runner) {
            session_as_parsed(session),
        "an edit after the heading reads it again from its definitions");
     markdown_core_session_close(session);
+
+    /* An edit refused at any allocation leaves nothing behind once the
+     * session closes, the blocks the edit took from the tree included. */
+    static const char kept[] = "# a\n\nb\n\nc\n";
+    bool clean = true, done = false;
+    for (size_t fail = 1; fail < 400 && clean && !done; fail++) {
+        payload_probe_arm();
+        session = NULL;
+        if (markdown_core_session_new((const uint8_t *)kept, sizeof(kept) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK ||
+            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            clean = false;
+        } else {
+            const markdown_core_position into = {5, 1};
+            payload_fail_at = payload_allocations + fail;
+            done = markdown_core_session_edit(session, into, into, (const uint8_t *)"abc\n", 4, &document) ==
+                   MARKDOWN_CORE_OK;
+            payload_fail_at = 0;
+        }
+        markdown_core_session_close(session);
+        payload_probe_disarm();
+        clean = clean && payload_live == 0;
+    }
+    OK(runner, clean && done, "an edit refused at any allocation leaks nothing");
 }
 
 /* The anchor `node` has, compared with `expected`. */

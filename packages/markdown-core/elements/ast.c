@@ -2255,6 +2255,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     const uint32_t record = records->count ? 1 : 0;
     uint32_t old = 0;
     ok = ok && (snapshot || publish_prefill(&walk, parser));
+    const bool walked = ok;
     if (ok) {
         assert(snapshot || !markdown_core_parser_undecided(parser));
         if (record) {
@@ -2269,7 +2270,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     if (ok) {
         parser->revision->last_id = walk.next_id;
     }
-    if (record) {
+    /* A walk that never started took no records: those the root holds stay,
+     * owning what a reopen took from the tree. */
+    if (record && walked) {
         markdown_core_tail_record *kept = &records->items[0];
         records_free(parser, ok ? old : kept->held, ok);
         kept->held = ok ? kept->held : old;
