@@ -339,6 +339,7 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .state_size = sizeof(markdown_core_list_work),
     .fold_child = fold_child,
+    .folds = MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED,
     .fold_kinds = LIST_KINDS,
     .blank_line = blank_line,
     .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
@@ -347,9 +348,10 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .continue_container = continue_container,
     .propagates_child_blank = true,
     /* A block identifier line after it names it (block_identifier.c). */
-    .trailed = true,
+    .trailed_kinds = LIST_KINDS,
     .reopens = true,
     .reopen_block = reopen_block,
+    .abuts = LIST_KINDS,
     .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
     .maximum_block_indent = 3,

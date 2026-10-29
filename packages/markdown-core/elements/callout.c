@@ -236,6 +236,8 @@ static markdown_core_node *open_lazy(const markdown_core_element_instance *self,
     return text_block->element->open_text_block(text_block, parser, node, input);
 }
 
+static const markdown_core_node_type CALLOUT_TRAILED[] = {MARKDOWN_CORE_NODE_CALLOUT, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .state_size = sizeof(markdown_core_callout_work),
     .accepts_lazy = accepts_lazy,
@@ -248,7 +250,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .container_prefix_bytes = ">",
     .blank_opaque = true,
     /* A block identifier line after it names it (block_identifier.c). */
-    .trailed = true,
+    .trailed_kinds = CALLOUT_TRAILED,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
     .start_reach = start_reach,

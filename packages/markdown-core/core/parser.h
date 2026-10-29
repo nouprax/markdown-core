@@ -543,6 +543,14 @@ typedef struct markdown_core_parser_at {
  * from `next` on back, `resumed` is where, and `tail` the index of the
  * first among the root's children, whose leads move by `lead`; 0 when it
  * took none back. */
+/* A child a reopened block let go (THE NESTED SPLICE): the block of the
+ * chain it was a child of, and its old window, from where the child before
+ * it ended. */
+typedef struct markdown_core_back_child {
+    struct markdown_core_node *node;
+    uint32_t level, prior, start, end;
+} markdown_core_back_child;
+
 typedef struct markdown_core_edit {
     struct markdown_core_node **children;
     size_t children_capacity;
@@ -561,6 +569,22 @@ typedef struct markdown_core_edit {
     struct markdown_core_node **chain;
     uint32_t *path, *ranks;
     size_t depth, chain_capacity;
+    /* THE NESTED SPLICE (blocks.c): for each block of the chain, where it
+     * ended in the old text (`ends`), its flags there (`states`), its
+     * record in the publish's (`owners`, ast.c), and where the children
+     * the reading took back begin among its own (`tails`), UINT32_MAX when
+     * it took none. `backs` are the children the chain let go, in the order
+     * of the text, the deepest block's first, `back_next` the next the
+     * reading may take back, and `taken` the first it took, SIZE_MAX when
+     * it took none of them; `level` is the block they went back to, and
+     * `shift` what the first's lead moves by. `closed` is where the old
+     * close of the root's child ended, and `reach_from` the first entry of
+     * the log its reading noted. */
+    uint32_t *ends, *states, *owners, *tails;
+    markdown_core_back_child *backs;
+    size_t back_count, back_capacity, back_next, taken, level, reach_from;
+    uint32_t closed;
+    int64_t shift;
     /* Whether the parse is an edit's reading. */
     bool reading;
     /* THE BACK (docs/plans/relative-positions.md): the lines of the flushed
@@ -1550,12 +1574,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
                                  const uint32_t *path, size_t depth);
+/* Whether the children of `block` abut (element.h, `abuts`). */
+bool markdown_core_parser_abuts(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* How the line before the rest point line `line` reads to the `depth`
  * blocks of `chain` reopened there (blocks.c, THE NESTED REOPEN), in the
  * text `text`, when the child before the rest point ends at `before`: blank
- * to the blocks from the one returned down. SIZE_MAX when the rest point
- * has none: the child before ends on that line or later, as it closed when
- * the rest point's line was read, or the line is no blank one the deepest
+ * to the blocks from the one returned down, none when that is `depth`.
+ * SIZE_MAX when the rest point has none: the child before ends on that line
+ * or later, as it closed when the rest point's line was read, unless the
+ * deepest block's children abut, or the line is no blank one the deepest
  * block took, or holds prefixes alone and which of the chain took them is
  * not known. */
 size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const unsigned char *text,
