@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Stop an edit's re-read where it meets the old reading (incremental edits
+  plan, step E1a, stage 2): past the edit, at the start of a line where an
+  old top-level block starts on a line of its own, nothing is open and no
+  candidate is live, the edit takes the old blocks from there to the end
+  back as they were, with their ids, headings, definitions and declarations,
+  and `markdown_core_session_reread` reports the re-read ending there. An
+  edit that changes the labels declared after its rest point still reads
+  the whole text again. Blocks inside a list or other container stop the
+  re-read once nested resync lands (step E1b).
+
 - Edit a flushed session (incremental edits plan, step E1a):
   `markdown_core_session_edit(session, start, end, text, length, &document)`
   replaces the text between two cursors, given as positions in the

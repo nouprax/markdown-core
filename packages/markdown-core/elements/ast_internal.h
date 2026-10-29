@@ -43,8 +43,15 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
  * and lists the definitions that stay as committed. False, with nothing
  * changed, when storage could not be had. */
 bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child);
+/* The edit's reading takes the old children back from the one at `child`
+ * among those the reopen let go (blocks.c, THE SPLICE), whose line starts at
+ * `point` in the new text: their records let them go, and their definitions
+ * are listed as committed, after every definition the reading listed.
+ * False, with the records as they were, when storage could not be had. */
+bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point);
 /* A heading that stays in a reopened document listed as committed, `key`
- * its place among those that stay. False when storage could not be had. */
+ * its place among those that stay, or its start in the new text when the
+ * edit took it back. False when storage could not be had. */
 bool markdown_core_publish_keep_heading(markdown_core_parser *parser, const markdown_core_node *node, uint32_t key);
 
 /* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,

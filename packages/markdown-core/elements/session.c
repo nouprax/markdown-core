@@ -159,8 +159,7 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
         made->context ? session_open(made, source, size, unit) : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK) {
         /* Only a session takes edits; a one-off parse keeps no reach. */
-        markdown_core_parser_edits(made->committed);
-        status = session_snapshot(made);
+        status = markdown_core_parser_edits(made->committed) ? session_snapshot(made) : MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status != MARKDOWN_CORE_OK) {
         session_close(made);
@@ -285,21 +284,25 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
 
 /* The flushed parse put back before the root's child `child`, at input line
  * `line`, reads the text, in which an edit replaced the old text from `from`
- * to `to` and moved what follows by `delta`, to its end and is flushed
- * again. */
+ * to `to` and moved what follows by `delta`, and is flushed again: to its
+ * end, or to where it takes the old children back, unless `whole` says to
+ * read all of it. */
 static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t from,
-                                           size_t to, int64_t delta) {
+                                           size_t to, int64_t delta, bool whole) {
     markdown_core_node *root = session->document.root;
     session->document.root = NULL;
     size_t start, end;
     markdown_core_parser_line_span(session->committed, line, &start, &end);
-    if (!markdown_core_parser_reopen(session->committed, root, child, line, from, to, delta, session_source(session))) {
+    if (!markdown_core_parser_reopen(session->committed, root, child, line, from, to, delta, session_source(session),
+                                     whole)) {
         markdown_core_node_pool_release(&session->pool, root);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    const markdown_core_status status = session_flush(session);
+    const size_t resumed = markdown_core_parser_resumed(session->committed);
     session->reread_from = start;
-    session->reread_to = session->text.count;
-    return session_flush(session);
+    session->reread_to = resumed ? resumed : session->text.count;
+    return status;
 }
 
 markdown_core_status markdown_core_session_edit(markdown_core_session *session, markdown_core_position start,
@@ -334,8 +337,10 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     const int64_t delta = (int64_t)length - (int64_t)(to - from);
-    markdown_core_status status = session_reread(session, child, line, from, to, delta);
-    if (status == MARKDOWN_CORE_OK && child) {
+    markdown_core_status status = session_reread(session, child, line, from, to, delta, false);
+    /* The children before the rest point stay, and so do those the reading
+     * took back after the edit. */
+    if (status == MARKDOWN_CORE_OK && (child || markdown_core_parser_resumed(session->committed))) {
         if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &after)) {
             /* The children that stay may read otherwise, and no edit after
              * this one may take them as they are. */
@@ -343,7 +348,7 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
             session->document.root = NULL;
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
         } else if ((before.size != after.size || (before.size && memcmp(before.ptr, after.ptr, before.size)))) {
-            status = session_reread(session, 0, 0, 0, 0, 0);
+            status = session_reread(session, 0, 0, 0, 0, 0, true);
         }
     }
     markdown_core_strbuf_free(&before);

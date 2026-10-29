@@ -48,9 +48,9 @@ typedef struct {
  * the committed names (heading.c, THE COMMITTED NAMES): the names taken,
  * where the reading of the registry's ANCHOR records stands and how many it
  * read, how many headings are named, and the committed headings that show
- * another name, from the last snapshot and then from the one under way; and
- * the projection and lookup work the assignment of their anchors did, for
- * its complexity gate. */
+ * another name, from the last snapshot and then from the one under way; the
+ * projection and lookup work the assignment of their anchors did, for its
+ * complexity gate; and the headings an edit put aside. */
 typedef struct {
     markdown_core_heading_collection headings;
     markdown_core_key_index taken;
@@ -58,6 +58,9 @@ typedef struct {
     uint32_t *renamed;
     size_t renamed_count, renamed_capacity;
     size_t anchor_work;
+    /* The headings an edit's reopen put aside, in source order, which its
+     * reading may take back (blocks.c, THE SPLICE). */
+    markdown_core_heading_collection aside;
 } markdown_core_heading_state;
 
 /* ONE HEADING'S INLINE RUN (the heading element's run record): where

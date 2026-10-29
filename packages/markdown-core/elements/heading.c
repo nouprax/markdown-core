@@ -155,29 +155,58 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
     entry->name = NULL;
 }
 
-/* A flushed parse names every heading and parses each, so its headings
- * are in source order: those from the first that starts at or past `start`
- * go, with the names their entries hold. */
-bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   uint32_t start) {
-    markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
-    assert(headings->parsed == headings->count);
-    size_t low = 0, high = headings->count;
+/* The entries `values` holds, `count` of them, let go, with the names
+ * they hold. */
+static void headings_let_go(markdown_core_heading_parse *values, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_dispose_heading(&values[i]);
+        if (values[i].holds_name) {
+            markdown_core_free((void *)values[i].name);
+        }
+    }
+}
+
+/* The first of the `count` entries in source order at `values` that starts
+ * at or past `start`. */
+static size_t headings_from(const markdown_core_heading_parse *values, size_t count, uint32_t start) {
+    size_t low = 0, high = count;
     while (low < high) {
         const size_t middle = low + (high - low) / 2;
-        if (headings->values[middle].start < start) {
+        if (values[middle].start < start) {
             low = middle + 1;
         } else {
             high = middle;
         }
     }
-    for (size_t i = low; i < headings->count; i++) {
-        markdown_core_dispose_heading(&headings->values[i]);
-        if (headings->values[i].holds_name) {
-            markdown_core_free((void *)headings->values[i].name);
+    return low;
+}
+
+/* A flushed parse names every heading and parses each, so its headings
+ * are in source order: those from the first that starts at or past `start`
+ * go aside, with the names their entries hold, and those an earlier edit
+ * put aside go. */
+bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   uint32_t start) {
+    markdown_core_heading_state *state = self->state;
+    markdown_core_heading_collection *headings = &state->headings;
+    markdown_core_heading_collection *aside = &state->aside;
+    assert(headings->parsed == headings->count);
+    const size_t low = headings_from(headings->values, headings->count, start);
+    const size_t gone = headings->count - low;
+    headings_let_go(aside->values, aside->count);
+    aside->count = aside->parsed = 0;
+    if (gone > aside->capacity) {
+        markdown_core_heading_parse *values =
+            markdown_core_reserve(aside->values, &aside->capacity, gone, sizeof(*values));
+        if (!values) {
+            return false;
         }
+        aside->values = values;
     }
+    if (gone) {
+        memcpy(aside->values, headings->values + low, gone * sizeof(*aside->values));
+    }
+    aside->count = aside->parsed = gone;
     headings->count = headings->parsed = low;
     size_t renamed = 0;
     for (size_t i = 0; i < state->renamed_count; i++) {
@@ -197,6 +226,36 @@ bool markdown_core_headings_reopen(const markdown_core_element_instance *self, m
     return true;
 }
 
+bool markdown_core_headings_splice(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   uint32_t start, uint32_t point) {
+    markdown_core_heading_state *state = self->state;
+    markdown_core_heading_collection *headings = &state->headings;
+    markdown_core_heading_collection *aside = &state->aside;
+    const size_t first = headings_from(aside->values, aside->count, start);
+    const size_t taken = aside->count - first;
+    if (headings->count + taken > headings->capacity) {
+        markdown_core_heading_parse *values =
+            markdown_core_reserve(headings->values, &headings->capacity, headings->count + taken, sizeof(*values));
+        if (!values) {
+            return false;
+        }
+        headings->values = values;
+    }
+    for (size_t i = first; i < aside->count; i++) {
+        aside->values[i].start = aside->values[i].start - start + point;
+        if (!markdown_core_publish_keep_heading(parser, aside->values[i].node, aside->values[i].start)) {
+            return false;
+        }
+    }
+    if (taken) {
+        memcpy(headings->values + headings->count, aside->values + first, taken * sizeof(*headings->values));
+    }
+    headings->count += taken;
+    headings_let_go(aside->values, first);
+    aside->count = aside->parsed = 0;
+    return true;
+}
+
 /* Release the headings and the names they took, with the committed names
  * their entries hold. The anchors are assigned by then, or the parse failed;
  * either way nothing reads them again. */
@@ -211,6 +270,9 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     }
     markdown_core_free(headings->values);
     *headings = (markdown_core_heading_collection){0};
+    headings_let_go(state->aside.values, state->aside.count);
+    markdown_core_free(state->aside.values);
+    state->aside = (markdown_core_heading_collection){0};
     markdown_core_key_index_free(&state->taken);
     markdown_core_free(state->renamed);
     state->renamed = NULL;

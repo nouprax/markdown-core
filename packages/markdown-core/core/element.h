@@ -213,6 +213,15 @@ struct markdown_core_element {
      * had. */
     bool (*reopen_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                             uint32_t, uint32_t);
+    /* The edit's reading takes the old children the reopen let go back
+     * (blocks.c, THE SPLICE), from the one at `child` among them on, whose
+     * line started at `start` of the old text and starts at `point` of the
+     * new: the root holds them again, and every state the document kept of
+     * what they hold -- their definitions, their headings -- is back, moved
+     * to the new text. False when storage could not be had, with the
+     * children still the records'. */
+    bool (*splice_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                            uint32_t, uint32_t, uint32_t);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,

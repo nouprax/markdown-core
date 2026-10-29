@@ -462,10 +462,11 @@ typedef struct markdown_core_stream {
      * point such a reading spans. */
     markdown_core_place *reach;
     size_t reach_count, reach_capacity;
-    /* Whether edits read the parse again after its flush: a session's
-     * (markdown_core_parser_edits), which keeps the reach and the headings'
-     * state; a one-shot parse keeps neither. */
-    bool edits;
+    /* What the edits that read the parse again after its flush keep: a
+     * session's (markdown_core_parser_edits), which keeps the reach, the
+     * headings' state and the old tail of each edit (THE SPLICE); NULL for
+     * a one-shot parse, which keeps none of them. */
+    struct markdown_core_edit *edit;
     /* THE SETTLE POINT (blocks.c). */
     markdown_core_settled settled;
     markdown_core_state_alignment candidate_room[];
@@ -526,6 +527,37 @@ typedef struct markdown_core_parser_at {
      * number in every reading of its line (blocks.c, THE CANDIDATES). */
     size_t asks, step_asks;
 } markdown_core_parser_at;
+
+/* THE OLD TAIL OF AN EDIT (blocks.c, THE SPLICE): what the reopen took
+ * from the flushed parse that the reading of the new text may take back
+ * whole. The old root's children from the one the edit reads from on, in
+ * order, which the records own (ast.c, THE RECORDS), and where the child
+ * before them ended; the old lines from line `line` on; the reach and the
+ * registry's records the reopen dropped; the definitions below the
+ * children, each with the index of its child among them as its `start`,
+ * in the order the old document listed them; the old reading's place at
+ * its flush, and where its text was complete. The edit replaced the old
+ * text up to `to` and moved what follows by `delta`. `next` is the child
+ * the reading tries next and `point` where its line starts in the new
+ * text, SIZE_MAX once none is left. Once the reading took the children
+ * from `next` on back, `resumed` is where, and `tail` the index of the
+ * first among the root's children, whose leads move by `lead`; 0 when it
+ * took none back. */
+typedef struct markdown_core_edit {
+    struct markdown_core_node **children;
+    size_t children_capacity;
+    uint32_t count, next, tail, prior;
+    struct markdown_core_input_line *lines;
+    size_t line, line_count, line_capacity;
+    markdown_core_place *reach;
+    size_t reach_count, reach_capacity;
+    markdown_core_registry registry;
+    markdown_core_defined *gone;
+    size_t gone_count, gone_capacity;
+    markdown_core_parser_at at;
+    size_t complete, to, point, resumed;
+    int64_t delta, lead;
+} markdown_core_edit;
 
 struct markdown_core_parser {
     /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
@@ -1484,10 +1516,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * the flushed document `root` before its child `child`, to read the new
  * text `source` of an edit that replaced the old text from `from` to `to`
  * and moved what follows by `delta`: a commit that ends the text and a `flush` read
- * it from there (blocks.c, THE REOPEN). False, with the transaction failed,
- * when storage could not be had. */
+ * it from there (blocks.c, THE REOPEN), and take the old children after the
+ * edit back where they read as they did (THE SPLICE), unless `whole` says
+ * to read all of it. False, with the transaction failed, when storage could
+ * not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 size_t from, size_t to, int64_t delta, const char *source);
+                                 size_t from, size_t to, int64_t delta, const char *source, bool whole);
+/* Where the last reading of an edit took the old children back, in the new
+ * text: 0 when it took none back. */
+size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
  * holds `offset`, and line `line`'s start and the start of the line after
  * it, or the text's end -- false when the text has no such line. A text
@@ -1495,8 +1532,8 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
  * end. */
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset);
 /* The parse just started takes edits after its flush (markdown_core_stream,
- * `edits`). */
-void markdown_core_parser_edits(markdown_core_parser *parser);
+ * `edit`). False, with nothing changed, when storage could not be had. */
+bool markdown_core_parser_edits(markdown_core_parser *parser);
 /* Whether it does. */
 bool markdown_core_parser_takes_edits(const markdown_core_parser *parser);
 /* A reading of the document decided what starts at `start` from the bytes up
@@ -1505,7 +1542,7 @@ bool markdown_core_parser_takes_edits(const markdown_core_parser *parser);
  * snapshot, whose readings its rollback takes back. */
 void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end);
 static inline bool markdown_core_parser_reaches(const markdown_core_parser *parser) {
-    return parser->stream && parser->stream->edits && !parser->stream->snapshot_mark;
+    return parser->stream && parser->stream->edit && !parser->stream->snapshot_mark;
 }
 static inline void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end) {
     if (markdown_core_parser_reaches(parser) && end > start) {
