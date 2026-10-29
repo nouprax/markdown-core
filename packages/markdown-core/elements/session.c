@@ -54,6 +54,14 @@ typedef struct {
     bool made;
 } session_widths;
 
+/* What only an edit keeps, made at the first: the widths, and the bytes of
+ * the text the last edit read again. A session that is never edited holds
+ * none of it. */
+typedef struct {
+    session_widths widths;
+    size_t reread_from, reread_to;
+} session_edits;
+
 struct markdown_core_session {
     MARKDOWN_CORE_ARRAY(uint8_t) text;
     markdown_core_parser *committed;
@@ -63,9 +71,7 @@ struct markdown_core_session {
     markdown_core_context *context;
     bool located;
     bool flushed;
-    /* The bytes of the text the last edit read again. */
-    size_t reread_from, reread_to;
-    session_widths widths;
+    session_edits *edits;
 };
 
 /* The bytes from where the child before `child` ends to where it ends. */
@@ -237,7 +243,10 @@ static void session_close(markdown_core_session *session) {
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_array_free(&session->text);
-    markdown_core_free(session->widths.chunks);
+    if (session->edits) {
+        markdown_core_free(session->edits->widths.chunks);
+        markdown_core_free(session->edits);
+    }
     markdown_core_context_free(session->context);
 }
 
@@ -341,7 +350,7 @@ static bool session_offset(const markdown_core_session *session, markdown_core_p
  * otherwise. */
 static void session_rest(const markdown_core_session *session, size_t edited, uint32_t *child, size_t *line) {
     const markdown_core_node *root = session->document.root;
-    const session_widths *widths = &session->widths;
+    const session_widths *widths = &session->edits->widths;
     size_t start, end;
     markdown_core_parser_sort_reach(session->committed);
     markdown_core_parser_line_span(session->committed, edited, &start, &end);
@@ -395,12 +404,12 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
 static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t from,
                                            size_t to, int64_t delta, bool whole) {
     markdown_core_node *root = session->document.root;
+    session_edits *edits = session->edits;
     const size_t count = root->child_count;
     session->document.root = NULL;
     size_t start, end;
     markdown_core_parser_line_span(session->committed, line, &start, &end);
-    const uint32_t prior =
-        child ? (uint32_t)widths_end(&session->widths, root, child - 1) : (uint32_t)root->extent.lead;
+    const uint32_t prior = child ? (uint32_t)widths_end(&edits->widths, root, child - 1) : (uint32_t)root->extent.lead;
     if (!markdown_core_parser_reopen(session->committed, root, child, line, prior, from, to, delta,
                                      session_source(session), whole)) {
         markdown_core_node_pool_release(&session->pool, root);
@@ -408,19 +417,19 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     }
     const markdown_core_status status = session_flush(session);
     const size_t resumed = markdown_core_parser_resumed(session->committed);
-    session->reread_from = start;
-    session->reread_to = resumed ? resumed : session->text.count;
+    edits->reread_from = start;
+    edits->reread_to = resumed ? resumed : session->text.count;
     if (status != MARKDOWN_CORE_OK) {
-        session->widths.made = false;
-    } else if (session->widths.made) {
+        edits->widths.made = false;
+    } else if (edits->widths.made) {
         /* The children it read, and the first it took back, whose lead is
          * from the last it read. */
         root = session->document.root;
         const size_t last =
             resumed && root->child_count == count ? markdown_core_parser_tail(session->committed) : SIZE_MAX;
-        if (widths_mend(&session->widths, root, child, last)) {
+        if (widths_mend(&edits->widths, root, child, last)) {
 #ifndef NDEBUG
-            widths_check(&session->widths, root);
+            widths_check(&edits->widths, root);
 #endif
         }
     }
@@ -440,8 +449,13 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (!session_offset(session, start, &from) || !session_offset(session, end, &to) || from > to) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    if (length > MARKDOWN_CORE_SOURCE_CAPACITY - (session->text.count - (to - from)) ||
-        !widths_make(&session->widths, session->document.root)) {
+    if (length > MARKDOWN_CORE_SOURCE_CAPACITY - (session->text.count - (to - from))) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (!session->edits && !(session->edits = markdown_core_alloc(1, sizeof(*session->edits)))) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (!widths_make(&session->edits->widths, session->document.root)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     session_forget(session);
@@ -483,8 +497,9 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
 }
 
 void markdown_core_session_reread(const markdown_core_session *session, size_t *from, size_t *to) {
-    *from = session->reread_from;
-    *to = session->reread_to;
+    const session_edits *edits = session->edits;
+    *from = edits ? edits->reread_from : 0;
+    *to = edits ? edits->reread_to : 0;
 }
 
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
