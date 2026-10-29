@@ -311,6 +311,24 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
 static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
+/* A list reopened at an item's line (blocks.c, THE NESTED REOPEN) is laid
+ * out by none of its items yet, and its last line was blank as the line
+ * before the item's was; an item keeps no state of its own. */
+static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node, bool blank) {
+    (void)self;
+    (void)parser;
+    if (node->kind != MARKDOWN_CORE_NODE_LIST) {
+        return;
+    }
+    node->flags &=
+        (markdown_core_node_internal_flags) ~(MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED |
+                                              MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK);
+    if (blank) {
+        node->flags |= MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK;
+    }
+    node->as.list->tight = false;
+}
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node) {
     (void)self;
@@ -330,6 +348,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .propagates_child_blank = true,
     /* A block identifier line after it names it (block_identifier.c). */
     .trailed = true,
+    .reopens = true,
+    .reopen_block = reopen_block,
     .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
     .maximum_block_indent = 3,

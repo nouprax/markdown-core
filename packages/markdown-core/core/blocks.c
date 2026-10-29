@@ -2870,6 +2870,133 @@ static void S_edit_pass(markdown_core_edit *edit) {
     S_edit_next(edit);
 }
 
+/* THE NESTED REOPEN (docs/plans/e1b-nested.md): the rest point of an edit
+ * may be a child of a closed block below the root -- a list's item, a block
+ * quote's paragraph -- at the start of a later line of the block than its
+ * first. The reading reopens the chain of blocks from the root's child down
+ * to the one that holds the rest point, each the last child of the one
+ * above, and stands in the deepest where a parse of the text before the
+ * line stands: the blocks of the chain open, each holding the children it
+ * keeps, closed and complete, with nothing pending. Each block's builder
+ * state there is its open state, the folds of the children it keeps
+ * (S_fold), its last line's blankness, and what its element's
+ * `reopen_block` gives back (element.h): the engine names no kind. The
+ * chain was read to its last line before, and its own completion is done:
+ * it does not join the completion queue again as it settles (S_finish_parse).
+ * What the reopen lets go of each block of the chain -- the children after
+ * its next block's, or after the rest point -- the next publish matches its
+ * new children against (ast.c, A DOCUMENT REOPENED FOR AN EDIT). */
+
+size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const unsigned char *text,
+                                       markdown_core_node *const *chain, size_t depth, size_t line, size_t before) {
+    size_t start, end;
+    /* The child before ended on an earlier line: the line before was read
+     * with every block it held closed. */
+    if (!line || !markdown_core_parser_line_span(parser, line - 1, &start, &end) || before > start) {
+        return SIZE_MAX;
+    }
+    bool raw = true;
+    for (size_t at = start; at < end && text[at] != '\n' && text[at] != '\r'; at++) {
+        const unsigned char c = text[at];
+        if (c != ' ' && c != '\t') {
+            if (!parser->dialect->container_prefix[c]) {
+                return SIZE_MAX;
+            }
+            raw = false;
+        }
+    }
+    if (raw) {
+        return 0;
+    }
+    /* The line holds prefixes only, which the chain's blocks took, the
+     * deepest of them that takes bytes last. */
+    for (size_t i = depth; i-- > 0;) {
+        const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, chain[i])->structure;
+        if (structure && structure->element->container_prefix_bytes) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+/* The chain the reading reopens, from the root's child `path[0]` down
+ * through `path[1..depth-1]`, kept in the edit with `path`. False when
+ * storage could not be had. */
+static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, const uint32_t *path, size_t depth) {
+    if (depth + 1 > edit->chain_capacity) {
+        size_t capacity = edit->chain_capacity;
+        markdown_core_node **chain = markdown_core_reserve(edit->chain, &capacity, depth + 1, sizeof(*chain));
+        if (!chain) {
+            return false;
+        }
+        edit->chain = chain;
+        capacity = edit->chain_capacity;
+        uint32_t *kept = markdown_core_reserve(edit->path, &capacity, depth + 1, sizeof(*kept));
+        if (!kept) {
+            return false;
+        }
+        edit->path = kept;
+        capacity = edit->chain_capacity;
+        uint32_t *ranks = markdown_core_reserve(edit->ranks, &capacity, depth + 1, sizeof(*ranks));
+        if (!ranks) {
+            return false;
+        }
+        edit->ranks = ranks;
+        edit->chain_capacity = capacity;
+    }
+    markdown_core_node *node = root;
+    for (size_t i = 0; i < depth; i++) {
+        assert(path[i] < node->child_count);
+        node = node->children[path[i]];
+        edit->chain[i] = node;
+    }
+    memcpy(edit->path, path, (depth + 1) * sizeof(*path));
+    return true;
+}
+
+/* The chain stands open as the reading needs it at the rest point, whose
+ * line before, which the deepest block took, reads blank to the blocks
+ * from `blank` down (markdown_core_parser_rest_blank). */
+static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *root, size_t blank) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_node *holder = root;
+    for (size_t level = 0; level < edit->depth; level++) {
+        markdown_core_node *node = edit->chain[level];
+        const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, node);
+        node->flags =
+            (markdown_core_node_internal_flags)((node->flags | MARKDOWN_CORE_NODE__OPEN) &
+                                                ~(MARKDOWN_CORE_NODE__FINAL | MARKDOWN_CORE_NODE__COMMITTED |
+                                                  MARKDOWN_CORE_NODE__ENDS_BLANK | MARKDOWN_CORE_NODE__BLANK_SPACED |
+                                                  MARKDOWN_CORE_NODE__BLANK_FOLDED |
+                                                  MARKDOWN_CORE_NODE__LAST_LINE_BLANK |
+                                                  MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION));
+        const markdown_core_element_instance *structure = kind->structure;
+        if (structure && structure->element->reopen_block) {
+            structure->element->reopen_block(structure, parser, node, level >= blank);
+        }
+        const bool deeper = level + 1 < edit->depth;
+        const uint32_t kept = deeper ? edit->path[level + 1] : edit->path[edit->depth];
+        if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
+            for (uint32_t i = 0; i < kept; i++) {
+                node->flags = S_fold(kind, node, node->flags, node->children[i]->flags);
+            }
+        }
+        if (!deeper && level >= blank) {
+            /* The deepest block took the blank line before, as
+             * add_text_to_container sets it. */
+            S_set_last_line_blank(node, !(kind->flags & MARKDOWN_CORE_KIND_BLANK_OPAQUE) &&
+                                            (!(kind->flags & MARKDOWN_CORE_KIND_BLANK_ASK)
+                                                 ? !S_kind_accepts_lines(kind, node)
+                                                 : structure->element->blank_line(structure, parser, node)));
+        }
+        markdown_core_scaffold_of(node)->parent = holder;
+        markdown_core_scaffold_of(node)->next = NULL;
+        holder = node;
+    }
+    parser->at.current = holder;
+    parser->at.pending = NULL;
+}
+
 /* THE REOPEN (docs/plans/2026-09-29-incremental-parsing.md, 12.3): an edit
  * puts a flushed parse back at the start of input line `line`, where the
  * flushed document `root` has a child start, its rest point, and reads the
@@ -2889,8 +3016,8 @@ static void S_edit_pass(markdown_core_edit *edit) {
  * flush's publish follows (ast.c, THE IMAGE OF AN OLD ANCHOR). False, with
  * the parse failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source,
-                                 bool whole) {
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
+                                 const uint32_t *path, size_t depth) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
@@ -2900,12 +3027,27 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
                          : line - input->lines.count < back->line_count ? S_back_start(back, line - input->lines.count)
                                                                         : input->scanned;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
+    stream->edit->depth = 0;
+    if (depth && !S_chain_keep(stream->edit, root, path, depth)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    stream->edit->depth = depth;
     if (!S_edit_keep(parser, root, child, line, prior, start, to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
         !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)stream->edit->end,
                                             &stream->edit->registry)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
+    }
+    /* The rest point's line before, as the deepest block's child before
+     * the rest point, which the reopen placed, ends (THE NESTED REOPEN). */
+    size_t blank = 0;
+    if (depth) {
+        const markdown_core_node *deepest = stream->edit->chain[depth - 1];
+        blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, stream->edit->chain, depth, line,
+                                                deepest->children[path[depth] - 1]->place.end);
+        assert(blank != SIZE_MAX);
     }
     S_settled_release(parser, &stream->settled);
     for (size_t i = 0; i < stream->miss_root_count; i++) {
@@ -2917,6 +3059,20 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->miss_root = NULL;
     markdown_core_strbuf_clear(&stream->miss_labels);
     stream->defined_count = 0;
+    if (depth) {
+        /* The close of the reopened child of the root, which its reading
+         * notes again. */
+        size_t kept = 0;
+        for (size_t i = 0; i < stream->reach_count; i++) {
+            if (stream->reach[i].end <= start) {
+                stream->reach[kept++] = stream->reach[i];
+            } else {
+                assert(stream->reach[i].start == stream->edit->chain[0]->place.start);
+            }
+        }
+        assert(stream->reach_count - kept <= 1);
+        stream->reach_count = kept;
+    }
 #ifndef NDEBUG
     for (size_t i = 0; i < stream->reach_count; i++) {
         assert(stream->reach[i].end <= start);
@@ -2954,6 +3110,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     parser->reading = false;
     root->flags |= MARKDOWN_CORE_NODE__OPEN;
     parser->root = root;
+    if (depth) {
+        S_reopen_chain(parser, root, blank);
+    }
     if (whole) {
         stream->edit->count = 0;
         stream->edit->line_count = stream->edit->reach_count = 0;
@@ -3003,9 +3162,10 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
         return false;
     }
     /* The reading's last child is its own, whose place is the new text's,
-     * or the last before the old tail, which ends before the edit. */
+     * or the last before the old tail, which ends before the edit; a child
+     * the reading reopened is its own (THE NESTED REOPEN). */
     const uint32_t joined =
-        root->child_count > edit->rest ? root->children[root->child_count - 1]->place.end : edit->prior;
+        root->child_count > edit->rest || edit->depth ? root->children[root->child_count - 1]->place.end : edit->prior;
     const uint32_t before = edit->before;
     /* The back's lines and reach before the line are the old text's the
      * reading read again, and go; the rest stand where they stood from the
@@ -3188,10 +3348,12 @@ void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start,
     reach[stream->reach_count++] = (markdown_core_place){(uint32_t)start, (uint32_t)end};
 }
 
-/* The log in order of start, each entry's end raised to the furthest of
- * those that start no later: the first start of a reading that spans a
- * point is then the first entry that ends past it, when that one starts
- * before it, and an edit reads from no point either log spans. */
+/* The log in order of start, and with it the furthest end of the entries
+ * that start no later (`furthest`): the first start of a reading that spans
+ * a point is then the first entry whose furthest end is past it, when that
+ * one starts before it, and an edit reads from no point either log spans.
+ * Each entry keeps its own end, which a reopen below the root reads (THE
+ * NESTED REOPEN). */
 static int S_reach_order(const void *a, const void *b) {
     const uint32_t left = ((const markdown_core_place *)a)->start, right = ((const markdown_core_place *)b)->start;
     return (left > right) - (left < right);
@@ -3208,42 +3370,45 @@ static markdown_core_place S_reach_at(const markdown_core_stream *stream, size_t
     return (markdown_core_place){(uint32_t)(edit->end - place.start), (uint32_t)(edit->end - place.end)};
 }
 
-void markdown_core_parser_sort_reach(markdown_core_parser *parser) {
+static size_t S_reach_count(const markdown_core_stream *stream) {
+    return stream->reach_count + (stream->edit ? stream->edit->reach_count : 0);
+}
+
+bool markdown_core_parser_sort_reach(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     if (stream->reach_count > 1) {
         qsort(stream->reach, stream->reach_count, sizeof(*stream->reach), S_reach_order);
     }
-    for (size_t i = 1; i < stream->reach_count; i++) {
-        if (stream->reach[i].end < stream->reach[i - 1].end) {
-            stream->reach[i].end = stream->reach[i - 1].end;
-        }
-    }
-    if (!edit || !edit->reach_count) {
-        return;
-    }
     if (edit->reach_count > 1) {
         /* Measured from the end, the order puts the back's last first. */
         qsort(edit->reach, edit->reach_count, sizeof(*edit->reach), S_reach_order);
     }
-    uint32_t furthest = stream->reach_count ? stream->reach[stream->reach_count - 1].end : 0;
-    for (size_t i = edit->reach_count; i-- > 0;) {
-        const uint32_t end = (uint32_t)(edit->end - edit->reach[i].end);
-        if (end < furthest) {
-            edit->reach[i].end = (uint32_t)(edit->end - furthest);
-        } else {
-            furthest = end;
+    const size_t count = S_reach_count(stream);
+    if (count > edit->furthest_capacity) {
+        uint32_t *furthest = markdown_core_reserve(edit->furthest, &edit->furthest_capacity, count, sizeof(*furthest));
+        if (!furthest) {
+            return false;
         }
+        edit->furthest = furthest;
     }
+    uint32_t end = 0;
+    for (size_t i = 0; i < count; i++) {
+        const uint32_t at = S_reach_at(stream, i).end;
+        end = at > end ? at : end;
+        edit->furthest[i] = end;
+    }
+    return true;
 }
 
 bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start) {
     const markdown_core_stream *stream = parser->stream;
-    const size_t count = stream->reach_count + (stream->edit ? stream->edit->reach_count : 0);
+    const uint32_t *furthest = stream->edit->furthest;
+    const size_t count = S_reach_count(stream);
     size_t low = 0, high = count;
     while (low < high) {
         const size_t middle = low + (high - low) / 2;
-        if (S_reach_at(stream, middle).end > point) {
+        if (furthest[middle] > point) {
             high = middle;
         } else {
             low = middle + 1;
@@ -3254,6 +3419,39 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
     }
     *start = S_reach_at(stream, low).start;
     return true;
+}
+
+bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
+                                         const size_t ends[3], size_t *start) {
+    const markdown_core_stream *stream = parser->stream;
+    const size_t count = S_reach_count(stream);
+    size_t low = 0, high = count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (S_reach_at(stream, middle).start >= from) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    bool closed = false;
+    for (size_t i = low; i < count; i++) {
+        const markdown_core_place place = S_reach_at(stream, i);
+        if (place.start >= point) {
+            break;
+        }
+        if (place.end <= point) {
+            continue;
+        }
+        if (!closed && place.start == close &&
+            ((place.end >= ends[0] && place.end <= ends[1]) || place.end == ends[2])) {
+            closed = true;
+            continue;
+        }
+        *start = place.start;
+        return true;
+    }
+    return false;
 }
 
 /* THE SNAPSHOT (docs/plans/2026-09-29-incremental-parsing.md, 5.3; step 7,
@@ -3451,6 +3649,10 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->lines);
         markdown_core_free(stream->edit->reach);
         markdown_core_free(stream->edit->gone);
+        markdown_core_free(stream->edit->chain);
+        markdown_core_free(stream->edit->path);
+        markdown_core_free(stream->edit->ranks);
+        markdown_core_free(stream->edit->furthest);
         markdown_core_registry_free(&stream->edit->registry);
         markdown_core_free(stream->edit);
     }
@@ -6922,6 +7124,33 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
  * steps, never miss one, because a kind in the finished tree was necessarily
  * created; and a step asked where none of its declared kinds is finds
  * nothing to do. */
+/* The blocks of the chain an edit's reading reopened leave the completion
+ * queue, which they joined as they settled again: their completion is done
+ * (THE NESTED REOPEN). */
+static void S_unqueue_chain(markdown_core_parser *parser) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_node *last = NULL;
+    for (markdown_core_node *node = parser->completion_first; node;) {
+        markdown_core_node *next = markdown_core_scaffold_next(node);
+        bool chained = false;
+        for (size_t i = 0; i < edit->depth && !chained; i++) {
+            chained = edit->chain[i] == node;
+        }
+        if (chained) {
+            markdown_core_scaffold_of(node)->next = NULL;
+            if (last) {
+                markdown_core_scaffold_of(last)->next = next;
+            } else {
+                parser->completion_first = next;
+            }
+        } else {
+            last = node;
+        }
+        node = next;
+    }
+    parser->completion_last = last;
+}
+
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
@@ -6931,6 +7160,9 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     S_take_back(parser, false);
 
     S_close_document(parser);
+    if (parser->stream->edit && parser->stream->edit->depth) {
+        S_unqueue_chain(parser);
+    }
     if (!parser->error) {
         S_complete_settled(parser);
     }
@@ -6973,6 +7205,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         }
         edit->reading = false;
         edit->count = 0;
+        edit->depth = 0;
         edit->point = SIZE_MAX;
     }
     S_release_walk(parser);

@@ -127,6 +127,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",
     .continue_container = continue_container,
+    .reopens = true,
     .continue_reach = markdown_core_block_indent_reach,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,

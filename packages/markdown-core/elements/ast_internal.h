@@ -49,6 +49,10 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
  * are listed as committed, after every definition the reading listed.
  * False, with the records as they were, when storage could not be had. */
 bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point);
+/* Where a published node's source lies, its first run measured from
+ * `anchor`: where the source of the node before it in its relation ends,
+ * or where its owner's starts. */
+markdown_core_place markdown_core_node_window(const markdown_core_node *node, uint32_t anchor);
 /* A heading that stays in a reopened document listed as committed, `key`
  * its place among those that stay, or its start in the new text when the
  * edit took it back. False when storage could not be had. */

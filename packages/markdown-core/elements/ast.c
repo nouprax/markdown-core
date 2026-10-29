@@ -526,6 +526,10 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
     return window;
 }
 
+markdown_core_place markdown_core_node_window(const markdown_core_node *node, uint32_t anchor) {
+    return runs_window(node, anchor);
+}
+
 /* PUBLISHING IN PLACE (docs/plans/2026-09-29-incremental-parsing.md, 5.9).
  * The walk that gives each node its extent and runs gives each node with no
  * id an id: the id of the old node it continues, or the next one. A
@@ -760,6 +764,9 @@ typedef struct {
      * where it moves a byte: NULL for the zero edit. */
     publish_edit edit;
     const publish_edit *moved;
+    /* The edit whose reading reopened blocks below the root (blocks.c, THE
+     * NESTED REOPEN), or NULL. */
+    const markdown_core_edit *chain;
 } publish_walk;
 
 /* Where a node published from `hand` lies: its range, in the content of the
@@ -968,6 +975,19 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk,
     return true;
 }
 
+/* Where a definition a nested reopen reopened is listed (ast.c, A
+ * DOCUMENT REOPENED FOR AN EDIT): at its place among the definitions that
+ * stay, which the definitions it holds follow; any other at `start`. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) uint32_t
+    publish_chain_rank(const markdown_core_edit *edit, const markdown_core_node *node, uint32_t start) {
+    for (size_t i = 0; i < edit->depth; i++) {
+        if (edit->chain[i] == node && edit->ranks[i] != UINT32_MAX) {
+            return edit->ranks[i];
+        }
+    }
+    return start;
+}
+
 /* Records `node` in table `table` at `start`: a publish that keeps what a
  * later one reads keeps it there too when it is COMMITTED and DECIDED, as it is FINAL (THE DECIDED
  * CONTENT). A definition is a block or an inline note, and every block in
@@ -975,6 +995,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk,
  * (blocks.c, A BLOCK SETTLES), as every note a settled node holds is (THE
  * SETTLE POINT). */
 static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start) {
+    if (walk->chain) {
+        start = publish_chain_rank(walk->chain, node, start);
+    }
     definition_table *values = &walk->tables[table];
     return table_add(values, node, start) && (!walk->keeps || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
                                               walk->decided != DECIDED || publish_keep(walk, table, values->count - 1));
@@ -1279,7 +1302,7 @@ static inline void publish_pass_final(const markdown_core_parser *parser, const 
      * reading's first does: their places are those of the text they were
      * read in (blocks.c, THE SPLICE). */
     const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
-    if (edit && edit->reading && holder == parser->root) {
+    if (edit && edit->reading && holder == parser->root && !edit->depth) {
         place.end = edit->prior;
     }
     hand->anchor = place.end;
@@ -2210,6 +2233,7 @@ static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
         walk->edit = (publish_edit){stream->edit_from, stream->edit_to, stream->edit_delta};
         walk->moved = &walk->edit;
     }
+    walk->chain = stream->edit && stream->edit->reading && stream->edit->depth ? stream->edit : NULL;
 }
 
 static void publish_end(const publish_walk *walk, markdown_core_parser *parser) {
@@ -2393,23 +2417,111 @@ static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node, ui
     return !failed;
 }
 
-/* `node`, which the root lets go from its relation `field`, recorded where
- * its source lay, after the record `*last`, plus one, or first below the
- * root's when that is 0. */
-static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, markdown_core_place place,
-                          uint32_t field, uint32_t *last) {
+/* `node`, which its owner lets go from its relation `field`, or the
+ * reopened block `id` of kind `kind` when `node` is NULL, recorded where its
+ * source lay, after the record `*last`, plus one, or first below the
+ * owner's record `owner`, plus one, when that is 0. */
+static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, uint64_t id, uint16_t kind,
+                          markdown_core_place place, uint32_t field, uint32_t owner, uint32_t *last) {
     const uint32_t at = record_take(records);
     if (!at) {
         return false;
     }
     records->items[at - 1] = (markdown_core_tail_record){
-        .node = node, .id = node->id, .start = place.start, .end = place.end, .field = field, .kind = node->kind};
+        .node = node, .id = id, .start = place.start, .end = place.end, .field = field, .kind = kind};
     if (*last) {
         records->items[*last - 1].next = at;
     } else {
-        records->items[0].held = at;
+        records->items[owner - 1].held = at;
     }
     *last = at;
+    return true;
+}
+
+/* How many children the reopened block `level` of the chain keeps: those
+ * before the next block of the chain and that block, or those before the
+ * deepest's first child that goes (blocks.c, THE NESTED REOPEN). */
+static inline uint32_t reopen_kept(const markdown_core_edit *edit, size_t level) {
+    return level + 1 < edit->depth ? edit->path[level + 1] + 1 : edit->path[edit->depth];
+}
+
+/* The level of the chain `node` is at, or -1. */
+static inline int reopen_level(const markdown_core_edit *edit, const markdown_core_node *node) {
+    for (size_t i = 0; i < edit->depth; i++) {
+        if (edit->chain[i] == node) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/* THE CHAIN'S RECORDS. Each reopened block is recorded below its owner's
+ * record as a block that stays, before the children its owner lets go,
+ * which follow it there: the next publish matches the block against its
+ * record, which gives it its id, and its new children against those of its
+ * old ones that go. Each lets go the children past those it keeps, and its
+ * relations other than its children, and the children it keeps but the
+ * next of the chain, are its FINAL prefix, the last of which ends where its
+ * runs say, written in its place, as the reading's publish reads it (THE
+ * FINAL PREFIX). Its own place starts where its runs do, which the reading
+ * reads. `anchor` is where the first's runs are measured from, and
+ * `*root_last` the last of the root's records, plus one, or 0. False when
+ * the records could not grow. */
+static bool reopen_chain(markdown_core_tail_records *records, const markdown_core_edit *edit, uint32_t anchor,
+                         uint32_t *root_last) {
+    markdown_core_node *block = edit->chain[0];
+    markdown_core_place window = runs_window(block, anchor);
+    if (!reopen_record(records, NULL, block->id, block->kind, window, 1, 1, root_last)) {
+        return false;
+    }
+    uint32_t owner = *root_last;
+    for (size_t level = 0; level < edit->depth; level++) {
+        block = edit->chain[level];
+        const bool deeper = level + 1 < edit->depth;
+        const uint32_t kept = reopen_kept(edit, level), final = deeper ? kept - 1 : kept;
+        uint32_t last = 0, next = 0;
+        markdown_core_place next_window = {0};
+        markdown_core_relation_cursor cursor;
+        markdown_core_relation relation;
+        markdown_core_relations_begin(&cursor, block);
+        while (markdown_core_relations_next(&cursor, &relation)) {
+            if (relation.holder != block) {
+                for (size_t i = 0; i < relation.count; i++) {
+                    relation.items[i]->flags |= MARKDOWN_CORE_NODE__FINAL;
+                }
+                continue;
+            }
+            /* The children, measured from where the block starts, one after
+             * another: the next block of the chain is recorded first, and
+             * the children that go after it. */
+            assert(!relation.continues && relation.items == block->children);
+            const uint32_t field = cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
+            uint32_t at = window.start;
+            for (uint32_t i = 0; i < block->child_count; i++) {
+                markdown_core_node *child = block->children[i];
+                const markdown_core_place place = runs_window(child, at);
+                at = place.end;
+                if (i < final) {
+                    child->flags |= MARKDOWN_CORE_NODE__FINAL;
+                    if (i + 1 == final) {
+                        child->place.end = place.end;
+                    }
+                } else if (i == final && deeper) {
+                    if (!reopen_record(records, NULL, child->id, child->kind, place, field, owner, &last)) {
+                        return false;
+                    }
+                    next = last;
+                    next_window = place;
+                } else if (!reopen_record(records, child, child->id, child->kind, place, field, owner, &last)) {
+                    return false;
+                }
+            }
+        }
+        block->place.start = window.start;
+        block->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__FINAL;
+        owner = next;
+        window = next_window;
+    }
     return true;
 }
 
@@ -2419,10 +2531,18 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     markdown_core_node *metadata = child ? NULL : value->metadata;
     markdown_core_edit *edit = stream->edit;
     reopen_gone gone = {0};
-    /* The metadata is no child the edit's reading takes back. */
+    /* The metadata is no child the edit's reading takes back, nor is what
+     * a reopened block lets go. */
     bool ok = !metadata || reopen_collect(&gone, metadata, UINT32_MAX);
     for (uint32_t i = child; ok && i < root->child_count; i++) {
         ok = reopen_collect(&gone, root->children[i], i - child);
+    }
+    for (size_t level = 0; ok && level < edit->depth; level++) {
+        const markdown_core_node *block = edit->chain[level];
+        for (uint32_t i = reopen_kept(edit, level); ok && i < block->child_count; i++) {
+            ok = reopen_collect(&gone, block->children[i], UINT32_MAX);
+        }
+        edit->ranks[level] = UINT32_MAX;
     }
     if (gone.count) {
         qsort(gone.entries, gone.count, sizeof(*gone.entries), reopen_order);
@@ -2443,7 +2563,9 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     /* What stays keeps its order, each table's entries counted from 0:
      * every definition that stays starts before the first the edit reads,
      * and no two of a table start at one place, so the count is below
-     * where any of them starts. */
+     * where any of them starts. A reopened block that is a definition takes
+     * its place in that order, but the reading's publish lists it, as it
+     * walks it again (publish_chain_rank). */
     const markdown_core_definitions *const tables[] = {&value->footnotes, &value->specimens, &value->references};
     for (size_t table = 0; ok && table < sizeof(tables) / sizeof(*tables); table++) {
         uint32_t kept = 0;
@@ -2451,7 +2573,10 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
             const reopen_entry key = {tables[table]->all.nodes[i], 0};
             const reopen_entry *found =
                 gone.count ? bsearch(&key, gone.entries, gone.count, sizeof(*gone.entries), reopen_order) : NULL;
-            if (!found) {
+            const int level = found || !edit->depth ? -1 : reopen_level(edit, key.node);
+            if (level >= 0) {
+                edit->ranks[level] = kept++;
+            } else if (!found) {
                 ok = committed_keep(&stream->committed, (uint32_t)table, key.node, kept++);
             } else if (found->child != UINT32_MAX) {
                 edit->gone[edit->gone_count++] = (markdown_core_defined){found->child, (uint32_t)table, key.node};
@@ -2466,16 +2591,26 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     }
     assert(!records->items[0].held);
     uint32_t last = 0;
-    ok = !metadata || reopen_record(records, metadata, metadata->place, 0, &last);
+    ok = !metadata || reopen_record(records, metadata, metadata->id, metadata->kind, metadata->place, 0, 1, &last);
+    if (ok && edit->depth) {
+        /* The first of the chain's runs are measured from where the child
+         * before it ends, which is where it ends less their width. */
+        markdown_core_node *first = root->children[child - 1];
+        const uint32_t anchor = edit->prior - runs_window(first, 0).end;
+        if (child > 1) {
+            root->children[child - 2]->place.end = anchor;
+        }
+        ok = reopen_chain(records, edit, anchor, &last);
+    }
     /* Each old child is where its extent says, from where the one before
      * it ends: nothing moves the place a parse wrote (blocks.c, THE
      * SPLICE). */
     uint32_t end = edit->prior;
     for (uint32_t i = child; ok && i < root->child_count; i++) {
-        const markdown_core_node *old = root->children[i];
+        markdown_core_node *old = root->children[i];
         const uint32_t start = (uint32_t)((int64_t)end + old->extent.lead);
         end = start + old->extent.span;
-        ok = reopen_record(records, root->children[i], (markdown_core_place){start, end}, 1, &last);
+        ok = reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, end}, 1, 1, &last);
     }
     if (!ok) {
         /* The records taken own their nodes, which stay in the tree. */
@@ -2489,16 +2624,19 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     markdown_core_node_free_tables(value);
     publish_clear(value);
     root->child_count = child;
+    for (size_t level = 0; level < edit->depth; level++) {
+        edit->chain[level]->child_count = reopen_kept(edit, level);
+    }
     if (metadata) {
         value->metadata = NULL;
     }
     /* What stays is as the last publish left it, the FINAL prefix of each
      * of the root's relations, which the last publish, which keeps nothing,
-     * need not have marked. */
+     * need not have marked; a reopened block is no part of it. */
     if (value->metadata) {
         value->metadata->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
-    for (uint32_t i = 0; i < child; i++) {
+    for (uint32_t i = 0; i + (edit->depth ? 1 : 0) < child; i++) {
         root->children[i]->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
     return true;

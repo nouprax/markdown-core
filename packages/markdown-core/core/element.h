@@ -189,6 +189,19 @@ struct markdown_core_element {
      * its anchor, a caption its table -- so an edit's reading takes no old
      * blocks back after one (blocks.c, THE SPLICE). */
     bool trailed;
+    /* An edit may reopen a closed block of the element's at one of its
+     * children and read on in it (blocks.c, THE NESTED REOPEN): the block
+     * holds blocks, and its builder state at the start of a child's line is
+     * its open state, the folds of the children before it, and what
+     * `reopen_block` gives back. */
+    bool reopens;
+    /* The builder state of `node`, reopened at the start of a child's line,
+     * that is neither a fold nor the engine's: the element's flags as a
+     * fresh parse holds them there, the line before blank past the
+     * containers' prefixes when `blank` says so. It runs before the
+     * children before the line are folded into the block again. NULL when
+     * the element keeps no such state. */
+    void (*reopen_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, bool);
     int maximum_block_indent;
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
