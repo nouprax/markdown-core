@@ -547,8 +547,12 @@ typedef struct markdown_core_edit {
     struct markdown_core_node **children;
     size_t children_capacity;
     uint32_t count, next, tail, prior;
+    /* THE BACK (docs/plans/relative-positions.md): the lines of the flushed
+     * text past the input's, from its last to the first, each measured back
+     * from `end`, the text's end: an edit before them moves none of them.
+     * `line` is the first's number, in the text the reopen put back. */
     struct markdown_core_input_line *lines;
-    size_t line, line_count, line_capacity;
+    size_t line, line_count, line_capacity, end;
     markdown_core_place *reach;
     size_t reach_count, reach_capacity;
     markdown_core_registry registry;
