@@ -13,11 +13,11 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self);
  * FOR AN EDIT). False when storage could not be had. */
 bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    uint32_t start);
-/* The headings the reopen put aside that start at `start` or after, back,
- * moved to start from `point` on, and listed as committed; the others go
- * (blocks.c, THE SPLICE). False when storage could not be had. */
+/* The headings the reopen put aside that start at `point` or after in the
+ * new text, back, and listed as committed; the others go (blocks.c, THE
+ * SPLICE). False when storage could not be had. */
 bool markdown_core_headings_splice(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   uint32_t start, uint32_t point);
+                                   uint32_t point);
 /* The attribute tails a heading's last line, which the content's end cuts
  * short, may hold, to the run's context sink; `declares` when the line is
  * a heading's only if the document finishes it as one. */

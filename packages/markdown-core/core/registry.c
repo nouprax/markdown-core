@@ -262,7 +262,7 @@ static inline bool S_append_record(markdown_core_registry *registry, const markd
            (!record->withdraws || S_index_space(registry, kind));
 }
 
-bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start,
+bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start, uint32_t end,
                                         markdown_core_registry *tail) {
     markdown_core_registry kept;
     markdown_core_registry_init(&kept);
@@ -274,7 +274,7 @@ bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32
         /* The tail only holds its records: nothing looks them up there. */
         ok = record->start < start ? S_append_record(&kept, record, record->start)
                                    : S_append(tail, (markdown_core_registry_kind)record->key[0], record->key + 1,
-                                              record->key_len - 1, record->start, record->withdraws);
+                                              record->key_len - 1, end - record->start, record->withdraws);
     }
     if (!ok) {
         markdown_core_registry_free(&kept);
@@ -288,11 +288,11 @@ bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32
 }
 
 bool markdown_core_registry_take(markdown_core_registry *registry, const markdown_core_registry *tail, uint32_t start,
-                                 int64_t delta) {
+                                 uint32_t end) {
     bool ok = true;
     for (size_t i = 0; ok && i < tail->count; i++) {
         const markdown_core_registry_record *record = tail->records[i];
-        ok = record->start < start || S_append_record(registry, record, (uint32_t)((int64_t)record->start + delta));
+        ok = (int64_t)end - record->start < (int64_t)start || S_append_record(registry, record, end - record->start);
     }
     return ok;
 }

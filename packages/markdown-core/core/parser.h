@@ -1532,6 +1532,10 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
+/* Where the text an edit's back is measured from ends (THE BACK). */
+static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
+    return (uint32_t)parser->stream->edit->end;
+}
 /* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
  * holds `offset`, and line `line`'s start and the start of the line after
  * it, or the text's end -- false when the text has no such line. A text

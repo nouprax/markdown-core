@@ -2891,7 +2891,8 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     if (!S_edit_keep(parser, root, child, line, start, to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
-        !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, &stream->edit->registry)) {
+        !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)stream->edit->end,
+                                            &stream->edit->registry)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -2992,6 +2993,22 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     }
     const uint32_t joined = root->child_count ? root->children[root->child_count - 1]->place.end : root->place.start;
     const uint32_t before = first ? edit->children[first - 1]->place.end : edit->prior;
+    /* The back's lines and reach before the line are the old text's the
+     * reading read again, and go; the rest stand where they stood from the
+     * end, which is the new text's. */
+    const size_t gone = S_edit_line(edit, old);
+    const size_t line = edit->line + gone;
+    S_drop_lines(input, index);
+    edit->line_count -= gone;
+    edit->line = index;
+    size_t kept = 0;
+    for (size_t i = 0; i < edit->reach_count; i++) {
+        if (edit->end - edit->reach[i].start >= old) {
+            edit->reach[kept++] = edit->reach[i];
+        }
+    }
+    edit->reach_count = kept;
+    edit->end = (size_t)((int64_t)edit->end + delta);
     /* The children join the root, which owns them once the document took
      * them from its records. */
     const uint32_t tail = root->child_count;
@@ -3003,7 +3020,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
         }
     }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (!document->element->splice_document(document, parser, root, first, (uint32_t)old, (uint32_t)start)) {
+    if (!document->element->splice_document(document, parser, root, first, (uint32_t)start)) {
         root->child_count = tail;
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -3019,22 +3036,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     edit->lead = (int64_t)before + delta - (int64_t)joined;
     edit->point = SIZE_MAX;
 
-    /* The back's lines before the line are the old text's the reading
-     * read again, and go; the rest stand where they stood from the end. */
-    const size_t gone = S_edit_line(edit, old);
-    const size_t line = edit->line + gone;
-    S_drop_lines(input, index);
-    edit->line_count -= gone;
-    edit->line = index;
-    size_t kept = 0;
-    for (size_t i = 0; i < edit->reach_count; i++) {
-        if (edit->end - edit->reach[i].start >= old) {
-            edit->reach[kept++] = edit->reach[i];
-        }
-    }
-    edit->reach_count = kept;
-    edit->end = (size_t)((int64_t)edit->end + delta);
-    if (!markdown_core_registry_take(&parser->registry, &edit->registry, (uint32_t)old, delta)) {
+    if (!markdown_core_registry_take(&parser->registry, &edit->registry, (uint32_t)start, (uint32_t)edit->end)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
