@@ -2834,17 +2834,43 @@ void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start,
     reach[stream->reach_count++] = (markdown_core_place){(uint32_t)start, (uint32_t)end};
 }
 
-bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start) {
-    const markdown_core_stream *stream = parser->stream;
-    bool found = false;
-    for (size_t i = 0; i < stream->reach_count; i++) {
-        const markdown_core_place reach = stream->reach[i];
-        if (reach.start < point && reach.end > point && (!found || reach.start < *start)) {
-            *start = reach.start;
-            found = true;
+/* The log in order of start, each entry's end raised to the furthest of
+ * those that start no later: the first start of a reading that spans a
+ * point is then the first entry that ends past it, when that one starts
+ * before it, and an edit reads from no point either log spans. */
+static int S_reach_order(const void *a, const void *b) {
+    const uint32_t left = ((const markdown_core_place *)a)->start, right = ((const markdown_core_place *)b)->start;
+    return (left > right) - (left < right);
+}
+
+void markdown_core_parser_sort_reach(markdown_core_parser *parser) {
+    markdown_core_stream *stream = parser->stream;
+    if (stream->reach_count > 1) {
+        qsort(stream->reach, stream->reach_count, sizeof(*stream->reach), S_reach_order);
+    }
+    for (size_t i = 1; i < stream->reach_count; i++) {
+        if (stream->reach[i].end < stream->reach[i - 1].end) {
+            stream->reach[i].end = stream->reach[i - 1].end;
         }
     }
-    return found;
+}
+
+bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start) {
+    const markdown_core_stream *stream = parser->stream;
+    size_t low = 0, high = stream->reach_count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (stream->reach[middle].end > point) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    if (low == stream->reach_count || stream->reach[low].start >= point) {
+        return false;
+    }
+    *start = stream->reach[low].start;
+    return true;
 }
 
 /* THE SNAPSHOT (docs/plans/2026-09-29-incremental-parsing.md, 5.3; step 7,

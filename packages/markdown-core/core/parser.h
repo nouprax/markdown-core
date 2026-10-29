@@ -1512,8 +1512,12 @@ static inline void markdown_core_parser_reach(markdown_core_parser *parser, size
         markdown_core_parser_note_reach(parser, start, end);
     }
 }
+/* Puts the reach of the flushed document in the order its queries need;
+ * it reads as it did. */
+void markdown_core_parser_sort_reach(markdown_core_parser *parser);
 /* The first start of a reading of the flushed document that spans `point`,
- * reading past it from before it, in `*start`: false when none does. */
+ * reading past it from before it, in `*start`: false when none does. The
+ * reach is sorted (markdown_core_parser_sort_reach). */
 bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the

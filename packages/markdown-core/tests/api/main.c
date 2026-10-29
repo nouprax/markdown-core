@@ -11319,6 +11319,35 @@ static void session_edits(test_batch_runner *runner) {
         clean = clean && payload_live == 0;
     }
     OK(runner, clean && done, "an edit refused at any allocation leaks nothing");
+
+    /* An edit refused at any allocation leaves the session as a fresh
+     * parse of its text has it, or refusing every edit after it, a label it
+     * declares for the children before it included. */
+    static const char labeled[] = "[x]\n\na\n\nb\n\nc\n";
+    bool sound = true;
+    done = false;
+    for (size_t fail = 1; fail < 1000 && sound && !done; fail++) {
+        payload_probe_arm();
+        session = NULL;
+        const markdown_core_position into = {8, 1};
+        if (markdown_core_session_new((const uint8_t *)labeled, sizeof(labeled) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK ||
+            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            sound = false;
+        } else {
+            payload_fail_at = payload_allocations + fail;
+            done = markdown_core_session_edit(session, into, into, (const uint8_t *)"\n[x]: /a\n", 9, &document) ==
+                   MARKDOWN_CORE_OK;
+            payload_fail_at = 0;
+            const markdown_core_status again = markdown_core_session_edit(session, into, into, NULL, 0, &document);
+            sound = again == MARKDOWN_CORE_ALLOCATION_FAILED ? !done
+                                                             : again == MARKDOWN_CORE_OK && session_as_parsed(session);
+        }
+        markdown_core_session_close(session);
+        payload_probe_disarm();
+        sound = sound && payload_live == 0;
+    }
+    OK(runner, sound && done, "an edit refused at any allocation leaves the session sound");
 }
 
 /* The anchor `node` has, compared with `expected`. */

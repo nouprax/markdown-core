@@ -239,6 +239,7 @@ static uint32_t session_child(const markdown_core_node *root, size_t offset) {
 static void session_rest(const markdown_core_session *session, size_t edited, uint32_t *child, size_t *line) {
     const markdown_core_node *root = session->document.root;
     size_t start, end;
+    markdown_core_parser_sort_reach(session->committed);
     markdown_core_parser_line_span(session->committed, edited, &start, &end);
     uint32_t at = session_child(root, start);
     size_t from = 0;
@@ -336,6 +337,10 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     markdown_core_status status = session_reread(session, child, line, from, to, delta);
     if (status == MARKDOWN_CORE_OK && child) {
         if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &after)) {
+            /* The children that stay may read otherwise, and no edit after
+             * this one may take them as they are. */
+            markdown_core_node_pool_release(&session->pool, session->document.root);
+            session->document.root = NULL;
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
         } else if ((before.size != after.size || (before.size && memcmp(before.ptr, after.ptr, before.size)))) {
             status = session_reread(session, 0, 0, 0, 0, 0);
