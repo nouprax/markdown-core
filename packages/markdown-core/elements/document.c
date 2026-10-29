@@ -61,10 +61,10 @@ static bool reopen_document(const markdown_core_element_instance *self, markdown
  * headings take theirs back first, and the publish's records let the
  * children go last, once nothing else can fail. */
 static bool splice_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *root, uint32_t child, uint32_t start, uint32_t point) {
+                            markdown_core_node *root, uint32_t child, uint32_t point) {
     (void)root;
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    return (!headings || markdown_core_headings_splice(headings, parser, start, point)) &&
+    return (!headings || markdown_core_headings_splice(headings, parser, point)) &&
            markdown_core_publish_splice(parser, child, point);
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {

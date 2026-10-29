@@ -212,14 +212,16 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
  * only the records whose definitions start before `start`, in the order it
  * held them, and the index is taken again as lookups ask; `tail`, emptied
  * first, holds the others, in the same order, which the edit may take back
- * (blocks.c, THE SPLICE). False, with the log as it was, when storage could
- * not be had. */
-bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start, markdown_core_registry *tail);
-/* The records of `tail` whose definitions start at `start` or after,
- * appended to the log in the order `tail` holds them, each moved by
- * `delta`. False when storage could not be had. */
+ * (blocks.c, THE SPLICE), each start measured back from `end`, the text's
+ * end, as the edit's back is (parser.h). False, with the log as it was,
+ * when storage could not be had. */
+bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start, uint32_t end,
+                                        markdown_core_registry *tail);
+/* The records of `tail` whose definitions start at `start` or after in the
+ * text that ends at `end`, appended to the log in the order `tail` holds
+ * them. False when storage could not be had. */
 bool markdown_core_registry_take(markdown_core_registry *registry, const markdown_core_registry *tail, uint32_t start,
-                                 int64_t delta);
+                                 uint32_t end);
 /* The keys every reference, footnote and specimen declaration from `start`
  * on declares, each once and in byte order, each with its NUL, into
  * `labels`: two texts declare the same labels there when the bytes are the

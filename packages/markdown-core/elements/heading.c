@@ -183,8 +183,9 @@ static size_t headings_from(const markdown_core_heading_parse *values, size_t co
 
 /* A flushed parse names every heading and parses each, so its headings
  * are in source order: those from the first that starts at or past `start`
- * go aside, with the names their entries hold, and those an earlier edit
- * put aside go. */
+ * go aside, with the names their entries hold, each start measured back
+ * from the text's end (blocks.c, THE BACK), and those an earlier edit put
+ * aside go. */
 bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    uint32_t start) {
     markdown_core_heading_state *state = self->state;
@@ -203,8 +204,10 @@ bool markdown_core_headings_reopen(const markdown_core_element_instance *self, m
         }
         aside->values = values;
     }
-    if (gone) {
-        memcpy(aside->values, headings->values + low, gone * sizeof(*aside->values));
+    const uint32_t end = markdown_core_parser_back_end(parser);
+    for (size_t i = 0; i < gone; i++) {
+        aside->values[i] = headings->values[low + i];
+        aside->values[i].start = end - aside->values[i].start;
     }
     aside->count = aside->parsed = gone;
     headings->count = headings->parsed = low;
@@ -227,11 +230,16 @@ bool markdown_core_headings_reopen(const markdown_core_element_instance *self, m
 }
 
 bool markdown_core_headings_splice(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   uint32_t start, uint32_t point) {
+                                   uint32_t point) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     markdown_core_heading_collection *aside = &state->aside;
-    const size_t first = headings_from(aside->values, aside->count, start);
+    const uint32_t end = markdown_core_parser_back_end(parser);
+    /* The first that starts at or past `point`. */
+    size_t first = 0;
+    while (first < aside->count && (int64_t)end - aside->values[first].start < (int64_t)point) {
+        first++;
+    }
     const size_t taken = aside->count - first;
     if (headings->count + taken > headings->capacity) {
         markdown_core_heading_parse *values =
@@ -242,7 +250,7 @@ bool markdown_core_headings_splice(const markdown_core_element_instance *self, m
         headings->values = values;
     }
     for (size_t i = first; i < aside->count; i++) {
-        aside->values[i].start = aside->values[i].start - start + point;
+        aside->values[i].start = end - aside->values[i].start;
         if (!markdown_core_publish_keep_heading(parser, aside->values[i].node, aside->values[i].start)) {
             return false;
         }

@@ -1263,7 +1263,8 @@ static inline void publish_pair_first(publish_match_frame *frame, const markdown
  * of them ends, in the content of the root whose places `places` holds when
  * the relation is that content, and from their runs when it is the content
  * of a root whose places the walk does not hold. */
-static inline void publish_pass_final(publish_relation *hand, const content_places *places) {
+static inline void publish_pass_final(const markdown_core_parser *parser, const markdown_core_node *holder,
+                                      publish_relation *hand, const content_places *places) {
     markdown_core_node **last = hand->end;
     while (last != hand->item && !(last[-1]->flags & MARKDOWN_CORE_NODE__FINAL)) {
         last--;
@@ -1273,7 +1274,14 @@ static inline void publish_pass_final(publish_relation *hand, const content_plac
     }
     markdown_core_node **const prefix = hand->item;
     hand->item = last;
-    const markdown_core_place place = last[-1]->place;
+    markdown_core_place place = last[-1]->place;
+    /* The children an edit's reading keeps end where the one before the
+     * reading's first does: their places are those of the text they were
+     * read in (blocks.c, THE SPLICE). */
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    if (edit && edit->reading && holder == parser->root) {
+        place.end = edit->prior;
+    }
     hand->anchor = place.end;
     if (places) {
         hand->source = inline_runs(places, inline_span_of(places, place), 0, NULL).end;
@@ -1341,9 +1349,9 @@ static void publish_relation_decided(const markdown_core_parser *parser, publish
  * relation before when it goes on from it, its decided content, and, for a
  * persisting node, its FINAL prefix passed when a publish placed the node
  * before, and a definition's body FINAL when it is COMMITTED and DECIDED. */
-static inline void publish_relation_begin(const markdown_core_parser *parser, const content_places *places,
-                                          publish_match_frame *frame, publish_relation *hand,
-                                          const markdown_core_node *holder, relation_shape shape, bool continues) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void publish_relation_begin(
+    const markdown_core_parser *parser, const content_places *places, publish_match_frame *frame,
+    publish_relation *hand, const markdown_core_node *holder, relation_shape shape, bool continues) {
     frame->holder = holder;
     if (!continues) {
         frame->field = shape == SHAPE_CHILDREN ? 0 : relation_field(&frame->walk.cursor);
@@ -1351,7 +1359,7 @@ static inline void publish_relation_begin(const markdown_core_parser *parser, co
     publish_relation_decided(parser, frame, holder, shape, hand->item, hand->end);
     if (frame->published) {
         markdown_core_node **const first = hand->item;
-        publish_pass_final(hand, frame->walk.content ? places : NULL);
+        publish_pass_final(parser, holder, hand, frame->walk.content ? places : NULL);
         /* Only a node that continues itself holds FINAL items (PUBLISHING
          * IN PLACE). */
         assert(frame->old == OLD_RECORDS || hand->item == first);
@@ -2388,18 +2396,14 @@ static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node, ui
 /* `node`, which the root lets go from its relation `field`, recorded where
  * its source lay, after the record `*last`, plus one, or first below the
  * root's when that is 0. */
-static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, uint32_t field,
-                          uint32_t *last) {
+static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, markdown_core_place place,
+                          uint32_t field, uint32_t *last) {
     const uint32_t at = record_take(records);
     if (!at) {
         return false;
     }
-    records->items[at - 1] = (markdown_core_tail_record){.node = node,
-                                                         .id = node->id,
-                                                         .start = node->place.start,
-                                                         .end = node->place.end,
-                                                         .field = field,
-                                                         .kind = node->kind};
+    records->items[at - 1] = (markdown_core_tail_record){
+        .node = node, .id = node->id, .start = place.start, .end = place.end, .field = field, .kind = node->kind};
     if (*last) {
         records->items[*last - 1].next = at;
     } else {
@@ -2462,9 +2466,16 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     }
     assert(!records->items[0].held);
     uint32_t last = 0;
-    ok = !metadata || reopen_record(records, metadata, 0, &last);
+    ok = !metadata || reopen_record(records, metadata, metadata->place, 0, &last);
+    /* Each old child is where its extent says, from where the one before
+     * it ends: nothing moves the place a parse wrote (blocks.c, THE
+     * SPLICE). */
+    uint32_t end = edit->prior;
     for (uint32_t i = child; ok && i < root->child_count; i++) {
-        ok = reopen_record(records, root->children[i], 1, &last);
+        const markdown_core_node *old = root->children[i];
+        const uint32_t start = (uint32_t)((int64_t)end + old->extent.lead);
+        end = start + old->extent.span;
+        ok = reopen_record(records, root->children[i], (markdown_core_place){start, end}, 1, &last);
     }
     if (!ok) {
         /* The records taken own their nodes, which stay in the tree. */
@@ -2493,25 +2504,6 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     return true;
 }
 
-/* The places of the blocks below `node`, `node` among them, moved by
- * `delta`; an inline node's place is in its root's content, and stays.
- * False when the walk could not grow. */
-static bool splice_move(markdown_core_node *node, int64_t delta) {
-    markdown_core_walk walk;
-    markdown_core_walk_item item;
-    markdown_core_walk_begin(&walk, node);
-    while (markdown_core_walk_next(&walk, &item)) {
-        markdown_core_node *found = (markdown_core_node *)item.node;
-        if (found && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(found->kind)) {
-            found->place.start = (uint32_t)((int64_t)found->place.start + delta);
-            found->place.end = (uint32_t)((int64_t)found->place.end + delta);
-        }
-    }
-    const bool failed = walk.failed;
-    markdown_core_walk_end(&walk);
-    return !failed;
-}
-
 /* THE OLD CHILDREN TAKEN BACK (blocks.c, THE SPLICE). Their definitions
  * are listed as committed from `point` on, one place each in the order the
  * old document listed them, past every definition the reading listed,
@@ -2524,11 +2516,6 @@ bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, 
     for (size_t i = 0; i < edit->gone_count; i++) {
         const markdown_core_defined *gone = &edit->gone[i];
         if (gone->start >= child && !committed_keep(&stream->committed, gone->table, gone->node, key++)) {
-            return false;
-        }
-    }
-    for (uint32_t i = child; i < edit->count; i++) {
-        if (!splice_move(edit->children[i], edit->delta)) {
             return false;
         }
     }
