@@ -246,6 +246,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .continue_reach = continue_reach,
     .container_prefix_bytes = ">",
     .blank_opaque = true,
+    /* A block identifier line after it names it (block_identifier.c). */
+    .trailed = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
     .start_reach = start_reach,

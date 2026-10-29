@@ -2695,9 +2695,9 @@ static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
  * candidate live, and no reading of the old text that began past the rest
  * point read across the line from before it. What reads backwards across a
  * line -- a block identifier, a caption, writing the block before -- writes
- * only the kinds the elements declare (element.h, `trail_kinds`), and a
- * reading after one of those goes on as it is. The children taken back stand as their publish left
- * them, and so do their lines, the reach of their readings, their
+ * only blocks whose structures say so (element.h, `trailed`), and a
+ * reading after one of those goes on as it is. The children taken back
+ * stand as their publish left them, and so do their lines, the reach of their readings, their
  * registry records, their headings and their definitions, moved by the
  * edit's delta; their facts and content runs are their completion's, which
  * is done, and go. The reopen keeps all of it aside (markdown_core_edit),
@@ -4071,14 +4071,17 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     parser->input.source = source;
     parser->input.size = length;
     parser->input.last_line_ready = false;
-    const size_t end = markdown_core_parser_candidate_final(parser) ? length : parser->input.complete;
     markdown_core_stream *const stream = at_root ? parser->stream : NULL;
-    /* An edit's reading stops at the line of the old child it may take back
-     * next (THE SPLICE). */
-    size_t limit = stream && stream->edit && stream->edit->point < end ? stream->edit->point : end;
     if (stream && parser->input.lines.count && parser->input.scanned < length &&
         source[parser->input.scanned - 1] != '\n' && !S_scan_last_line(parser)) {
         return;
+    }
+bound:;
+    size_t limit = markdown_core_parser_candidate_final(parser) ? length : parser->input.complete;
+    /* An edit's reading stops at the line of the old child it may take back
+     * next (THE SPLICE). */
+    if (stream && stream->edit && stream->edit->point < limit) {
+        limit = stream->edit->point;
     }
 read:
     if (at_root && !parser->at.line_number && limit) {
@@ -4108,12 +4111,12 @@ read:
         size_t start =
             index < parser->input.lines.count ? parser->input.lines.values[index].start : parser->input.scanned;
         if (start >= limit) {
-            if (limit < end) {
+            if (stream && stream->edit && limit == stream->edit->point &&
+                limit < (markdown_core_parser_candidate_final(parser) ? length : parser->input.complete)) {
                 if (S_resume(parser, start, index)) {
                     return;
                 }
-                limit = stream->edit->point < end ? stream->edit->point : end;
-                continue;
+                goto bound;
             }
             if (stream && !parser->snapshot && start == limit && start < length && parser->at.line_number &&
                 S_hold_next_line(parser, source, length, index)) {
