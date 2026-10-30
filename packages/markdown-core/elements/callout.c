@@ -243,6 +243,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
 
     .name = "callout",
     .continue_container = continue_container,
+    .reopens = true,
     .continue_reach = continue_reach,
     .container_prefix_bytes = ">",
     .blank_opaque = true,

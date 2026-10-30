@@ -765,6 +765,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .interrupts_paragraph = true,
 
     .pending_close = true,
+    .reopens = true,
 
     .name = "directive",
     .match_inline = match,

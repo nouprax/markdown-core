@@ -552,6 +552,15 @@ typedef struct markdown_core_edit {
     uint32_t count, next, tail, prior, before;
     /* The root's child the reading began at. */
     uint32_t rest;
+    /* THE NESTED REOPEN (blocks.c): the `depth` blocks below the root the
+     * reading reopened, the root's child first, each the last child of the
+     * one before; `path` holds where each is among its holder's children,
+     * and past them where the deepest's first child that goes was; `ranks`
+     * where each that is a definition is listed among those that stay
+     * (ast.c, A DOCUMENT REOPENED FOR AN EDIT), UINT32_MAX for the others. */
+    struct markdown_core_node **chain;
+    uint32_t *path, *ranks;
+    size_t depth, chain_capacity;
     /* Whether the parse is an edit's reading. */
     bool reading;
     /* THE BACK (docs/plans/relative-positions.md): the lines of the flushed
@@ -562,6 +571,10 @@ typedef struct markdown_core_edit {
     size_t line, line_count, line_capacity, end;
     markdown_core_place *reach;
     size_t reach_count, reach_capacity;
+    /* The furthest end of the reach's entries up to each, the log's and
+     * then the back's (markdown_core_parser_sort_reach). */
+    uint32_t *furthest;
+    size_t furthest_capacity;
     markdown_core_registry registry;
     markdown_core_defined *gone;
     size_t gone_count, gone_capacity;
@@ -1530,10 +1543,24 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * it from there (blocks.c, THE REOPEN), and take the old children after the
  * edit back where they read as they did (THE SPLICE), unless `whole` says
  * to read all of it. `prior` is where the child before `child` ends, or the
- * root starts. False, with the transaction failed, when storage could not
- * be had. */
+ * root starts. With `depth`, the rest point is below the root (THE NESTED
+ * REOPEN): the child before `child` and the `depth - 1` blocks `path`
+ * names below it are reopened, the deepest at its child `path[depth]`.
+ * False, with the transaction failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole);
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
+                                 const uint32_t *path, size_t depth);
+/* How the line before the rest point line `line` reads to the `depth`
+ * blocks of `chain` reopened there (blocks.c, THE NESTED REOPEN), in the
+ * text `text`, when the child before the rest point ends at `before`: blank
+ * to the blocks from the one returned down. SIZE_MAX when the rest point
+ * has none: the child before ends on that line or later, as it closed when
+ * the rest point's line was read, or the line is no blank one the deepest
+ * block took, or holds prefixes alone and which of the chain took them is
+ * not known. */
+size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const unsigned char *text,
+                                       struct markdown_core_node *const *chain, size_t depth, size_t line,
+                                       size_t before);
 /* Where the last reading of an edit took the old children back, in the new
  * text: 0 when it took none back. */
 size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
@@ -1569,12 +1596,20 @@ static inline void markdown_core_parser_reach(markdown_core_parser *parser, size
     }
 }
 /* Puts the reach of the flushed document in the order its queries need;
- * it reads as it did. */
-void markdown_core_parser_sort_reach(markdown_core_parser *parser);
+ * it reads as it did. False when storage could not be had. */
+bool markdown_core_parser_sort_reach(markdown_core_parser *parser);
 /* The first start of a reading of the flushed document that spans `point`,
  * reading past it from before it, in `*start`: false when none does. The
  * reach is sorted (markdown_core_parser_sort_reach). */
 bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start);
+/* The same of the readings that start at `from` or later, but one that
+ * starts at `close` and ends from `ends[0]` to `ends[1]`, or at `ends[2]`:
+ * the close of a child of the root reopened below it (THE NESTED REOPEN),
+ * noted as a line after it was read, the first of the next child or one of
+ * the blank lines before, or on its last line, when its own end condition
+ * or the input's end closed it (blocks.c, S_reach_close). */
+bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
+                                         const size_t ends[3], size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the

@@ -391,6 +391,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .peers = DEFINITION_LIST_PEERS,
     .state_size = sizeof(markdown_core_definition_list_work),
     .close_block = close_block,
+    .reopens = true,
 
     .accepts_blank = accepts_blank,
 
