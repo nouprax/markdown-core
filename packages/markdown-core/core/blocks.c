@@ -3120,7 +3120,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
                 }
             }
             if (close != SIZE_MAX) {
-                edit->closed = edit->end - edit->reach[close].end;
+                edit->closed = (uint32_t)(edit->end - edit->reach[close].end);
                 edit->reach[close] = edit->reach[--edit->reach_count];
             }
         }
