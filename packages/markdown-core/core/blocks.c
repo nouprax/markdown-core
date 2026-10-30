@@ -3332,7 +3332,7 @@ static int S_carries(markdown_core_parser *parser, markdown_core_node *block, ma
  * prefixes down to `block` but not the next (THE NESTED SPLICE). False,
  * with the reading as it was, when they do not. */
 static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind) {
-    markdown_core_node *open = parser->at.current, *inside = NULL;
+    markdown_core_node *open = parser->at.current, *inside = NULL, *below = NULL;
     const bool abuts = markdown_core_parser_abuts(parser, block);
     for (; open && open != block; open = markdown_core_parser_builder_below(parser, open)) {
         const markdown_core_kind_record *record = markdown_core_parser_block_kind(parser, open);
@@ -3342,10 +3342,16 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
              (element->pending_close || (!abuts && (element->last_block_matches || element->continues_block))))) {
             return false;
         }
+        below = inside;
         inside = open;
     }
-    if (!open || !inside || S_carries(parser, block, kind) != 1 ||
-        S_carries(parser, inside, MARKDOWN_CORE_NODE_PARAGRAPH) != 0) {
+    /* The prefixes down to `inside` are those a child of it of the kind it
+     * holds carries: the open one, or its last. */
+    const markdown_core_node *held = below                           ? below
+                                     : inside && inside->child_count ? inside->children[inside->child_count - 1]
+                                                                     : NULL;
+    if (!open || !held || S_carries(parser, block, kind) != 1 ||
+        S_carries(parser, inside, (markdown_core_node_type)held->kind) != 0) {
         return false;
     }
     markdown_core_parser_close_below(parser, block);
