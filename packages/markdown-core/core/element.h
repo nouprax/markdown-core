@@ -185,10 +185,11 @@ struct markdown_core_element {
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
-    /* A later line may write the block once it closed -- a block identifier
-     * its anchor, a caption its table -- so an edit's reading takes no old
-     * blocks back after one (blocks.c, THE SPLICE). */
-    bool trailed;
+    /* The block kinds of the element a later line may write once the block
+     * closed -- a block identifier its anchor, a caption its table -- so an
+     * edit's reading takes no old blocks back after one (blocks.c, THE
+     * SPLICE), terminated by MARKDOWN_CORE_NODE_NONE, or NULL. */
+    const markdown_core_node_type *trailed_kinds;
     /* An edit may reopen a closed block of the element's at one of its
      * children and read on in it (blocks.c, THE NESTED REOPEN): the block
      * holds blocks, and its builder state at the start of a child's line is
@@ -202,6 +203,13 @@ struct markdown_core_element {
      * children before the line are folded into the block again. NULL when
      * the element keeps no such state. */
     void (*reopen_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, bool);
+    /* The block kinds of the element whose children each start a line of
+     * their own with a marker that no line of the child before takes, not
+     * even lazily -- a list's items: a reopen may rest at one on the line
+     * after the child before ends, blank or not, and an edit's reading take
+     * one back there (blocks.c, THE NESTED REOPEN), terminated by
+     * MARKDOWN_CORE_NODE_NONE, or NULL. */
+    const markdown_core_node_type *abuts;
     int maximum_block_indent;
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -313,6 +321,10 @@ struct markdown_core_element {
      * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
      * fold hook declares at least one, and one without declares NULL. */
     const markdown_core_node_type *fold_kinds;
+    /* The element's flags the fold hook writes, which a splice below a
+     * reopened block folds again from all of its children (blocks.c, THE
+     * NESTED SPLICE). */
+    unsigned folds;
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
     /* What `scan_block_start` needs on a non-indented line before it is worth

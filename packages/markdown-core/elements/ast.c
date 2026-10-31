@@ -2455,6 +2455,17 @@ static inline int reopen_level(const markdown_core_edit *edit, const markdown_co
     return -1;
 }
 
+/* Where the children the chain's block `level` lets go begin among all it
+ * lets go, in the order of the text: after those of the blocks below it
+ * (blocks.c, THE NESTED SPLICE). */
+static uint32_t reopen_offset(const markdown_core_edit *edit, size_t level) {
+    uint32_t offset = 0;
+    for (size_t i = level + 1; i < edit->depth; i++) {
+        offset += edit->chain[i]->child_count - reopen_kept(edit, i);
+    }
+    return offset;
+}
+
 /* THE CHAIN'S RECORDS. Each reopened block is recorded below its owner's
  * record as a block that stays, before the children its owner lets go,
  * which follow it there: the next publish matches the block against its
@@ -2479,6 +2490,9 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
         block = edit->chain[level];
         const bool deeper = level + 1 < edit->depth;
         const uint32_t kept = reopen_kept(edit, level), final = deeper ? kept - 1 : kept;
+        const uint32_t offset = reopen_offset(edit, level);
+        edit->owners[level] = owner;
+        edit->ends[level] = window.end;
         uint32_t last = 0, next = 0;
         markdown_core_place next_window = {0};
         markdown_core_relation_cursor cursor;
@@ -2500,6 +2514,10 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
             for (uint32_t i = 0; i < block->child_count; i++) {
                 markdown_core_node *child = block->children[i];
                 const markdown_core_place place = runs_window(child, at);
+                if (i >= kept) {
+                    edit->backs[offset + i - kept] =
+                        (markdown_core_back_child){child, (uint32_t)level, at, place.start, place.end};
+                }
                 at = place.end;
                 if (i < final) {
                     child->flags |= MARKDOWN_CORE_NODE__FINAL;
@@ -2534,13 +2552,26 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     /* The metadata is no child the edit's reading takes back, nor is what
      * a reopened block lets go. */
     bool ok = !metadata || reopen_collect(&gone, metadata, UINT32_MAX);
+    /* The children the chain lets go, numbered in the order of the text,
+     * before the root's (blocks.c, THE NESTED SPLICE). */
+    const uint32_t backs =
+        edit->depth ? reopen_offset(edit, 0) + edit->chain[0]->child_count - reopen_kept(edit, 0) : 0;
+    if (backs > edit->back_capacity) {
+        markdown_core_back_child *list = markdown_core_reserve(edit->backs, &edit->back_capacity, backs, sizeof(*list));
+        ok = ok && list != NULL;
+        edit->backs = list ? list : edit->backs;
+    }
+    edit->back_count = ok ? backs : 0;
+    edit->back_next = 0;
+    edit->taken = SIZE_MAX;
     for (uint32_t i = child; ok && i < root->child_count; i++) {
-        ok = reopen_collect(&gone, root->children[i], i - child);
+        ok = reopen_collect(&gone, root->children[i], backs + i - child);
     }
     for (size_t level = 0; ok && level < edit->depth; level++) {
         const markdown_core_node *block = edit->chain[level];
-        for (uint32_t i = reopen_kept(edit, level); ok && i < block->child_count; i++) {
-            ok = reopen_collect(&gone, block->children[i], UINT32_MAX);
+        const uint32_t kept = reopen_kept(edit, level), offset = reopen_offset(edit, level);
+        for (uint32_t i = kept; ok && i < block->child_count; i++) {
+            ok = reopen_collect(&gone, block->children[i], offset + i - kept);
         }
         edit->ranks[level] = UINT32_MAX;
     }
@@ -2647,30 +2678,59 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
  * old document listed them, past every definition the reading listed,
  * which all start before it: a publish lists them where they fall, as
  * their publish placed them, and their tables put them in source order. */
-bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point) {
-    markdown_core_stream *stream = parser->stream;
-    markdown_core_edit *edit = stream->edit;
-    uint32_t key = point;
-    for (size_t i = 0; i < edit->gone_count; i++) {
-        const markdown_core_defined *gone = &edit->gone[i];
-        if (gone->start >= child && !committed_keep(&stream->committed, gone->table, gone->node, key++)) {
-            return false;
-        }
-    }
-    /* The records of the root's old children are in their order, and those
-     * of the children taken back are the last. */
-    markdown_core_tail_records *records = &stream->records;
-    uint32_t *link = &records->items[0].held;
-    while (*link && records->items[*link - 1].node != edit->children[child]) {
-        link = &records->items[*link - 1].next;
-    }
-    assert(*link);
+/* The records from the one `*link` names on let go of their nodes, which
+ * the reading took back, and go. */
+static void records_cut(markdown_core_parser *parser, markdown_core_tail_records *records, uint32_t *link) {
     const uint32_t at = *link;
     *link = 0;
     for (uint32_t record = at; record; record = records->items[record - 1].next) {
         records->items[record - 1].node = NULL;
     }
     records_free(parser, at, false);
+}
+
+bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_edit *edit = stream->edit;
+    /* The first taken back, numbered as the reopen numbered them: the
+     * children a reopened block let go first (blocks.c, THE NESTED SPLICE). */
+    const size_t first = edit->taken != SIZE_MAX ? edit->taken : edit->back_count + child;
+    uint32_t key = point;
+    for (size_t i = 0; i < edit->gone_count; i++) {
+        const markdown_core_defined *gone = &edit->gone[i];
+        if (gone->start >= first && !committed_keep(&stream->committed, gone->table, gone->node, key++)) {
+            return false;
+        }
+    }
+    /* The records of each block's old children are in their order, and
+     * those of the children taken back are the last: from the first taken
+     * back in its block, and all a block above it let go, which follow the
+     * record of the block below. */
+    markdown_core_tail_records *records = &stream->records;
+    if (edit->taken != SIZE_MAX) {
+        const markdown_core_back_child *back = &edit->backs[edit->taken];
+        for (size_t level = back->level + 1; level-- > 0;) {
+            uint32_t *link = &records->items[edit->owners[level] - 1].held;
+            if (level == back->level) {
+                while (*link && records->items[*link - 1].node != back->node) {
+                    link = &records->items[*link - 1].next;
+                }
+                assert(*link);
+            } else {
+                assert(*link && !records->items[*link - 1].node);
+                link = &records->items[*link - 1].next;
+            }
+            records_cut(parser, records, link);
+        }
+    }
+    if (child < edit->count) {
+        uint32_t *link = &records->items[0].held;
+        while (*link && records->items[*link - 1].node != edit->children[child]) {
+            link = &records->items[*link - 1].next;
+        }
+        assert(*link);
+        records_cut(parser, records, link);
+    }
     return true;
 }
 
