@@ -3139,11 +3139,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     parser->block_input_count = parser->block_input_cursor = 0;
 
     S_drop_lines(input, line);
-    size_t marks = parser->line_marks.count;
-    while (marks > 1 && parser->line_marks.values[marks - 1].source >= (bufsize_t)start) {
-        marks--;
-    }
-    markdown_core_array_truncate(&parser->line_marks, marks);
+    /* Every map the flush made is complete, and so are the chain's: what
+     * the reading maps starts after the identity run again. */
+    markdown_core_array_truncate(&parser->line_marks, MARKDOWN_CORE_IDENTITY_MARK + 1);
     input->scanned = input->size = input->complete = start;
     input->source = (const unsigned char *)source;
     input->epoch = ++parser->epochs;

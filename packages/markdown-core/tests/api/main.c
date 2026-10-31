@@ -11191,9 +11191,9 @@ static void session_appends(test_batch_runner *runner) {
 
 /* Whether the session's document dumps as a fresh parse of its text does. */
 static bool session_as_parsed(markdown_core_session *session) {
-    uint8_t text[256];
     const size_t size = markdown_core_session_text_size(session);
-    if (size > sizeof(text)) {
+    uint8_t *text = malloc(size + 1);
+    if (!text) {
         return false;
     }
     markdown_core_session_text(session, text);
@@ -11212,7 +11212,41 @@ static bool session_as_parsed(markdown_core_session *session) {
     if (fresh) {
         markdown_core_document_free(fresh);
     }
+    free(text);
     return same;
+}
+
+/* What a session holds stays as large as what its text needs: an edit lets
+ * go what the reading it replaces held, so a thousand edits that type into
+ * the blank line of a nested list and take the byte away again hold no more
+ * than the first hundred do (plan 12.4). Each edit reads the nested items
+ * again and maps their lines anew; the maps of the reading before go. */
+static void session_edits_storage(test_batch_runner *runner) {
+    static const char source[] = "  one\n\n  - two> \n    -# three four\n\n  ```";
+    properties_probe_arm();
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool edited = markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                            &session) == MARKDOWN_CORE_OK &&
+                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    size_t early = 0;
+    const markdown_core_position at = {5, 1}, past = {5, 2};
+    for (int edit = 0; edited && edit < 1000; edit++) {
+        edited =
+            edit % 2
+                ? markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK
+                : markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
+        if (edit == 99) {
+            early = properties_live_bytes;
+        }
+    }
+    const size_t late = properties_live_bytes;
+    OK(runner, edited && session_as_parsed(session), "a thousand edits read the list as a parse does");
+    OK(runner, late <= early + early / 8, "the session holds %zu bytes after a thousand edits, %zu after a hundred",
+       late, early);
+    markdown_core_session_close(session);
+    properties_probe_disarm();
+    OK(runner, properties_live_bytes == 0, "closing the session releases all it held");
 }
 
 /* An edit after the flush: refused while the session streams and at a cursor
@@ -12712,6 +12746,7 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_edits(runner);
+    session_edits_storage(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
     session_snapshot_tables(runner);
