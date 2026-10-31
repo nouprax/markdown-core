@@ -80,6 +80,18 @@ void *markdown_core_array_extend(markdown_core_ahead *ahead, void *values, size_
 #define markdown_core_array_truncate(array, size)                                                                      \
     (markdown_core_ahead_unsettle(&(array)->ahead, (size)), (void)((array)->count = (size)))
 
+/* markdown_core_array_shrink's storage: the array's, moved to the least
+ * capacity that holds `count`, or `values` itself as it was when that is
+ * no less or storage could not be had. Out of line: a session that lets
+ * most of its text go runs it once. */
+void *markdown_core_array_fit(markdown_core_ahead *ahead, void *values, size_t *room, size_t count, size_t width);
+
+/* Gives back the storage the array holds past what its elements need, with
+ * the storage ahead: when it cannot, it stays as it was. */
+#define markdown_core_array_shrink(array)                                                                              \
+    ((array)->values = markdown_core_array_fit(&(array)->ahead, (array)->values, &(array)->room, (array)->count,       \
+                                               sizeof(*(array)->values)))
+
 /* Gives back the array's storage, which leaves it empty. */
 #define markdown_core_array_free(array)                                                                                \
     (markdown_core_free((array)->values), markdown_core_ahead_free(&(array)->ahead, NULL), (array)->values = NULL,     \

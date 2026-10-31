@@ -11191,9 +11191,9 @@ static void session_appends(test_batch_runner *runner) {
 
 /* Whether the session's document dumps as a fresh parse of its text does. */
 static bool session_as_parsed(markdown_core_session *session) {
-    uint8_t text[256];
     const size_t size = markdown_core_session_text_size(session);
-    if (size > sizeof(text)) {
+    uint8_t *text = malloc(size + 1);
+    if (!text) {
         return false;
     }
     markdown_core_session_text(session, text);
@@ -11212,7 +11212,90 @@ static bool session_as_parsed(markdown_core_session *session) {
     if (fresh) {
         markdown_core_document_free(fresh);
     }
+    free(text);
     return same;
+}
+
+/* What a session holds stays as large as what its text needs: an edit lets
+ * go what the reading it replaces held, so a thousand edits that type into
+ * the blank line of a nested list and take the byte away again hold no more
+ * than the first hundred do (plan 12.4). Each edit reads the nested items
+ * again and maps their lines anew; the maps of the reading before go. */
+static void session_edits_storage(test_batch_runner *runner) {
+    static const char source[] = "  one\n\n  - two> \n    -# three four\n\n  ```";
+    properties_probe_arm();
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool edited = markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                            &session) == MARKDOWN_CORE_OK &&
+                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    size_t early = 0;
+    const markdown_core_position at = {5, 1}, past = {5, 2};
+    for (int edit = 0; edited && edit < 1000; edit++) {
+        edited =
+            edit % 2
+                ? markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK
+                : markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
+        if (edit == 99) {
+            early = properties_live_bytes;
+        }
+    }
+    const size_t late = properties_live_bytes;
+    OK(runner, edited && session_as_parsed(session), "a thousand edits read the list as a parse does");
+    OK(runner, late <= early + early / 8, "the session holds %zu bytes after a thousand edits, %zu after a hundred",
+       late, early);
+    markdown_core_session_close(session);
+    properties_probe_disarm();
+    OK(runner, properties_live_bytes == 0, "closing the session releases all it held");
+}
+
+/* What a session holds after an edit lets most of its text go: the edit
+ * reads all of what is left into storage of its own, which holds no more
+ * than twice what a session that reads that text afresh holds, and the
+ * blocks before the edit keep their ids (plan 12.4, E-D4). */
+static void session_edits_compaction(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    for (int item = 0; item < 400; item++) {
+        char line[96];
+        snprintf(line, sizeof(line), "- item %03d\n  more\n\n  - inner\n    - deep\n\n  ```\n  code\n  ```\n\n", item);
+        markdown_core_strbuf_puts(&source, line);
+    }
+    properties_probe_arm();
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool edited = markdown_core_session_new(source.ptr, (size_t)source.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                      MARKDOWN_CORE_OK &&
+                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    const uint64_t first = edited ? markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) : 0;
+    /* Lines 1 to 400 are the first forty items, and the edit takes the
+     * rest away. */
+    const markdown_core_position from = {401, 1}, to = {4001, 1};
+    edited =
+        edited && markdown_core_session_edit(session, from, to, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
+    const size_t held = properties_live_bytes;
+    const size_t size = edited ? markdown_core_session_text_size(session) : 0;
+    uint8_t *const text = malloc(size + 1);
+    size_t fresh = 0;
+    if (edited && text) {
+        markdown_core_session_text(session, text);
+        markdown_core_session *again = NULL;
+        const markdown_core_document *read = NULL;
+        if (markdown_core_session_new(text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &again) == MARKDOWN_CORE_OK &&
+            markdown_core_session_flush(again, &read) == MARKDOWN_CORE_OK) {
+            fresh = properties_live_bytes - held;
+        }
+        markdown_core_session_close(again);
+    }
+    OK(runner, edited && session_as_parsed(session),
+       "the edit that takes most of the list away reads it as a parse does");
+    OK(runner, edited && markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) == first,
+       "the list keeps its id");
+    OK(runner, fresh && held <= 2 * fresh, "the session holds %zu bytes after the edit, a fresh one %zu", held, fresh);
+    markdown_core_session_close(session);
+    properties_probe_disarm();
+    OK(runner, properties_live_bytes == 0, "closing the sessions releases all they held");
+    free(text);
+    markdown_core_strbuf_free(&source);
 }
 
 /* An edit after the flush: refused while the session streams and at a cursor
@@ -12712,6 +12795,8 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_edits(runner);
+    session_edits_storage(runner);
+    session_edits_compaction(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
     session_snapshot_tables(runner);
