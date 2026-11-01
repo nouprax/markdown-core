@@ -71,6 +71,9 @@ struct markdown_core_inline_state {
      * a closer will pair without walking the stack. */
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    /* The rules whose scanners asked those counts, one bit each: a reading
+     * of such a rule depends on the openers below it on the stack. */
+    uint32_t asked;
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
@@ -102,6 +105,9 @@ struct markdown_core_inline_state {
      * the text's end (sink.h). */
     markdown_core_context_sink *context;
 };
+
+/* Each rule takes one bit of `asked`. */
+typedef char markdown_core_asked_fits[MARKDOWN_CORE_DELIM_RULE_COUNT <= 32 ? 1 : -1];
 
 /* Whether an end read of the token being read would be one the run lists:
  * no earlier token read the end, and the run lists settle starts. A check

@@ -452,6 +452,13 @@ static void reduce_delimiter_range(markdown_core_inline_state *inline_state, del
         if (entry->kind == DELIMITER_BOUNDARY && !boundary) {
             boundary = true;
         } else {
+            /* An opener of an asked rule that pairs with none still counted
+             * at every later scan of its rule: a reading from past it, without
+             * it, need not agree, so none may settle. */
+            if (entry->kind == DELIMITER_MARKER && entry->can_open && (inline_state->asked >> entry->rule & 1u) &&
+                (bufsize_t)entry->node->place.start < inline_state->undecided) {
+                inline_state->undecided = (bufsize_t)entry->node->place.start;
+            }
             markdown_core_inline_remove_delimiter(inline_state, entry);
         }
         entry = previous;
@@ -1476,6 +1483,7 @@ int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *
      * the stack is. For a rule whose closers are pushed only when this says
      * yes, every closer on the stack has an opener below it, and an opener is
      * unmatched exactly when the openers outnumber the closers. */
+    inline_state->asked |= 1u << rule;
     return inline_state->delim_openers[rule] > inline_state->delim_closers[rule];
 }
 

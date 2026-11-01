@@ -11711,6 +11711,9 @@ static void session_flush_matches_a_parse(test_batch_runner *runner) {
          * lead the text cuts short may yet be part of the name. */
         "%%%%\ns\n~\x9b~#\xc8\xdd\xf2"
         "3\xc2\xe3",
+        /* A `$` the emphasis around it takes away still made each `$` after
+         * it a closer: no settle point lies past it. */
+        "a\n*$`m\n`*$x$",
     };
 #undef FILLER
     static const size_t chunks[] = {1, 3, 0};
