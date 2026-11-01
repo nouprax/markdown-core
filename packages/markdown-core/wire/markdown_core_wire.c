@@ -945,6 +945,13 @@ uint8_t *markdown_core_wire_session_flush(markdown_core_session *session) {
     return step_message(status, document);
 }
 
+uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, markdown_core_position start,
+                                         markdown_core_position end, const uint8_t *text, size_t size) {
+    const markdown_core_document *document = NULL;
+    markdown_core_status status = markdown_core_session_edit(session, start, end, text, size, &document);
+    return step_message(status, document);
+}
+
 /* ---- Queries ------------------------------------------------------------- */
 
 /* The message `buffer` holds, or ALLOCATION_FAILED's when it could not be

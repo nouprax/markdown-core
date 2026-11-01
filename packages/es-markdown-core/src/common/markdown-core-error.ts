@@ -10,9 +10,10 @@
  *   this binding reads a kind the tree has not already typed, so none reports
  *   it;
  * - `"sessionFlushed"`: a session was asked for another step after its
- *   `flush()`.
+ *   `flush()`;
+ * - `"sessionStreaming"`: a session was asked to edit before its `flush()`.
  */
-export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch" | "sessionFlushed";
+export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch" | "sessionFlushed" | "sessionStreaming";
 
 /** The one error every public call of the library throws, carrying its code. */
 export class MarkdownCoreError extends Error {

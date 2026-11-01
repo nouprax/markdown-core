@@ -49,6 +49,9 @@ const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
 const session = new MarkdownSession("# typed", { unit: "utf16" });
 const appended: Document = session.append("\n");
 const final: Document = session.flush();
+const edited: Document = session.edit({ line: 1, column: 1 }, { line: 1, column: 3 }, "# Re");
+// @ts-expect-error an edit takes two cursors and the text written between them
+session.edit({ line: 1, column: 1 }, "# Re");
 const sessionText: string = session.text;
 const sessionUnit: TextUnit = session.unit;
 session.locate({ line: 1, column: 3 });
@@ -76,7 +79,7 @@ const nodeDump: string = document.dump(document.content[0]!, "# typed");
 const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
 // @ts-expect-error a dump is computed from the source
 document.dump();
-void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, final, sessionText, sessionUnit];
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, final, edited, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
 const runs: readonly Run[] = document.content[0]!.runs;

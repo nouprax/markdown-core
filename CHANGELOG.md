@@ -6,6 +6,18 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Edit a flushed session from Swift, Kotlin and ECMAScript (incremental
+  edits plan, step E2): `MarkdownSession.edit(from:to:with:)` in Swift and
+  `edit(start, end, text)` in Kotlin and ECMAScript replace the text between
+  two cursors, given as positions in the session's unit, and return the
+  parse of the new text, in which a node the edit did not reach is the old
+  node and one it read again keeps the old node's id. An edit before the
+  flush throws the new error code `sessionStreaming` (Kotlin
+  `SESSION_STREAMING`); an edit whose cursor stands nowhere in the text, or
+  whose end is before its start, throws `outOfBounds` and leaves the
+  session's context as it was. The wire's `markdown_core_wire_session_edit`
+  answers the edit's document as a step's message.
+
 - Stop an edit's re-read where it meets the old reading (incremental edits
   plan, step E1a, stage 2): past the edit, at the start of a line where an
   old top-level block starts on a line of its own, nothing is open and no

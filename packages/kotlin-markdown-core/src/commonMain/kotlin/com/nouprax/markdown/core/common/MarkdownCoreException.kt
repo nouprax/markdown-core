@@ -13,6 +13,9 @@ public enum class ErrorCode {
 
     /** A [MarkdownSession] was asked to append or flush after it was flushed. */
     SESSION_FLUSHED,
+
+    /** A [MarkdownSession] was asked to edit before it was flushed. */
+    SESSION_STREAMING,
 }
 
 /**

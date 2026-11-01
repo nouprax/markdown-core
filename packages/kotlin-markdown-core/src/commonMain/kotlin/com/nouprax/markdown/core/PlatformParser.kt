@@ -20,6 +20,18 @@ internal interface PlatformSession {
     /** Ends the text: the final document. */
     fun end(): Document
 
+    /**
+     * Replaces the text from the cursor at line [startLine] and [startColumn] to
+     * the cursor at line [endLine] and [endColumn] with the UTF-8 [text].
+     */
+    fun edit(
+        startLine: Int,
+        startColumn: Int,
+        endLine: Int,
+        endColumn: Int,
+        text: ByteArray,
+    ): Document
+
     /** The session's text in UTF-8. */
     fun text(): ByteArray
 

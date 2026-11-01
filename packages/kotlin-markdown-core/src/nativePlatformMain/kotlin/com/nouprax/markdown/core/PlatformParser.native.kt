@@ -15,6 +15,7 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_wire_locate
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_markers
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_append
+import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_edit
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_flush
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_new
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_spell
@@ -130,6 +131,25 @@ private class CSession(
         publish(text.withAddress { markdown_core_wire_session_append(session?.reinterpret(), it, text.size.convert()) })
 
     override fun end(): Document = publish(markdown_core_wire_session_flush(session?.reinterpret()))
+
+    override fun edit(
+        startLine: Int,
+        startColumn: Int,
+        endLine: Int,
+        endColumn: Int,
+        text: ByteArray,
+    ): Document =
+        publish(
+            text.withAddress {
+                markdown_core_wire_session_edit(
+                    session?.reinterpret(),
+                    position(startLine, startColumn),
+                    position(endLine, endColumn),
+                    it,
+                    text.size.convert(),
+                )
+            },
+        )
 
     override fun text(): ByteArray {
         val bytes = ByteArray(markdown_core_session_text_size(session?.reinterpret()).convert<Int>())

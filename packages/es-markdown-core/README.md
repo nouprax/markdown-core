@@ -205,9 +205,23 @@ the final document; afterwards `append` and `flush` throw
 itself lives in WebAssembly memory: `dispose()` releases it, and a session
 collected without it is released then.
 
+After `flush()`, `edit(start, end, text)` replaces the text between two
+cursors, positions in the session's unit, and returns the parse of the new
+text. The session reads again only the blocks the edit reaches: a node the
+edit did not reach is the old node, and one it read again keeps its `id`. An
+edit before `flush()` throws `sessionStreaming`.
+
+```js
+const session = new MarkdownSession("# Title\n\nfirst\n");
+session.flush();
+session.edit({ line: 3, column: 6 }, { line: 3, column: 6 }, " line"); // "first" becomes "first line"
+session.dispose();
+```
+
 A session also answers an editor's queries from the engine's parse of its
 text, which it holds, so no query parses the text again or takes the source.
-An editor holds a flushed session per version of a text.
+An editor holds one flushed session per open text and edits it as the text
+changes.
 
 ```js
 const session = new MarkdownSession("See [[Field notes]]\n");
@@ -224,7 +238,7 @@ session.dispose();
 The `context` is the session's state at its cursor: `locate` moves the cursor
 and updates it in place to the blocks and inline constructs the text before
 the cursor leaves open and the `Slot`s the cursor may be writing, and adding
-text or `flush()` clears it. `session.spell(slot, value)` writes a value in
+text, `flush()` or an edit clears it. `session.spell(slot, value)` writes a value in
 a slot of the current context in the slot's own syntax, with the closer an
 open construct needs, as an `Edit` whose caret counts columns in the
 session's unit; a slot of a context a later step replaced throws

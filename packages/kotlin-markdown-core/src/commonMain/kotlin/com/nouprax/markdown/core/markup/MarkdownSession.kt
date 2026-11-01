@@ -15,8 +15,9 @@ import kotlin.jvm.JvmOverloads
  *
  * The caller ends the text with [flush], which returns the final
  * document; nothing ends a session implicitly. Afterwards [document] and
- * [text] stay readable, and [append] and [flush] throw
- * [MarkdownCoreException] with [ErrorCode.SESSION_FLUSHED].
+ * [text] stay readable, [append] and [flush] throw [MarkdownCoreException]
+ * with [ErrorCode.SESSION_FLUSHED], and [edit] replaces any part of the text:
+ * streaming and editing are the session's two phases.
  *
  * The session also answers the queries of an editor: the [context] at its
  * cursor, which [locate] moves, the [path] of nodes that hold a byte, and the
@@ -49,9 +50,9 @@ public class MarkdownSession
         /**
          * The syntactic context at the session's cursor, which [locate]
          * moves: the session's state, which it updates in place. It is a
-         * context with nothing open until the first locate, and an append or
-         * [flush] empties it again, since they change the text it was read
-         * from.
+         * context with nothing open until the first locate, and an append,
+         * [flush] or [edit] empties it again, since they change the text it
+         * was read from.
          */
         public var context: Context = blank
             private set
@@ -86,6 +87,45 @@ public class MarkdownSession
          *   flushed.
          */
         public fun flush(): Document = step { end() }
+
+        /**
+         * Replaces the text from the cursor [start] to the cursor [end] with
+         * [text], and parses the result.
+         *
+         * The new document equals [Document.parse] of the new [text] in
+         * everything but identifiers, and continues the previous one: a node
+         * the edit did not reach is the old node, and one the edit read again
+         * keeps the identifier of the old node it continues. The session
+         * reads again only the blocks the edit reaches.
+         *
+         * A cursor stands between characters, so its column may also stand at
+         * its line's end, before the line's terminator, or at the text's end.
+         * It counts columns in the session's [unit]; [start] itself as [end]
+         * inserts [text] there.
+         *
+         * @return the new [document].
+         * @throws MarkdownCoreException [ErrorCode.SESSION_STREAMING] before
+         *   [flush]; [ErrorCode.OUT_OF_BOUNDS] when a cursor stands nowhere in
+         *   the text, its line or column is below 1, or [end] is before
+         *   [start], which leaves [context] as it was; and
+         *   [ErrorCode.ALLOCATION_FAILED] when the engine cannot allocate, the
+         *   text would exceed 1 GiB of UTF-8, or the tree a byte array's
+         *   capacity. A failed allocation fails the session's parse, and every
+         *   later edit throws it again.
+         */
+        public fun edit(
+            start: Position,
+            end: Position,
+            text: String,
+        ): Document {
+            if (start.line < 1 || start.column < 1 || end.line < 1 || end.column < 1) {
+                throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
+            }
+            val encoded = text.encodeToByteArray()
+            return step(editRefusals) {
+                edit(start.line, start.column, end.line, end.column, encoded)
+            }
+        }
 
         /**
          * Moves the session's cursor to [position] of [text], which stands
@@ -221,19 +261,24 @@ public class MarkdownSession
         }
 
         /**
-         * A step of the text. A step of a session not yet flushed empties
-         * the engine's context whether or not it succeeds, and so [context].
+         * A step of the text. A step empties the engine's context whether or
+         * not it succeeds, and so [context], unless it fails with one of
+         * [kept], which refuse before the engine reads anything: an append or
+         * flush of a flushed session by default.
          */
-        private inline fun step(run: PlatformSession.() -> Document): Document {
+        private inline fun step(
+            kept: Set<ErrorCode> = flushRefusals,
+            run: PlatformSession.() -> Document,
+        ): Document {
             val platform = open()
-            var flushed = false
+            var refused = false
             try {
                 return platform.run()
             } catch (failure: MarkdownCoreException) {
-                flushed = failure.code == ErrorCode.SESSION_FLUSHED
+                refused = failure.code in kept
                 throw failure
             } finally {
-                if (!flushed) {
+                if (!refused) {
                     turn++
                     context = blank
                 }
@@ -262,3 +307,9 @@ public class MarkdownSession
             return session
         }
     }
+
+/** The failures of an append or flush that leave the context: the session was already flushed. */
+private val flushRefusals = setOf(ErrorCode.SESSION_FLUSHED)
+
+/** The failures of an edit that leave the context: the session still streams, or a cursor is out of bounds. */
+private val editRefusals = setOf(ErrorCode.SESSION_STREAMING, ErrorCode.OUT_OF_BOUNDS)

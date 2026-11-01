@@ -12,6 +12,9 @@ export interface NativeExports extends WebAssembly.Exports {
     markdown_core_wire_session_new(source: number, length: number, unit: number, session: number): number;
     markdown_core_wire_session_append(session: number, text: number, size: number): number;
     markdown_core_wire_session_flush(session: number): number;
+    /** Replaces the text from the cursor at `start` to the cursor at `end`,
+     * each the address of its two i32s, with `size` bytes at `text`. */
+    markdown_core_wire_session_edit(session: number, start: number, end: number, text: number, size: number): number;
     /** The answers of a session's queries (docs/architecture/wire-format.md,
      * Queries), each one owned MCB3 message as a step's is. A position is
      * passed as the address of its two i32s. A locate moves the session's

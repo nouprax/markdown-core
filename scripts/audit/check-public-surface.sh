@@ -137,10 +137,11 @@ retired_surface_terms='render|feed|stream|snapshot|delta|diagnostic|concrete|Con
 # Mutation verbs end at an identifier or camel/snake-case word boundary;
 # a noun sharing a lowercase prefix does not name a mutation operation.
 mutation_surface_terms='set[A-Z]|(insert|append|prepend|replace|unlink|edit)([A-Z_]|\b)'
-# A session is the one object that changes: its text takes appends
-# (docs/plans/2026-09-29-incremental-parsing.md, R6 and R8). Only its own
-# `append` is exempt from the mutation verbs.
-session_text_operation='/MarkdownSession\.(swift|kt):[0-9]+:[[:space:]]*public (func|fun) append\('
+# A session is the one object that changes: its text takes appends, and
+# edits once flushed (docs/plans/2026-09-29-incremental-parsing.md, R6, R8
+# and 12.3). Only its own `append` and `edit` are exempt from the mutation
+# verbs.
+session_text_operation='/MarkdownSession\.(swift|kt):[0-9]+:[[:space:]]*public (func|fun) (append|edit)\('
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
