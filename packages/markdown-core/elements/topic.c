@@ -205,8 +205,10 @@ static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t a
     }
     /* The name may go on with the input, and what follows it decides
      * whether it is one; a name the input's end cuts short is a field, as
-     * is one a `/` the input ends with may go on from. */
-    if (end + 3 > len) {
+     * is one a `/` the input ends with may go on from. The character after
+     * it is read whole, up to four bytes, and after a `/` the one after
+     * that, as `://` is. */
+    if (end + (end < len && data[end] == '/' ? 5 : 4) > len) {
         markdown_core_inline_saw_end(inline_state);
     }
     if (inline_state->context && (end == len || (end + 1 == len && end > at + 1 && data[end] == '/'))) {

@@ -161,6 +161,7 @@ static bufsize_t quote_close(markdown_core_attribute_parser *p, bufsize_t open) 
             at++;
         }
     }
+    p->ran_out = 1;
     return n;
 }
 
@@ -280,6 +281,9 @@ static bufsize_t recognise(markdown_core_attribute_parser *p, bufsize_t b) {
             bufsize_t close = quote_close(p, e + 1);
             if (close < n) {
                 b = close + 1;
+                /* A closer at the end is read as an unquoted value's byte
+                 * below, which the input going on undoes. */
+                p->ran_out |= b == n;
             }
         }
         if (b == n) {
@@ -684,7 +688,7 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
         const struct markdown_core_attribute_member *member = &w->members[i];
         markdown_core_chunk staged = {text + member->value, member->value_length, 0};
         if (member->name < 0) {
-            *class ++= staged;
+            *class ++ = staged;
         } else {
             *record++ = (markdown_core_record){{text + member->name, member->name_length, 0}, staged};
         }
@@ -1104,7 +1108,8 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     /* A block that does not close may close once the input goes on, and
      * one that closes inside a quote the input's end leaves open, which
      * reads it as text of a bare value, may close past it. */
-    if ((!matched || inline_state->context) && markdown_core_inline_tracks_end(inline_state)) {
+    if ((!matched || inline_state->context || inline_state->attributes.ran_out) &&
+        markdown_core_inline_tracks_end(inline_state)) {
         S_saw_end(inline_state, start, owner);
     }
     return matched;

@@ -1356,6 +1356,12 @@ unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inl
     return markdown_core_inline_peek_at(inline_state, pos);
 }
 
+void markdown_core_inline_state_undecide(markdown_core_inline_state *inline_state, bufsize_t start) {
+    if (start < inline_state->undecided) {
+        inline_state->undecided = start;
+    }
+}
+
 void markdown_core_inline_state_saw_end(markdown_core_inline_state *inline_state) {
     markdown_core_inline_saw_end(inline_state);
 }

@@ -72,6 +72,9 @@ typedef struct {
     markdown_core_attribute_scratch *scratch;
     size_t work;
     int oom;
+    /* Whether a quote's lookahead met the extent's end with no closer: what
+     * the walks answered may change once the input goes on. */
+    int ran_out;
 } markdown_core_attribute_parser;
 
 /* Whether a value owns anything a release must free: its block, or an anchor

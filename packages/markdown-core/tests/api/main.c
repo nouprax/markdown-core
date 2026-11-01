@@ -11700,6 +11700,17 @@ static void session_flush_matches_a_parse(test_batch_runner *runner) {
         "See [^n] here." FILLER "[^n]: note\n",
         "See [^n]{#c} and [x][y]{#a}." FILLER "# a\n\n# c\n\n[^n]: note\n\n[y]: /u\n",
         "- a\n  - # A [x]\n  - > b [y]\n    > - # A [x]\n- c" FILLER ":n{#a}\n\n# A\n\n[x]: /u\n\n[y]: /v\n",
+        /* A `$` pair whose body a code span begins makes no formula, but
+         * takes the `*` between away: no settle point lies inside it. */
+        "a\n$`\n`*$*",
+        "a\n$`b\n`*b$*\n",
+        /* A quote whose closer the text has not reached yet leaves the
+         * attribute block open past the brace it closes at for now. */
+        "a\n:d{b='\n}c'x",
+        /* A topic's name reads the character after it whole: a four-byte
+         * lead the text cuts short may yet be part of the name. */
+        "%%%%\ns\n~\x9b~#\xc8\xdd\xf2"
+        "3\xc2\xe3",
     };
 #undef FILLER
     static const size_t chunks[] = {1, 3, 0};
