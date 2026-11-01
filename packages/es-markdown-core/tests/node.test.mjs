@@ -813,10 +813,12 @@ test("api: a node an edit did not reach is the old node, and one it read again k
         const end = { line: 5, column: 7 };
         const after = session.edit(end, end, " one");
         assert.equal(session.text, "# Title\n\nfirst\n\nsecond one\n");
-        assert.equal(after.content[0], before.content[0]);
-        assert.equal(after.content[1], before.content[1]);
+        // Each step decodes a new value tree, so an unchanged node is equal, not the same object.
+        assert.ok(markupEquals(after.content[0], before.content[0]));
+        assert.ok(markupEquals(after.content[1], before.content[1]));
+        assert.equal(after.content[0].id, before.content[0].id);
         assert.equal(after.content[2].id, before.content[2].id);
-        assert.notEqual(after.content[2], before.content[2]);
+        assert.equal(markupEquals(after.content[2], before.content[2]), false);
     } finally {
         session.dispose();
     }
