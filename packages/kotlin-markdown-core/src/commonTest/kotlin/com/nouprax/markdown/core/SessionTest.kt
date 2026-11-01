@@ -162,10 +162,12 @@ class SessionTest {
             val start = Position(1, 1)
             val inside = Position(1, 4)
             val nowhere = Position(9, 1)
+
             fun refused(
                 from: Position,
                 to: Position,
             ) = assertFailsWith<MarkdownCoreException> { session.edit(from, to, "") }.code
+
             assertEquals(ErrorCode.SESSION_STREAMING, refused(start, start))
             session.append("more\n")
             val final = session.flush()
