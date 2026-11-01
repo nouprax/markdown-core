@@ -2901,6 +2901,28 @@ static void S_edit_pass(markdown_core_edit *edit) {
  * its next block's, or after the rest point -- the next publish matches its
  * new children against (ast.c, A DOCUMENT REOPENED FOR AN EDIT). */
 
+void markdown_core_parser_compact(markdown_core_parser *parser) {
+    markdown_core_parser_input *input = &parser->input;
+    markdown_core_array_shrink(&input->lines);
+    markdown_core_array_shrink(&parser->line_marks);
+    if (input->fact_count < input->fact_capacity / 2) {
+        void *facts =
+            markdown_core_realloc(input->facts, (input->fact_count ? input->fact_count : 1) * sizeof(*input->facts));
+        if (facts) {
+            input->facts = facts;
+            input->fact_capacity = input->fact_count ? input->fact_count : 1;
+        }
+    }
+    /* What only a reading of the old tail holds: the whole text read none. */
+    markdown_core_edit *edit = parser->stream->edit;
+    assert(!edit->count && !edit->line_count);
+    markdown_core_free(edit->children);
+    markdown_core_free(edit->lines);
+    edit->children = NULL;
+    edit->lines = NULL;
+    edit->children_capacity = edit->line_capacity = 0;
+}
+
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const markdown_core_node *block) {
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
     for (const markdown_core_node_type *kind = structure ? structure->element->abuts : NULL; kind && *kind; kind++) {
@@ -3139,11 +3161,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     parser->block_input_count = parser->block_input_cursor = 0;
 
     S_drop_lines(input, line);
-    size_t marks = parser->line_marks.count;
-    while (marks > 1 && parser->line_marks.values[marks - 1].source >= (bufsize_t)start) {
-        marks--;
-    }
-    markdown_core_array_truncate(&parser->line_marks, marks);
+    /* Every map the flush made is complete, and so are the chain's: what
+     * the reading maps starts after the identity run again. */
+    markdown_core_array_truncate(&parser->line_marks, MARKDOWN_CORE_IDENTITY_MARK + 1);
     input->scanned = input->size = input->complete = start;
     input->source = (const unsigned char *)source;
     input->epoch = ++parser->epochs;

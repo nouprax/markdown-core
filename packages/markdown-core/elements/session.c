@@ -65,6 +65,9 @@ typedef struct {
      * looked for in lie, level after level (session_rest_in). */
     markdown_core_place *windows;
     size_t window_capacity;
+    /* The most text the session has held since it last read all of it into
+     * storage of its own (THE COMPACTION). */
+    size_t peak;
 } session_edits;
 
 struct markdown_core_session {
@@ -666,13 +669,34 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
      * declares others, a lookup of the children that stay may answer
      * otherwise, and the whole text is read again. */
     markdown_core_strbuf before = MARKDOWN_CORE_BUF_INIT(), after = MARKDOWN_CORE_BUF_INIT();
+    if (session->text.count > session->edits->peak) {
+        session->edits->peak = session->text.count;
+    }
     if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &before) ||
         !session_replace(session, from, to, text, length)) {
         markdown_core_strbuf_free(&before);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     const int64_t delta = (int64_t)length - (int64_t)(to - from);
-    markdown_core_status status = session_reread(session, child, line, from, to, delta, false, &rest);
+    session_edits *const edits = session->edits;
+    /* THE COMPACTION (plan 12.4, E-D4): the pool keeps what each reading
+     * let go for the next, so it holds what the most text held needed.
+     * Once the text is less than half of that, the holes exceed what it
+     * needs, and the edit reads all of it into new slabs; the old go with
+     * the old nodes, which keep them only until the reading lets them go. */
+    const bool compact = session->text.count < edits->peak / 2;
+    if (compact) {
+        markdown_core_node_pool_dispose(&session->pool);
+    }
+    markdown_core_status status = compact ? session_reread(session, 0, 0, from, to, delta, true, NULL)
+                                          : session_reread(session, child, line, from, to, delta, false, &rest);
+    if (compact) {
+        markdown_core_node_pool_dispose(&session->pool);
+        if (status == MARKDOWN_CORE_OK) {
+            markdown_core_parser_compact(session->committed);
+        }
+        edits->peak = session->text.count;
+    }
     /* The children before the rest point stay, and so do those the reading
      * took back after the edit. */
     if (status == MARKDOWN_CORE_OK && (child || markdown_core_parser_resumed(session->committed))) {

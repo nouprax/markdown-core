@@ -1574,6 +1574,10 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
                                  const uint32_t *path, size_t depth);
+/* THE COMPACTION (plan 12.4): after a reading of the whole text, gives back
+ * the storage the input and the reading hold past what the text needs, as
+ * the most text before left it. */
+void markdown_core_parser_compact(markdown_core_parser *parser);
 /* Whether the children of `block` abut (element.h, `abuts`). */
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* How the line before the rest point line `line` reads to the `depth`

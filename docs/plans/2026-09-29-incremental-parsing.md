@@ -1255,7 +1255,16 @@ The edit runs in five steps:
 - **Nodes.** The dropped nodes and the replaced ancestors go back to the
   node pool's slabs, as a released subtree does today.
 - **Compaction.** When old buffers and slab holes exceed the live size, the
-  next edit parses the whole text again (E-D4).
+  next edit parses the whole text again (E-D4). The pool keeps the slots
+  each reading lets go for the next, so what it holds follows the most text
+  the session held. The session keeps that peak, and an edit that leaves
+  less than half of it reads the whole text: it drops the pool's released
+  slots and slab first, so the new nodes take new slabs, and drops them
+  again after, so the old slabs go with the old nodes. The input's lines,
+  the content marks, the line facts and the edit's scratch then shrink to
+  the text. Ids stay, as for any whole reading. On the 16k list fixture, an
+  edit that deletes 90% of the text leaves 1.35× the storage of a fresh
+  parse, down from 7.6×.
 
 ### 12.5 Identity
 

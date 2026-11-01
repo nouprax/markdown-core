@@ -54,3 +54,21 @@ void *markdown_core_array_extend(markdown_core_ahead *ahead, void *values, size_
     void *moved = markdown_core_ahead_extend(ahead, NULL, values, room, held, count, width);
     return moved ? moved : values;
 }
+
+void *markdown_core_array_fit(markdown_core_ahead *ahead, void *values, size_t *room, size_t count, size_t width) {
+    size_t capacity = MARKDOWN_CORE_AHEAD_FIRST;
+    while (capacity < count) {
+        capacity *= 2;
+    }
+    if (!values || capacity >= ahead->capacity) {
+        return values;
+    }
+    void *moved = markdown_core_realloc(values, capacity * width);
+    if (!moved) {
+        return values;
+    }
+    markdown_core_ahead_free(ahead, NULL);
+    ahead->capacity = capacity;
+    *room = markdown_core_ahead_room(capacity, count, width);
+    return moved;
+}
