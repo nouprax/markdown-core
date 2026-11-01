@@ -487,6 +487,10 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_session_unit(const markd
  * which holds that many. */
 MARKDOWN_CORE_API size_t markdown_core_session_text_size(const markdown_core_session *session);
 MARKDOWN_CORE_API void markdown_core_session_text(const markdown_core_session *session, uint8_t *bytes);
+/** The session's text, lent: it borrows from the session until its next
+ * append, flush, edit or close, so a caller that reads the text after each
+ * step copies nothing. */
+MARKDOWN_CORE_API markdown_core_string markdown_core_session_source(const markdown_core_session *session);
 /** Destroys the session: its text, its parse state, its documents and its
  * context go with it, and nothing it lent may be read afterwards. A session
  * may be closed at any point of its life, flushed or not. */

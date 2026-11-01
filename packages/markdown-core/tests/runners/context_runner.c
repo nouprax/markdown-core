@@ -155,14 +155,20 @@ static int32_t column_after(const uint8_t *source, size_t count, markdown_core_t
     return column;
 }
 
-/* Whether every position of `example` answers a context whose slots hold
- * the cursor, in `unit`. */
-static int sweeps(const ts_spec_case *example, markdown_core_text_unit unit, size_t *queries) {
-    const uint8_t *source = (const uint8_t *)example->markdown;
-    const size_t length = example->markdown_length;
+/* Whether every position of the first `length` bytes of `example` answers
+ * a context whose slots hold the cursor, in `unit`. The text is copied into a buffer of its own size,
+ * so a sanitizer sees a query read past its end, as a session's text has no
+ * byte after it. */
+static int sweeps(const ts_spec_case *example, size_t length, markdown_core_text_unit unit, size_t *queries) {
+    uint8_t *source = malloc(length ? length : 1);
+    if (!source) {
+        return 0;
+    }
+    memcpy(source, example->markdown, length);
     markdown_core_document *document = NULL;
     if (markdown_core_document_parse_in(source, length, unit, &document) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "example %d: the parse failed\n", example->example);
+        free(source);
         return 0;
     }
     int good = 1;
@@ -194,6 +200,7 @@ static int sweeps(const ts_spec_case *example, markdown_core_text_unit unit, siz
         }
     }
     markdown_core_document_free(document);
+    free(source);
     return good;
 }
 
@@ -207,8 +214,18 @@ static int sweep(int count, char **paths) {
             return 1;
         }
         for (size_t j = 0; j < spec.count; j++) {
-            failures += !sweeps(&spec.cases[j], MARKDOWN_CORE_TEXT_UNIT_UTF8, &queries);
-            failures += !sweeps(&spec.cases[j], MARKDOWN_CORE_TEXT_UNIT_UTF16, &queries);
+            /* Each text whole, and without its last line ending, so that
+             * what its last line opens runs to the text's end. */
+            const ts_spec_case *example = &spec.cases[j];
+            size_t length = example->markdown_length;
+            for (int cut = 0; cut < 2; cut++) {
+                failures += !sweeps(example, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, &queries);
+                failures += !sweeps(example, length, MARKDOWN_CORE_TEXT_UNIT_UTF16, &queries);
+                if (!length || example->markdown[length - 1] != '\n') {
+                    break;
+                }
+                length--;
+            }
         }
         ts_spec_free(&spec);
     }

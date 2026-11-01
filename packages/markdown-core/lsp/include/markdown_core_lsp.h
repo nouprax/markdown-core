@@ -23,7 +23,8 @@
  * value is the protocol's error code, and writes its out-parameters only
  * when it answers MARKDOWN_CORE_LSP_OK. A host answers a request that fails
  * with that code and drops a notification that fails, as the protocol does.
- * A failed call changes nothing. Pointer arguments are not checked for NULL,
+ * A failed call changes nothing, except an update that fails INTERNAL_ERROR
+ * (markdown_core_lsp_update). Pointer arguments are not checked for NULL,
  * except that a text of size 0 may be NULL and `*_free(NULL)` does nothing.
  *
  * Positions are the protocol's: a line and a character offset counted from
@@ -58,7 +59,7 @@ typedef struct markdown_core_lsp_server markdown_core_lsp_server;
  * - INVALID_REQUEST: the call is not one the server's phase takes: a second
  *   initialize, or any call after shutdown.
  * - INVALID_PARAMS: the call names a document that is not open, or an edit
- *   whose start is past its end.
+ *   whose start is after its end.
  * - INTERNAL_ERROR: an allocation failed, or a text exceeds what the parser
  *   can hold. */
 typedef enum markdown_core_lsp_status {
@@ -138,15 +139,21 @@ MARKDOWN_CORE_LSP_API markdown_core_lsp_status markdown_core_lsp_shutdown(markdo
 
 /** The didOpen notification: the document at `uri`, `uri_size` bytes
  * compared as they are, holds `text_size` bytes of `text` at `version`. A
- * document opened again replaces the one open at its URI. */
+ * document opened again replaces the one open at its URI. The server parses
+ * the text into the document's session and flushes it, so each later change
+ * edits that parse (plan, section 6). */
 MARKDOWN_CORE_LSP_API markdown_core_lsp_status markdown_core_lsp_open(markdown_core_lsp_server *server,
                                                                       const uint8_t *uri, size_t uri_size,
                                                                       int32_t version, const uint8_t *text,
                                                                       size_t text_size);
 /** The didChange notification: `count` edits applied to the document in
  * order, each to the text the one before it made, which give it `version`.
- * INVALID_PARAMS when an edit's start is past its end, and then the
- * document keeps its text and version. */
+ * Each is one edit of the document's session, which reads again only the
+ * blocks the edit damaged. INVALID_PARAMS when an edit's start is after its
+ * end, which every edit is checked for before the first applies, and then
+ * the document keeps its text and version. INTERNAL_ERROR when an edit
+ * cannot allocate, and then the server has taken some of the edits and
+ * cannot tell the client's text, so it closes the document. */
 MARKDOWN_CORE_LSP_API markdown_core_lsp_status markdown_core_lsp_update(markdown_core_lsp_server *server,
                                                                         const uint8_t *uri, size_t uri_size,
                                                                         int32_t version,
@@ -158,8 +165,8 @@ MARKDOWN_CORE_LSP_API markdown_core_lsp_status markdown_core_lsp_close(markdown_
 
 /** The completion request at `position` in the document at `uri`. `*list`
  * receives a new list, which markdown_core_lsp_list_free releases. It
- * parses the document's version once, on the first request that needs it,
- * and reads the parser's context at the cursor (plan, section 6). */
+ * locates the document's session at the cursor and reads the context there
+ * (plan, section 6), so it parses nothing the edits have not kept current. */
 MARKDOWN_CORE_LSP_API markdown_core_lsp_status markdown_core_lsp_complete(markdown_core_lsp_server *server,
                                                                           const uint8_t *uri, size_t uri_size,
                                                                           markdown_core_lsp_position position,

@@ -784,7 +784,13 @@ finalized session edits that re-read only the damaged block (its D7, revised
 - The server holds one session per open document. `didOpen` makes it from
   the text and finalizes it. Each `didChange` content change is one edit of
   that session, and `didClose` frees it. Text editing and parsing are both
-  the session's work, so the server holds no second copy of the text.
+  the session's work, so the server holds no second copy of the text: it
+  reads the session's through `markdown_core_session_source`, which lends
+  it until the session's next step, to stand a protocol position at the
+  parser's cursor. A change is checked whole before its first edit
+  applies, and an edit that cannot allocate closes the document, since the
+  server then cannot tell the client's text. This landed as step E3 of the
+  incremental plan (2026-11-01).
 - A completion request locates the document's session at the cursor and
   reads its context. Its cost is one session over the text before the
   cursor, the confirmation lookups in the session's document, and the
@@ -899,9 +905,8 @@ it (D6).
    4.2), 4b the engine's Swift, Kotlin and ECMAScript bindings in one pull
    request (owner, 2026-10-27), each replaying the transcripts, and 4c the
    latency report. The server holds one session per open document of its
-   workspace (owner, 2026-10-27). Until step E3 of the incremental plan
-   lands edits in the server, a change makes a new session from the new
-   text; after it, a change edits the session in place (D3).
+   workspace (owner, 2026-10-27). Step E3 of the incremental plan made each
+   change an edit of the session in place (D3, 2026-11-01).
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with

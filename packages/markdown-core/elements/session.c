@@ -745,6 +745,11 @@ markdown_core_text_unit markdown_core_session_unit(const markdown_core_session *
 
 size_t markdown_core_session_text_size(const markdown_core_session *session) { return session->text.count; }
 
+markdown_core_string markdown_core_session_source(const markdown_core_session *session) {
+    markdown_core_string text = {(const uint8_t *)session_source(session), session->text.count};
+    return text;
+}
+
 void markdown_core_session_text(const markdown_core_session *session, uint8_t *bytes) {
     if (session->text.count) {
         memcpy(bytes, session->text.values, session->text.count);
