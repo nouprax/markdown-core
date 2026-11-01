@@ -30,11 +30,16 @@ uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length);
  * markdown_core_wire_session_new makes `*session` from `length` bytes of
  * `source`, columns counted in `unit`; `*session` is NULL unless the message
  * is its document. markdown_core_wire_session_append appends `size` bytes of
- * `text`, and markdown_core_wire_session_flush ends the session's text. */
+ * `text`, markdown_core_wire_session_flush ends the session's text, and
+ * markdown_core_wire_session_edit replaces the text from the cursor `start`
+ * to the cursor `end` with `size` bytes of `text`, as
+ * markdown_core_session_edit does. */
 uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                         markdown_core_session **session);
 uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
 uint8_t *markdown_core_wire_session_flush(markdown_core_session *session);
+uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, markdown_core_position start,
+                                         markdown_core_position end, const uint8_t *text, size_t size);
 
 /* QUERIES of a session (docs/plans/2026-10-23-lsp-completion-engine.md, step
  * 3), for the same bindings. Each answers with one caller-owned message of its

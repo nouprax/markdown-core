@@ -104,9 +104,23 @@ document; afterwards `append` and `flush` throw
 `close` releases the engine's session; the documents it returned stay complete
 values.
 
+After `flush`, `edit(start, end, text)` replaces the text between two
+cursors, positions in the session's unit, and returns the parse of the new
+text. The session reads again only the blocks the edit reaches: a node the
+edit did not reach is the old node, and one it read again keeps its id. An
+edit before `flush` throws `ErrorCode.SESSION_STREAMING`.
+
+```kotlin
+MarkdownSession("# Title\n\nfirst\n").use { session ->
+    session.flush()
+    session.edit(Position(3, 6), Position(3, 6), " line")   // "first" becomes "first line"
+}
+```
+
 A session also answers an editor's queries from the engine's parse of its
 text, which it holds, so no query parses the text again or takes the source.
-An editor holds a flushed session per version of a text.
+An editor holds one flushed session per open text and edits it as the text
+changes.
 
 ```kotlin
 MarkdownSession("See [[Field notes]]\n").use { session ->
@@ -122,8 +136,8 @@ MarkdownSession("See [[Field notes]]\n").use { session ->
 
 The `context` is the session's state at its cursor: `locate` moves the cursor
 and updates it in place to the blocks and inline constructs the text before
-the cursor leaves open and the `Slot`s the cursor may be writing, and an append
-or `flush` clears it. `session.spell(slot, value)` writes a value in a slot
+the cursor leaves open and the `Slot`s the cursor may be writing, and an append,
+`flush` or an edit clears it. `session.spell(slot, value)` writes a value in a slot
 of the current context in the slot's own syntax, with the closer an open
 construct needs, and its caret counts columns in the session's unit; a slot of
 a context a later step replaced throws `OUT_OF_BOUNDS`. Nothing is handed out

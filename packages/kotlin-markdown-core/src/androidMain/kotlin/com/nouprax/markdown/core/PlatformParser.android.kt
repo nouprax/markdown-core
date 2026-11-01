@@ -47,6 +47,14 @@ private class JniSession(
 
     override fun end(): Document = publish(JniParser.sessionFlushPayload(session[0]))
 
+    override fun edit(
+        startLine: Int,
+        startColumn: Int,
+        endLine: Int,
+        endColumn: Int,
+        text: ByteArray,
+    ): Document = publish(JniParser.sessionEditPayload(session[0], startLine, startColumn, endLine, endColumn, text))
+
     override fun text(): ByteArray = JniParser.sessionText(session[0])
 
     override fun free() {
@@ -110,6 +118,21 @@ private object JniParser {
     /** The MCB3 message of flushing [session]; null as for [parsePayload]. */
     @JvmSynthetic
     external fun sessionFlushPayload(session: Long): ByteArray?
+
+    /**
+     * The MCB3 message of replacing [session]'s text from the cursor at line
+     * [startLine] and [startColumn] to the cursor at line [endLine] and [endColumn]
+     * with [text]; null as for [parsePayload].
+     */
+    @JvmSynthetic
+    external fun sessionEditPayload(
+        session: Long,
+        startLine: Int,
+        startColumn: Int,
+        endLine: Int,
+        endColumn: Int,
+        text: ByteArray,
+    ): ByteArray?
 
     /** A copy of [session]'s UTF-8 text. */
     @JvmSynthetic

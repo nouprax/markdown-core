@@ -198,8 +198,30 @@ static void check_session(void) {
         markdown_core_session_text(session, text);
     }
     check(size == strlen(expected) && memcmp(text, expected, size) == 0, "the session's text follows its steps");
+    const markdown_core_position more = {5, 1}, past = {5, 5}, outside = {6, 1};
+    message = markdown_core_wire_session_edit(session, more, past, (const uint8_t *)"less", 4);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_STREAMING,
+          "an edit before flush answers SESSION_STREAMING");
+    markdown_core_wire_free(message);
     message = markdown_core_wire_session_flush(session);
     check(message != NULL && message_status(message) == 0, "flush answers with the final document");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_session_edit(session, more, past, (const uint8_t *)"less", 4);
+    check(message != NULL && message_status(message) == 0, "an edit after flush answers with its document");
+    markdown_core_wire_free(message);
+    const char edited[] = "# One\n\npair \xf0\x9f\x98\x80 here\n\nless";
+    size = markdown_core_session_text_size(session);
+    if (size < sizeof(text)) {
+        markdown_core_session_text(session, text);
+    }
+    check(size == strlen(edited) && memcmp(text, edited, size) == 0, "the session's text follows its edit");
+    message = markdown_core_wire_session_edit(session, past, more, (const uint8_t *)"", 0);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "an edit whose end is before its start answers OUT_OF_BOUNDS");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_session_edit(session, outside, outside, (const uint8_t *)"", 0);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "an edit whose cursor stands nowhere in the text answers OUT_OF_BOUNDS");
     markdown_core_wire_free(message);
     message = markdown_core_wire_session_append(session, (const uint8_t *)"x", 1);
     check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FLUSHED,

@@ -87,6 +87,7 @@ const exported = [
     "markdown_core_wire_session_new",
     "markdown_core_wire_session_append",
     "markdown_core_wire_session_flush",
+    "markdown_core_wire_session_edit",
     "markdown_core_wire_dialect",
     "markdown_core_wire_locate",
     "markdown_core_wire_spell",

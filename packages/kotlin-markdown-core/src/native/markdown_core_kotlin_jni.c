@@ -116,6 +116,22 @@ static jbyteArray JNICALL native_session_flush(JNIEnv *environment, jobject rece
     return message_array(environment, markdown_core_wire_session_flush(session_address(session)));
 }
 
+static jbyteArray JNICALL native_session_edit(JNIEnv *environment, jobject receiver, jlong session, jint start_line,
+                                              jint start_column, jint end_line, jint end_column, jbyteArray text) {
+    markdown_core_position from = {start_line, start_column}, to = {end_line, end_column};
+    jbyte *pinned;
+    uint8_t *message;
+    (void)receiver;
+
+    if (!pin_bytes(environment, text, &pinned)) {
+        return NULL;
+    }
+    message = markdown_core_wire_session_edit(session_address(session), from, to, (const uint8_t *)pinned,
+                                              (size_t)(*environment)->GetArrayLength(environment, text));
+    unpin_bytes(environment, text, pinned);
+    return message_array(environment, message);
+}
+
 /* A copy of the session's text, which the 1 GiB limit keeps within a JVM
  * array. NULL leaves the JVM's exception pending. */
 static jbyteArray JNICALL native_session_text(JNIEnv *environment, jobject receiver, jlong session) {
@@ -195,6 +211,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"sessionNewPayload", "([BZ[J)[B", (void *)native_session_new},
         {"sessionAppendPayload", "(J[B)[B", (void *)native_session_append},
         {"sessionFlushPayload", "(J)[B", (void *)native_session_flush},
+        {"sessionEditPayload", "(JIIII[B)[B", (void *)native_session_edit},
         {"sessionText", "(J)[B", (void *)native_session_text},
         {"sessionClose", "(J)V", (void *)native_session_close},
         {"dialectAnswer", "()[B", (void *)native_dialect},

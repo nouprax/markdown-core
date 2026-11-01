@@ -14,8 +14,9 @@ import MarkdownCoreC
 ///
 /// The caller ends the text with ``flush()``, which returns the final
 /// document; nothing ends a session implicitly. Afterwards ``document`` and
-/// ``text`` stay readable, and ``append(_:)`` and ``flush()`` throw
-/// ``ErrorCode/sessionFlushed``.
+/// ``text`` stay readable, ``append(_:)`` and ``flush()`` throw
+/// ``ErrorCode/sessionFlushed``, and ``edit(from:to:with:)`` replaces any
+/// part of the text: streaming and editing are the session's two phases.
 ///
 /// A session has one writer. It is not `Sendable`.
 public final class MarkdownSession {
@@ -28,8 +29,8 @@ public final class MarkdownSession {
     /// The syntactic context at the session's cursor, which
     /// ``locate(_:)`` moves: the session's state, which it updates in place.
     /// It is ``Context`` with nothing open until the first locate, and an
-    /// append or ``flush()`` empties it again, since they change the text
-    /// it was read from.
+    /// append, ``flush()`` or edit empties it again, since they change the
+    /// text it was read from.
     public internal(set) var context = Context.blank
     /// Counts the steps that replace ``context``: a slot spells only in the
     /// turn that read it.
@@ -103,12 +104,55 @@ public final class MarkdownSession {
         return try publish(status, native)
     }
 
+    /// Replaces the text from the cursor `start` to the cursor `end` with
+    /// `text`, and parses the result.
+    ///
+    /// The new document equals ``Document/parse(_:unit:)`` of the new
+    /// ``text`` in everything but ids, and continues the previous one: a node
+    /// the edit did not reach is the old node, and one the edit read again
+    /// keeps the ``Markup/id`` of the old node it continues. The session
+    /// reads again only the blocks the edit reaches.
+    ///
+    /// A cursor stands between characters, so its column may also stand at
+    /// its line's end, before the line's terminator, or at the text's end. It
+    /// counts columns in the session's ``unit``.
+    ///
+    /// - Parameters:
+    ///   - start: where the replaced text starts.
+    ///   - end: where it ends; `start` itself inserts `text` there.
+    ///   - text: the Markdown to write in its place. It is read as UTF-8.
+    /// - Returns: the new ``document``.
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/sessionStreaming``
+    ///   before ``flush()``, with ``ErrorCode/outOfBounds`` when a cursor
+    ///   stands nowhere in the text or `end` is before `start`, which leaves
+    ///   ``context`` as it was, and with ``ErrorCode/allocationFailed`` when
+    ///   an allocation fails or the text would exceed 1 GiB of UTF-8. A
+    ///   failed allocation fails the session's parse, and every later edit
+    ///   throws it again.
+    @discardableResult
+    public func edit(from start: Position, to end: Position, with text: String) throws -> Document {
+        guard start.line >= 1, start.column >= 1, end.line >= 1, end.column >= 1 else {
+            throw MarkdownCoreError(code: .outOfBounds)
+        }
+        var native: OpaquePointer?
+        var written = text
+        let status = written.withUTF8 { buffer in
+            markdown_core_session_edit(session, start.native, end.native, buffer.baseAddress, buffer.count, &native)
+        }
+        return try publish(status, native, kept: [MARKDOWN_CORE_SESSION_STREAMING, MARKDOWN_CORE_OUT_OF_BOUNDS])
+    }
+
     /// Builds the document a step returned, which borrows from the session
     /// until its next step.
-    private func publish(_ status: markdown_core_status, _ native: OpaquePointer?) throws -> Document {
-        // A step of a session not yet flushed empties the native context,
-        // whether or not it succeeds.
-        if status != MARKDOWN_CORE_SESSION_FLUSHED {
+    private func publish(
+        _ status: markdown_core_status,
+        _ native: OpaquePointer?,
+        kept: [markdown_core_status] = [MARKDOWN_CORE_SESSION_FLUSHED]
+    ) throws -> Document {
+        // A step empties the native context, whether or not it succeeds,
+        // unless it refused before it read anything: an append or flush of
+        // a flushed session, or an edit of a streaming one or out of bounds.
+        if !kept.contains(status) {
             turn += 1
             context = .blank
         }

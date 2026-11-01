@@ -1,4 +1,4 @@
-import { MarkdownCoreError } from "./common/markdown-core-error.js";
+import { MarkdownCoreError, type ErrorCode } from "./common/markdown-core-error.js";
 import { SourceLines } from "./common/source-lines.js";
 import type { Context, Edit, Slot } from "./markup/context.js";
 import type { Document } from "./markup/document.js";
@@ -36,6 +36,13 @@ function release(engine: Engine): void {
 /** The context of a session not yet located: nothing is open. */
 const blank: Context = { blocks: [], inlines: [], slots: [] };
 
+/** The failures of an append or flush that leave the context: the session
+ * was already flushed. */
+const flushRefusals: readonly ErrorCode[] = ["sessionFlushed"];
+/** The failures of an edit that leave the context: the session still
+ * streams, or a cursor is out of bounds. */
+const editRefusals: readonly ErrorCode[] = ["sessionStreaming", "outOfBounds"];
+
 /** Whether `position`'s line and column are integers from 1 to the C
  * `int32_t` bound. */
 function valid({ line, column }: Position): boolean {
@@ -55,8 +62,9 @@ function valid({ line, column }: Position): boolean {
  *
  * The caller ends the text with `flush()`, which returns the final
  * document; nothing ends a session implicitly. Afterwards `document` and
- * `text` stay readable, and adding text or flushing again throws
- * `MarkdownCoreError` `sessionFlushed`.
+ * `text` stay readable, adding text or flushing again throws
+ * `MarkdownCoreError` `sessionFlushed`, and `edit` replaces any part of the
+ * text: streaming and editing are the session's two phases.
  *
  * The session also answers the queries of an editor: the `context` at its
  * cursor, which `locate` moves, the `path` of nodes that hold a byte, and the
@@ -110,8 +118,8 @@ export class MarkdownSession {
 
     /** The syntactic context at the session's cursor, which `locate` moves:
      * the session's state, which it updates in place. Nothing is open in it
-     * until the first locate, and adding text or `flush()` clears it
-     * again, since they change the text it was read from. */
+     * until the first locate, and adding text, `flush()` or `edit` clears
+     * it again, since they change the text it was read from. */
     get context(): Context {
         return this.#context;
     }
@@ -144,6 +152,52 @@ export class MarkdownSession {
     flush(): Document {
         const message = native.markdown_core_wire_session_flush(this.#open());
         return (this.#document = this.#step(message));
+    }
+
+    /**
+     * Replaces the text from the cursor `start` to the cursor `end` with
+     * `text`, and parses the result.
+     *
+     * The new document equals `Document.parse` of the new `text` in
+     * everything but ids, and continues the previous one: a node the edit did
+     * not reach is the old node, and one the edit read again keeps the id of
+     * the old node it continues. The session reads again only the blocks the
+     * edit reaches.
+     *
+     * A cursor stands between characters, so its column may also stand at its
+     * line's end, before the line's terminator, or at the text's end. It
+     * counts columns in the session's `unit`; `start` itself as `end` inserts
+     * `text` there. Throws `MarkdownCoreError` `sessionStreaming` before
+     * `flush()`; `outOfBounds` when a cursor stands nowhere in the text, its
+     * line or column is not an integer of at least 1, or `end` is before
+     * `start`, which leaves `context` as it was; and `allocationFailed` when
+     * an allocation fails or the text would exceed 1 GiB. A failed allocation
+     * fails the session's parse, and every later edit throws it again.
+     */
+    edit(start: Position, end: Position, text: string): Document {
+        if (!valid(start) || !valid(end)) throw new MarkdownCoreError("outOfBounds");
+        const session = this.#open();
+        const encoded = utf8Encoder.encode(text);
+        let startPointer = 0;
+        let endPointer = 0;
+        let textPointer = 0;
+        try {
+            startPointer = this.#position(start);
+            endPointer = this.#position(end);
+            textPointer = allocateBytes(native, encoded);
+            const message = native.markdown_core_wire_session_edit(
+                session,
+                startPointer,
+                endPointer,
+                textPointer,
+                encoded.length
+            );
+            return (this.#document = this.#step(message, editRefusals));
+        } finally {
+            if (textPointer) native.free(textPointer);
+            if (endPointer) native.free(endPointer);
+            if (startPointer) native.free(startPointer);
+        }
     }
 
     /**
@@ -303,18 +357,19 @@ export class MarkdownSession {
         return pointer;
     }
 
-    /** The document of a step's `message`. A step of a session not yet
-     * flushed clears the engine's context whether or not it succeeds, and
-     * so `context`. */
-    #step(message: number): Document {
-        let flushed = false;
+    /** The document of a step's `message`. A step clears the engine's
+     * context whether or not it succeeds, and so `context`, unless it fails
+     * with one of `kept`, which refuse before the engine reads anything: an
+     * append or flush of a flushed session by default. */
+    #step(message: number, kept: readonly ErrorCode[] = flushRefusals): Document {
+        let refused = false;
         try {
             return decodeMessage(native, message, this.unit);
         } catch (failure) {
-            flushed = failure instanceof MarkdownCoreError && failure.code === "sessionFlushed";
+            refused = failure instanceof MarkdownCoreError && kept.includes(failure.code);
             throw failure;
         } finally {
-            if (!flushed) this.#context = blank;
+            if (!refused) this.#context = blank;
         }
     }
 

@@ -27,6 +27,7 @@ internal object WireDecoder {
             2 to ErrorCode.OUT_OF_BOUNDS,
             3 to ErrorCode.KIND_MISMATCH,
             4 to ErrorCode.SESSION_FLUSHED,
+            5 to ErrorCode.SESSION_STREAMING,
         )
 
     /** The failure a message's `u32` [status] code carries. */

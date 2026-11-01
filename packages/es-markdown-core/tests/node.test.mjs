@@ -741,12 +741,120 @@ test("api: a session's first document is a snapshot of its source", () => {
     }
 });
 
+/** The text every edit sweep starts from: ASCII, so a column is a byte. */
+const sweepSource = "# Title [a]\n\nfirst *one* `code`\n\n- item\n- second\n\n> quote\n\n[a]: /url\n";
+/** What each sweep writes at a cursor, and so removes again. */
+const sweepWrites = ["*", "\n", "- ", "#", "`", "> ", "[a]", "x"];
+
+/** Every cursor of an ASCII `text`: each line's columns, its end included. */
+function cursors(text) {
+    return text
+        .split("\n")
+        .flatMap((content, line) =>
+            Array.from({ length: content.length + 1 }, (_, column) => ({ line: line + 1, column: column + 1 }))
+        );
+}
+
+/** The cursor after the ASCII `written` is written at `cursor`. */
+function cursorAfter(written, cursor) {
+    const lines = written.split("\n");
+    if (lines.length === 1) return { line: cursor.line, column: cursor.column + written.length };
+    return { line: cursor.line + lines.length - 1, column: lines.at(-1).length + 1 };
+}
+
+test("api: an edit at every cursor, and its undoing, parse as the new text", () => {
+    for (const unit of ["utf8", "utf16"]) {
+        const session = new MarkdownSession(sweepSource, { unit });
+        try {
+            session.flush();
+            cursors(sweepSource).forEach((place, index) => {
+                const written = sweepWrites[index % sweepWrites.length];
+                const document = session.edit(place, place, written);
+                assert.equal(document, session.document);
+                const text = session.text;
+                const where = `${JSON.stringify(written)} at ${place.line}:${place.column}`;
+                assert.equal(document.dump(text), Document.parse(text, { unit }).dump(text), where);
+                session.edit(place, cursorAfter(written, place), "");
+                assert.equal(session.text, sweepSource);
+                const undone = session.document.dump(sweepSource);
+                assert.equal(undone, Document.parse(sweepSource, { unit }).dump(sweepSource), `${where}, undone`);
+            });
+        } finally {
+            session.dispose();
+        }
+    }
+});
+
+test("api: an edit's cursors count columns in the session's unit", () => {
+    // 🚀 is four UTF-8 bytes and two UTF-16 units.
+    for (const [unit, column] of [
+        ["utf8", 5],
+        ["utf16", 3]
+    ]) {
+        const session = new MarkdownSession("🚀 one\n\ntwo\n", { unit });
+        try {
+            session.flush();
+            session.edit({ line: 1, column }, { line: 1, column: column + 4 }, "*won*");
+            assert.equal(session.text, "🚀*won*\n\ntwo\n");
+            assert.equal(
+                session.document.dump(session.text),
+                Document.parse(session.text, { unit }).dump(session.text)
+            );
+        } finally {
+            session.dispose();
+        }
+    }
+});
+
+test("api: a node an edit did not reach is the old node, and one it read again keeps its id", () => {
+    const session = new MarkdownSession("# Title\n\nfirst\n\nsecond\n");
+    try {
+        const before = session.flush();
+        const end = { line: 5, column: 7 };
+        const after = session.edit(end, end, " one");
+        assert.equal(session.text, "# Title\n\nfirst\n\nsecond one\n");
+        assert.equal(after.content[0], before.content[0]);
+        assert.equal(after.content[1], before.content[1]);
+        assert.equal(after.content[2].id, before.content[2].id);
+        assert.notEqual(after.content[2], before.content[2]);
+    } finally {
+        session.dispose();
+    }
+});
+
+test("errors: an edit before flush, out of bounds or backwards throws and changes nothing", () => {
+    const session = new MarkdownSession("- text\n");
+    try {
+        const start = { line: 1, column: 1 };
+        const inside = { line: 1, column: 4 };
+        const nowhere = { line: 9, column: 1 };
+        assert.throws(() => session.edit(start, start, "x"), { code: "sessionStreaming" });
+        session.append("more\n");
+        const final = session.flush();
+        session.locate(inside);
+        const open = session.context;
+        assert.ok(open.blocks.length > 0);
+        assert.throws(() => session.edit(inside, start, ""), { code: "outOfBounds" });
+        assert.throws(() => session.edit(nowhere, nowhere, ""), { code: "outOfBounds" });
+        assert.throws(() => session.edit({ line: 0, column: 1 }, start, ""), { code: "outOfBounds" });
+        assert.equal(session.text, "- text\nmore\n");
+        assert.equal(session.document, final);
+        assert.equal(session.context, open);
+        // An edit that runs empties the context, since it changes the text.
+        session.edit(start, start, "a ");
+        assert.equal(session.context.blocks.length, 0);
+    } finally {
+        session.dispose();
+    }
+});
+
 test("errors: a disposed session takes no further call", () => {
     const session = new MarkdownSession("text\n");
     session.dispose();
     session.dispose();
     assert.throws(() => session.append("more"), Error);
     assert.throws(() => session.flush(), Error);
+    assert.throws(() => session.edit({ line: 1, column: 1 }, { line: 1, column: 1 }, ""), Error);
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
 });
@@ -1124,7 +1232,8 @@ test("errors: a native failure maps its status by value across the WASM boundary
         [1, "allocationFailed"],
         [2, "outOfBounds"],
         [3, "kindMismatch"],
-        [4, "sessionFlushed"]
+        [4, "sessionFlushed"],
+        [5, "sessionStreaming"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),

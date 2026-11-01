@@ -15,6 +15,8 @@ public enum ErrorCode: Sendable, Hashable {
     /// A ``MarkdownSession`` was asked to append or flush after it was
     /// flushed.
     case sessionFlushed
+    /// A ``MarkdownSession`` was asked to edit before it was flushed.
+    case sessionStreaming
 }
 
 /// The library's one error: a call that cannot answer without crashing or
