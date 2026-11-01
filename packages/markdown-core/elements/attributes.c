@@ -688,7 +688,7 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
         const struct markdown_core_attribute_member *member = &w->members[i];
         markdown_core_chunk staged = {text + member->value, member->value_length, 0};
         if (member->name < 0) {
-            *class ++ = staged;
+            *class ++= staged;
         } else {
             *record++ = (markdown_core_record){{text + member->name, member->name_length, 0}, staged};
         }
