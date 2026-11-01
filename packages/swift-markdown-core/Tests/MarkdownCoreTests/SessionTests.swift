@@ -130,10 +130,14 @@ private func parses(_ document: Document, _ text: String, _ unit: TextUnit) thro
         let end = Position(line: 5, column: 7)
         let after = try session.edit(from: end, to: end, with: " one")
         #expect(session.text == "# Title\n\nfirst\n\nsecond one\n")
-        #expect(after.content[0] == before.content[0])
-        #expect(after.content[1] == before.content[1])
-        #expect(after.content[2].id == before.content[2].id)
-        #expect(after.content[2] != before.content[2])
+        let title = try #require(before.content[0] as? Heading)
+        let first = try #require(before.content[1] as? Paragraph)
+        #expect(after.content[0] as? Heading == title)
+        #expect(after.content[1] as? Paragraph == first)
+        let old = try #require(before.content[2] as? Paragraph)
+        let new = try #require(after.content[2] as? Paragraph)
+        #expect(new.id == old.id)
+        #expect(new != old)
     }
 
     @Test("an edit before flush, out of bounds or backwards throws and changes nothing")
