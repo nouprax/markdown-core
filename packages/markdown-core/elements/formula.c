@@ -596,6 +596,9 @@ static void insert_formula(const markdown_core_element_instance *self, markdown_
          markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer)) ||
         !formula_body_admitted(rule, chunk->data + from, close - from) || !holder ||
         !markdown_core_node_can_contain_type(holder, MARKDOWN_CORE_NODE_FORMULA)) {
+        /* The pair makes no formula, but the delimiters between are gone
+         * all the same: no reading from between may settle. */
+        markdown_core_inline_state_undecide(inline_state, opener_node->place.start);
         return;
     }
     markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, holder, rule,

@@ -690,6 +690,14 @@ int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state);
  */
 void markdown_core_inline_state_saw_end(markdown_core_inline_state *inline_state);
 
+/** What the run read from content offset `start` on depends on input after
+ * the token being read, though no node it makes says so: a delimiter pair
+ * that makes no node still took the delimiters between its two away, so a
+ * reading that began between them would pair them otherwise. No settle point
+ * lies past `start` (docs/plans/2026-09-29-incremental-parsing.md, 5.8).
+ */
+void markdown_core_inline_state_undecide(markdown_core_inline_state *inline_state, bufsize_t start);
+
 /** Get the characters located after the current inline parsing offset
  * while 'pred' matches. Free after usage.
  */
