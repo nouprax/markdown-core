@@ -127,6 +127,45 @@ static int usage(void) {
     return 2;
 }
 
+/* Whether `offset` of `model` stands between the CR and the LF of a CRLF. */
+static bool inside_crlf(const ih_text *model, size_t offset) {
+    return offset && offset < model->length && model->bytes[offset - 1] == '\r' && model->bytes[offset] == '\n';
+}
+
+/* The script's edit `step` as a cursor names it, in `*edit`: a cursor stands
+ * at no offset between the CR and the LF of a CRLF, so a start there takes
+ * the CR in and writes it back, and an end there the LF, in the text
+ * `*owned` holds, which the caller frees; the step itself otherwise. The
+ * text the edit leaves is the step's. False when storage could not be had. */
+static bool cursor_edit(const ih_text *model, const ih_step *step, ih_step *edit, uint8_t **owned) {
+    const bool before = inside_crlf(model, step->start), after = inside_crlf(model, step->end);
+    *edit = *step;
+    *owned = NULL;
+    if (!before && !after) {
+        return true;
+    }
+    *owned = malloc(step->length + 2);
+    if (!*owned) {
+        return false;
+    }
+    size_t length = 0;
+    if (before) {
+        (*owned)[length++] = '\r';
+        edit->start--;
+    }
+    if (step->length) {
+        memcpy(*owned + length, step->text, step->length);
+    }
+    length += step->length;
+    if (after) {
+        (*owned)[length++] = '\n';
+        edit->end++;
+    }
+    edit->text = *owned;
+    edit->length = length;
+    return true;
+}
+
 /* One edit script on the document, in at most `most` windows of its edits,
  * then its receipt. The script flushes, then edits: the generator's edit
  * families take no other step. */
@@ -164,13 +203,19 @@ static bool run_script(const measured_subject *measured, const uint8_t *document
     for (window = 0, index = 0; window < windows; window++) {
         size_t end = (window + 1) * count / windows;
         for (; index < end; index++) {
-            const ih_step *step = &edits[index];
+            const ih_step *script_step = &edits[index];
             const markdown_core_document *next = NULL;
-            bool edited =
-                index + 1 < end && measured->replace
-                    ? measured->replace(handle, step->start, step->end, step->text, step->length) == MARKDOWN_CORE_OK
-                    : bench_apply_step(measured->subject, handle, step, &next);
-            if (!edited || !ih_text_replace(&model, step->start, step->end, step->text, step->length)) {
+            ih_step cursor;
+            uint8_t *owned = NULL;
+            const ih_step *step = &cursor;
+            bool edited = cursor_edit(&model, script_step, &cursor, &owned);
+            edited = edited && (index + 1 < end && measured->replace
+                                    ? measured->replace(handle, step->start, step->end, step->text, step->length) ==
+                                          MARKDOWN_CORE_OK
+                                    : bench_apply_step(measured->subject, handle, step, &next));
+            free(owned);
+            if (!edited || !ih_text_replace(&model, script_step->start, script_step->end, script_step->text,
+                                            script_step->length)) {
                 fprintf(stderr, "stream_runner: %s edit %zu failed\n", script->name, index + 1);
                 goto close;
             }
