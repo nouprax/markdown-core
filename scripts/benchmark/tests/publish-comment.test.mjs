@@ -7,7 +7,14 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { attributeSection, publish, readArchive, stageSection, streamSection } from "../publish-comment.mjs";
+import {
+    attributeSection,
+    completionSection,
+    publish,
+    readArchive,
+    stageSection,
+    streamSection
+} from "../publish-comment.mjs";
 import { markdownReport } from "../run.mjs";
 
 const head = "a".repeat(40);
@@ -371,6 +378,69 @@ test("report projections reject corrupt counts, mismatched workloads and injecte
     assert.doesNotMatch(stageSection(untrusted, stageReport(100)), /@everyone/);
 });
 
+test("the completion table reports Ir per request by document size next to the proposed budget", () => {
+    const section = completionSection(completion());
+    assert.match(section, /^### Completion latency/);
+    assert.match(section, /\| Grammar corpus \| 1 ms \| 2 \| 9 \| 1 \| 40 \| 1,200 \| 1,500 \| 2,000 \| 900 \| 600 \|/);
+    assert.match(
+        section,
+        /\| Shapes, 256 KiB \| 10 ms \| 1 \| 4 \| 0 \| 16 \| 130,000 \| 270,000 \| 280,000 \| 160,000 \| 110,000 \|/
+    );
+    assert.match(section, /no gate/);
+    for (const mutate of [
+        (r) => {
+            r.schemaVersion = 2;
+        },
+        (r) => {
+            r.groups = [];
+        },
+        (r) => {
+            r.workloads.digest = "[click](https://example.com)";
+        },
+        (r) => {
+            r.workloads.count = 4;
+        },
+        (r) => {
+            r.groups[0].workloads = 3;
+        },
+        (r) => {
+            r.groups[1].size = 1048576;
+        },
+        (r) => {
+            r.groups[1].size = null;
+        },
+        (r) => {
+            r.groups[1].budget = 1;
+        },
+        (r) => {
+            r.groups[0].skipped = 10;
+        },
+        (r) => {
+            r.groups[0].requests = 0;
+        },
+        (r) => {
+            r.groups[0].ir.p95 = "1500";
+        },
+        (r) => {
+            r.groups[0].edit.p95 = 2000;
+        },
+        (r) => {
+            r.groups[1].complete.max = -1;
+        },
+        (r) => {
+            r.requests.large = "@everyone";
+        }
+    ]) {
+        const report = completion();
+        mutate(report);
+        assert.throws(() => completionSection(report));
+    }
+    const untrusted = completion();
+    untrusted.groups[0].key = "@everyone";
+    untrusted.costliest = [{ workload: "@everyone" }];
+    assert.doesNotMatch(completionSection(untrusted), /@everyone/);
+});
+
 test("archives read only fixed JSON members without extracting or executing files", (t) => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "benchmark-archive-test-"));
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
@@ -386,6 +456,41 @@ test("archives read only fixed JSON members without extracting or executing file
     fs.writeFileSync(path.join(cwd, "attributes.json"), "x".repeat(16 * 1024 * 1024 + 1));
     execFileSync("zip", ["-q", "report.zip", "attributes.json"], { cwd });
     assert.throws(() => readArchive(fs.readFileSync(path.join(cwd, "report.zip")), ["attributes.json"]));
+});
+
+const figures = (p50, p95, max, total) => ({ p50, p95, max, total });
+const completion = () => ({
+    schemaVersion: 1,
+    requests: { most: 16, large: 4, edits: 16 },
+    workloads: { version: "incremental-workloads-v4", digest: "e".repeat(64), count: 3 },
+    groups: [
+        {
+            key: "grammar",
+            size: null,
+            budget: 1,
+            workloads: 2,
+            scripts: 9,
+            skipped: 1,
+            requests: 40,
+            ir: figures(1200, 1500, 2000, 52000),
+            edit: figures(700, 900, 1100, 30000),
+            complete: figures(500, 600, 900, 22000)
+        },
+        {
+            key: "shapes-262144",
+            size: 262144,
+            budget: 10,
+            workloads: 1,
+            scripts: 4,
+            skipped: 0,
+            requests: 16,
+            ir: figures(130000, 270000, 280000, 3000000),
+            edit: figures(80000, 160000, 165000, 1800000),
+            complete: figures(50000, 110000, 115000, 1200000)
+        }
+    ],
+    costliest: [],
+    results: [{ name: "a.edits" }, { name: "b.edits" }, { name: "prose-ascii-256k.edits" }]
 });
 
 function fixture() {
@@ -434,7 +539,8 @@ function fixture() {
             "benchmark-report-stages-1",
             "benchmark-report-attributes-1",
             "ci-inputs",
-            "benchmark-report-streams-1"
+            "benchmark-report-streams-1",
+            "benchmark-report-completion-1"
         ].map((name, id) => ({
             id,
             name,
@@ -444,7 +550,8 @@ function fixture() {
         jobs: [
             "Benchmark / Measure - parse stages against cmark",
             "Benchmark / Measure - the attribute grammar against lexbor",
-            "Benchmark / Measure - streams"
+            "Benchmark / Measure - streams",
+            "Benchmark / Measure - completion latency"
         ].map((name) => ({ name, status: "completed", conclusion: "success", run_attempt: 1 }))
     };
     const snapshot = (run_id) => {
@@ -482,6 +589,7 @@ function fixture() {
                 if (bytes.toString() === "102") return [state.inputs];
                 if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
                 if (bytes.toString() === "3") return [streams()];
+                if (bytes.toString() === "4") return [completion()];
                 return bytes.toString() === "0" ? [stageReport(112), stageReport(100)] : [attributes()];
             }
         });
@@ -992,7 +1100,8 @@ test("producer and publisher keep PR execution separate from write permissions",
     for (const [kind, members] of [
         ["stages", ["stages.json", "baseline/stages.json"]],
         ["attributes", ["attributes.json"]],
-        ["streams", ["streams.json"]]
+        ["streams", ["streams.json"]],
+        ["completion", ["completion.json"]]
     ]) {
         const upload = producer.jobs[kind].steps.find(
             (step) => step.with?.name === `benchmark-report-${kind}-` + "${{ github.run_attempt }}"

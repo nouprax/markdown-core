@@ -33,6 +33,13 @@ const measurements = [
         job: "Benchmark / Measure - streams",
         members: ["streams.json"],
         render: streamSection
+    },
+    {
+        kind: "completion",
+        title: "Completion latency",
+        job: "Benchmark / Measure - completion latency",
+        members: ["completion.json"],
+        render: completionSection
     }
 ];
 const count = (value) => {
@@ -355,6 +362,81 @@ export function streamSection(report) {
             ].join(" | ")} |`;
         })
     );
+    return lines.join("\n");
+}
+
+// The shape sizes the completion report measures, and the plan's proposed
+// budget in milliseconds for a group (completion.mjs, BUDGET): 1 up to 16 KiB,
+// the grammar corpus included, and 10 up to 256 KiB.
+const COMPLETION_SIZES = [16384, 65536, 262144];
+const completionBudget = (size) => (size === null || size <= 16384 ? 1 : 10);
+const COMPLETION_METRICS = ["p50", "p95", "max", "total"];
+
+// Ir per completion request by document size (completion.mjs): the request,
+// and its edit and completion at p95. Report only (D5); every figure is a
+// validated count, and group names come from validated sizes.
+export function completionSection(report) {
+    if (
+        report?.schemaVersion !== 1 ||
+        !Array.isArray(report.groups) ||
+        !report.groups.length ||
+        !Array.isArray(report.results)
+    ) {
+        throw new Error("Invalid completion report");
+    }
+    digest(report.workloads?.digest);
+    if (report.results.length !== count(report.workloads.count)) throw new Error("Incomplete completion report");
+    const most = count(report.requests?.most);
+    const large = count(report.requests?.large);
+    const edits = count(report.requests?.edits);
+    const metrics = (value) => {
+        if (!COMPLETION_METRICS.every((metric) => count(value?.[metric]))) {
+            throw new Error("Invalid completion figures");
+        }
+        if (!(value.p50 <= value.p95 && value.p95 <= value.max && value.max <= value.total)) {
+            throw new Error("Invalid completion figures");
+        }
+        return value;
+    };
+    const lines = [
+        "### Completion latency",
+        "",
+        `Callgrind Ir per completion request: the didChange of one edit and the completion at the end of its text. At most ${number(most)} requests a script; on a shape larger than 16 KiB, ${number(large)} over its first ${number(edits)} edits. The budget is the plan's proposed p95 wall time on a device, not compared with these counts; no gate.`,
+        "",
+        "| Documents | Budget p95 | Workloads | Scripts | Skipped | Requests | p50 | p95 | Max | Edit p95 | Completion p95 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    ];
+    let workloads = 0;
+    const seen = new Set();
+    for (const group of report.groups) {
+        const grammar = group.size === null;
+        if (!grammar && !COMPLETION_SIZES.includes(group.size)) throw new Error("Invalid completion size");
+        if (seen.has(group.size)) throw new Error("Repeated completion group");
+        seen.add(group.size);
+        const budget = completionBudget(group.size);
+        if (group.budget !== budget) throw new Error("Invalid completion budget");
+        if (!count(group.workloads) || count(group.skipped) > count(group.scripts) || !count(group.requests)) {
+            throw new Error("Empty completion group");
+        }
+        workloads += group.workloads;
+        const [ir, edit, complete] = [group.ir, group.edit, group.complete].map(metrics);
+        lines.push(
+            `| ${[
+                grammar ? "Grammar corpus" : `Shapes, ${number(group.size / 1024)} KiB`,
+                `${budget} ms`,
+                number(group.workloads),
+                number(group.scripts),
+                number(group.skipped),
+                number(group.requests),
+                number(ir.p50),
+                number(ir.p95),
+                number(ir.max),
+                number(edit.p95),
+                number(complete.p95)
+            ].join(" | ")} |`
+        );
+    }
+    if (workloads !== report.workloads.count) throw new Error("Incomplete completion report");
     return lines.join("\n");
 }
 

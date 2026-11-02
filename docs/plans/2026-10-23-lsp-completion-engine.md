@@ -931,7 +931,15 @@ it (D6).
    request (owner, 2026-10-27), each replaying the transcripts, and 4c the
    latency report. The server holds one session per open document of its
    workspace (owner, 2026-10-27). Step E3 of the incremental plan made each
-   change an edit of the session in place (D3, 2026-11-01).
+   change an edit of the session in place (D3, 2026-11-01). 4c is the
+   benchmark workflow's job `Measure - completion latency`
+   (`scripts/benchmark/completion.mjs`): the stream benchmark's edit
+   scripts sent as didChange, each measured edit followed by a completion
+   at the end of its text, in callgrind Ir per request by document size.
+   Its first run (2026-11-02) put the p95 at about 2 M Ir on the grammar
+   corpus, 20 M on the 16 KiB shapes, 74 M at 64 KiB and 278 M at
+   256 KiB, where the edit and the locate's prefix parse (D4) each take
+   about half.
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with

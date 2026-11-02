@@ -83,7 +83,7 @@ node --test scripts/shared/tests/ci-changes.test.mjs scripts/benchmark/tests/cal
     scripts/benchmark/tests/run.test.mjs scripts/benchmark/tests/compile-identity.test.mjs \
     scripts/benchmark/tests/stage-budget.test.mjs \
     scripts/benchmark/tests/stream-gates.test.mjs scripts/benchmark/tests/streams.test.mjs \
-    scripts/benchmark/tests/publish-comment.test.mjs
+    scripts/benchmark/tests/publish-comment.test.mjs scripts/benchmark/tests/completion.test.mjs
 
 # THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
 # wall-clock pipeline this repository has had was retired for the same reason:
