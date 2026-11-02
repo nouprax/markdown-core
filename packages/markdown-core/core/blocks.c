@@ -3066,8 +3066,8 @@ static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *roo
  * flush's publish follows (ast.c, THE IMAGE OF AN OLD ANCHOR). False, with
  * the parse failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
-                                 const uint32_t *path, size_t depth) {
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
+                                 bool whole, const uint32_t *path, size_t depth) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
@@ -3083,7 +3083,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         return false;
     }
     stream->edit->depth = depth;
-    if (!S_edit_keep(parser, root, child, line, prior, start, to, delta) ||
+    if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
         !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)stream->edit->end,
                                             &stream->edit->registry)) {

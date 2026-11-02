@@ -598,9 +598,11 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
  * `line`, or below the root as `rest` says, reads the text, in which an
  * edit replaced the old text from `from` to `to` and moved what follows by
  * `delta`, and is flushed again: to its end, or to where it takes the old
- * children back, unless `whole` says to read all of it. */
+ * children back, which is not before `past`, unless `whole` says to read
+ * all of it. */
 static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t from,
-                                           size_t to, int64_t delta, bool whole, const session_rest_point *rest) {
+                                           size_t to, int64_t delta, size_t past, bool whole,
+                                           const session_rest_point *rest) {
     markdown_core_node *root = session->document.root;
     session_edits *edits = session->edits;
     const size_t count = root->child_count;
@@ -608,7 +610,7 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     size_t start, end;
     markdown_core_parser_line_span(session->committed, line, &start, &end);
     const uint32_t prior = child ? (uint32_t)widths_end(&edits->widths, root, child - 1) : (uint32_t)root->extent.lead;
-    if (!markdown_core_parser_reopen(session->committed, root, child, line, prior, from, to, delta,
+    if (!markdown_core_parser_reopen(session->committed, root, child, line, prior, from, to, delta, past,
                                      session_source(session), whole, rest ? rest->path : NULL,
                                      rest ? rest->depth : 0)) {
         markdown_core_node_pool_release(&session->pool, root);
@@ -643,37 +645,130 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
  * reference, a footnote and a heading label are named in brackets, so each
  * `[`, and `[^`, is followed, past white space, by a run of bytes whose
  * normal form starts with the label's first word when the bracket names it;
- * a specimen is cited as `@label`, its bytes as written. The block that
- * holds a place is read again, as an edit of nothing there reads it, which
- * completes its content against the definitions the edit left. */
+ * a specimen is cited as `@label`, its bytes as written. The blocks that
+ * hold the places are read again, as an edit of nothing just past the first
+ * reads them when it takes no old child back before the last, which
+ * completes their content against the definitions the edit left and keeps
+ * the identity of every node. */
 
-/* The first word of the key `item` of `size` bytes, the kind's byte first:
- * the label up to its first space, which a normal form holds one of between
- * words. */
-static size_t session_first_word(const uint8_t *item, size_t size) {
-    const uint8_t *space = memchr(item + 1, ' ', size - 1);
-    return (space ? (size_t)(space - item) : size) - 1;
+/* A label's first word: the label up to its first space, which a normal
+ * form holds one of between words. */
+typedef struct {
+    const uint8_t *text;
+    size_t size;
+} session_word;
+
+/* The first words of the altered labels of one family, in byte order and
+ * each once, and the sizes they come in, ascending, each once. */
+typedef struct {
+    session_word *words;
+    size_t count, room;
+    size_t *sizes;
+    size_t size_count, size_room;
+} session_words;
+
+static int session_word_order(const void *a, const void *b) {
+    const session_word *left = a, *other = b;
+    const size_t common = left->size < other->size ? left->size : other->size;
+    const int order = common ? memcmp(left->text, other->text, common) : 0;
+    return order ? order : (left->size > other->size) - (left->size < other->size);
+}
+
+static int session_size_order(const void *a, const void *b) {
+    const size_t left = *(const size_t *)a, other = *(const size_t *)b;
+    return (left > other) - (left < other);
+}
+
+static void session_words_free(session_words *words) {
+    markdown_core_free(words->words);
+    markdown_core_free(words->sizes);
+    *words = (session_words){0};
+}
+
+/* The words in order, each once, and their sizes. */
+static bool session_words_index(session_words *words) {
+    if (!words->count) {
+        return true;
+    }
+    qsort(words->words, words->count, sizeof(*words->words), session_word_order);
+    size_t kept = 1;
+    for (size_t i = 1; i < words->count; i++) {
+        if (session_word_order(&words->words[i], &words->words[kept - 1])) {
+            words->words[kept++] = words->words[i];
+        }
+    }
+    words->count = kept;
+    for (size_t i = 0; i < words->count; i++) {
+        size_t *more = markdown_core_reserve(words->sizes, &words->size_room, words->size_count + 1, sizeof(*more));
+        if (!more) {
+            return false;
+        }
+        words->sizes = more;
+        words->sizes[words->size_count++] = words->words[i].size;
+    }
+    qsort(words->sizes, words->size_count, sizeof(*words->sizes), session_size_order);
+    kept = 1;
+    for (size_t i = 1; i < words->size_count; i++) {
+        if (words->sizes[i] != words->sizes[kept - 1]) {
+            words->sizes[kept++] = words->sizes[i];
+        }
+    }
+    words->size_count = kept;
+    return true;
+}
+
+/* The first words of the `altered` keys, the kind's byte first and each
+ * with its NUL: a specimen's into `specimens`, the others into `folded`. */
+static bool session_words_of(const markdown_core_strbuf *altered, session_words *folded, session_words *specimens) {
+    for (bufsize_t item = 0; item < altered->size;) {
+        const uint8_t *label = altered->ptr + item;
+        const size_t size = strlen((const char *)label);
+        item += (bufsize_t)size + 1;
+        const uint8_t *space = memchr(label + 1, ' ', size - 1);
+        session_words *words = label[0] == MARKDOWN_CORE_REGISTRY_SPECIMEN ? specimens : folded;
+        session_word *more = markdown_core_reserve(words->words, &words->room, words->count + 1, sizeof(*more));
+        if (!more) {
+            return false;
+        }
+        words->words = more;
+        words->words[words->count++] = (session_word){label + 1, (space ? (size_t)(space - label) : size) - 1};
+    }
+    return session_words_index(folded) && session_words_index(specimens);
+}
+
+/* Whether the `size` bytes at `run` start with one of the `words`: a
+ * search of each size they come in. */
+static bool session_words_start(const session_words *words, const uint8_t *run, size_t size) {
+    for (size_t i = 0; i < words->size_count && words->sizes[i] <= size; i++) {
+        const session_word probe = {run, words->sizes[i]};
+        if (bsearch(&probe, words->words, words->count, sizeof(*words->words), session_word_order)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /* Whether the run of the text at `at`, up to its end at `limit`, may be
- * the start of a label whose first word is `word`, of `size` bytes, in the
- * normal form `fold` (a specimen's bytes as written when it is false). The
- * run starts past white space and ends at white space. White space that
- * ends a line may hide a container's prefix, so the run may name the label
- * then. A fold may take up to four bytes to one, so no more than four times
- * the word is folded. */
-static bool session_matches(const uint8_t *text, size_t limit, size_t at, const uint8_t *word, size_t size, bool fold,
+ * the start of a label whose first word is one of the `words`, in the
+ * normal form when `fold` says (a specimen's bytes as written when it is
+ * false). The run starts past white space and ends at white space. White
+ * space that ends a line may hide a container's prefix, so the run may
+ * name a label then. A fold may take up to four bytes to one, so no more
+ * than four times the widest word is folded, once. */
+static bool session_matches(const uint8_t *text, size_t limit, size_t at, const session_words *words, bool fold,
                             markdown_core_strbuf *scratch) {
+    if (!words->count) {
+        return false;
+    }
     while (fold && at < limit && markdown_core_is_whitespace(text[at])) {
-        /* A label that goes on in the next line may go on past a
-         * container's prefix there, which its lookup does not see. */
         if (text[at] == '\n' || text[at] == '\r') {
             return true;
         }
         at++;
     }
+    const size_t widest = words->sizes[words->size_count - 1];
     size_t end = at;
-    const size_t most = at + 4 * size + 4 < limit ? at + 4 * size + 4 : limit;
+    const size_t most = at + 4 * widest + 4 < limit ? at + 4 * widest + 4 : limit;
     while (end < most && !markdown_core_is_whitespace(text[end])) {
         end++;
     }
@@ -682,54 +777,87 @@ static bool session_matches(const uint8_t *text, size_t limit, size_t at, const 
         end--;
     }
     if (!fold) {
-        return end - at >= size && memcmp(text + at, word, size) == 0;
+        return session_words_start(words, text + at, end - at);
     }
     markdown_core_strbuf_clear(scratch);
     markdown_core_utf8proc_normalize_label(scratch, text + at, (bufsize_t)(end - at));
-    return !scratch->oom && (size_t)scratch->size >= size && memcmp(scratch->ptr, word, size) == 0;
+    /* A filter without its storage reads the block again. */
+    return scratch->oom || session_words_start(words, scratch->ptr, (size_t)scratch->size);
 }
 
-/* Whether the text at `at`, an opener, may name one of the `altered`
- * labels. True, too, when the filter could not have its storage: the block
- * is read again. */
-static bool session_names(const uint8_t *text, size_t limit, size_t at, const markdown_core_strbuf *altered,
-                          markdown_core_strbuf *scratch) {
-    for (bufsize_t item = 0; item < altered->size;) {
-        const uint8_t *label = altered->ptr + item;
-        const size_t size = strlen((const char *)label);
-        item += (bufsize_t)size + 1;
-        const size_t word = session_first_word(label, size);
-        const bool specimen = label[0] == MARKDOWN_CORE_REGISTRY_SPECIMEN;
-        if (specimen != (text[at] == '@')) {
-            continue;
-        }
-        if (session_matches(text, limit, at + 1, label + 1, word, !specimen, scratch) ||
-            (!specimen && at + 1 < limit && text[at + 1] == '^' &&
-             session_matches(text, limit, at + 2, label + 1, word, true, scratch)) ||
-            scratch->oom) {
-            return true;
+/* Whether the text at `at`, an opener, may name one of the words. */
+static bool session_names(const uint8_t *text, size_t limit, size_t at, const session_words *folded,
+                          const session_words *specimens, markdown_core_strbuf *scratch) {
+    if (text[at] == '@') {
+        return session_matches(text, limit, at + 1, specimens, false, scratch);
+    }
+    return session_matches(text, limit, at + 1, folded, true, scratch) ||
+           (at + 1 < limit && text[at + 1] == '^' && session_matches(text, limit, at + 2, folded, true, scratch));
+}
+
+/* The most readings one refresh makes: places further apart than the
+ * others are read in readings of their own, and the rest share them, so
+ * that a label many blocks name costs a few readings and not one each. */
+#define SESSION_PASSES 8
+
+/* The kept text in `spans`, `count` pairs of offsets, read again where a
+ * lookup of one of the `altered` labels may be made. The bytes read again
+ * join those the edit read. */
+static markdown_core_status session_refresh(markdown_core_session *session, const markdown_core_strbuf *altered,
+                                            const size_t *spans, size_t count) {
+    const uint8_t *text = (const uint8_t *)session_source(session);
+    const size_t limit = session->text.count;
+    session_edits *edits = session->edits;
+    session_words folded = {0}, specimens = {0};
+    markdown_core_strbuf scratch = MARKDOWN_CORE_BUF_INIT();
+    size_t *places = NULL, place_count = 0, place_room = 0;
+    bool ok = session_words_of(altered, &folded, &specimens);
+    for (size_t pair = 0; ok && pair < count; pair++) {
+        for (size_t at = spans[2 * pair]; ok && at < spans[2 * pair + 1]; at++) {
+            if ((text[at] != '[' && text[at] != '@') ||
+                !session_names(text, limit, at, &folded, &specimens, &scratch)) {
+                continue;
+            }
+            size_t *more = markdown_core_reserve(places, &place_room, place_count + 1, sizeof(*more));
+            ok = more != NULL;
+            if (ok) {
+                places = more;
+                places[place_count++] = at;
+            }
         }
     }
-    return false;
-}
-
-/* The kept text from `from` up to `to` read again where a lookup of one of
- * the `altered` labels may be made, block by block, a block once. The
- * bytes read again join those the edit read. */
-static markdown_core_status session_refresh(markdown_core_session *session, const markdown_core_strbuf *altered,
-                                            size_t from, size_t to) {
-    const uint8_t *text = (const uint8_t *)session_source(session);
-    session_edits *edits = session->edits;
-    size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
-    markdown_core_strbuf scratch = MARKDOWN_CORE_BUF_INIT();
-    markdown_core_status status = MARKDOWN_CORE_OK;
-    for (size_t at = from; status == MARKDOWN_CORE_OK && at < to; at++) {
-        if ((text[at] != '[' && text[at] != '@') || !session_names(text, session->text.count, at, altered, &scratch)) {
+    markdown_core_strbuf_free(&scratch);
+    session_words_free(&folded);
+    session_words_free(&specimens);
+    /* The widest gaps between places part the readings, the earlier of
+     * two as wide first: `cuts` holds the places they follow, widest
+     * first. */
+    size_t cuts[SESSION_PASSES - 1], cut_count = 0;
+    for (size_t i = 0; ok && i + 1 < place_count; i++) {
+        const size_t width = places[i + 1] - places[i];
+        size_t at = cut_count;
+        while (at > 0 && places[cuts[at - 1] + 1] - places[cuts[at - 1]] < width) {
+            at--;
+        }
+        if (at == SESSION_PASSES - 1) {
             continue;
         }
-        /* An edit of nothing just past the opener: one at a block's start
-         * would be the end of the block before. */
-        const size_t inside = at + 1;
+        cut_count -= cut_count == SESSION_PASSES - 1;
+        memmove(cuts + at + 1, cuts + at, (cut_count - at) * sizeof(*cuts));
+        cuts[at] = i;
+        cut_count++;
+    }
+    qsort(cuts, cut_count, sizeof(*cuts), session_size_order);
+    markdown_core_status status = ok ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+    size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
+    for (size_t first = 0, cut = 0; status == MARKDOWN_CORE_OK && first < place_count;) {
+        while (cut < cut_count && cuts[cut] < first) {
+            cut++;
+        }
+        const size_t last = cut < cut_count ? cuts[cut] : place_count - 1;
+        /* An edit just past the opener: one at a block's start would be the
+         * end of the block before. */
+        const size_t inside = places[first] + 1, past = places[last] + 1;
         uint32_t child;
         size_t line;
         session_rest_point rest;
@@ -737,15 +865,14 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
             break;
         }
-        status = session_reread(session, child, line, inside, inside, 0, false, &rest);
+        status = session_reread(session, child, line, inside, inside, 0, past, false, &rest);
         reread_from = edits->reread_from < reread_from ? edits->reread_from : reread_from;
         reread_to = edits->reread_to > reread_to ? edits->reread_to : reread_to;
-        /* The block read again holds no place left to look at. */
-        if (edits->reread_to > at + 1) {
-            at = edits->reread_to - 1;
+        /* The places the reading read past need no reading of their own. */
+        for (first = last + 1; first < place_count && places[first] < edits->reread_to; first++) {
         }
     }
-    markdown_core_strbuf_free(&scratch);
+    markdown_core_free(places);
     edits->reread_from = reread_from;
     edits->reread_to = reread_to;
     return status;
@@ -799,8 +926,8 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (compact) {
         markdown_core_node_pool_dispose(&session->pool);
     }
-    markdown_core_status status = compact ? session_reread(session, 0, 0, from, to, delta, true, NULL)
-                                          : session_reread(session, child, line, from, to, delta, false, &rest);
+    markdown_core_status status = compact ? session_reread(session, 0, 0, from, to, delta, 0, true, NULL)
+                                          : session_reread(session, child, line, from, to, delta, 0, false, &rest);
     if (compact) {
         markdown_core_node_pool_dispose(&session->pool);
         if (status == MARKDOWN_CORE_OK) {
@@ -821,11 +948,8 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
             session->document.root = NULL;
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
         } else if (altered.size) {
-            const size_t text_size = session->text.count;
-            status = session_refresh(session, &altered, 0, rest_start);
-            if (status == MARKDOWN_CORE_OK && resumed) {
-                status = session_refresh(session, &altered, resumed, text_size);
-            }
+            const size_t spans[] = {0, rest_start, resumed, session->text.count};
+            status = session_refresh(session, &altered, spans, resumed ? 2 : 1);
         }
         markdown_core_strbuf_free(&altered);
     }

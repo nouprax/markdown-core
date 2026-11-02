@@ -1566,14 +1566,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * and moved what follows by `delta`: a commit that ends the text and a `flush` read
  * it from there (blocks.c, THE REOPEN), and take the old children after the
  * edit back where they read as they did (THE SPLICE), unless `whole` says
- * to read all of it. `prior` is where the child before `child` ends, or the
+ * to read all of it, and none before `past`, an offset of the new text,
+ * either. `prior` is where the child before `child` ends, or the
  * root starts. With `depth`, the rest point is below the root (THE NESTED
  * REOPEN): the child before `child` and the `depth - 1` blocks `path`
  * names below it are reopened, the deepest at its child `path[depth]`.
  * False, with the transaction failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
-                                 const uint32_t *path, size_t depth);
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
+                                 bool whole, const uint32_t *path, size_t depth);
 /* THE COMPACTION (plan 12.4): after a reading of the whole text, gives back
  * the storage the input and the reading hold past what the text needs, as
  * the most text before left it. */

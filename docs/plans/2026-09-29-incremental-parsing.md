@@ -1243,9 +1243,13 @@ The edit runs in five steps:
     (`markdown_core_parser_altered_labels`); the declarations before and
     after the re-read range are not sorted or compared. The filter folds the run after
     each opener, past white space and up to white space, at most four times
-    the first word's bytes. Each block that holds a hit is read again as an
-    edit of nothing at that place would read it, and the edit reports the
-    union of what it read. The hard cases of 12.7 bound it: a plain
+    the first word's bytes, once, and looks its prefixes up among the
+    altered first words, sorted. The hits are read again in at most eight
+    readings, parted at the widest gaps between them: each reads as an
+    edit of nothing just past its first hit, and takes no old child back
+    before its last, so every node keeps its identity and a label that
+    thousands of blocks name costs no more than reading the text once.
+    The edit reports the union of what it read. The hard cases of 12.7 bound it: a plain
     paragraph after the uses is not read again.
   - **Anchors.** If a heading or an explicit anchor changed, reassign the
     automatic anchors by `main`'s rule. This is O(headings) and parses
