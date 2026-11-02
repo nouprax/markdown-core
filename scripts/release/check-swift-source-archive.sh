@@ -19,8 +19,11 @@ cp LICENSE README.md VERSION "$package/"
 cp -R packages/markdown-core/core "$package/packages/markdown-core/core"
 cp -R packages/markdown-core/elements "$package/packages/markdown-core/elements"
 cp -R packages/markdown-core/include "$package/packages/markdown-core/include"
+cp -R packages/markdown-core/lsp "$package/packages/markdown-core/lsp"
 cp -R packages/swift-markdown-core/Sources/MarkdownCore \
     "$package/packages/swift-markdown-core/Sources/MarkdownCore"
+cp -R packages/swift-markdown-core/Sources/MarkdownCoreLSP \
+    "$package/packages/swift-markdown-core/Sources/MarkdownCoreLSP"
 
 (cd "$unpacked" && zip -qr "$archive" markdown-core)
 
@@ -30,7 +33,9 @@ for required in \
     README.md \
     VERSION \
     packages/markdown-core/include/markdown_core.h \
-    packages/swift-markdown-core/Sources/MarkdownCore/Document.swift; do
+    packages/swift-markdown-core/Sources/MarkdownCore/Document.swift \
+    packages/markdown-core/lsp/include/markdown_core_lsp.h \
+    packages/swift-markdown-core/Sources/MarkdownCoreLSP/Server.swift; do
     [ -f "$package/$required" ] || { echo "Swift source archive is missing $required" >&2; exit 1; }
 done
 
@@ -50,6 +55,8 @@ fi
 
 CLANG_MODULE_CACHE_PATH="$temporary/product-module-cache" \
     swift build --disable-sandbox --package-path "$package" --target MarkdownCore
+CLANG_MODULE_CACHE_PATH="$temporary/product-module-cache" \
+    swift build --disable-sandbox --package-path "$package" --target MarkdownCoreLSP
 
 mkdir -p "$consumer/Sources/Consumer"
 printf '%s\n' \

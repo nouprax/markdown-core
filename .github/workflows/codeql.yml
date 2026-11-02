@@ -74,7 +74,7 @@ jobs:
               run: scripts/tooling/run-gradle.sh --no-build-cache --rerun-tasks :packages:kotlin-markdown-core:compileKotlinJvm
             - name: Build Swift product
               if: matrix.language == 'swift'
-              run: swift build --target MarkdownCore
+              run: swift build --target MarkdownCore && swift build --target MarkdownCoreLSP
             - name: Perform CodeQL analysis
               uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
               with:

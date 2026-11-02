@@ -1,4 +1,13 @@
 import {
+    Server,
+    ServerError,
+    type Capabilities as LspCapabilities,
+    type Completions,
+    type Edit as LspEdit,
+    type Phase,
+    type ServerCode
+} from "@nouprax/es-markdown-core/lsp";
+import {
     Document,
     Attributes,
     type Record,
@@ -476,6 +485,27 @@ void crossLink.dimensions;
 void crossLink.embedded;
 // @ts-expect-error CrossEmbedded also has no redundant embedded flag
 void crossEmbedded.embedded;
+
+// The language engine is its own entry point, and the main one does not carry it.
+const server: Server = new Server();
+const capabilities: LspCapabilities = server.initialize(["utf8", "utf16"]);
+const replaced: readonly LspEdit[] = [
+    { text: "whole" },
+    { scope: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, text: "" }
+];
+server.open("file:///a.md", 1, capabilities.cues);
+server.update("file:///a.md", 2, replaced);
+const completions: Completions = server.complete("file:///a.md", { line: 0, character: 0 });
+const phase: Phase = server.phase;
+void completions.version;
+void phase;
+// @ts-expect-error a version is a number
+server.open("file:///a.md", "1", "");
+void ((error: ServerError): ServerCode => error.code);
+server.dispose();
+// @ts-expect-error the server is only exported from the lsp entry point
+import { Server as MainServer } from "@nouprax/es-markdown-core";
+void MainServer;
 
 // @ts-expect-error dispatch is internal; walk is the only visitor execution API
 import { visit } from "@nouprax/es-markdown-core";

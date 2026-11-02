@@ -1,6 +1,6 @@
-headers = markdown_core_wire.h
-headerFilter = markdown_core_wire.h markdown_core.h
-nonStrictEnums = markdown_core_text_unit markdown_core_slot_kind
+headers = markdown_core_wire.h markdown_core_lsp.h
+headerFilter = markdown_core_wire.h markdown_core.h markdown_core_lsp.h
+nonStrictEnums = markdown_core_text_unit markdown_core_slot_kind markdown_core_lsp_status markdown_core_lsp_phase
 package = com.nouprax.markdown.core.internal.capi
-staticLibraries = libmarkdown-core-wire.a libmarkdown-core.a
+staticLibraries = libmarkdown-core-lsp.a libmarkdown-core-wire.a libmarkdown-core.a
 libraryPaths = @LIBRARY_PATH@

@@ -14,6 +14,10 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
         },
+        "./lsp": {
+            "types": "./dist/lsp.d.ts",
+            "import": "./dist/lsp.js"
+        },
         "./markdown-core.wasm": "./dist/markdown-core.wasm"
     },
     "engines": {

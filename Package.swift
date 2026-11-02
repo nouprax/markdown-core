@@ -8,7 +8,8 @@ let package = Package(
         .macOS(.v26),
     ],
     products: [
-        .library(name: "MarkdownCore", targets: ["MarkdownCore"])
+        .library(name: "MarkdownCore", targets: ["MarkdownCore"]),
+        .library(name: "MarkdownCoreLSP", targets: ["MarkdownCoreLSP"]),
     ],
     targets: [
         .target(
@@ -97,6 +98,27 @@ let package = Package(
             dependencies: ["MarkdownCoreC"],
             path: "packages/swift-markdown-core/Sources/MarkdownCore"
         ),
+        // The language engine (docs/plans/2026-10-23-lsp-completion-engine.md,
+        // 4.1): its C library and its Swift binding, a second product.
+        .target(
+            name: "MarkdownCoreLSPC",
+            dependencies: ["MarkdownCoreC"],
+            path: "packages/markdown-core/lsp",
+            sources: [
+                "server.c",
+                "text.c",
+            ],
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("MARKDOWN_CORE_STATIC_DEFINE"),
+                .define("MARKDOWN_CORE_LSP_STATIC_DEFINE"),
+            ]
+        ),
+        .target(
+            name: "MarkdownCoreLSP",
+            dependencies: ["MarkdownCore", "MarkdownCoreLSPC"],
+            path: "packages/swift-markdown-core/Sources/MarkdownCoreLSP"
+        ),
         .testTarget(
             name: "MarkdownCoreTests",
             dependencies: ["MarkdownCore"],
@@ -104,7 +126,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MarkdownCoreConformanceTests",
-            dependencies: ["MarkdownCore"],
+            dependencies: ["MarkdownCore", "MarkdownCoreLSP"],
             path: "packages/swift-markdown-core/Tests/MarkdownCoreConformanceTests",
             plugins: [.plugin(name: "GenerateCanonicalASTResources")]
         ),

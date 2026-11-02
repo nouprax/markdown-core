@@ -202,6 +202,33 @@ why:
 A node of another document is not checked, and the answer for it means
 nothing.
 
+### Language server
+
+`com.nouprax.markdown.core.lsp.Server` is the language engine, the
+semantics of the Language Server Protocol 3.17 over the parser, called in
+process: each method is one protocol method, and answers as the C engine and
+the JSON-RPC adapter `markdown-core-server` do. Completion answers an empty
+list until the providers land.
+
+```kotlin
+Server().use { server ->
+    val capabilities = server.initialize(listOf(TextUnit.UTF8, TextUnit.UTF16))  // UTF-8 when offered
+    server.open("file:///note.md", 1, "# Title\n\n[a](")
+    val end = Position(2, 4)
+    server.update("file:///note.md", 2, listOf(Edit(Scope(end, end), "/url)")))
+    val completions = server.complete("file:///note.md", Position(2, 4))   // completions.version == 2
+    server.close("file:///note.md")
+    server.shutdown()
+}
+```
+
+Positions count from 0 in the negotiated `capabilities.unit`; an `Edit` with
+no scope replaces the whole text. A method that fails throws
+`ServerException`, whose `code` is the protocol's error: `NOT_INITIALIZED`,
+`INVALID_REQUEST`, `INVALID_PARAMS` or `INTERNAL_ERROR`. An update checks
+every edit before the first applies, so a refused one leaves the document as
+it was. `close()` releases the server; `close(uri)` is didClose.
+
 ### Compose
 
 The Compose compiler treats classes from a module it did not compile as

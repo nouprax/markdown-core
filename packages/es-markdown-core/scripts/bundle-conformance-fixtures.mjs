@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -46,6 +46,17 @@ if (corpus.schemaVersion !== 1 || !Array.isArray(corpus.cases) || corpus.cases.l
     throw new Error("shared context query corpus v1 must contain at least one case");
 }
 
+// The protocol transcripts (specs/lsp), each by its name, sorted.
+const transcriptDirectory = path.join(repositoryRoot, "specs/lsp/transcripts");
+const transcriptNames = (await readdir(transcriptDirectory)).filter((name) => name.endsWith(".json")).sort();
+if (transcriptNames.length === 0) throw new Error("the protocol transcripts must hold at least one transcript");
+const transcripts = await Promise.all(
+    transcriptNames.map(async (name) => ({
+        name: name.slice(0, -".json".length),
+        messages: JSON.parse(await readFile(path.join(transcriptDirectory, name), "utf8")).messages
+    }))
+);
+
 /** Writes `text` to `file` unless it already holds it. */
 async function emit(file, text) {
     let current;
@@ -62,3 +73,4 @@ async function emit(file, text) {
 
 await emit(output, `${JSON.stringify({ schemaVersion: 1, cases }, null, 2)}\n`);
 await emit(path.join(generatedDirectory, "context-queries.json"), queries);
+await emit(path.join(generatedDirectory, "lsp-transcripts.json"), `${JSON.stringify(transcripts, null, 2)}\n`);
