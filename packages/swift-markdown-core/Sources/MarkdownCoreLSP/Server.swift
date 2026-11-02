@@ -119,9 +119,8 @@ public final class Server {
                     )
                 }
                 return native.withUnsafeBufferPointer { list in
-                    markdown_core_lsp_update(
-                        server, name.baseAddress, name.count, version, list.baseAddress, list.count
-                    )
+                    let first = list.baseAddress
+                    return markdown_core_lsp_update(server, name.baseAddress, name.count, version, first, list.count)
                 }
             }
         }
