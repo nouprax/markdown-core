@@ -119,7 +119,8 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
     #expect(try tables(session.document, text) == tables(fresh, text), "\(label)")
     let opened = try MarkdownSession(text, unit: unit)
     try opened.flush()
-    var line: Int32 = 1, column: Int32 = 1
+    var line: Int32 = 1
+    var column: Int32 = 1
     for character in text.utf8 {
         if character == UInt8(ascii: "\n") {
             line += 1
@@ -131,7 +132,8 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
         let place = Position(line: line, column: column)
         try session.locate(place)
         try opened.locate(place)
-        let mine = session.context, theirs = opened.context
+        let mine = session.context
+        let theirs = opened.context
         #expect(mine.blocks == theirs.blocks && mine.inlines == theirs.inlines, "\(label) at \(place)")
         #expect(mine.slots.map(fields) == theirs.slots.map(fields), "\(label) at \(place)")
     }
