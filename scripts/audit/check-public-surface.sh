@@ -245,10 +245,12 @@ grep -q 'public enum class MarkupVisitPhase' \
 # (docs/architecture/wire-format.md). No target keeps its own encoder or walks
 # the C tree itself.
 kotlin_src=packages/kotlin-markdown-core/src
-grep -q '^headers = markdown_core_wire.h$' "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
+# The language engine's header and library ride beside the wire's; its calls
+# answer statuses and plain values, not trees.
+grep -q '^headers = markdown_core_wire.h markdown_core_lsp.h$' "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
         "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
-    && grep -q '^staticLibraries = libmarkdown-core-wire.a libmarkdown-core.a$' \
+    && grep -q '^staticLibraries = libmarkdown-core-lsp.a libmarkdown-core-wire.a libmarkdown-core.a$' \
         "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
     && grep -q 'markdown_core_wire_parse' "$kotlin_src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt" \
     && grep -q 'markdown_core_wire_parse' "$kotlin_src/native/markdown_core_kotlin_jni.c" \
@@ -307,8 +309,12 @@ const [, , manifestPath, runtimePath] = process.argv;
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const rootExport = manifest.exports?.["."];
 const exportKeys = Object.keys(manifest.exports ?? {}).sort();
-if (exportKeys.join("\n") !== ".\n./markdown-core.wasm") {
+if (exportKeys.join("\n") !== ".\n./lsp\n./markdown-core.wasm") {
     throw new Error(`Unexpected npm export paths: ${exportKeys.join(", ")}`);
+}
+const lspExport = manifest.exports?.["./lsp"];
+if (lspExport?.types !== "./dist/lsp.d.ts" || lspExport?.import !== "./dist/lsp.js") {
+    throw new Error("npm lsp export does not point at the reviewed ESM and declaration files");
 }
 if (rootExport?.types !== "./dist/index.d.ts" || rootExport?.import !== "./dist/index.js") {
     throw new Error("npm root export does not point at the reviewed ESM and declaration files");

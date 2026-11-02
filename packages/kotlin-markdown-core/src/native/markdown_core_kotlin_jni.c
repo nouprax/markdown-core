@@ -1,7 +1,9 @@
+#include <markdown_core_lsp.h>
 #include <markdown_core_wire.h>
 
 #include <jni.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 /* The MCB3 message's u32 length, which counts the whole message. */
 static uint32_t message_length(const uint8_t *message) {
@@ -205,6 +207,211 @@ static jbyteArray JNICALL native_session_markers(JNIEnv *environment, jobject re
     return message_array(environment, markdown_core_wire_markers(session_address(session), (uint64_t)id, position));
 }
 
+/* The language engine (packages/markdown-core/lsp): each entry point below is
+ * one call of markdown_core_lsp_*, and answers its status. A JVM failure to
+ * pin or allocate leaves its exception pending, and the status is then
+ * MARKDOWN_CORE_LSP_INTERNAL_ERROR, which the pending exception overrides. */
+static markdown_core_lsp_server *server_address(jlong server) { return (markdown_core_lsp_server *)(intptr_t)server; }
+
+/* Writes a new server's address to `server[0]`. */
+static jint JNICALL native_server_new(JNIEnv *environment, jobject receiver, jlongArray server) {
+    markdown_core_lsp_server *made;
+    markdown_core_lsp_status status;
+    jlong address;
+    (void)receiver;
+
+    status = markdown_core_lsp_server_new(&made);
+    if (status == MARKDOWN_CORE_LSP_OK) {
+        address = (jlong)(intptr_t)made;
+        (*environment)->SetLongArrayRegion(environment, server, 0, 1, &address);
+    }
+    return status;
+}
+
+static void JNICALL native_server_free(JNIEnv *environment, jobject receiver, jlong server) {
+    (void)environment;
+    (void)receiver;
+    markdown_core_lsp_server_free(server_address(server));
+}
+
+static jint JNICALL native_server_phase(JNIEnv *environment, jobject receiver, jlong server) {
+    (void)environment;
+    (void)receiver;
+    return markdown_core_lsp_server_phase(server_address(server));
+}
+
+/* Initializes with the units `utf16` names, true for UTF-16 and false for
+ * UTF-8. `answer[0]` receives the status and, on success, `answer[1]` 1 when
+ * the server counts in UTF-16 and 0 otherwise; the result is the cues. */
+static jbyteArray JNICALL native_server_initialize(JNIEnv *environment, jobject receiver, jlong server,
+                                                   jbooleanArray utf16, jintArray answer) {
+    jsize count, index;
+    jboolean *flags;
+    markdown_core_text_unit *units;
+    markdown_core_lsp_capabilities capabilities;
+    jint written[2] = {MARKDOWN_CORE_LSP_INTERNAL_ERROR, 0};
+    jbyteArray cues;
+    (void)receiver;
+
+    count = (*environment)->GetArrayLength(environment, utf16);
+    units = count > 0 ? malloc((size_t)count * sizeof *units) : NULL;
+    flags = count > 0 ? (*environment)->GetBooleanArrayElements(environment, utf16, NULL) : NULL;
+    if (count > 0 && (units == NULL || flags == NULL)) {
+        if (flags != NULL) {
+            (*environment)->ReleaseBooleanArrayElements(environment, utf16, flags, JNI_ABORT);
+        }
+        free(units);
+        (*environment)->SetIntArrayRegion(environment, answer, 0, 2, written);
+        return NULL;
+    }
+    for (index = 0; index < count; index++) {
+        units[index] = flags[index] ? MARKDOWN_CORE_TEXT_UNIT_UTF16 : MARKDOWN_CORE_TEXT_UNIT_UTF8;
+    }
+    if (flags != NULL) {
+        (*environment)->ReleaseBooleanArrayElements(environment, utf16, flags, JNI_ABORT);
+    }
+    written[0] = markdown_core_lsp_initialize(server_address(server), units, (size_t)count, &capabilities);
+    free(units);
+    cues = NULL;
+    if (written[0] == MARKDOWN_CORE_LSP_OK) {
+        written[1] = capabilities.unit == MARKDOWN_CORE_TEXT_UNIT_UTF16;
+        /* The cues are a few ASCII bytes. */
+        cues = (*environment)->NewByteArray(environment, (jsize)capabilities.cues.length);
+        if (cues != NULL) {
+            (*environment)
+                ->SetByteArrayRegion(environment, cues, 0, (jsize)capabilities.cues.length,
+                                     (const jbyte *)capabilities.cues.data);
+        }
+    }
+    (*environment)->SetIntArrayRegion(environment, answer, 0, 2, written);
+    return cues;
+}
+
+static jint JNICALL native_server_shutdown(JNIEnv *environment, jobject receiver, jlong server) {
+    (void)environment;
+    (void)receiver;
+    return markdown_core_lsp_shutdown(server_address(server));
+}
+
+static jint JNICALL native_server_open(JNIEnv *environment, jobject receiver, jlong server, jbyteArray uri,
+                                       jint version, jbyteArray text) {
+    jbyte *name, *bytes;
+    jint status;
+    (void)receiver;
+
+    if (!pin_bytes(environment, uri, &name)) {
+        return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
+    }
+    if (!pin_bytes(environment, text, &bytes)) {
+        unpin_bytes(environment, uri, name);
+        return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
+    }
+    status = markdown_core_lsp_open(server_address(server), (const uint8_t *)name,
+                                    (size_t)(*environment)->GetArrayLength(environment, uri), version,
+                                    (const uint8_t *)bytes, (size_t)(*environment)->GetArrayLength(environment, text));
+    unpin_bytes(environment, text, bytes);
+    unpin_bytes(environment, uri, name);
+    return status;
+}
+
+/* Applies the edits whose scopes `scopes` holds, four unsigned numbers each,
+ * and whose texts are `text` cut at `ends`. */
+static jint JNICALL native_server_update(JNIEnv *environment, jobject receiver, jlong server, jbyteArray uri,
+                                         jint version, jintArray scopes, jbyteArray text, jintArray ends) {
+    jsize count, index;
+    jbyte *name, *bytes;
+    jint *bounds, *cuts;
+    markdown_core_lsp_edit *edits;
+    jint status, start;
+    (void)receiver;
+
+    count = (*environment)->GetArrayLength(environment, ends);
+    status = MARKDOWN_CORE_LSP_INTERNAL_ERROR;
+    name = bytes = NULL;
+    bounds = cuts = NULL;
+    edits = count > 0 ? malloc((size_t)count * sizeof *edits) : NULL;
+    if ((count > 0 && edits == NULL) || !pin_bytes(environment, uri, &name)) {
+        free(edits);
+        return status;
+    }
+    if (!pin_bytes(environment, text, &bytes)) {
+        goto done;
+    }
+    if (count > 0) {
+        bounds = (*environment)->GetIntArrayElements(environment, scopes, NULL);
+        cuts = (*environment)->GetIntArrayElements(environment, ends, NULL);
+        if (bounds == NULL || cuts == NULL) {
+            goto done;
+        }
+    }
+    start = 0;
+    for (index = 0; index < count; index++) {
+        edits[index].scope.start.line = (uint32_t)bounds[index * 4];
+        edits[index].scope.start.character = (uint32_t)bounds[index * 4 + 1];
+        edits[index].scope.end.line = (uint32_t)bounds[index * 4 + 2];
+        edits[index].scope.end.character = (uint32_t)bounds[index * 4 + 3];
+        edits[index].text = bytes != NULL ? (const uint8_t *)bytes + start : NULL;
+        edits[index].size = (size_t)(cuts[index] - start);
+        start = cuts[index];
+    }
+    status = markdown_core_lsp_update(server_address(server), (const uint8_t *)name,
+                                      (size_t)(*environment)->GetArrayLength(environment, uri), version, edits,
+                                      (size_t)count);
+done:
+    if (cuts != NULL) {
+        (*environment)->ReleaseIntArrayElements(environment, ends, cuts, JNI_ABORT);
+    }
+    if (bounds != NULL) {
+        (*environment)->ReleaseIntArrayElements(environment, scopes, bounds, JNI_ABORT);
+    }
+    unpin_bytes(environment, text, bytes);
+    unpin_bytes(environment, uri, name);
+    free(edits);
+    return status;
+}
+
+static jint JNICALL native_server_close(JNIEnv *environment, jobject receiver, jlong server, jbyteArray uri) {
+    jbyte *name;
+    jint status;
+    (void)receiver;
+
+    if (!pin_bytes(environment, uri, &name)) {
+        return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
+    }
+    status = markdown_core_lsp_close(server_address(server), (const uint8_t *)name,
+                                     (size_t)(*environment)->GetArrayLength(environment, uri));
+    unpin_bytes(environment, uri, name);
+    return status;
+}
+
+/* Completes at `line` and `character`, read as unsigned; on success
+ * `answer` receives the list's version and count. */
+static jint JNICALL native_server_complete(JNIEnv *environment, jobject receiver, jlong server, jbyteArray uri,
+                                           jint line, jint character, jlongArray answer) {
+    markdown_core_lsp_position position;
+    markdown_core_lsp_list *list;
+    jbyte *name;
+    jint status;
+    jlong written[2];
+    (void)receiver;
+
+    if (!pin_bytes(environment, uri, &name)) {
+        return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
+    }
+    position.line = (uint32_t)line;
+    position.character = (uint32_t)character;
+    status = markdown_core_lsp_complete(server_address(server), (const uint8_t *)name,
+                                        (size_t)(*environment)->GetArrayLength(environment, uri), position, &list);
+    unpin_bytes(environment, uri, name);
+    if (status == MARKDOWN_CORE_LSP_OK) {
+        written[0] = markdown_core_lsp_list_version(list);
+        written[1] = (jlong)markdown_core_lsp_list_count(list);
+        markdown_core_lsp_list_free(list);
+        (*environment)->SetLongArrayRegion(environment, answer, 0, 2, written);
+    }
+    return status;
+}
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
     static const JNINativeMethod methods[] = {
         {"parsePayload", "([B)[B", (void *)native_parse},
@@ -219,6 +426,15 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"sessionSpellAnswer", "(JI[B)[B", (void *)native_session_spell},
         {"sessionFieldAnswer", "(JJIII)[B", (void *)native_session_field},
         {"sessionMarkersAnswer", "(JJII)[B", (void *)native_session_markers},
+        {"serverNew", "([J)I", (void *)native_server_new},
+        {"serverFree", "(J)V", (void *)native_server_free},
+        {"serverPhase", "(J)I", (void *)native_server_phase},
+        {"serverInitialize", "(J[Z[I)[B", (void *)native_server_initialize},
+        {"serverShutdown", "(J)I", (void *)native_server_shutdown},
+        {"serverOpen", "(J[BI[B)I", (void *)native_server_open},
+        {"serverUpdate", "(J[BI[I[B[I)I", (void *)native_server_update},
+        {"serverClose", "(J[B)I", (void *)native_server_close},
+        {"serverComplete", "(J[BII[J)I", (void *)native_server_complete},
     };
     JNIEnv *environment;
     jclass parser_class;

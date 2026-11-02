@@ -13,7 +13,7 @@ import MarkdownCoreLSPC
 /// it returns are.
 ///
 /// A method that fails throws ``ServerError``, whose code is the protocol's
-/// error code, and changes nothing, except an ``update(_:version:changes:)``
+/// error code, and changes nothing, except an ``update(_:version:edits:)``
 /// that fails with ``ServerError/Code/internalError``, which closes the
 /// document.
 public final class Server {
@@ -87,38 +87,38 @@ public final class Server {
         try check(status)
     }
 
-    /// The didChange notification: `changes` applied to the document in
-    /// order, each to the text the one before it made, which give it
-    /// `version`.
+    /// The didChange notification: `edits`, the content changes, applied to
+    /// the document in order, each to the text the one before it made, which
+    /// give it `version`.
     ///
     /// - Throws: ``ServerError`` with ``ServerError/Code/invalidParams`` when
-    ///   the document is not open or a change's start is after its end,
-    ///   which every change is checked for before the first applies; the
+    ///   the document is not open or an edit's start is after its end,
+    ///   which every edit is checked for before the first applies; the
     ///   document then keeps its text and version.
-    ///   ``ServerError/Code/internalError`` when a change cannot allocate,
+    ///   ``ServerError/Code/internalError`` when an edit cannot allocate,
     ///   and then the server closes the document, since it holds some of the
-    ///   changes and cannot tell the client's text.
-    public func update(_ uri: String, version: Int32, changes: [Change]) throws {
-        // Every change's text stays alive in one buffer while the engine reads it.
+    ///   edits and cannot tell the client's text.
+    public func update(_ uri: String, version: Int32, edits: [Edit]) throws {
+        // Every edit's text stays alive in one buffer while the engine reads it.
         var joined = [UInt8]()
         var starts = [Int]()
-        for change in changes {
+        for edit in edits {
             starts.append(joined.count)
-            joined.append(contentsOf: change.text.utf8)
+            joined.append(contentsOf: edit.text.utf8)
         }
         var uri = uri
         let status = uri.withUTF8 { name in
-            joined.withUnsafeBufferPointer { bytes in
-                let edits = changes.indices.map { index -> markdown_core_lsp_edit in
+            joined.withUnsafeBufferPointer { buffer in
+                let native = edits.indices.map { index -> markdown_core_lsp_edit in
                     let end = index + 1 < starts.count ? starts[index + 1] : joined.count
-                    let scope = changes[index].scope ?? Scope.whole
+                    let scope = edits[index].scope ?? Scope.whole
                     return markdown_core_lsp_edit(
                         scope: scope.native,
-                        text: bytes.baseAddress.map { $0 + starts[index] },
+                        text: buffer.baseAddress.map { $0 + starts[index] },
                         size: end - starts[index]
                     )
                 }
-                return edits.withUnsafeBufferPointer { list in
+                return native.withUnsafeBufferPointer { list in
                     markdown_core_lsp_update(server, name.baseAddress, name.count, version, list.baseAddress, list.count)
                 }
             }
@@ -203,7 +203,7 @@ public struct Scope: Sendable, Hashable {
         self.end = end
     }
 
-    /// The whole text, which a change that names no range replaces.
+    /// The whole text, which an edit that names no range replaces.
     static let whole = Scope(
         start: Position(line: 0, character: 0),
         end: Position(line: .max, character: .max)
@@ -216,7 +216,7 @@ public struct Scope: Sendable, Hashable {
 
 /// A content change of didChange: `text` replaces `scope`, or the whole text
 /// when `scope` is nil.
-public struct Change: Sendable, Hashable {
+public struct Edit: Sendable, Hashable {
     public var scope: Scope?
     public var text: String
 
@@ -243,7 +243,7 @@ public struct ServerError: Error, Sendable, Hashable {
         /// The call is not one the server's phase takes: a second
         /// initialize, or any call after shutdown.
         case invalidRequest = -32600
-        /// The call names a document that is not open, or a change whose
+        /// The call names a document that is not open, or an edit whose
         /// start is after its end.
         case invalidParams = -32602
         /// An allocation failed, or a text exceeds what the parser can hold.

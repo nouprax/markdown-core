@@ -527,6 +527,31 @@ On every platform the editor calls the engine as a library, in process. For
 the notebook's use of Markdown as a command input, a completion therefore
 costs the engine's work and one call into Swift, not a message round trip.
 
+Step 4b built the three bindings this way:
+
+- Each calls `markdown_core_lsp_*` directly, not through the wire: the
+  engine's calls answer statuses and plain values. SwiftPM builds the engine
+  from source as the C target `MarkdownCoreLSPC` under the product
+  `MarkdownCoreLSP`; Kotlin links `libmarkdown-core-lsp` into its JNI
+  library, whose natives join the parser's on the one registered holder, and
+  into its cinterop definition; the WebAssembly module exports the calls and
+  `@nouprax/es-markdown-core/lsp` binds them.
+- The protocol's types are `Position` and `Scope`, counted from 0, and
+  `Edit`, a content change whose missing scope is the whole text (the
+  engine's scope 0:0 to UINT32_MAX:UINT32_MAX). A change is an `Edit`, not a
+  `Change`, by the naming rule of 3.2. Kotlin's `Position` holds the
+  protocol's `uinteger`, up to 2^31 - 1, in an `Int`; Swift and ECMAScript
+  take the engine's whole `uint32_t`.
+- The error carries the protocol's code: Swift `ServerError.Code`, Kotlin
+  `ServerException.Code` and ECMAScript `ServerCode` with its number in
+  `value`. ECMAScript also refuses, as `invalidParams`, a version or position
+  that is not an integer in the engine's range, which the other bindings'
+  types cannot hold.
+- Each binding's test maps the transcripts' JSON messages onto its `Server`
+  as the adapter does and must give the adapter's answers; a body that is
+  not JSON or not a message, which only the adapter reads, is skipped with
+  its answer.
+
 ### 4.2 The JSON-RPC adapter
 
 `markdown-core-server` is a small C executable that maps LSP 3.17 JSON-RPC
@@ -922,7 +947,9 @@ it (D6).
    formatting on track W's writer (4.4), in C and Swift.
 - [ ] **Step 9: Kotlin and ECMAScript.** The engine's Kotlin binding for
    Android and its ECMAScript binding for the web, one binding per step
-   (D7).
+   (D7). The bindings themselves landed in step 4b with the Swift one
+   (owner, 2026-10-27); this step brings them the features steps 5 to 8
+   add in C and Swift.
 - [ ] **Step 10: Latency.** With every feature in place, tune the engine's
    latency as a whole against the reports of section 7, then set the
    budget's numbers as a CI gate (D5).

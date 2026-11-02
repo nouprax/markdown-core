@@ -3,7 +3,7 @@ if(MARKDOWN_CORE_KOTLIN_JNI)
 
     add_library(markdown_core_kotlin_jni SHARED markdown_core_kotlin_jni.c)
     target_include_directories(markdown_core_kotlin_jni PRIVATE ${JNI_INCLUDE_DIRS})
-    target_link_libraries(markdown_core_kotlin_jni PRIVATE libmarkdown-core-wire)
+    target_link_libraries(markdown_core_kotlin_jni PRIVATE libmarkdown-core-wire libmarkdown-core-lsp)
     set_target_properties(
         markdown_core_kotlin_jni
         PROPERTIES OUTPUT_NAME markdown_core_kotlin

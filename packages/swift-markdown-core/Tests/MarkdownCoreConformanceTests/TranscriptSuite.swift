@@ -18,19 +18,19 @@ import Testing
         }
     }
 
-    @Test("a change is checked whole, and a refused one leaves the document as it was")
-    func changes() throws {
+    @Test("edits are checked whole, and refused ones leave the document as it was")
+    func edits() throws {
         let server = try Server()
         _ = try server.initialize([.utf8])
         try server.open("file:///a.md", version: 1, text: "one\n")
         let start = Position(line: 0, character: 3)
-        let backwards = Change(scope: Scope(start: start, end: Position(line: 0, character: 0)), text: "")
-        let append = Change(scope: Scope(start: start, end: start), text: " two")
+        let backwards = Edit(scope: Scope(start: start, end: Position(line: 0, character: 0)), text: "")
+        let append = Edit(scope: Scope(start: start, end: start), text: " two")
         #expect(throws: ServerError(code: .invalidParams)) {
-            try server.update("file:///a.md", version: 2, changes: [append, backwards])
+            try server.update("file:///a.md", version: 2, edits: [append, backwards])
         }
         #expect(try server.complete("file:///a.md", at: start).version == 1)
-        try server.update("file:///a.md", version: 3, changes: [append, Change(scope: nil, text: "whole")])
+        try server.update("file:///a.md", version: 3, edits: [append, Edit(scope: nil, text: "whole")])
         #expect(try server.complete("file:///a.md", at: start).version == 3)
         try server.close("file:///a.md")
         #expect(throws: ServerError(code: .invalidParams)) {
@@ -175,19 +175,19 @@ private final class Host {
             guard let uri = Host.uri(params), let list = params?["contentChanges"] as? [Any],
                 let version = Host.integer(document?["version"], Int64(Int32.min), Int64(Int32.max))
             else { return }
-            var changes: [Change] = []
+            var edits: [Edit] = []
             for item in list {
-                guard let change = item as? [String: Any], let text = change["text"] as? String else { return }
-                if let range = change["range"] {
+                guard let item = item as? [String: Any], let text = item["text"] as? String else { return }
+                if let range = item["range"] {
                     guard let range = range as? [String: Any], let start = Host.position(range["start"]),
                         let end = Host.position(range["end"])
                     else { return }
-                    changes.append(Change(scope: Scope(start: start, end: end), text: text))
+                    edits.append(Edit(scope: Scope(start: start, end: end), text: text))
                 } else {
-                    changes.append(Change(scope: nil, text: text))
+                    edits.append(Edit(scope: nil, text: text))
                 }
             }
-            try? server.update(uri, version: Int32(version), changes: changes)
+            try? server.update(uri, version: Int32(version), edits: edits)
         case "textDocument/didClose":
             guard let uri = Host.uri(params) else { return }
             try? server.close(uri)

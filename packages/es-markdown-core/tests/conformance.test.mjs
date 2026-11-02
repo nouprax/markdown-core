@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { Document, MarkdownSession, MarkupDumper, markupEquals, walk } from "../dist/index.js";
+import { Server, ServerError } from "../dist/lsp.js";
 import { emptyVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -11,6 +12,9 @@ if (canonicalManifest.schemaVersion !== 1 || !canonicalManifest.cases?.length) {
 }
 const contextCorpus = JSON.parse(
     await readFile(new URL("../build/generated/conformance/context-queries.json", import.meta.url), "utf8")
+);
+const transcripts = JSON.parse(
+    await readFile(new URL("../build/generated/conformance/lsp-transcripts.json", import.meta.url), "utf8")
 );
 
 test("conformance: public node schema is reachable", () => {
@@ -312,4 +316,162 @@ function scopeText({ start, end }) {
 
 function scopesText(scopes) {
     return scopes.map(scopeText).join(",");
+}
+
+// The protocol transcripts (specs/lsp): each client message a binding can be
+// handed, replayed through `Server` in process, must get the answer the
+// JSON-RPC adapter gives. A body that is not JSON, or not a message, is the
+// adapter's alone to read, so it and its answer are left out.
+test("conformance: the language server answers every transcript as the JSON-RPC adapter does", () => {
+    assert.ok(transcripts.length > 0);
+    for (const { name, messages } of transcripts) {
+        const host = new Host();
+        try {
+            for (let index = 0; index < messages.length;) {
+                const entry = messages[index++];
+                if ("exit" in entry) {
+                    assert.equal(host.exit, entry.exit, `${name}: the exit code`);
+                    continue;
+                }
+                if (!isMessage(entry.client)) {
+                    // The adapter's alone: skip its answer too.
+                    if (index < messages.length && "server" in messages[index]) index++;
+                    continue;
+                }
+                const answer = host.handle(entry.client);
+                const expected =
+                    index < messages.length && "server" in messages[index] ? messages[index++].server : null;
+                assert.deepEqual(answer, expected, `${name}, entry ${index}`);
+            }
+        } finally {
+            host.server.dispose();
+        }
+    }
+});
+
+/** Whether `value` is a JSON object. */
+function isObject(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Whether `sent` is a request or a notification, which a binding can be handed. */
+function isMessage(sent) {
+    if (!isObject(sent) || sent.jsonrpc !== "2.0" || typeof sent.method !== "string") return false;
+    return !("id" in sent) || typeof sent.id === "string" || typeof sent.id === "number";
+}
+
+/** The protocol's code for each failure the host itself answers. */
+class Refusal extends Error {
+    constructor(code) {
+        super(String(code));
+        this.code = code;
+    }
+}
+
+const reasons = {
+    [-32700]: "the message is not JSON",
+    [-32600]: "the message is not a request the server takes now",
+    [-32601]: "the server has no such method",
+    [-32602]: "the params are not the method's",
+    [-32002]: "the server is not initialized"
+};
+
+/** The adapter's mapping of messages onto the engine (lsp/adapter.c),
+ * written over `Server`. A number passes as it is: the server refuses one
+ * the protocol does not hold there, as the adapter does. */
+class Host {
+    server = new Server();
+
+    get exit() {
+        return this.server.phase === "halted" ? 0 : 1;
+    }
+
+    handle(sent) {
+        if (!("id" in sent)) {
+            this.#notify(sent.method, sent.params);
+            return null;
+        }
+        try {
+            return { jsonrpc: "2.0", id: sent.id, result: this.#request(sent.method, sent.params) };
+        } catch (failure) {
+            const code =
+                failure instanceof ServerError ? failure.value : failure instanceof Refusal ? failure.code : null;
+            if (code === null) throw failure;
+            return { jsonrpc: "2.0", id: sent.id, error: { code, message: reasons[code] ?? "the server failed" } };
+        }
+    }
+
+    #request(method, params) {
+        switch (method) {
+            case "initialize": {
+                if (!isObject(params)) throw new Refusal(-32602);
+                const general = isObject(params.capabilities) ? params.capabilities.general : undefined;
+                const offered =
+                    isObject(general) && Array.isArray(general.positionEncodings) ? general.positionEncodings : [];
+                const units = [];
+                for (const name of offered) {
+                    if (units.length === 2) break;
+                    if (name === "utf-8") units.push("utf8");
+                    if (name === "utf-16") units.push("utf16");
+                }
+                const capabilities = this.server.initialize(units);
+                return {
+                    capabilities: {
+                        positionEncoding: capabilities.unit === "utf8" ? "utf-8" : "utf-16",
+                        textDocumentSync: { openClose: true, change: 2 },
+                        completionProvider: { triggerCharacters: [...capabilities.cues] }
+                    },
+                    serverInfo: { name: "markdown-core" }
+                };
+            }
+            case "shutdown":
+                this.server.shutdown();
+                return null;
+            case "textDocument/completion": {
+                const uri = uriOf(params);
+                if (uri === null || !isObject(params.position)) throw new Refusal(-32602);
+                this.server.complete(uri, params.position);
+                return { isIncomplete: false, items: [] };
+            }
+            default:
+                throw new Refusal({ fresh: -32002, halted: -32600, active: -32601 }[this.server.phase]);
+        }
+    }
+
+    /** A notification answers nothing; one that fails is dropped. */
+    #notify(method, params) {
+        const uri = uriOf(params);
+        if (uri === null) return;
+        const document = params.textDocument;
+        try {
+            if (method === "textDocument/didOpen") {
+                if (typeof document.text === "string") this.server.open(uri, document.version, document.text);
+            } else if (method === "textDocument/didChange") {
+                if (!Array.isArray(params.contentChanges)) return;
+                const edits = [];
+                for (const item of params.contentChanges) {
+                    if (!isObject(item) || typeof item.text !== "string") return;
+                    if (!("range" in item)) {
+                        edits.push({ text: item.text });
+                        continue;
+                    }
+                    const { range } = item;
+                    if (!isObject(range) || !isObject(range.start) || !isObject(range.end)) return;
+                    edits.push({ scope: { start: range.start, end: range.end }, text: item.text });
+                }
+                this.server.update(uri, document.version, edits);
+            } else if (method === "textDocument/didClose") {
+                this.server.close(uri);
+            }
+        } catch (failure) {
+            if (!(failure instanceof ServerError)) throw failure;
+        }
+    }
+}
+
+/** The document URI of `params`, or null when there is none. */
+function uriOf(params) {
+    return isObject(params) && isObject(params.textDocument) && typeof params.textDocument.uri === "string"
+        ? params.textDocument.uri
+        : null;
 }

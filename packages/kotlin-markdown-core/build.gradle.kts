@@ -39,10 +39,67 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
     @get:OutputFile
     abstract val queriesOutputFile: RegularFileProperty
 
+    /** The protocol transcripts, specs/lsp/transcripts. */
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val transcriptsDirectory: DirectoryProperty
+
+    @get:OutputFile
+    abstract val transcriptsOutputFile: RegularFileProperty
+
     @TaskAction
     fun generate() {
         generateCanonicalAst()
         generateQueries()
+        generateTranscripts()
+    }
+
+    /**
+     * Each transcript's name and JSON text, sorted by name, which the test
+     * reads itself. Each text is built in a function of its own, so no
+     * method outgrows the JVM's 64 KiB.
+     */
+    private fun generateTranscripts() {
+        val files =
+            transcriptsDirectory
+                .get()
+                .asFile
+                .listFiles { file -> file.name.endsWith(".json") }
+                ?.sortedBy { it.name }
+                .orEmpty()
+        require(files.isNotEmpty()) { "the transcripts directory must hold at least one transcript" }
+        val lines =
+            mutableListOf(
+                "package com.nouprax.markdown.core.lsp",
+                "",
+                "internal class TranscriptText(",
+                "    val name: String,",
+                "    val text: String,",
+                ")",
+                "",
+                "internal val transcriptTexts: kotlin.collections.List<TranscriptText> =",
+                "    listOf(",
+            )
+        for (index in files.indices) lines += "        transcript$index(),"
+        lines += "    )"
+        for ((index, file) in files.withIndex()) {
+            lines += ""
+            lines += "private fun transcript$index(): TranscriptText ="
+            lines += "    TranscriptText("
+            lines += "        name = ${kotlinLiteral(file.name.removeSuffix(".json"))},"
+            lines += "        text ="
+            lines += "            buildString {"
+            for (chunk in chunkedOnCodePoints(file.readText(), 200)) {
+                lines += "                append(${kotlinLiteral(chunk)})"
+            }
+            lines += "            },"
+            lines += "    )"
+        }
+        lines += ""
+
+        val destination = transcriptsOutputFile.get().asFile
+        destination.parentFile.mkdirs()
+        destination.writeText(lines.joinToString("\n"))
     }
 
     /**
@@ -331,6 +388,12 @@ val generateCanonicalAstCommonTest =
                 "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/ContextCases.kt",
             ),
         )
+        transcriptsDirectory.set(repositoryRoot.dir("specs/lsp/transcripts"))
+        transcriptsOutputFile.set(
+            layout.buildDirectory.file(
+                "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/lsp/Transcripts.kt",
+            ),
+        )
     }
 
 fun KotlinNativeTarget.configureNativeFacade() {
@@ -339,6 +402,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
     val archiveDirectory = layout.buildDirectory.dir("native/$name/archives")
     val coreArchive = archiveDirectory.map { it.file("libmarkdown-core.a") }
     val wireArchive = archiveDirectory.map { it.file("libmarkdown-core-wire.a") }
+    val lspArchive = archiveDirectory.map { it.file("libmarkdown-core-lsp.a") }
     val generatedDefinitionDirectory = layout.buildDirectory.dir("generated/cinterop/$name")
     val embedNativeLibraries = !isIdeModelImport
     val configureTask =
@@ -349,6 +413,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 repositoryRoot.dir("packages/markdown-core/elements"),
                 repositoryRoot.dir("packages/markdown-core/include"),
                 repositoryRoot.dir("packages/markdown-core/wire"),
+                repositoryRoot.dir("packages/markdown-core/lsp"),
                 layout.projectDirectory.dir("src/native"),
             )
             outputs.file(buildDirectory.map { it.file("CMakeCache.txt") })
@@ -373,9 +438,10 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 repositoryRoot.dir("packages/markdown-core/elements"),
                 repositoryRoot.dir("packages/markdown-core/include"),
                 repositoryRoot.dir("packages/markdown-core/wire"),
+                repositoryRoot.dir("packages/markdown-core/lsp"),
                 layout.projectDirectory.dir("src/native"),
             )
-            outputs.files(coreArchive, wireArchive)
+            outputs.files(coreArchive, wireArchive, lspArchive)
             commandLine(
                 "cmake",
                 "--build",
@@ -384,6 +450,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 "Release",
                 "--target",
                 "libmarkdown-core-wire",
+                "libmarkdown-core-lsp",
                 "--parallel",
             )
         }
@@ -408,6 +475,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
         compilerOpts(
             "-I${repositoryRoot.dir("packages/markdown-core/wire").asFile.absolutePath}",
             "-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}",
+            "-I${repositoryRoot.dir("packages/markdown-core/lsp/include").asFile.absolutePath}",
         )
         tasks.named(interopProcessingTaskName).configure {
             dependsOn(generateDefinition)
@@ -440,6 +508,7 @@ val configureDesktopJni =
             repositoryRoot.dir("packages/markdown-core/elements"),
             repositoryRoot.dir("packages/markdown-core/include"),
             repositoryRoot.dir("packages/markdown-core/wire"),
+            repositoryRoot.dir("packages/markdown-core/lsp"),
             layout.projectDirectory.dir("src/native"),
         )
         inputs.property("desktopPlatform", desktopPlatform ?: "unsupported")
@@ -473,6 +542,7 @@ val buildDesktopJni =
             repositoryRoot.dir("packages/markdown-core/elements"),
             repositoryRoot.dir("packages/markdown-core/include"),
             repositoryRoot.dir("packages/markdown-core/wire"),
+            repositoryRoot.dir("packages/markdown-core/lsp"),
             layout.projectDirectory.dir("src/native"),
         )
         val libraryName =

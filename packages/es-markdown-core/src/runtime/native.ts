@@ -29,6 +29,35 @@ export interface NativeExports extends WebAssembly.Exports {
     markdown_core_session_text_size(session: number): number;
     markdown_core_session_text(session: number, bytes: number): void;
     markdown_core_session_close(session: number): void;
+    /** The language engine (packages/markdown-core/lsp), each call answering
+     * its `markdown_core_lsp_status`: 0, or the protocol's error code. A
+     * position is passed as the address of its two u32s. */
+    markdown_core_lsp_server_new(server: number): number;
+    markdown_core_lsp_server_free(server: number): void;
+    markdown_core_lsp_server_phase(server: number): number;
+    markdown_core_lsp_initialize(server: number, units: number, count: number, capabilities: number): number;
+    markdown_core_lsp_shutdown(server: number): number;
+    markdown_core_lsp_open(
+        server: number,
+        uri: number,
+        uriSize: number,
+        version: number,
+        text: number,
+        size: number
+    ): number;
+    markdown_core_lsp_update(
+        server: number,
+        uri: number,
+        uriSize: number,
+        version: number,
+        edits: number,
+        count: number
+    ): number;
+    markdown_core_lsp_close(server: number, uri: number, uriSize: number): number;
+    markdown_core_lsp_complete(server: number, uri: number, uriSize: number, position: number, list: number): number;
+    markdown_core_lsp_list_version(list: number): number;
+    markdown_core_lsp_list_count(list: number): number;
+    markdown_core_lsp_list_free(list: number): void;
 }
 
 const wasmURL = new URL("../markdown-core.wasm", import.meta.url);

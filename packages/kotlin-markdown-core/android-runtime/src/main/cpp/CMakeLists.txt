@@ -77,13 +77,19 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/tasklist.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/topic.c"
     "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire/markdown_core_wire.c"
+    "${MARKDOWN_CORE_ROOT}/packages/markdown-core/lsp/server.c"
+    "${MARKDOWN_CORE_ROOT}/packages/markdown-core/lsp/text.c"
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c")
 
 target_include_directories(
     markdown_core_kotlin
-    PRIVATE "${MARKDOWN_CORE_CORE_DIR}" "${MARKDOWN_CORE_ELEMENTS_DIR}"
-            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/include" "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire"
-            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/core/include")
+    PRIVATE "${MARKDOWN_CORE_CORE_DIR}"
+            "${MARKDOWN_CORE_ELEMENTS_DIR}"
+            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/include"
+            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire"
+            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/core/include"
+            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/lsp/include"
+            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/lsp")
 target_link_options(
     markdown_core_kotlin PRIVATE
     "-Wl,--version-script=${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map")

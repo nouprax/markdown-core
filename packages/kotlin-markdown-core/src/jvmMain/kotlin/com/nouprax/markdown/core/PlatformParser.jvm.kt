@@ -91,6 +91,55 @@ private class JniSession(
     private fun publish(message: ByteArray?): Document = decode(message, document.unit).also { document = it }
 }
 
+internal actual fun newPlatformServer(): PlatformServer? {
+    DesktopNativeLoader.ensureLoaded()
+    val server = LongArray(1)
+    return if (JniParser.serverNew(server) == 0) JniServer(server[0]) else null
+}
+
+/** A C language server held through JNI by its address. */
+private class JniServer(
+    /** The C server's address; 0 once freed. */
+    private var server: Long,
+) : PlatformServer {
+    override fun phase(): Int = JniParser.serverPhase(server)
+
+    override fun initialize(
+        units: BooleanArray,
+        answer: IntArray,
+    ): ByteArray = JniParser.serverInitialize(server, units, answer) ?: ByteArray(0)
+
+    override fun shutdown(): Int = JniParser.serverShutdown(server)
+
+    override fun open(
+        uri: ByteArray,
+        version: Int,
+        text: ByteArray,
+    ): Int = JniParser.serverOpen(server, uri, version, text)
+
+    override fun update(
+        uri: ByteArray,
+        version: Int,
+        scopes: IntArray,
+        text: ByteArray,
+        ends: IntArray,
+    ): Int = JniParser.serverUpdate(server, uri, version, scopes, text, ends)
+
+    override fun close(uri: ByteArray): Int = JniParser.serverClose(server, uri)
+
+    override fun complete(
+        uri: ByteArray,
+        line: Int,
+        character: Int,
+        answer: LongArray,
+    ): Int = JniParser.serverComplete(server, uri, line, character, answer)
+
+    override fun free() {
+        JniParser.serverFree(server)
+        server = 0
+    }
+}
+
 private object JniParser {
     /**
      * The MCB3 message for [source], or null when the engine could not
@@ -186,6 +235,67 @@ private object JniParser {
         line: Int,
         column: Int,
     ): ByteArray?
+
+    /** Writes a new language server's address to `server[0]`: the engine's status. */
+    @JvmSynthetic
+    external fun serverNew(server: LongArray): Int
+
+    /** Releases [server]; 0 releases nothing. */
+    @JvmSynthetic
+    external fun serverFree(server: Long)
+
+    /** [server]'s phase. */
+    @JvmSynthetic
+    external fun serverPhase(server: Long): Int
+
+    /** Initializes [server] as [PlatformServer.initialize] does. */
+    @JvmSynthetic
+    external fun serverInitialize(
+        server: Long,
+        units: BooleanArray,
+        answer: IntArray,
+    ): ByteArray?
+
+    /** Shuts [server] down: the engine's status. */
+    @JvmSynthetic
+    external fun serverShutdown(server: Long): Int
+
+    /** Opens [uri] in [server]: the engine's status. */
+    @JvmSynthetic
+    external fun serverOpen(
+        server: Long,
+        uri: ByteArray,
+        version: Int,
+        text: ByteArray,
+    ): Int
+
+    /** Edits [uri] in [server] as [PlatformServer.update] does: the engine's status. */
+    @JvmSynthetic
+    external fun serverUpdate(
+        server: Long,
+        uri: ByteArray,
+        version: Int,
+        scopes: IntArray,
+        text: ByteArray,
+        ends: IntArray,
+    ): Int
+
+    /** Closes [uri] in [server]: the engine's status. */
+    @JvmSynthetic
+    external fun serverClose(
+        server: Long,
+        uri: ByteArray,
+    ): Int
+
+    /** Completes in [uri] of [server] as [PlatformServer.complete] does: the engine's status. */
+    @JvmSynthetic
+    external fun serverComplete(
+        server: Long,
+        uri: ByteArray,
+        line: Int,
+        character: Int,
+        answer: LongArray,
+    ): Int
 }
 
 private object DesktopNativeLoader {

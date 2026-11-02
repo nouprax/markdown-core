@@ -6,6 +6,21 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Bind the language engine in Swift, Kotlin and ECMAScript (LSP plan, step
+  4b): the Swift product `MarkdownCoreLSP`, Kotlin's package
+  `com.nouprax.markdown.core.lsp` and the ECMAScript entry point
+  `@nouprax/es-markdown-core/lsp` each have a `Server` with one method per
+  protocol method the C engine serves (`initialize`, `shutdown`, `open`,
+  `update`, `close`, `complete`) and its `phase`, the protocol's `Position`,
+  `Scope` and `Edit` (a content change, whose missing scope is the whole
+  text), `Capabilities`, `Completions`, and an error whose code is the
+  protocol's (Swift `ServerError`, Kotlin `ServerException`, ECMAScript
+  `ServerError`). Each binding calls `markdown-core-lsp` directly, through
+  the target that already builds the parser: SwiftPM builds it from source,
+  Kotlin links it into its JNI library and cinterop, and the WebAssembly
+  module exports it. Each binding's tests replay `specs/lsp/transcripts` in
+  process and must give the JSON-RPC adapter's answers.
+
 - Keep each open document of the language engine as a flushed session
   (incremental edits plan, step E3): `didOpen` parses the text into the
   document's session and flushes it, each change of `didChange` is one edit

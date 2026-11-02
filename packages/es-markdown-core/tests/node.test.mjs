@@ -14,6 +14,7 @@ import {
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
+import { Server, ServerError } from "../dist/lsp.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { Decoder } from "../dist/wire/node-decoder.js";
 import { emptyVisitor } from "./visitor.mjs";
@@ -2382,5 +2383,60 @@ test("api: a session's documents count columns in its unit", () => {
         } finally {
             session.dispose();
         }
+    }
+});
+
+test("api: the language server checks an update's edits whole, and a refused one leaves the document as it was", () => {
+    const server = new Server();
+    try {
+        assert.equal(server.phase, "fresh");
+        assert.throws(() => server.open("file:///a.md", 1, "x"), { name: "ServerError", code: "notInitialized" });
+        assert.deepEqual(server.initialize(["utf8"]).unit, "utf8");
+        assert.equal(server.phase, "active");
+        server.open("file:///a.md", 1, "one\n");
+        const start = { line: 0, character: 3 };
+        const append = { scope: { start, end: start }, text: " two" };
+        const backwards = { scope: { start, end: { line: 0, character: 0 } }, text: "" };
+        assert.throws(() => server.update("file:///a.md", 2, [append, backwards]), {
+            code: "invalidParams",
+            value: -32602
+        });
+        assert.equal(server.complete("file:///a.md", start).version, 1);
+        server.update("file:///a.md", 3, [append, { text: "whole" }]);
+        assert.deepEqual(server.complete("file:///a.md", start), { version: 3, count: 0 });
+        server.close("file:///a.md");
+        assert.throws(() => server.complete("file:///a.md", start), ServerError);
+        assert.throws(() => server.initialize([]), { code: "invalidRequest" });
+        server.shutdown();
+        assert.equal(server.phase, "halted");
+    } finally {
+        server.dispose();
+    }
+    server.dispose();
+    assert.throws(() => server.phase, { message: "The server is disposed." });
+});
+
+test("errors: the language server refuses a version or position the protocol does not hold there", () => {
+    const server = new Server();
+    try {
+        server.initialize(["utf16"]);
+        for (const version of [1.5, 2 ** 31, -(2 ** 31) - 1, Number.NaN]) {
+            assert.throws(() => server.open("file:///a.md", version, ""), { code: "invalidParams" });
+        }
+        server.open("file:///a.md", -(2 ** 31), "a\n");
+        for (const position of [
+            { line: -1, character: 0 },
+            { line: 0, character: 2 ** 32 },
+            { line: 0.5, character: 0 }
+        ]) {
+            assert.throws(() => server.complete("file:///a.md", position), { code: "invalidParams" });
+        }
+        // The protocol's bound stands at the text's end.
+        assert.equal(
+            server.complete("file:///a.md", { line: 2 ** 32 - 1, character: 2 ** 32 - 1 }).version,
+            -(2 ** 31)
+        );
+    } finally {
+        server.dispose();
     }
 });

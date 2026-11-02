@@ -250,6 +250,37 @@ unchanged. `Metadata.fields` names the properties fields and `Slot.cues` the
 characters after which a slot may begin empty, an editor's completion
 triggers.
 
+## Language server
+
+The `@nouprax/es-markdown-core/lsp` entry point is the language engine, the
+semantics of the Language Server Protocol 3.17 over the parser, called in
+process: each method of `Server` is one protocol method, and answers as the
+C engine and the JSON-RPC adapter `markdown-core-server` do. Completion
+answers an empty list until the providers land.
+
+```js
+import { Server, ServerError } from "@nouprax/es-markdown-core/lsp";
+
+const server = new Server();
+const { unit, cues } = server.initialize(["utf16"]);   // the protocol's default
+server.open("file:///note.md", 1, "# Title\n\n[a](");
+const end = { line: 2, character: 4 };
+server.update("file:///note.md", 2, [{ scope: { start: end, end }, text: "/url)" }]);
+const { version, count } = server.complete("file:///note.md", end);   // version === 2
+server.close("file:///note.md");
+server.shutdown();
+server.dispose();
+```
+
+Positions count from 0 in the negotiated `unit`; an edit with no `scope`
+replaces the whole text. A method that fails throws `ServerError`, whose
+`code` is `"notInitialized"`, `"invalidRequest"`, `"invalidParams"` or
+`"internalError"` and whose `value` is the protocol's number. A version that
+is not an int32, or a line or character that is not a uint32, is
+`"invalidParams"`. An update checks every edit before the first applies, so
+a refused one leaves the document as it was. `dispose()` releases the
+server's WebAssembly state.
+
 ## Errors
 
 Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:

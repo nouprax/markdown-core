@@ -28,7 +28,7 @@ try {
         ].sort();
         assert.deepEqual(files, expected);
         const manifest = JSON.parse(await readFile(path.join(packageDirectory, "package.json"), "utf8"));
-        assert.deepEqual(Object.keys(manifest.exports), [".", "./markdown-core.wasm"]);
+        assert.deepEqual(Object.keys(manifest.exports), [".", "./lsp", "./markdown-core.wasm"]);
         console.log("packaging: npm artifact contents and exports passed");
     }
 
@@ -66,7 +66,11 @@ try {
                     "if (d.content[0].kind !== 'heading') process.exit(2);",
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
                     "if (d.dump('# npm consumer') !== api.MarkupDumper.dump(d, '# npm consumer')) process.exit(4);",
-                    "if ('concrete' in d || 'Concrete' in api) process.exit(5);"
+                    "if ('concrete' in d || 'Concrete' in api) process.exit(5);",
+                    "const lsp = await import('@nouprax/es-markdown-core/lsp');",
+                    "const server = new lsp.Server();",
+                    "if (server.initialize(['utf8']).unit !== 'utf8') process.exit(6);",
+                    "server.dispose();"
                 ].join("\n")
             ],
             { cwd: temporary, encoding: "utf8" }

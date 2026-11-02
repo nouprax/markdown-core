@@ -22,8 +22,10 @@ WireDecoder$Reader$WhenMappings
 PlatformParser_jvmKt
 MarkupDumperKt
 
-# The internal session each platform implements behind MarkdownSession.
+# The internal session each platform implements behind MarkdownSession, and
+# the internal language server each implements behind lsp.Server.
 PlatformSession
+PlatformServer
 
 # The private MCB3 reader (docs/architecture/wire-format.md). commonMain
 # declares these internal types, so Kotlin emits public bytecode even though

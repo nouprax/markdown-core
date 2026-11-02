@@ -4,6 +4,21 @@ package com.nouprax.markdown.core
 
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TEXT_UNIT_UTF16
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TEXT_UNIT_UTF8
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_capabilities
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_close
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_complete
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_edit
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_initialize
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_list_count
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_list_free
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_list_version
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_open
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_position
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_server_free
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_server_new
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_server_phase
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_shutdown
+import com.nouprax.markdown.core.internal.capi.markdown_core_lsp_update
 import com.nouprax.markdown.core.internal.capi.markdown_core_position
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_close
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_text
@@ -23,14 +38,18 @@ import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.COpaquePointerVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.UByteVar
+import kotlinx.cinterop.UIntVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
+import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.cValue
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.get
+import kotlinx.cinterop.plus
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.set
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toLong
 import kotlinx.cinterop.usePinned
@@ -195,4 +214,143 @@ private class CSession(
 
     private fun publish(message: CPointer<UByteVar>?): Document =
         WireDecoder.decode(copy(message), document.unit).also { document = it }
+}
+
+internal actual fun newPlatformServer(): PlatformServer? =
+    memScoped {
+        val address = alloc<COpaquePointerVar>()
+        if (markdown_core_lsp_server_new(address.ptr.reinterpret()).convert<Int>() == 0) {
+            CServer(address.value)
+        } else {
+            null
+        }
+    }
+
+/** The engine's protocol position at [line] and [character], read as unsigned. */
+private fun place(
+    line: Int,
+    character: Int,
+) = cValue<markdown_core_lsp_position> {
+    this.line = line.toUInt()
+    this.character = character.toUInt()
+}
+
+/** A C language server held through cinterop; null once freed. */
+private class CServer(
+    private var server: COpaquePointer?,
+) : PlatformServer {
+    override fun phase(): Int = markdown_core_lsp_server_phase(server?.reinterpret()).convert()
+
+    override fun initialize(
+        units: BooleanArray,
+        answer: IntArray,
+    ): ByteArray =
+        memScoped {
+            val codes = allocArray<UIntVar>(units.size.coerceAtLeast(1))
+            for (index in units.indices) {
+                codes[index] = (if (units[index]) TextUnit.UTF16 else TextUnit.UTF8).code.convert()
+            }
+            val capabilities = alloc<markdown_core_lsp_capabilities>()
+            val status =
+                markdown_core_lsp_initialize(
+                    server?.reinterpret(),
+                    codes.reinterpret(),
+                    units.size.convert(),
+                    capabilities.ptr,
+                ).convert<Int>()
+            answer[0] = status
+            if (status != 0) return@memScoped ByteArray(0)
+            answer[1] = if (capabilities.unit == MARKDOWN_CORE_TEXT_UNIT_UTF16) 1 else 0
+            val cues = capabilities.cues
+            cues.data?.readBytes(cues.length.convert()) ?: ByteArray(0)
+        }
+
+    override fun shutdown(): Int = markdown_core_lsp_shutdown(server?.reinterpret()).convert()
+
+    override fun open(
+        uri: ByteArray,
+        version: Int,
+        text: ByteArray,
+    ): Int =
+        uri.withAddress { name ->
+            text.withAddress { bytes ->
+                markdown_core_lsp_open(
+                    server?.reinterpret(),
+                    name,
+                    uri.size.convert(),
+                    version,
+                    bytes,
+                    text.size.convert(),
+                ).convert()
+            }
+        }
+
+    override fun update(
+        uri: ByteArray,
+        version: Int,
+        scopes: IntArray,
+        text: ByteArray,
+        ends: IntArray,
+    ): Int =
+        memScoped {
+            val edits = allocArray<markdown_core_lsp_edit>(ends.size.coerceAtLeast(1))
+            uri.withAddress { name ->
+                text.withAddress { bytes ->
+                    var start = 0
+                    for (index in ends.indices) {
+                        val edit = edits[index]
+                        edit.scope.start.line = scopes[index * 4].toUInt()
+                        edit.scope.start.character = scopes[index * 4 + 1].toUInt()
+                        edit.scope.end.line = scopes[index * 4 + 2].toUInt()
+                        edit.scope.end.character = scopes[index * 4 + 3].toUInt()
+                        edit.text = bytes?.plus(start)
+                        edit.size = (ends[index] - start).convert()
+                        start = ends[index]
+                    }
+                    markdown_core_lsp_update(
+                        server?.reinterpret(),
+                        name,
+                        uri.size.convert(),
+                        version,
+                        edits,
+                        ends.size.convert(),
+                    ).convert()
+                }
+            }
+        }
+
+    override fun close(uri: ByteArray): Int =
+        uri.withAddress { markdown_core_lsp_close(server?.reinterpret(), it, uri.size.convert()).convert() }
+
+    override fun complete(
+        uri: ByteArray,
+        line: Int,
+        character: Int,
+        answer: LongArray,
+    ): Int =
+        memScoped {
+            val list = alloc<COpaquePointerVar>()
+            val status =
+                uri
+                    .withAddress {
+                        markdown_core_lsp_complete(
+                            server?.reinterpret(),
+                            it,
+                            uri.size.convert(),
+                            place(line, character),
+                            list.ptr.reinterpret(),
+                        )
+                    }.convert<Int>()
+            if (status == 0) {
+                answer[0] = markdown_core_lsp_list_version(list.value?.reinterpret()).toLong()
+                answer[1] = markdown_core_lsp_list_count(list.value?.reinterpret()).convert()
+                markdown_core_lsp_list_free(list.value?.reinterpret())
+            }
+            status
+        }
+
+    override fun free() {
+        markdown_core_lsp_server_free(server?.reinterpret())
+        server = null
+    }
 }
