@@ -819,6 +819,25 @@ static markdown_core_status session_edit(void *handle, size_t start, size_t end,
 static void session_reread(const void *handle, size_t *from, size_t *to) {
     markdown_core_session_reread(((const session_subject *)handle)->session, from, to);
 }
+
+static markdown_core_status session_locate(void *handle, size_t at, markdown_core_position *position,
+                                           const markdown_core_context **context) {
+    session_subject *subject = (session_subject *)handle;
+    const ih_unit unit =
+        markdown_core_session_unit(subject->session) == MARKDOWN_CORE_TEXT_UNIT_UTF16 ? IH_UTF16 : IH_UTF8;
+    size_t size;
+    const uint8_t *bytes = session_text(handle, &size);
+    *context = NULL;
+    if (!bytes) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    session_position(bytes, size, unit, at, position);
+    const markdown_core_status status = markdown_core_session_locate(subject->session, *position);
+    if (status == MARKDOWN_CORE_OK) {
+        *context = markdown_core_session_context(subject->session);
+    }
+    return status;
+}
 #endif
 
 /* The session takes edits from step E1 on (plan 12.9). */
@@ -831,6 +850,7 @@ const ih_subject_class ih_session = {.name = "session",
 #ifndef MARKDOWN_CORE_BENCH_SESSION_EDITLESS
                                      .edit = session_edit,
                                      .reread = session_reread,
+                                     .locate = session_locate,
 #endif
                                      .keeps = true};
 
