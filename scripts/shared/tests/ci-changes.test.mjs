@@ -509,7 +509,13 @@ test("Benchmark is a required reusable workflow with a single shared preflight",
     const benchmark = workflow("benchmark");
     assert.equal(benchmark.name, "Benchmark");
     assert.deepEqual(Object.keys(benchmark.on).sort(), ["workflow_call", "workflow_dispatch"]);
-    assert.deepEqual(Object.keys(benchmark.jobs).sort(), ["attributes", "completion", "stages", "stream-shards", "streams"]);
+    assert.deepEqual(Object.keys(benchmark.jobs).sort(), [
+        "attributes",
+        "completion",
+        "stages",
+        "stream-shards",
+        "streams"
+    ]);
     for (const [id, script] of [
         ["stages", "run.mjs"],
         ["attributes", "measure-attributes.mjs"],
