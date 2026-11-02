@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-reference-winner hard
+flush
+edit 12 12 5b725d3a202f7a65726f0a0a
+expect within 0 38
+edit 12 25 -
+expect within 0 25

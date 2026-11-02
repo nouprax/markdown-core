@@ -1237,6 +1237,20 @@ The edit runs in five steps:
     `(@label)`; a specimen definition changes whether `(@label)` is a
     specimen or a bibliography citation (E-D2). Typing inside a paragraph changes no
     definition and skips this step.
+    On `main` since the E-D2 PR (2026-11-02): the changed labels are the
+    keys that the declarations of the re-read range hold and those of the
+    old text it replaced do not, or the other way round
+    (`markdown_core_parser_altered_labels`); the declarations before and
+    after the re-read range are not sorted or compared. The filter folds the run after
+    each opener, past white space and up to white space, at most four times
+    the first word's bytes, once, and looks its prefixes up among the
+    altered first words, sorted. The hits are read again in at most eight
+    readings, parted at the widest gaps between them: each reads as an
+    edit of nothing just past its first hit, and takes no old child back
+    before its last, so every node keeps its identity and a label that
+    thousands of blocks name costs no more than reading the text once.
+    The edit reports the union of what it read. The hard cases of 12.7 bound it: a plain
+    paragraph after the uses is not read again.
   - **Anchors.** If a heading or an explicit anchor changed, reassign the
     automatic anchors by `main`'s rule. This is O(headings) and parses
     nothing. A heading whose anchor changes keeps its id.

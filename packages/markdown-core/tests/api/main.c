@@ -11252,6 +11252,57 @@ static void session_edits_storage(test_batch_runner *runner) {
     OK(runner, properties_live_bytes == 0, "closing the session releases all it held");
 }
 
+/* An edit that renames a definition and cannot have the storage it needs
+ * leaves no use of the old name as the link it no longer is: the next edit
+ * reads as a parse does, or fails with the session (E-D2). Each allocation
+ * of the edit is refused in turn, until the edit needs no more. */
+static void session_edits_refresh_storage(test_batch_runner *runner) {
+    static const char source[] = "[r]: /url\n\nmid\n\n[r]\n\nplain\n\nend\n";
+    const markdown_core_position name = {1, 2}, after = {1, 3}, end = {9, 1}, past = {9, 4};
+    bool held = true, swept = false;
+    for (size_t fail = 1; held && !swept && fail < 4096; fail++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK ||
+            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            held = false;
+            markdown_core_session_close(session);
+            break;
+        }
+        payload_probe_arm();
+        payload_fail_at = fail;
+        const markdown_core_status renamed =
+            markdown_core_session_edit(session, name, after, (const uint8_t *)"s", 1, &document);
+        swept = payload_allocations < fail;
+        payload_fail_at = 0;
+        const markdown_core_status next =
+            markdown_core_session_edit(session, end, past, (const uint8_t *)"done", 4, &document);
+        held = (renamed == MARKDOWN_CORE_OK || renamed == MARKDOWN_CORE_ALLOCATION_FAILED) &&
+               (next == MARKDOWN_CORE_OK ? session_as_parsed(session) : next == MARKDOWN_CORE_ALLOCATION_FAILED);
+        markdown_core_session_close(session);
+        payload_probe_disarm();
+    }
+    OK(runner, held && swept, "no edit after a rename that runs out of storage publishes a stale use");
+}
+
+/* A use whose label holds a NUL, which the block replaces before the
+ * inline parse looks the label up, is read again when an edit renames the
+ * definition it names (E-D2). */
+static void session_edits_replaced_label(test_batch_runner *runner) {
+    static const char source[] = "[a\0b]: /url\n\nmid\n\n[a\0b]\n\nend\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    const markdown_core_position name = {1, 2}, after = {1, 3};
+    const bool edited =
+        markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) == MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_edit(session, name, after, (const uint8_t *)"c", 1, &document) == MARKDOWN_CORE_OK;
+    OK(runner, edited && session_as_parsed(session), "renaming a label that holds a NUL reads its use again");
+    markdown_core_session_close(session);
+}
+
 /* What a session holds after an edit lets most of its text go: the edit
  * reads all of what is left into storage of its own, which holds no more
  * than twice what a session that reads that text afresh holds, and the
@@ -12813,6 +12864,8 @@ int main(void) {
     session_appends(runner);
     session_edits(runner);
     session_edits_storage(runner);
+    session_edits_refresh_storage(runner);
+    session_edits_replaced_label(runner);
     session_edits_compaction(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);

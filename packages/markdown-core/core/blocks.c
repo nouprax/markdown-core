@@ -3066,8 +3066,8 @@ static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *roo
  * flush's publish follows (ast.c, THE IMAGE OF AN OLD ANCHOR). False, with
  * the parse failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
-                                 const uint32_t *path, size_t depth) {
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
+                                 bool whole, const uint32_t *path, size_t depth) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
@@ -3083,7 +3083,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         return false;
     }
     stream->edit->depth = depth;
-    if (!S_edit_keep(parser, root, child, line, prior, start, to, delta) ||
+    if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
         !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)stream->edit->end,
                                             &stream->edit->registry)) {
@@ -3512,6 +3512,40 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser) {
 }
 
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return parser->stream->edit->tail; }
+
+bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, size_t start,
+                                         markdown_core_strbuf *altered) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
+    markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
+    bool ok = markdown_core_registry_labels_within(&parser->registry, (uint32_t)start, to, 0, &made) &&
+              markdown_core_registry_labels_within(&edit->registry, 0, to, (uint32_t)edit->end, &lost);
+    markdown_core_strbuf_clear(altered);
+    /* Both are in byte order: a merge keeps what one holds and the other
+     * does not. */
+    for (bufsize_t left = 0, other = 0; ok && (left < made.size || other < lost.size);) {
+        const bufsize_t left_size = left < made.size ? (bufsize_t)strlen((const char *)made.ptr + left) + 1 : 0;
+        const bufsize_t other_size = other < lost.size ? (bufsize_t)strlen((const char *)lost.ptr + other) + 1 : 0;
+        int order = !left_size ? 1 : !other_size ? -1 : 0;
+        if (!order) {
+            const bufsize_t common = left_size < other_size ? left_size : other_size;
+            order = memcmp(made.ptr + left, lost.ptr + other, (size_t)common);
+        }
+        if (order < 0) {
+            markdown_core_strbuf_put(altered, made.ptr + left, left_size);
+            left += left_size;
+        } else if (order > 0) {
+            markdown_core_strbuf_put(altered, lost.ptr + other, other_size);
+            other += other_size;
+        } else {
+            left += left_size;
+            other += other_size;
+        }
+    }
+    markdown_core_strbuf_free(&made);
+    markdown_core_strbuf_free(&lost);
+    return ok && !altered->oom;
+}
 
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
     const markdown_core_parser_input *input = &parser->input;

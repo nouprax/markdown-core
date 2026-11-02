@@ -2,6 +2,10 @@ markdown-core incremental script 2
 script hard-heading-label hard
 flush
 edit 30 35 4f74686572
+expect within 0 37
 edit 30 35 5469746c65
+expect within 0 37
 edit 28 28 23205469746c650a0a
+expect within 0 37
 edit 28 37 -
+expect within 0 28

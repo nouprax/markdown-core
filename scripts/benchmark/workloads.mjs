@@ -1182,27 +1182,75 @@ export function hardScripts() {
             .insert(12, "  ")
     );
     /* Definitions: a reference, a footnote, a heading label and a specimen
-     * added, renamed and removed, with their uses before and after them. */
-    add("reference-definition", "see [a][r] and [r]\n\n[r]: /one\n\nafter [r]\n", (s) =>
-        s.edit(26, 29, "two").edit(21, 22, "q").edit(21, 22, "r").remove(20, 31).insert(20, "[r]: /three\n\n")
+     * added, renamed and removed, with their uses before and after them.
+     * An edit that changes which labels are declared reads again the blocks
+     * that may name one (E-D2), not the plain paragraphs after them. */
+    add("reference-definition", "see [a][r] and [r]\n\n[r]: /one\n\nafter [r]\n\nplain one\n\nplain two\n", (s) =>
+        s
+            .edit(26, 29, "two")
+            .within(0, 31)
+            .edit(21, 22, "q")
+            .within(0, 42)
+            .edit(21, 22, "r")
+            .within(0, 42)
+            .remove(20, 31)
+            .within(0, 31)
+            .insert(20, "[r]: /three\n\n")
+            .within(0, 44)
     );
-    add("footnote-definition", "note[^n] here\n\nmore[^n]\n", (s) =>
-        s.insert(24, "\n[^n]: body\n").edit(27, 28, "m").edit(27, 28, "n").remove(24, 36)
+    /* A definition the edit adds before the one a kept use resolves to
+     * takes the label's win, and a use before the re-read text must
+     * follow it; removing it hands the win back. */
+    add("reference-winner", "see [r]\n\nA\n\nB\n\n[r]: /one\n\nplain one\n\nplain two\n", (s) =>
+        s.insert(12, "[r]: /zero\n\n").within(0, 38).remove(12, 25).within(0, 25)
     );
-    add("heading-label", "see [Title] and [x][Title]\n\n# Title\n\n# Other\n", (s) =>
-        s.edit(30, 35, "Other").edit(30, 35, "Title").toggle(28, "# Title\n\n")
+    /* A definition the edit writes over, the reading resuming before a use
+     * of it: the use must lose its link. */
+    add("reference-replaced", "[t]: /m\n\nmid\n\n[t]\n\nplain one\n", (s) =>
+        s.edit(0, 7, "text").within(0, 16).edit(0, 4, "[t]: /m").within(0, 19)
     );
-    add("specimen-definition", "see @spec and (@spec)\n\nbody\n", (s) =>
+    /* A use whose label goes on past a container's prefix. */
+    add("quoted-label", "[r]: /url\n\nmid\n\n> [\n> r]\n\nend\n", (s) => s.edit(1, 2, "s").edit(1, 2, "r"));
+    /* A use in a table cell, whose `\\|` the cell takes to `|`. */
+    add("table-label", "[a|b]: /url\n\nmid\n\n| [a\\|b] |\n| --- |\n\nend\n", (s) => s.edit(1, 2, "c").edit(1, 2, "a"));
+    add("footnote-definition", "note[^n] here\n\nmore[^n]\n\nplain one\n\nplain two\n", (s) =>
+        s
+            .insert(24, "\n[^n]: body\n")
+            .within(0, 48)
+            .edit(27, 28, "m")
+            .within(0, 48)
+            .edit(27, 28, "n")
+            .within(0, 48)
+            .remove(24, 36)
+            .within(0, 36)
+    );
+    add("heading-label", "see [Title] and [x][Title]\n\n# Title\n\n# Other\n\nplain one\n\nplain two\n", (s) =>
+        s
+            .edit(30, 35, "Other")
+            .within(0, 37)
+            .edit(30, 35, "Title")
+            .within(0, 37)
+            .insert(28, "# Title\n\n")
+            .within(0, 37)
+            .remove(28, 37)
+            .within(0, 28)
+    );
+    add("specimen-definition", "see @spec and (@spec)\n\nbody\n\nplain one\n\nplain two\n", (s) =>
         s
             .insert(0, "(@spec) Defined.\n\n")
+            .within(0, 41)
             .edit(2, 6, "spek")
+            .within(0, 41)
             .edit(2, 6, "spec")
+            .within(0, 41)
             .insert(bytes("(@spec) Defined.\n\nsee @spec and (@spec)\n\nbody\n"), "\n(@spec) Again.\n")
+            .within(0, 74)
             .remove(0, 18)
+            .within(0, 56)
     );
     /* The text of a heading with an automatic anchor that a link targets. */
-    add("automatic-anchor", "# Title\n\nsee [x](#title)\n\n# Title\n", (s) =>
-        s.insert(7, "s").remove(7, 8).edit(2, 7, "Other")
+    add("automatic-anchor", "# Title\n\nsee [x](#title)\n\n# Title\n\nplain one\n\nplain two\n", (s) =>
+        s.insert(7, "s").within(0, 10).remove(7, 8).within(0, 9).edit(2, 7, "Other").within(0, 9)
     );
     /* Splitting and joining paragraphs and list items. */
     add("split-and-join", "alpha beta\n\n- one two\n- three\n", (s) =>

@@ -228,6 +228,14 @@ bool markdown_core_registry_take(markdown_core_registry *registry, const markdow
  * same. False when storage could not be had. */
 bool markdown_core_registry_labels_from(const markdown_core_registry *registry, uint32_t start,
                                         markdown_core_strbuf *labels);
+/* The keys as markdown_core_registry_labels_from writes them, of the
+ * declarations that start from `from` up to `to`, each start measured back
+ * from `end` when `end` is not 0, as a tail's are
+ * (markdown_core_registry_keep_before), and then with no lower bound: the
+ * records of text an edit replaced count, as those the splice does not take
+ * back (markdown_core_registry_take). False when storage could not be had. */
+bool markdown_core_registry_labels_within(const markdown_core_registry *registry, uint32_t from, uint32_t to,
+                                          uint32_t end, markdown_core_strbuf *labels);
 
 #ifdef __cplusplus
 }

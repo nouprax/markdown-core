@@ -2,7 +2,12 @@ markdown-core incremental script 2
 script hard-reference-definition hard
 flush
 edit 26 29 74776f
+expect within 0 31
 edit 21 22 71
+expect within 0 42
 edit 21 22 72
+expect within 0 42
 edit 20 31 -
+expect within 0 31
 edit 20 20 5b725d3a202f74687265650a0a
+expect within 0 44

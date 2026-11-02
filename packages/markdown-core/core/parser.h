@@ -1566,14 +1566,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * and moved what follows by `delta`: a commit that ends the text and a `flush` read
  * it from there (blocks.c, THE REOPEN), and take the old children after the
  * edit back where they read as they did (THE SPLICE), unless `whole` says
- * to read all of it. `prior` is where the child before `child` ends, or the
+ * to read all of it, and none before `past`, an offset of the new text,
+ * either. `prior` is where the child before `child` ends, or the
  * root starts. With `depth`, the rest point is below the root (THE NESTED
  * REOPEN): the child before `child` and the `depth - 1` blocks `path`
  * names below it are reopened, the deepest at its child `path[depth]`.
  * False, with the transaction failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
-                                 uint32_t prior, size_t from, size_t to, int64_t delta, const char *source, bool whole,
-                                 const uint32_t *path, size_t depth);
+                                 uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
+                                 bool whole, const uint32_t *path, size_t depth);
 /* THE COMPACTION (plan 12.4): after a reading of the whole text, gives back
  * the storage the input and the reading hold past what the text needs, as
  * the most text before left it. */
@@ -1598,6 +1599,15 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
+/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_labels_from
+ * writes them, that the declarations of the text the last reading of an
+ * edit read, from `start`, its rest point, up to where it took the old
+ * children back, hold and those of the old text it replaced did not, or the
+ * other way round. The children before and after keep their declarations,
+ * so only a lookup of these keys may answer otherwise. False when storage
+ * could not be had. */
+bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, size_t start,
+                                         markdown_core_strbuf *altered);
 /* Where the text an edit's back is measured from ends (THE BACK). */
 static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
     return (uint32_t)parser->stream->edit->end;

@@ -1,0 +1,5 @@
+markdown-core incremental script 2
+script hard-table-label hard
+flush
+edit 1 2 63
+edit 1 2 61

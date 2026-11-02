@@ -62,6 +62,14 @@ document documents/hard-container-markers.md
 script documents/hard-container-markers.md scripts/hard-container-markers.script
 document documents/hard-reference-definition.md
 script documents/hard-reference-definition.md scripts/hard-reference-definition.script
+document documents/hard-reference-winner.md
+script documents/hard-reference-winner.md scripts/hard-reference-winner.script
+document documents/hard-reference-replaced.md
+script documents/hard-reference-replaced.md scripts/hard-reference-replaced.script
+document documents/hard-quoted-label.md
+script documents/hard-quoted-label.md scripts/hard-quoted-label.script
+document documents/hard-table-label.md
+script documents/hard-table-label.md scripts/hard-table-label.script
 document documents/hard-footnote-definition.md
 script documents/hard-footnote-definition.md scripts/hard-footnote-definition.script
 document documents/hard-heading-label.md
