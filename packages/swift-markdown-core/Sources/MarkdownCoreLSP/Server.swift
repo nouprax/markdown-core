@@ -119,7 +119,9 @@ public final class Server {
                     )
                 }
                 return native.withUnsafeBufferPointer { list in
-                    markdown_core_lsp_update(server, name.baseAddress, name.count, version, list.baseAddress, list.count)
+                    markdown_core_lsp_update(
+                        server, name.baseAddress, name.count, version, list.baseAddress, list.count
+                    )
                 }
             }
         }
@@ -180,9 +182,12 @@ public struct Capabilities: Sendable, Hashable {
 /// at the line's end, one inside a character stands at the character's
 /// start, and a line past the text's last stands at the text's end.
 public struct Position: Sendable, Hashable {
+    /// The line, counted from 0.
     public var line: UInt32
+    /// The character in the line, counted from 0 in the negotiated unit.
     public var character: UInt32
 
+    /// The position at `character` of `line`.
     public init(line: UInt32, character: UInt32) {
         self.line = line
         self.character = character
@@ -195,9 +200,12 @@ public struct Position: Sendable, Hashable {
 
 /// A protocol range: from `start` up to `end`, which it does not hold.
 public struct Scope: Sendable, Hashable {
+    /// Where the range starts, which it holds.
     public var start: Position
+    /// Where the range ends, which it does not hold.
     public var end: Position
 
+    /// The range from `start` up to `end`.
     public init(start: Position, end: Position) {
         self.start = start
         self.end = end
@@ -217,9 +225,12 @@ public struct Scope: Sendable, Hashable {
 /// A content change of didChange: `text` replaces `scope`, or the whole text
 /// when `scope` is nil.
 public struct Edit: Sendable, Hashable {
+    /// The range the edit replaces, or `nil` for the whole text.
     public var scope: Scope?
+    /// The text that replaces the range.
     public var text: String
 
+    /// The edit that writes `text` over `scope`, or over the whole text when it is `nil`.
     public init(scope: Scope?, text: String) {
         self.scope = scope
         self.text = text
@@ -230,7 +241,9 @@ public struct Edit: Sendable, Hashable {
 /// computed for, and the number of its items. The items come with the
 /// providers of the plan's section 5.
 public struct Completions: Sendable, Hashable {
+    /// The version of the document the completions were computed for.
     public let version: Int32
+    /// The number of completion items.
     public let count: Int
 }
 
@@ -250,8 +263,10 @@ public struct ServerError: Error, Sendable, Hashable {
         case internalError = -32603
     }
 
+    /// The protocol's error code.
     public let code: Code
 
+    /// The error of `code`.
     public init(code: Code) {
         self.code = code
     }

@@ -104,7 +104,8 @@ private final class Host {
     }
 
     func handle(_ message: [String: Any]) -> [String: Any]? {
-        let method = message["method"] as! String
+        // isMessage checked that the method is a string.
+        let method = message["method"] as? String ?? ""
         let params = message["params"]
         guard let id = message["id"] else {
             notify(method, params as? [String: Any])
