@@ -3513,6 +3513,40 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser) {
 
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return parser->stream->edit->tail; }
 
+bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, size_t start,
+                                         markdown_core_strbuf *altered) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
+    markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
+    bool ok = markdown_core_registry_labels_within(&parser->registry, (uint32_t)start, to, 0, &made) &&
+              markdown_core_registry_labels_within(&edit->registry, 0, to, (uint32_t)edit->end, &lost);
+    markdown_core_strbuf_clear(altered);
+    /* Both are in byte order: a merge keeps what one holds and the other
+     * does not. */
+    for (bufsize_t left = 0, other = 0; ok && (left < made.size || other < lost.size);) {
+        const bufsize_t left_size = left < made.size ? (bufsize_t)strlen((const char *)made.ptr + left) + 1 : 0;
+        const bufsize_t other_size = other < lost.size ? (bufsize_t)strlen((const char *)lost.ptr + other) + 1 : 0;
+        int order = !left_size ? 1 : !other_size ? -1 : 0;
+        if (!order) {
+            const bufsize_t common = left_size < other_size ? left_size : other_size;
+            order = memcmp(made.ptr + left, lost.ptr + other, (size_t)common);
+        }
+        if (order < 0) {
+            markdown_core_strbuf_put(altered, made.ptr + left, left_size);
+            left += left_size;
+        } else if (order > 0) {
+            markdown_core_strbuf_put(altered, lost.ptr + other, other_size);
+            other += other_size;
+        } else {
+            left += left_size;
+            other += other_size;
+        }
+    }
+    markdown_core_strbuf_free(&made);
+    markdown_core_strbuf_free(&lost);
+    return ok && !altered->oom;
+}
+
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
     const markdown_core_parser_input *input = &parser->input;
     const markdown_core_edit *edit = parser->stream && parser->stream->edit ? parser->stream->edit : NULL;

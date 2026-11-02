@@ -12,6 +12,7 @@
 
 #include <element.h>
 #include <parser.h>
+#include <utf8.h>
 
 /* A SESSION: the text, the parse that has committed its lines, the document
  * published from it, the storage its nodes live in and whether it was
@@ -634,6 +635,115 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     return status;
 }
 
+/* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): a lookup of
+ * the children an edit kept, before its rest point and from where it took
+ * the old children back, may answer otherwise for a label the edit altered
+ * (markdown_core_parser_altered_labels). A byte filter over the kept text
+ * finds every place a lookup of one may be made, and conservatively: a
+ * reference, a footnote and a heading label are named in brackets, so each
+ * `[`, and `[^`, is followed, past white space, by a run of bytes whose
+ * normal form starts with the label's first word when the bracket names it;
+ * a specimen is cited as `@label`, its bytes as written. The block that
+ * holds a place is read again, as an edit of nothing there reads it, which
+ * completes its content against the definitions the edit left. */
+
+/* The first word of the key `item` of `size` bytes, the kind's byte first:
+ * the label up to its first space, which a normal form holds one of between
+ * words. */
+static size_t session_first_word(const uint8_t *item, size_t size) {
+    const uint8_t *space = memchr(item + 1, ' ', size - 1);
+    return (space ? (size_t)(space - item) : size) - 1;
+}
+
+/* Whether the run of the text at `at`, up to its end at `limit`, may be
+ * the start of a label whose first word is `word`, of `size` bytes, in the
+ * normal form `fold` (a specimen's bytes as written when it is false). The
+ * run starts past white space and ends at white space; a fold may take up
+ * to four bytes to one, so no more than four times the word is folded. */
+static bool session_matches(const uint8_t *text, size_t limit, size_t at, const uint8_t *word, size_t size, bool fold,
+                            markdown_core_strbuf *scratch) {
+    while (fold && at < limit && markdown_core_is_whitespace(text[at])) {
+        at++;
+    }
+    size_t end = at;
+    const size_t most = at + 4 * size + 4 < limit ? at + 4 * size + 4 : limit;
+    while (end < most && !markdown_core_is_whitespace(text[end])) {
+        end++;
+    }
+    /* A run the bound cut ends at a scalar's start. */
+    while (end < limit && end > at && end == most && (text[end] & 0xC0) == 0x80) {
+        end--;
+    }
+    if (!fold) {
+        return end - at >= size && memcmp(text + at, word, size) == 0;
+    }
+    markdown_core_strbuf_clear(scratch);
+    markdown_core_utf8proc_normalize_label(scratch, text + at, (bufsize_t)(end - at));
+    return !scratch->oom && (size_t)scratch->size >= size && memcmp(scratch->ptr, word, size) == 0;
+}
+
+/* Whether the text at `at`, an opener, may name one of the `altered`
+ * labels. True, too, when the filter could not have its storage: the block
+ * is read again. */
+static bool session_names(const uint8_t *text, size_t limit, size_t at, const markdown_core_strbuf *altered,
+                          markdown_core_strbuf *scratch) {
+    for (bufsize_t item = 0; item < altered->size;) {
+        const uint8_t *label = altered->ptr + item;
+        const size_t size = strlen((const char *)label);
+        item += (bufsize_t)size + 1;
+        const size_t word = session_first_word(label, size);
+        const bool specimen = label[0] == MARKDOWN_CORE_REGISTRY_SPECIMEN;
+        if (specimen != (text[at] == '@')) {
+            continue;
+        }
+        if (session_matches(text, limit, at + 1, label + 1, word, !specimen, scratch) ||
+            (!specimen && at + 1 < limit && text[at + 1] == '^' &&
+             session_matches(text, limit, at + 2, label + 1, word, true, scratch)) ||
+            scratch->oom) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The kept text from `from` up to `to` read again where a lookup of one of
+ * the `altered` labels may be made, block by block, a block once. The
+ * bytes read again join those the edit read. */
+static markdown_core_status session_refresh(markdown_core_session *session, const markdown_core_strbuf *altered,
+                                            size_t from, size_t to) {
+    const uint8_t *text = (const uint8_t *)session_source(session);
+    session_edits *edits = session->edits;
+    size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
+    markdown_core_strbuf scratch = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_status status = MARKDOWN_CORE_OK;
+    for (size_t at = from; status == MARKDOWN_CORE_OK && at < to; at++) {
+        if ((text[at] != '[' && text[at] != '@') || !session_names(text, session->text.count, at, altered, &scratch)) {
+            continue;
+        }
+        /* An edit of nothing just past the opener: one at a block's start
+         * would be the end of the block before. */
+        const size_t inside = at + 1;
+        uint32_t child;
+        size_t line;
+        session_rest_point rest;
+        if (!session_rest(session, markdown_core_parser_line_of(session->committed, inside), &child, &line, &rest)) {
+            status = MARKDOWN_CORE_ALLOCATION_FAILED;
+            break;
+        }
+        status = session_reread(session, child, line, inside, inside, 0, false, &rest);
+        reread_from = edits->reread_from < reread_from ? edits->reread_from : reread_from;
+        reread_to = edits->reread_to > reread_to ? edits->reread_to : reread_to;
+        /* The block read again holds no place left to look at. */
+        if (edits->reread_to > at + 1) {
+            at = edits->reread_to - 1;
+        }
+    }
+    markdown_core_strbuf_free(&scratch);
+    edits->reread_from = reread_from;
+    edits->reread_to = reread_to;
+    return status;
+}
+
 markdown_core_status markdown_core_session_edit(markdown_core_session *session, markdown_core_position start,
                                                 markdown_core_position end, const uint8_t *text, size_t length,
                                                 const markdown_core_document **document) {
@@ -665,16 +775,10 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     }
     size_t rest_start, rest_end;
     markdown_core_parser_line_span(session->committed, line, &rest_start, &rest_end);
-    /* The labels the text from the rest point declares: when the new text
-     * declares others, a lookup of the children that stay may answer
-     * otherwise, and the whole text is read again. */
-    markdown_core_strbuf before = MARKDOWN_CORE_BUF_INIT(), after = MARKDOWN_CORE_BUF_INIT();
     if (session->text.count > session->edits->peak) {
         session->edits->peak = session->text.count;
     }
-    if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &before) ||
-        !session_replace(session, from, to, text, length)) {
-        markdown_core_strbuf_free(&before);
+    if (!session_replace(session, from, to, text, length)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     const int64_t delta = (int64_t)length - (int64_t)(to - from);
@@ -698,20 +802,26 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
         edits->peak = session->text.count;
     }
     /* The children before the rest point stay, and so do those the reading
-     * took back after the edit. */
-    if (status == MARKDOWN_CORE_OK && (child || markdown_core_parser_resumed(session->committed))) {
-        if (!markdown_core_registry_labels_from(&session->committed->registry, (uint32_t)rest_start, &after)) {
+     * took back after the edit: their lookups of a label the edit altered
+     * are made again (THE DEFINITIONS AN EDIT ALTERED). */
+    const size_t resumed = markdown_core_parser_resumed(session->committed);
+    if (status == MARKDOWN_CORE_OK && !compact && (child || resumed)) {
+        markdown_core_strbuf altered = MARKDOWN_CORE_BUF_INIT();
+        if (!markdown_core_parser_altered_labels(session->committed, rest_start, &altered)) {
             /* The children that stay may read otherwise, and no edit after
              * this one may take them as they are. */
             markdown_core_node_pool_release(&session->pool, session->document.root);
             session->document.root = NULL;
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
-        } else if ((before.size != after.size || (before.size && memcmp(before.ptr, after.ptr, before.size)))) {
-            status = session_reread(session, 0, 0, 0, 0, 0, true, NULL);
+        } else if (altered.size) {
+            const size_t text_size = session->text.count;
+            status = session_refresh(session, &altered, 0, rest_start);
+            if (status == MARKDOWN_CORE_OK && resumed) {
+                status = session_refresh(session, &altered, resumed, text_size);
+            }
         }
+        markdown_core_strbuf_free(&altered);
     }
-    markdown_core_strbuf_free(&before);
-    markdown_core_strbuf_free(&after);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
     }

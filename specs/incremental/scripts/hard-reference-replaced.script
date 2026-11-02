@@ -1,0 +1,7 @@
+markdown-core incremental script 2
+script hard-reference-replaced hard
+flush
+edit 0 7 74657874
+expect within 0 16
+edit 0 4 5b745d3a202f6d
+expect within 0 19

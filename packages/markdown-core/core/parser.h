@@ -1598,6 +1598,15 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
+/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_labels_from
+ * writes them, that the declarations of the text the last reading of an
+ * edit read, from `start`, its rest point, up to where it took the old
+ * children back, hold and those of the old text it replaced did not, or the
+ * other way round. The children before and after keep their declarations,
+ * so only a lookup of these keys may answer otherwise. False when storage
+ * could not be had. */
+bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, size_t start,
+                                         markdown_core_strbuf *altered);
 /* Where the text an edit's back is measured from ends (THE BACK). */
 static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
     return (uint32_t)parser->stream->edit->end;

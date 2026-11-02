@@ -307,13 +307,20 @@ static int S_key_order(const void *a, const void *b) {
     return order ? order : (left->key_len > right->key_len) - (left->key_len < right->key_len);
 }
 
-bool markdown_core_registry_labels_from(const markdown_core_registry *registry, uint32_t start,
-                                        markdown_core_strbuf *labels) {
+/* The keys of the declarations that start from `from` up to `to`, each
+ * start measured back from `back` when it is not 0, in byte order, each
+ * once and with its NUL, into `labels`. A start measured back has no lower
+ * bound: a record of text an edit replaced measures back to before where
+ * it was, even before the text's start. */
+static bool S_labels_of(const markdown_core_registry *registry, uint32_t from, uint32_t to, uint32_t back,
+                        markdown_core_strbuf *labels) {
     const markdown_core_registry_record **found = NULL;
     size_t count = 0, capacity = 0;
     for (size_t i = 0; i < registry->count; i++) {
         const markdown_core_registry_record *record = registry->records[i];
-        if (record->start < start || record->withdraws || record->key[0] == MARKDOWN_CORE_REGISTRY_ANCHOR) {
+        const int64_t start = back ? (int64_t)back - record->start : (int64_t)record->start;
+        if ((!back && start < from) || start >= to || record->withdraws ||
+            record->key[0] == MARKDOWN_CORE_REGISTRY_ANCHOR) {
             continue;
         }
         const markdown_core_registry_record **grown =
@@ -336,4 +343,14 @@ bool markdown_core_registry_labels_from(const markdown_core_registry *registry, 
     }
     markdown_core_free(found);
     return !labels->oom;
+}
+
+bool markdown_core_registry_labels_from(const markdown_core_registry *registry, uint32_t start,
+                                        markdown_core_strbuf *labels) {
+    return S_labels_of(registry, start, UINT32_MAX, 0, labels);
+}
+
+bool markdown_core_registry_labels_within(const markdown_core_registry *registry, uint32_t from, uint32_t to,
+                                          uint32_t end, markdown_core_strbuf *labels) {
+    return S_labels_of(registry, from, to, end, labels);
 }
