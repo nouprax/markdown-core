@@ -940,7 +940,7 @@ activates for it.
    `finalize` in C and every binding (4.4, 5.10), container folds (5.6) and
    pipe and simple tables read a row at a time (5.7).
 - [x] **Step 8: Settle point.** The settle point of an open paragraph (5.8).
-- [ ] **Steps E0 to E3: Edits.** Gates, the C edit, the bindings and the LSP
+- [x] **Steps E0 to E3: Edits.** Gates, the C edit, the bindings and the LSP
    server's edit step (12.9).
 
 ## 10. Decisions for the owner
@@ -1387,7 +1387,9 @@ list of 10,000 items, it is about 10,000 pointer copies.
   compaction.
 - **E2: Bindings.** `session.edit` on Swift, Kotlin and ES, in one PR.
 - **E3: LSP server.** One session per open document: `didOpen` parses and
-  finalizes it, `didChange` edits it, and completion locates it.
+  finalizes it, `didChange` edits it, and completion locates it. The server
+  reads the session's text through `markdown_core_session_source` and holds
+  no copy of it.
 
 ### 12.10 Decisions for the owner
 

@@ -107,6 +107,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_locate;
     markdown_core_session_new;
     markdown_core_session_reread;
+    markdown_core_session_source;
     markdown_core_session_text;
     markdown_core_session_text_size;
     markdown_core_session_unit;

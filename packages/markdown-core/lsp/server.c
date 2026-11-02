@@ -9,9 +9,11 @@
  * The engine's server: the lifecycle, the negotiated unit and the document
  * store (plan, sections 4.3 and 6).
  *
- * A RECORD is one open document: its URI, its version, its text, and the
- * document parsed from that text, which the first request that needs it
- * makes and every edit drops, so a version is parsed at most once.
+ * A RECORD is one open document: its URI, its version and its session.
+ * didOpen parses the text into the session and flushes it, each change of
+ * didChange is one edit of the session, which reads again only what the
+ * edit damaged, and completion locates the session at its cursor. The
+ * session holds the text, so the server holds no copy of it.
  *
  * The store is an open-addressed table of records keyed by URI, probed
  * linearly; a close shifts the records after it back, so the table holds no
@@ -23,8 +25,7 @@ typedef struct record {
     size_t uri_size;
     uint64_t hash;
     int32_t version;
-    lsp_text text;
-    markdown_core_document *document;
+    markdown_core_session *session;
 } record;
 
 struct markdown_core_lsp_server {
@@ -33,9 +34,6 @@ struct markdown_core_lsp_server {
     record **slots;
     size_t capacity;
     size_t count;
-    /* The text an update edits, swapped with the record's when every edit
-     * applies, so a failed update leaves the record as it was. */
-    lsp_text spare;
 };
 
 struct markdown_core_lsp_list {
@@ -74,8 +72,7 @@ static void release(record *held) {
     if (!held) {
         return;
     }
-    markdown_core_document_free(held->document);
-    lsp_text_release(&held->text);
+    markdown_core_session_close(held->session);
     free(held->uri);
     free(held);
 }
@@ -155,7 +152,6 @@ void markdown_core_lsp_server_free(markdown_core_lsp_server *server) {
         release(server->slots[i]);
     }
     free(server->slots);
-    lsp_text_release(&server->spare);
     free(server);
 }
 
@@ -199,8 +195,10 @@ markdown_core_lsp_status markdown_core_lsp_open(markdown_core_lsp_server *server
     uint64_t hash = hash_uri(uri, uri_size);
     size_t at = probe(server, uri, uri_size, hash);
     record *made = (record *)calloc(1, sizeof(*made));
-    if (!made || !lsp_text_assign(&made->text, text, text_size) ||
-        !(made->uri = (uint8_t *)malloc(uri_size ? uri_size : 1))) {
+    const markdown_core_document *document;
+    if (!made || !(made->uri = (uint8_t *)malloc(uri_size ? uri_size : 1)) ||
+        markdown_core_session_new(text, text_size, server->unit, &made->session) != MARKDOWN_CORE_OK ||
+        markdown_core_session_flush(made->session, &document) != MARKDOWN_CORE_OK) {
         release(made);
         return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
     }
@@ -219,38 +217,52 @@ markdown_core_lsp_status markdown_core_lsp_open(markdown_core_lsp_server *server
     return MARKDOWN_CORE_LSP_OK;
 }
 
+/* Whether `a` stands after `b`. */
+static bool after(markdown_core_lsp_position a, markdown_core_lsp_position b) {
+    return a.line != b.line ? a.line > b.line : a.character > b.character;
+}
+
+/* Closes the document in slot `at`. */
+static void drop(markdown_core_lsp_server *server, size_t at) {
+    release(server->slots[at]);
+    vacate(server, at);
+    server->count--;
+}
+
 markdown_core_lsp_status markdown_core_lsp_update(markdown_core_lsp_server *server, const uint8_t *uri, size_t uri_size,
                                                   int32_t version, const markdown_core_lsp_edit *edits, size_t count) {
     markdown_core_lsp_status status = active(server);
     if (status != MARKDOWN_CORE_LSP_OK) {
         return status;
     }
-    record *held = find(server, uri, uri_size);
+    size_t at = probe(server, uri, uri_size, hash_uri(uri, uri_size));
+    record *held = server->slots[at];
     if (!held) {
         return MARKDOWN_CORE_LSP_INVALID_PARAMS;
     }
-    lsp_text *spare = &server->spare;
-    if (!lsp_text_assign(spare, held->text.bytes, held->text.size)) {
-        return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
-    }
+    /* A scope's order holds whatever the text, so every edit is checked
+     * before the first applies. */
     for (size_t i = 0; i < count; i++) {
-        size_t start, end;
-        markdown_core_position cursor;
-        lsp_text_locate(spare, edits[i].scope.start, server->unit, &start, &cursor);
-        lsp_text_locate(spare, edits[i].scope.end, server->unit, &end, &cursor);
-        if (start > end) {
+        if (after(edits[i].scope.start, edits[i].scope.end)) {
             return MARKDOWN_CORE_LSP_INVALID_PARAMS;
         }
-        if (!lsp_text_splice(spare, start, end, edits[i].text, edits[i].size)) {
+    }
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_string text = markdown_core_session_source(held->session);
+        size_t start, end;
+        markdown_core_position from, to;
+        lsp_text_locate(text, edits[i].scope.start, server->unit, &start, &from);
+        lsp_text_locate(text, edits[i].scope.end, server->unit, &end, &to);
+        const markdown_core_document *document;
+        if (markdown_core_session_edit(held->session, from, to, edits[i].text, edits[i].size, &document) !=
+            MARKDOWN_CORE_OK) {
+            /* The session took the edits before this one and may have taken
+             * this one's text, so no text the server holds is the client's. */
+            drop(server, at);
             return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
         }
     }
-    lsp_text edited = *spare;
-    *spare = held->text;
-    held->text = edited;
     held->version = version;
-    markdown_core_document_free(held->document);
-    held->document = NULL;
     return MARKDOWN_CORE_LSP_OK;
 }
 
@@ -264,9 +276,7 @@ markdown_core_lsp_status markdown_core_lsp_close(markdown_core_lsp_server *serve
     if (!server->slots[at]) {
         return MARKDOWN_CORE_LSP_INVALID_PARAMS;
     }
-    release(server->slots[at]);
-    vacate(server, at);
-    server->count--;
+    drop(server, at);
     return MARKDOWN_CORE_LSP_OK;
 }
 
@@ -281,21 +291,14 @@ markdown_core_lsp_status markdown_core_lsp_complete(markdown_core_lsp_server *se
     if (!held) {
         return MARKDOWN_CORE_LSP_INVALID_PARAMS;
     }
-    if (!held->document && markdown_core_document_parse_in(held->text.bytes, held->text.size, server->unit,
-                                                           &held->document) != MARKDOWN_CORE_OK) {
-        return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
-    }
     size_t offset;
     markdown_core_position cursor;
-    lsp_text_locate(&held->text, position, server->unit, &offset, &cursor);
-    /* The providers of section 5 read this context; until they land, every
-     * slot has no candidates. */
-    markdown_core_context *context;
-    if (markdown_core_document_context(held->document, held->text.bytes, held->text.size, cursor, &context) !=
-        MARKDOWN_CORE_OK) {
+    lsp_text_locate(markdown_core_session_source(held->session), position, server->unit, &offset, &cursor);
+    /* The providers of section 5 read the session's context there; until
+     * they land, every slot has no candidates. */
+    if (markdown_core_session_locate(held->session, cursor) != MARKDOWN_CORE_OK) {
         return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
     }
-    markdown_core_context_free(context);
     markdown_core_lsp_list *made = (markdown_core_lsp_list *)calloc(1, sizeof(*made));
     if (!made) {
         return MARKDOWN_CORE_LSP_INTERNAL_ERROR;
@@ -306,9 +309,10 @@ markdown_core_lsp_status markdown_core_lsp_complete(markdown_core_lsp_server *se
     return MARKDOWN_CORE_LSP_OK;
 }
 
-const lsp_text *lsp_server_text(const markdown_core_lsp_server *server, const uint8_t *uri, size_t uri_size) {
+const markdown_core_session *lsp_server_session(const markdown_core_lsp_server *server, const uint8_t *uri,
+                                                size_t uri_size) {
     const record *held = find(server, uri, uri_size);
-    return held ? &held->text : NULL;
+    return held ? held->session : NULL;
 }
 
 int32_t markdown_core_lsp_list_version(const markdown_core_lsp_list *list) { return list->version; }

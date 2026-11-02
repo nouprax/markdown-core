@@ -11150,6 +11150,9 @@ static void session_appends(test_batch_runner *runner) {
     uint8_t text[64];
     markdown_core_session_text(session, text);
     OK(runner, memcmp(text, "one\n\ntwo \xf0\xa0\x80\x80\ns\xe4\xb8", sizeof(source) + 2) == 0, "the text");
+    markdown_core_string lent = markdown_core_session_source(session);
+    OK(runner, lent.length == sizeof(source) + 2 && memcmp(lent.data, text, lent.length) == 0,
+       "the lent text is the text");
     const markdown_core_document *final = NULL;
     OK(runner,
        markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && final &&

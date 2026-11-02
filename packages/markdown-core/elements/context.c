@@ -876,7 +876,8 @@ static bool marked(const context_query *query, const markdown_core_context_field
         (owner == MARKDOWN_CORE_KIND_LINK || owner == MARKDOWN_CORE_KIND_EMBEDDED ||
          owner == MARKDOWN_CORE_KIND_REFERENCE)) {
         const size_t origin = field->start - field->lead;
-        const bool angled = source[origin] == '<' || (origin > 0 && source[origin - 1] == '<');
+        /* A field the text's end opens has no byte at its origin. */
+        const bool angled = (origin < last && source[origin] == '<') || (origin > 0 && source[origin - 1] == '<');
         long depth = 0;
         for (size_t at = field->start; at < end && !angled; at++) {
             if (source[at] == '\\' && at + 1 < end) {

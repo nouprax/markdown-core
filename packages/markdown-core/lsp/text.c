@@ -1,8 +1,5 @@
 #include "text.h"
 
-#include <stdlib.h>
-#include <string.h>
-
 static bool line_end(uint8_t byte) { return byte == '\n' || byte == '\r'; }
 
 /* The columns a run of bytes counts in `unit`, by the parser's rule: in
@@ -19,10 +16,10 @@ static uint64_t columns(const uint8_t *bytes, size_t from, size_t to, markdown_c
     return units;
 }
 
-void lsp_text_locate(const lsp_text *text, markdown_core_lsp_position position, markdown_core_text_unit unit,
+void lsp_text_locate(markdown_core_string text, markdown_core_lsp_position position, markdown_core_text_unit unit,
                      size_t *offset, markdown_core_position *cursor) {
-    const uint8_t *bytes = text->bytes;
-    size_t size = text->size, at = 0;
+    const uint8_t *bytes = text.data;
+    size_t size = text.length, at = 0;
     uint32_t line = 0;
     for (; line < position.line; line++) {
         size_t i = at;
@@ -60,53 +57,4 @@ void lsp_text_locate(const lsp_text *text, markdown_core_lsp_position position, 
     *offset = at;
     cursor->line = (int32_t)line + 1;
     cursor->column = (int32_t)(units + 1);
-}
-
-static bool reserve(lsp_text *text, size_t size) {
-    if (size <= text->capacity) {
-        return true;
-    }
-    size_t capacity = text->capacity < 256 ? 256 : text->capacity;
-    while (capacity < size) {
-        capacity = capacity > SIZE_MAX / 2 ? size : capacity * 2;
-    }
-    uint8_t *bytes = (uint8_t *)realloc(text->bytes, capacity);
-    if (!bytes) {
-        return false;
-    }
-    text->bytes = bytes;
-    text->capacity = capacity;
-    return true;
-}
-
-bool lsp_text_assign(lsp_text *text, const uint8_t *bytes, size_t size) {
-    if (!reserve(text, size)) {
-        return false;
-    }
-    if (size) {
-        memcpy(text->bytes, bytes, size);
-    }
-    text->size = size;
-    return true;
-}
-
-bool lsp_text_splice(lsp_text *text, size_t start, size_t end, const uint8_t *bytes, size_t size) {
-    size_t kept = text->size - (end - start);
-    if (size > SIZE_MAX - kept || !reserve(text, kept + size)) {
-        return false;
-    }
-    if (text->size > end) {
-        memmove(text->bytes + start + size, text->bytes + end, text->size - end);
-    }
-    if (size) {
-        memcpy(text->bytes + start, bytes, size);
-    }
-    text->size = kept + size;
-    return true;
-}
-
-void lsp_text_release(lsp_text *text) {
-    free(text->bytes);
-    text->bytes = NULL;
-    text->size = text->capacity = 0;
 }

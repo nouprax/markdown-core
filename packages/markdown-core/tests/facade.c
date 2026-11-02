@@ -1012,6 +1012,25 @@ static void check_context_query(void) {
     markdown_core_context_free(context);
     markdown_core_context_free(NULL);
 
+    /* A destination the text's end opens: the query reads no byte past the
+     * text, which a buffer of the text's own size shows a sanitizer. */
+    context = NULL;
+    uint8_t *opened = malloc(4);
+    markdown_core_document *link = NULL;
+    if (opened) {
+        memcpy(opened, "[a](", 4);
+    }
+    check(opened && markdown_core_document_parse(opened, 4, &link) == MARKDOWN_CORE_OK &&
+              markdown_core_document_context(link, opened, 4, (markdown_core_position){1, 5}, &context) ==
+                  MARKDOWN_CORE_OK &&
+              markdown_core_context_slot_count(context) == 1 &&
+              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK &&
+              slot.kind == MARKDOWN_CORE_SLOT_DEST,
+          "a context query at the end of an opened destination reads only the text");
+    markdown_core_context_free(context);
+    markdown_core_document_free(link);
+    free(opened);
+
     const markdown_core_position outside[] = {{0, 1}, {1, 0}, {3, 1}, {1, 40}};
     for (size_t index = 0; index < sizeof(outside) / sizeof(*outside); index++) {
         context = NULL;

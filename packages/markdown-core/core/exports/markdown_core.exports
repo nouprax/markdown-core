@@ -105,6 +105,7 @@ _markdown_core_session_close
 _markdown_core_session_locate
 _markdown_core_session_new
 _markdown_core_session_reread
+_markdown_core_session_source
 _markdown_core_session_text
 _markdown_core_session_text_size
 _markdown_core_session_unit

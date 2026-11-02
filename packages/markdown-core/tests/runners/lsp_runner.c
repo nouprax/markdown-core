@@ -380,6 +380,8 @@ static void sync_case(prng_state *prng, markdown_core_text_unit unit, size_t ind
             next.scalars[i] = text.scalars[i];
         }
         next.count = text.count;
+        /* A scope whose start is after its end refuses the whole change,
+         * whatever the text. */
         bool valid = true;
         for (size_t e = 0; e < count; e++) {
             markdown_core_lsp_scope scope;
@@ -395,13 +397,19 @@ static void sync_case(prng_state *prng, markdown_core_text_unit unit, size_t ind
             edits[e].scope = scope;
             edits[e].size = model_bytes(inserted[e], added, encoded[e]);
             edits[e].text = encoded[e];
-            markdown_core_position cursor;
-            size_t start = model_locate(&next, scope.start, unit, &cursor);
-            size_t end = model_locate(&next, scope.end, unit, &cursor);
+            if (scope.start.line != scope.end.line ? scope.start.line > scope.end.line
+                                                   : scope.start.character > scope.end.character) {
+                valid = false;
+            }
             if (!valid) {
                 continue;
             }
+            markdown_core_position cursor;
+            size_t start = model_locate(&next, scope.start, unit, &cursor);
+            size_t end = model_locate(&next, scope.end, unit, &cursor);
             if (start > end) {
+                fprintf(stderr, "FAIL sync case %zu: the model stands an ordered scope backwards\n", index);
+                failures++;
                 valid = false;
                 continue;
             }
@@ -425,22 +433,45 @@ static void sync_case(prng_state *prng, markdown_core_text_unit unit, size_t ind
         } else {
             free(next.scalars);
         }
-        const lsp_text *held = lsp_server_text(server, SYNC_URI, sizeof(SYNC_URI) - 1);
+        const markdown_core_session *session = lsp_server_session(server, SYNC_URI, sizeof(SYNC_URI) - 1);
+        markdown_core_string held = {NULL, 0};
+        if (session) {
+            held = markdown_core_session_source(session);
+        }
         uint8_t *want = (uint8_t *)malloc(4 * text.count + 1);
         size_t want_size = model_bytes(text.scalars, text.count, want);
-        if (!held || held->size != want_size || (want_size && memcmp(held->bytes, want, want_size) != 0)) {
+        if (!session || held.length != want_size || (want_size && memcmp(held.data, want, want_size) != 0)) {
             fprintf(stderr, "FAIL sync case %zu, version %d: the text differs from the model's\n", index, (int)version);
             failures++;
+            session = NULL;
+        }
+        /* The session's document, which the edits kept, is a parse of its
+         * text, ids aside. */
+        markdown_core_document *document = NULL;
+        if (session && markdown_core_document_parse_in(held.data, held.length, unit, &document) != MARKDOWN_CORE_OK) {
+            fprintf(stderr, "FAIL sync case %zu: the text does not parse\n", index);
+            failures++;
+            session = NULL;
+        }
+        if (session) {
+            const markdown_core_document *edited = markdown_core_session_document(session);
+            uint8_t *left = NULL, *right = NULL;
+            size_t left_size = 0, right_size = 0;
+            if (markdown_core_document_dump(edited, markdown_core_document_root(edited), held.data, held.length, &left,
+                                            &left_size) != MARKDOWN_CORE_OK ||
+                markdown_core_document_dump(document, markdown_core_document_root(document), held.data, held.length,
+                                            &right, &right_size) != MARKDOWN_CORE_OK ||
+                left_size != right_size || memcmp(left, right, left_size) != 0) {
+                fprintf(stderr, "FAIL sync case %zu, version %d: the session's document is not a parse of its text\n",
+                        index, (int)version);
+                failures++;
+            }
+            markdown_core_dump_free(left);
+            markdown_core_dump_free(right);
         }
         /* Every position stands where the model says, at a cursor the
          * context query takes. */
-        markdown_core_document *document = NULL;
-        if (held && markdown_core_document_parse_in(held->bytes, held->size, unit, &document) != MARKDOWN_CORE_OK) {
-            fprintf(stderr, "FAIL sync case %zu: the text does not parse\n", index);
-            failures++;
-            held = NULL;
-        }
-        for (int p = 0; held && p < 8 && !failures; p++) {
+        for (int p = 0; session && p < 8 && !failures; p++) {
             markdown_core_lsp_position position = pick_position(prng, &text);
             markdown_core_position cursor, model_cursor;
             size_t offset;
@@ -453,7 +484,7 @@ static void sync_case(prng_state *prng, markdown_core_text_unit unit, size_t ind
                         index, position.line, position.character, offset, cursor.line, cursor.column, model_offset,
                         model_cursor.line, model_cursor.column);
                 failures++;
-            } else if (markdown_core_document_context(document, held->bytes, held->size, cursor, &context) !=
+            } else if (markdown_core_document_context(document, held.data, held.length, cursor, &context) !=
                        MARKDOWN_CORE_OK) {
                 fprintf(stderr, "FAIL sync case %zu: the context query refuses the cursor %d:%d\n", index, cursor.line,
                         cursor.column);
@@ -480,7 +511,7 @@ static void sync_case(prng_state *prng, markdown_core_text_unit unit, size_t ind
         free(want);
     }
     if (markdown_core_lsp_close(server, SYNC_URI, sizeof(SYNC_URI) - 1) != MARKDOWN_CORE_LSP_OK ||
-        lsp_server_text(server, SYNC_URI, sizeof(SYNC_URI) - 1) != NULL) {
+        lsp_server_session(server, SYNC_URI, sizeof(SYNC_URI) - 1) != NULL) {
         fprintf(stderr, "FAIL sync case %zu: the document does not close\n", index);
         failures++;
     }
@@ -516,9 +547,13 @@ static void store_case(prng_state *prng) {
         }
         for (int k = 0; k < STORE_COUNT; k++) {
             int known = snprintf(uri, sizeof(uri), "file:///%d.md", k);
-            const lsp_text *held = lsp_server_text(server, (const uint8_t *)uri, (size_t)known);
-            bool right = open[k] ? held && held->size == (size_t)known && !memcmp(held->bytes, uri, (size_t)known)
-                                 : held == NULL;
+            const markdown_core_session *held = lsp_server_session(server, (const uint8_t *)uri, (size_t)known);
+            markdown_core_string text = {NULL, 0};
+            if (held) {
+                text = markdown_core_session_source(held);
+            }
+            bool right =
+                open[k] ? held && text.length == (size_t)known && !memcmp(text.data, uri, (size_t)known) : held == NULL;
             if (!right) {
                 fprintf(stderr, "FAIL store round %d: %s is %s\n", round, uri,
                         open[k] ? "open but not found" : "closed but found");

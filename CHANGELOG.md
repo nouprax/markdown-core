@@ -6,6 +6,20 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Keep each open document of the language engine as a flushed session
+  (incremental edits plan, step E3): `didOpen` parses the text into the
+  document's session and flushes it, each change of `didChange` is one edit
+  of the session, which reads again only the blocks the edit damaged, and a
+  completion request locates the session at its cursor instead of parsing
+  the version and asking a fresh context. The server holds no copy of the
+  text: it reads the session's through the new
+  `markdown_core_session_source`, which lends the text until the session's
+  next step. A change whose scope's start is after its end is refused before
+  any of its edits applies; an edit that cannot allocate closes the
+  document, whose text the server no longer knows. A context query at the
+  end of a destination the text's end opens, such as `[a](`, no longer reads
+  the byte after the text.
+
 - Edit a flushed session from Swift, Kotlin and ECMAScript (incremental
   edits plan, step E2): `MarkdownSession.edit(from:to:with:)` in Swift and
   `edit(start, end, text)` in Kotlin and ECMAScript replace the text between
