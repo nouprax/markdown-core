@@ -102,6 +102,17 @@ if(_markdown_core_edit EQUAL -1)
     target_compile_definitions(markdown_core_stream_runner PRIVATE MARKDOWN_CORE_BENCH_SESSION_EDITLESS)
 endif()
 
+# The completion latency benchmark's runner (docs/plans/
+# 2026-10-23-lsp-completion-engine.md, section 7): the language engine on the
+# stream benchmark's edit scripts, one completion request per window. It reads
+# the scripts through the incremental harness and the document's session
+# through the engine's internal accessor, which checks its edits' text. Like
+# the stage runners it is never registered with CTest.
+add_executable(markdown_core_completion_runner completion_runner.c incremental_harness.c)
+target_include_directories(markdown_core_completion_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+                                                                   "${CMAKE_CURRENT_SOURCE_DIR}/../lsp")
+target_link_libraries(markdown_core_completion_runner PRIVATE libmarkdown-core-lsp libmarkdown-core-public-static)
+
 # The attribute comparison's two runners.
 #
 # Separate binaries from the stage runners above, and separate on purpose: the

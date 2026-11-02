@@ -225,3 +225,50 @@ jobs:
                       build/benchmark-streams/streams.json
                   if-no-files-found: error
                   retention-days: 30
+
+    # What the language engine pays per completion request (docs/plans/
+    # 2026-10-23-lsp-completion-engine.md, section 7): the stream benchmark's
+    # edit scripts sent as didChange, each measured request followed by a
+    # completion, on the grammar corpus and the shapes up to 256 KiB. Report
+    # only: nothing is gated until the providers land (D5).
+    completion:
+        name: Measure - completion latency
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 26.12.1
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            # The runner is built by the stage benchmark's own build, references
+            # included, so its identity is recorded as theirs is.
+            - name: Build the pinned reference checkouts
+              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+            - name: Measure completion requests
+              run: node scripts/benchmark/completion.mjs --quiet
+            - name: Upload structured results for the PR comment
+              if: ${{ always() }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: benchmark-report-completion-${{ github.run_attempt }}
+                  path: build/benchmark-completion/completion.json
+                  if-no-files-found: warn
+                  retention-days: 30
+            - name: Upload the report, every request and the costliest profiles
+              if: ${{ always() }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: benchmark-completion-${{ github.sha }}-${{ github.run_attempt }}
+                  path: |
+                      build/benchmark-completion/completion.md
+                      build/benchmark-completion/completion.json
+                      build/benchmark-completion/requests.json
+                      build/benchmark-completion/callgrind
+                      build/benchmark-completion/workloads
+                  if-no-files-found: error
+                  retention-days: 30

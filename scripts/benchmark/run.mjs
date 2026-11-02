@@ -139,6 +139,11 @@ export const PARSE_BOUNDARIES = Object.freeze(STAGES.map((stage) => ENGINES["mar
  * measured per append rather than per stage. */
 export const STREAM_RUNNER = "packages/markdown-core/benchmarks/markdown_core_stream_runner";
 
+/* The completion latency benchmark's runner (completion.mjs): the language
+ * engine, measured per completion request. Only that driver builds it, and
+ * never for a base revision: the report has no gate (plan D5). */
+export const COMPLETION_RUNNER = "packages/markdown-core/benchmarks/markdown_core_completion_runner";
+
 /* The stage runners. */
 const STAGE_RUNNERS = Object.fromEntries(
     Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
@@ -1181,7 +1186,11 @@ function dispatchIdentity(profile, root) {
  * runner's standard output. `args` must name absolute paths: the child runs
  * from the directory that exists to hold no configuration.
  */
-export function profileRun(profile, runner, args, dump, out) {
+/* `options.collect: false` starts the run with instrumentation off, for a
+ * runner that turns it on around what it measures
+ * (`CALLGRIND_START_INSTRUMENTATION`), so the work between runs at valgrind's
+ * uninstrumented speed and is in no count. */
+export function profileRun(profile, runner, args, dump, out, options = {}) {
     fs.mkdirSync(path.dirname(dump), { recursive: true });
     const root = measurementRoot(out, fail);
     return run(
@@ -1198,6 +1207,7 @@ export function profileRun(profile, runner, args, dump, out) {
              * from the edge and so were right; the breakdown was not. */
             "--separate-callers=1",
             ...CACHE,
+            ...(options.collect === false ? ["--instr-atstart=no"] : []),
             `--callgrind-out-file=${dump}`,
             "--quiet",
             path.join(profile.binaryDir, runner),
@@ -1413,11 +1423,14 @@ export function markdownReport(report) {
 
 /**
  * The measurement build, shared by every driver that measures this
- * repository's runners (this one and streams.mjs): the profile preset built from
- * scratch with the pinned references, every measured binary checked for one
- * compiler and the pinned flags, and the identity a report states -- toolchain,
- * compile lines, dispatch, runtime libraries and binary digests. With
- * `options.baselineRef`, the base revision is rebuilt the same way.
+ * repository's runners (this one, streams.mjs and completion.mjs): the
+ * profile preset built from scratch with the pinned references, every
+ * measured binary checked for one compiler and the pinned flags, and the
+ * identity a report states -- toolchain, compile lines, dispatch, runtime
+ * libraries and binary digests. With
+ * `options.baselineRef`, the base revision is rebuilt the same way, and
+ * `options.runners` names a driver's own runners, which only this revision
+ * builds.
  */
 export function prepareBuild(options) {
     refuseResponseFiles();
@@ -1439,9 +1452,12 @@ export function prepareBuild(options) {
      * measurement that takes minutes. There is no flag to get it wrong with. */
     const cmarkBuildDir = buildCmark(profile, cmark, options.out, versions);
     const gfmBuildDir = buildCmarkGfm(profile, gfm, options.out, versions);
-    buildRunners(profile, MEASURED_BINARIES, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, root);
+    /* A driver's own runners, `options.runners`, are built with this
+     * revision's and measured only on it. */
+    const measured = { ...MEASURED_BINARIES, ...options.runners };
+    buildRunners(profile, measured, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, root);
     verifyStageSymbols(profile);
-    verifyBuildProvenance(profile, MEASURED_BINARIES, versions);
+    verifyBuildProvenance(profile, measured, versions);
     /* The report's central claim is that both engines met the same compiler
      * with the same flags. The two trees are configured separately, so that is
      * checked against what they each recorded rather than assumed from having
@@ -1521,7 +1537,7 @@ export function prepareBuild(options) {
             .join(" ")
     };
     versions.architecture = process.arch;
-    const binaries = runnerIdentity(profile, MEASURED_BINARIES);
+    const binaries = runnerIdentity(profile, measured);
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     return { profile, cmark, gfm, versions, binaries, baseline };

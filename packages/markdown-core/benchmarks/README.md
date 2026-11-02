@@ -248,3 +248,33 @@ profiles live in `build/benchmark-attributes`.
 
 This operation-level comparison is not pooled into document-parser ratios.
 It has its own provenance and input receipts, and remains a separate CI job.
+
+## Completion latency
+
+`pnpm benchmark:completion` reports what the language engine pays per
+completion request (LSP plan, section 7). `completion_runner` opens the engine
+on a document and sends each edit script of the stream benchmark's edit
+workloads (`workloads.mjs`) as didChange notifications, as a client typing it
+would. A request is the didChange of one edit followed by the completion at the
+end of the edit's text, both inside `bench_request`; its cost is that function's
+inclusive Ir, split into the edit (`markdown_core_lsp_update`) and the
+completion (`markdown_core_lsp_complete`). Opening the server and the document
+is in no request, and the edits between measured requests reach the server
+outside every request.
+
+Every script is measured at up to 8 evenly spaced edits over the whole script,
+at every document size. Callgrind starts with instrumentation off, and the
+runner turns it on around each measured request only, so the edits between run
+at valgrind's uninstrumented speed and the full set takes about 40 minutes on
+four cores. A script with an edit, or a cursor after an edit, between the `\r`
+and `\n` of a line break is skipped, since no protocol position names that
+place; the report counts them. The runner checks that the document's session
+ends in the script's text.
+
+The report groups requests by document size, the grammar corpus and the shapes
+at 16, 64 and 256 KiB, with p50, p95 and maximum next to the plan's proposed
+budget, which is p95 wall time on a device and so is not compared with the
+counts. Nothing is gated (D5). `build/benchmark-completion` holds
+`completion.json`, `completion.md`, `requests.json` with every request, the
+costliest request's profile per workload in `callgrind/NAME.out.max`, and the
+workloads. CI runs it as its own job, and the PR comment shows its table.

@@ -32,6 +32,7 @@
         "audit:toolchains": "scripts/audit/check-toolchain-versions.sh",
         "benchmark": "node scripts/benchmark/run.mjs",
         "benchmark:attributes": "node scripts/benchmark/measure-attributes.mjs",
+        "benchmark:completion": "node scripts/benchmark/completion.mjs",
         "benchmark:streams": "node scripts/benchmark/streams.mjs",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
