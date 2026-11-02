@@ -78,7 +78,7 @@ import {
     sameCompileOptions
 } from "./compile-identity.mjs";
 import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
-import { BINDING_ENTRIES, SESSION_STEPS, STEP_ENTRIES } from "./stream-gates.mjs";
+import { BINDING_ENTRIES, SESSION_EDIT, SESSION_STEPS, STEP_ENTRIES } from "./stream-gates.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -928,7 +928,7 @@ function verifyStageSymbols(profile) {
         }
     }
     const streamSymbols = symbolsOf("markdown-core streams", STREAM_RUNNER);
-    for (const name of [...STEP_ENTRIES, ...PARSE_BOUNDARIES, ...BINDING_ENTRIES, ...SESSION_STEPS]) {
+    for (const name of [...STEP_ENTRIES, ...PARSE_BOUNDARIES, ...BINDING_ENTRIES, ...SESSION_STEPS, SESSION_EDIT]) {
         if (!streamSymbols.has(name)) {
             fail(
                 `markdown-core streams: ${name} is absent from ${STREAM_RUNNER}. The profile build must keep the ` +

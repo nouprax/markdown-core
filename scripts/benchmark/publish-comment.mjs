@@ -211,18 +211,18 @@ const STREAM_SUBJECTS = ["reparse", "session", "binding"];
 const GATED_SUBJECTS = ["reparse", "session"];
 const STREAM_FAMILIES = ["tokens", "scalars", "rows"];
 const STREAM_METRICS = ["p95", "max", "total"];
-// The subjects that take edits until the session does (plan 12.9, E1), and
-// the families the edit workloads run (workloads.mjs).
-const EDIT_SUBJECTS = ["reparse"];
+// The subjects that take edits (plan 12.9, E1 on), and the families the
+// edit workloads run (workloads.mjs).
+const EDIT_SUBJECTS = ["reparse", "session"];
 const EDIT_FAMILIES = ["typing", "lines", "markers", "ranges", "far", "declarations", "random"];
 
 // The R and S columns by family and size, the grammar corpus apart from the
 // shapes, with a base revision the workloads that pass 6.4, the B column
-// beside S, and the edit workloads' R column. Every workload's windows are
+// beside S, and the edit workloads' R and S columns. Every workload's windows are
 // validated counts; names never reach the comment.
 export function streamSection(report) {
     if (
-        report?.schemaVersion !== 7 ||
+        report?.schemaVersion !== 8 ||
         JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
         JSON.stringify(report.editSubjects) !== JSON.stringify(EDIT_SUBJECTS) ||
         !Array.isArray(report.results) ||
@@ -277,7 +277,7 @@ export function streamSection(report) {
         }
         if (row.regressions.length) regressed++;
     }
-    // A script's windows are at most its edits, one cost each.
+    // A script's windows are at most its edits, one cost each, and S has R's.
     for (const row of report.edits) {
         if (row.size !== null) count(row.size);
         if (!Array.isArray(row.scripts) || !row.scripts.length) throw new Error("Invalid edit workload");
@@ -285,6 +285,9 @@ export function streamSection(report) {
             if (!EDIT_FAMILIES.includes(script?.family)) throw new Error("Invalid edit family");
             if (!windows(script.windows) || script.windows.length > count(script.edits)) {
                 throw new Error("Invalid edit windows");
+            }
+            if (!windows(script.session?.windows) || script.session.windows.length !== script.windows.length) {
+                throw new Error("Invalid session edit windows");
             }
         }
     }
@@ -343,10 +346,10 @@ export function streamSection(report) {
                 ].join(" | ")} |`;
             }),
         "",
-        `Edits (R alone until the session takes edits): Ir per window of edits, R counting the two parse stages of the \`Document.parse\` of a window's last edit; one window per edit except at a shape's larger sizes; no gate. ${number(report.edits.length)} edit workloads.`,
+        `Edits: Ir per window of edits, R counting the two parse stages of the \`Document.parse\` of a window's last edit and S the session's edits of the window, every one; one window per edit except at a shape's larger sizes; no gate. ${number(report.edits.length)} edit workloads.`,
         "",
-        "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ...groupEdits(report.edits, (row, script) =>
             JSON.stringify([row.size === null ? "grammar" : "shapes", script.family, row.size])
         ).map((group) => {
@@ -358,7 +361,8 @@ export function streamSection(report) {
                 number(group.scripts),
                 number(group.edits),
                 number(group.windows),
-                ...figures(group.reparse)
+                ...figures(group.reparse),
+                ...figures(group.session)
             ].join(" | ")} |`;
         })
     );

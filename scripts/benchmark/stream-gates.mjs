@@ -27,6 +27,8 @@ export const BINDING_ENTRIES = Object.freeze([
 ]);
 /** The session's own steps inside those entries: the S column's work. */
 export const SESSION_STEPS = Object.freeze(["markdown_core_session_append", "markdown_core_session_flush"]);
+/** The session's edit, inside the runner's step: the S column of the edit workloads. */
+export const SESSION_EDIT = "markdown_core_session_edit";
 /** The most windows a stream 6.3 does not measure at every step is split into (5.1). */
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */
@@ -72,6 +74,17 @@ function windowRecord(profile, steps, edges, inside = []) {
 export function stepCost(profile) {
     const steps = stepEdges(profile);
     return windowRecord(profile, steps, steps);
+}
+
+/**
+ * A `session` edit window's cost: its calls into the session's edit. The
+ * runner's step around it finds the edit's positions in the whole text, which
+ * is the harness's work and in no window (5.1).
+ */
+export function editCost(profile) {
+    const found = [...profile.edges.values()].filter((call) => baseName(call.callee) === SESSION_EDIT);
+    if (!found.length) throw new Error(`a window made no call to ${SESSION_EDIT}`);
+    return windowRecord(profile, found, found);
 }
 
 /**
@@ -246,19 +259,21 @@ export function groupWindows(results, key) {
 }
 
 /**
- * The edit workloads' R column by group (5.1): each script's windows, pooled
- * over every script of every edit workload whose scripts `key` puts in the
- * group. `key` names a script's group from its workload and the script.
+ * The edit workloads' R and S columns by group (5.1): each script's windows,
+ * pooled over every script of every edit workload whose scripts `key` puts in
+ * the group. `key` names a script's group from its workload and the script.
+ * A group without S windows has no S column.
  */
 export function groupEdits(results, key) {
     const groups = new Map();
     for (const row of results)
         for (const script of row.scripts) {
             const name = key(row, script);
-            const group = groups.get(name) ?? { key: name, scripts: 0, edits: 0, windows: [] };
+            const group = groups.get(name) ?? { key: name, scripts: 0, edits: 0, windows: [], session: [] };
             group.scripts++;
             group.edits += script.edits;
             group.windows.push(...script.windows);
+            group.session.push(...(script.session?.windows ?? []));
             groups.set(name, group);
         }
     return [...groups.values()].map((group) => ({
@@ -266,6 +281,7 @@ export function groupEdits(results, key) {
         scripts: group.scripts,
         edits: group.edits,
         windows: group.windows.length,
-        reparse: summary(group.windows)
+        reparse: summary(group.windows),
+        session: group.session.length ? summary(group.session) : null
     }));
 }
