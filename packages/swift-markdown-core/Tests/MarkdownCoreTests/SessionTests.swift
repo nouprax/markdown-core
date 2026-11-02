@@ -67,7 +67,9 @@ import Testing
 }
 
 /// The text every edit sweep starts from: ASCII, so a column is a byte.
-private let sweepSource = "# Title [a]\n\nfirst *one* `code`\n\n- item\n- second\n\n> quote\n\n[a]: /url\n"
+private let sweepSource =
+    "# Title [a]\n\nfirst *one* `code`{.c}\n\n- item\n- second\n\n> quote\n\n"
+    + "<https://a.b>{.e} [a]{k=1}\n\n[a]: /url\n"
 /// What each sweep writes at a cursor, and so removes again.
 private let sweepWrites = ["*", "\n", "- ", "#", "`", "> ", "[a]", "x"]
 
@@ -92,8 +94,51 @@ private func parses(_ document: Document, _ text: String, _ unit: TextUnit) thro
     try document.dump(in: text) == Document.parse(text, unit: unit).dump(in: text)
 }
 
+/// Each definition table of `document` as dumps of its entries, in order.
+private func tables(_ document: Document, _ text: String) throws -> [[String]] {
+    [
+        try document.footnotes.map { try document.dump($0, in: text) },
+        try document.specimens.map { try document.dump($0, in: text) },
+        try document.references.map { try document.dump($0, in: text) },
+    ]
+}
+
+/// A slot's fields: what a context compares of it.
+private func fields(_ slot: Slot) -> String {
+    "\(slot.kind) \(slot.owner) \(slot.before) \(slot.after) \(slot.closed) \(slot.prefix)"
+}
+
+/// The edit oracle (incremental plan 12.7) on the edited `session`: its
+/// document dumps as a fresh parse of its text, its definition tables hold
+/// the fresh parse's, and its context after every slot cue of the ASCII text
+/// is that of a session opened on the text.
+private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label: String) throws {
+    let text = session.text
+    let fresh = try Document.parse(text, unit: unit)
+    #expect(try session.document.dump(in: text) == fresh.dump(in: text), "\(label)")
+    #expect(try tables(session.document, text) == tables(fresh, text), "\(label)")
+    let opened = try MarkdownSession(text, unit: unit)
+    try opened.flush()
+    var line: Int32 = 1, column: Int32 = 1
+    for character in text.utf8 {
+        if character == UInt8(ascii: "\n") {
+            line += 1
+            column = 1
+        } else {
+            column += 1
+        }
+        guard Slot.cues.contains(Character(Unicode.Scalar(character))) else { continue }
+        let place = Position(line: line, column: column)
+        try session.locate(place)
+        try opened.locate(place)
+        let mine = session.context, theirs = opened.context
+        #expect(mine.blocks == theirs.blocks && mine.inlines == theirs.inlines, "\(label) at \(place)")
+        #expect(mine.slots.map(fields) == theirs.slots.map(fields), "\(label) at \(place)")
+    }
+}
+
 @Suite("session edits") struct SessionEditSuite {
-    @Test("an edit at every cursor, and its undoing, parse as the new text", arguments: [TextUnit.utf8, .utf16])
+    @Test("an edit at every cursor, and its undoing, hold the edit oracle", arguments: [TextUnit.utf8, .utf16])
     func sweep(unit: TextUnit) throws {
         let session = try MarkdownSession(sweepSource, unit: unit)
         try session.flush()
@@ -101,7 +146,7 @@ private func parses(_ document: Document, _ text: String, _ unit: TextUnit) thro
             let written = sweepWrites[index % sweepWrites.count]
             let document = try session.edit(from: place, to: place, with: written)
             #expect(document == session.document)
-            #expect(try parses(document, session.text, unit), "\(written) at \(place)")
+            try expectOracle(session, unit, "\(written) at \(place)")
             try session.edit(from: place, to: cursor(after: written, at: place), with: "")
             #expect(session.text == sweepSource)
             #expect(try parses(session.document, sweepSource, unit), "\(written) undone at \(place)")

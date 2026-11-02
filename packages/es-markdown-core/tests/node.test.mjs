@@ -743,7 +743,8 @@ test("api: a session's first document is a snapshot of its source", () => {
 });
 
 /** The text every edit sweep starts from: ASCII, so a column is a byte. */
-const sweepSource = "# Title [a]\n\nfirst *one* `code`\n\n- item\n- second\n\n> quote\n\n[a]: /url\n";
+const sweepSource =
+    "# Title [a]\n\nfirst *one* `code`{.c}\n\n- item\n- second\n\n> quote\n\n<https://a.b>{.e} [a]{k=1}\n\n[a]: /url\n";
 /** What each sweep writes at a cursor, and so removes again. */
 const sweepWrites = ["*", "\n", "- ", "#", "`", "> ", "[a]", "x"];
 
@@ -763,7 +764,69 @@ function cursorAfter(written, cursor) {
     return { line: cursor.line + lines.length - 1, column: lines.at(-1).length + 1 };
 }
 
-test("api: an edit at every cursor, and its undoing, parse as the new text", () => {
+/** Each definition table of `document` as dumps of its entries, in order. */
+function tables(document, text) {
+    return [document.footnotes, document.specimens, document.references].map((table) =>
+        table.map((item) => MarkupDumper.dump(document, item, text))
+    );
+}
+
+/** A context's openers and slots: what the edit oracle compares of it. */
+function contextFields(context) {
+    const opener = ({ kind, scope }) => ({ kind, scope });
+    return {
+        blocks: context.blocks.map(opener),
+        inlines: context.inlines.map(opener),
+        slots: context.slots.map(({ kind, owner, before, after, closed, prefix }) => ({
+            kind,
+            owner,
+            before,
+            after,
+            closed,
+            prefix: [...prefix]
+        }))
+    };
+}
+
+/**
+ * The edit oracle (incremental plan 12.7) on the edited `session`: its
+ * document dumps as a fresh parse of its text, its definition tables hold the
+ * fresh parse's, and its context after every slot cue of the ASCII text is
+ * that of a session opened on the text.
+ */
+function assertOracle(session, unit, label) {
+    const text = session.text;
+    const fresh = Document.parse(text, { unit });
+    assert.equal(session.document.dump(text), fresh.dump(text), label);
+    assert.deepEqual(tables(session.document, text), tables(fresh, text), label);
+    const opened = new MarkdownSession(text, { unit });
+    try {
+        opened.flush();
+        let line = 1;
+        let column = 1;
+        for (const character of text) {
+            if (character === "\n") {
+                line++;
+                column = 1;
+            } else {
+                column++;
+            }
+            if (!Slot.cues.includes(character)) continue;
+            const place = { line, column };
+            session.locate(place);
+            opened.locate(place);
+            assert.deepEqual(
+                contextFields(session.context),
+                contextFields(opened.context),
+                `${label} at ${line}:${column}`
+            );
+        }
+    } finally {
+        opened.dispose();
+    }
+}
+
+test("api: an edit at every cursor, and its undoing, hold the edit oracle", () => {
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession(sweepSource, { unit });
         try {
@@ -772,9 +835,8 @@ test("api: an edit at every cursor, and its undoing, parse as the new text", () 
                 const written = sweepWrites[index % sweepWrites.length];
                 const document = session.edit(place, place, written);
                 assert.equal(document, session.document);
-                const text = session.text;
                 const where = `${JSON.stringify(written)} at ${place.line}:${place.column}`;
-                assert.equal(document.dump(text), Document.parse(text, { unit }).dump(text), where);
+                assertOracle(session, unit, where);
                 session.edit(place, cursorAfter(written, place), "");
                 assert.equal(session.text, sweepSource);
                 const undone = session.document.dump(sweepSource);
