@@ -1211,6 +1211,8 @@ export function hardScripts() {
     );
     /* A use whose label goes on past a container's prefix. */
     add("quoted-label", "[r]: /url\n\nmid\n\n> [\n> r]\n\nend\n", (s) => s.edit(1, 2, "s").edit(1, 2, "r"));
+    /* A use in a table cell, whose `\\|` the cell takes to `|`. */
+    add("table-label", "[a|b]: /url\n\nmid\n\n| [a\\|b] |\n| --- |\n\nend\n", (s) => s.edit(1, 2, "c").edit(1, 2, "a"));
     add("footnote-definition", "note[^n] here\n\nmore[^n]\n\nplain one\n\nplain two\n", (s) =>
         s
             .insert(24, "\n[^n]: body\n")
