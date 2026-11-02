@@ -89,8 +89,8 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             lines += "        name = ${kotlinLiteral(file.name.removeSuffix(".json"))},"
             lines += "        text ="
             lines += "            buildString {"
-            for (chunk in chunkedOnCodePoints(file.readText(), 200)) {
-                lines += "                append(${kotlinLiteral(chunk)})"
+            for (literal in literalsWithin(file.readText(), 90)) {
+                lines += "                append($literal)"
             }
             lines += "            },"
             lines += "    )"
@@ -280,6 +280,34 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             start = end
         }
         return chunks
+    }
+
+    /**
+     * [value] as Kotlin string literals whose text between the quotes is at
+     * most [width] characters once escaped, never split inside a surrogate
+     * pair, so each generated line stays within ktlint's line length.
+     */
+    private fun literalsWithin(
+        value: String,
+        width: Int,
+    ): kotlin.collections.List<String> {
+        val literals = mutableListOf<String>()
+        var start = 0
+        var used = 0
+        var at = 0
+        while (at < value.length) {
+            val next = if (value[at].isHighSurrogate() && at + 1 < value.length) at + 2 else at + 1
+            val cost = kotlinLiteral(value.substring(at, next)).length - 2
+            if (used + cost > width && at > start) {
+                literals += kotlinLiteral(value.substring(start, at))
+                start = at
+                used = 0
+            }
+            used += cost
+            at = next
+        }
+        if (start < value.length) literals += kotlinLiteral(value.substring(start))
+        return literals
     }
 
     private fun kotlinLiteral(value: String): String =
