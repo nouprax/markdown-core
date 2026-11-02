@@ -12,7 +12,7 @@ enum CanonicalASTResourceGenerator {
     }
 
     private static func generate(arguments: [String]) throws {
-        guard arguments.count == 4 else { throw GeneratorFailure.invalidArguments }
+        guard arguments.count == 6 else { throw GeneratorFailure.invalidArguments }
         let specDirectory =
             URL(fileURLWithPath: arguments[0], isDirectory: true)
             .resolvingSymlinksInPath()
@@ -56,6 +56,23 @@ enum CanonicalASTResourceGenerator {
         // is copied as it is.
         try Data(contentsOf: URL(fileURLWithPath: arguments[2], isDirectory: false))
             .write(to: URL(fileURLWithPath: arguments[3], isDirectory: false), options: .atomic)
+        // The protocol transcripts (specs/lsp) are one JSON array of their
+        // names and texts, in name order, which the engine binding replays.
+        let transcripts = URL(fileURLWithPath: arguments[4], isDirectory: true)
+        let names = try FileManager.default.contentsOfDirectory(atPath: transcripts.path)
+            .filter { $0.hasSuffix(".json") }
+            .sorted()
+        let bundled = try names.map { name in
+            Transcript(
+                name: name,
+                text: try String(
+                    contentsOf: transcripts.appendingPathComponent(name, isDirectory: false),
+                    encoding: .utf8
+                )
+            )
+        }
+        try encoder.encode(bundled)
+            .write(to: URL(fileURLWithPath: arguments[5], isDirectory: false), options: .atomic)
     }
 
     private static func fixtureContents(at relativePath: String, in root: URL) throws -> String {
@@ -81,12 +98,18 @@ private enum GeneratorFailure: Error, CustomStringConvertible {
         switch self {
         case .invalidArguments:
             "usage: CanonicalASTResourceGenerator SPEC_DIRECTORY OUTPUT_FILE QUERIES_FILE QUERIES_OUTPUT_FILE"
+                + " TRANSCRIPT_DIRECTORY TRANSCRIPTS_OUTPUT_FILE"
         case .invalidManifest(let reason):
             "invalid canonical AST manifest: \(reason)"
         case .invalidRelativePath(let path):
             "canonical AST case path escapes the spec directory: \(path)"
         }
     }
+}
+
+private struct Transcript: Encodable {
+    let name: String
+    let text: String
 }
 
 private struct CanonicalManifest: Decodable {

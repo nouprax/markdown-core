@@ -8,6 +8,8 @@ output=${1:-"$root/build/ci-artifacts/swift-product"}
 cd "$root"
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
     swift build --target MarkdownCore --disable-sandbox
+CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
+    swift build --target MarkdownCoreLSP --disable-sandbox
 rm -rf "$output"
 mkdir -p "$output"
 tar -czf "$output/swift-product-tree.tar.gz" .build

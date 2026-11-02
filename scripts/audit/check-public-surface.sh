@@ -150,7 +150,7 @@ import fs from "node:fs";
 
 const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const products = manifest.products.map((product) => `${product.name}:${product.targets.join(",")}`);
-if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
+if (products.join("\n") !== "MarkdownCore:MarkdownCore\nMarkdownCoreLSP:MarkdownCoreLSP") {
     throw new Error(`Unexpected SwiftPM products: ${products.join(", ")}`);
 }
 NODE
