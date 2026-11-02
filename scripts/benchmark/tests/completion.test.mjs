@@ -6,12 +6,8 @@ import {
     BUDGET,
     budgetOf,
     costliest,
-    editsOf,
     groupRequests,
-    LARGE_EDITS,
-    LARGE_REQUESTS,
     markdownReport,
-    measureOf,
     requestCost,
     REQUESTS,
     requestsOf
@@ -58,13 +54,7 @@ test("a dump without exactly one request is refused rather than counted", () => 
     assert.throws(() => requestCost(empty), /0 calls/);
 });
 
-test("large shapes are cut to their first edits, smaller documents measured over every edit", () => {
-    assert.deepEqual(measureOf({ size: null }), { most: REQUESTS, edits: null });
-    assert.deepEqual(measureOf({ size: 16384 }), { most: REQUESTS, edits: null });
-    assert.deepEqual(measureOf({ size: 65536 }), { most: LARGE_REQUESTS, edits: LARGE_EDITS });
-    assert.equal(editsOf(64, measureOf({ size: 262144 })), LARGE_EDITS);
-    assert.equal(editsOf(3, measureOf({ size: 262144 })), 3);
-    assert.equal(editsOf(64, measureOf({ size: null })), 64);
+test("a script is measured at every edit up to the most requests, and at that many beyond", () => {
     assert.equal(requestsOf(5, REQUESTS), 5);
     assert.equal(requestsOf(64, REQUESTS), REQUESTS);
 });
@@ -118,7 +108,7 @@ test("the costliest requests name where they ran, and the report renders every g
     );
     const markdown = markdownReport({
         commit: "a".repeat(40),
-        requests: { most: REQUESTS, large: LARGE_REQUESTS, edits: LARGE_EDITS },
+        requests: { most: REQUESTS },
         toolchain: { compiler: "cc", valgrind: "valgrind-3.22.0" },
         binaries: { "markdown-core completion": { sha256: "f".repeat(64) } },
         workloads: { digest: "e".repeat(64), count: 3 },

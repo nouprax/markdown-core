@@ -428,7 +428,7 @@ test("the completion table reports Ir per request by document size next to the p
             r.groups[1].complete.max = -1;
         },
         (r) => {
-            r.requests.large = "@everyone";
+            r.requests.most = "@everyone";
         }
     ]) {
         const report = completion();
@@ -461,7 +461,7 @@ test("archives read only fixed JSON members without extracting or executing file
 const figures = (p50, p95, max, total) => ({ p50, p95, max, total });
 const completion = () => ({
     schemaVersion: 1,
-    requests: { most: 16, large: 4, edits: 16 },
+    requests: { most: 8 },
     workloads: { version: "incremental-workloads-v4", digest: "e".repeat(64), count: 3 },
     groups: [
         {

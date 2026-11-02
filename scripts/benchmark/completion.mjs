@@ -14,12 +14,13 @@
  * section 5 land locates the document's session at the cursor and answers no
  * item. Opening the server and the document are in no request.
  *
- * A script is measured at most `REQUESTS` times, at evenly spaced edits; the
- * edits between reach the server as changes of their own, outside every
- * request. On a shape larger than 16 KiB, whose edits each take tens to
- * hundreds of millions of instructions under callgrind, a script is cut to
- * its first `LARGE_EDITS` edits and measured at `LARGE_REQUESTS` of them. A script whose edit splits a `\r\n` is skipped, since no protocol
- * position addresses that place; the report counts them.
+ * Every script, at every size, is measured at most `REQUESTS` times, at
+ * evenly spaced edits over the whole script; the edits between reach the
+ * server as changes of their own, outside every request. Callgrind starts
+ * with instrumentation off and the runner turns it on around each request
+ * only, so those edits run at valgrind's uninstrumented speed. A script
+ * whose edit or cursor splits a `\r\n` is skipped, since no protocol position
+ * addresses that place; the report counts them.
  *
  * The figures are callgrind Ir, as the parser's gates count, grouped by
  * document size next to the plan's proposed budget, which is wall time on a
@@ -48,9 +49,7 @@ export const REQUEST_PARTS = Object.freeze({
     edit: "markdown_core_lsp_update",
     complete: "markdown_core_lsp_complete"
 });
-export const REQUESTS = 16;
-export const LARGE_REQUESTS = 4;
-export const LARGE_EDITS = 16;
+export const REQUESTS = 8;
 /* The largest shape size measured: the plan's budget stops at 256 KiB. */
 export const LARGEST = 262144;
 /* The plan's proposed budget per request, p95 of wall time on a device
@@ -121,19 +120,6 @@ export function requestCost(profile) {
 export const requestsOf = (edits, most) => Math.min(edits, most);
 
 /**
- * How a script on `document` is measured: at most `most` requests over its
- * first `edits` edits, every edit when `edits` is null.
- */
-export function measureOf(document) {
-    return (document.size ?? 0) > BUDGET[0].size
-        ? { most: LARGE_REQUESTS, edits: LARGE_EDITS }
-        : { most: REQUESTS, edits: null };
-}
-
-/** The edits the runner sends of a script of `edits` edits under `measure`. */
-export const editsOf = (edits, measure) => (measure.edits === null ? edits : Math.min(edits, measure.edits));
-
-/**
  * One workload: each script's requests, in the file's order. The runner's
  * receipts must name the generator's scripts and edit counts. The profile of
  * the most expensive request is kept as `NAME.max`. Runs in a worker; every
@@ -150,11 +136,11 @@ function measureWorkload(profile, out, workload) {
             "--scripts",
             path.join(out, "workloads", workload.scripts),
             "--requests",
-            String(workload.measure.most),
-            ...(workload.measure.edits === null ? [] : ["--edits", String(workload.measure.edits)])
+            String(REQUESTS)
         ],
         dump,
-        out
+        out,
+        { collect: false }
     );
     const receipts = [
         ...stdout.matchAll(/^completion-runner script=(\S+) (?:edits=(\d+) requests=(\d+) bytes=(\d+)|skipped)$/gmu)
@@ -171,8 +157,8 @@ function measureWorkload(profile, out, workload) {
             (receipt, index) =>
                 receipt.name !== workload.expected[index].name ||
                 (!receipt.skipped &&
-                    (receipt.edits !== editsOf(workload.expected[index].edits, workload.measure) ||
-                        receipt.requests !== requestsOf(receipt.edits, workload.measure.most)))
+                    (receipt.edits !== workload.expected[index].edits ||
+                        receipt.requests !== requestsOf(receipt.edits, REQUESTS)))
         )
     ) {
         throw new Error(`${workload.name}: the runner ran other scripts than the generator wrote`);
@@ -341,7 +327,7 @@ export function markdownReport(report) {
     const lines = [
         "# Completion latency",
         "",
-        `Commit: \`${report.commit}\`. ${number(report.workloads.count)} edit workloads · \`${report.workloads.digest.slice(0, 16)}\`. Every figure is callgrind Ir per completion request: the didChange of one edit and the completion at the end of its text, at most ${number(report.requests.most)} requests a script at evenly spaced edits; on a shape larger than 16 KiB, ${number(report.requests.large)} over the script's first ${number(report.requests.edits)} edits. Opening the server and the document is in no request. The budget is the plan's proposal for p95 wall time on a device (section 7), not compared with these counts; nothing is gated (D5).`,
+        `Commit: \`${report.commit}\`. ${number(report.workloads.count)} edit workloads · \`${report.workloads.digest.slice(0, 16)}\`. Every figure is callgrind Ir per completion request: the didChange of one edit and the completion at the end of its text, at most ${number(report.requests.most)} requests a script at evenly spaced edits over the whole script. Opening the server and the document is in no request. The budget is the plan's proposal for p95 wall time on a device (section 7), not compared with these counts; nothing is gated (D5).`,
         "",
         "| Documents | Budget p95 | Workloads | Scripts | Skipped | Requests | p50 | p95 | Max | Edit p95 | Completion p95 |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -362,7 +348,7 @@ export function markdownReport(report) {
                 ].join(" | ")} |`
         ),
         "",
-        "A skipped script edits between the `\\r` and `\\n` of a line break, a place no protocol position names.",
+        "A skipped script edits, or leaves its cursor, between the `\\r` and `\\n` of a line break, a place no protocol position names.",
         "",
         "## Costliest requests",
         "",
@@ -425,7 +411,6 @@ async function measureSet(options) {
             name: workload.name,
             document: workload.document.path,
             scripts: workload.path,
-            measure: measureOf(workload.document),
             expected: workload.scripts.map((script) => ({
                 name: script.name,
                 family: script.family,
@@ -448,7 +433,7 @@ async function measureSet(options) {
         report: {
             schemaVersion: SCHEMA_VERSION,
             commit,
-            requests: { most: REQUESTS, large: LARGE_REQUESTS, edits: LARGE_EDITS },
+            requests: { most: REQUESTS },
             toolchain: versions,
             binaries: { "markdown-core completion": { sha256: binaries["markdown-core completion"].sha256 } },
             profile: { compiler: profile.compiler, flags: profile.flags },

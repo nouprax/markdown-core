@@ -7,12 +7,13 @@
  * the completion at the end of the edit's text, the place the client's cursor
  * stands after typing it, both inside `bench_request`. The driver reads each
  * request's cost out of the callgrind call graph from the edges into
- * `bench_request`, and the runner marks the requests with
- * `CALLGRIND_DUMP_STATS` and `CALLGRIND_ZERO_STATS`, no-ops outside valgrind.
- * Creating the server, initialize and didOpen, which parses and flushes the
- * document, come before the counts are zeroed, and turning each edit's byte
- * offsets into protocol positions is the client's work, done before the
- * call, so none of them is in a request.
+ * `bench_request`. The driver starts callgrind with instrumentation off, and
+ * the runner turns it on around each measured request only, zeroing the
+ * counts before it and dumping them after: creating the server, initialize
+ * and didOpen, which parses and flushes the document, the edits between the
+ * measured ones, and turning each edit's byte offsets into protocol
+ * positions, the client's work, are in no request and run at valgrind's
+ * uninstrumented speed. The macros are no-ops outside valgrind.
  *
  * `--requests` is the most requests a script is measured at. A script of at
  * most that many edits is measured at every edit; a longer one splits into
@@ -21,17 +22,13 @@
  * server as changes of their own outside every request. Positions are UTF-8,
  * the unit the engine prefers.
  *
- * `--edits` cuts each script to its first N edits, so a large document's
- * requests do not wait on every edit of a long script under callgrind; the
- * receipt counts the edits the runner sent, and the text check reads their
- * text.
- *
- *   completion_runner --document PATH --scripts FILE --requests N [--edits N]
+ *   completion_runner --document PATH --scripts FILE --requests N
  *
  * Each script prints one receipt, in the file's order, after the runner has
  * checked that the document's session ends in the script's text, or a
- * receipt that it skipped the script, which makes no request: one whose edit
- * splits a `\r\n`, which no protocol position can address.
+ * receipt that it skipped the script, which makes no request: one with an
+ * edit, or a cursor after an edit, between the `\r` and `\n` of a line
+ * break, which no protocol position can address.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,9 +61,16 @@ static markdown_core_lsp_position position_of(const ih_text *text, size_t offset
     return position;
 }
 
+/* Whether `at` is between the `\r` and the `\n` of a line break of `text`. */
+static bool inside_break(const ih_text *text, size_t at) {
+    return at > 0 && at < text->length && text->bytes[at - 1] == '\r' && text->bytes[at] == '\n';
+}
+
 /* Whether some edit of the script starts or ends between the `\r` and the
- * `\n` of a line break, a place no protocol position names: a client never
- * sends such an edit, so the runner skips the script. */
+ * `\n` of a line break, or leaves the cursor at the end of its text there, as
+ * an inserted `\r` before a `\n` does: no protocol position names that place,
+ * so a client never sends such an edit or asks there, and the runner skips
+ * the script. */
 static bool splits_break(const uint8_t *document, size_t length, const ih_step *steps, size_t count) {
     ih_text model = {0};
     bool split = false;
@@ -75,13 +79,9 @@ static bool splits_break(const uint8_t *document, size_t length, const ih_step *
     }
     for (size_t index = 0; index < count && !split; index++) {
         const ih_step *step = &steps[index];
-        for (int side = 0; side < 2 && !split; side++) {
-            const size_t at = side ? step->end : step->start;
-            split = at > 0 && at < model.length && model.bytes[at - 1] == '\r' && model.bytes[at] == '\n';
-        }
-        if (!split && !ih_text_replace(&model, step->start, step->end, step->text, step->length)) {
-            split = true;
-        }
+        split = inside_break(&model, step->start) || inside_break(&model, step->end) ||
+                !ih_text_replace(&model, step->start, step->end, step->text, step->length) ||
+                inside_break(&model, step->start + step->length);
     }
     ih_text_free(&model);
     return split;
@@ -102,16 +102,16 @@ __attribute__((noinline)) bool bench_request(markdown_core_lsp_server *server, i
 }
 
 static int usage(void) {
-    fputs("usage: completion_runner --document PATH --scripts FILE --requests N [--edits N]\n", stderr);
+    fputs("usage: completion_runner --document PATH --scripts FILE --requests N\n", stderr);
     return 2;
 }
 
 /* One edit script on the document, measured at most `most` times, then its
  * receipt. The script flushes, then edits: the generator's edit families take
  * no other step, and didOpen is the flush. */
-static bool run_script(const uint8_t *document, size_t length, const ih_script *script, size_t most, size_t cut) {
+static bool run_script(const uint8_t *document, size_t length, const ih_script *script, size_t most) {
     const ih_step *steps = script->steps + 1;
-    size_t count = script->count ? script->count - 1 : 0;
+    const size_t count = script->count ? script->count - 1 : 0;
     const markdown_core_text_unit unit = MARKDOWN_CORE_TEXT_UNIT_UTF8;
     markdown_core_lsp_capabilities capabilities;
     markdown_core_lsp_server *server = NULL;
@@ -129,9 +129,6 @@ static bool run_script(const uint8_t *document, size_t length, const ih_script *
         fprintf(stderr, "completion_runner: %s does not flush and then edit\n", script->name);
         return false;
     }
-    if (cut && count > cut) {
-        count = cut;
-    }
     if (splits_break(document, length, steps, count)) {
         printf("completion-runner script=%s skipped\n", script->name);
         return true;
@@ -144,7 +141,6 @@ static bool run_script(const uint8_t *document, size_t length, const ih_script *
         fprintf(stderr, "completion_runner: %s did not open\n", script->name);
         goto close;
     }
-    CALLGRIND_ZERO_STATS;
     for (request = 0, index = 0; request < requests; request++) {
         const size_t measured = (request + 1) * count / requests - 1;
         for (; index <= measured; index++) {
@@ -158,20 +154,22 @@ static bool run_script(const uint8_t *document, size_t length, const ih_script *
                 goto close;
             }
             version++;
-            const bool sent =
-                index < measured
-                    ? markdown_core_lsp_update(server, URI, URI_SIZE, version, &edit, 1) == MARKDOWN_CORE_LSP_OK
-                    : bench_request(server, version, &edit, position_of(&model, step->start + step->length));
+            bool sent;
+            if (index < measured) {
+                sent = markdown_core_lsp_update(server, URI, URI_SIZE, version, &edit, 1) == MARKDOWN_CORE_LSP_OK;
+            } else {
+                const markdown_core_lsp_position cursor = position_of(&model, step->start + step->length);
+                CALLGRIND_START_INSTRUMENTATION;
+                CALLGRIND_ZERO_STATS;
+                sent = bench_request(server, version, &edit, cursor);
+                CALLGRIND_DUMP_STATS;
+                CALLGRIND_STOP_INSTRUMENTATION;
+            }
             if (!sent) {
                 fprintf(stderr, "completion_runner: %s edit %zu failed\n", script->name, index + 1);
                 goto close;
             }
-            if (index < measured) {
-                /* Outside every request: the next one's counts start here. */
-                CALLGRIND_ZERO_STATS;
-            }
         }
-        CALLGRIND_DUMP_STATS;
     }
     {
         const markdown_core_string text = markdown_core_session_source(lsp_server_session(server, URI, URI_SIZE));
@@ -190,18 +188,17 @@ close:
 }
 
 int main(int argc, char **argv) {
-    const char *document_path = NULL, *scripts_path = NULL, *requests_text = NULL, *edits_text = NULL;
+    const char *document_path = NULL, *scripts_path = NULL, *requests_text = NULL;
     ih_scripts scripts = {0};
     uint8_t *document;
-    size_t length = 0, most, cut = 0, index;
-    char *requests_end = NULL, *edits_end = NULL;
+    size_t length = 0, most, index;
+    char *requests_end = NULL;
     int i, status = 0;
 
     for (i = 1; i + 1 < argc; i += 2) {
         const char **slot = strcmp(argv[i], "--document") == 0   ? &document_path
                             : strcmp(argv[i], "--scripts") == 0  ? &scripts_path
                             : strcmp(argv[i], "--requests") == 0 ? &requests_text
-                            : strcmp(argv[i], "--edits") == 0    ? &edits_text
                                                                  : NULL;
         if (!slot || *slot) {
             return usage();
@@ -215,12 +212,6 @@ int main(int argc, char **argv) {
     if (!most || *requests_end) {
         return usage();
     }
-    if (edits_text) {
-        cut = strtoul(edits_text, &edits_end, 10);
-        if (!cut || *edits_end) {
-            return usage();
-        }
-    }
     document = ih_read_file(document_path, &length);
     if (!document) {
         fprintf(stderr, "completion_runner: cannot read %s\n", document_path);
@@ -231,7 +222,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     for (index = 0; index < scripts.count && !status; index++) {
-        status = run_script(document, length, &scripts.scripts[index], most, cut) ? 0 : 1;
+        status = run_script(document, length, &scripts.scripts[index], most) ? 0 : 1;
     }
     ih_scripts_free(&scripts);
     free(document);

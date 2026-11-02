@@ -1186,7 +1186,11 @@ function dispatchIdentity(profile, root) {
  * runner's standard output. `args` must name absolute paths: the child runs
  * from the directory that exists to hold no configuration.
  */
-export function profileRun(profile, runner, args, dump, out) {
+/* `options.collect: false` starts the run with instrumentation off, for a
+ * runner that turns it on around what it measures
+ * (`CALLGRIND_START_INSTRUMENTATION`), so the work between runs at valgrind's
+ * uninstrumented speed and is in no count. */
+export function profileRun(profile, runner, args, dump, out, options = {}) {
     fs.mkdirSync(path.dirname(dump), { recursive: true });
     const root = measurementRoot(out, fail);
     return run(
@@ -1203,6 +1207,7 @@ export function profileRun(profile, runner, args, dump, out) {
              * from the edge and so were right; the breakdown was not. */
             "--separate-callers=1",
             ...CACHE,
+            ...(options.collect === false ? ["--instr-atstart=no"] : []),
             `--callgrind-out-file=${dump}`,
             "--quiet",
             path.join(profile.binaryDir, runner),

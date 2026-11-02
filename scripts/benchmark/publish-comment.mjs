@@ -387,8 +387,6 @@ export function completionSection(report) {
     digest(report.workloads?.digest);
     if (report.results.length !== count(report.workloads.count)) throw new Error("Incomplete completion report");
     const most = count(report.requests?.most);
-    const large = count(report.requests?.large);
-    const edits = count(report.requests?.edits);
     const metrics = (value) => {
         if (!COMPLETION_METRICS.every((metric) => count(value?.[metric]))) {
             throw new Error("Invalid completion figures");
@@ -401,7 +399,7 @@ export function completionSection(report) {
     const lines = [
         "### Completion latency",
         "",
-        `Callgrind Ir per completion request: the didChange of one edit and the completion at the end of its text. At most ${number(most)} requests a script; on a shape larger than 16 KiB, ${number(large)} over its first ${number(edits)} edits. The budget is the plan's proposed p95 wall time on a device, not compared with these counts; no gate.`,
+        `Callgrind Ir per completion request: the didChange of one edit and the completion at the end of its text. At most ${number(most)} requests a script, at evenly spaced edits. The budget is the plan's proposed p95 wall time on a device, not compared with these counts; no gate.`,
         "",
         "| Documents | Budget p95 | Workloads | Scripts | Skipped | Requests | p50 | p95 | Max | Edit p95 | Completion p95 |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"

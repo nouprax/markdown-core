@@ -262,12 +262,14 @@ completion (`markdown_core_lsp_complete`). Opening the server and the document
 is in no request, and the edits between measured requests reach the server
 outside every request.
 
-A script is measured at up to 16 evenly spaced edits. On a shape larger than
-16 KiB, whose edits cost tens to hundreds of millions of instructions under
-callgrind, a script is cut to its first 16 edits and measured at 4 of them. A
-script with an edit between the `\r` and `\n` of a line break is skipped, since
-no protocol position names that place; the report counts them. The runner
-checks that the document's session ends in the script's text.
+Every script is measured at up to 8 evenly spaced edits over the whole script,
+at every document size. Callgrind starts with instrumentation off, and the
+runner turns it on around each measured request only, so the edits between run
+at valgrind's uninstrumented speed and the full set takes about 40 minutes on
+four cores. A script with an edit, or a cursor after an edit, between the `\r`
+and `\n` of a line break is skipped, since no protocol position names that
+place; the report counts them. The runner checks that the document's session
+ends in the script's text.
 
 The report groups requests by document size, the grammar corpus and the shapes
 at 16, 64 and 256 KiB, with p50, p95 and maximum next to the plan's proposed
