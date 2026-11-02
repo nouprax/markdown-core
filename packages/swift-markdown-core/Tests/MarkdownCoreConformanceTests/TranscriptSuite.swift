@@ -23,9 +23,11 @@ import Testing
         let server = try Server()
         _ = try server.initialize([.utf8])
         try server.open("file:///a.md", version: 1, text: "one\n")
-        let start = Position(line: 0, character: 3)
-        let backwards = Edit(scope: Scope(start: start, end: Position(line: 0, character: 0)), text: "")
-        let append = Edit(scope: Scope(start: start, end: start), text: " two")
+        let start = MarkdownCoreLSP.Position(line: 0, character: 3)
+        // MarkdownCore has a Position and Scope of its own.
+        let origin = MarkdownCoreLSP.Position(line: 0, character: 0)
+        let backwards = Edit(scope: MarkdownCoreLSP.Scope(start: start, end: origin), text: "")
+        let append = Edit(scope: MarkdownCoreLSP.Scope(start: start, end: start), text: " two")
         #expect(throws: ServerError(code: .invalidParams)) {
             try server.update("file:///a.md", version: 2, edits: [append, backwards])
         }
@@ -205,7 +207,7 @@ private final class Host {
             guard let range = range as? [String: Any], let start = position(range["start"]),
                 let end = position(range["end"])
             else { return nil }
-            edits.append(Edit(scope: Scope(start: start, end: end), text: text))
+            edits.append(Edit(scope: MarkdownCoreLSP.Scope(start: start, end: end), text: text))
         }
         return edits
     }
@@ -229,12 +231,12 @@ private final class Host {
         (params?["textDocument"] as? [String: Any])?["uri"] as? String
     }
 
-    private static func position(_ value: Any?) -> Position? {
+    private static func position(_ value: Any?) -> MarkdownCoreLSP.Position? {
         let value = value as? [String: Any]
         guard let line = integer(value?["line"], 0, Int64(UInt32.max)),
             let character = integer(value?["character"], 0, Int64(UInt32.max))
         else { return nil }
-        return Position(line: UInt32(line), character: UInt32(character))
+        return MarkdownCoreLSP.Position(line: UInt32(line), character: UInt32(character))
     }
 
     /// A JSON integer within `min...max`, as the adapter reads one.
