@@ -658,11 +658,18 @@ static size_t session_first_word(const uint8_t *item, size_t size) {
 /* Whether the run of the text at `at`, up to its end at `limit`, may be
  * the start of a label whose first word is `word`, of `size` bytes, in the
  * normal form `fold` (a specimen's bytes as written when it is false). The
- * run starts past white space and ends at white space; a fold may take up
- * to four bytes to one, so no more than four times the word is folded. */
+ * run starts past white space and ends at white space. White space that
+ * ends a line may hide a container's prefix, so the run may name the label
+ * then. A fold may take up to four bytes to one, so no more than four times
+ * the word is folded. */
 static bool session_matches(const uint8_t *text, size_t limit, size_t at, const uint8_t *word, size_t size, bool fold,
                             markdown_core_strbuf *scratch) {
     while (fold && at < limit && markdown_core_is_whitespace(text[at])) {
+        /* A label that goes on in the next line may go on past a
+         * container's prefix there, which its lookup does not see. */
+        if (text[at] == '\n' || text[at] == '\r') {
+            return true;
+        }
         at++;
     }
     size_t end = at;

@@ -66,6 +66,8 @@ document documents/hard-reference-winner.md
 script documents/hard-reference-winner.md scripts/hard-reference-winner.script
 document documents/hard-reference-replaced.md
 script documents/hard-reference-replaced.md scripts/hard-reference-replaced.script
+document documents/hard-quoted-label.md
+script documents/hard-quoted-label.md scripts/hard-quoted-label.script
 document documents/hard-footnote-definition.md
 script documents/hard-footnote-definition.md scripts/hard-footnote-definition.script
 document documents/hard-heading-label.md

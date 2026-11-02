@@ -1209,6 +1209,8 @@ export function hardScripts() {
     add("reference-replaced", "[t]: /m\n\nmid\n\n[t]\n\nplain one\n", (s) =>
         s.edit(0, 7, "text").within(0, 16).edit(0, 4, "[t]: /m").within(0, 19)
     );
+    /* A use whose label goes on past a container's prefix. */
+    add("quoted-label", "[r]: /url\n\nmid\n\n> [\n> r]\n\nend\n", (s) => s.edit(1, 2, "s").edit(1, 2, "r"));
     add("footnote-definition", "note[^n] here\n\nmore[^n]\n\nplain one\n\nplain two\n", (s) =>
         s
             .insert(24, "\n[^n]: body\n")
