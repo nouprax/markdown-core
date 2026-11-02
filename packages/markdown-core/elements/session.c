@@ -753,9 +753,9 @@ static bool session_words_start(const session_words *words, const uint8_t *run, 
  * normal form when `fold` says (a specimen's bytes as written when it is
  * false). The run starts past white space and ends at white space. White
  * space that ends a line may hide a container's prefix, so the run may
- * name a label then, as it may when it holds a backslash. A fold may take
- * up to four bytes to one, so no more than four times the widest word is
- * folded, once. */
+ * name a label then, as it may when it holds a backslash or a NUL. A fold
+ * may take up to four bytes to one, so no more than four times the widest
+ * word is folded, once. */
 static bool session_matches(const uint8_t *text, size_t limit, size_t at, const session_words *words, bool fold,
                             markdown_core_strbuf *scratch) {
     if (!words->count) {
@@ -778,8 +778,9 @@ static bool session_matches(const uint8_t *text, size_t limit, size_t at, const 
         end--;
     }
     /* A backslash may escape what the block takes out before the inline
-     * parse sees the label, as a table cell does with `\|`. */
-    if (memchr(text + at, '\\', end - at)) {
+     * parse sees the label, as a table cell does with `\|`, and the block
+     * replaces a NUL. */
+    if (memchr(text + at, '\\', end - at) || memchr(text + at, '\0', end - at)) {
         return true;
     }
     if (!fold) {

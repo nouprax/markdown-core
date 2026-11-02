@@ -11286,6 +11286,23 @@ static void session_edits_refresh_storage(test_batch_runner *runner) {
     OK(runner, held && swept, "no edit after a rename that runs out of storage publishes a stale use");
 }
 
+/* A use whose label holds a NUL, which the block replaces before the
+ * inline parse looks the label up, is read again when an edit renames the
+ * definition it names (E-D2). */
+static void session_edits_replaced_label(test_batch_runner *runner) {
+    static const char source[] = "[a\0b]: /url\n\nmid\n\n[a\0b]\n\nend\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    const markdown_core_position name = {1, 2}, after = {1, 3};
+    const bool edited =
+        markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) == MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_edit(session, name, after, (const uint8_t *)"c", 1, &document) == MARKDOWN_CORE_OK;
+    OK(runner, edited && session_as_parsed(session), "renaming a label that holds a NUL reads its use again");
+    markdown_core_session_close(session);
+}
+
 /* What a session holds after an edit lets most of its text go: the edit
  * reads all of what is left into storage of its own, which holds no more
  * than twice what a session that reads that text afresh holds, and the
@@ -12848,6 +12865,7 @@ int main(void) {
     session_edits(runner);
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);
+    session_edits_replaced_label(runner);
     session_edits_compaction(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
