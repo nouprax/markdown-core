@@ -950,6 +950,12 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
         } else if (altered.size) {
             const size_t spans[] = {0, rest_start, resumed, session->text.count};
             status = session_refresh(session, &altered, spans, resumed ? 2 : 1);
+            if (status != MARKDOWN_CORE_OK && session->document.root) {
+                /* The children that name an altered label read as they
+                 * did, and no edit after this one may take them so. */
+                markdown_core_node_pool_release(&session->pool, session->document.root);
+                session->document.root = NULL;
+            }
         }
         markdown_core_strbuf_free(&altered);
     }
