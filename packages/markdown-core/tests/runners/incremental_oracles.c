@@ -1530,10 +1530,12 @@ static bool same_context(const markdown_core_context *a, const markdown_core_con
 }
 
 /* Whether a cursor may stand after byte `at` of `model`, a slot cue: not
- * between the CR and the LF of a CRLF. */
+ * between the CR and the LF of a CRLF, nor before a continuation byte, where
+ * no position stands. */
 static bool cue_after(const ih_text *model, markdown_core_string cues, size_t at) {
     return memchr(cues.data, model->bytes[at], cues.length) &&
-           !(model->bytes[at] == '\r' && at + 1 < model->length && model->bytes[at + 1] == '\n');
+           !(model->bytes[at] == '\r' && at + 1 < model->length && model->bytes[at + 1] == '\n') &&
+           ih_utf8_boundary(model->bytes, model->length, at + 1);
 }
 
 /* 4.1 at the slot cues: after an edit, the subject's context after a cue
