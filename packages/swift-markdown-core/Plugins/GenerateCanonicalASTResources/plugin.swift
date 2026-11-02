@@ -22,10 +22,7 @@ struct GenerateCanonicalASTResources: BuildToolPlugin {
         let transcriptsOutput =
             context.pluginWorkDirectoryURL
             .appendingPathComponent("lsp-transcripts.json", isDirectory: false)
-        let transcriptInputs = try FileManager.default.contentsOfDirectory(
-            at: transcripts,
-            includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }.sorted { $0.path < $1.path }
+        let transcriptInputs = try Self.transcriptFiles(in: transcripts)
         let tool = try context.tool(named: "CanonicalASTResourceGenerator")
 
         guard
@@ -60,6 +57,13 @@ struct GenerateCanonicalASTResources: BuildToolPlugin {
                 outputFiles: [output, queriesOutput, transcriptsOutput]
             )
         ]
+    }
+
+    /// The transcripts' JSON files, in path order.
+    private static func transcriptFiles(in directory: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.path < $1.path }
     }
 }
 

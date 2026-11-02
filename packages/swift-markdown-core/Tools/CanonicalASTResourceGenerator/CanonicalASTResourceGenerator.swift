@@ -56,9 +56,16 @@ enum CanonicalASTResourceGenerator {
         // is copied as it is.
         try Data(contentsOf: URL(fileURLWithPath: arguments[2], isDirectory: false))
             .write(to: URL(fileURLWithPath: arguments[3], isDirectory: false), options: .atomic)
-        // The protocol transcripts (specs/lsp) are one JSON array of their
-        // names and texts, in name order, which the engine binding replays.
-        let transcripts = URL(fileURLWithPath: arguments[4], isDirectory: true)
+        try bundleTranscripts(
+            from: URL(fileURLWithPath: arguments[4], isDirectory: true),
+            to: URL(fileURLWithPath: arguments[5], isDirectory: false),
+            encoder: encoder
+        )
+    }
+
+    /// The protocol transcripts (specs/lsp) as one JSON array of their names
+    /// and texts, in name order, which the engine binding replays.
+    private static func bundleTranscripts(from transcripts: URL, to output: URL, encoder: JSONEncoder) throws {
         let names = try FileManager.default.contentsOfDirectory(atPath: transcripts.path)
             .filter { $0.hasSuffix(".json") }
             .sorted()
@@ -71,8 +78,7 @@ enum CanonicalASTResourceGenerator {
                 )
             )
         }
-        try encoder.encode(bundled)
-            .write(to: URL(fileURLWithPath: arguments[5], isDirectory: false), options: .atomic)
+        try encoder.encode(bundled).write(to: output, options: .atomic)
     }
 
     private static func fixtureContents(at relativePath: String, in root: URL) throws -> String {

@@ -62,7 +62,7 @@ public final class Server {
         let cues = UnsafeBufferPointer(start: capabilities.cues.data, count: capabilities.cues.length)
         return Capabilities(
             unit: capabilities.unit == MARKDOWN_CORE_TEXT_UNIT_UTF8 ? .utf8 : .utf16,
-            cues: String(decoding: cues, as: UTF8.self)
+            cues: String(bytes: cues, encoding: .utf8) ?? ""
         )
     }
 

@@ -126,16 +126,7 @@ private final class Host {
         switch method {
         case "initialize":
             guard let params = params as? [String: Any] else { throw Failure.invalidParams }
-            let general = (params["capabilities"] as? [String: Any])?["general"] as? [String: Any]
-            var units: [TextUnit] = []
-            for name in general?["positionEncodings"] as? [Any] ?? [] where units.count < 2 {
-                if name as? String == "utf-8" {
-                    units.append(.utf8)
-                } else if name as? String == "utf-16" {
-                    units.append(.utf16)
-                }
-            }
-            let capabilities = try server.initialize(units)
+            let capabilities = try server.initialize(Host.units(params))
             return [
                 "capabilities": [
                     "positionEncoding": capabilities.unit == .utf8 ? "utf-8" : "utf-16",
@@ -163,6 +154,21 @@ private final class Host {
         }
     }
 
+    /// The position encodings the client offers, at most two, as the adapter
+    /// reads them.
+    private static func units(_ params: [String: Any]) -> [TextUnit] {
+        let general = (params["capabilities"] as? [String: Any])?["general"] as? [String: Any]
+        var units: [TextUnit] = []
+        for name in general?["positionEncodings"] as? [Any] ?? [] where units.count < 2 {
+            if name as? String == "utf-8" {
+                units.append(.utf8)
+            } else if name as? String == "utf-16" {
+                units.append(.utf16)
+            }
+        }
+        return units
+    }
+
     /// A notification answers nothing; one that fails is dropped.
     private func notify(_ method: String, _ params: [String: Any]?) {
         let document = params?["textDocument"] as? [String: Any]
@@ -173,21 +179,9 @@ private final class Host {
             else { return }
             try? server.open(uri, version: Int32(version), text: text)
         case "textDocument/didChange":
-            guard let uri = Host.uri(params), let list = params?["contentChanges"] as? [Any],
+            guard let uri = Host.uri(params), let edits = Host.edits(params?["contentChanges"]),
                 let version = Host.integer(document?["version"], Int64(Int32.min), Int64(Int32.max))
             else { return }
-            var edits: [Edit] = []
-            for item in list {
-                guard let item = item as? [String: Any], let text = item["text"] as? String else { return }
-                if let range = item["range"] {
-                    guard let range = range as? [String: Any], let start = Host.position(range["start"]),
-                        let end = Host.position(range["end"])
-                    else { return }
-                    edits.append(Edit(scope: Scope(start: start, end: end), text: text))
-                } else {
-                    edits.append(Edit(scope: nil, text: text))
-                }
-            }
             try? server.update(uri, version: Int32(version), edits: edits)
         case "textDocument/didClose":
             guard let uri = Host.uri(params) else { return }
@@ -195,6 +189,25 @@ private final class Host {
         default:
             break
         }
+    }
+
+    /// The content changes of didChange, or nil when one is not the
+    /// protocol's.
+    private static func edits(_ value: Any?) -> [Edit]? {
+        guard let list = value as? [Any] else { return nil }
+        var edits: [Edit] = []
+        for item in list {
+            guard let item = item as? [String: Any], let text = item["text"] as? String else { return nil }
+            guard let range = item["range"] else {
+                edits.append(Edit(scope: nil, text: text))
+                continue
+            }
+            guard let range = range as? [String: Any], let start = position(range["start"]),
+                let end = position(range["end"])
+            else { return nil }
+            edits.append(Edit(scope: Scope(start: start, end: end), text: text))
+        }
+        return edits
     }
 
     private func failure(_ id: Any, _ code: Int) -> [String: Any] {
