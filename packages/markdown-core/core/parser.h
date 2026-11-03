@@ -595,10 +595,10 @@ typedef struct markdown_core_edit {
     size_t line, line_count, line_capacity, end;
     markdown_core_place *reach;
     size_t reach_count, reach_capacity;
-    /* The furthest end of the reach's entries up to each, the log's and
-     * then the back's (markdown_core_parser_sort_reach). */
+    /* The furthest end of the log's entries up to each, the first
+     * `furthest_count` of them (markdown_core_parser_sort_reach). */
     uint32_t *furthest;
-    size_t furthest_capacity;
+    size_t furthest_count, furthest_capacity;
     /* Room for the entries an edit put out of order (S_reach_sort). */
     markdown_core_place *room;
     size_t room_capacity;
@@ -612,6 +612,10 @@ typedef struct markdown_core_edit {
      * reading took back (THE SPLICE), are the root's last children now. */
     uint8_t *marks;
     size_t mark_count, mark_capacity, mark_front, mark_back;
+    /* The old tail's children no record holds yet, nor the root, the
+     * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
+     * them go when it fails before its publish. */
+    uint32_t recorded, unrecorded;
     markdown_core_parser_at at;
     size_t complete, to, point, resumed;
     int64_t delta, lead;
@@ -1129,6 +1133,8 @@ typedef struct markdown_core_line_facts {
     bool taken;
     /* Blank after the recorded container's prefix. */
     bool blank;
+    /* Its line dropped (blocks.c, S_drop_lines): no line names it. */
+    bool dropped;
     /* On the first line of a run of blank lines: the number of the first line
      * after the run and where it begins (`run_end_at`), so a later scan
      * whose extra containers accept every blank line steps over the run at
