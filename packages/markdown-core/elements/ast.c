@@ -2433,14 +2433,35 @@ static void committed_check(markdown_core_committed_tables *committed) {
 #define committed_check(committed) ((void)(committed))
 #endif
 
+/* The committed tables of a stream that has kept none (parser.h,
+ * `committed`), which a reading reads as empty. */
+static const markdown_core_committed_tables committed_none;
+
+static const markdown_core_committed_tables *committed_of(const markdown_core_stream *stream) {
+    return stream->committed ? stream->committed : &committed_none;
+}
+
+/* The stream's committed tables, made when it has none. NULL when storage
+ * could not be had. */
+static markdown_core_committed_tables *committed_need(markdown_core_stream *stream) {
+    if (!stream->committed) {
+        stream->committed = markdown_core_alloc(1, sizeof(*stream->committed));
+    }
+    return stream->committed;
+}
+
 /* The COMMITTED definitions the walk listed, kept in the committed tables
  * and taken out of the walk's, which then list the snapshot's own. False
  * when storage could not be had. */
 static bool keep_committed(markdown_core_parser *parser, const publish_walk *walk) {
+    markdown_core_committed_tables *committed = walk->kept_count ? committed_need(parser->stream) : NULL;
+    if (walk->kept_count && !committed) {
+        return false;
+    }
     for (size_t i = 0; i < walk->kept_count; i++) {
         const markdown_core_kept kept = parser->stream->kept[i];
         definition_entry *entry = &walk->tables[kept.table].values[kept.entry];
-        if (!committed_keep(&parser->stream->committed, kept.table, entry->node, (uint32_t)entry->start)) {
+        if (!committed_keep(committed, kept.table, entry->node, (uint32_t)entry->start)) {
             return false;
         }
         entry->node = NULL;
@@ -2451,7 +2472,7 @@ static bool keep_committed(markdown_core_parser *parser, const publish_walk *wal
 /* The finalize lists the committed definitions first, in source order. */
 static bool publish_prefill(publish_walk *walk, markdown_core_parser *parser) {
     for (size_t table = 0; table < TABLE_COUNT; table++) {
-        const markdown_core_listed_zipper *zipper = &parser->stream->committed.starts[table];
+        const markdown_core_listed_zipper *zipper = &committed_of(parser->stream)->starts[table];
         assert(!zipper->back_count);
         for (size_t i = 0; i < zipper->front.count; i++) {
             const markdown_core_listed *entry = &zipper->front.values[i];
@@ -2465,7 +2486,10 @@ static bool publish_prefill(publish_walk *walk, markdown_core_parser *parser) {
 
 bool markdown_core_publish_withdraw(markdown_core_parser *parser, markdown_core_place place,
                                     const markdown_core_node *root) {
-    markdown_core_committed_tables *committed = &parser->stream->committed;
+    markdown_core_committed_tables *committed = parser->stream->committed;
+    if (!committed) {
+        return true;
+    }
     committed_check(committed);
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];
@@ -2490,7 +2514,10 @@ bool markdown_core_publish_withdraw(markdown_core_parser *parser, markdown_core_
 
 bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, const markdown_core_node *node,
                                   uint32_t start) {
-    markdown_core_committed_tables *committed = &parser->stream->committed;
+    markdown_core_committed_tables *committed = committed_need(parser->stream);
+    if (!committed) {
+        return false;
+    }
     markdown_core_listed_zipper *zipper = &committed->starts[table];
     const size_t at = listed_front_from(zipper, start);
     if (at < zipper->front.count && zipper->front.values[at].start == start) {
@@ -2504,6 +2531,9 @@ bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, 
 }
 
 void markdown_core_publish_release_committed(markdown_core_committed_tables *committed) {
+    if (!committed) {
+        return;
+    }
     for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_array_free(&committed->starts[table].front);
         listed_release_back(&committed->starts[table]);
@@ -2639,7 +2669,7 @@ static void snapshot_targets(const definition_table *references, const definitio
  * the document lists anything. */
 static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, markdown_core_document_value *value) {
     markdown_core_stream *stream = parser->stream;
-    const markdown_core_committed_tables *committed = &stream->committed;
+    const markdown_core_committed_tables *committed = committed_of(stream);
     definition_table *const tables = walk->tables;
     for (size_t table = 0; table < TABLE_COUNT; table++) {
         if (!snapshot_own(parser, &tables[table])) {
@@ -2747,7 +2777,10 @@ static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, mar
  * that took nothing back read every old definition again. False when
  * storage could not be had. */
 static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk, markdown_core_document_value *value) {
-    markdown_core_committed_tables *committed = &parser->stream->committed;
+    markdown_core_committed_tables *committed = committed_need(parser->stream);
+    if (!committed) {
+        return false;
+    }
     const markdown_core_edit *edit = parser->stream->edit;
     committed_check(committed);
     for (uint32_t table = 0; table < TABLE_COUNT; table++) {
@@ -3064,7 +3097,8 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
      * definition stays, and the reading's publish finds it there as it
      * lists it again (committed_keep). The metadata goes, and with it every
      * definition before the rest point. */
-    markdown_core_committed_tables *committed = &stream->committed;
+    markdown_core_committed_tables *committed = committed_need(stream);
+    ok = ok && committed;
     const size_t size = markdown_core_parser_back_end(parser);
     for (uint32_t table = 0; ok && table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];
@@ -3145,7 +3179,10 @@ static void records_cut(markdown_core_parser *parser, markdown_core_tail_records
 bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
-    markdown_core_committed_tables *committed = &stream->committed;
+    markdown_core_committed_tables *committed = committed_need(stream);
+    if (!committed) {
+        return false;
+    }
     const size_t old = (size_t)((int64_t)point - edit->delta);
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];

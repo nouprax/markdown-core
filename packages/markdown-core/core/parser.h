@@ -441,8 +441,10 @@ typedef struct markdown_core_stream {
     /* The definitions the published document holds as committed (ast.c),
      * room for those a publish lists as it walks, and the definitions the
      * candidates of a finalize list, which join the committed tables once
-     * every candidate is placed (blocks.c). */
-    markdown_core_committed_tables committed;
+     * every candidate is placed (blocks.c): made when the first is kept
+     * (ast.c, committed_need), which a stream that defines nothing never
+     * does. */
+    markdown_core_committed_tables *committed;
     markdown_core_kept *kept;
     size_t kept_capacity;
     /* Room for the entries a snapshot's document lists as its own (ast.c,

@@ -3942,7 +3942,8 @@ static void S_release_stream(markdown_core_parser *parser) {
     markdown_core_free(stream->rooms);
     markdown_core_parser_release_records(parser, &stream->records);
     markdown_core_free(stream->records.items);
-    markdown_core_publish_release_committed(&stream->committed);
+    markdown_core_publish_release_committed(stream->committed);
+    markdown_core_free(stream->committed);
     markdown_core_free(stream->kept);
     markdown_core_free(stream->own_tables);
     markdown_core_free(stream->defined);
