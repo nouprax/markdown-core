@@ -2669,7 +2669,7 @@ static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
             continue;
         }
         markdown_core_line_facts *facts = &input->facts[fact - 1];
-        facts->dropped = true;
+        facts->depth = MARKDOWN_CORE_FACTS_DROPPED;
         if (facts->normalized) {
             facts->normalized->fact = 0;
             facts->normalized = NULL;
@@ -2685,7 +2685,7 @@ static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
             markdown_core_free(normalized);
         }
     }
-    while (input->fact_count && input->facts[input->fact_count - 1].dropped) {
+    while (input->fact_count && input->facts[input->fact_count - 1].depth == MARKDOWN_CORE_FACTS_DROPPED) {
         input->fact_count--;
     }
 #ifndef NDEBUG

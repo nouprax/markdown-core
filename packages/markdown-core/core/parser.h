@@ -1105,6 +1105,8 @@ typedef struct markdown_core_input_line {
     uint32_t own;
 } markdown_core_input_line;
 
+#define MARKDOWN_CORE_FACTS_DROPPED INT_MIN
+
 typedef struct markdown_core_line_facts {
     struct markdown_core_normalized_line *normalized;
     /* Table grammar search facts under one matched container prefix. */
@@ -1117,7 +1119,9 @@ typedef struct markdown_core_line_facts {
      * (container, line) prefix is matched at most once per parse. NULL means
      * that no scan has recorded a prefix. */
     const struct markdown_core_node *container;
-    /* Its place in the scan's path: path[depth] == container. */
+    /* Its place in the scan's path: path[depth] == container; or
+     * MARKDOWN_CORE_FACTS_DROPPED once its line dropped, when no line names
+     * it (blocks.c, S_drop_lines). */
     int depth;
     /* The line state after that container's prefix: what S_advance_offset left. */
     bufsize_t offset;
@@ -1133,8 +1137,6 @@ typedef struct markdown_core_line_facts {
     bool taken;
     /* Blank after the recorded container's prefix. */
     bool blank;
-    /* Its line dropped (blocks.c, S_drop_lines): no line names it. */
-    bool dropped;
     /* On the first line of a run of blank lines: the number of the first line
      * after the run and where it begins (`run_end_at`), so a later scan
      * whose extra containers accept every blank line steps over the run at
