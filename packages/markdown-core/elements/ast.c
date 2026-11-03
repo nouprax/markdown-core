@@ -2417,6 +2417,34 @@ static bool reopen_collect(reopen_gone *gone, const markdown_core_node *node, ui
     return !failed;
 }
 
+/* THE MARKS (parser.h): whether a child of the root holds a definition
+ * changes only when a reading writes the child, so the reopen walks for
+ * definitions only the children that go and hold one, or that no walk asked
+ * yet: those the last reading wrote, and those no reopen let go before. */
+enum { MARK_BARE, MARK_DEFINES, MARK_UNREAD };
+
+/* The marks made the root's `count` children's: the front and the back
+ * stand, the rest unread. False when storage could not be had. */
+static bool reopen_marks(markdown_core_edit *edit, size_t count) {
+    size_t front = edit->mark_front, back = edit->mark_back;
+    if (front + back > count || front + back > edit->mark_count) {
+        front = back = 0;
+    }
+    if (count > edit->mark_capacity) {
+        uint8_t *marks = markdown_core_reserve(edit->marks, &edit->mark_capacity, count, sizeof(*marks));
+        if (!marks) {
+            return false;
+        }
+        edit->marks = marks;
+    }
+    if (back) {
+        memmove(edit->marks + count - back, edit->marks + edit->mark_count - back, back);
+    }
+    memset(edit->marks + front, MARK_UNREAD, count - back - front);
+    edit->mark_count = count;
+    return true;
+}
+
 /* `node`, which its owner lets go from its relation `field`, or the
  * reopened block `id` of kind `kind` when `node` is NULL, recorded where its
  * source lay, after the record `*last`, plus one, or first below the
@@ -2564,9 +2592,25 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     edit->back_count = ok ? backs : 0;
     edit->back_next = 0;
     edit->taken = SIZE_MAX;
+    ok = ok && reopen_marks(edit, root->child_count);
     for (uint32_t i = child; ok && i < root->child_count; i++) {
-        ok = reopen_collect(&gone, root->children[i], backs + i - child);
+        uint8_t *mark = &edit->marks[i];
+        if (*mark != MARK_BARE) {
+            const size_t found = gone.count;
+            ok = reopen_collect(&gone, root->children[i], backs + i - child);
+            *mark = gone.count > found ? MARK_DEFINES : MARK_BARE;
+        }
+#ifndef NDEBUG
+        else {
+            reopen_gone bare = {0};
+            assert(!reopen_collect(&bare, root->children[i], 0) || !bare.count);
+            markdown_core_free(bare.entries);
+        }
+#endif
     }
+    /* A reopened child is the reading's to write. */
+    edit->mark_front = edit->depth ? child - 1 : child;
+    edit->mark_back = 0;
     for (size_t level = 0; ok && level < edit->depth; level++) {
         const markdown_core_node *block = edit->chain[level];
         const uint32_t kept = reopen_kept(edit, level), offset = reopen_offset(edit, level);

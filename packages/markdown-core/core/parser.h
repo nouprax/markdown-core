@@ -599,9 +599,19 @@ typedef struct markdown_core_edit {
      * then the back's (markdown_core_parser_sort_reach). */
     uint32_t *furthest;
     size_t furthest_capacity;
+    /* Room for the entries an edit put out of order (S_reach_sort). */
+    markdown_core_place *room;
+    size_t room_capacity;
     markdown_core_registry registry;
     markdown_core_defined *gone;
     size_t gone_count, gone_capacity;
+    /* THE MARKS (ast.c, A DOCUMENT REOPENED FOR AN EDIT): for each of the
+     * root's children at the last reopen, `mark_count` of them, whether its
+     * subtree holds a definition, or that no walk asked yet. The first
+     * `mark_front` stand as they were, and the last `mark_back`, which the
+     * reading took back (THE SPLICE), are the root's last children now. */
+    uint8_t *marks;
+    size_t mark_count, mark_capacity, mark_front, mark_back;
     markdown_core_parser_at at;
     size_t complete, to, point, resumed;
     int64_t delta, lead;

@@ -3280,6 +3280,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
         }
     }
     edit->tail = tail;
+    edit->mark_back = edit->count - first;
     edit->resumed = start;
     edit->lead = (int64_t)before + delta - (int64_t)joined;
     edit->point = SIZE_MAX;
@@ -3663,15 +3664,49 @@ static size_t S_reach_count(const markdown_core_stream *stream) {
     return stream->reach_count + (stream->edit ? stream->edit->reach_count : 0);
 }
 
+/* Puts the `count` entries of `log` in order of start. An edit leaves each
+ * log in order but for the entries it moved or noted, which it put at the
+ * end: they are sorted on their own and merged in from the back, which
+ * moves no entry before the first of them in order, through `room`, which
+ * holds `*capacity` entries. False when storage could not be had. */
+static bool S_reach_sort(markdown_core_place *log, size_t count, markdown_core_place **room, size_t *capacity) {
+    size_t front = 1;
+    while (front < count && log[front - 1].start <= log[front].start) {
+        front++;
+    }
+    if (front >= count) {
+        return true;
+    }
+    const size_t rest = count - front;
+    if (rest > 1) {
+        qsort(log + front, rest, sizeof(*log), S_reach_order);
+    }
+    if (rest > *capacity) {
+        markdown_core_place *places = markdown_core_reserve(*room, capacity, rest, sizeof(*places));
+        if (!places) {
+            return false;
+        }
+        *room = places;
+    }
+    memcpy(*room, log + front, rest * sizeof(*log));
+    size_t left = front, right = rest, at = count;
+    while (right) {
+        if (left && log[left - 1].start > (*room)[right - 1].start) {
+            log[--at] = log[--left];
+        } else {
+            log[--at] = (*room)[--right];
+        }
+    }
+    return true;
+}
+
 bool markdown_core_parser_sort_reach(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
-    if (stream->reach_count > 1) {
-        qsort(stream->reach, stream->reach_count, sizeof(*stream->reach), S_reach_order);
-    }
-    if (edit->reach_count > 1) {
-        /* Measured from the end, the order puts the back's last first. */
-        qsort(edit->reach, edit->reach_count, sizeof(*edit->reach), S_reach_order);
+    /* Measured from the end, the order puts the back's last first. */
+    if (!S_reach_sort(stream->reach, stream->reach_count, &edit->room, &edit->room_capacity) ||
+        !S_reach_sort(edit->reach, edit->reach_count, &edit->room, &edit->room_capacity)) {
+        return false;
     }
     const size_t count = S_reach_count(stream);
     if (count > edit->furthest_capacity) {
@@ -3938,6 +3973,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->lines);
         markdown_core_free(stream->edit->reach);
         markdown_core_free(stream->edit->gone);
+        markdown_core_free(stream->edit->marks);
         markdown_core_free(stream->edit->chain);
         markdown_core_free(stream->edit->path);
         markdown_core_free(stream->edit->ranks);
@@ -3947,6 +3983,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->tails);
         markdown_core_free(stream->edit->backs);
         markdown_core_free(stream->edit->furthest);
+        markdown_core_free(stream->edit->room);
         markdown_core_registry_free(&stream->edit->registry);
         markdown_core_free(stream->edit);
     }
