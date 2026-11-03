@@ -638,167 +638,18 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
 
 /* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): a lookup of
  * the children an edit kept, before its rest point and from where it took
- * the old children back, may answer otherwise for a label the edit altered
- * (markdown_core_parser_altered_labels). A byte filter over the kept text
- * finds every place a lookup of one may be made, and conservatively: a
- * reference, a footnote and a heading label are named in brackets, so each
- * `[`, and `[^`, is followed, past white space, by a run of bytes whose
- * normal form starts with the label's first word when the bracket names it;
- * a specimen is cited as `@label`, its bytes as written. The blocks that
- * hold the places are read again, as an edit of nothing just past the first
- * reads them when it takes no old child back before the last, which
- * completes their content against the definitions the edit left and keeps
- * the identity of every node. */
-
-/* A label's first word: the label up to its first space, which a normal
- * form holds one of between words. */
-typedef struct {
-    const uint8_t *text;
-    size_t size;
-} session_word;
-
-/* The first words of the altered labels of one family, in byte order and
- * each once, and the sizes they come in, ascending, each once. */
-typedef struct {
-    session_word *words;
-    size_t count, room;
-    size_t *sizes;
-    size_t size_count, size_room;
-} session_words;
-
-static int session_word_order(const void *a, const void *b) {
-    const session_word *left = a, *other = b;
-    const size_t common = left->size < other->size ? left->size : other->size;
-    const int order = common ? memcmp(left->text, other->text, common) : 0;
-    return order ? order : (left->size > other->size) - (left->size < other->size);
-}
+ * the old children back, answers otherwise only for a label the edit made
+ * declared or left undeclared (markdown_core_parser_altered_labels). Every
+ * inline root's lookups are its uses (markdown_core_parser_uses_of), so the
+ * blocks that hold a use of one are known, and only they are read again, as
+ * an edit of nothing just past where the root starts reads them when it
+ * takes no old child back before the last, which completes their content
+ * against the definitions the edit left and keeps the identity of every
+ * node. */
 
 static int session_size_order(const void *a, const void *b) {
     const size_t left = *(const size_t *)a, other = *(const size_t *)b;
     return (left > other) - (left < other);
-}
-
-static void session_words_free(session_words *words) {
-    markdown_core_free(words->words);
-    markdown_core_free(words->sizes);
-    *words = (session_words){0};
-}
-
-/* The words in order, each once, and their sizes. */
-static bool session_words_index(session_words *words) {
-    if (!words->count) {
-        return true;
-    }
-    qsort(words->words, words->count, sizeof(*words->words), session_word_order);
-    size_t kept = 1;
-    for (size_t i = 1; i < words->count; i++) {
-        if (session_word_order(&words->words[i], &words->words[kept - 1])) {
-            words->words[kept++] = words->words[i];
-        }
-    }
-    words->count = kept;
-    for (size_t i = 0; i < words->count; i++) {
-        size_t *more = markdown_core_reserve(words->sizes, &words->size_room, words->size_count + 1, sizeof(*more));
-        if (!more) {
-            return false;
-        }
-        words->sizes = more;
-        words->sizes[words->size_count++] = words->words[i].size;
-    }
-    qsort(words->sizes, words->size_count, sizeof(*words->sizes), session_size_order);
-    kept = 1;
-    for (size_t i = 1; i < words->size_count; i++) {
-        if (words->sizes[i] != words->sizes[kept - 1]) {
-            words->sizes[kept++] = words->sizes[i];
-        }
-    }
-    words->size_count = kept;
-    return true;
-}
-
-/* The first words of the `altered` keys, the kind's byte first and each
- * with its NUL: a specimen's into `specimens`, the others into `folded`. */
-static bool session_words_of(const markdown_core_strbuf *altered, session_words *folded, session_words *specimens) {
-    for (bufsize_t item = 0; item < altered->size;) {
-        const uint8_t *label = altered->ptr + item;
-        const size_t size = strlen((const char *)label);
-        item += (bufsize_t)size + 1;
-        const uint8_t *space = memchr(label + 1, ' ', size - 1);
-        session_words *words = label[0] == MARKDOWN_CORE_REGISTRY_SPECIMEN ? specimens : folded;
-        session_word *more = markdown_core_reserve(words->words, &words->room, words->count + 1, sizeof(*more));
-        if (!more) {
-            return false;
-        }
-        words->words = more;
-        words->words[words->count++] = (session_word){label + 1, (space ? (size_t)(space - label) : size) - 1};
-    }
-    return session_words_index(folded) && session_words_index(specimens);
-}
-
-/* Whether the `size` bytes at `run` start with one of the `words`: a
- * search of each size they come in. */
-static bool session_words_start(const session_words *words, const uint8_t *run, size_t size) {
-    for (size_t i = 0; i < words->size_count && words->sizes[i] <= size; i++) {
-        const session_word probe = {run, words->sizes[i]};
-        if (bsearch(&probe, words->words, words->count, sizeof(*words->words), session_word_order)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* Whether the run of the text at `at`, up to its end at `limit`, may be
- * the start of a label whose first word is one of the `words`, in the
- * normal form when `fold` says (a specimen's bytes as written when it is
- * false). The run starts past white space and ends at white space. White
- * space that ends a line may hide a container's prefix, so the run may
- * name a label then, as it may when it holds a backslash or a NUL. A fold
- * may take up to four bytes to one, so no more than four times the widest
- * word is folded, once. */
-static bool session_matches(const uint8_t *text, size_t limit, size_t at, const session_words *words, bool fold,
-                            markdown_core_strbuf *scratch) {
-    if (!words->count) {
-        return false;
-    }
-    while (fold && at < limit && markdown_core_is_whitespace(text[at])) {
-        if (text[at] == '\n' || text[at] == '\r') {
-            return true;
-        }
-        at++;
-    }
-    const size_t widest = words->sizes[words->size_count - 1];
-    size_t end = at;
-    const size_t most = at + 4 * widest + 4 < limit ? at + 4 * widest + 4 : limit;
-    while (end < most && !markdown_core_is_whitespace(text[end])) {
-        end++;
-    }
-    /* A run the bound cut ends at a scalar's start. */
-    while (end < limit && end > at && end == most && (text[end] & 0xC0) == 0x80) {
-        end--;
-    }
-    /* A backslash may escape what the block takes out before the inline
-     * parse sees the label, as a table cell does with `\|`, and the block
-     * replaces a NUL. */
-    if (memchr(text + at, '\\', end - at) || memchr(text + at, '\0', end - at)) {
-        return true;
-    }
-    if (!fold) {
-        return session_words_start(words, text + at, end - at);
-    }
-    markdown_core_strbuf_clear(scratch);
-    markdown_core_utf8proc_normalize_label(scratch, text + at, (bufsize_t)(end - at));
-    /* A filter without its storage reads the block again. */
-    return scratch->oom || session_words_start(words, scratch->ptr, (size_t)scratch->size);
-}
-
-/* Whether the text at `at`, an opener, may name one of the words. */
-static bool session_names(const uint8_t *text, size_t limit, size_t at, const session_words *folded,
-                          const session_words *specimens, markdown_core_strbuf *scratch) {
-    if (text[at] == '@') {
-        return session_matches(text, limit, at + 1, specimens, false, scratch);
-    }
-    return session_matches(text, limit, at + 1, folded, true, scratch) ||
-           (at + 1 < limit && text[at + 1] == '^' && session_matches(text, limit, at + 2, folded, true, scratch));
 }
 
 /* The most readings one refresh makes: places further apart than the
@@ -811,30 +662,9 @@ static bool session_names(const uint8_t *text, size_t limit, size_t at, const se
  * join those the edit read. */
 static markdown_core_status session_refresh(markdown_core_session *session, const markdown_core_strbuf *altered,
                                             const size_t *spans, size_t count) {
-    const uint8_t *text = (const uint8_t *)session_source(session);
-    const size_t limit = session->text.count;
     session_edits *edits = session->edits;
-    session_words folded = {0}, specimens = {0};
-    markdown_core_strbuf scratch = MARKDOWN_CORE_BUF_INIT();
-    size_t *places = NULL, place_count = 0, place_room = 0;
-    bool ok = session_words_of(altered, &folded, &specimens);
-    for (size_t pair = 0; ok && pair < count; pair++) {
-        for (size_t at = spans[2 * pair]; ok && at < spans[2 * pair + 1]; at++) {
-            if ((text[at] != '[' && text[at] != '@') ||
-                !session_names(text, limit, at, &folded, &specimens, &scratch)) {
-                continue;
-            }
-            size_t *more = markdown_core_reserve(places, &place_room, place_count + 1, sizeof(*more));
-            ok = more != NULL;
-            if (ok) {
-                places = more;
-                places[place_count++] = at;
-            }
-        }
-    }
-    markdown_core_strbuf_free(&scratch);
-    session_words_free(&folded);
-    session_words_free(&specimens);
+    size_t *places = NULL, place_count = 0;
+    const bool ok = markdown_core_parser_uses_of(session->committed, altered, spans, count, &places, &place_count);
     /* The widest gaps between places part the readings, the earlier of
      * two as wide first: `cuts` holds the places they follow, widest
      * first. */
