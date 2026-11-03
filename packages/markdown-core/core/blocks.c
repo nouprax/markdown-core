@@ -2762,6 +2762,11 @@ static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry
                   bufsize_t size) {
     const markdown_core_use use = {(uint32_t)start, (uint32_t)edit->use_labels.size, (uint32_t)size, kind};
     markdown_core_strbuf_put(&edit->use_labels, label, size);
+    /* Room for many uses at the first, rather than growing a few at a time
+     * in the steps that follow. */
+    if (!edit->uses.front.room) {
+        (void)markdown_core_array_reserve(&edit->uses.front, 64);
+    }
     if (edit->use_labels.oom || !markdown_core_array_push(&edit->uses.front, use)) {
         return false;
     }
@@ -3828,8 +3833,6 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     /* Room for the log up front, so a step it grows in pays no
      * allocation; a refusal here leaves the step to grow it. */
     (void)markdown_core_array_reserve(&stream->reach.front, 64);
-    /* And for the uses. */
-    (void)markdown_core_array_reserve(&edit->uses.front, 64);
     return true;
 }
 
