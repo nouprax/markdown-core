@@ -595,10 +595,10 @@ typedef struct markdown_core_edit {
     size_t line, line_count, line_capacity, end;
     markdown_core_place *reach;
     size_t reach_count, reach_capacity;
-    /* The furthest end of the reach's entries up to each, the log's and
-     * then the back's (markdown_core_parser_sort_reach). */
+    /* The furthest end of the log's entries up to each, the first
+     * `furthest_count` of them (markdown_core_parser_sort_reach). */
     uint32_t *furthest;
-    size_t furthest_capacity;
+    size_t furthest_count, furthest_capacity;
     /* Room for the entries an edit put out of order (S_reach_sort). */
     markdown_core_place *room;
     size_t room_capacity;
@@ -612,6 +612,10 @@ typedef struct markdown_core_edit {
      * reading took back (THE SPLICE), are the root's last children now. */
     uint8_t *marks;
     size_t mark_count, mark_capacity, mark_front, mark_back;
+    /* The old tail's children no record holds yet, nor the root, the
+     * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
+     * them go when it fails before its publish. */
+    uint32_t recorded, unrecorded;
     markdown_core_parser_at at;
     size_t complete, to, point, resumed;
     int64_t delta, lead;
@@ -1101,6 +1105,8 @@ typedef struct markdown_core_input_line {
     uint32_t own;
 } markdown_core_input_line;
 
+#define MARKDOWN_CORE_FACTS_DROPPED INT_MIN
+
 typedef struct markdown_core_line_facts {
     struct markdown_core_normalized_line *normalized;
     /* Table grammar search facts under one matched container prefix. */
@@ -1113,7 +1119,9 @@ typedef struct markdown_core_line_facts {
      * (container, line) prefix is matched at most once per parse. NULL means
      * that no scan has recorded a prefix. */
     const struct markdown_core_node *container;
-    /* Its place in the scan's path: path[depth] == container. */
+    /* Its place in the scan's path: path[depth] == container; or
+     * MARKDOWN_CORE_FACTS_DROPPED once its line dropped, when no line names
+     * it (blocks.c, S_drop_lines). */
     int depth;
     /* The line state after that container's prefix: what S_advance_offset left. */
     bufsize_t offset;

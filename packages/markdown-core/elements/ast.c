@@ -2262,6 +2262,40 @@ static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, mar
     return ok && reference_targets(parser, value, &walk->tables[TABLE_HEADINGS]);
 }
 
+static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, uint64_t id, uint16_t kind,
+                          markdown_core_place place, uint32_t field, uint32_t owner, uint32_t *last);
+
+/* The records of the old tail's first `count` children, the ones the
+ * reading read again, after the root's others: each
+ * is where its extent says, from where the one before it ends, as nothing
+ * moves the place a parse wrote (blocks.c, THE SPLICE), and owns its child
+ * from then on. The rest the reading took back, which the root owns again.
+ * False when storage could not be had. */
+static bool record_tail(markdown_core_parser *parser, uint32_t count) {
+    markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_tail_records *records = &parser->stream->records;
+    assert(!edit->recorded && count <= edit->unrecorded);
+    uint32_t last = records->items[0].held;
+    while (last && records->items[last - 1].next) {
+        last = records->items[last - 1].next;
+    }
+    uint32_t end = edit->prior;
+    for (uint32_t i = 0; i < count; i++) {
+        markdown_core_node *old = edit->children[i];
+        const uint32_t start = (uint32_t)((int64_t)end + old->extent.lead);
+        end = start + old->extent.span;
+        if (!reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, end}, 1, 1, &last)) {
+            /* The parse failed, and what is left unrecorded goes with it
+             * (blocks.c, S_release_tail). */
+            edit->recorded = i;
+            edit->unrecorded -= i;
+            return false;
+        }
+    }
+    edit->unrecorded = 0;
+    return true;
+}
+
 /* A publish is made in place: it walks from the root, matched against the
  * records the publish before it kept, if any, past the FINAL prefix of
  * every relation of a node a publish placed before, and keeps the records
@@ -2276,6 +2310,11 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
     markdown_core_document_value *value = root->as.document;
     markdown_core_tail_records *records = &parser->stream->records;
+    markdown_core_edit *edit = parser->stream->edit;
+    /* A reading that took nothing back read every old child again. */
+    if (edit && edit->unrecorded && !record_tail(parser, edit->unrecorded)) {
+        return false;
+    }
     publish_walk walk;
     publish_start(&walk, parser);
     const bool snapshot = parser->snapshot;
@@ -2679,16 +2718,8 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
         }
         ok = reopen_chain(records, edit, anchor, &last);
     }
-    /* Each old child is where its extent says, from where the one before
-     * it ends: nothing moves the place a parse wrote (blocks.c, THE
-     * SPLICE). */
-    uint32_t end = edit->prior;
-    for (uint32_t i = child; ok && i < root->child_count; i++) {
-        markdown_core_node *old = root->children[i];
-        const uint32_t start = (uint32_t)((int64_t)end + old->extent.lead);
-        end = start + old->extent.span;
-        ok = reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, end}, 1, 1, &last);
-    }
+    /* The old children are recorded as the reading passes them: those it
+     * takes back are the root's again, and need none (record_tail). */
     if (!ok) {
         /* The records taken own their nodes, which stay in the tree. */
         for (uint32_t at = records->items[0].held; at; at = records->items[at - 1].next) {
@@ -2700,6 +2731,8 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     }
     markdown_core_node_free_tables(value);
     publish_clear(value);
+    edit->recorded = 0;
+    edit->unrecorded = root->child_count - child;
     root->child_count = child;
     for (size_t level = 0; level < edit->depth; level++) {
         edit->chain[level]->child_count = reopen_kept(edit, level);
@@ -2769,15 +2802,7 @@ bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, 
             records_cut(parser, records, link);
         }
     }
-    if (child < edit->count) {
-        uint32_t *link = &records->items[0].held;
-        while (*link && records->items[*link - 1].node != edit->children[child]) {
-            link = &records->items[*link - 1].next;
-        }
-        assert(*link);
-        records_cut(parser, records, link);
-    }
-    return true;
+    return !edit->unrecorded || record_tail(parser, child < edit->unrecorded ? child : edit->unrecorded);
 }
 
 bool markdown_core_publish_keep_heading(markdown_core_parser *parser, const markdown_core_node *node, uint32_t key) {
