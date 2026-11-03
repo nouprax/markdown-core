@@ -2888,7 +2888,7 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
      * lists it again (committed_keep). The metadata goes, and with it every
      * definition before the rest point. */
     markdown_core_committed_tables *committed = &stream->committed;
-    const size_t size = parser->input.size;
+    const size_t size = markdown_core_parser_back_end(parser);
     for (uint32_t table = 0; ok && table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];
         ok = listed_move(zipper, start, size, committed) && (child || committed_truncate(committed, table, 0));
