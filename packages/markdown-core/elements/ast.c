@@ -2435,7 +2435,7 @@ static void committed_check(markdown_core_committed_tables *committed) {
 
 /* The committed tables of a stream that has kept none (parser.h,
  * `committed`), which a reading reads as empty. */
-static const markdown_core_committed_tables committed_none;
+static const markdown_core_committed_tables committed_none = {0};
 
 static const markdown_core_committed_tables *committed_of(const markdown_core_stream *stream) {
     return stream->committed ? stream->committed : &committed_none;
