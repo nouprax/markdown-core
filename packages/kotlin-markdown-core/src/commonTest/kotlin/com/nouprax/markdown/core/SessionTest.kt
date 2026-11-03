@@ -15,7 +15,8 @@ private fun assertParsesItsText(session: MarkdownSession) {
 }
 
 /** The text every edit sweep starts from: ASCII, so a column is a byte. */
-private const val SWEEP = "# Title [a]\n\nfirst *one* `code`\n\n- item\n- second\n\n> quote\n\n[a]: /url\n"
+private const val SWEEP =
+    "# Title [a]\n\nfirst *one* `code`{.c}\n\n- item\n- second\n\n> quote\n\n<https://a.b>{.e} [a]{k=1}\n\n[a]: /url\n"
 
 /** What each sweep writes at a cursor, and so removes again. */
 private val writes = listOf("*", "\n", "- ", "#", "`", "> ", "[a]", "x")
@@ -32,6 +33,60 @@ private fun after(
     val lines = written.split("\n")
     if (lines.size == 1) return Position(cursor.line, cursor.column + written.length)
     return Position(cursor.line + lines.size - 1, lines.last().length + 1)
+}
+
+/** Each definition table of [document] as dumps of its entries, in order. */
+private fun tables(
+    document: Document,
+    text: String,
+): kotlin.collections.List<kotlin.collections.List<String>> =
+    listOf(
+        document.footnotes.map { document.dump(it, text) },
+        document.specimens.map { document.dump(it, text) },
+        document.references.map { document.dump(it, text) },
+    )
+
+/** A slot's fields: what a context compares of it. */
+private fun fields(slot: Slot): String =
+    "${slot.kind} ${slot.owner} ${slot.before} ${slot.after} ${slot.closed} ${slot.prefix}"
+
+/**
+ * The edit oracle (incremental plan 12.7) on the edited [session]: its
+ * document dumps as a fresh parse of its text, its definition tables hold the
+ * fresh parse's, and its context after every slot cue of the ASCII text is
+ * that of a session opened on the text.
+ */
+private fun assertOracle(
+    session: MarkdownSession,
+    unit: TextUnit,
+    label: String,
+) {
+    val text = session.text
+    val fresh = Document.parse(text, unit)
+    assertEquals(fresh.dump(text), session.document.dump(text), label)
+    assertEquals(tables(fresh, text), tables(session.document, text), label)
+    MarkdownSession(text, unit).use { opened ->
+        opened.flush()
+        var line = 1
+        var column = 1
+        for (character in text) {
+            if (character == '\n') {
+                line++
+                column = 1
+            } else {
+                column++
+            }
+            if (character !in Slot.cues) continue
+            val place = Position(line, column)
+            session.locate(place)
+            opened.locate(place)
+            val mine = session.context
+            val theirs = opened.context
+            assertEquals(theirs.blocks, mine.blocks, "$label at $place")
+            assertEquals(theirs.inlines, mine.inlines, "$label at $place")
+            assertEquals(theirs.slots.map(::fields), mine.slots.map(::fields), "$label at $place")
+        }
+    }
 }
 
 class SessionTest {
@@ -111,7 +166,7 @@ class SessionTest {
     }
 
     @Test
-    fun anEditAtEachCursorAndItsUndoParseAsTheNewText() {
+    fun anEditAtEachCursorAndItsUndoHoldTheEditOracle() {
         for (unit in listOf(TextUnit.UTF8, TextUnit.UTF16)) {
             MarkdownSession(SWEEP, unit).use { session ->
                 session.flush()
@@ -119,8 +174,7 @@ class SessionTest {
                     val written = writes[index % writes.size]
                     val document = session.edit(place, place, written)
                     assertEquals(document, session.document)
-                    val text = session.text
-                    assertEquals(Document.parse(text, unit).dump(text), document.dump(text), "$written at $place")
+                    assertOracle(session, unit, "$written at $place")
                     session.edit(place, after(written, place), "")
                     assertEquals(SWEEP, session.text)
                     val undone = session.document.dump(SWEEP)

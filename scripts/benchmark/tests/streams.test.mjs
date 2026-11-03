@@ -8,9 +8,9 @@ import { markdownReport, mergeParts, regressed, steep, violations } from "../str
  * k mod shards. */
 const parts = (count, shards, edits = 0) =>
     Array.from({ length: shards }, (_, index) => ({
-        schemaVersion: 7,
+        schemaVersion: 8,
         subjects: ["reparse", "session", "binding"],
-        editSubjects: ["reparse"],
+        editSubjects: ["reparse", "session"],
         toolchain: { compiler: "cc" },
         binaries: { "markdown-core": { sha256: "a" }, "markdown-core streams": { sha256: "b" } },
         profile: { compiler: "cc", flags: "-O2" },
@@ -60,29 +60,49 @@ test("the report pools each edit family's windows by documents and size, without
                 source: "grammar corpus",
                 size: null,
                 scripts: [
-                    { name: "typing-word", family: "typing", edits: 3, windows: [10, 20, 30] },
-                    { name: "far", family: "far", edits: 1, windows: [40] }
+                    {
+                        name: "typing-word",
+                        family: "typing",
+                        edits: 3,
+                        windows: [10, 20, 30],
+                        session: { windows: [1, 2, 3] }
+                    },
+                    { name: "far", family: "far", edits: 1, windows: [40], session: { windows: [4] } }
                 ]
             },
             {
                 name: "b.edits",
                 source: "grammar corpus",
                 size: null,
-                scripts: [{ name: "typing-word", family: "typing", edits: 1, windows: [50] }]
+                scripts: [{ name: "typing-word", family: "typing", edits: 1, windows: [50], session: { windows: [5] } }]
             },
             {
                 name: "prose-ascii-64k.edits",
                 source: "prose",
                 size: 65536,
-                scripts: [{ name: "far", family: "far", edits: 64, windows: [7, 8, 9, 10] }]
+                scripts: [
+                    {
+                        name: "far",
+                        family: "far",
+                        edits: 64,
+                        windows: [7, 8, 9, 10],
+                        session: { windows: [1, 1, 2, 2] }
+                    }
+                ]
             }
         ]
     };
     const rendered = markdownReport(report);
     assert.match(rendered, /## Edits/);
-    assert.match(rendered, /\| grammar corpus \| typing \| {2}\| 2 \| 4 \| 4 \| 20 \| 50 \| 50 \| 110 \|/);
-    assert.match(rendered, /\| grammar corpus \| far \| {2}\| 1 \| 1 \| 1 \| 40 \| 40 \| 40 \| 40 \|/);
-    assert.match(rendered, /\| prose \| far \| 65,536 \| 1 \| 64 \| 4 \| 8 \| 10 \| 10 \| 34 \|/);
+    assert.match(
+        rendered,
+        /\| grammar corpus \| typing \| {2}\| 2 \| 4 \| 4 \| 20 \| 50 \| 50 \| 110 \| 2 \| 5 \| 5 \| 11 \|/
+    );
+    assert.match(
+        rendered,
+        /\| grammar corpus \| far \| {2}\| 1 \| 1 \| 1 \| 40 \| 40 \| 40 \| 40 \| 4 \| 4 \| 4 \| 4 \|/
+    );
+    assert.match(rendered, /\| prose \| far \| 65,536 \| 1 \| 64 \| 4 \| 8 \| 10 \| 10 \| 34 \| 1 \| 2 \| 2 \| 6 \|/);
 });
 
 test("a missing, repeated or foreign part is refused", () => {

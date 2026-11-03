@@ -61,11 +61,12 @@ struct markdown_core_context {
     uint8_t quote;
 };
 
-/* A source range of a node of the document, the range of the holding that
- * encloses it, by index, or -1, and its place in the document's walk. */
+/* A source range of a node of the document, where the node's whole source
+ * ends, the range of the holding that encloses it, by index, or -1, and its
+ * place in the document's walk. */
 typedef struct {
     const markdown_core_node *node;
-    uint32_t start, end;
+    uint32_t start, end, last;
     size_t order;
     ptrdiff_t enclosing;
 } holding;
@@ -197,7 +198,7 @@ static bool read_holdings(context_query *query) {
             if (grew) {
                 query->holdings = grew;
                 query->holdings[query->holding_count++] =
-                    (holding){item.node, ranges[i].start, ranges[i].end, order, -1};
+                    (holding){item.node, ranges[i].start, ranges[i].end, item.place.end, order, -1};
             }
         }
     }
@@ -936,21 +937,52 @@ static bool marked(const context_query *query, const markdown_core_context_field
 
 /* Cuts `*end` to where the innermost block that holds the byte at `offset`
  * ends, when that is sooner: a paragraph a fence interrupts ends before the
- * fence. False when the walk failed. */
+ * fence. A node's own place is no offset of the text once an edit kept it,
+ * so the end is the walk's. False when the walk failed. */
 static bool held_end(const context_query *query, size_t offset, size_t *end) {
-    const markdown_core_node **path = NULL;
-    size_t count = 0;
-    if (!query_holders(query, offset, &path, &count)) {
-        return false;
-    }
-    for (size_t i = count; i > 0; i--) {
-        if (MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)path[i - 1])) {
-            const size_t close = path[i - 1]->place.end;
-            *end = close > offset && close < *end ? close : *end;
-            break;
+    size_t close = SIZE_MAX;
+    if (query->nested) {
+        size_t low = 0, top = query->holding_count;
+        while (low < top) {
+            const size_t middle = low + (top - low) / 2;
+            if (query->holdings[middle].start <= offset) {
+                low = middle + 1;
+            } else {
+                top = middle;
+            }
+        }
+        for (ptrdiff_t up = (ptrdiff_t)low - 1; up >= 0; up = query->holdings[up].enclosing) {
+            const holding *held = &query->holdings[up];
+            if (held->end > offset && MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)held->node)) {
+                close = held->last;
+                break;
+            }
+        }
+    } else {
+        markdown_core_walk walk;
+        markdown_core_walk_item item;
+        markdown_core_walk_begin(&walk, query->document->root);
+        while (markdown_core_walk_next(&walk, &item)) {
+            const markdown_core_place *runs;
+            size_t count;
+            if (!item.node || !MARKDOWN_CORE_NODE_BLOCK_P((markdown_core_node *)item.node) ||
+                !markdown_core_walk_ranges(&walk, &item, &runs, &count)) {
+                continue;
+            }
+            for (size_t i = 0; i < count; i++) {
+                if (runs[i].start <= offset && offset < runs[i].end) {
+                    close = item.place.end;
+                    break;
+                }
+            }
+        }
+        const bool failed = walk.failed;
+        markdown_core_walk_end(&walk);
+        if (failed) {
+            return false;
         }
     }
-    markdown_core_free((void *)path);
+    *end = close != SIZE_MAX && close > offset && close < *end ? close : *end;
     return true;
 }
 

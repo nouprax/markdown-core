@@ -210,6 +210,12 @@ typedef struct ih_subject_class {
     /* The bytes [*from, *to) of its new text the last edit read again: the
      * damage bound of gates 4.12. NULL for a subject that states none. */
     void (*reread)(const void *subject, size_t *from, size_t *to);
+    /* Moves the subject's cursor to UTF-8 offset `at` of its text, which
+     * `*position` receives in the subject's unit, and lends its context
+     * there in `*context`: MARKDOWN_CORE_OK, or the status of its failure.
+     * NULL for a subject that keeps no context. */
+    markdown_core_status (*locate)(void *subject, size_t at, markdown_core_position *position,
+                                   const markdown_core_context **context);
     /* Whether the subject's ids follow the lineage (4.2 to 4.5); `reparse`
      * numbers every parse from 1. */
     bool keeps;

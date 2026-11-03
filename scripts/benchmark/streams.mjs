@@ -37,10 +37,10 @@
  *
  * The edit workloads are a document and its edit scripts, one runner process
  * each: every script opens the subject on the document and flushes outside
- * every window, then each window holds its edits (5.1). Until the session
- * takes edits (plan 12.9, step E1) only `reparse` runs them, a fresh
- * `Document.parse` of each edit's text, and they are reported without a
- * gate or a base.
+ * every window, then each window holds its edits (5.1). `reparse` counts a
+ * fresh `Document.parse` of a window's last edit's text, R, and `session` the
+ * session's edits of the window, S; they are reported without a gate or a
+ * base.
  *
  *   node scripts/benchmark/streams.mjs [--out DIR] [--set all|corpus]
  *                                      [--workload NAME]... [--shard I/N]
@@ -65,6 +65,7 @@ import { parseCallgrind } from "./callgrind.mjs";
 import { PARSE_BOUNDARIES, STREAM_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import {
     bindingCost,
+    editCost,
     everyStep,
     flatStream,
     groupEdits,
@@ -83,8 +84,8 @@ import { BENCHMARK_SETS, EDIT_WINDOWS, streamChunks, writeBenchmarkWorkloads } f
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SUBJECTS = Object.freeze(["reparse", "session", "binding"]);
-/* The subjects that take edits; the session joins at step E1. */
-const EDIT_SUBJECTS = Object.freeze(["reparse"]);
+/* The subjects that take edits (plan 12.9, step E1 on). */
+const EDIT_SUBJECTS = Object.freeze(["reparse", "session"]);
 /* What a window of each subject counts (gates 5.1): an append is the
  * session's streaming parse, all of it, of each `Document.parse` the
  * `reparse` subject calls, the two parse stages are the parsing, and a
@@ -297,17 +298,35 @@ function measureWorkload(profile, baseline, out, workload) {
     };
 }
 
+/* What a window of edits of each subject counts: the two parse stages of
+ * the `Document.parse` of `reparse`'s last edit, and the session's edits. */
+const EDIT_COST = Object.freeze({
+    reparse: (profile) => parseCost(profile, PARSE_BOUNDARIES),
+    session: editCost
+});
+
 /**
- * One edit workload, measured: each script's windows for `reparse`, in the
- * file's order, one window per edit where the workload is `stepwise` and at
- * most `EDIT_WINDOWS` a script otherwise. The runner's receipts must name the
- * generator's scripts and edit counts. The profile of the most expensive
- * window is kept as `NAME.reparse.max`. Runs in a worker; every path is
- * absolute.
+ * One edit workload, measured: each script's windows for each subject that
+ * takes edits, in the file's order, one window per edit where the workload is
+ * `stepwise` and at most `EDIT_WINDOWS` a script otherwise. The runner's
+ * receipts must name the generator's scripts and edit counts. The profile of
+ * each subject's most expensive window is kept as `NAME.SUBJECT.max`. Runs in
+ * a worker; every path is absolute.
  */
 function measureEdits(profile, out, workload) {
-    const subject = "reparse";
     const most = workload.stepwise ? WINDOWS : EDIT_WINDOWS;
+    const measured = Object.fromEntries(
+        EDIT_SUBJECTS.map((subject) => [subject, measureEditsOf(profile, out, workload, subject, most)])
+    );
+    const scripts = measured.reparse.map((script, index) => ({
+        ...script,
+        session: { windows: measured.session[index].windows }
+    }));
+    return { stepwise: workload.stepwise, scripts };
+}
+
+/* One subject's windows of one edit workload, each script's in order. */
+function measureEditsOf(profile, out, workload, subject, most) {
     const dump = path.join(out, "callgrind", `${workload.name}.${subject}.out`);
     const stdout = profileRun(
         profile,
@@ -337,7 +356,7 @@ function measureEdits(profile, out, workload) {
                 receipt.windows !== Math.min(receipt.edits, most)
         )
     ) {
-        throw new Error(`${workload.name}: the runner ran other scripts than the generator wrote`);
+        throw new Error(`${workload.name}: the ${subject} runner ran other scripts than the generator wrote`);
     }
     let window = 0;
     let highest = { Ir: -1, window: 0 };
@@ -345,7 +364,7 @@ function measureEdits(profile, out, workload) {
         const windows = [];
         for (let step = 0; step < receipt.windows; step++) {
             window++;
-            const cost = parseCost(parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")), PARSE_BOUNDARIES);
+            const cost = EDIT_COST[subject](parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")));
             windows.push(cost.Ir);
             if (cost.Ir > highest.Ir) highest = { Ir: cost.Ir, window };
         }
@@ -357,11 +376,13 @@ function measureEdits(profile, out, workload) {
             windows
         };
     });
-    if (fs.existsSync(`${dump}.${window + 1}`)) throw new Error(`${workload.name} dumped more windows than it ran`);
+    if (fs.existsSync(`${dump}.${window + 1}`)) {
+        throw new Error(`${workload.name} dumped more ${subject} windows than it ran`);
+    }
     fs.renameSync(`${dump}.${highest.window}`, `${dump}.max`);
     for (let index = 1; index <= window; index++) fs.rmSync(`${dump}.${index}`, { force: true });
     fs.rmSync(dump, { force: true });
-    return { stepwise: workload.stepwise, scripts };
+    return scripts;
 }
 
 /* A worker measures the workloads its parent hands it, one at a time. */
@@ -509,10 +530,10 @@ export function markdownReport(report) {
         "",
         "## Edits",
         "",
-        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text. Opening each script on its document and flushing are in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script. No gate holds them.`,
+        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text, and S the session's edits of the window, every one of them. Opening each script on its document and flushing are in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script. No gate holds them.`,
         "",
-        "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     );
     for (const group of groupEdits(report.edits, (row, script) =>
         JSON.stringify([row.source, script.family, row.size])
@@ -526,7 +547,8 @@ export function markdownReport(report) {
                 number(group.scripts),
                 number(group.edits),
                 number(group.windows),
-                ...figures(group.reparse)
+                ...figures(group.reparse),
+                ...figures(group.session)
             ].join(" | ")} |`
         );
     }
@@ -675,7 +697,7 @@ async function measureSet(options) {
         size: document.shape ? document.size : null
     });
     const report = {
-        schemaVersion: 7,
+        schemaVersion: 8,
         subjects: SUBJECTS,
         editSubjects: EDIT_SUBJECTS,
         toolchain: versions,

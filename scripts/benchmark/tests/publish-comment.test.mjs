@@ -103,9 +103,9 @@ const attributes = () => ({
 });
 
 const streams = () => ({
-    schemaVersion: 7,
+    schemaVersion: 8,
     subjects: ["reparse", "session", "binding"],
-    editSubjects: ["reparse"],
+    editSubjects: ["reparse", "session"],
     workloads: { version: "incremental-workloads-v4", set: "corpus", digest: "e".repeat(64), count: 3, edits: 2 },
     baseline: { revision: "b".repeat(40) },
     edits: [
@@ -113,14 +113,22 @@ const streams = () => ({
             name: "a.edits",
             size: null,
             scripts: [
-                { name: "typing-word", family: "typing", edits: 2, windows: [5, 7] },
-                { name: "far", family: "far", edits: 1, windows: [9] }
+                { name: "typing-word", family: "typing", edits: 2, windows: [5, 7], session: { windows: [2, 3] } },
+                { name: "far", family: "far", edits: 1, windows: [9], session: { windows: [4] } }
             ]
         },
         {
             name: "prose-ascii-64k.edits",
             size: 65536,
-            scripts: [{ name: "typing-word", family: "typing", edits: 64, windows: [30, 31, 32, 33] }]
+            scripts: [
+                {
+                    name: "typing-word",
+                    family: "typing",
+                    edits: 64,
+                    windows: [30, 31, 32, 33],
+                    session: { windows: [10, 11, 12, 13] }
+                }
+            ]
         }
     ],
     results: [
@@ -173,9 +181,12 @@ test("the stream table reports the R, S and B columns by family and size, pooled
     assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 8 \| 10 \| 10 \| 36 \| 0\.250× \|/);
     assert.doesNotMatch(body, /\| Shapes \| rows \| 16,384 \| {2}\|/);
     assert.match(body, /against `bbbbbbbbbbbb`\): \*\*2\/3 passed\*\*, 1 exceeded/);
-    assert.match(body, /\| Grammar corpus \| typing \| {2}\| 1 \| 2 \| 2 \| 5 \| 7 \| 7 \| 12 \|/);
-    assert.match(body, /\| Grammar corpus \| far \| {2}\| 1 \| 1 \| 1 \| 9 \| 9 \| 9 \| 9 \|/);
-    assert.match(body, /\| Shapes \| typing \| 65,536 \| 1 \| 64 \| 4 \| 31 \| 33 \| 33 \| 126 \|/);
+    assert.match(body, /\| Grammar corpus \| typing \| {2}\| 1 \| 2 \| 2 \| 5 \| 7 \| 7 \| 12 \| 2 \| 3 \| 3 \| 5 \|/);
+    assert.match(body, /\| Grammar corpus \| far \| {2}\| 1 \| 1 \| 1 \| 9 \| 9 \| 9 \| 9 \| 4 \| 4 \| 4 \| 4 \|/);
+    assert.match(
+        body,
+        /\| Shapes \| typing \| 65,536 \| 1 \| 64 \| 4 \| 31 \| 33 \| 33 \| 126 \| 11 \| 13 \| 13 \| 46 \|/
+    );
     assert.match(body, /2 edit workloads/);
     assert.doesNotMatch(body, /a\.tokens|a\.edits|typing-word|prose-ascii/);
     const unbased = streams();
@@ -211,7 +222,7 @@ test("the stream table reports the R, S and B columns by family and size, pooled
         (r) => (r.results[1].regressions[0].metric = "<b>"),
         (r) => (r.results[1].regressions[0].ratio = "1.03"),
         (r) => delete r.results[0].regressions,
-        (r) => (r.editSubjects = ["reparse", "session"]),
+        (r) => (r.editSubjects = ["reparse"]),
         (r) => (r.workloads.edits = 3),
         (r) => delete r.edits,
         (r) => (r.edits[0].size = -1),
@@ -219,6 +230,9 @@ test("the stream table reports the R, S and B columns by family and size, pooled
         (r) => (r.edits[0].scripts[0].family = "undo"),
         (r) => (r.edits[0].scripts[0].windows = []),
         (r) => (r.edits[0].scripts[0].windows = [5, "7"]),
+        (r) => delete r.edits[0].scripts[0].session,
+        (r) => (r.edits[0].scripts[0].session.windows = [2]),
+        (r) => (r.edits[0].scripts[1].session.windows = [0]),
         (r) => (r.edits[0].scripts[1].edits = 0),
         (r) => (r.edits[1].scripts[0].edits = 3)
     ]) {

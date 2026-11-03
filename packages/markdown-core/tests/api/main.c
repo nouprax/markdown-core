@@ -11286,6 +11286,73 @@ static void session_edits_refresh_storage(test_batch_runner *runner) {
     OK(runner, held && swept, "no edit after a rename that runs out of storage publishes a stale use");
 }
 
+/* The allocator sweep of 12.7: an edit refused at each of its allocations
+ * in turn either leaves the session as it was or fails it, and the session
+ * then frees everything it holds. The edits type into a paragraph and a
+ * nested item, open a fence, rename a definition, retitle a heading that
+ * a reference names, write into a table and take most of a long text away,
+ * which compacts it. After each refused edit, another edit either reads as
+ * a parse of its text does or fails too. */
+static void session_edits_allocations(test_batch_runner *runner) {
+    typedef struct {
+        const char *name, *source;
+        markdown_core_position from, to;
+        const char *text;
+    } sweep_edit;
+    markdown_core_strbuf long_text = MARKDOWN_CORE_BUF_INIT();
+    for (int item = 0; item < 120; item++) {
+        char line[64];
+        snprintf(line, sizeof(line), "- item %03d\n\n  more [r]\n\n", item);
+        markdown_core_strbuf_puts(&long_text, line);
+    }
+    markdown_core_strbuf_puts(&long_text, "[r]: /u\n");
+    const sweep_edit edits[] = {
+        {"paragraph", "one\n\ntwo\n\nthree\n", {3, 2}, {3, 2}, "x"},
+        {"nested item", "- a\n  - b\n\n  c\n- d\n", {2, 6}, {2, 6}, "x"},
+        {"fence", "one\n\ntwo\n\nthree\n", {1, 1}, {1, 1}, "```\n"},
+        {"definition", "see [r]\n\n[r]: /u\n\nmid\n\n[r] again\n", {3, 2}, {3, 3}, "s"},
+        {"heading", "see [Title]\n\n# Title\n\nend [Title]\n", {3, 8}, {3, 8}, "s"},
+        {"table", "| a |\n|---|\n| b [r] |\n\n[r]: /u\n", {3, 3}, {3, 3}, "c"},
+        {"compaction", (const char *)long_text.ptr, {3, 1}, {481, 1}, ""},
+    };
+    const markdown_core_position again = {1, 1};
+    for (size_t e = 0; e < sizeof(edits) / sizeof(edits[0]); e++) {
+        const sweep_edit *edit = &edits[e];
+        bool held = !long_text.oom, swept = false;
+        size_t fail = 1;
+        for (; held && !swept && fail < 100000; fail++) {
+            payload_probe_arm();
+            markdown_core_session *session = NULL;
+            const markdown_core_document *document = NULL;
+            if (markdown_core_session_new((const uint8_t *)edit->source, strlen(edit->source),
+                                          MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
+                markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+                held = false;
+                markdown_core_session_close(session);
+                payload_probe_disarm();
+                break;
+            }
+            payload_fail_at = payload_allocations + fail;
+            const size_t before = payload_allocations;
+            const markdown_core_status status = markdown_core_session_edit(
+                session, edit->from, edit->to, (const uint8_t *)edit->text, strlen(edit->text), &document);
+            swept = payload_allocations - before < fail;
+            payload_fail_at = 0;
+            const markdown_core_status next =
+                markdown_core_session_edit(session, again, again, (const uint8_t *)"z", 1, &document);
+            held = (status == MARKDOWN_CORE_OK || status == MARKDOWN_CORE_ALLOCATION_FAILED) &&
+                   (next == MARKDOWN_CORE_OK ? session_as_parsed(session) : next == MARKDOWN_CORE_ALLOCATION_FAILED);
+            markdown_core_session_close(session);
+            held = held && payload_live == 0;
+            payload_probe_disarm();
+        }
+        OK(runner, held && swept,
+           "the %s edit refused at each of its %zu allocations keeps the session or fails it, and frees all",
+           edit->name, fail - 1);
+    }
+    markdown_core_strbuf_free(&long_text);
+}
+
 /* A use whose label holds a NUL, which the block replaces before the
  * inline parse looks the label up, is read again when an edit renames the
  * definition it names (E-D2). */
@@ -12866,6 +12933,7 @@ int main(void) {
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);
     session_edits_replaced_label(runner);
+    session_edits_allocations(runner);
     session_edits_compaction(runner);
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
