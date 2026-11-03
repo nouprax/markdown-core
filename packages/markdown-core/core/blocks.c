@@ -3828,6 +3828,10 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     /* Room for the log up front, so a step it grows in pays no
      * allocation; a refusal here leaves the step to grow it. */
     (void)markdown_core_array_reserve(&stream->reach.front, 64);
+    /* And for the uses and their labels. */
+    (void)markdown_core_array_reserve(&edit->uses.front, 64);
+    markdown_core_strbuf_grow(&edit->use_labels, 512);
+    edit->use_labels.oom = false;
     return true;
 }
 
