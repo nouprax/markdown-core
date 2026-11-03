@@ -37,11 +37,12 @@ extern "C" {
  *   leave(owner, i)   called before the front's entries from `i` on leave
  *                     it, to the back or for good, or move in it: what the
  *                     instance keeps about them, an index over the front,
- *                     lets them go;
- *   turn(owner, z, e) called for each entry `e` a move of the focus took to
- *                     the other part, there, with the zipper `z` as it then
- *                     is: what the instance keeps of where its entries are,
- *                     an index by another key, follows it.
+ *                     lets them go.
+ *
+ * An instance that keeps its entries in an index by another key follows a
+ * move of the focus after it, where it may fail: the entries the move took
+ * to the other part are the front's past its count before the move, or the
+ * back's nearest the focus past its count before it.
  *
  * The back is the zipper's own; a parse that keeps no back -- one that no
  * edit put back -- never touches it. */
@@ -52,13 +53,10 @@ extern "C" {
         size_t back_count, back_room, end;                                                                             \
     }
 
-/* The `turn` of an instance that keeps nothing of where its entries are. */
-#define MARKDOWN_CORE_ZIPPER_NO_TURN(self, z, entry) ((void)(self), (void)(z), (void)(entry))
-
 /* The operations of the zipper type `zipper` of entries of `type`, named
  * `name_...`, `flip`, `start`, `leave` and `turn` as above, `owner` the type
  * of what `leave` and `turn` are called with. */
-#define MARKDOWN_CORE_ZIPPER_OPS(name, zipper, type, flip, start, leave, turn, owner)                                  \
+#define MARKDOWN_CORE_ZIPPER_OPS(name, zipper, type, flip, start, leave, owner)                                        \
     /* How many entries the zipper holds. */                                                                           \
     static inline MARKDOWN_CORE_ATTRIBUTE((unused)) size_t name##_count(const zipper *z) {                             \
         return z->front.count + z->back_count;                                                                         \
@@ -176,13 +174,11 @@ extern "C" {
             const size_t count = z->front.count;                                                                       \
             markdown_core_array_truncate(&z->front, first);                                                            \
             for (size_t i = count; i-- > first;) {                                                                     \
-                z->back[z->back_count] = flip(z->front.values[i], z->end);                                             \
-                turn(self, z, &z->back[z->back_count++]);                                                              \
+                z->back[z->back_count++] = flip(z->front.values[i], z->end);                                           \
             }                                                                                                          \
         }                                                                                                              \
         for (size_t i = 0; i < taken; i++) {                                                                           \
-            z->front.values[z->front.count] = flip(z->back[--z->back_count], z->end);                                  \
-            turn(self, z, &z->front.values[z->front.count++]);                                                         \
+            z->front.values[z->front.count++] = flip(z->back[--z->back_count], z->end);                                \
         }                                                                                                              \
         return true;                                                                                                   \
     }                                                                                                                  \
@@ -194,13 +190,15 @@ extern "C" {
         return gone;                                                                                                   \
     }                                                                                                                  \
                                                                                                                        \
-    /* Its front's entry `index` goes, the others staying in order: those                                              \
-     * after it move, so `leave` hears of all of them. */                                                              \
-    static inline MARKDOWN_CORE_ATTRIBUTE((unused)) void name##_front_remove(zipper *z, size_t index, owner *self) {   \
+    /* Its front's `count` entries from `index` go, the others staying in                                              \
+     * order: those after them move, so `leave` hears of all of them. */                                               \
+    static inline MARKDOWN_CORE_ATTRIBUTE((unused)) void name##_front_erase(zipper *z, size_t index, size_t count,     \
+                                                                            owner *self) {                             \
         leave(self, index);                                                                                            \
         markdown_core_ahead_unsettle(&z->front.ahead, index);                                                          \
-        memmove(z->front.values + index, z->front.values + index + 1, (z->front.count - index - 1) * sizeof(type));    \
-        markdown_core_array_truncate(&z->front, z->front.count - 1);                                                   \
+        memmove(z->front.values + index, z->front.values + index + count,                                              \
+                (z->front.count - index - count) * sizeof(type));                                                      \
+        markdown_core_array_truncate(&z->front, z->front.count - count);                                               \
     }                                                                                                                  \
                                                                                                                        \
     /* `entry` put in the front at `index`, the entries from there on after                                            \

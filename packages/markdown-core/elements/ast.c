@@ -1939,9 +1939,9 @@ typedef char committed_tables_fit[(int)TABLE_COUNT == (int)MARKDOWN_CORE_DEFINIT
 
 /* THE COMMITTED ZIPPERS. Each table's entries are in order of where they
  * start, the front's in the text's terms and the back's measured back from
- * its end (zipper.h), and a label's entry holds where its definition starts
- * in the terms of the part that holds it, which a move of the focus turns
- * (committed_turn). */
+ * its end (zipper.h), and a label's entry and its holders hold where its
+ * definition starts in the terms of the part that holds it, which follow a
+ * move of the focus (committed_follow). */
 static inline markdown_core_listed listed_entry_flip(markdown_core_listed entry, size_t end) {
     return (markdown_core_listed){entry.node, (uint32_t)(end - entry.start)};
 }
@@ -1953,11 +1953,8 @@ static inline void listed_entry_leave(markdown_core_committed_tables *committed,
     (void)first;
 }
 
-static void committed_turn(markdown_core_committed_tables *committed, const markdown_core_listed_zipper *zipper,
-                           const markdown_core_listed *entry);
-
 MARKDOWN_CORE_ZIPPER_OPS(listed, markdown_core_listed_zipper, markdown_core_listed, listed_entry_flip,
-                         listed_entry_start, listed_entry_leave, committed_turn, markdown_core_committed_tables)
+                         listed_entry_start, listed_entry_leave, markdown_core_committed_tables)
 
 /* Whether `node`, a definition of label table `labels` that starts at
  * `start` of the text, before the back's, is its label's definition before
@@ -1974,25 +1971,10 @@ static inline bool label_wins(uint32_t labels, const markdown_core_node *node, u
     return (entry->extra & MARKDOWN_CORE_LISTED_BACK) || start < entry->extra;
 }
 
-/* The table of `zipper`, one of `committed`'s. */
-static inline uint32_t committed_table(const markdown_core_committed_tables *committed,
-                                       const markdown_core_listed_zipper *zipper) {
-    return (uint32_t)(zipper - committed->starts);
-}
-
-static void committed_turn(markdown_core_committed_tables *committed, const markdown_core_listed_zipper *zipper,
-                           const markdown_core_listed *entry) {
-    markdown_core_chunk label;
-    if (!definition_label(entry->node, &label)) {
-        return;
-    }
-    const uint32_t labels = table_labels[committed_table(committed, zipper)];
-    const label_entry named = label_entry_of(label.data, (size_t)label.len, entry->node, 0);
-    markdown_core_key_entry *held = markdown_core_key_tree_find(&committed->labels[labels], &named, NULL);
-    if (held && held->value == entry->node) {
-        const bool back = entry >= zipper->back && entry < zipper->back + zipper->back_count;
-        held->extra = entry->start | (back ? MARKDOWN_CORE_LISTED_BACK : 0);
-    }
+/* Where the entry `entry` of a zipper's part starts, in that part's terms,
+ * with MARKDOWN_CORE_LISTED_BACK when `back`. */
+static inline uint32_t listed_at_of(const markdown_core_listed *entry, bool back) {
+    return entry->start | (back ? MARKDOWN_CORE_LISTED_BACK : 0);
 }
 
 /* THE LABEL TABLES' KEYS (parser.h, `label_blocks`). */
@@ -2034,6 +2016,128 @@ static unsigned char *committed_carve(markdown_core_committed_tables *committed,
     return bytes;
 }
 
+/* THE HOLDERS' KEYS (parser.h, `holders`): the label, each zero byte of it
+ * the two bytes 0 1, then 0 0, so that a label orders before every longer
+ * one it begins; then the definition's table, which orders the References
+ * before the Headings; then 0 for the front or 1 for the back; then where
+ * the definition starts, four bytes big-endian, a back's place taken from
+ * 0xFFFFFFFF, so that the one nearer the focus orders first. A key is made
+ * in bytes the tables own, and one only sought is given back at once. */
+enum { HOLDER_TAIL = 6 };
+
+static size_t holder_prefix(markdown_core_chunk label) {
+    size_t length = (size_t)label.len + 2;
+    for (bufsize_t i = 0; i < label.len; i++) {
+        length += label.data[i] == 0;
+    }
+    return length;
+}
+
+/* The key of a definition of table `table` with label `label` that starts
+ * at `at` (listed_at_of), or, when `table` is MARKDOWN_CORE_DEFINITION_TABLES,
+ * the label's prefix alone, into `*key`. False when storage could not be
+ * had. */
+static bool holder_key(markdown_core_committed_tables *committed, uint32_t table, markdown_core_chunk label,
+                       uint32_t at, markdown_core_key_entry *key) {
+    const size_t prefix = holder_prefix(label);
+    const size_t length = prefix + (table < MARKDOWN_CORE_DEFINITION_TABLES ? HOLDER_TAIL : 0);
+    unsigned char *bytes = committed_carve(committed, length);
+    if (!bytes) {
+        return false;
+    }
+    size_t i = 0;
+    for (bufsize_t j = 0; j < label.len; j++) {
+        bytes[i++] = label.data[j];
+        if (!label.data[j]) {
+            bytes[i++] = 1;
+        }
+    }
+    bytes[i++] = 0;
+    bytes[i++] = 0;
+    if (table < MARKDOWN_CORE_DEFINITION_TABLES) {
+        const bool back = (at & MARKDOWN_CORE_LISTED_BACK) != 0;
+        const uint32_t place = back ? 0xFFFFFFFFu - (at & ~MARKDOWN_CORE_LISTED_BACK) : at;
+        bytes[i++] = (unsigned char)table;
+        bytes[i++] = back;
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            bytes[i++] = (unsigned char)(place >> shift);
+        }
+    }
+    *key =
+        (markdown_core_key_entry){markdown_core_key_head(bytes, (bufsize_t)length), bytes, (bufsize_t)length, 0, NULL};
+    return true;
+}
+
+/* The key `key` made last given back. */
+static void holder_unkey(markdown_core_committed_tables *committed, const markdown_core_key_entry *key) {
+    committed->label_used -= (size_t)key->key_len;
+}
+
+/* Where the holder `entry` starts (listed_at_of). */
+static uint32_t holder_at(const markdown_core_key_entry *entry) {
+    const unsigned char *tail = entry->key + entry->key_len - 4;
+    const uint32_t place = (uint32_t)tail[0] << 24 | (uint32_t)tail[1] << 16 | (uint32_t)tail[2] << 8 | tail[3];
+    return entry->key[entry->key_len - 5] ? (0xFFFFFFFFu - place) | MARKDOWN_CORE_LISTED_BACK : place;
+}
+
+/* `node`, a definition of table `table` with label `label` that starts at
+ * `at`, among its label table's holders. False when storage could not be
+ * had. */
+static bool holder_put(markdown_core_committed_tables *committed, uint32_t table, const markdown_core_node *node,
+                       markdown_core_chunk label, uint32_t at) {
+    markdown_core_key_entry key;
+    if (!holder_key(committed, table, label, at, &key)) {
+        return false;
+    }
+    key.value = node;
+    bool made;
+    markdown_core_key_entry *held = markdown_core_key_tree_entry(&committed->holders[table_labels[table]], &key, &made);
+    if (!held) {
+        holder_unkey(committed, &key);
+        return false;
+    }
+    assert(made);
+    *held = key;
+    committed->label_live += (size_t)key.key_len;
+    return true;
+}
+
+/* The holder of a definition of table `table` with label `label` that
+ * starts at `at` goes. False when storage could not be had. */
+static bool holder_drop(markdown_core_committed_tables *committed, uint32_t table, markdown_core_chunk label,
+                        uint32_t at) {
+    markdown_core_key_entry key;
+    if (!holder_key(committed, table, label, at, &key)) {
+        return false;
+    }
+    markdown_core_key_tree *tree = &committed->holders[table_labels[table]];
+    assert(markdown_core_key_tree_find(tree, &key, NULL));
+    markdown_core_key_tree_remove(tree, &key);
+    holder_unkey(committed, &key);
+    committed->label_live -= (size_t)key.key_len;
+    committed->label_dead += (size_t)key.key_len;
+    return true;
+}
+
+/* The first holder of label `label` in label table `labels`, the label's
+ * definition, into `*first`, NULL when it has none. False when storage
+ * could not be had. */
+static bool holder_first(markdown_core_committed_tables *committed, uint32_t labels, markdown_core_chunk label,
+                         const markdown_core_key_entry **first) {
+    markdown_core_key_entry key;
+    if (!holder_key(committed, MARKDOWN_CORE_DEFINITION_TABLES, label, 0, &key)) {
+        return false;
+    }
+    markdown_core_key_tree_cursor cursor;
+    markdown_core_key_tree_seek(&committed->holders[labels], &key, &cursor);
+    const markdown_core_key_entry *found = markdown_core_key_tree_next(&cursor);
+    *first = found && found->key_len == key.key_len + HOLDER_TAIL && !memcmp(found->key, key.key, (size_t)key.key_len)
+                 ? found
+                 : NULL;
+    holder_unkey(committed, &key);
+    return true;
+}
+
 /* The entry of label table `labels` for `named`'s label, made with
  * `named`, its key a copy the tables own, when the table had none, which
  * `*made` says. NULL when storage could not be had. */
@@ -2063,13 +2167,16 @@ static markdown_core_key_entry *committed_entry(markdown_core_committed_tables *
 }
 
 /* `node`, a definition of table `table` that starts at `start`, before the
- * back's, at its label when it has one and is the label's definition.
- * False when storage could not be had. */
+ * back's, at its label when it has one: among its holders, and the label's
+ * definition when it is the first. False when storage could not be had. */
 static bool committed_label(markdown_core_committed_tables *committed, uint32_t table, const markdown_core_node *node,
                             uint32_t start) {
     markdown_core_chunk label;
     if (!definition_label(node, &label)) {
         return true;
+    }
+    if (!holder_put(committed, table, node, label, start)) {
+        return false;
     }
     const uint32_t labels = table_labels[table];
     const label_entry named = label_entry_of(label.data, (size_t)label.len, node, start);
@@ -2105,12 +2212,14 @@ static bool committed_keep(markdown_core_committed_tables *committed, uint32_t t
            committed_label(committed, table, node, start);
 }
 
-/* The label tables made again from the tables, each label's definition
- * the first of its table in order, and of the References before the
- * Headings, their keys copied anew. False when storage could not be had. */
+/* The label tables and their holders made again from the tables, each
+ * label's definition the first of its table in order, and of the
+ * References before the Headings, their keys copied anew. False when
+ * storage could not be had. */
 static bool committed_relabel(markdown_core_committed_tables *committed) {
     for (uint32_t labels = 0; labels < MARKDOWN_CORE_LABEL_TABLES; labels++) {
         markdown_core_key_tree_free(&committed->labels[labels]);
+        markdown_core_key_tree_free(&committed->holders[labels]);
     }
     committed_keys_free(committed);
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
@@ -2124,9 +2233,10 @@ static bool committed_relabel(markdown_core_committed_tables *committed) {
                 continue;
             }
             bool made;
-            const label_entry named = label_entry_of(label.data, (size_t)label.len, entry->node,
-                                                     entry->start | (back ? MARKDOWN_CORE_LISTED_BACK : 0));
-            if (!committed_entry(committed, table_labels[table], &named, &made)) {
+            const uint32_t at = listed_at_of(entry, back);
+            const label_entry named = label_entry_of(label.data, (size_t)label.len, entry->node, at);
+            if (!holder_put(committed, table, entry->node, label, at) ||
+                !committed_entry(committed, table_labels[table], &named, &made)) {
                 return false;
             }
         }
@@ -2134,99 +2244,115 @@ static bool committed_relabel(markdown_core_committed_tables *committed) {
     return true;
 }
 
-/* The definition `node` of table `table`, which its table no longer holds,
- * no label's: when it was its label's, the label's is the first that holds
- * it now, of its table in order, and of the References before the
- * Headings. False when storage could not be had. */
-static bool committed_unlabel(markdown_core_committed_tables *committed, uint32_t table,
-                              const markdown_core_node *node) {
+/* The tables' keys made again once more of their bytes are dead than live
+ * (committed_relabel). False when storage could not be had. */
+static bool committed_settle(markdown_core_committed_tables *committed) {
+    return committed->label_dead <= 4096 || committed->label_dead <= committed->label_live ||
+           committed_relabel(committed);
+}
+
+/* The definition `node` of table `table` that started at `at`
+ * (listed_at_of), which its table no longer holds, among no label's
+ * holders: when it was its label's definition, the label's next holder is.
+ * False when storage could not be had. */
+static bool committed_unlabel(markdown_core_committed_tables *committed, uint32_t table, const markdown_core_node *node,
+                              uint32_t at) {
     markdown_core_chunk label;
     if (!definition_label(node, &label)) {
         return true;
     }
+    if (!holder_drop(committed, table, label, at)) {
+        return false;
+    }
     const uint32_t labels = table_labels[table];
     markdown_core_key_tree *tree = &committed->labels[labels];
     const label_entry named = label_entry_of(label.data, (size_t)label.len, node, 0);
-    const markdown_core_key_entry *held = markdown_core_key_tree_find(tree, &named, NULL);
+    markdown_core_key_entry *held = markdown_core_key_tree_find(tree, &named, NULL);
     if (!held || held->value != node) {
         return true;
     }
-    committed->label_dead += (size_t)named.key_len;
-    markdown_core_key_tree_remove(tree, &named);
-    if (committed->label_dead > 4096 && committed->label_dead > committed->label_live) {
-        return committed_relabel(committed);
+    const markdown_core_key_entry *next;
+    if (!holder_first(committed, labels, label, &next)) {
+        return false;
+    }
+    if (next) {
+        held->value = next->value;
+        held->extra = holder_at(next);
+        return true;
     }
     committed->label_live -= (size_t)named.key_len;
-    for (uint32_t other = 0; other < MARKDOWN_CORE_DEFINITION_TABLES; other++) {
-        if (table_labels[other] != labels) {
-            continue;
-        }
-        const markdown_core_listed_zipper *zipper = &committed->starts[other];
-        for (size_t i = 0; i < listed_count(zipper); i++) {
-            const bool back = i >= zipper->front.count;
-            const markdown_core_listed *entry =
-                back ? &zipper->back[zipper->back_count - 1 - (i - zipper->front.count)] : &zipper->front.values[i];
-            markdown_core_chunk found;
-            if (!definition_label(entry->node, &found) ||
-                label_compare(found.data, (size_t)found.len, label.data, (size_t)label.len)) {
-                continue;
-            }
-            bool made;
-            const label_entry next = label_entry_of(found.data, (size_t)found.len, entry->node,
-                                                    entry->start | (back ? MARKDOWN_CORE_LISTED_BACK : 0));
-            return committed_entry(committed, labels, &next, &made) != NULL;
-        }
-    }
+    committed->label_dead += (size_t)named.key_len;
+    markdown_core_key_tree_remove(tree, &named);
     return true;
 }
-
-/* More entries than this taken out at once make their labels again
- * (committed_relabel) rather than one at a time. */
-enum { COMMITTED_UNLABEL_MOST = 16 };
 
 /* The `count` entries of table `table`'s back nearest the focus go, and
  * the labels they held with them. False when storage could not be had. */
 static bool committed_cut(markdown_core_committed_tables *committed, uint32_t table, size_t count) {
     markdown_core_listed_zipper *zipper = &committed->starts[table];
     assert(count <= zipper->back_count);
-    if (count > COMMITTED_UNLABEL_MOST) {
-        zipper->back_count -= count;
-        return committed_relabel(committed);
-    }
     for (size_t i = 0; i < count; i++) {
-        const markdown_core_node *node = zipper->back[--zipper->back_count].node;
-        if (!committed_unlabel(committed, table, node)) {
+        const markdown_core_listed entry = zipper->back[--zipper->back_count];
+        if (!committed_unlabel(committed, table, entry.node, listed_at_of(&entry, true))) {
             return false;
         }
     }
-    return true;
+    return committed_settle(committed);
 }
 
 /* The front's entries of table `table` from `first` on go, and the labels
  * they held with them. False when storage could not be had. */
 static bool committed_truncate(markdown_core_committed_tables *committed, uint32_t table, size_t first) {
     markdown_core_listed_zipper *zipper = &committed->starts[table];
-    if (first >= zipper->front.count) {
-        return true;
-    }
-    if (zipper->front.count - first > COMMITTED_UNLABEL_MOST) {
-        listed_truncate(zipper, first, committed);
-        return committed_relabel(committed);
-    }
-    while (zipper->front.count > first) {
-        const markdown_core_node *node = zipper->front.values[zipper->front.count - 1].node;
-        listed_truncate(zipper, zipper->front.count - 1, committed);
-        if (!committed_unlabel(committed, table, node)) {
+    for (size_t i = first; i < zipper->front.count; i++) {
+        const markdown_core_listed *entry = &zipper->front.values[i];
+        if (!committed_unlabel(committed, table, entry->node, listed_at_of(entry, false))) {
             return false;
         }
     }
-    return true;
+    if (first < zipper->front.count) {
+        listed_truncate(zipper, first, committed);
+    }
+    return committed_settle(committed);
+}
+
+/* The labels of table `table`'s entries that its zipper's last move took
+ * to the other part, from a front of `front` entries and a back of `back`,
+ * follow them there. False when storage could not be had. */
+static bool committed_follow(markdown_core_committed_tables *committed, uint32_t table, size_t front, size_t back) {
+    const markdown_core_listed_zipper *zipper = &committed->starts[table];
+    const bool went = zipper->front.count < front;
+    const size_t first = went ? zipper->back_count - (front - zipper->front.count) : front;
+    const size_t last = went ? zipper->back_count : zipper->front.count;
+    (void)back;
+    assert(went ? zipper->back_count - back == front - zipper->front.count
+                : back - zipper->back_count == zipper->front.count - front);
+    for (size_t i = first; i < last; i++) {
+        const markdown_core_listed *entry = went ? &zipper->back[i] : &zipper->front.values[i];
+        markdown_core_chunk label;
+        if (!definition_label(entry->node, &label)) {
+            continue;
+        }
+        const markdown_core_listed was = listed_entry_flip(*entry, zipper->end);
+        const uint32_t at = listed_at_of(entry, went);
+        if (!holder_drop(committed, table, label, listed_at_of(&was, !went)) ||
+            !holder_put(committed, table, entry->node, label, at)) {
+            return false;
+        }
+        const label_entry named = label_entry_of(label.data, (size_t)label.len, entry->node, 0);
+        markdown_core_key_entry *held =
+            markdown_core_key_tree_find(&committed->labels[table_labels[table]], &named, NULL);
+        if (held && held->value == entry->node) {
+            held->extra = at;
+        }
+    }
+    return committed_settle(committed);
 }
 
 #ifndef NDEBUG
 /* Every table in order, and every label's entry the first definition of its
  * label that a table holds. */
-static void committed_check(const markdown_core_committed_tables *committed) {
+static void committed_check(markdown_core_committed_tables *committed) {
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         const markdown_core_listed_zipper *zipper = &committed->starts[table];
         for (size_t i = 1; i < listed_count(zipper); i++) {
@@ -2254,6 +2380,23 @@ static void committed_check(const markdown_core_committed_tables *committed) {
             }
         }
         assert(count == tree->count);
+        size_t holders = 0;
+        for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+            const markdown_core_listed_zipper *zipper = &committed->starts[table];
+            for (size_t i = 0; table_labels[table] == labels && i < listed_count(zipper); i++) {
+                markdown_core_chunk label;
+                holders += definition_label(listed_at(zipper, i).node, &label);
+            }
+        }
+        assert(holders == committed->holders[labels].count);
+        for (size_t rank = 0; rank < tree->count; rank++) {
+            const markdown_core_key_entry *held = markdown_core_key_tree_at(tree, rank);
+            markdown_core_chunk label;
+            const markdown_core_key_entry *first;
+            if (definition_label(held->value, &label) && holder_first(committed, labels, label, &first)) {
+                assert(first && first->value == held->value && holder_at(first) == held->extra);
+            }
+        }
     }
 }
 #else
@@ -2297,20 +2440,21 @@ bool markdown_core_publish_withdraw(markdown_core_parser *parser, markdown_core_
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];
         assert(!zipper->back_count || listed_back_start(zipper, 0) >= place.end);
-        for (size_t i = listed_front_from(zipper, place.start);
-             i < zipper->front.count && zipper->front.values[i].start < place.end;) {
-            const markdown_core_node *node = zipper->front.values[i].node;
-            if (node == root) {
-                i++;
-                continue;
-            }
-            listed_front_remove(zipper, i, committed);
-            if (!committed_unlabel(committed, table, node)) {
+        const size_t first = listed_front_from(zipper, place.start);
+        size_t end = first, kept = first;
+        for (; end < zipper->front.count && zipper->front.values[end].start < place.end; end++) {
+            const markdown_core_listed entry = zipper->front.values[end];
+            if (entry.node == root) {
+                zipper->front.values[kept++] = entry;
+            } else if (!committed_unlabel(committed, table, entry.node, listed_at_of(&entry, false))) {
                 return false;
             }
         }
+        if (kept < end) {
+            listed_front_erase(zipper, kept, end - kept, committed);
+        }
     }
-    return true;
+    return committed_settle(committed);
 }
 
 bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, const markdown_core_node *node,
@@ -2320,12 +2464,12 @@ bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, 
     const size_t at = listed_front_from(zipper, start);
     if (at < zipper->front.count && zipper->front.values[at].start == start) {
         const markdown_core_node *old = zipper->front.values[at].node;
-        listed_front_remove(zipper, at, committed);
-        if (!committed_unlabel(committed, table, old)) {
+        if (!committed_unlabel(committed, table, old, start)) {
             return false;
         }
+        listed_front_erase(zipper, at, 1, committed);
     }
-    return committed_keep(committed, table, node, start);
+    return committed_keep(committed, table, node, start) && committed_settle(committed);
 }
 
 void markdown_core_publish_release_committed(markdown_core_committed_tables *committed) {
@@ -2335,6 +2479,7 @@ void markdown_core_publish_release_committed(markdown_core_committed_tables *com
     }
     for (size_t table = 0; table < MARKDOWN_CORE_LABEL_TABLES; table++) {
         markdown_core_key_tree_free(&committed->labels[table]);
+        markdown_core_key_tree_free(&committed->holders[table]);
     }
     committed_keys_free(committed);
 }
@@ -2891,7 +3036,9 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     const size_t size = markdown_core_parser_back_end(parser);
     for (uint32_t table = 0; ok && table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];
-        ok = listed_move(zipper, start, size, committed) && (child || committed_truncate(committed, table, 0));
+        const size_t front = zipper->front.count, back = zipper->back_count;
+        ok = listed_move(zipper, start, size, committed) && committed_follow(committed, table, front, back) &&
+             (child || committed_truncate(committed, table, 0));
     }
     if (ok) {
         committed_check(committed);

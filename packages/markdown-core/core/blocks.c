@@ -2706,7 +2706,7 @@ static inline markdown_core_input_line S_line_flip(markdown_core_input_line line
 static inline size_t S_line_start(const markdown_core_input_line *line) { return line->start; }
 
 MARKDOWN_CORE_ZIPPER_OPS(S_lines, markdown_core_line_zipper, markdown_core_input_line, S_line_flip, S_line_start,
-                         S_lines_leave, MARKDOWN_CORE_ZIPPER_NO_TURN, markdown_core_parser_input)
+                         S_lines_leave, markdown_core_parser_input)
 
 /* THE REACH ZIPPER (stream, `reach`): the log is the front, in order of
  * start once an edit sorted it (markdown_core_parser_sort_reach), and the
@@ -2724,7 +2724,7 @@ static inline markdown_core_place S_place_flip(markdown_core_place place, size_t
 static inline size_t S_place_start(const markdown_core_place *place) { return place->start; }
 
 MARKDOWN_CORE_ZIPPER_OPS(S_reach, markdown_core_reach_zipper, markdown_core_place, S_place_flip, S_place_start,
-                         S_reach_leave, MARKDOWN_CORE_ZIPPER_NO_TURN, markdown_core_edit)
+                         S_reach_leave, markdown_core_edit)
 
 /* The lines of the input from `line` on go. */
 static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) {
@@ -3104,7 +3104,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
             if (reach->front.values[i].end > start) {
                 assert(reach->front.values[i].start == open);
                 edit->closed = reach->front.values[i].end;
-                S_reach_front_remove(reach, i, edit);
+                S_reach_front_erase(reach, i, 1, edit);
                 break;
             }
         }
