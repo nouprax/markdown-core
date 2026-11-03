@@ -323,15 +323,11 @@ typedef struct {
 
 /* A definition lookup a commit's completion found nothing for: the root it
  * was made for, among the parser's `miss_roots`, and the lookup's kind and
- * label, as written, at `label_start` in the parser's `miss_labels`. A
- * parse that takes edits lists the lookups that found a definition too,
- * `found`, which the finalize does not ask again: each is a use of its
- * label (markdown_core_edit, `uses`). */
+ * label, as written, at `label_start` in the parser's `miss_labels`. */
 typedef struct {
     size_t root;
     markdown_core_registry_kind kind;
     bufsize_t label_start, label_length;
-    bool found;
 } markdown_core_definition_miss;
 
 /* WHERE A COMMIT STOPPED IN THE LINE A SESSION HOLDS (blocks.c): the step
@@ -670,11 +666,13 @@ typedef struct markdown_core_edit {
      * other way round: its uses say which blocks read such a label. The
      * labels are kept as written, in `use_labels`; the reading of an edit
      * notes its own from `uses_from` on, which its flush puts in order, and
-     * `use_live` is how many bytes of the labels a use held when they were
-     * last made again. */
+     * `use_live` is how many bytes of the labels the uses hold. */
     markdown_core_use_zipper uses;
     markdown_core_strbuf use_labels;
     size_t uses_from, use_live;
+    /* While the finalize completes anew the roots whose misses now find a
+     * definition, whose commits noted their uses. */
+    bool anew;
     /* The old tail's children no record holds yet, nor the root, the
      * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
      * them go when it fails before its publish. */

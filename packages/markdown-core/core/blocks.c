@@ -1956,7 +1956,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
  * definition. */
 
 static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
-                          const unsigned char *label, bufsize_t size, bool found);
+                          const unsigned char *label, bufsize_t size);
+static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry_kind kind, const unsigned char *label,
+                  bufsize_t size);
 
 /* Whether `node`'s completion settles its content: a snapshot's, of a
  * paragraph it lent, read on its own lines, while no candidate waits. */
@@ -2146,9 +2148,10 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
                                            0};
         /* A finalize asked again those that found nothing, which noted
          * their uses (S_settled_found). */
-        const bool kept = parser->snapshot ? S_record_miss(parser, node, miss->kind, label.data, label.len, miss->found)
-                          : miss->found    ? markdown_core_parser_note_use(parser, miss->kind, &label)
-                                           : true;
+        const bool kept = !parser->snapshot ? !miss->found || markdown_core_parser_note_use(parser, miss->kind, &label)
+                          : miss->found
+                              ? S_use(parser->stream->edit, node->place.start, miss->kind, label.data, label.len)
+                              : S_record_miss(parser, node, miss->kind, label.data, label.len);
         if (!kept) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -2759,11 +2762,30 @@ static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry
                   bufsize_t size) {
     const markdown_core_use use = {(uint32_t)start, (uint32_t)edit->use_labels.size, (uint32_t)size, kind};
     markdown_core_strbuf_put(&edit->use_labels, label, size);
-    return !edit->use_labels.oom && markdown_core_array_push(&edit->uses.front, use);
+    if (edit->use_labels.oom || !markdown_core_array_push(&edit->uses.front, use)) {
+        return false;
+    }
+    edit->use_live += (size_t)size;
+    return true;
+}
+
+/* The `count` uses of the back nearest the focus go, and their labels'
+ * bytes are dead. */
+static void S_uses_drop(markdown_core_edit *edit, size_t count) {
+    markdown_core_use_zipper *uses = &edit->uses;
+    for (size_t k = 0; k < count; k++) {
+        edit->use_live -= uses->back[uses->back_count - 1 - k].size;
+    }
+    uses->back_count -= count;
 }
 
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_registry_kind kind,
                                    const markdown_core_chunk *label) {
+    /* A committed root's commit noted its uses, which its completion
+     * anew repeats (S_complete_misses). */
+    if (parser->stream->edit->anew) {
+        return true;
+    }
     return S_use(parser->stream->edit, parser->completing->place.start, kind, label->data, label->len);
 }
 
@@ -2806,22 +2828,19 @@ static bool S_uses_settle(markdown_core_edit *edit) {
     return true;
 }
 
-/* THE USES A FLUSH NOTES: the lookups the commits listed (A LOOKUP THAT
- * FOUND NOTHING), each a use of the root it was made for, where the root
- * lay; and what the reading noted put in order, after the uses before its
- * rest point. False when storage could not be had. */
+/* THE USES A FLUSH NOTES: what the reading noted put in order, after the
+ * uses before its rest point. The commits noted theirs as they made them
+ * (A LOOKUP THAT FOUND NOTHING), and the finalize those of the roots it
+ * completed first. False when storage could not be had. */
 static bool S_uses_flush(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    markdown_core_edit *edit = stream->edit;
-    for (size_t i = 0; i < stream->miss_count; i++) {
-        const markdown_core_definition_miss *miss = &stream->misses[i];
-        if (!S_use(edit, stream->miss_roots[miss->root].position.place.start, miss->kind,
-                   stream->miss_labels.ptr + miss->label_start, miss->label_length)) {
-            return false;
-        }
-    }
+    markdown_core_edit *edit = parser->stream->edit;
     markdown_core_use_zipper *uses = &edit->uses;
-    if (uses->front.count > edit->uses_from + 1) {
+    /* A reading notes its roots' uses mostly in order. */
+    size_t sorted = edit->uses_from + (uses->front.count > edit->uses_from);
+    while (sorted < uses->front.count && uses->front.values[sorted - 1].start <= uses->front.values[sorted].start) {
+        sorted++;
+    }
+    if (sorted < uses->front.count) {
         markdown_core_ahead_unsettle(&uses->front.ahead, edit->uses_from);
         qsort(uses->front.values + edit->uses_from, uses->front.count - edit->uses_from, sizeof(*uses->front.values),
               S_use_order);
@@ -3287,7 +3306,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->count = 0;
         stream->edit->back_count = 0;
         input->lines.back_count = stream->reach.back_count = 0;
-        stream->edit->uses.back_count = 0;
+        S_uses_drop(stream->edit, stream->edit->uses.back_count);
     }
     S_edit_next(stream->edit, &input->lines);
     return true;
@@ -3342,7 +3361,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     input->lines.back_count -= gone;
     edit->line = index;
     (void)S_reach_cut(&stream->reach, old);
-    (void)S_uses_cut(&edit->uses, old);
+    S_uses_drop(edit, S_uses_back_from(&edit->uses, old));
     input->lines.end = (size_t)((int64_t)input->lines.end + delta);
     stream->reach.end = (size_t)((int64_t)stream->reach.end + delta);
     edit->uses.end = (size_t)((int64_t)edit->uses.end + delta);
@@ -7294,7 +7313,10 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
         }
         return found ? record : NULL;
     }
-    *failed = !S_record_miss(parser, root, kind, label->data, label->len, found);
+    /* A committed root's lookup that found a definition is a use now: no
+     * finalize asks it again. */
+    *failed = found ? !S_use(parser->stream->edit, root->place.start, kind, label->data, label->len)
+                    : !S_record_miss(parser, root, kind, label->data, label->len);
     return found && !*failed ? record : NULL;
 }
 
@@ -7302,7 +7324,7 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
  * `size` bytes, recorded for the finalize. False when storage could not be
  * had. */
 static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
-                          const unsigned char *label, bufsize_t size, bool found) {
+                          const unsigned char *label, bufsize_t size) {
     markdown_core_definition_miss *misses = markdown_core_reserve(
         parser->stream->misses, &parser->stream->miss_capacity, parser->stream->miss_count + 1, sizeof(*misses));
     if (misses) {
@@ -7311,10 +7333,14 @@ static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root
     if (!misses || (parser->stream->miss_root != root && !S_miss_root(parser, root))) {
         return false;
     }
-    misses[parser->stream->miss_count++] = (markdown_core_definition_miss){
-        parser->stream->miss_root_count - 1, kind, parser->stream->miss_labels.size, size, found};
+    misses[parser->stream->miss_count++] = (markdown_core_definition_miss){parser->stream->miss_root_count - 1, kind,
+                                                                           parser->stream->miss_labels.size, size};
     markdown_core_strbuf_put(&parser->stream->miss_labels, label, size);
-    return !parser->stream->miss_labels.oom;
+    /* A parse that takes edits keeps it as a use too, in the order of the
+     * commits, which is where the roots start: a finalize that completes
+     * the root again looks the same labels up. */
+    return !parser->stream->miss_labels.oom &&
+           (!parser->stream->edit || S_use(parser->stream->edit, root->place.start, kind, label, size));
 }
 
 /* The nodes of what completion made of a root, gathered as their anchors
@@ -7481,17 +7507,18 @@ static void S_complete_misses(markdown_core_parser *parser) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    markdown_core_edit *const edit = parser->stream->edit;
+    if (edit) {
+        edit->anew = true;
+    }
     size_t count = 0;
     for (size_t miss = 0, record = 0; record < parser->stream->miss_root_count && !parser->error; record++) {
         bool found = false;
-        /* The lookups asked again are no root's to note: the flush notes
-         * every one the commits listed (S_uses_flush). */
+        /* The lookups asked again are no root's to note: the commits noted
+         * them (S_record_miss). */
         parser->completing = NULL;
         for (; miss < parser->stream->miss_count && parser->stream->misses[miss].root == record; miss++) {
             const markdown_core_definition_miss *at = &parser->stream->misses[miss];
-            if (at->found) {
-                continue;
-            }
             const markdown_core_chunk label = {parser->stream->miss_labels.ptr + at->label_start, at->label_length, 0};
             bool failed = false;
             found = found || markdown_core_parser_find_definition(parser, at->kind, &label, &failed);
@@ -7519,6 +7546,9 @@ static void S_complete_misses(markdown_core_parser *parser) {
         markdown_core_node_pool_release(parser->pool, anew[placed].candidate);
     }
     markdown_core_free(anew);
+    if (edit) {
+        edit->anew = false;
+    }
     if (!parser->error && count) {
         S_keep_defined(parser);
     }
@@ -7770,7 +7800,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         /* A reading that took nothing back read every line of the text. */
         if (!edit->resumed) {
             parser->input.lines.back_count = parser->stream->reach.back_count = 0;
-            edit->uses.back_count = 0;
+            S_uses_drop(edit, edit->uses.back_count);
         }
         edit->reading = false;
         edit->count = 0;
