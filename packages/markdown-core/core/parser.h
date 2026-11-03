@@ -247,7 +247,9 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
  * MARKDOWN_CORE_LISTED_BACK, when that is the back. Each label table's
  * HOLDERS hold every definition its tables hold that has a label, in order
  * of label and then of which is the label's definition first, so that the
- * label's next definition is at hand when one goes. */
+ * label's next definition is at hand when one goes: made, `held`, once the
+ * tables first lose a definition or move their focus, which a parse that
+ * only streams in may never do. */
 enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
 
 typedef struct markdown_core_listed {
@@ -263,6 +265,7 @@ typedef struct markdown_core_committed_tables {
     markdown_core_listed_zipper starts[MARKDOWN_CORE_DEFINITION_TABLES];
     markdown_core_key_tree labels[MARKDOWN_CORE_LABEL_TABLES];
     markdown_core_key_tree holders[MARKDOWN_CORE_LABEL_TABLES];
+    bool held;
     /* The label tables' own copies of their keys, which an entry and the
      * separators above it borrow (map.h) while the tables outlive any one
      * definition: carved from blocks newest first, `live` bytes of them
