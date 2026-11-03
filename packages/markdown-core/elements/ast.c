@@ -2440,7 +2440,9 @@ static bool reopen_marks(markdown_core_edit *edit, size_t count) {
     if (back) {
         memmove(edit->marks + count - back, edit->marks + edit->mark_count - back, back);
     }
-    memset(edit->marks + front, MARK_UNREAD, count - back - front);
+    if (count > front + back) {
+        memset(edit->marks + front, MARK_UNREAD, count - back - front);
+    }
     edit->mark_count = count;
     return true;
 }
