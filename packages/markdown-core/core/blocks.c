@@ -116,7 +116,8 @@ static void S_clear_normalized_lines(markdown_core_parser_input *input) {
 
 static void S_release_input(markdown_core_parser_input *input) {
     S_clear_normalized_lines(input);
-    markdown_core_array_free(&input->lines);
+    markdown_core_array_free(&input->lines.front);
+    markdown_core_free(input->lines.back);
     markdown_core_free(input->facts);
     markdown_core_strbuf_free(&input->last_line);
 }
@@ -271,7 +272,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
      * ownership. */
-    (void)markdown_core_array_reserve(&parser->input.lines, 1);
+    (void)markdown_core_array_reserve(&parser->input.lines.front, 1);
     /* The first run of the content map is the identity an inline root's
      * parse places on (parser.h, MARKDOWN_CORE_IDENTITY_MARK): first, so that
      * no map appended after it ends with it. */
@@ -302,7 +303,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
      * failed transaction. Disposal does not depend on it having begun: the
      * lifecycle's own allocations can fail halfway, so its release already
      * takes whatever state it finds. */
-    if (!parser->root || !parser->stream || !parser->input.lines.values || parser->curline.oom ||
+    if (!parser->root || !parser->stream || !parser->input.lines.front.values || parser->curline.oom ||
         parser->input.last_line.oom || parser->root->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     } else {
@@ -799,7 +800,7 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
     if (container == parser->root) {
         return;
     }
-    const int visited = parser->input.first_line + (int)parser->input.lines.count - 1;
+    const int visited = parser->input.first_line + (int)parser->input.lines.front.count - 1;
     const uint32_t start = node->place.start, end = node->place.end;
     int first = *line;
     while (first > parser->input.first_line && (uint32_t)S_line_offset(parser, first) > start) {
@@ -2655,16 +2656,17 @@ markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) 
 
 void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_parse(parser); }
 
-/* The lines of the input from `line` on go, with the normalized lines
- * their facts name, which leave the list in one walk: a normalized line
- * names no facts once it goes. The facts past the last a kept line names
- * go too: storage keeps to the text, however many edits read it again. A
- * line names its facts alone, so those are the facts past the last one no
- * dropped line names, and the walk is the dropped lines'. */
-static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
+/* THE LINE ZIPPER (parser_input, `lines`; zipper.h). The input's lines
+ * from `line` on leave it, with the normalized lines their facts name,
+ * which leave the list in one walk: a normalized line names no facts once it
+ * goes. The facts past the last a kept line names go too: storage keeps to
+ * the text, however many edits read it again. A line names its facts alone,
+ * so those are the facts past the last one no leaving line names, and the
+ * walk is the leaving lines'. A line in the back has no facts. */
+static void S_lines_leave(markdown_core_parser_input *input, size_t line) {
     bool normalized_freed = false;
-    for (size_t i = line; i < input->lines.count; i++) {
-        const uint32_t fact = input->lines.values[i].facts;
+    for (size_t i = line; i < input->lines.front.count; i++) {
+        const uint32_t fact = input->lines.front.values[i].facts;
         if (!fact) {
             continue;
         }
@@ -2690,14 +2692,43 @@ static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
     }
 #ifndef NDEBUG
     uint32_t facts = 0;
-    for (size_t i = 0; i < line && i < input->lines.count; i++) {
-        facts = input->lines.values[i].facts > facts ? input->lines.values[i].facts : facts;
+    for (size_t i = 0; i < line && i < input->lines.front.count; i++) {
+        facts = input->lines.front.values[i].facts > facts ? input->lines.front.values[i].facts : facts;
     }
     assert(input->fact_count == facts);
 #endif
-    if (line < input->lines.count) {
-        markdown_core_array_truncate(&input->lines, line);
+}
+
+static inline markdown_core_input_line S_line_flip(markdown_core_input_line line, size_t end) {
+    return (markdown_core_input_line){(uint32_t)(end - line.start), (uint32_t)(end - line.end), 0, line.own};
+}
+
+static inline size_t S_line_start(const markdown_core_input_line *line) { return line->start; }
+
+MARKDOWN_CORE_ZIPPER_OPS(S_lines, markdown_core_line_zipper, markdown_core_input_line, S_line_flip, S_line_start,
+                         S_lines_leave, markdown_core_parser_input)
+
+/* THE REACH ZIPPER (stream, `reach`): the log is the front, in order of
+ * start once an edit sorted it (markdown_core_parser_sort_reach), and the
+ * furthest ends stay for the entries that do not leave it. */
+static void S_reach_leave(markdown_core_edit *edit, size_t first) {
+    if (edit->furthest_count > first) {
+        edit->furthest_count = first;
     }
+}
+
+static inline markdown_core_place S_place_flip(markdown_core_place place, size_t end) {
+    return (markdown_core_place){(uint32_t)(end - place.start), (uint32_t)(end - place.end)};
+}
+
+static inline size_t S_place_start(const markdown_core_place *place) { return place->start; }
+
+MARKDOWN_CORE_ZIPPER_OPS(S_reach, markdown_core_reach_zipper, markdown_core_place, S_place_flip, S_place_start,
+                         S_reach_leave, markdown_core_edit)
+
+/* The lines of the input from `line` on go. */
+static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) {
+    S_lines_truncate(&input->lines, line, input);
 }
 
 /* THE SPLICE (docs/plans/2026-09-29-incremental-parsing.md, 12.3, step 4):
@@ -2717,53 +2748,10 @@ static void S_drop_lines(markdown_core_parser_input *input, size_t line) {
  * and the reading checks each child's line as it comes to it, the limit of
  * its line loop the line's start (S_parse_source). */
 
-/* Where the back's line `index`, from its first, starts. */
-static inline size_t S_back_start(const markdown_core_edit *edit, size_t index) {
-    return edit->end - edit->lines[edit->line_count - 1 - index].start;
-}
-
-/* Moves the line where the input ends and the back begins to `line` of
- * the flushed text: the input's lines from `line` on go to the back, or the
- * back's go to the input up to it. Their facts and normalized bytes are
- * their reading's, and go. The storage is reserved. */
-static void S_back_move(markdown_core_parser *parser, size_t line) {
-    markdown_core_parser_input *input = &parser->input;
-    markdown_core_edit *edit = parser->stream->edit;
-    assert((!edit->line_count && !edit->reach_count) || edit->end == input->size);
-    edit->end = input->size;
-    for (size_t i = input->lines.count; i > line; i--) {
-        const markdown_core_input_line *moved = &input->lines.values[i - 1];
-        edit->lines[edit->line_count++] = (markdown_core_input_line){(uint32_t)(edit->end - moved->start),
-                                                                     (uint32_t)(edit->end - moved->end), 0, moved->own};
-    }
-    S_drop_lines(input, line);
-    while (input->lines.count < line) {
-        const markdown_core_input_line *moved = &edit->lines[--edit->line_count];
-        input->lines.values[input->lines.count++] = (markdown_core_input_line){
-            (uint32_t)(edit->end - moved->start), (uint32_t)(edit->end - moved->end), 0, moved->own};
-    }
-    edit->line = line;
-}
-
-/* The first entry of `log`, `count` entries in order of start, that starts
- * at or past `start`. */
-static size_t S_reach_from(const markdown_core_place *log, size_t count, size_t start) {
-    size_t low = 0, high = count;
-    while (low < high) {
-        const size_t middle = low + (high - low) / 2;
-        if (log[middle].start < start) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low;
-}
-
 #ifndef NDEBUG
-static bool S_reach_sorted(const markdown_core_place *log, size_t count) {
-    for (size_t i = 1; i < count; i++) {
-        if (log[i - 1].start > log[i].start) {
+static bool S_reach_sorted(const markdown_core_reach_zipper *reach) {
+    for (size_t i = 1; i < S_reach_count(reach); i++) {
+        if (S_reach_start(reach, i - 1) > S_reach_start(reach, i)) {
             return false;
         }
     }
@@ -2771,38 +2759,12 @@ static bool S_reach_sorted(const markdown_core_place *log, size_t count) {
 }
 #endif
 
-/* Moves the reach the same way to `start`: what starts from there on goes
- * to the back, measured from the text's end, and what the back holds before
- * it comes to the log. Both are in order of start (markdown_core_parser_sort_reach),
- * and everything the log holds starts before everything the back does, so
- * what moves is the log's last entries or the back's, which stay in order:
- * the move is as long as what moves. The storage is reserved. */
-static void S_reach_move(markdown_core_parser *parser, size_t start) {
-    markdown_core_stream *stream = parser->stream;
-    markdown_core_edit *edit = stream->edit;
-    while (edit->reach_count && edit->end - edit->reach[edit->reach_count - 1].start < start) {
-        const markdown_core_place place = edit->reach[--edit->reach_count];
-        stream->reach[stream->reach_count++] =
-            (markdown_core_place){(uint32_t)(edit->end - place.start), (uint32_t)(edit->end - place.end)};
-    }
-    const size_t first = S_reach_from(stream->reach, stream->reach_count, start);
-    for (size_t i = stream->reach_count; i-- > first;) {
-        const markdown_core_place place = stream->reach[i];
-        edit->reach[edit->reach_count++] =
-            (markdown_core_place){(uint32_t)(edit->end - place.start), (uint32_t)(edit->end - place.end)};
-    }
-    stream->reach_count = first;
-    if (edit->furthest_count > first) {
-        edit->furthest_count = first;
-    }
-}
-
 /* Whether a reading of the back that starts before `old`, a place of the
- * old text, reads past it. The back is in order of start, its last first,
- * so those are its last entries. */
-static bool S_back_spans(const markdown_core_edit *edit, size_t old) {
-    for (size_t i = edit->reach_count; i-- > 0 && edit->end - edit->reach[i].start < old;) {
-        if (edit->end - edit->reach[i].end > old) {
+ * old text, reads past it: one of the back's that start before it, which
+ * are those nearest the focus. */
+static bool S_back_spans(const markdown_core_reach_zipper *reach, size_t old) {
+    for (size_t k = 0; k < reach->back_count && S_reach_back_start(reach, k) < old; k++) {
+        if (S_reach_back_at(reach, k).end > old) {
             return true;
         }
     }
@@ -2818,13 +2780,9 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
                         uint32_t prior, size_t start, size_t to, int64_t delta) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
-    const markdown_core_parser_input *input = &parser->input;
+    markdown_core_parser_input *input = &parser->input;
     const uint32_t count = root->child_count - child;
-    const size_t front = input->lines.count;
-    const size_t lines = edit->line_count + (line < front ? front - line : 0);
-    assert(S_reach_sorted(stream->reach, stream->reach_count) && S_reach_sorted(edit->reach, edit->reach_count));
-    const size_t reach =
-        edit->reach_count + stream->reach_count - S_reach_from(stream->reach, stream->reach_count, start);
+    assert(S_reach_sorted(&stream->reach));
     if (count > edit->children_capacity) {
         markdown_core_node **children =
             markdown_core_reserve(edit->children, &edit->children_capacity, count, sizeof(*children));
@@ -2833,43 +2791,24 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
         }
         edit->children = children;
     }
-    if (lines > edit->line_capacity) {
-        markdown_core_input_line *kept = markdown_core_reserve(edit->lines, &edit->line_capacity, lines, sizeof(*kept));
-        if (!kept) {
-            return false;
-        }
-        edit->lines = kept;
-    }
-    if (line > front && !markdown_core_array_reserve(&parser->input.lines, line)) {
+    if (!S_lines_ready(&input->lines, start, input->size) || !S_reach_ready(&stream->reach, start, input->size)) {
         return false;
-    }
-    if (reach > edit->reach_capacity) {
-        markdown_core_place *places = markdown_core_reserve(edit->reach, &edit->reach_capacity, reach, sizeof(*places));
-        if (!places) {
-            return false;
-        }
-        edit->reach = places;
     }
     S_release_tail(parser);
     if (count) {
         memcpy(edit->children, root->children + child, count * sizeof(*edit->children));
     }
-    if (stream->reach_count + edit->reach_count > stream->reach_capacity) {
-        markdown_core_place *places = markdown_core_reserve(stream->reach, &stream->reach_capacity,
-                                                            stream->reach_count + edit->reach_count, sizeof(*places));
-        if (!places) {
-            return false;
-        }
-        stream->reach = places;
-    }
-    S_back_move(parser, line);
-    S_reach_move(parser, start);
+    /* The rest point starts line `line`: what moves is the lines from it
+     * on, or up to it. */
+    (void)S_lines_move(&input->lines, start, input->size, input);
+    (void)S_reach_move(&stream->reach, start, input->size, edit);
+    assert(input->lines.front.count == line || start == input->scanned);
+    edit->line = line;
     edit->count = count;
     edit->next = 0;
     edit->prior = edit->before = prior;
     edit->rest = child;
     edit->reading = true;
-    edit->gone_count = 0;
     edit->at = parser->at;
     edit->complete = input->complete;
     edit->to = to;
@@ -2879,30 +2818,22 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
     return true;
 }
 
-/* The old line that starts at `start`, as an index of the old tail's
- * lines, or the one before the first that starts past it. */
-static size_t S_edit_line(const markdown_core_edit *edit, size_t start) {
-    size_t low = 0, high = edit->line_count;
-    while (low + 1 < high) {
-        const size_t middle = low + (high - low) / 2;
-        if (S_back_start(edit, middle) <= start) {
-            low = middle;
-        } else {
-            high = middle;
-        }
-    }
-    return low;
+/* The old line that starts at `start`, as an index of the back's lines
+ * from the focus, or the one before the first that starts past it. */
+static size_t S_edit_line(const markdown_core_line_zipper *lines, size_t start) {
+    const size_t from = S_lines_back_from(lines, start + 1);
+    return from ? from - 1 : 0;
 }
 
 /* The next child of the old tail the reading may take back, from `next`
  * on, and where its line starts in the new text: one that starts on a line
  * of its own past the edit, and not at the text's start, where the
  * document's prefix is read. */
-static void S_edit_next(markdown_core_edit *edit) {
+static void S_edit_next(markdown_core_edit *edit, const markdown_core_line_zipper *lines) {
     /* The children a reopened block let go come first (THE NESTED SPLICE). */
     for (; edit->back_next < edit->back_count; edit->back_next++) {
         const markdown_core_back_child *back = &edit->backs[edit->back_next];
-        const size_t line = S_back_start(edit, S_edit_line(edit, back->start));
+        const size_t line = S_lines_back_start(lines, S_edit_line(lines, back->start));
         if (back->prior <= line && line >= edit->to && (int64_t)line + edit->delta > 0) {
             edit->point = (size_t)((int64_t)line + edit->delta);
             return;
@@ -2911,7 +2842,7 @@ static void S_edit_next(markdown_core_edit *edit) {
     for (; edit->next < edit->count; edit->next++) {
         const markdown_core_node *child = edit->children[edit->next];
         const uint32_t start = (uint32_t)((int64_t)edit->before + child->extent.lead);
-        const size_t line = S_back_start(edit, S_edit_line(edit, start));
+        const size_t line = S_lines_back_start(lines, S_edit_line(lines, start));
         if (edit->before <= line && line >= edit->to && (int64_t)line + edit->delta > 0) {
             edit->point = (size_t)((int64_t)line + edit->delta);
             return;
@@ -2922,15 +2853,15 @@ static void S_edit_next(markdown_core_edit *edit) {
 }
 
 /* The reading passes the old tail's child `next`, and tries the next. */
-static void S_edit_pass(markdown_core_edit *edit) {
+static void S_edit_pass(markdown_core_edit *edit, const markdown_core_line_zipper *lines) {
     if (edit->back_next < edit->back_count) {
         edit->back_next++;
-        S_edit_next(edit);
+        S_edit_next(edit, lines);
         return;
     }
     const markdown_core_node *child = edit->children[edit->next++];
     edit->before = (uint32_t)((int64_t)edit->before + child->extent.lead + child->extent.span);
-    S_edit_next(edit);
+    S_edit_next(edit, lines);
 }
 
 /* THE NESTED REOPEN (docs/plans/e1b-nested.md): the rest point of an edit
@@ -2952,7 +2883,7 @@ static void S_edit_pass(markdown_core_edit *edit) {
 
 void markdown_core_parser_compact(markdown_core_parser *parser) {
     markdown_core_parser_input *input = &parser->input;
-    markdown_core_array_shrink(&input->lines);
+    markdown_core_array_shrink(&input->lines.front);
     markdown_core_array_shrink(&parser->line_marks);
     if (input->fact_count < input->fact_capacity / 2) {
         void *facts =
@@ -2964,12 +2895,14 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     }
     /* What only a reading of the old tail holds: the whole text read none. */
     markdown_core_edit *edit = parser->stream->edit;
-    assert(!edit->count && !edit->line_count);
+    assert(!edit->count && !input->lines.back_count);
     markdown_core_free(edit->children);
-    markdown_core_free(edit->lines);
     edit->children = NULL;
-    edit->lines = NULL;
-    edit->children_capacity = edit->line_capacity = 0;
+    edit->children_capacity = 0;
+    S_lines_release_back(&input->lines);
+    assert(!parser->stream->reach.back_count);
+    S_reach_release_back(&parser->stream->reach);
+    markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const markdown_core_node *block) {
@@ -3030,7 +2963,7 @@ static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, con
             return false;
         }
         edit->chain = chain;
-        uint32_t **const lists[] = {&edit->path, &edit->ranks, &edit->ends, &edit->states, &edit->owners, &edit->tails};
+        uint32_t **const lists[] = {&edit->path, &edit->ends, &edit->states, &edit->owners, &edit->tails};
         for (size_t i = 0; i < sizeof(lists) / sizeof(*lists); i++) {
             capacity = edit->chain_capacity;
             uint32_t *list = markdown_core_reserve(*lists[i], &capacity, depth + 1, sizeof(*list));
@@ -3120,11 +3053,8 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
-    const markdown_core_edit *back = stream->edit;
-    assert(line <= input->lines.count + back->line_count);
-    const size_t start = line < input->lines.count                      ? input->lines.values[line].start
-                         : line - input->lines.count < back->line_count ? S_back_start(back, line - input->lines.count)
-                                                                        : input->scanned;
+    assert(line <= S_lines_count(&input->lines));
+    const size_t start = line < S_lines_count(&input->lines) ? S_lines_start(&input->lines, line) : input->scanned;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     stream->edit->depth = 0;
     if (depth && !S_chain_keep(stream->edit, root, path, depth)) {
@@ -3134,7 +3064,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit->depth = depth;
     if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
-        !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)stream->edit->end,
+        !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)input->lines.end,
                                             &stream->edit->registry)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -3169,15 +3099,13 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         /* Only that close reads past the rest point, and it starts where
          * the child does: the log's entries from there on start in it. */
         markdown_core_edit *edit = stream->edit;
+        markdown_core_reach_zipper *reach = &stream->reach;
         const size_t open = edit->chain[0]->place.start;
-        for (size_t i = S_reach_from(stream->reach, stream->reach_count, open); i < stream->reach_count; i++) {
-            if (stream->reach[i].end > start) {
-                assert(stream->reach[i].start == open);
-                edit->closed = stream->reach[i].end;
-                memmove(stream->reach + i, stream->reach + i + 1,
-                        (stream->reach_count - i - 1) * sizeof(*stream->reach));
-                stream->reach_count--;
-                edit->furthest_count = edit->furthest_count > i ? i : edit->furthest_count;
+        for (size_t i = S_reach_front_from(reach, open); i < reach->front.count; i++) {
+            if (reach->front.values[i].end > start) {
+                assert(reach->front.values[i].start == open);
+                edit->closed = reach->front.values[i].end;
+                S_reach_front_erase(reach, i, 1, edit);
                 break;
             }
         }
@@ -3185,25 +3113,23 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
             /* The rest point is the chain's first child's, where its child
              * of the root starts too: the close is among the old tail's
              * readings, the furthest of those from there, which are the
-             * back's last. */
+             * back's nearest the focus. */
             size_t close = SIZE_MAX;
-            for (size_t i = edit->reach_count; i-- > 0 && edit->end - edit->reach[i].start == open;) {
-                if (close == SIZE_MAX || edit->reach[i].end < edit->reach[close].end) {
-                    close = i;
+            for (size_t k = 0; k < reach->back_count && S_reach_back_start(reach, k) == open; k++) {
+                if (close == SIZE_MAX || S_reach_back_at(reach, k).end > S_reach_back_at(reach, close).end) {
+                    close = k;
                 }
             }
             if (close != SIZE_MAX) {
-                edit->closed = (uint32_t)(edit->end - edit->reach[close].end);
-                memmove(edit->reach + close, edit->reach + close + 1,
-                        (edit->reach_count - close - 1) * sizeof(*edit->reach));
-                edit->reach_count--;
+                edit->closed = S_reach_back_at(reach, close).end;
+                S_reach_back_remove(reach, close);
             }
         }
     }
-    stream->edit->reach_from = stream->reach_count;
+    stream->edit->reach_from = stream->reach.front.count;
 #ifndef NDEBUG
-    for (size_t i = 0; i < stream->reach_count; i++) {
-        assert(stream->reach[i].end <= start);
+    for (size_t i = 0; i < stream->reach.front.count; i++) {
+        assert(stream->reach.front.values[i].end <= start);
     }
 #endif
     stream->edit_from = (uint32_t)from;
@@ -3222,7 +3148,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     input->epoch = ++parser->epochs;
     input->last_line_ready = false;
 
-    const markdown_core_input_line *last = line ? &input->lines.values[line - 1] : NULL;
+    const markdown_core_input_line *last = line ? &input->lines.front.values[line - 1] : NULL;
     parser->at = (markdown_core_parser_at){
         .block_root = root,
         .current = root,
@@ -3242,9 +3168,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     if (whole) {
         stream->edit->count = 0;
         stream->edit->back_count = 0;
-        stream->edit->line_count = stream->edit->reach_count = 0;
+        input->lines.back_count = stream->reach.back_count = 0;
     }
-    S_edit_next(stream->edit);
+    S_edit_next(stream->edit, &input->lines);
     return true;
 }
 
@@ -3262,7 +3188,7 @@ static bool S_resumes(const markdown_core_parser *parser, size_t start) {
     if (last && (markdown_core_parser_block_kind(parser, last)->flags & MARKDOWN_CORE_KIND_TRAILED)) {
         return false;
     }
-    return !S_back_spans(edit, (size_t)((int64_t)start - edit->delta));
+    return !S_back_spans(&stream->reach, (size_t)((int64_t)start - edit->delta));
 }
 
 /* The reading takes the old tail back from its child `next`, whose line
@@ -3291,15 +3217,14 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     /* The back's lines and reach before the line are the old text's the
      * reading read again, and go; the rest stand where they stood from the
      * end, which is the new text's. */
-    const size_t gone = S_edit_line(edit, old);
+    const size_t gone = S_edit_line(&input->lines, old);
     const size_t line = edit->line + gone;
     S_drop_lines(input, index);
-    edit->line_count -= gone;
+    input->lines.back_count -= gone;
     edit->line = index;
-    while (edit->reach_count && edit->end - edit->reach[edit->reach_count - 1].start < old) {
-        edit->reach_count--;
-    }
-    edit->end = (size_t)((int64_t)edit->end + delta);
+    (void)S_reach_cut(&stream->reach, old);
+    input->lines.end = (size_t)((int64_t)input->lines.end + delta);
+    stream->reach.end = (size_t)((int64_t)stream->reach.end + delta);
     /* The children join the root, which owns them once the document took
      * them from its records. */
     const uint32_t tail = root->child_count;
@@ -3323,12 +3248,11 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
         }
     }
     edit->tail = tail;
-    edit->mark_back = edit->count - first;
     edit->resumed = start;
     edit->lead = (int64_t)before + delta - (int64_t)joined;
     edit->point = SIZE_MAX;
 
-    if (!markdown_core_registry_take(&parser->registry, &edit->registry, (uint32_t)start, (uint32_t)edit->end)) {
+    if (!markdown_core_registry_take(&parser->registry, &edit->registry, (uint32_t)start, (uint32_t)input->lines.end)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -3375,7 +3299,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
  * (THE REACH). */
 static int S_carries(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind) {
     markdown_core_stream *stream = parser->stream;
-    const size_t reach = stream->reach_count;
+    const size_t reach = stream->reach.front.count;
     markdown_core_block_lookahead lookahead;
     if (!markdown_core_parser_lookahead_begin(parser, block, kind, &lookahead)) {
         return -1;
@@ -3385,7 +3309,7 @@ static int S_carries(markdown_core_parser *parser, markdown_core_node *block, ma
     const int read = markdown_core_parser_lookahead_next(&lookahead, &line, &first, &indent, &blanks);
     const int carried = blanks ? -1 : !read ? 0 : lookahead.line == parser->at.line_number + 2 ? 1 : -1;
     markdown_core_parser_lookahead_end(&lookahead);
-    stream->reach_count = reach;
+    markdown_core_array_truncate(&stream->reach.front, reach);
     return parser->error ? -1 : carried;
 }
 
@@ -3442,15 +3366,16 @@ static bool S_resumes_in(markdown_core_parser *parser, size_t start, size_t inde
     }
     /* The line before is the old text's, the line end before it too, and
      * both children before ended before it. */
-    const size_t before = parser->input.lines.values[index - 1].start;
+    const size_t before = parser->input.lines.front.values[index - 1].start;
     const int64_t old_before = (int64_t)before - edit->delta;
     const size_t old = (size_t)((int64_t)start - edit->delta);
     if (last->place.end > before) {
         /* The child before ends on the line before, in a block whose
          * children abut, and did in the old text too. */
-        const size_t line = S_edit_line(edit, old);
+        const markdown_core_line_zipper *lines = &parser->input.lines;
+        const size_t line = S_edit_line(lines, old);
         if (!markdown_core_parser_abuts(parser, block) || last->place.end > start || !line ||
-            S_back_start(edit, line) != old || back->prior <= S_back_start(edit, line - 1)) {
+            S_lines_back_start(lines, line) != old || back->prior <= S_lines_back_start(lines, line - 1)) {
             return false;
         }
     } else if (old_before <= (int64_t)edit->to || (int64_t)back->prior > old_before ||
@@ -3458,11 +3383,11 @@ static bool S_resumes_in(markdown_core_parser *parser, size_t start, size_t inde
                                                last->place.end) == SIZE_MAX) {
         return false;
     }
-    if (S_back_spans(edit, old)) {
+    if (S_back_spans(&stream->reach, old)) {
         return false;
     }
-    for (size_t i = edit->reach_from; i < stream->reach_count; i++) {
-        if (stream->reach[i].start < start && stream->reach[i].end > start) {
+    for (size_t i = edit->reach_from; i < stream->reach.front.count; i++) {
+        if (stream->reach.front.values[i].start < start && stream->reach.front.values[i].end > start) {
             return false;
         }
     }
@@ -3532,7 +3457,7 @@ static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *parser, size_t start, size_t index) {
     markdown_core_edit *edit = parser->stream->edit;
     while (edit->point < start) {
-        S_edit_pass(edit);
+        S_edit_pass(edit, &parser->input.lines);
     }
     if (edit->point != start) {
         return false;
@@ -3545,7 +3470,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
         }
         return true;
     }
-    S_edit_pass(edit);
+    S_edit_pass(edit, &parser->input.lines);
     return false;
 }
 
@@ -3561,7 +3486,7 @@ bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, siz
     const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
     markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
     bool ok = markdown_core_registry_labels_within(&parser->registry, (uint32_t)start, to, 0, &made) &&
-              markdown_core_registry_labels_within(&edit->registry, 0, to, (uint32_t)edit->end, &lost);
+              markdown_core_registry_labels_within(&edit->registry, 0, to, (uint32_t)parser->input.lines.end, &lost);
     markdown_core_strbuf_clear(altered);
     /* Both are in byte order: a merge keeps what one holds and the other
      * does not. */
@@ -3591,14 +3516,14 @@ bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, siz
 
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
     const markdown_core_parser_input *input = &parser->input;
-    const markdown_core_edit *edit = parser->stream && parser->stream->edit ? parser->stream->edit : NULL;
-    if (edit && edit->line_count && S_back_start(edit, 0) <= offset) {
-        return input->lines.count + S_edit_line(edit, offset);
+    const markdown_core_line_zipper *lines = &input->lines;
+    if (lines->back_count && S_lines_back_start(lines, 0) <= offset) {
+        return lines->front.count + S_edit_line(lines, offset);
     }
-    size_t low = 0, high = input->lines.count;
+    size_t low = 0, high = input->lines.front.count;
     while (low + 1 < high) {
         const size_t middle = low + (high - low) / 2;
-        if (input->lines.values[middle].start <= offset) {
+        if (input->lines.front.values[middle].start <= offset) {
             low = middle;
         } else {
             high = middle;
@@ -3609,25 +3534,25 @@ size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t o
 
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end) {
     const markdown_core_parser_input *input = &parser->input;
-    const markdown_core_edit *edit = parser->stream && parser->stream->edit ? parser->stream->edit : NULL;
-    const size_t back = edit ? edit->line_count : 0;
-    if (line < input->lines.count) {
-        *start = input->lines.values[line].start;
-        *end = line + 1 < input->lines.count ? input->lines.values[line + 1].start
-               : back                        ? S_back_start(edit, 0)
+    const markdown_core_line_zipper *lines = &input->lines;
+    const size_t back = lines->back_count;
+    if (line < lines->front.count) {
+        *start = lines->front.values[line].start;
+        *end = line + 1 < lines->front.count ? lines->front.values[line + 1].start
+               : back                        ? S_lines_back_start(lines, 0)
                                              : input->size;
         return true;
     }
-    if (line - input->lines.count < back) {
-        const size_t index = line - input->lines.count;
-        *start = S_back_start(edit, index);
-        *end = index + 1 < back ? S_back_start(edit, index + 1) : input->size;
+    if (line - lines->front.count < back) {
+        const size_t index = line - lines->front.count;
+        *start = S_lines_back_start(lines, index);
+        *end = index + 1 < back ? S_lines_back_start(lines, index + 1) : input->size;
         return true;
     }
     /* The empty line after a text's last line ending, or the empty text's
      * one line. */
     const size_t size = input->size;
-    if (line == input->lines.count + back &&
+    if (line == input->lines.front.count + back &&
         (!size || input->source[size - 1] == '\n' || input->source[size - 1] == '\r')) {
         *start = *end = size;
         return true;
@@ -3656,10 +3581,7 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     stream->edit = edit;
     /* Room for the log up front, so a step it grows in pays no
      * allocation; a refusal here leaves the step to grow it. */
-    markdown_core_place *reach = markdown_core_reserve(stream->reach, &stream->reach_capacity, 64, sizeof(*reach));
-    if (reach) {
-        stream->reach = reach;
-    }
+    (void)markdown_core_array_reserve(&stream->reach.front, 64);
     return true;
 }
 
@@ -3669,14 +3591,9 @@ bool markdown_core_parser_takes_edits(const markdown_core_parser *parser) {
 
 void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end) {
     markdown_core_stream *stream = parser->stream;
-    markdown_core_place *reach =
-        markdown_core_reserve(stream->reach, &stream->reach_capacity, stream->reach_count + 1, sizeof(*reach));
-    if (!reach) {
+    if (!markdown_core_array_push(&stream->reach.front, ((markdown_core_place){(uint32_t)start, (uint32_t)end}))) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
     }
-    stream->reach = reach;
-    reach[stream->reach_count++] = (markdown_core_place){(uint32_t)start, (uint32_t)end};
 }
 
 /* The log in order of start, and with it the furthest end of the log's
@@ -3694,29 +3611,14 @@ static int S_reach_order(const void *a, const void *b) {
     return (left > right) - (left < right);
 }
 
-/* The log's entry `index`, and past the log the back's, from its first, in
- * the text's terms. */
-static markdown_core_place S_reach_at(const markdown_core_stream *stream, size_t index) {
-    if (index < stream->reach_count) {
-        return stream->reach[index];
-    }
-    const markdown_core_edit *edit = stream->edit;
-    const markdown_core_place place = edit->reach[edit->reach_count - 1 - (index - stream->reach_count)];
-    return (markdown_core_place){(uint32_t)(edit->end - place.start), (uint32_t)(edit->end - place.end)};
-}
-
-static size_t S_reach_count(const markdown_core_stream *stream) {
-    return stream->reach_count + (stream->edit ? stream->edit->reach_count : 0);
-}
-
 /* Puts the `count` entries of `log` in order of start, and into `*moved`
  * the first of them that moved. An edit leaves each log in order but for
  * the entries it noted, which it put at the end: they are sorted on their
  * own and merged in from the back, which moves no entry before the first of
  * them in order, through `room`, which holds `*capacity` entries. False when
  * storage could not be had. */
-static bool S_reach_sort(markdown_core_place *log, size_t count, markdown_core_place **room, size_t *capacity,
-                         size_t *moved) {
+static bool S_reach_sort(markdown_core_place *log, size_t count, markdown_core_ahead *ahead, markdown_core_place **room,
+                         size_t *capacity, size_t *moved) {
     size_t front = 1;
     while (front < count && log[front - 1].start <= log[front].start) {
         front++;
@@ -3728,6 +3630,20 @@ static bool S_reach_sort(markdown_core_place *log, size_t count, markdown_core_p
     const size_t rest = count - front;
     if (rest > 1) {
         qsort(log + front, rest, sizeof(*log), S_reach_order);
+    }
+    if (ahead) {
+        /* The merge writes from the first of the front that starts past
+         * the least of the rest on. */
+        size_t low = 0, high = front;
+        while (low < high) {
+            const size_t middle = low + (high - low) / 2;
+            if (log[middle].start > log[front].start) {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        markdown_core_ahead_unsettle(ahead, low);
     }
     if (rest > *capacity) {
         markdown_core_place *places = markdown_core_reserve(*room, capacity, rest, sizeof(*places));
@@ -3754,11 +3670,13 @@ bool markdown_core_parser_sort_reach(markdown_core_parser *parser) {
     markdown_core_edit *edit = stream->edit;
     size_t moved, back;
     /* Measured from the end, the order puts the back's last first. */
-    if (!S_reach_sort(stream->reach, stream->reach_count, &edit->room, &edit->room_capacity, &moved) ||
-        !S_reach_sort(edit->reach, edit->reach_count, &edit->room, &edit->room_capacity, &back)) {
+    markdown_core_reach_zipper *reach = &stream->reach;
+    if (!S_reach_sort(reach->front.values, reach->front.count, &reach->front.ahead, &edit->room, &edit->room_capacity,
+                      &moved) ||
+        !S_reach_sort(reach->back, reach->back_count, NULL, &edit->room, &edit->room_capacity, &back)) {
         return false;
     }
-    const size_t count = stream->reach_count;
+    const size_t count = reach->front.count;
     if (count > edit->furthest_capacity) {
         uint32_t *furthest = markdown_core_reserve(edit->furthest, &edit->furthest_capacity, count, sizeof(*furthest));
         if (!furthest) {
@@ -3770,14 +3688,14 @@ bool markdown_core_parser_sort_reach(markdown_core_parser *parser) {
     from = from < count ? from : count;
     uint32_t end = from ? edit->furthest[from - 1] : 0;
     for (size_t i = from; i < count; i++) {
-        end = stream->reach[i].end > end ? stream->reach[i].end : end;
+        end = reach->front.values[i].end > end ? reach->front.values[i].end : end;
         edit->furthest[i] = end;
     }
     edit->furthest_count = count;
 #ifndef NDEBUG
     end = 0;
     for (size_t i = 0; i < count; i++) {
-        end = stream->reach[i].end > end ? stream->reach[i].end : end;
+        end = reach->front.values[i].end > end ? reach->front.values[i].end : end;
         assert(edit->furthest[i] == end);
     }
 #endif
@@ -3788,7 +3706,8 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
     const markdown_core_stream *stream = parser->stream;
     const markdown_core_edit *edit = stream->edit;
     const uint32_t *furthest = edit->furthest;
-    const size_t count = stream->reach_count;
+    const markdown_core_reach_zipper *reach = &stream->reach;
+    const size_t count = reach->front.count;
     size_t low = 0, high = count;
     while (low < high) {
         const size_t middle = low + (high - low) / 2;
@@ -3799,15 +3718,16 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
         }
     }
     if (low < count) {
-        if (stream->reach[low].start >= point) {
+        if (reach->front.values[low].start >= point) {
             return false;
         }
-        *start = stream->reach[low].start;
+        *start = reach->front.values[low].start;
         return true;
     }
-    for (size_t i = edit->reach_count; i-- > 0 && edit->end - edit->reach[i].start < point;) {
-        if (edit->end - edit->reach[i].end > point) {
-            *start = edit->end - edit->reach[i].start;
+    for (size_t k = 0; k < reach->back_count && S_reach_back_start(reach, k) < point; k++) {
+        const markdown_core_place place = S_reach_back_at(reach, k);
+        if (place.end > point) {
+            *start = place.start;
             return true;
         }
     }
@@ -3817,19 +3737,11 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
 bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
                                          const size_t ends[3], size_t *start) {
     const markdown_core_stream *stream = parser->stream;
-    const size_t count = S_reach_count(stream);
-    size_t low = 0, high = count;
-    while (low < high) {
-        const size_t middle = low + (high - low) / 2;
-        if (S_reach_at(stream, middle).start >= from) {
-            high = middle;
-        } else {
-            low = middle + 1;
-        }
-    }
+    const markdown_core_reach_zipper *reach = &stream->reach;
+    const size_t count = S_reach_count(reach);
     bool closed = false;
-    for (size_t i = low; i < count; i++) {
-        const markdown_core_place place = S_reach_at(stream, i);
+    for (size_t i = S_reach_from(reach, from); i < count; i++) {
+        const markdown_core_place place = S_reach_at(reach, i);
         if (place.start >= point) {
             break;
         }
@@ -3915,7 +3827,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
     *mark = (S_snapshot_mark){
         .at = parser->at,
         .mapped = parser->input.mapped,
-        .line_count = parser->input.lines.count,
+        .line_count = parser->input.lines.front.count,
         .fact_count = parser->input.fact_count,
         .scanned = parser->input.scanned,
         .normalized = parser->input.normalized,
@@ -3925,7 +3837,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
         .completion_last = parser->completion_last,
         .block_input_count = parser->block_input_count,
         .block_input_cursor = parser->block_input_cursor,
-        .reach_count = parser->stream ? parser->stream->reach_count : 0,
+        .reach_count = parser->stream ? parser->stream->reach.front.count : 0,
         .kept = mark->kept,
     };
     if (parser->line_marks.count) {
@@ -3958,7 +3870,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
     parser->block_input_count = mark->block_input_count;
     parser->block_input_cursor = mark->block_input_cursor;
     if (parser->stream) {
-        parser->stream->reach_count = mark->reach_count;
+        markdown_core_array_truncate(&parser->stream->reach.front, mark->reach_count);
     }
 }
 
@@ -3967,10 +3879,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
  * `fact_count` with them. */
 static void S_drop_facts(markdown_core_parser_input *input, size_t first, size_t end, size_t fact_count) {
     for (size_t i = first; i < end; i++) {
-        if (input->lines.values[i].facts > fact_count) {
-            markdown_core_array_write(&input->lines, i)->facts = 0;
-        } else if (input->lines.values[i].facts) {
-            markdown_core_line_facts *facts = &input->facts[input->lines.values[i].facts - 1];
+        if (input->lines.front.values[i].facts > fact_count) {
+            markdown_core_array_write(&input->lines.front, i)->facts = 0;
+        } else if (input->lines.front.values[i].facts) {
+            markdown_core_line_facts *facts = &input->facts[input->lines.front.values[i].facts - 1];
             facts->container = NULL;
             facts->table_container = NULL;
         }
@@ -3998,7 +3910,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_rollback(markdown_
      * line it holds, which the snapshot read on. */
     const size_t first = (size_t)(mark->at.line_number + 1 - input->first_line) - (parser->stream->held ? 1 : 0);
     S_drop_facts(input, first, mark->line_count, mark->fact_count);
-    markdown_core_array_truncate(&input->lines, mark->line_count);
+    markdown_core_array_truncate(&input->lines.front, mark->line_count);
     input->fact_count = mark->fact_count;
     input->scanned = mark->scanned;
 }
@@ -4031,12 +3943,8 @@ static void S_release_stream(markdown_core_parser *parser) {
     markdown_core_free(stream->rooms);
     markdown_core_parser_release_records(parser, &stream->records);
     markdown_core_free(stream->records.items);
-    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
-        markdown_core_key_tree_free(&stream->committed.starts[table]);
-    }
-    for (size_t table = 0; table < MARKDOWN_CORE_LABEL_TABLES; table++) {
-        markdown_core_key_tree_free(&stream->committed.labels[table]);
-    }
+    markdown_core_publish_release_committed(stream->committed);
+    markdown_core_free(stream->committed);
     markdown_core_free(stream->kept);
     markdown_core_free(stream->own_tables);
     markdown_core_free(stream->defined);
@@ -4048,16 +3956,12 @@ static void S_release_stream(markdown_core_parser *parser) {
         }
     }
     markdown_core_free(stream->miss_roots);
-    markdown_core_free(stream->reach);
+    markdown_core_array_free(&stream->reach.front);
+    S_reach_release_back(&stream->reach);
     if (stream->edit) {
         markdown_core_free(stream->edit->children);
-        markdown_core_free(stream->edit->lines);
-        markdown_core_free(stream->edit->reach);
-        markdown_core_free(stream->edit->gone);
-        markdown_core_free(stream->edit->marks);
         markdown_core_free(stream->edit->chain);
         markdown_core_free(stream->edit->path);
-        markdown_core_free(stream->edit->ranks);
         markdown_core_free(stream->edit->ends);
         markdown_core_free(stream->edit->states);
         markdown_core_free(stream->edit->owners);
@@ -4143,11 +4047,11 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_lend_below(markdown_core_parse
 static markdown_core_node *S_stop(const markdown_core_parser *parser, size_t length) {
     const markdown_core_parser_input *input = &parser->input;
     if (parser->stream->held) {
-        const markdown_core_input_line *line = &input->lines.values[parser->at.line_number - input->first_line];
+        const markdown_core_input_line *line = &input->lines.front.values[parser->at.line_number - input->first_line];
         return markdown_core_input_line_next(parser, line) >= length ? parser->stream->stop.container : parser->root;
     }
     const size_t index = (size_t)(parser->at.line_number + 1 - input->first_line);
-    const size_t start = index < input->lines.count ? input->lines.values[index].start : input->scanned;
+    const size_t start = index < input->lines.front.count ? input->lines.front.values[index].start : input->scanned;
     return start < length ? parser->root : parser->at.current;
 }
 
@@ -4565,8 +4469,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_scan_line(markdown
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *S_extend_source_lines(markdown_core_parser *parser, size_t index) {
     assert(parser->input.size <= MARKDOWN_CORE_SOURCE_CAPACITY);
-    while (index >= parser->input.lines.count && parser->input.scanned < parser->input.size) {
-        if (!markdown_core_array_reserve(&parser->input.lines, parser->input.lines.count + 1)) {
+    while (index >= parser->input.lines.front.count && parser->input.scanned < parser->input.size) {
+        if (!markdown_core_array_reserve(&parser->input.lines.front, parser->input.lines.front.count + 1)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
@@ -4574,9 +4478,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         if (!S_scan_line(parser, &entry, entry.start)) {
             return NULL;
         }
-        parser->input.lines.values[parser->input.lines.count++] = entry;
+        parser->input.lines.front.values[parser->input.lines.front.count++] = entry;
     }
-    return index < parser->input.lines.count ? &parser->input.lines.values[index] : NULL;
+    return index < parser->input.lines.front.count ? &parser->input.lines.front.values[index] : NULL;
 }
 
 /* External speculative readers share the driver's scanner. The driver calls
@@ -4653,7 +4557,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) size_t
  * of its end recorded. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_scan_last_line(markdown_core_parser *parser) {
     markdown_core_parser_input *input = &parser->input;
-    markdown_core_input_line *line = markdown_core_array_write(&input->lines, input->lines.count - 1);
+    markdown_core_input_line *line = markdown_core_array_write(&input->lines.front, input->lines.front.count - 1);
     const uint32_t end = line->end;
     if (!S_scan_line(parser, line, end)) {
         return false;
@@ -4730,14 +4634,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_driver_step
     S_read_held_line(markdown_core_parser *parser, const unsigned char *source, size_t length, size_t limit) {
     markdown_core_stream *const stream = parser->stream;
     const size_t index = (size_t)(parser->at.line_number - parser->input.first_line);
-    markdown_core_input_line *found = &parser->input.lines.values[index];
+    markdown_core_input_line *found = &parser->input.lines.front.values[index];
     bool hold = false;
     if (!parser->snapshot) {
         if (stream->mark_count &&
             S_feed(parser, parser->at.line_number, source + markdown_core_input_line_next(parser, found))) {
             return S_DRIVER_RESTARTS;
         }
-        found = &parser->input.lines.values[index];
+        found = &parser->input.lines.front.values[index];
         stream->held = false;
         hold = found->start >= limit;
     }
@@ -4759,7 +4663,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_hold_next_line(markdown_core_p
         if (S_feed(parser, parser->at.line_number + 1, source + markdown_core_input_line_next(parser, found))) {
             return true;
         }
-        found = &parser->input.lines.values[index];
+        found = &parser->input.lines.front.values[index];
     }
     if (found) {
         S_read_line(parser, source, length, found, NULL, true, true);
@@ -4786,7 +4690,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     if (!at_root || !parser->input.source) {
         S_clear_normalized_lines(&parser->input);
         parser->input.scanned = 0;
-        markdown_core_array_truncate(&parser->input.lines, 0);
+        markdown_core_array_truncate(&parser->input.lines.front, 0);
         parser->input.fact_count = 0;
         parser->input.mapped = !at_root;
         parser->input.first_line = parser->at.line_number + 1;
@@ -4805,7 +4709,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     parser->input.size = length;
     parser->input.last_line_ready = false;
     markdown_core_stream *const stream = at_root ? parser->stream : NULL;
-    if (stream && parser->input.lines.count && parser->input.scanned < length &&
+    if (stream && parser->input.lines.front.count && parser->input.scanned < length &&
         source[parser->input.scanned - 1] != '\n' && !S_scan_last_line(parser)) {
         return;
     }
@@ -4841,8 +4745,8 @@ read:
     /* THE FEED (THE CANDIDATES): the candidates see each line first. */
     while (!parser->error) {
         size_t index = (size_t)(parser->at.line_number + 1 - parser->input.first_line);
-        size_t start =
-            index < parser->input.lines.count ? parser->input.lines.values[index].start : parser->input.scanned;
+        size_t start = index < parser->input.lines.front.count ? parser->input.lines.front.values[index].start
+                                                               : parser->input.scanned;
         if (start >= limit) {
             if (stream && stream->edit && limit == stream->edit->point &&
                 limit < (markdown_core_parser_candidate_final(parser) ? length : parser->input.complete)) {
@@ -4865,7 +4769,7 @@ read:
             if (S_feed(parser, parser->at.line_number + 1, source + markdown_core_input_line_next(parser, found))) {
                 goto read;
             }
-            found = &parser->input.lines.values[index];
+            found = &parser->input.lines.front.values[index];
         }
         S_read_line(parser, source, length, found, NULL, false, at_root);
         if (stream && stream->requested) {
@@ -5238,8 +5142,8 @@ static inline markdown_core_input_line *S_source_line_unread(markdown_core_parse
         return NULL;
     }
     const size_t index = (size_t)(line - parser->input.first_line);
-    return index < parser->input.lines.count ? &parser->input.lines.values[index]
-                                             : S_extend_source_lines(parser, index);
+    return index < parser->input.lines.front.count ? &parser->input.lines.front.values[index]
+                                                   : S_extend_source_lines(parser, index);
 }
 
 /* Room for a lookahead on a path of `depth` containers. A lookahead starts
@@ -5879,7 +5783,7 @@ bool markdown_core_parser_candidate_start(markdown_core_parser *parser, markdown
                                           markdown_core_node **container) {
     struct markdown_core_candidate *candidate = parser->stream->deciding;
     candidate->saved = parser->at;
-    markdown_core_input_line *found = &parser->input.lines.values[candidate->line - parser->input.first_line];
+    markdown_core_input_line *found = &parser->input.lines.front.values[candidate->line - parser->input.first_line];
     bufsize_t length;
     const unsigned char *content = S_input_line_content(parser, found, &length);
     if (!content) {
@@ -6074,7 +5978,8 @@ static void S_candidate_make(markdown_core_parser *parser) {
 /* Where the line after line `line` starts: the text's start after line 0,
  * where the document's prefix is read. */
 static size_t S_line_next(const markdown_core_parser *parser, int line) {
-    return line ? markdown_core_input_line_next(parser, &parser->input.lines.values[line - parser->input.first_line])
+    return line ? markdown_core_input_line_next(parser,
+                                                &parser->input.lines.front.values[line - parser->input.first_line])
                 : 0;
 }
 
@@ -6214,7 +6119,7 @@ static void S_candidate_put_back(markdown_core_parser *parser, size_t m) {
     const struct markdown_core_candidate *first = &mark->calls[0];
     markdown_core_parser_input *input = &parser->input;
     const int line = first->line ? first->line : input->first_line;
-    S_drop_facts(input, (size_t)(line - input->first_line), input->lines.count, input->fact_count);
+    S_drop_facts(input, (size_t)(line - input->first_line), input->lines.front.count, input->fact_count);
     stream->stop = first->stop;
     stream->held = first->line > 0;
     stream->fed = first->line;
@@ -6323,7 +6228,7 @@ static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t inde
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
     const int line = mark->calls[index].line;
     const markdown_core_parser_input *input = &parser->input;
-    markdown_core_parser_reach(parser, line ? input->lines.values[line - input->first_line].start : 0, end);
+    markdown_core_parser_reach(parser, line ? input->lines.front.values[line - input->first_line].start : 0, end);
     mark->calls[index].decided = true;
     mark->live--;
     if (index == mark->first) {
@@ -7278,35 +7183,19 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, markdow
  * (S_keep_defined), so no candidate empties another's. */
 static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_root *record,
                                const markdown_core_node *root) {
-    const markdown_core_place place = record->position.place;
-    const markdown_core_key_entry from = markdown_core_key_number(place.start);
-    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
-        markdown_core_key_tree_cursor cursor;
-        markdown_core_key_tree_seek(&parser->stream->committed.starts[table], &from, &cursor);
-        for (markdown_core_key_entry *entry;
-             (entry = markdown_core_key_tree_next(&cursor)) && entry->extra < place.end;) {
-            if (entry->value && entry->value != root) {
-                entry->value = NULL;
-            }
-        }
+    if (!markdown_core_publish_withdraw(parser, record->position.place, root)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 
-/* The definitions the candidates listed, in the committed tables: each at
- * the entry of where it starts, which one emptied may already hold. */
+/* The definitions the candidates listed, in the committed tables: each
+ * where it starts, in place of one emptied there. */
 static void S_keep_defined(markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->stream->defined_count; i++) {
+    for (size_t i = 0; i < parser->stream->defined_count && !parser->error; i++) {
         const markdown_core_defined *defined = &parser->stream->defined[i];
-        const markdown_core_key_entry key = markdown_core_key_number(defined->start);
-        bool made;
-        markdown_core_key_entry *entry =
-            markdown_core_key_tree_entry(&parser->stream->committed.starts[defined->table], &key, &made);
-        if (!entry) {
+        if (!markdown_core_publish_define(parser, defined->table, defined->node, defined->start)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
         }
-        entry->extra = defined->start;
-        entry->value = defined->node;
     }
     parser->stream->defined_count = 0;
 }
@@ -7638,7 +7527,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (edit) {
         /* A reading that took nothing back read every line of the text. */
         if (!edit->resumed) {
-            edit->line_count = edit->reach_count = 0;
+            parser->input.lines.back_count = parser->stream->reach.back_count = 0;
         }
         edit->reading = false;
         edit->count = 0;

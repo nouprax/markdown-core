@@ -54,7 +54,7 @@ static void finish_document(const markdown_core_element_instance *self, markdown
 static bool reopen_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *root, uint32_t child, uint32_t start) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    return markdown_core_publish_reopen(parser, root, child) &&
+    return markdown_core_publish_reopen(parser, root, child, start) &&
            (!headings || markdown_core_headings_reopen(headings, parser, start));
 }
 /* THE EDIT TAKES THE OLD CHILDREN BACK (blocks.c, THE SPLICE): the

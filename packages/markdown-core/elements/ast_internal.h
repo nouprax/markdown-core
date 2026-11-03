@@ -40,23 +40,20 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
 /* A DOCUMENT REOPENED FOR AN EDIT (ast.c): the flushed `root` keeps its
  * children before `child` and lets the others go, its metadata with them
  * when `child` is 0, each an old node the next publish matches against,
- * and lists the definitions that stay as committed. False, with nothing
- * changed, when storage could not be had. */
-bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child);
+ * and the committed tables' focus moves to the rest point `start`. False
+ * when storage could not be had. */
+bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child,
+                                  uint32_t start);
 /* The edit's reading takes the old children back from the one at `child`
  * among those the reopen let go (blocks.c, THE SPLICE), whose line starts at
- * `point` in the new text: their records let them go, and their definitions
- * are listed as committed, after every definition the reading listed.
+ * `point` in the new text: their records let them go, and the committed
+ * definitions the reading read again go.
  * False, with the records as they were, when storage could not be had. */
 bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point);
 /* Where a published node's source lies, its first run measured from
  * `anchor`: where the source of the node before it in its relation ends,
  * or where its owner's starts. */
 markdown_core_place markdown_core_node_window(const markdown_core_node *node, uint32_t anchor);
-/* A heading that stays in a reopened document listed as committed, `key`
- * its place among those that stay, or its start in the new text when the
- * edit took it back. False when storage could not be had. */
-bool markdown_core_publish_keep_heading(markdown_core_parser *parser, const markdown_core_node *node, uint32_t key);
 
 /* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,
  * after CR, or after CRLF, which is one terminator. */

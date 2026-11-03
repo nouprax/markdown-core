@@ -126,6 +126,10 @@ markdown_core_key_entry *markdown_core_key_tree_find(const markdown_core_key_tre
  * next insertion. */
 markdown_core_key_entry *markdown_core_key_tree_entry(markdown_core_key_tree *tree, const markdown_core_key_entry *key,
                                                       bool *made);
+/* The entry of `key`'s key taken out, when the tree has one: its node may
+ * be left with fewer entries than a split leaves, or none, which a search
+ * and a walk pass, and no storage goes until the tree is freed. */
+void markdown_core_key_tree_remove(markdown_core_key_tree *tree, const markdown_core_key_entry *key);
 /* The entry of rank `rank`, below the tree's count. */
 markdown_core_key_entry *markdown_core_key_tree_at(const markdown_core_key_tree *tree, size_t rank);
 /* Sets `*cursor` at the first entry whose key is not before `key`'s. */

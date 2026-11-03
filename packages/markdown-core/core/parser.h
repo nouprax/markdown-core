@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include "array.h"
+#include "zipper.h"
 #include "registry.h"
 #include "node.h"
 #include "buffer.h"
@@ -116,6 +117,10 @@ typedef struct markdown_core_block_input {
     uint32_t enclosing;
 } markdown_core_block_input;
 
+/* The zippers of the lines and of the reach (THE BACK). */
+typedef MARKDOWN_CORE_ZIPPER(struct markdown_core_input_line) markdown_core_line_zipper;
+typedef MARKDOWN_CORE_ZIPPER(markdown_core_place) markdown_core_reach_zipper;
+
 /* AN INPUT the block parser reads: its bytes, and the geometry and grammar
  * facts of its lines. The driver and lookahead extend one index; a source
  * byte is scanned for line geometry once, whether the input is the
@@ -131,7 +136,11 @@ typedef struct markdown_core_parser_input {
      * (markdown_core_parser_extend_source_lines). A cell's content is
      * complete when it is read, so this is its end. */
     size_t complete;
-    MARKDOWN_CORE_ARRAY(struct markdown_core_input_line) lines;
+    /* The lines, in a zipper (zipper.h) whose back an edit keeps: the lines
+     * of the flushed text past the input's, which an edit before them moves
+     * none of (docs/plans/relative-positions.md, THE BACK). The front is
+     * the input's own, which the parse reads and grows. */
+    markdown_core_line_zipper lines;
     struct markdown_core_normalized_line *normalized;
     struct markdown_core_line_facts *facts;
     size_t fact_count, fact_capacity;
@@ -229,15 +238,41 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
  * of the document's tables -- Footnotes, Specimens, References, Headings --
- * by where they start, an entry's number its start and its pointer the
- * object the document holds; and the labeled Footnotes, the labeled
- * Specimens and the reference targets by label, an entry's pointer the
- * label's definition and its number where that starts. */
+ * in order of where they start, a zipper (zipper.h) whose focus is where
+ * an edit reads from, each entry the object the document holds and where
+ * it starts; and the labeled Footnotes, the labeled Specimens and the
+ * reference targets by label, an entry's pointer the label's definition and
+ * its number where that starts, in the terms of the part of its table that
+ * holds it: measured back from the text's end, with
+ * MARKDOWN_CORE_LISTED_BACK, when that is the back. Each label table's
+ * HOLDERS hold every definition its tables hold that has a label, in order
+ * of label and then of which is the label's definition first, so that the
+ * label's next definition is at hand when one goes: made, `held`, once the
+ * tables first lose a definition or move their focus, which a parse that
+ * only streams in may never do. */
 enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
 
+typedef struct markdown_core_listed {
+    const struct markdown_core_node *node;
+    uint32_t start;
+} markdown_core_listed;
+
+typedef MARKDOWN_CORE_ZIPPER(markdown_core_listed) markdown_core_listed_zipper;
+
+#define MARKDOWN_CORE_LISTED_BACK 0x80000000u
+
 typedef struct markdown_core_committed_tables {
-    markdown_core_key_tree starts[MARKDOWN_CORE_DEFINITION_TABLES];
+    markdown_core_listed_zipper starts[MARKDOWN_CORE_DEFINITION_TABLES];
     markdown_core_key_tree labels[MARKDOWN_CORE_LABEL_TABLES];
+    markdown_core_key_tree holders[MARKDOWN_CORE_LABEL_TABLES];
+    bool held;
+    /* The label tables' own copies of their keys, which an entry and the
+     * separators above it borrow (map.h) while the tables outlive any one
+     * definition: carved from blocks newest first, `live` bytes of them
+     * an entry holds and `dead` none does, which the tables let go once
+     * they are made again. */
+    void *label_blocks;
+    size_t label_used, label_room, label_live, label_dead;
 } markdown_core_committed_tables;
 
 /* A DEFINITION A CANDIDATE LISTS (blocks.c, A LOOKUP THAT FOUND NOTHING):
@@ -247,6 +282,20 @@ typedef struct {
     uint32_t start, table;
     const struct markdown_core_node *node;
 } markdown_core_defined;
+
+/* THE DEFINITIONS A ROOT COMPLETED AGAIN MAKES AGAIN (blocks.c): the
+ * committed definitions that start in `place`, but `root`, go; and the
+ * definition `node` of table `table` that starts at `start` is committed,
+ * in place of one that started there. False when storage could not be had.
+ * And the committed tables' storage let go. */
+bool markdown_core_publish_withdraw(struct markdown_core_parser *parser, markdown_core_place place,
+                                    const struct markdown_core_node *root);
+bool markdown_core_publish_define(struct markdown_core_parser *parser, uint32_t table,
+                                  const struct markdown_core_node *node, uint32_t start);
+void markdown_core_publish_release_committed(markdown_core_committed_tables *committed);
+/* The committed tables held in no more storage than they need, after a
+ * reading of the whole text (markdown_core_parser_compact). */
+void markdown_core_publish_compact_committed(markdown_core_committed_tables *committed);
 
 /* A COMMITTED DEFINITION A PUBLISH LISTS as it walks: its table and its
  * entry there, which name the object the publish places once it is done. */
@@ -395,8 +444,10 @@ typedef struct markdown_core_stream {
     /* The definitions the published document holds as committed (ast.c),
      * room for those a publish lists as it walks, and the definitions the
      * candidates of a finalize list, which join the committed tables once
-     * every candidate is placed (blocks.c). */
-    markdown_core_committed_tables committed;
+     * every candidate is placed (blocks.c): made when the first is kept
+     * (ast.c, committed_need), which a stream that defines nothing never
+     * does. */
+    markdown_core_committed_tables *committed;
     markdown_core_kept *kept;
     size_t kept_capacity;
     /* Room for the entries a snapshot's document lists as its own (ast.c,
@@ -459,9 +510,9 @@ typedef struct markdown_core_stream {
      * document that closed as the line at `end - 1` was read, a lookahead
      * that read past the line after its own, a candidate a later line
      * rejected -- in the order the readings ran. An edit reads from no
-     * point such a reading spans. */
-    markdown_core_place *reach;
-    size_t reach_count, reach_capacity;
+     * point such a reading spans. A zipper (zipper.h): the front is the
+     * log, and an edit keeps the readings of the old tail in its back. */
+    markdown_core_reach_zipper reach;
     /* What the edits that read the parse again after its flush keep: a
      * session's (markdown_core_parser_edits), which keeps the reach, the
      * headings' state and the old tail of each edit (THE SPLICE); NULL for
@@ -563,11 +614,9 @@ typedef struct markdown_core_edit {
     /* THE NESTED REOPEN (blocks.c): the `depth` blocks below the root the
      * reading reopened, the root's child first, each the last child of the
      * one before; `path` holds where each is among its holder's children,
-     * and past them where the deepest's first child that goes was; `ranks`
-     * where each that is a definition is listed among those that stay
-     * (ast.c, A DOCUMENT REOPENED FOR AN EDIT), UINT32_MAX for the others. */
+     * and past them where the deepest's first child that goes was. */
     struct markdown_core_node **chain;
-    uint32_t *path, *ranks;
+    uint32_t *path;
     size_t depth, chain_capacity;
     /* THE NESTED SPLICE (blocks.c): for each block of the chain, where it
      * ended in the old text (`ends`), its flags there (`states`), its
@@ -587,14 +636,9 @@ typedef struct markdown_core_edit {
     int64_t shift;
     /* Whether the parse is an edit's reading. */
     bool reading;
-    /* THE BACK (docs/plans/relative-positions.md): the lines of the flushed
-     * text past the input's, from its last to the first, each measured back
-     * from `end`, the text's end: an edit before them moves none of them.
-     * `line` is the first's number, in the text the reopen put back. */
-    struct markdown_core_input_line *lines;
-    size_t line, line_count, line_capacity, end;
-    markdown_core_place *reach;
-    size_t reach_count, reach_capacity;
+    /* The number of the back's first line (parser_input, `lines`), in the
+     * text the reopen put back. */
+    size_t line;
     /* The furthest end of the log's entries up to each, the first
      * `furthest_count` of them (markdown_core_parser_sort_reach). */
     uint32_t *furthest;
@@ -603,15 +647,6 @@ typedef struct markdown_core_edit {
     markdown_core_place *room;
     size_t room_capacity;
     markdown_core_registry registry;
-    markdown_core_defined *gone;
-    size_t gone_count, gone_capacity;
-    /* THE MARKS (ast.c, A DOCUMENT REOPENED FOR AN EDIT): for each of the
-     * root's children at the last reopen, `mark_count` of them, whether its
-     * subtree holds a definition, or that no walk asked yet. The first
-     * `mark_front` stand as they were, and the last `mark_back`, which the
-     * reading took back (THE SPLICE), are the root's last children now. */
-    uint8_t *marks;
-    size_t mark_count, mark_capacity, mark_front, mark_back;
     /* The old tail's children no record holds yet, nor the root, the
      * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
      * them go when it fails before its publish. */
@@ -1154,7 +1189,8 @@ typedef struct markdown_core_line_facts {
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
-    return next < parser->input.lines.values + parser->input.lines.count ? next->start : parser->input.scanned;
+    return next < parser->input.lines.front.values + parser->input.lines.front.count ? next->start
+                                                                                     : parser->input.scanned;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -1166,8 +1202,8 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
         return NULL;
     }
     size_t index = (size_t)(line - parser->input.first_line);
-    return index < parser->input.lines.count ? &parser->input.lines.values[index]
-                                             : markdown_core_parser_extend_source_lines(parser, index);
+    return index < parser->input.lines.front.count ? &parser->input.lines.front.values[index]
+                                                   : markdown_core_parser_extend_source_lines(parser, index);
 }
 
 /* Whether the end of the active input is the end of its text (blocks.c, THE
@@ -1246,7 +1282,7 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
         return &parser->input.facts[line->facts - 1];
     }
     return markdown_core_parser_extend_line_facts(
-        parser, markdown_core_array_write(&parser->input.lines, (size_t)(number - parser->input.first_line)));
+        parser, markdown_core_array_write(&parser->input.lines.front, (size_t)(number - parser->input.first_line)));
 }
 
 /* The flags of a container a lookahead matches: as it first matched it, and
@@ -1367,15 +1403,15 @@ bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, i
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
                                                                           int line) {
     size_t index = (size_t)(line - parser->input.first_line);
-    assert(line >= parser->input.first_line && index < parser->input.lines.count);
-    return &parser->input.lines.values[index];
+    assert(line >= parser->input.first_line && index < parser->input.lines.front.count);
+    return &parser->input.lines.front.values[index];
 }
 
 /* The same, to change in place (array.h, markdown_core_array_write). */
 static inline markdown_core_input_line *markdown_core_parser_rewritten_line(markdown_core_parser *parser, int line) {
     size_t index = (size_t)(line - parser->input.first_line);
-    assert(line >= parser->input.first_line && index < parser->input.lines.count);
-    return markdown_core_array_write(&parser->input.lines, index);
+    assert(line >= parser->input.first_line && index < parser->input.lines.front.count);
+    return markdown_core_array_write(&parser->input.lines.front, index);
 }
 
 /* An input that is not mapped is a copy of its source, so a line's column c
@@ -1628,7 +1664,7 @@ bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, siz
                                          markdown_core_strbuf *altered);
 /* Where the text an edit's back is measured from ends (THE BACK). */
 static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
-    return (uint32_t)parser->stream->edit->end;
+    return (uint32_t)parser->input.lines.end;
 }
 /* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
  * holds `offset`, and line `line`'s start and the start of the line after
