@@ -2530,6 +2530,35 @@ bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, 
     return committed_keep(committed, table, node, start) && committed_settle(committed);
 }
 
+void markdown_core_publish_compact_committed(markdown_core_committed_tables *committed) {
+    if (!committed) {
+        return;
+    }
+    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        assert(!committed->starts[table].back_count);
+        markdown_core_array_shrink(&committed->starts[table].front);
+        listed_release_back(&committed->starts[table]);
+    }
+    /* A key tree keeps the storage of the entries it lost, and the arena
+     * their keys: both are made again at their size, beside the old, which
+     * stay when storage could not be had. */
+    markdown_core_committed_tables fresh = *committed;
+    for (size_t labels = 0; labels < MARKDOWN_CORE_LABEL_TABLES; labels++) {
+        fresh.labels[labels] = fresh.holders[labels] = (markdown_core_key_tree){0};
+    }
+    fresh.label_blocks = NULL;
+    fresh.label_used = fresh.label_room = fresh.label_live = fresh.label_dead = 0;
+    markdown_core_committed_tables *const kept = committed_relabel(&fresh) ? committed : &fresh;
+    for (size_t labels = 0; labels < MARKDOWN_CORE_LABEL_TABLES; labels++) {
+        markdown_core_key_tree_free(&kept->labels[labels]);
+        markdown_core_key_tree_free(&kept->holders[labels]);
+    }
+    committed_keys_free(kept);
+    if (kept == committed) {
+        *committed = fresh;
+    }
+}
+
 void markdown_core_publish_release_committed(markdown_core_committed_tables *committed) {
     if (!committed) {
         return;

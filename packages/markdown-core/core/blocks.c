@@ -2902,6 +2902,7 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     S_lines_release_back(&input->lines);
     assert(!parser->stream->reach.back_count);
     S_reach_release_back(&parser->stream->reach);
+    markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const markdown_core_node *block) {

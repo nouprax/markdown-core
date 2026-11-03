@@ -293,6 +293,9 @@ bool markdown_core_publish_withdraw(struct markdown_core_parser *parser, markdow
 bool markdown_core_publish_define(struct markdown_core_parser *parser, uint32_t table,
                                   const struct markdown_core_node *node, uint32_t start);
 void markdown_core_publish_release_committed(markdown_core_committed_tables *committed);
+/* The committed tables held in no more storage than they need, after a
+ * reading of the whole text (markdown_core_parser_compact). */
+void markdown_core_publish_compact_committed(markdown_core_committed_tables *committed);
 
 /* A COMMITTED DEFINITION A PUBLISH LISTS as it walks: its table and its
  * entry there, which name the object the publish places once it is done. */
