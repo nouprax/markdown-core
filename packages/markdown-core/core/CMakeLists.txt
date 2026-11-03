@@ -30,6 +30,7 @@ set(HEADERS
     delimiter.h
     ahead.h
     array.h
+    zipper.h
     sink.h)
 set(LIBRARY_SOURCES
     alloc.c

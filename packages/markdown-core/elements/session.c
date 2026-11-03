@@ -575,23 +575,22 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
  * `text`. False, with the text as it was, when storage could not be had. */
 static bool session_replace(markdown_core_session *session, size_t from, size_t to, const uint8_t *text, size_t size) {
     const size_t rest = session->text.count - to;
-    uint8_t *suffix = rest ? markdown_core_alloc(rest, 1) : NULL;
-    if (rest && !suffix) {
+    const size_t total = from + size + rest;
+    if (!markdown_core_array_reserve(&session->text, total)) {
         return false;
     }
-    if (rest) {
-        memcpy(suffix, session->text.values + to, rest);
+    /* In place: the text after the replaced moves, and what replaces it is
+     * written where the replaced was. */
+    markdown_core_ahead_unsettle(&session->text.ahead, from);
+    uint8_t *values = session->text.values;
+    if (rest && size != to - from) {
+        memmove(values + from + size, values + to, rest);
     }
-    const size_t total = from + size + rest;
-    bool ok = markdown_core_array_reserve(&session->text, total);
-    if (ok) {
-        markdown_core_array_truncate(&session->text, from);
-        ok = (!size || markdown_core_array_append(&session->text, text, size)) &&
-             (!rest || markdown_core_array_append(&session->text, suffix, rest));
-        assert(ok);
+    if (size) {
+        memcpy(values + from, text, size);
     }
-    markdown_core_free(suffix);
-    return ok;
+    session->text.count = total;
+    return true;
 }
 
 /* The flushed parse put back before the root's child `child`, at input line

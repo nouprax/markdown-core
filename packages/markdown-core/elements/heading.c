@@ -221,11 +221,6 @@ bool markdown_core_headings_reopen(const markdown_core_element_instance *self, m
     if (state->named > low) {
         state->named = low;
     }
-    for (size_t i = 0; i < low; i++) {
-        if (!markdown_core_publish_keep_heading(parser, headings->values[i].node, (uint32_t)i)) {
-            return false;
-        }
-    }
     return true;
 }
 
@@ -251,9 +246,6 @@ bool markdown_core_headings_splice(const markdown_core_element_instance *self, m
     }
     for (size_t i = first; i < aside->count; i++) {
         aside->values[i].start = end - aside->values[i].start;
-        if (!markdown_core_publish_keep_heading(parser, aside->values[i].node, aside->values[i].start)) {
-            return false;
-        }
     }
     if (taken) {
         memcpy(headings->values + headings->count, aside->values + first, taken * sizeof(*headings->values));

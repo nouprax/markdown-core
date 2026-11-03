@@ -330,6 +330,31 @@ markdown_core_key_entry *markdown_core_key_tree_at(const markdown_core_key_tree 
     return &((S_tree_leaf *)node)->entries[rank];
 }
 
+void markdown_core_key_tree_remove(markdown_core_key_tree *tree, const markdown_core_key_entry *key) {
+    S_tree_inner *path[KEY_TREE_LEVELS];
+    uint32_t at[KEY_TREE_LEVELS];
+    void *node = tree->root;
+    if (!node) {
+        return;
+    }
+    for (uint32_t level = 0; level < tree->levels; level++) {
+        path[level] = node;
+        at[level] = S_tree_child(path[level], key);
+        node = path[level]->children[at[level]];
+    }
+    S_tree_leaf *leaf = node;
+    const uint32_t place = S_tree_place(leaf, key);
+    if (place >= leaf->count || !markdown_core_key_same(&leaf->entries[place], key)) {
+        return;
+    }
+    memmove(&leaf->entries[place], &leaf->entries[place + 1], (leaf->count - place - 1) * sizeof(*leaf->entries));
+    leaf->count--;
+    for (uint32_t level = 0; level < tree->levels; level++) {
+        path[level]->sizes[at[level]]--;
+    }
+    tree->count--;
+}
+
 void markdown_core_key_tree_seek(const markdown_core_key_tree *tree, const markdown_core_key_entry *key,
                                  markdown_core_key_tree_cursor *cursor) {
     const void *node = tree->root;
