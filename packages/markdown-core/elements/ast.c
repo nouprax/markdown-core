@@ -2188,8 +2188,8 @@ static bool committed_next(const markdown_core_committed_tables *committed, mark
              record; record = record->after) {
             size_t index;
             const markdown_core_listed *entry = listed_find(zipper, record->back, record->start, &index);
-            if (!entry || (out && out->table == table && !record->back && index >= out->from &&
-                           index < out->to && entry->node != out->kept)) {
+            if (!entry || (out && out->table == table && !record->back && index >= out->from && index < out->to &&
+                           entry->node != out->kept)) {
                 continue;
             }
             markdown_core_chunk held;
