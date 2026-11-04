@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include "array.h"
 #include "zipper.h"
-#include "registry.h"
+#include "roster.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
@@ -246,7 +246,7 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
  * holds it: measured back from the text's end, with
  * MARKDOWN_CORE_LISTED_BACK, when that is the back. When a label's
  * definition goes, its next is the first of the label's declarations in
- * the registry, which keeps them in order of where they start, that the
+ * the roster, which keeps them in order of where they start, that the
  * tables hold (ast.c, THE LABEL'S NEXT DEFINITION). */
 enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
 
@@ -322,7 +322,7 @@ typedef struct {
  * label, as written, at `label_start` in the parser's `miss_labels`. */
 typedef struct {
     size_t root;
-    markdown_core_registry_kind kind;
+    markdown_core_roster_kind kind;
     bufsize_t label_start, label_length;
 } markdown_core_definition_miss;
 
@@ -383,7 +383,7 @@ typedef struct markdown_core_inline_settle {
  * kind and its label, at `label_start` in the settled labels; or, in a
  * parse that takes edits, one that found a definition, `found`. */
 typedef struct {
-    markdown_core_registry_kind kind;
+    markdown_core_roster_kind kind;
     bufsize_t label_start, label_size;
     bool found;
 } markdown_core_settled_miss;
@@ -544,7 +544,7 @@ typedef struct markdown_core_parser_at {
      * block identifier its anchor and end, a caption its table -- and nothing
      * writes a settled block but completion, which makes its inline
      * content. The document and the cell inputs share this parser and all
-     * document registries. Input roots stay owned by the AST; the queue only
+     * document rosters. Input roots stay owned by the AST; the queue only
      * borrows them until their block content is read. */
     struct markdown_core_node *block_root, *current, *pending;
     /* The line being read, its input line number, and where on it the
@@ -605,7 +605,7 @@ typedef struct markdown_core_back_child {
  * label, as written, `size` bytes at `label` in the edit's `use_labels`. */
 typedef struct markdown_core_use {
     uint32_t start, label, size;
-    markdown_core_registry_kind kind;
+    markdown_core_roster_kind kind;
 } markdown_core_use;
 
 typedef MARKDOWN_CORE_ZIPPER(markdown_core_use) markdown_core_use_zipper;
@@ -614,7 +614,7 @@ typedef MARKDOWN_CORE_ZIPPER(markdown_core_use) markdown_core_use_zipper;
  * this, and `label` the number of its note: its label's bytes went. */
 #define MARKDOWN_CORE_USE_NOTED UINT32_MAX
 
-/* A NAME THE USES' INDEX HOLDS: a lookup's kind and label as the registry
+/* A NAME THE USES' INDEX HOLDS: a lookup's kind and label as the roster
  * keys them, `size` bytes, and the first of the notes of the uses that
  * looked it up, `count` of them. */
 typedef struct markdown_core_use_name {
@@ -725,11 +725,11 @@ struct markdown_core_parser {
      * open (sink.h), or NULL: a parse with a sink is never published but
      * to the context query. */
     struct markdown_core_context_sink *sink;
-    /* Every definition and explicit anchor the parse declared (registry.h):
+    /* Every definition and explicit anchor the parse declared (roster.h):
      * the block phase declares definitions as it reads them, the headings
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
-    markdown_core_registry registry;
+    markdown_core_roster roster;
     /* The root being completed: the queued block or field root the
      * completion walk is in (blocks.c, COMPLETION), or the heading whose
      * inline content the document's preparation parses. */
@@ -1082,7 +1082,7 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
 /* WHAT THE COMMITS KEEP: in a snapshot, what `self`'s parse record keeps
  * with a mark (element.h, `kept_size`) as the earliest mark the reading can
  * be put back to found it -- the oldest candidate's, else the snapshot's --
- * and, in `*records`, the registry's length there. No put-back reaches what
+ * and, in `*records`, the roster's length there. No put-back reaches what
  * the reading made before it. */
 const void *markdown_core_parser_kept(const markdown_core_parser *parser, const markdown_core_element_instance *self,
                                       size_t *records);
@@ -1605,29 +1605,30 @@ bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t dept
 /* THE DEFINITION LOOKUP of inline content: the record of `kind` that
  * declares `label`, as written, for the block being completed, or NULL.
  * Reference and footnote labels are looked up in their normal form, and a
- * specimen label as its bytes (registry.h). At a finalize every declaration
+ * specimen label as its bytes (roster.h). At a finalize every declaration
  * answers; at a snapshot only one whose key some definition declares before
  * the block starts, which is before its inline roots start, and a lookup that
  * finds none is recorded for the finalize. `*failed` is set when storage
  * could not be had, and the answer is then NULL. A snapshot's lookup goes on
- * from what the registry answered in markdown_core_parser_find_at_snapshot. */
-const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
-                                                                           markdown_core_registry_kind kind,
-                                                                           const markdown_core_chunk *label,
-                                                                           const markdown_core_registry_record *record,
-                                                                           bool *failed);
+ * from what the roster answered in markdown_core_parser_find_at_snapshot. */
+const markdown_core_roster_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
+                                                                         markdown_core_roster_kind kind,
+                                                                         const markdown_core_chunk *label,
+                                                                         const markdown_core_roster_record *record,
+                                                                         bool *failed);
 /* A lookup a finalize's completion made, of `kind` and `label` as written,
  * noted as a use of the root being completed. False when storage could not
  * be had. */
-bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_registry_kind kind,
+bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label);
-static inline const markdown_core_registry_record *
-markdown_core_parser_find_definition(markdown_core_parser *parser, markdown_core_registry_kind kind,
-                                     const markdown_core_chunk *label, bool *failed) {
-    const markdown_core_registry_record *record =
-        kind == MARKDOWN_CORE_REGISTRY_SPECIMEN
-            ? markdown_core_registry_find(&parser->registry, kind, label->data, label->len, failed)
-            : markdown_core_registry_find_label(&parser->registry, kind, label, failed);
+static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
+                                                                                      markdown_core_roster_kind kind,
+                                                                                      const markdown_core_chunk *label,
+                                                                                      bool *failed) {
+    const markdown_core_roster_record *record =
+        kind == MARKDOWN_CORE_ROSTER_SPECIMEN
+            ? markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed)
+            : markdown_core_roster_find_label(&parser->roster, kind, label, failed);
     if (parser->snapshot && !*failed) {
         return markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed);
     }
@@ -1718,7 +1719,7 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
-/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_made
+/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_roster_made
  * writes them, that the declarations of the text the last reading of an
  * edit read, from `start`, its rest point, up to where it took the old
  * children back, hold and those of the old text it replaced did not, or the

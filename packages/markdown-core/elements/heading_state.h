@@ -46,7 +46,7 @@ typedef struct {
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
  * heading as its block closed, its two counts at the front of the record;
  * the committed names (heading.c, THE COMMITTED NAMES): the names taken,
- * where the reading of the registry's ANCHOR records stands and how many it
+ * where the reading of the roster's ANCHOR records stands and how many it
  * read, how many headings are named, and the committed headings that show
  * another name, from the last snapshot and then from the one under way; the
  * projection and lookup work the assignment of their anchors did, for its

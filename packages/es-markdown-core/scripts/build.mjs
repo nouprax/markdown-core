@@ -16,7 +16,7 @@ const core = [
     "inlines.c",
     "utf8.c",
     "buffer.c",
-    "registry.c",
+    "roster.c",
     "map.c",
     "sink.c",
     "houdini_html_u.c",

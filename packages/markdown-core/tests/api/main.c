@@ -3204,36 +3204,36 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* THE REGISTRY'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
+/* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
  * log's array and the index each double -- rather than one each, and all of
- * them go with the registry. */
-static void registry_records_are_carved_from_its_blocks(test_batch_runner *runner) {
+ * them go with the roster. */
+static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner) {
     enum { COUNT = 4096 };
     payload_probe_arm();
-    markdown_core_registry registry;
-    markdown_core_registry_init(&registry);
+    markdown_core_roster roster;
+    markdown_core_roster_init(&roster);
     char label[32];
     bool declared = true;
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
         declared = declared &&
-                   markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE,
-                                                  (const unsigned char *)label, (bufsize_t)strlen(label), (uint32_t)i);
+                   markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, (const unsigned char *)label,
+                                                (bufsize_t)strlen(label), (uint32_t)i);
     }
-    OK(runner, declared && registry.count == COUNT, "every declaration is a record");
+    OK(runner, declared && roster.count == COUNT, "every declaration is a record");
     /* Twelve doublings reach COUNT; each of the three structures doubles
      * at most once per doubling. */
     OK(runner, payload_allocations <= 3 * 13, "%d records took %zu allocations", COUNT, payload_allocations);
     bool failed = false;
     markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
-    const markdown_core_registry_record *found =
-        markdown_core_registry_find_label(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, &lookup, &failed);
-    markdown_core_chunk name = found ? markdown_core_registry_label(found) : (markdown_core_chunk){0};
+    const markdown_core_roster_record *found =
+        markdown_core_roster_find_label(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, &lookup, &failed);
+    markdown_core_chunk name = found ? markdown_core_roster_label(found) : (markdown_core_chunk){0};
     OK(runner, !failed && name.len == 10 && !memcmp(name.data, "label 4095", 10),
        "a carved record is found by its label's normal form");
-    markdown_core_registry_free(&registry);
-    INT_EQ(runner, payload_live, 0, "the registry's blocks, log and index are all released");
+    markdown_core_roster_free(&roster);
+    INT_EQ(runner, payload_live, 0, "the roster's blocks, log and index are all released");
     payload_probe_disarm();
 }
 
@@ -3365,41 +3365,40 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
 /* THE KINDS ARE SEPARATE LOOKUP SPACES, and a key's records answer for the
  * earliest of them: a label declared as a reference is not a footnote, and
  * a key declared twice starts where its earlier declaration starts. */
-static void registry_kinds_and_starts(test_batch_runner *runner) {
-    markdown_core_registry registry;
-    markdown_core_registry_init(&registry);
+static void roster_kinds_and_starts(test_batch_runner *runner) {
+    markdown_core_roster roster;
+    markdown_core_roster_init(&roster);
     const unsigned char *x = (const unsigned char *)"x";
     bool failed = false;
-    OK(runner, markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 40),
+    OK(runner, markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 40),
        "a reference is declared");
-    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, x, 1, &failed),
+    OK(runner, !markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_SPECIMEN, x, 1, &failed),
-       "nor a specimen");
-    const markdown_core_registry_record *record =
-        markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
+    OK(runner, !markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_SPECIMEN, x, 1, &failed), "nor a specimen");
+    const markdown_core_roster_record *record =
+        markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, &failed);
     OK(runner,
-       record && !markdown_core_registry_starts_before(&registry, record, 40) &&
-           markdown_core_registry_starts_before(&registry, record, 41),
+       record && !markdown_core_roster_starts_before(&roster, record, 40) &&
+           markdown_core_roster_starts_before(&roster, record, 41),
        "a declaration starts where its definition starts");
     OK(runner,
-       markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 90) &&
-           markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 10),
+       markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 90) &&
+           markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 10),
        "the key is declared twice more");
-    record = markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
+    record = markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, &failed);
     OK(runner,
-       record && record->start == 10 && markdown_core_registry_starts_before(&registry, record, 11) &&
-           !markdown_core_registry_starts_before(&registry, record, 10),
+       record && record->start == 10 && markdown_core_roster_starts_before(&roster, record, 11) &&
+           !markdown_core_roster_starts_before(&roster, record, 10),
        "the key's earliest declaration answers");
-    markdown_core_registry_mark mark = markdown_core_registry_mark_now(&registry);
-    OK(runner, markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 2),
+    markdown_core_roster_mark mark = markdown_core_roster_mark_now(&roster);
+    OK(runner, markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 2),
        "a declaration after the mark");
-    markdown_core_registry_rollback(&registry, mark);
-    record = markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
-    OK(runner, record && record->start == 10 && !markdown_core_registry_starts_before(&registry, record, 10),
+    markdown_core_roster_rollback(&roster, mark);
+    record = markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, &failed);
+    OK(runner, record && record->start == 10 && !markdown_core_roster_starts_before(&roster, record, 10),
        "a rollback takes the earlier start back with the record");
     OK(runner, !failed, "and no lookup failed");
-    markdown_core_registry_free(&registry);
+    markdown_core_roster_free(&roster);
 }
 
 /* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- each key's
@@ -3420,20 +3419,20 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
 typedef struct {
     uint32_t *starts;
     size_t count, capacity;
-} registry_model_key;
+} roster_model_key;
 
 /* A step of the model: what it declared, or the start it withdrew. */
 typedef struct {
     unsigned kind, label;
     uint32_t start;
     bool withdraws;
-} registry_model_step;
+} roster_model_step;
 
-static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
+static void roster_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
 /* The start the model's key withdraws for a withdrawal at `start`: that
  * start when a declaration stands there, else the latest. */
-static size_t registry_model_withdrawn(const registry_model_key *key, uint32_t start) {
+static size_t roster_model_withdrawn(const roster_model_key *key, uint32_t start) {
     size_t latest = 0;
     for (size_t i = 0; i < key->count; i++) {
         if (key->starts[i] == start) {
@@ -3444,15 +3443,15 @@ static size_t registry_model_withdrawn(const registry_model_key *key, uint32_t s
     return latest;
 }
 
-static void registry_rollback_matches_a_model(test_batch_runner *runner) {
+static void roster_rollback_matches_a_model(test_batch_runner *runner) {
     enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
-    markdown_core_registry registry;
-    markdown_core_registry_init(&registry);
-    registry_model_step *model = malloc(STEPS * sizeof(*model));
-    registry_model_key *keys = calloc((size_t)KINDS * (SHARED + STEPS), sizeof(*keys));
+    markdown_core_roster roster;
+    markdown_core_roster_init(&roster);
+    roster_model_step *model = malloc(STEPS * sizeof(*model));
+    roster_model_key *keys = calloc((size_t)KINDS * (SHARED + STEPS), sizeof(*keys));
     size_t model_count = 0, fresh = SHARED, mark_count = 0;
-    markdown_core_registry_mark marks[MARKS];
+    markdown_core_roster_mark marks[MARKS];
     size_t model_marks[MARKS];
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
     bool agrees = true;
@@ -3464,18 +3463,18 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
         unsigned choice = (unsigned)(random % 100);
         if (choice < 6 && mark_count < MARKS) {
             model_marks[mark_count] = model_count;
-            marks[mark_count++] = markdown_core_registry_mark_now(&registry);
+            marks[mark_count++] = markdown_core_roster_mark_now(&roster);
         } else if (choice < 10 && mark_count) {
             size_t to = (size_t)(random >> 32) % mark_count;
-            for (size_t popped = model_marks[to]; popped < registry.count; popped++) {
-                const bool indexed = popped < registry.spaces[registry.records[popped]->key[0]].cursor;
+            for (size_t popped = model_marks[to]; popped < roster.count; popped++) {
+                const bool indexed = popped < roster.spaces[roster.records[popped]->key[0]].cursor;
                 taken += indexed;
                 untaken += !indexed;
             }
-            markdown_core_registry_rollback(&registry, marks[to]);
+            markdown_core_roster_rollback(&roster, marks[to]);
             while (model_count > model_marks[to]) {
-                const registry_model_step *undone = &model[--model_count];
-                registry_model_key *key = &keys[undone->kind * (SHARED + STEPS) + undone->label];
+                const roster_model_step *undone = &model[--model_count];
+                roster_model_key *key = &keys[undone->kind * (SHARED + STEPS) + undone->label];
                 if (undone->withdraws) {
                     key->starts[key->count++] = undone->start;
                 } else {
@@ -3489,24 +3488,24 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             }
             mark_count = to;
         } else {
-            registry_model_step record = {(unsigned)((random >> 40) % KINDS),
-                                          choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++,
-                                          (uint32_t)(random >> 44), false};
-            registry_model_key *key = &keys[record.kind * (SHARED + STEPS) + record.label];
+            roster_model_step record = {(unsigned)((random >> 40) % KINDS),
+                                        choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++,
+                                        (uint32_t)(random >> 44), false};
+            roster_model_key *key = &keys[record.kind * (SHARED + STEPS) + record.label];
             /* A declared key is withdrawn about a third of the times a
              * shared label comes up, so declarations stand and fall again
              * and again. */
             record.withdraws = choice < 30 && key->count > 0;
             char text[16];
-            registry_label_text(record.label, text, sizeof(text));
-            const markdown_core_registry_kind kind =
-                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + record.kind);
-            agrees = record.withdraws ? markdown_core_registry_withdraw(&registry, kind, (const unsigned char *)text,
-                                                                        (bufsize_t)strlen(text), record.start)
-                                      : markdown_core_registry_declare(&registry, kind, (const unsigned char *)text,
-                                                                       (bufsize_t)strlen(text), record.start);
+            roster_label_text(record.label, text, sizeof(text));
+            const markdown_core_roster_kind kind =
+                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_REFERENCE + record.kind);
+            agrees = record.withdraws ? markdown_core_roster_withdraw(&roster, kind, (const unsigned char *)text,
+                                                                      (bufsize_t)strlen(text), record.start)
+                                      : markdown_core_roster_declare(&roster, kind, (const unsigned char *)text,
+                                                                     (bufsize_t)strlen(text), record.start);
             if (record.withdraws) {
-                const size_t at = registry_model_withdrawn(key, record.start);
+                const size_t at = roster_model_withdrawn(key, record.start);
                 /* The step keeps the start it withdrew, which its undoing
                  * declares again. */
                 record.start = key->starts[at];
@@ -3521,7 +3520,7 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             withdrawals += record.withdraws;
             model[model_count++] = record;
         }
-        agrees = agrees && registry.count == model_count;
+        agrees = agrees && roster.count == model_count;
         const bool compare = (random >> 52) % 3 == 0 || step == STEPS - 1;
         /* The kinds compared: a random set, so one kind's records are taken
          * while another's wait; every kind at the last step. */
@@ -3530,10 +3529,10 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
-            const markdown_core_registry_kind compared_kind =
-                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind);
+            const markdown_core_roster_kind compared_kind =
+                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_REFERENCE + kind);
             for (unsigned label = 0; label < fresh && agrees; label++) {
-                const registry_model_key *key = &keys[kind * (SHARED + STEPS) + label];
+                const roster_model_key *key = &keys[kind * (SHARED + STEPS) + label];
                 /* Only a label some step declared can answer; the rest are
                  * sampled every few steps, which is enough to see a key
                  * left behind. */
@@ -3545,33 +3544,33 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
                     earliest = key->starts[i] < earliest ? key->starts[i] : earliest;
                 }
                 char text[16];
-                registry_label_text(label, text, sizeof(text));
+                roster_label_text(label, text, sizeof(text));
                 bool failed = false;
-                const markdown_core_registry_record *found = markdown_core_registry_find(
-                    &registry, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
+                const markdown_core_roster_record *found = markdown_core_roster_find(
+                    &roster, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
                 const markdown_core_key_index_slot *slot =
-                    found ? markdown_core_key_index_find(&registry.index, found->key, found->key_len) : NULL;
+                    found ? markdown_core_key_index_find(&roster.index, found->key, found->key_len) : NULL;
                 agrees =
                     !failed && (found != NULL) == (key->count > 0) &&
                     (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
                 if (!agrees) {
-                    fprintf(stderr, "registry diverges at step %zu on kind %u label %u\n", step, kind, label);
+                    fprintf(stderr, "roster diverges at step %zu on kind %u label %u\n", step, kind, label);
                 }
             }
         }
     }
-    OK(runner, agrees, "the registry answers as the model after declarations, withdrawals, marks and rollbacks");
+    OK(runner, agrees, "the roster answers as the model after declarations, withdrawals, marks and rollbacks");
     OK(runner, withdrawals, "declarations were withdrawn (%zu)", withdrawals);
     OK(runner, untaken && taken, "rollbacks popped records the index took and records it never took (%zu, %zu)", taken,
        untaken);
     if (mark_count == 0 || agrees) {
-        markdown_core_registry_rollback(&registry, (markdown_core_registry_mark){0});
+        markdown_core_roster_rollback(&roster, (markdown_core_roster_mark){0});
     }
-    INT_EQ(runner, (int)registry.count, 0, "a rollback to the start empties the log");
-    INT_EQ(runner, (int)registry.index.size, 0, "and the index");
-    OK(runner, registry.blocks == NULL, "and releases every block");
-    markdown_core_registry_free(&registry);
-    INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
+    INT_EQ(runner, (int)roster.count, 0, "a rollback to the start empties the log");
+    INT_EQ(runner, (int)roster.index.size, 0, "and the index");
+    OK(runner, roster.blocks == NULL, "and releases every block");
+    markdown_core_roster_free(&roster);
+    INT_EQ(runner, payload_live, 0, "the roster releases everything it holds");
     payload_probe_disarm();
     for (size_t i = 0; i < (size_t)KINDS * (SHARED + STEPS); i++) {
         free(keys[i].starts);
@@ -5116,8 +5115,8 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->attributes = parser->attribute_scratch.work;
     work->anchors = headings->anchor_work;
     work->definitions = 0;
-    for (size_t i = 0; i < parser->registry.count; i++) {
-        work->definitions += parser->registry.records[i]->key[0] == MARKDOWN_CORE_REGISTRY_REFERENCE;
+    for (size_t i = 0; i < parser->roster.count; i++) {
+        work->definitions += parser->roster.records[i]->key[0] == MARKDOWN_CORE_ROSTER_REFERENCE;
     }
     work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
@@ -7121,7 +7120,7 @@ static void heading_completion_invariants(test_batch_runner *runner) {
     }
 }
 
-static void heading_registry_invariants(test_batch_runner *runner) {
+static void heading_roster_invariants(test_batch_runner *runner) {
     for (size_t count = 128; count <= 8192; count *= 2) {
         for (int reserve = 0; reserve < 2; reserve++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -7140,7 +7139,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
             inline_work work = {0};
             markdown_core_node *root =
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "heading registry handles dense future reservations");
+            OK(runner, root != NULL, "heading roster handles dense future reservations");
             if (root) {
                 markdown_core_node *node = child_at(root, 0);
                 OK(runner, work.heading_collection_disposed, "the finished document holds no live heading parse state");
@@ -7156,7 +7155,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                            "every generated suffix is the smallest available");
                 }
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
-                   "registry work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
+                   "roster work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
                 bool named = true;
                 for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
                     markdown_core_node *node = last_child_of(root)->children[node_index];
@@ -12835,10 +12834,10 @@ int main(void) {
     unicode_classes_are_total(runner);
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
-    registry_records_are_carved_from_its_blocks(runner);
+    roster_records_are_carved_from_its_blocks(runner);
     key_tree_matches_a_sorted_model(runner);
-    registry_kinds_and_starts(runner);
-    registry_rollback_matches_a_model(runner);
+    roster_kinds_and_starts(runner);
+    roster_rollback_matches_a_model(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_nul(runner);
@@ -12868,7 +12867,7 @@ int main(void) {
     the_list_scanner_reads_a_numeral_by_its_first_bytes_class(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
-    heading_registry_invariants(runner);
+    heading_roster_invariants(runner);
     reference_occurrences_hold_the_label_alone(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);

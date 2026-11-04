@@ -431,7 +431,7 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
  * are one index. A name's entry holds who takes it, in `extra`: zero for an
  * explicit anchor, a heading's place in the collection plus one otherwise;
  * and in `value` the suffix a heading projecting to the name tries next. Its
- * key is the taker's bytes: the label of the registry record that reserves
+ * key is the taker's bytes: the label of the roster record that reserves
  * it, or the bytes of the heading's anchor.
  *
  * A heading takes the first name of its sequence, from where it starts, that
@@ -446,7 +446,7 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
  * names it may take.
  *
  * A streaming parse keeps the index across snapshots, with where its reading
- * of the registry's ANCHOR records stands and how many headings it named.
+ * of the roster's ANCHOR records stands and how many headings it named.
  * Each snapshot first reads the records committed since the last and names
  * the headings commits parsed since, then names its tail in an overlay (A
  * SNAPSHOT'S NAMES). The finalize, and a parse that takes no snapshot, start
@@ -708,12 +708,12 @@ static void displace(name_pass *pass, size_t at) {
  * name: a declaration of it came before, which entered it. A pass that
  * starts empty reads neither a withdrawal nor what one withdrew, nor a
  * declaration an edit replaced or one its reading does not see, which an
- * edit's log holds where it was made (registry.h). */
-static void read_record(name_pass *pass, const markdown_core_registry_record *record) {
+ * edit's log holds where it was made (roster.h). */
+static void read_record(name_pass *pass, const markdown_core_roster_record *record) {
     markdown_core_parser *parser = pass->parser;
-    const markdown_core_chunk label = markdown_core_registry_label(record);
+    const markdown_core_chunk label = markdown_core_roster_label(record);
     markdown_core_key_index *index = pass->index;
-    if (pass->fresh && !markdown_core_registry_seen(&parser->registry, record)) {
+    if (pass->fresh && !markdown_core_roster_seen(&parser->roster, record)) {
         return;
     }
     if (record->withdraws) {
@@ -751,10 +751,10 @@ static void read_record(name_pass *pass, const markdown_core_registry_record *re
 
 /* The cursor's records before position `end` of the log, reserved in log
  * order. */
-static void read_records(name_pass *pass, markdown_core_registry_cursor *cursor, size_t end) {
-    const markdown_core_registry *registry = &pass->parser->registry;
-    for (const markdown_core_registry_record *record;
-         !pass->parser->error && (record = markdown_core_registry_next_before(registry, cursor, end));) {
+static void read_records(name_pass *pass, markdown_core_roster_cursor *cursor, size_t end) {
+    const markdown_core_roster *roster = &pass->parser->roster;
+    for (const markdown_core_roster_record *record;
+         !pass->parser->error && (record = markdown_core_roster_next_before(roster, cursor, end));) {
         read_record(pass, record);
     }
 }
@@ -803,7 +803,7 @@ static void restore_name(markdown_core_heading_parse *heading) {
  * UNDER ANOTHER NAME); then each committed heading the last snapshot renamed
  * and this one did not shows its committed name again, and the ones this one
  * renamed are the list. */
-static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor) {
+static void name_snapshot(name_pass *pass, markdown_core_roster_cursor cursor) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_heading_state *state = pass->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -815,7 +815,7 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
     pass->index = &overlay;
     pass->beneath = &state->taken;
     const size_t earlier = state->renamed_count;
-    read_records(pass, &cursor, parser->registry.count);
+    read_records(pass, &cursor, parser->roster.count);
     name_headings(pass, state->named, headings->count);
     for (size_t i = 0; i < earlier && !parser->error; i++) {
         markdown_core_heading_parse *heading = &headings->values[state->renamed[i]];
@@ -863,7 +863,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     const bool snapshot = parser->snapshot;
-    size_t committed = headings->count, committed_records = parser->registry.count;
+    size_t committed = headings->count, committed_records = parser->roster.count;
     if (snapshot) {
         committed =
             ((const markdown_core_heading_collection *)markdown_core_parser_kept(parser, self, &committed_records))
@@ -884,10 +884,10 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
             return;
         }
     }
-    const markdown_core_registry *registry = &parser->registry;
-    const size_t records = registry->spaces[MARKDOWN_CORE_REGISTRY_ANCHOR].records;
-    markdown_core_registry_cursor cursor = {MARKDOWN_CORE_REGISTRY_ANCHOR, state->records_at,
-                                            records - state->records_read};
+    const markdown_core_roster *roster = &parser->roster;
+    const size_t records = roster->spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records;
+    markdown_core_roster_cursor cursor = {MARKDOWN_CORE_ROSTER_ANCHOR, state->records_at,
+                                          records - state->records_read};
     if (!state->taken.capacity && !markdown_core_key_index_init(&state->taken, headings->count + cursor.left)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -900,7 +900,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     pass.fresh = !snapshot;
     pass.name = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     pass.stack = (anchor_projection_stack){0};
-    read_records(&pass, &cursor, snapshot ? committed_records : registry->count);
+    read_records(&pass, &cursor, snapshot ? committed_records : roster->count);
     state->records_at = cursor.at;
     state->records_read = records - cursor.left;
     name_headings(&pass, state->named, committed);
@@ -952,9 +952,9 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
         markdown_core_chunk *declared = &heading->node->as.heading->label;
         if (!declared->len && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &label, declared) ||
-                !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE, declared->data,
-                                                declared->len, heading->node->place.start)) {
+            if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &label, declared) ||
+                !markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_REFERENCE, declared->data,
+                                              declared->len, heading->node->place.start)) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
         }

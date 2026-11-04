@@ -11,9 +11,9 @@ Closing a heading registers it, so headings register in source order,
 including headings in footnote definitions. A heading is a leaf block, so closure order is source
 order. The parser keeps borrowed node pointers in that order; no final tree
 search or sorting is needed. Each heading whose text is a writable label keeps
-that label, normalized, and declares it in the parse's registry
-(`core/registry.h`) as a reference label, as each `Reference` declares its
-own. Reference parsing asks the registry only whether a label is declared, so
+that label, normalized, and declares it in the parse's roster
+(`core/roster.h`) as a reference label, as each `Reference` declares its
+own. Reference parsing asks the roster only whether a label is declared, so
 it needs no heading-specific case. The published
 document resolves a `reference` destination: to the first `Reference` that
 declares the label or, when none does, to the first heading.
@@ -69,7 +69,7 @@ owns. A reference occurrence holds only the label it names; the anchor it
 leads to is the heading's own, and the heading's attributes stay the
 heading's.
 
-Completion declares effective explicit anchors in the registry at each
+Completion declares effective explicit anchors in the roster at each
 node's ENTER, once the node is complete, while it discovers owned label/title
 fields. A node's attributes are settled by then: a block's as it closes, an
 inline's as its root's content is parsed, and a fence that names a formula
@@ -108,11 +108,11 @@ offset. Missing ranges mean omission. Each scalar needs one lookup, including
 case conversion and whitespace replacement. Its generator verifies both the
 pinned UnicodeData SHA-256 and Node Unicode version. Builds need no download.
 
-A spelling is taken when the registry holds it as an explicit anchor or a
+A spelling is taken when the roster holds it as an explicit anchor or a
 heading before was given it. When some heading's anchor is to be computed,
 finalization's own exact-string index holds both: it first takes every
-explicit anchor, reading the registry's anchor records in log order under the
-registry's copy of their bytes, and then each spelling a heading is given.
+explicit anchor, reading the roster's anchor records in log order under the
+roster's copy of their bytes, and then each spelling a heading is given.
 Each occupied base has one increasing suffix cursor stored directly in its
 index slot. Every candidate, the base first, costs one entry lookup, which
 returns an occupied or a vacant slot; a vacant one the heading is given is
@@ -134,7 +134,7 @@ headings rather than discarded when a value is attached.
 ## Lifetime and bounds
 
 The heading collection and finalization's anchor index borrow nodes and
-strings only until finalization completes; the registry holds its own copy of
+strings only until finalization completes; the roster holds its own copy of
 every label it records. Pending inline states own their temporary parser state.
 Each heading owns its computed anchor and its label, and a reference
 occurrence owns its label, so freeing a heading or a document invalidates no

@@ -12,7 +12,7 @@ static const markdown_core_element *const DOCUMENT_PEERS[] = {[DOCUMENT_HEADING]
 
 /* THE DOCUMENT LIFECYCLE. The document element drives it and owns only the
  * properties grammar's work, its parse record; the definitions the parse
- * declares are the parse's registry (registry.h), and the headings it
+ * declares are the parse's roster (roster.h), and the headings it
  * finalizes are the heading element's state, its peer, which it asks through
  * their lifecycle calls. An element the dialect does not hold has nothing to
  * finalize. */

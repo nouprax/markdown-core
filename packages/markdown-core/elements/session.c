@@ -873,16 +873,16 @@ markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size
     return MARKDOWN_CORE_OK;
 }
 
-/* Declares in `registry` every label `whole` defines: the reference
+/* Declares in `roster` every label `whole` defines: the reference
  * labels its occurrences resolve, its footnotes' and its specimens'. */
-static bool seed_labels(markdown_core_registry *registry, const markdown_core_document *whole) {
+static bool seed_labels(markdown_core_roster *roster, const markdown_core_document *whole) {
     bool ok = true;
     for (size_t i = 0; ok && i < markdown_core_document_reference_label_count(whole); i++) {
         markdown_core_string label;
         const markdown_core_node *target;
         if (markdown_core_document_reference_label_at(whole, i, &label, &target) == MARKDOWN_CORE_OK) {
-            ok = markdown_core_registry_declare(registry, MARKDOWN_CORE_REGISTRY_REFERENCE, label.data,
-                                                (bufsize_t)label.length, 0);
+            ok = markdown_core_roster_declare(roster, MARKDOWN_CORE_ROSTER_REFERENCE, label.data,
+                                              (bufsize_t)label.length, 0);
         }
     }
     for (size_t i = 0; ok && i < markdown_core_document_footnote_count(whole); i++) {
@@ -890,17 +890,17 @@ static bool seed_labels(markdown_core_registry *registry, const markdown_core_do
         markdown_core_optional_string label;
         if (markdown_core_document_footnote_at(whole, i, &node) == MARKDOWN_CORE_OK &&
             markdown_core_footnote_label(node, &label) == MARKDOWN_CORE_OK && label.has_value) {
-            ok = markdown_core_registry_declare(registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, label.value.data,
-                                                (bufsize_t)label.value.length, 0);
+            ok = markdown_core_roster_declare(roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, label.value.data,
+                                              (bufsize_t)label.value.length, 0);
         }
     }
     for (size_t i = 0; ok && i < markdown_core_document_specimen_count(whole); i++) {
         const markdown_core_node *node;
         if (markdown_core_document_specimen_at(whole, i, &node) == MARKDOWN_CORE_OK &&
             node->as.specimen->label.has_value) {
-            ok = markdown_core_registry_declare(registry, MARKDOWN_CORE_REGISTRY_SPECIMEN,
-                                                node->as.specimen->label.value.data, node->as.specimen->label.value.len,
-                                                0);
+            ok =
+                markdown_core_roster_declare(roster, MARKDOWN_CORE_ROSTER_SPECIMEN, node->as.specimen->label.value.data,
+                                             node->as.specimen->label.value.len, 0);
         }
     }
     return ok;
@@ -920,7 +920,7 @@ markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sin
     }
     markdown_core_session session = {0};
     markdown_core_status status = session_open(&session, sink->source, sink->length, unit);
-    if (status == MARKDOWN_CORE_OK && whole && !seed_labels(&session.committed->registry, whole)) {
+    if (status == MARKDOWN_CORE_OK && whole && !seed_labels(&session.committed->roster, whole)) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status == MARKDOWN_CORE_OK) {

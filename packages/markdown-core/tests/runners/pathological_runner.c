@@ -1501,7 +1501,7 @@ static int case_properties_carriage_returns(pc_context *context) {
     return pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph");
 }
 
-/* Registry ------------------------------------------------------------------ */
+/* Roster ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
     const char *name;

@@ -401,7 +401,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
     markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
     markdown_core_chunk label;
-    if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &definition.label, &label)) {
+    if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &definition.label, &label)) {
         lost = 1;
     }
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
@@ -443,8 +443,8 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
      * it was read from, which settles later if anything of it is left. */
     markdown_core_block_settle_before(parser, reference, parent);
     /* The document defines the label from where the definition starts. */
-    if (!parser->error && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE,
-                                                          label.data, label.len, start)) {
+    if (!parser->error &&
+        !markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_REFERENCE, label.data, label.len, start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     return length;
@@ -782,7 +782,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    const markdown_core_registry_record *record = NULL;
+    const markdown_core_roster_record *record = NULL;
     int found_label;
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
@@ -877,14 +877,14 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
         bool failed = false;
-        record = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_REFERENCE,
+        record = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_ROSTER_REFERENCE,
                                                       &raw_label, &failed);
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->label = record ? markdown_core_registry_label(record) : markdown_core_chunk_literal("");
+    candidate->label = record ? markdown_core_roster_label(record) : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
