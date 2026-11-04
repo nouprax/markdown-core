@@ -11286,6 +11286,46 @@ static void session_edits_refresh_storage(test_batch_runner *runner) {
     OK(runner, held && swept, "no edit after a rename that runs out of storage publishes a stale use");
 }
 
+/* An edit reads again only the kept blocks that looked up a label whose
+ * definedness it flipped (THE USES): renaming one of two definitions of a
+ * label rereads no use of it, a new definition rereads no block that only
+ * names its label in code, and deleting a label's only definition turns
+ * its uses back into text. */
+static void session_edits_uses(test_batch_runner *runner) {
+    typedef struct {
+        const char *name, *source;
+        markdown_core_position from, to;
+        const char *text;
+        /* The offset no reading of the edit starts before, or 0. */
+        size_t after;
+    } uses_edit;
+    static const char twice[] = "[r]: /a\n\nuse [r]\n\nmid\n\n`[z]` in code\n\n[r]: /b\n\nend [r]\n";
+    static const char once[] = "[r]: /a\n\nuse [r]\n\nmid\n\nend [r]\n";
+    const uses_edit edits[] = {
+        {"rename a duplicate", twice, {9, 2}, {9, 3}, "q", 18},
+        {"define a label only code names", twice, {12, 1}, {12, 1}, "\n[z]: /x\n", 38},
+        {"delete the only definition", once, {1, 1}, {3, 1}, "", 0},
+    };
+    for (size_t e = 0; e < sizeof(edits) / sizeof(edits[0]); e++) {
+        const uses_edit *edit = &edits[e];
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        bool edited = markdown_core_session_new((const uint8_t *)edit->source, strlen(edit->source),
+                                                MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
+                      markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+                      markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
+                                                 strlen(edit->text), &document) == MARKDOWN_CORE_OK;
+        size_t from = 0, to = 0;
+        if (edited) {
+            markdown_core_session_reread(session, &from, &to);
+        }
+        OK(runner, edited && session_as_parsed(session), "%s reads as a parse does", edit->name);
+        OK(runner, edited && from >= edit->after, "%s reads again from byte %zu, not before %zu", edit->name, from,
+           edit->after);
+        markdown_core_session_close(session);
+    }
+}
+
 /* The allocator sweep of 12.7: an edit refused at each of its allocations
  * in turn either leaves the session as it was or fails it, and the session
  * then frees everything it holds. The edits type into a paragraph and a
@@ -12932,6 +12972,7 @@ int main(void) {
     session_edits(runner);
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);
+    session_edits_uses(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);
     session_edits_compaction(runner);

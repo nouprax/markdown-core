@@ -1957,6 +1957,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
 
 static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
                           const unsigned char *label, bufsize_t size);
+static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry_kind kind, const unsigned char *label,
+                  bufsize_t size);
 
 /* Whether `node`'s completion settles its content: a snapshot's, of a
  * paragraph it lent, read on its own lines, while no candidate waits. */
@@ -2074,14 +2076,14 @@ static inline size_t S_settled_labels(const markdown_core_settled *settled) {
  * for, listed after the settled ones. False when storage could not be
  * had. */
 static bool S_settled_miss(markdown_core_settled *settled, markdown_core_registry_kind kind,
-                           const markdown_core_chunk *label) {
+                           const markdown_core_chunk *label, bool found) {
     markdown_core_settled_miss *misses =
         markdown_core_reserve(settled->misses, &settled->miss_capacity, settled->miss_total + 1, sizeof(*misses));
     if (!misses) {
         return false;
     }
     settled->misses = misses;
-    misses[settled->miss_total++] = (markdown_core_settled_miss){kind, settled->labels.size, label->len};
+    misses[settled->miss_total++] = (markdown_core_settled_miss){kind, settled->labels.size, label->len, found};
     markdown_core_strbuf_put(&settled->labels, label->data, label->len);
     settled->settle.misses++;
     return !settled->labels.oom;
@@ -2101,6 +2103,9 @@ static inline bufsize_t S_content_bytes(const markdown_core_node *node) {
 static bool S_settled_found(markdown_core_parser *parser, const markdown_core_settled *settled) {
     for (size_t i = 0; !parser->snapshot && i < settled->miss_count; i++) {
         const markdown_core_settled_miss *miss = &settled->misses[i];
+        if (miss->found) {
+            continue;
+        }
         const markdown_core_chunk label = {(unsigned char *)settled->labels.ptr + miss->label_start, miss->label_size,
                                            0};
         bool failed = false;
@@ -2137,10 +2142,17 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
     /* A lookup's record keeps where the root lies once its content is read.
      * Only a snapshot's completion records one (markdown_core_parser_find_definition). */
     markdown_core_parser_read_content(parser, node, size);
-    for (size_t i = 0; parser->snapshot && !parser->error && i < settled->miss_count; i++) {
+    for (size_t i = 0; !parser->error && i < settled->miss_count; i++) {
         const markdown_core_settled_miss *miss = &settled->misses[i];
-        if (!S_record_miss(parser, node, miss->kind, (const unsigned char *)settled->labels.ptr + miss->label_start,
-                           miss->label_size)) {
+        const markdown_core_chunk label = {(unsigned char *)settled->labels.ptr + miss->label_start, miss->label_size,
+                                           0};
+        /* A finalize asked again those that found nothing, which noted
+         * their uses (S_settled_found). */
+        const bool kept = !parser->snapshot ? !miss->found || markdown_core_parser_note_use(parser, miss->kind, &label)
+                          : miss->found
+                              ? S_use(parser->stream->edit, node->place.start, miss->kind, label.data, label.len)
+                              : S_record_miss(parser, node, miss->kind, label.data, label.len);
+        if (!kept) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
@@ -2726,6 +2738,130 @@ static inline size_t S_place_start(const markdown_core_place *place) { return pl
 MARKDOWN_CORE_ZIPPER_OPS(S_reach, markdown_core_reach_zipper, markdown_core_place, S_place_flip, S_place_start,
                          S_reach_leave, markdown_core_edit)
 
+/* THE USES ZIPPER (markdown_core_edit, `uses`): the front in order of
+ * where the roots start, but for what the reading of an edit noted since
+ * its reopen, `uses_from` on, which its flush puts in order (S_uses_flush). */
+static inline void S_uses_leave(markdown_core_edit *edit, size_t first) {
+    (void)edit;
+    (void)first;
+}
+
+static inline markdown_core_use S_use_flip(markdown_core_use use, size_t end) {
+    use.start = (uint32_t)(end - use.start);
+    return use;
+}
+
+static inline size_t S_use_start(const markdown_core_use *use) { return use->start; }
+
+MARKDOWN_CORE_ZIPPER_OPS(S_uses, markdown_core_use_zipper, markdown_core_use, S_use_flip, S_use_start, S_uses_leave,
+                         markdown_core_edit)
+
+/* A use of `label`, `size` bytes as written, of `kind`, by the root that
+ * starts at `start`. False when storage could not be had. */
+static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry_kind kind, const unsigned char *label,
+                  bufsize_t size) {
+    const markdown_core_use use = {(uint32_t)start, (uint32_t)edit->use_labels.size, (uint32_t)size, kind};
+    markdown_core_strbuf_put(&edit->use_labels, label, size);
+    /* Room for many uses at the first, rather than growing a few at a time
+     * in the steps that follow. */
+    if (!edit->uses.front.room) {
+        (void)markdown_core_array_reserve(&edit->uses.front, 64);
+    }
+    if (edit->use_labels.oom || !markdown_core_array_push(&edit->uses.front, use)) {
+        return false;
+    }
+    edit->use_live += (size_t)size;
+    return true;
+}
+
+/* The `count` uses of the back nearest the focus go, and their labels'
+ * bytes are dead. */
+static void S_uses_drop(markdown_core_edit *edit, size_t count) {
+    markdown_core_use_zipper *uses = &edit->uses;
+    for (size_t k = 0; k < count; k++) {
+        edit->use_live -= uses->back[uses->back_count - 1 - k].size;
+    }
+    uses->back_count -= count;
+}
+
+bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_registry_kind kind,
+                                   const markdown_core_chunk *label) {
+    /* A committed root's commit noted its uses, which its completion
+     * anew repeats (S_complete_misses). */
+    if (parser->stream->edit->anew) {
+        return true;
+    }
+    return S_use(parser->stream->edit, parser->completing->place.start, kind, label->data, label->len);
+}
+
+static int S_use_order(const void *a, const void *b) {
+    const uint32_t left = ((const markdown_core_use *)a)->start, other = ((const markdown_core_use *)b)->start;
+    return (left > other) - (left < other);
+}
+
+/* The labels the uses hold made again, once more of their bytes are dead
+ * than live: what a reading noted goes on growing them, and what it let go
+ * stays. False when storage could not be had, with the labels as they
+ * were. */
+static bool S_uses_settle(markdown_core_edit *edit) {
+    if ((size_t)edit->use_labels.size <= 2 * edit->use_live + 4096) {
+        return true;
+    }
+    markdown_core_strbuf labels = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_use_zipper *uses = &edit->uses;
+    for (size_t i = 0; i < S_uses_count(uses); i++) {
+        markdown_core_use *use = i < uses->front.count ? &uses->front.values[i]
+                                                       : &uses->back[uses->back_count - 1 - (i - uses->front.count)];
+        markdown_core_strbuf_put(&labels, edit->use_labels.ptr + use->label, (bufsize_t)use->size);
+    }
+    if (labels.oom) {
+        markdown_core_strbuf_free(&labels);
+        return false;
+    }
+    /* The front's entries change in place: no copy of them ahead holds. */
+    markdown_core_ahead_unsettle(&uses->front.ahead, 0);
+    uint32_t at = 0;
+    for (size_t i = 0; i < S_uses_count(uses); i++) {
+        markdown_core_use *use = i < uses->front.count ? &uses->front.values[i]
+                                                       : &uses->back[uses->back_count - 1 - (i - uses->front.count)];
+        use->label = at;
+        at += use->size;
+    }
+    markdown_core_strbuf_free(&edit->use_labels);
+    edit->use_labels = labels;
+    edit->use_live = (size_t)labels.size;
+    return true;
+}
+
+/* THE USES A FLUSH NOTES: what the reading noted put in order, after the
+ * uses before its rest point. The commits noted theirs as they made them
+ * (A LOOKUP THAT FOUND NOTHING), and the finalize those of the roots it
+ * completed first. False when storage could not be had. */
+static bool S_uses_flush(markdown_core_parser *parser) {
+    markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_use_zipper *uses = &edit->uses;
+    /* A reading notes its roots' uses mostly in order. */
+    size_t sorted = edit->uses_from + (uses->front.count > edit->uses_from);
+    while (sorted < uses->front.count && uses->front.values[sorted - 1].start <= uses->front.values[sorted].start) {
+        sorted++;
+    }
+    if (sorted < uses->front.count) {
+        markdown_core_ahead_unsettle(&uses->front.ahead, edit->uses_from);
+        qsort(uses->front.values + edit->uses_from, uses->front.count - edit->uses_from, sizeof(*uses->front.values),
+              S_use_order);
+    }
+    /* A root the reading completed again may start before its rest point,
+     * as a container it reopened does: its uses go among those before. */
+    if (edit->uses_from && edit->uses_from < uses->front.count &&
+        uses->front.values[edit->uses_from - 1].start > uses->front.values[edit->uses_from].start) {
+        const size_t first = S_uses_front_from(uses, uses->front.values[edit->uses_from].start);
+        markdown_core_ahead_unsettle(&uses->front.ahead, first);
+        qsort(uses->front.values + first, uses->front.count - first, sizeof(*uses->front.values), S_use_order);
+    }
+    edit->uses_from = uses->front.count;
+    return S_uses_settle(edit);
+}
+
 /* The lines of the input from `line` on go. */
 static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) {
     S_lines_truncate(&input->lines, line, input);
@@ -2791,7 +2927,8 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
         }
         edit->children = children;
     }
-    if (!S_lines_ready(&input->lines, start, input->size) || !S_reach_ready(&stream->reach, start, input->size)) {
+    if (!S_lines_ready(&input->lines, start, input->size) || !S_reach_ready(&stream->reach, start, input->size) ||
+        !S_uses_ready(&edit->uses, start, input->size)) {
         return false;
     }
     S_release_tail(parser);
@@ -2802,6 +2939,8 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
      * on, or up to it. */
     (void)S_lines_move(&input->lines, start, input->size, input);
     (void)S_reach_move(&stream->reach, start, input->size, edit);
+    (void)S_uses_move(&edit->uses, start, input->size, edit);
+    edit->uses_from = edit->uses.front.count;
     assert(input->lines.front.count == line || start == input->scanned);
     edit->line = line;
     edit->count = count;
@@ -2902,6 +3041,9 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     S_lines_release_back(&input->lines);
     assert(!parser->stream->reach.back_count);
     S_reach_release_back(&parser->stream->reach);
+    assert(!edit->uses.back_count);
+    markdown_core_array_shrink(&edit->uses.front);
+    S_uses_release_back(&edit->uses);
     markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
@@ -3169,6 +3311,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->count = 0;
         stream->edit->back_count = 0;
         input->lines.back_count = stream->reach.back_count = 0;
+        S_uses_drop(stream->edit, stream->edit->uses.back_count);
     }
     S_edit_next(stream->edit, &input->lines);
     return true;
@@ -3223,8 +3366,10 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     input->lines.back_count -= gone;
     edit->line = index;
     (void)S_reach_cut(&stream->reach, old);
+    S_uses_drop(edit, S_uses_back_from(&edit->uses, old));
     input->lines.end = (size_t)((int64_t)input->lines.end + delta);
     stream->reach.end = (size_t)((int64_t)stream->reach.end + delta);
+    edit->uses.end = (size_t)((int64_t)edit->uses.end + delta);
     /* The children join the root, which owns them once the document took
      * them from its records. */
     const uint32_t tail = root->child_count;
@@ -3480,8 +3625,31 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser) {
 
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return parser->stream->edit->tail; }
 
-bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, size_t start,
-                                         markdown_core_strbuf *altered) {
+/* Whether the key `key`, `size` bytes with its kind's byte, which the
+ * reading from `start` up to `to` declared and the old text it replaced did
+ * not (`made`), or the other way round, is now declared, or not, where it
+ * was not, or was, before: the answer of a lookup of it flips only then. A
+ * key the reading made was declared before when a declaration outside what
+ * it read declares it now; one it lost is declared now when any does. */
+static bool S_label_flips(markdown_core_parser *parser, const unsigned char *key, bufsize_t size, bool made,
+                          uint32_t start, uint32_t to, bool *failed) {
+    const markdown_core_registry_record *record =
+        markdown_core_registry_find(&parser->registry, (markdown_core_registry_kind)key[0], key + 1, size - 1, failed);
+    if (*failed) {
+        return true;
+    }
+    if (!made) {
+        return !record;
+    }
+    for (; record; record = record->previous ? parser->registry.records[record->previous - 1] : NULL) {
+        if (!record->withdraws && (record->start < start || record->start >= to)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered) {
     const markdown_core_edit *edit = parser->stream->edit;
     const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
     markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
@@ -3498,12 +3666,16 @@ bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, siz
             const bufsize_t common = left_size < other_size ? left_size : other_size;
             order = memcmp(made.ptr + left, lost.ptr + other, (size_t)common);
         }
-        if (order < 0) {
-            markdown_core_strbuf_put(altered, made.ptr + left, left_size);
-            left += left_size;
-        } else if (order > 0) {
-            markdown_core_strbuf_put(altered, lost.ptr + other, other_size);
-            other += other_size;
+        if (order) {
+            const unsigned char *key = order < 0 ? made.ptr + left : lost.ptr + other;
+            const bufsize_t size = order < 0 ? left_size : other_size;
+            bool failed = false;
+            if (S_label_flips(parser, key, size - 1, order < 0, (uint32_t)start, to, &failed)) {
+                markdown_core_strbuf_put(altered, key, size);
+            }
+            ok = !failed;
+            left += order < 0 ? left_size : 0;
+            other += order > 0 ? other_size : 0;
         } else {
             left += left_size;
             other += other_size;
@@ -3512,6 +3684,84 @@ bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, siz
     markdown_core_strbuf_free(&made);
     markdown_core_strbuf_free(&lost);
     return ok && !altered->oom;
+}
+
+/* Whether `key`, `size` bytes with its NUL, is one of the `altered` keys,
+ * `offsets` the start of each, in byte order. */
+static bool S_altered_holds(const markdown_core_strbuf *altered, const bufsize_t *offsets, size_t count,
+                            const unsigned char *key, bufsize_t size) {
+    size_t low = 0, high = count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        const unsigned char *probe = altered->ptr + offsets[middle];
+        const bufsize_t probe_size = (bufsize_t)strlen((const char *)probe) + 1;
+        const int order = memcmp(probe, key, (size_t)(probe_size < size ? probe_size : size));
+        if (!order && probe_size == size) {
+            return true;
+        }
+        if (order < 0 || (!order && probe_size < size)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return false;
+}
+
+bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
+                                  const size_t *spans, size_t count, size_t **places, size_t *place_count) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    const markdown_core_use_zipper *uses = &edit->uses;
+    *places = NULL;
+    *place_count = 0;
+    size_t room = 0, key_count = 0, key_room = 0;
+    bufsize_t *offsets = NULL;
+    bool ok = true;
+    for (bufsize_t item = 0; ok && item < altered->size;) {
+        bufsize_t *more = markdown_core_reserve(offsets, &key_room, key_count + 1, sizeof(*more));
+        ok = more != NULL;
+        if (ok) {
+            offsets = more;
+            offsets[key_count++] = item;
+            item += (bufsize_t)strlen((const char *)altered->ptr + item) + 1;
+        }
+    }
+    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
+    for (size_t pair = 0; ok && pair < count; pair++) {
+        for (size_t i = S_uses_from(uses, spans[2 * pair]);
+             ok && i < S_uses_count(uses) && S_uses_start(uses, i) < spans[2 * pair + 1]; i++) {
+            const markdown_core_use use = S_uses_at(uses, i);
+            const unsigned char *label = edit->use_labels.ptr + use.label;
+            markdown_core_strbuf_clear(&key);
+            markdown_core_strbuf_putc(&key, (int)use.kind);
+            if (use.kind == MARKDOWN_CORE_REGISTRY_SPECIMEN) {
+                markdown_core_strbuf_put(&key, label, (bufsize_t)use.size);
+            } else {
+                markdown_core_utf8proc_normalize_label(&key, label, (bufsize_t)use.size);
+            }
+            markdown_core_strbuf_putc(&key, 0);
+            ok = !key.oom;
+            const size_t place = (size_t)use.start + 1;
+            if (!ok || (*place_count && (*places)[*place_count - 1] == place) ||
+                !S_altered_holds(altered, offsets, key_count, key.ptr, key.size)) {
+                continue;
+            }
+            size_t *more = markdown_core_reserve(*places, &room, *place_count + 1, sizeof(*more));
+            ok = more != NULL;
+            if (ok) {
+                *places = more;
+                (*places)[(*place_count)++] = place;
+            }
+        }
+    }
+    markdown_core_strbuf_free(&key);
+    markdown_core_free(offsets);
+    if (!ok) {
+        markdown_core_free(*places);
+        *places = NULL;
+        *place_count = 0;
+    }
+    return ok;
 }
 
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
@@ -3577,6 +3827,7 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
         return false;
     }
     markdown_core_registry_init(&edit->registry);
+    edit->use_labels = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     edit->point = SIZE_MAX;
     stream->edit = edit;
     /* Room for the log up front, so a step it grows in pays no
@@ -3970,6 +4221,9 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->furthest);
         markdown_core_free(stream->edit->room);
         markdown_core_registry_free(&stream->edit->registry);
+        markdown_core_array_free(&stream->edit->uses.front);
+        S_uses_release_back(&stream->edit->uses);
+        markdown_core_strbuf_free(&stream->edit->use_labels);
         markdown_core_free(stream->edit);
     }
     markdown_core_settled *settled = &stream->settled;
@@ -7049,20 +7303,26 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
                                                                            const markdown_core_registry_record *record,
                                                                            bool *failed) {
     markdown_core_node *root = parser->completing;
-    if (record && markdown_core_registry_starts_before(record, root->place.start)) {
+    const bool found = record && markdown_core_registry_starts_before(record, root->place.start);
+    /* A parse that takes edits lists what found a definition too: each is
+     * a use of its label (markdown_core_edit, `uses`). */
+    if (found && !parser->stream->edit) {
         return record;
     }
     /* Only a committed root is asked again: a snapshot's own are gone with
      * it, but for the lookups of the open paragraph it settles, whose
      * settled nodes stay (THE SETTLE POINT). */
     if (!(root->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-        if (root == parser->stream->settled.root && !S_settled_miss(&parser->stream->settled, kind, label)) {
+        if (root == parser->stream->settled.root && !S_settled_miss(&parser->stream->settled, kind, label, found)) {
             *failed = true;
         }
-        return NULL;
+        return found ? record : NULL;
     }
-    *failed = !S_record_miss(parser, root, kind, label->data, label->len);
-    return NULL;
+    /* A committed root's lookup that found a definition is a use now: no
+     * finalize asks it again. */
+    *failed = found ? !S_use(parser->stream->edit, root->place.start, kind, label->data, label->len)
+                    : !S_record_miss(parser, root, kind, label->data, label->len);
+    return found && !*failed ? record : NULL;
 }
 
 /* A lookup of the committed root `root` that found nothing for `label`, of
@@ -7081,7 +7341,11 @@ static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root
     misses[parser->stream->miss_count++] = (markdown_core_definition_miss){parser->stream->miss_root_count - 1, kind,
                                                                            parser->stream->miss_labels.size, size};
     markdown_core_strbuf_put(&parser->stream->miss_labels, label, size);
-    return !parser->stream->miss_labels.oom;
+    /* A parse that takes edits keeps it as a use too, in the order of the
+     * commits, which is where the roots start: a finalize that completes
+     * the root again looks the same labels up. */
+    return !parser->stream->miss_labels.oom &&
+           (!parser->stream->edit || S_use(parser->stream->edit, root->place.start, kind, label, size));
 }
 
 /* The nodes of what completion made of a root, gathered as their anchors
@@ -7248,9 +7512,16 @@ static void S_complete_misses(markdown_core_parser *parser) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    markdown_core_edit *const edit = parser->stream->edit;
+    if (edit) {
+        edit->anew = true;
+    }
     size_t count = 0;
     for (size_t miss = 0, record = 0; record < parser->stream->miss_root_count && !parser->error; record++) {
         bool found = false;
+        /* The lookups asked again are no root's to note: the commits noted
+         * them (S_record_miss). */
+        parser->completing = NULL;
         for (; miss < parser->stream->miss_count && parser->stream->misses[miss].root == record; miss++) {
             const markdown_core_definition_miss *at = &parser->stream->misses[miss];
             const markdown_core_chunk label = {parser->stream->miss_labels.ptr + at->label_start, at->label_length, 0};
@@ -7280,6 +7551,9 @@ static void S_complete_misses(markdown_core_parser *parser) {
         markdown_core_node_pool_release(parser->pool, anew[placed].candidate);
     }
     markdown_core_free(anew);
+    if (edit) {
+        edit->anew = false;
+    }
     if (!parser->error && count) {
         S_keep_defined(parser);
     }
@@ -7524,10 +7798,14 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             }
         }
     }
+    if (edit && !parser->snapshot && !parser->error && !S_uses_flush(parser)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     if (edit) {
         /* A reading that took nothing back read every line of the text. */
         if (!edit->resumed) {
             parser->input.lines.back_count = parser->stream->reach.back_count = 0;
+            S_uses_drop(edit, edit->uses.back_count);
         }
         edit->reading = false;
         edit->count = 0;

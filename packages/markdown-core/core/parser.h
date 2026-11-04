@@ -384,10 +384,12 @@ typedef struct markdown_core_inline_settle {
 } markdown_core_inline_settle;
 
 /* A lookup a snapshot's reading of an open paragraph found nothing for: its
- * kind and its label, at `label_start` in the settled labels. */
+ * kind and its label, at `label_start` in the settled labels; or, in a
+ * parse that takes edits, one that found a definition, `found`. */
 typedef struct {
     markdown_core_registry_kind kind;
     bufsize_t label_start, label_size;
+    bool found;
 } markdown_core_settled_miss;
 
 /* THE SETTLED NODES OF AN OPEN PARAGRAPH (blocks.c, THE SETTLE POINT): the
@@ -602,6 +604,16 @@ typedef struct markdown_core_back_child {
     uint32_t level, prior, start, end;
 } markdown_core_back_child;
 
+/* A USE OF A LABEL (markdown_core_edit, `uses`): where the inline root
+ * whose completion looked the label up starts, and the lookup's kind and
+ * label, as written, `size` bytes at `label` in the edit's `use_labels`. */
+typedef struct markdown_core_use {
+    uint32_t start, label, size;
+    markdown_core_registry_kind kind;
+} markdown_core_use;
+
+typedef MARKDOWN_CORE_ZIPPER(markdown_core_use) markdown_core_use_zipper;
+
 typedef struct markdown_core_edit {
     struct markdown_core_node **children;
     size_t children_capacity;
@@ -647,6 +659,20 @@ typedef struct markdown_core_edit {
     markdown_core_place *room;
     size_t room_capacity;
     markdown_core_registry registry;
+    /* THE USES (blocks.c): every definition lookup the completion of the
+     * document's inline roots made, in order of where the roots start, a
+     * zipper whose focus is the rest point. A block an edit keeps reads as
+     * it did unless one of its labels is declared now and was not, or the
+     * other way round: its uses say which blocks read such a label. The
+     * labels are kept as written, in `use_labels`; the reading of an edit
+     * notes its own from `uses_from` on, which its flush puts in order, and
+     * `use_live` is how many bytes of the labels the uses hold. */
+    markdown_core_use_zipper uses;
+    markdown_core_strbuf use_labels;
+    size_t uses_from, use_live;
+    /* While the finalize completes anew the roots whose misses now find a
+     * definition, whose commits noted their uses. */
+    bool anew;
     /* The old tail's children no record holds yet, nor the root, the
      * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
      * them go when it fails before its publish. */
@@ -1563,6 +1589,11 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
                                                                            const markdown_core_chunk *label,
                                                                            const markdown_core_registry_record *record,
                                                                            bool *failed);
+/* A lookup a finalize's completion made, of `kind` and `label` as written,
+ * noted as a use of the root being completed. False when storage could not
+ * be had. */
+bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_registry_kind kind,
+                                   const markdown_core_chunk *label);
 static inline const markdown_core_registry_record *
 markdown_core_parser_find_definition(markdown_core_parser *parser, markdown_core_registry_kind kind,
                                      const markdown_core_chunk *label, bool *failed) {
@@ -1570,8 +1601,15 @@ markdown_core_parser_find_definition(markdown_core_parser *parser, markdown_core
         kind == MARKDOWN_CORE_REGISTRY_SPECIMEN
             ? markdown_core_registry_find(&parser->registry, kind, label->data, label->len, failed)
             : markdown_core_registry_find_label(&parser->registry, kind, label, failed);
-    return parser->snapshot && !*failed ? markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed)
-                                        : record;
+    if (parser->snapshot && !*failed) {
+        return markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed);
+    }
+    if (!*failed && parser->stream && parser->stream->edit && parser->completing &&
+        !markdown_core_parser_note_use(parser, kind, label)) {
+        *failed = true;
+        return NULL;
+    }
+    return record;
 }
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
@@ -1660,8 +1698,14 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
  * other way round. The children before and after keep their declarations,
  * so only a lookup of these keys may answer otherwise. False when storage
  * could not be had. */
-bool markdown_core_parser_altered_labels(const markdown_core_parser *parser, size_t start,
-                                         markdown_core_strbuf *altered);
+bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered);
+/* THE USES OF ALTERED LABELS (markdown_core_edit, `uses`): one past where
+ * each inline root starts that looked up one of the `altered` keys, as
+ * markdown_core_parser_altered_labels writes them, and lies in one of the
+ * `count` spans of the text, pairs of offsets, in order and each once, in
+ * `*places`, which the caller frees. False when storage could not be had. */
+bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
+                                  const size_t *spans, size_t count, size_t **places, size_t *place_count);
 /* Where the text an edit's back is measured from ends (THE BACK). */
 static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
     return (uint32_t)parser->input.lines.end;

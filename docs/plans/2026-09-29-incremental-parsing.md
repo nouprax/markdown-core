@@ -1241,16 +1241,23 @@ The edit runs in five steps:
     keys that the declarations of the re-read range hold and those of the
     old text it replaced do not, or the other way round
     (`markdown_core_parser_altered_labels`); the declarations before and
-    after the re-read range are not sorted or compared. The filter folds the run after
-    each opener, past white space and up to white space, at most four times
-    the first word's bytes, once, and looks its prefixes up among the
-    altered first words, sorted. The hits are read again in at most eight
-    readings, parted at the widest gaps between them: each reads as an
-    edit of nothing just past its first hit, and takes no old child back
-    before its last, so every node keeps its identity and a label that
-    thousands of blocks name costs no more than reading the text once.
-    The edit reports the union of what it read. The hard cases of 12.7 bound it: a plain
-    paragraph after the uses is not read again.
+    after the re-read range are not sorted or compared.
+    Since the dependency-edge PR (2026-11-03, docs/plans in the project
+    files: edit-state-audit.md, R3) only a key whose definedness flips is
+    altered: a kept root's lookup answers by the label's definedness, and the
+    reference targets are a table looked up by label, so a new winner of a
+    label that stays declared changes no kept root. A key the reading made
+    flips when no declaration outside the reading declares it; one it lost
+    flips when no declaration is left. The byte filter is gone: a session
+    keeps every inline root's lookups, found or not, as its uses
+    (`markdown_core_edit`, `uses`, a zipper keyed by where the root starts),
+    and the roots that used an altered key are read again
+    (`markdown_core_parser_uses_of`), in at most eight readings, parted at
+    the widest gaps between them: each reads as an edit of nothing just past
+    its first root's start, and takes no old child back before its last, so
+    every node keeps its identity. The edit reports the union of what it
+    read. Renaming one of 53 definitions of a label in a 256 KB text read
+    the whole text (111M Ir) and now reads the one definition (3.8M Ir).
   - **Anchors.** If a heading or an explicit anchor changed, reassign the
     automatic anchors by `main`'s rule. This is O(headings) and parses
     nothing. A heading whose anchor changes keeps its id.
@@ -1411,7 +1418,9 @@ list of 10,000 items, it is about 10,000 pointer copies.
   and takes edits only after it. The owner: "我们显然streaming的时候不能编辑，编辑的时候不能streaming，session的复制本身就是个伪命题".
 - **E-D2 Definition changes. Decided 2026-10-27: the byte filter on the edit
   path.** Rejected: recording every lookup on the parse path, which was part
-  of what made #432 1.7 times slower.
+  of what made #432 1.7 times slower. Revised 2026-11-03 (owner chose the
+  dependency edges of the edit state audit): a session records its lookups
+  as uses, a one-shot parse records none, and the stream gate holds.
 - **E-D3 Candidate log. Decided 2026-10-27:** two integers per candidate on
   the parse path, gated as noise.
 - **E-D4 Compaction. Decided 2026-10-27:** parse the whole text again when
