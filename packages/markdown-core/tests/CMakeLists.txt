@@ -518,6 +518,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     tables
     reference_collisions
     duplicate_definitions_edit
+    shared_anchor_completions
     reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes

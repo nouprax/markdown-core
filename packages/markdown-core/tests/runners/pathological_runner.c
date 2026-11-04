@@ -978,6 +978,34 @@ static int case_duplicate_definitions_edit(pc_context *context) {
     return result;
 }
 
+/* A definition that comes after many roots that looked its label up and
+ * that share one anchor: the finalize completes every root anew, which
+ * withdraws its anchor and reserves it again, in the order of the text.
+ * Each search of the anchor's declarations begins beside the last one the
+ * search touched. Beginning at the list's end took 12.5 seconds at 64000
+ * roots in a release build. */
+static int case_shared_anchor_completions(pc_context *context) {
+    enum { ROOTS = 64000 };
+    if (pc_build(context, NULL, "[text][x]{#a}\n\n", ROOTS, NULL) != 0) {
+        return -1;
+    }
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    if (markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) != MARKDOWN_CORE_OK) {
+        return -1;
+    }
+    int result = -1;
+    if (markdown_core_session_append(session, (const uint8_t *)"[x]: /u\n", 8, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, ROOTS, "Link") == 0) {
+        result = 0;
+    }
+    markdown_core_session_close(session);
+    return result;
+}
+
 static int case_reference_collisions(pc_context *context) {
     enum { COLLISIONS = 50000 };
     char bad_key[32] = "";
@@ -1518,6 +1546,7 @@ static const pc_case_entry PC_CASES[] = {
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
     {"duplicate_definitions_edit", case_duplicate_definitions_edit},
+    {"shared_anchor_completions", case_shared_anchor_completions},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"dump_deep_nesting", case_dump_deep_nesting},
     {"dump_wide_siblings", case_dump_wide_siblings},

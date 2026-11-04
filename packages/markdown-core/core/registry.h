@@ -71,11 +71,12 @@ typedef enum {
 
 typedef struct markdown_core_registry_record {
     /* A declaration the index holds: the key's declarations before and
-     * after it in its list; and, in the list's first, its last, and
-     * `bound`, a declaration of the list near the front's last, or NULL,
-     * where a declaration of the front begins its search. A withdrawal:
-     * the declaration it withdrew, in `before`. */
-    struct markdown_core_registry_record *before, *after, *last, *bound;
+     * after it in its list; and, in the list's first, its last, `bound`, a
+     * declaration of the list near the front's last, or NULL, and `hint`,
+     * the declaration the list last took or one beside the last it let go,
+     * where a search of the list begins (S_link). A withdrawal: the
+     * declaration it withdrew, in `before`. */
+    struct markdown_core_registry_record *before, *after, *last, *bound, *hint;
     /* Where the declaring or withdrawing definition starts: in the text, or
      * measured back from the end when the record is in the back. */
     uint32_t start;

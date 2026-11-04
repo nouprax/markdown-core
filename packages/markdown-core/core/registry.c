@@ -116,13 +116,17 @@ static inline bool S_precedes(const markdown_core_registry_record *left, const m
 }
 
 /* The declaration joins its key's list in `slot`, an entry of the index
- * that `markdown_core_key_index_entry` found, from the list's end. */
+ * that `markdown_core_key_index_entry` found. Its search begins at the
+ * list's hint, the declaration the list last took or let go near, and walks
+ * whichever way its place lies: a parse declares and withdraws a key's
+ * declarations mostly in the order of the text, and an edit's reading its
+ * own past those before its rest point, so the walk is short. */
 static void S_link(markdown_core_registry *registry, markdown_core_key_index_slot *slot,
                    markdown_core_registry_record *record) {
     record->linked = true;
     record->before = record->after = NULL;
     if (!slot->key) {
-        record->last = record;
+        record->last = record->hint = record;
         record->bound = record->back ? NULL : record;
         markdown_core_key_index_commit(&registry->index, slot, record->key);
         slot->value = (size_t)record;
@@ -130,30 +134,24 @@ static void S_link(markdown_core_registry *registry, markdown_core_key_index_slo
         return;
     }
     markdown_core_registry_record *first = (markdown_core_registry_record *)slot->value;
-    markdown_core_registry_record *at = first->last;
-    if (!record->back) {
-        /* A declaration of the front searches from the front's last, which
-         * the bound is near: a move of the focus may have taken it, or those
-         * after it, to the other part since. The back it never walks. */
-        at = first->bound ? first->bound : (first->back ? NULL : first);
-        while (at && at->back) {
-            at = at->before;
-        }
-        while (at && at->after && !at->after->back) {
+    markdown_core_registry_record *at = first->hint ? first->hint : first->last;
+    if (!S_precedes(record, at)) {
+        while (at->after && !S_precedes(record, at->after)) {
             at = at->after;
         }
-    }
-    while (at && S_precedes(record, at)) {
-        at = at->before;
+    } else {
+        while (at && S_precedes(record, at)) {
+            at = at->before;
+        }
     }
     slot->extra++;
-    record->bound = NULL;
+    record->bound = record->hint = NULL;
     if (!at) {
         record->after = first;
         record->last = first->last;
         record->bound = first->bound;
         first->before = record;
-        first->last = first->bound = NULL;
+        first->last = first->bound = first->hint = NULL;
         slot->value = (size_t)record;
         slot->key = record->key;
         first = record;
@@ -168,6 +166,7 @@ static void S_link(markdown_core_registry *registry, markdown_core_key_index_slo
         }
         at->after = record;
     }
+    first->hint = record;
     if (!record->back && (!record->after || record->after->back)) {
         first->bound = record;
     }
@@ -186,11 +185,14 @@ static void S_unlink(markdown_core_registry *registry, markdown_core_registry_re
     if (first->bound == record) {
         first->bound = record->before;
     }
+    /* The next search of the list is likely near the one that went. */
+    first->hint = record->before ? record->before : record->after;
     if (record == first) {
         markdown_core_registry_record *next = first->after;
         next->before = NULL;
         next->last = first->last;
         next->bound = first->bound;
+        next->hint = first->hint;
         slot->value = (size_t)next;
         slot->key = next->key;
         return;
@@ -321,14 +323,21 @@ bool markdown_core_registry_withdraw(markdown_core_registry *registry, markdown_
         markdown_core_key_index_find(&registry->index, registry->key.ptr, registry->key.size);
     assert(slot);
     /* The declaration that starts where the withdrawal does, the last of
-     * them; or, when none does, the key's last. */
-    markdown_core_registry_record *first = (markdown_core_registry_record *)slot->value, *withdrawn = first->last;
-    for (markdown_core_registry_record *at = first->last; at; at = at->before) {
-        if (markdown_core_registry_start(registry, at) == start) {
-            withdrawn = at;
-            break;
+     * them; or, when none does, the key's last. The list is in order of
+     * where they start: the search walks from its hint (S_link). */
+    markdown_core_registry_record *first = (markdown_core_registry_record *)slot->value;
+    markdown_core_registry_record *at = first->hint ? first->hint : first->last;
+    if (markdown_core_registry_start(registry, at) <= start) {
+        while (at->after && markdown_core_registry_start(registry, at->after) <= start) {
+            at = at->after;
+        }
+    } else {
+        while (at && markdown_core_registry_start(registry, at) > start) {
+            at = at->before;
         }
     }
+    markdown_core_registry_record *withdrawn =
+        at && markdown_core_registry_start(registry, at) == start ? at : first->last;
     const uint32_t live = (uint32_t)slot->extra - 1;
     if (!S_append(registry, kind, label, length, start, true)) {
         return false;
@@ -566,7 +575,9 @@ static bool S_place(markdown_core_registry *registry) {
          * log does only within a block; the parse makes most in order of
          * where they start, which the sort then keeps. */
         markdown_core_ahead_unsettle(&places->front.ahead, 0);
-        qsort(places->front.values, places->front.count, sizeof(*places->front.values), S_place_order);
+        if (places->front.count > 1) {
+            qsort(places->front.values, places->front.count, sizeof(*places->front.values), S_place_order);
+        }
     }
     registry->placed = true;
     return true;
