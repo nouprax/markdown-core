@@ -3044,6 +3044,7 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     assert(!edit->uses.back_count);
     markdown_core_array_shrink(&edit->uses.front);
     S_uses_release_back(&edit->uses);
+    (void)markdown_core_registry_compact(&parser->registry);
     markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
@@ -3206,8 +3207,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit->depth = depth;
     if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
-        !markdown_core_registry_keep_before(&parser->registry, (uint32_t)start, (uint32_t)input->lines.end,
-                                            &stream->edit->registry)) {
+        !markdown_core_registry_reopen(&parser->registry, (uint32_t)start, input->lines.end)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -3312,6 +3312,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->back_count = 0;
         input->lines.back_count = stream->reach.back_count = 0;
         S_uses_drop(stream->edit, stream->edit->uses.back_count);
+        markdown_core_registry_splice(&parser->registry, SIZE_MAX, 0);
     }
     S_edit_next(stream->edit, &input->lines);
     return true;
@@ -3367,6 +3368,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     edit->line = index;
     (void)S_reach_cut(&stream->reach, old);
     S_uses_drop(edit, S_uses_back_from(&edit->uses, old));
+    markdown_core_registry_splice(&parser->registry, old, delta);
     input->lines.end = (size_t)((int64_t)input->lines.end + delta);
     stream->reach.end = (size_t)((int64_t)stream->reach.end + delta);
     edit->uses.end = (size_t)((int64_t)edit->uses.end + delta);
@@ -3397,10 +3399,6 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     edit->lead = (int64_t)before + delta - (int64_t)joined;
     edit->point = SIZE_MAX;
 
-    if (!markdown_core_registry_take(&parser->registry, &edit->registry, (uint32_t)start, (uint32_t)input->lines.end)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
     input->scanned = input->size;
     input->complete = (size_t)((int64_t)edit->complete + delta);
     input->last_line_ready = false;
@@ -3633,28 +3631,20 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return 
  * it read declares it now; one it lost is declared now when any does. */
 static bool S_label_flips(markdown_core_parser *parser, const unsigned char *key, bufsize_t size, bool made,
                           uint32_t start, uint32_t to, bool *failed) {
-    const markdown_core_registry_record *record =
-        markdown_core_registry_find(&parser->registry, (markdown_core_registry_kind)key[0], key + 1, size - 1, failed);
-    if (*failed) {
-        return true;
-    }
+    const markdown_core_registry_kind kind = (markdown_core_registry_kind)key[0];
     if (!made) {
-        return !record;
+        return !markdown_core_registry_find(&parser->registry, kind, key + 1, size - 1, failed) && !*failed;
     }
-    for (; record; record = record->previous ? parser->registry.records[record->previous - 1] : NULL) {
-        if (!record->withdraws && (record->start < start || record->start >= to)) {
-            return false;
-        }
-    }
-    return true;
+    return !markdown_core_registry_declared_outside(&parser->registry, kind, key + 1, size - 1, start, to, failed) &&
+           !*failed;
 }
 
 bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered) {
     const markdown_core_edit *edit = parser->stream->edit;
     const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
     markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
-    bool ok = markdown_core_registry_labels_within(&parser->registry, (uint32_t)start, to, 0, &made) &&
-              markdown_core_registry_labels_within(&edit->registry, 0, to, (uint32_t)parser->input.lines.end, &lost);
+    bool ok = markdown_core_registry_made(&parser->registry, (uint32_t)start, &made) &&
+              markdown_core_registry_lost(&parser->registry, &lost);
     markdown_core_strbuf_clear(altered);
     /* Both are in byte order: a merge keeps what one holds and the other
      * does not. */
@@ -3826,7 +3816,6 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     if (!edit) {
         return false;
     }
-    markdown_core_registry_init(&edit->registry);
     edit->use_labels = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     edit->point = SIZE_MAX;
     stream->edit = edit;
@@ -4220,7 +4209,6 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->backs);
         markdown_core_free(stream->edit->furthest);
         markdown_core_free(stream->edit->room);
-        markdown_core_registry_free(&stream->edit->registry);
         markdown_core_array_free(&stream->edit->uses.front);
         S_uses_release_back(&stream->edit->uses);
         markdown_core_strbuf_free(&stream->edit->use_labels);
@@ -7303,7 +7291,7 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
                                                                            const markdown_core_registry_record *record,
                                                                            bool *failed) {
     markdown_core_node *root = parser->completing;
-    const bool found = record && markdown_core_registry_starts_before(record, root->place.start);
+    const bool found = record && markdown_core_registry_starts_before(&parser->registry, record, root->place.start);
     /* A parse that takes edits lists what found a definition too: each is
      * a use of its label (markdown_core_edit, `uses`). */
     if (found && !parser->stream->edit) {
@@ -7806,6 +7794,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         if (!edit->resumed) {
             parser->input.lines.back_count = parser->stream->reach.back_count = 0;
             S_uses_drop(edit, edit->uses.back_count);
+            markdown_core_registry_splice(&parser->registry, SIZE_MAX, 0);
         }
         edit->reading = false;
         edit->count = 0;

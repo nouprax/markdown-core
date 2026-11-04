@@ -3379,7 +3379,8 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
     const markdown_core_registry_record *record =
         markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
     OK(runner,
-       record && !markdown_core_registry_starts_before(record, 40) && markdown_core_registry_starts_before(record, 41),
+       record && !markdown_core_registry_starts_before(&registry, record, 40) &&
+           markdown_core_registry_starts_before(&registry, record, 41),
        "a declaration starts where its definition starts");
     OK(runner,
        markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 90) &&
@@ -3387,69 +3388,69 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
        "the key is declared twice more");
     record = markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
     OK(runner,
-       record && record->start == 10 && markdown_core_registry_starts_before(record, 11) &&
-           !markdown_core_registry_starts_before(record, 10),
-       "the latest record answers for the earliest start of its key");
+       record && record->start == 10 && markdown_core_registry_starts_before(&registry, record, 11) &&
+           !markdown_core_registry_starts_before(&registry, record, 10),
+       "the key's earliest declaration answers");
     markdown_core_registry_mark mark = markdown_core_registry_mark_now(&registry);
     OK(runner, markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 2),
        "a declaration after the mark");
     markdown_core_registry_rollback(&registry, mark);
     record = markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
-    OK(runner, record && record->start == 10 && !markdown_core_registry_starts_before(record, 10),
+    OK(runner, record && record->start == 10 && !markdown_core_registry_starts_before(&registry, record, 10),
        "a rollback takes the earlier start back with the record");
     OK(runner, !failed, "and no lookup failed");
     markdown_core_registry_free(&registry);
 }
 
-/* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- the records as
- * a plain array, every answer computed by scanning it -- is driven through
- * the same random declarations, withdrawals, marks and rollbacks, and after
- * a random third of the steps every key of a random set of the kinds is
- * compared: whether it is declared, its latest record, its earliest start
- * and how many of its declarations stand. The index takes a kind's records
- * only when a lookup or a withdrawal of that kind asks, so the steps between
- * two comparisons, and the kinds a comparison skips, leave records it never
- * took, and the rollbacks pop records it took and records it did not. Labels come from a small set, so keys are
- * declared again and again, and from a growing one, so the index grows and removals cross the slots growth moved. A
- * rollback to the first mark releases every block the records were carved from. */
+/* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- each key's
+ * declarations that stand, as a list of where they start, and every step
+ * that changed one, which a rollback undoes newest first -- is driven
+ * through the same random declarations, withdrawals, marks and rollbacks,
+ * and after a random third of the steps every key of a random set of the
+ * kinds is compared: whether it is declared, where its earliest declaration
+ * starts and how many of its declarations stand. A withdrawal withdraws the
+ * declaration that starts where it does, or the key's last when none does.
+ * The index takes a kind's records only when a lookup or a withdrawal of
+ * that kind asks, so the steps between two comparisons, and the kinds a
+ * comparison skips, leave records it never took, and the rollbacks pop
+ * records it took and records it did not. Labels come from a small set, so
+ * keys are declared again and again, and from a growing one, so the index
+ * grows and removals cross the slots growth moved. A rollback to the first
+ * mark releases every block the records were carved from. */
 typedef struct {
-    markdown_core_registry_kind kind;
-    unsigned label;
+    uint32_t *starts;
+    size_t count, capacity;
+} registry_model_key;
+
+/* A step of the model: what it declared, or the start it withdrew. */
+typedef struct {
+    unsigned kind, label;
     uint32_t start;
     bool withdraws;
-} registry_model_record;
-
-/* How many declarations of the key stand among the model's first `count`
- * records. */
-static uint32_t registry_model_live(const registry_model_record *model, size_t count, markdown_core_registry_kind kind,
-                                    unsigned label) {
-    uint32_t live = 0;
-    for (size_t i = 0; i < count; i++) {
-        if (model[i].kind == kind && model[i].label == label) {
-            live = model[i].withdraws ? live - 1 : live + 1;
-        }
-    }
-    return live;
-}
-
-/* The model's answer for one key: its latest record, its earliest standing
- * start and how many of its declarations stand, taken for every label of a
- * kind in one pass over the records. */
-typedef struct {
-    const registry_model_record *latest;
-    uint32_t earliest;
-    uint32_t live;
-} model_answer;
+} registry_model_step;
 
 static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
+
+/* The start the model's key withdraws for a withdrawal at `start`: that
+ * start when a declaration stands there, else the latest. */
+static size_t registry_model_withdrawn(const registry_model_key *key, uint32_t start) {
+    size_t latest = 0;
+    for (size_t i = 0; i < key->count; i++) {
+        if (key->starts[i] == start) {
+            return i;
+        }
+        latest = key->starts[i] > key->starts[latest] ? i : latest;
+    }
+    return latest;
+}
 
 static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
     markdown_core_registry registry;
     markdown_core_registry_init(&registry);
-    registry_model_record *model = malloc(STEPS * sizeof(*model));
-    model_answer *answers = malloc((SHARED + STEPS) * sizeof(*answers));
+    registry_model_step *model = malloc(STEPS * sizeof(*model));
+    registry_model_key *keys = calloc((size_t)KINDS * (SHARED + STEPS), sizeof(*keys));
     size_t model_count = 0, fresh = SHARED, mark_count = 0;
     markdown_core_registry_mark marks[MARKS];
     size_t model_marks[MARKS];
@@ -3472,23 +3473,51 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
                 untaken += !indexed;
             }
             markdown_core_registry_rollback(&registry, marks[to]);
-            model_count = model_marks[to];
+            while (model_count > model_marks[to]) {
+                const registry_model_step *undone = &model[--model_count];
+                registry_model_key *key = &keys[undone->kind * (SHARED + STEPS) + undone->label];
+                if (undone->withdraws) {
+                    key->starts[key->count++] = undone->start;
+                } else {
+                    for (size_t i = key->count; i-- > 0;) {
+                        if (key->starts[i] == undone->start) {
+                            key->starts[i] = key->starts[--key->count];
+                            break;
+                        }
+                    }
+                }
+            }
             mark_count = to;
         } else {
-            registry_model_record record = {
-                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + (random >> 40) % KINDS),
-                choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44), false};
+            registry_model_step record = {(unsigned)((random >> 40) % KINDS),
+                                          choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++,
+                                          (uint32_t)(random >> 44), false};
+            registry_model_key *key = &keys[record.kind * (SHARED + STEPS) + record.label];
             /* A declared key is withdrawn about a third of the times a
              * shared label comes up, so declarations stand and fall again
              * and again. */
-            record.withdraws = choice < 30 && registry_model_live(model, model_count, record.kind, record.label) > 0;
+            record.withdraws = choice < 30 && key->count > 0;
             char text[16];
             registry_label_text(record.label, text, sizeof(text));
-            agrees = record.withdraws
-                         ? markdown_core_registry_withdraw(&registry, record.kind, (const unsigned char *)text,
-                                                           (bufsize_t)strlen(text), record.start)
-                         : markdown_core_registry_declare(&registry, record.kind, (const unsigned char *)text,
-                                                          (bufsize_t)strlen(text), record.start);
+            const markdown_core_registry_kind kind =
+                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + record.kind);
+            agrees = record.withdraws ? markdown_core_registry_withdraw(&registry, kind, (const unsigned char *)text,
+                                                                        (bufsize_t)strlen(text), record.start)
+                                      : markdown_core_registry_declare(&registry, kind, (const unsigned char *)text,
+                                                                       (bufsize_t)strlen(text), record.start);
+            if (record.withdraws) {
+                const size_t at = registry_model_withdrawn(key, record.start);
+                /* The step keeps the start it withdrew, which its undoing
+                 * declares again. */
+                record.start = key->starts[at];
+                key->starts[at] = key->starts[--key->count];
+            } else {
+                if (key->count == key->capacity) {
+                    key->capacity = key->capacity ? 2 * key->capacity : 4;
+                    key->starts = realloc(key->starts, key->capacity * sizeof(*key->starts));
+                }
+                key->starts[key->count++] = record.start;
+            }
             withdrawals += record.withdraws;
             model[model_count++] = record;
         }
@@ -3503,38 +3532,28 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             }
             const markdown_core_registry_kind compared_kind =
                 (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind);
-            for (unsigned label = 0; label < fresh; label++) {
-                answers[label] = (model_answer){NULL, UINT32_MAX, 0};
-            }
-            for (size_t i = 0; i < model_count; i++) {
-                if (model[i].kind == compared_kind) {
-                    model_answer *answer = &answers[model[i].label];
-                    answer->latest = &model[i];
-                    if (model[i].withdraws) {
-                        answer->live--;
-                    } else {
-                        answer->live++;
-                        answer->earliest = model[i].start < answer->earliest ? model[i].start : answer->earliest;
-                    }
-                }
-            }
             for (unsigned label = 0; label < fresh && agrees; label++) {
-                const registry_model_record *latest = answers[label].latest;
-                const uint32_t earliest = answers[label].earliest, live = answers[label].live;
+                const registry_model_key *key = &keys[kind * (SHARED + STEPS) + label];
                 /* Only a label some step declared can answer; the rest are
                  * sampled every few steps, which is enough to see a key
                  * left behind. */
-                if (!latest && label >= SHARED && (label + step) % 64) {
+                if (!key->count && label >= SHARED && (label + step) % 64) {
                     continue;
+                }
+                uint32_t earliest = UINT32_MAX;
+                for (size_t i = 0; i < key->count; i++) {
+                    earliest = key->starts[i] < earliest ? key->starts[i] : earliest;
                 }
                 char text[16];
                 registry_label_text(label, text, sizeof(text));
                 bool failed = false;
                 const markdown_core_registry_record *found = markdown_core_registry_find(
                     &registry, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
-                agrees = !failed && (found != NULL) == (live > 0) &&
-                         (!found || (found->start == latest->start && found->withdraws == latest->withdraws &&
-                                     found->earliest == earliest && found->live == live));
+                const markdown_core_key_index_slot *slot =
+                    found ? markdown_core_key_index_find(&registry.index, found->key, found->key_len) : NULL;
+                agrees =
+                    !failed && (found != NULL) == (key->count > 0) &&
+                    (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
                 if (!agrees) {
                     fprintf(stderr, "registry diverges at step %zu on kind %u label %u\n", step, kind, label);
                 }
@@ -3554,8 +3573,11 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     markdown_core_registry_free(&registry);
     INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
     payload_probe_disarm();
+    for (size_t i = 0; i < (size_t)KINDS * (SHARED + STEPS); i++) {
+        free(keys[i].starts);
+    }
+    free(keys);
     free(model);
-    free(answers);
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --

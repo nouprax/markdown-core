@@ -585,8 +585,8 @@ typedef struct markdown_core_parser_at {
  * from the flushed parse that the reading of the new text may take back
  * whole. The old root's children from the one the edit reads from on, in
  * order, which the records own (ast.c, THE RECORDS), and where the child
- * before them ended; the old lines from line `line` on; the reach and the
- * registry's records the reopen dropped; the definitions below the
+ * before them ended; the old lines from line `line` on; the reach the
+ * reopen dropped; the definitions below the
  * children, each with the index of its child among them as its `start`,
  * in the order the old document listed them; the old reading's place at
  * its flush, and where its text was complete. The edit replaced the old
@@ -658,7 +658,6 @@ typedef struct markdown_core_edit {
     /* Room for the entries an edit put out of order (S_reach_sort). */
     markdown_core_place *room;
     size_t room_capacity;
-    markdown_core_registry registry;
     /* THE USES (blocks.c): every definition lookup the completion of the
      * document's inline roots made, in order of where the roots start, a
      * zipper whose focus is the rest point. A block an edit keeps reads as
@@ -1691,13 +1690,14 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
-/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_labels_from
+/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_made
  * writes them, that the declarations of the text the last reading of an
  * edit read, from `start`, its rest point, up to where it took the old
  * children back, hold and those of the old text it replaced did not, or the
- * other way round. The children before and after keep their declarations,
- * so only a lookup of these keys may answer otherwise. False when storage
- * could not be had. */
+ * other way round, and that are declared now where they were not before, or
+ * the other way round. The children before and after keep their
+ * declarations, so only a lookup of these keys may answer otherwise. False
+ * when storage could not be had. */
 bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered);
 /* THE USES OF ALTERED LABELS (markdown_core_edit, `uses`): one past where
  * each inline root starts that looked up one of the `altered` keys, as

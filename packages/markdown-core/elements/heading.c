@@ -459,6 +459,10 @@ typedef struct {
      * overlay; and the committed names beneath an overlay, or NULL. */
     markdown_core_key_index *index;
     const markdown_core_key_index *beneath;
+    /* Whether the pass starts empty, which reads only the declarations that
+     * stand: the names they reserve are what reading every record would
+     * leave, before any heading takes one. */
+    bool fresh;
     /* The candidate name, and the projection's stack, which every heading
      * of the pass uses in turn. */
     markdown_core_strbuf name;
@@ -700,13 +704,18 @@ static void displace(name_pass *pass, size_t at) {
 
 /* The record's name reserved: a vacant name becomes the record's, and one a
  * heading holds is taken from it, which goes on along its sequence. A
- * withdrawal that leaves no declaration of its name standing, which only a
- * pass that starts empty reads, before any heading takes a name, frees the
- * name: a declaration of it came before, which entered it. */
+ * withdrawal that leaves no declaration of its name standing frees the
+ * name: a declaration of it came before, which entered it. A pass that
+ * starts empty reads neither a withdrawal nor what one withdrew, nor a
+ * declaration an edit replaced or one its reading does not see, which an
+ * edit's log holds where it was made (registry.h). */
 static void read_record(name_pass *pass, const markdown_core_registry_record *record) {
     markdown_core_parser *parser = pass->parser;
     const markdown_core_chunk label = markdown_core_registry_label(record);
     markdown_core_key_index *index = pass->index;
+    if (pass->fresh && !markdown_core_registry_seen(&parser->registry, record)) {
+        return;
+    }
     if (record->withdraws) {
         assert(!pass->beneath);
         if (!record->live) {
@@ -888,6 +897,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     pass.state = state;
     pass.index = &state->taken;
     pass.beneath = NULL;
+    pass.fresh = !snapshot;
     pass.name = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     pass.stack = (anchor_projection_stack){0};
     read_records(&pass, &cursor, snapshot ? committed_records : registry->count);
