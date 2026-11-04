@@ -11532,6 +11532,39 @@ static void session_edits_name_headings(test_batch_runner *runner) {
     }
     OK(runner, same, "the headings an edit names again show the anchors a fresh parse gives them");
     markdown_core_session_close(session);
+    /* Edits that take many lines at once: each run of whole lines of each
+     * text goes, or gives way to a heading, in a session of its own. The
+     * second text holds two headings of one base that one edit takes (a
+     * stem that the edit empties once, however many of its headings go). */
+    static const char *const texts[] = {text, "# A\n\n# A\n\n# A 1\n\n# A 1\n\n# A 2\n"};
+    static const char *const put[] = {"", "# A\n\n", "# Notes\n\n", "# Section 1\n\n"};
+    bool kept = true;
+    for (size_t x = 0; kept && x < sizeof(texts) / sizeof(*texts); x++) {
+        const size_t length = strlen(texts[x]);
+        int count = 1;
+        for (size_t i = 0; i + 1 < length; i++) {
+            count += texts[x][i] == '\n';
+        }
+        for (int first = 1; kept && first <= count; first++) {
+            for (int last = first + 1; kept && last <= count + 1; last++) {
+                for (size_t p = 0; kept && p < sizeof(put) / sizeof(*put); p++) {
+                    markdown_core_session *own = NULL;
+                    const markdown_core_document *read = NULL;
+                    const markdown_core_position from = {first, 1}, to = {last, 1};
+                    kept = markdown_core_session_new((const uint8_t *)texts[x], length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                                     &own) == MARKDOWN_CORE_OK &&
+                           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK;
+                    const markdown_core_status status =
+                        kept ? markdown_core_session_edit(own, from, to, (const uint8_t *)put[p], strlen(put[p]), &read)
+                             : MARKDOWN_CORE_OK;
+                    kept = kept && (status == MARKDOWN_CORE_OUT_OF_BOUNDS ||
+                                    (status == MARKDOWN_CORE_OK && session_as_parsed(own)));
+                    markdown_core_session_close(own);
+                }
+            }
+        }
+    }
+    OK(runner, kept, "the headings an edit of many lines names again show a fresh parse's anchors");
 }
 
 static void session_edits(test_batch_runner *runner) {

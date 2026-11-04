@@ -369,9 +369,10 @@ static bool stem_add(markdown_core_heading_names *names, uint32_t id, uint32_t s
  * text, its end `end`, go. False when storage could not be had. */
 static bool stem_cut(markdown_core_heading_names *names, uint32_t id, size_t place, size_t end) {
     markdown_core_heading_stem *stem = stem_of(names, id);
+    const bool present = stem_present(stem);
     stem->starts.end = end;
     (void)stem_zipper_cut(&stem->starts, place);
-    if (!stem_present(stem)) {
+    if (present && !stem_present(stem)) {
         stem_unlink(names, id);
     }
     return stem_touch(names, id);
