@@ -5,13 +5,16 @@
 #include <stdint.h>
 #include "map.h"
 #include "node.h"
+#include "zipper.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* THE REGISTRY: everything a parse declares that a later lookup asks for, as
- * one append-only log and one index over it.
+ * one log in the order the parse made it, an index of each key's
+ * declarations in the order of where they start, and, once an edit reads a
+ * parse again, each kind's declarations in that order about the edit.
  *
  * A record states a kind, a label in that kind's normal form, and the source
  * offset where the declaring definition starts. The kinds are lookup spaces:
@@ -28,25 +31,37 @@ extern "C" {
  * (markdown_core_registry_normal_label); a specimen label and an anchor are
  * their bytes as written.
  *
- * A record declares its key, or withdraws one earlier declaration of it: a
- * key is declared while it has more declarations than withdrawals.
+ * A record declares its key, or withdraws one earlier declaration of it, the
+ * one that starts where the withdrawal does: that declaration is withdrawn,
+ * and a key is declared while one of its declarations stands.
  *
- * The index maps a kind and a label to the key's latest record, and each
- * record names the key's record before it, the earliest start among the
- * declarations up to it and how many of them stand. So a lookup answers
- * whether the key is declared at all and whether some declaration of it
- * starts before a position, and a rollback pops records back to a mark, each
- * pop pointing the index at what it pointed at before that record was taken.
- * A declaration only appends to the log: a lookup of a kind has the index
- * take that kind's records beyond it, in log order, room for all of them made
- * at once. So the declarations of a kind a parse makes before its first
- * lookup of that kind are indexed together, a kind that no lookup asks for
+ * THE LOG is what a rollback pops back to a mark and what the headings read
+ * (heading.c, THE COMMITTED NAMES); a record lives in it, where its label is
+ * the registry's own copy, until a rollback pops it or the registry is
+ * compacted. The log holds no node.
+ *
+ * THE INDEX maps a kind and a label to the key's declarations that stand, in
+ * a list through the records in the order of where they start, the first
+ * the earliest. So a lookup answers whether the key is declared at all and
+ * whether some declaration of it starts before a position, and a
+ * declaration the list holds leaves it, which a withdrawal, a rollback or an
+ * edit that replaced its text does, without looking at any other key. A
+ * declaration only appends to the log: a lookup of a kind has the index
+ * take that kind's records beyond it, in log order, room for all of them
+ * made at once, and each joins its key's list from the list's end, where a
+ * declaration in log order mostly goes. So a kind that no lookup asks for
  * and nothing withdraws is never indexed, and a record rolled back before a
  * lookup of its kind never is. A withdrawal has the index take its kind's
- * records up to it as it is appended, so it knows how many declarations of
- * its key stand after it. A kind's records can also be read in log order
- * (markdown_core_registry_records), which asks nothing of the index. The log
- * holds no node: a record's label is the registry's own copy. */
+ * records up to it as it is appended.
+ *
+ * THE PLACES. A parse an edit reads again holds each kind's declarations in
+ * a zipper (zipper.h) about the edit: the declarations before where the
+ * reading starts in the front, and the rest in the back, which the reading
+ * does not see, until it takes the old text back from a place (THE SPLICE,
+ * blocks.c), the back's declarations before that place going with the text
+ * they were in. A record holds where it starts as its entry does: in the
+ * text, or, in the back, measured back from the end. A parse no edit read
+ * has no places, and its records stand in the text. */
 typedef enum {
     MARKDOWN_CORE_REGISTRY_REFERENCE = 1,
     MARKDOWN_CORE_REGISTRY_FOOTNOTE,
@@ -55,55 +70,79 @@ typedef enum {
 } markdown_core_registry_kind;
 
 typedef struct markdown_core_registry_record {
-    /* Once the index has taken the record: the key's record before this
-     * one, as its position in the log plus one, zero when this is the key's
-     * first; and how many of the key's declarations up to this one stand,
-     * which no withdrawal up to this one withdraws. */
-    size_t previous;
+    /* A declaration the index holds: the key's declarations before and
+     * after it in its list, the list's first holding its last in `before`;
+     * and, in the first, `hint`, the declaration the list last took or one
+     * beside the last it let go, where a search of the list begins
+     * (S_link). A withdrawal: the declaration it withdrew, in `before`. */
+    struct markdown_core_registry_record *before, *after, *hint;
+    /* Where the declaring or withdrawing definition starts: in the text, or
+     * measured back from the end when the record is in the back. */
+    uint32_t start;
+    /* A withdrawal: how many of the key's declarations stand after it. */
     uint32_t live;
-    /* Where the declaring or withdrawing definition starts, and, once the
-     * index has taken the record, the earliest start among the key's
-     * declarations up to this one. */
-    uint32_t start, earliest;
     /* The key: the kind's byte, then the label, then NUL. */
     bufsize_t key_len;
-    /* Whether the record withdraws a declaration of its key. */
-    bool withdraws;
+    /* Whether the record withdraws a declaration of its key; whether, a
+     * declaration, the index holds it in its key's list; whether a
+     * withdrawal withdrew it; whether it is in the back; and whether the
+     * text it was in is gone, which an edit replaced. */
+    bool withdraws, linked, withdrawn, back, gone;
     unsigned char key[];
 } markdown_core_registry_record;
+
+/* Where a declaration of a parse an edit reads starts, and the record. */
+typedef struct {
+    uint32_t start;
+    markdown_core_registry_record *record;
+} markdown_core_registry_place;
+
+typedef MARKDOWN_CORE_ZIPPER(markdown_core_registry_place) markdown_core_registry_places;
 
 /* Storage records are carved from, newest first (registry.c). */
 typedef struct markdown_core_registry_block markdown_core_registry_block;
 
-/* One kind's records in the log. */
+/* One kind's records. */
 typedef struct {
-    /* How many records are of the kind: a kind none declares answers every
-     * lookup without its key being assembled. */
+    /* How many records of the log are of the kind: a kind none declares
+     * answers every lookup without its key being assembled. */
     size_t records;
     /* How many of them the index has taken: every one before `cursor` in
      * the log, and none after it. */
     size_t indexed, cursor;
+    /* The kind's declarations about an edit, once one reads the parse. */
+    markdown_core_registry_places places;
 } markdown_core_registry_space;
 
 typedef struct {
     markdown_core_registry_record **records;
     size_t count, capacity;
     markdown_core_registry_space spaces[MARKDOWN_CORE_REGISTRY_ANCHOR + 1];
-    /* Each key's latest record among the records the index has taken, as
-     * its position in the log. The index borrows the key bytes from that
-     * record. */
+    /* Each key's first declaration in its list, as the record. The index
+     * borrows the key bytes from that record, and holds in `extra` how
+     * many declarations the list holds. */
     markdown_core_key_index index;
     markdown_core_registry_block *blocks;
     size_t block_used, block_size;
     /* Where a lookup assembles its key. */
     markdown_core_strbuf key;
+    /* Whether the kinds hold their declarations in places, which an edit
+     * makes; and whether the back is hidden from lookups, from the reopen
+     * that makes it to the splice that takes it back. */
+    bool placed, hidden;
+    /* How many bytes the log's records take, and how many of them are of
+     * records gone, which an edit replaced or a withdrawal withdrew. */
+    size_t bytes, dead;
+    /* The keys of the declarations the last splice let go, each with its
+     * NUL. */
+    markdown_core_strbuf lost;
 } markdown_core_registry;
 
 /* A point the log can roll back to. */
 typedef struct {
     size_t count;
     markdown_core_registry_block *blocks;
-    size_t block_used, block_size;
+    size_t block_used, block_size, bytes, dead;
 } markdown_core_registry_mark;
 
 void markdown_core_registry_init(markdown_core_registry *registry);
@@ -115,25 +154,44 @@ void markdown_core_registry_free(markdown_core_registry *registry);
 bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_core_registry_kind kind,
                                     const unsigned char *label, bufsize_t length, uint32_t start);
 
-/* Append a record of `kind` that withdraws one declaration of `label`, which
- * is declared, by a definition starting at `start`. False when storage could
- * not be had. */
+/* Append a record of `kind` that withdraws the declaration of `label` that
+ * starts at `start`, which stands. False when storage could not be had. */
 bool markdown_core_registry_withdraw(markdown_core_registry *registry, markdown_core_registry_kind kind,
                                      const unsigned char *label, bufsize_t length, uint32_t start);
 
-/* The latest record of `kind` for `label`, in the kind's normal form, or NULL
- * when nothing declares it. `*failed` is set when the key could not be
- * assembled or the index could not take the log, and the answer is then
- * NULL. */
+/* The earliest declaration of `kind` for `label`, in the kind's normal
+ * form, that stands and a lookup sees, or NULL when none does. `*failed` is
+ * set when the key could not be assembled or the index could not take the
+ * log, and the answer is then NULL. */
 const markdown_core_registry_record *markdown_core_registry_find(markdown_core_registry *registry,
                                                                  markdown_core_registry_kind kind,
                                                                  const unsigned char *label, bufsize_t length,
                                                                  bool *failed);
 
-/* The latest record of `kind` for the reference-label normal form of `label`,
- * as written, or NULL when nothing declares it; a label that normalizes to
- * nothing, or is longer than a link label may be, is declared by nothing.
- * `*failed` as above. */
+/* The earliest declaration of `kind` for `label`, in the kind's normal
+ * form, that stands, one of a back that lookups do not see as well: the
+ * key's next is its `after`, in order of where they start, the front's
+ * first. `*failed` as above. */
+markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
+                                                            markdown_core_registry_kind kind,
+                                                            const unsigned char *label, bufsize_t length, bool *failed);
+
+/* The declaration `record` of the index's list that starts where `record`
+ * does, of its key, in the terms of the back when `back` or of the front:
+ * the one of `kind` for `label`, as markdown_core_registry_first takes it,
+ * that the index holds and starts at `start` there, or NULL, as it is when
+ * the kinds hold no places. */
+const markdown_core_registry_record *markdown_core_registry_held_at(const markdown_core_registry *registry,
+                                                                    markdown_core_registry_kind kind,
+                                                                    const unsigned char *label, bufsize_t length,
+                                                                    bool back, uint32_t start);
+/* The first declaration of the back in the list `first` begins, or NULL. */
+const markdown_core_registry_record *markdown_core_registry_back_first(markdown_core_registry_record *first);
+
+/* The earliest declaration of `kind` for the reference-label normal form of
+ * `label`, as written, as above; a label that normalizes to nothing, or is
+ * longer than a link label may be, is declared by nothing. `*failed` as
+ * above. */
 const markdown_core_registry_record *markdown_core_registry_find_label(markdown_core_registry *registry,
                                                                        markdown_core_registry_kind kind,
                                                                        const markdown_core_chunk *label, bool *failed);
@@ -148,6 +206,20 @@ bool markdown_core_registry_normal_label(markdown_core_registry *registry, markd
 static inline markdown_core_chunk markdown_core_registry_label(const markdown_core_registry_record *record) {
     markdown_core_chunk label = {(unsigned char *)record->key + 1, record->key_len - 1, 0};
     return label;
+}
+
+/* Where the record starts in the text. */
+static inline uint32_t markdown_core_registry_start(const markdown_core_registry *registry,
+                                                    const markdown_core_registry_record *record) {
+    return record->back ? (uint32_t)registry->spaces[record->key[0]].places.end - record->start : record->start;
+}
+
+/* Whether the declaration `record`, the earliest of its key a lookup found,
+ * starts before `position`. */
+static inline bool markdown_core_registry_starts_before(const markdown_core_registry *registry,
+                                                        const markdown_core_registry_record *record,
+                                                        uint32_t position) {
+    return markdown_core_registry_start(registry, record) < position;
 }
 
 /* A reading of one kind's records in log order: where the next one is
@@ -195,47 +267,58 @@ markdown_core_registry_next_before(const markdown_core_registry *registry, markd
     return NULL;
 }
 
-/* Whether some declaration of the record's key, up to the record, starts
- * before `position`. */
-static inline bool markdown_core_registry_starts_before(const markdown_core_registry_record *record,
-                                                        uint32_t position) {
-    return record->earliest < position;
+/* Whether the declaration stands: no withdrawal withdrew it and no edit
+ * replaced its text. */
+static inline bool markdown_core_registry_stands(const markdown_core_registry_record *record) {
+    return !record->withdraws && !record->withdrawn && !record->gone;
+}
+
+/* Whether the declaration stands and a lookup sees it: one in the back is
+ * hidden from the reopen to the splice. */
+static inline bool markdown_core_registry_seen(const markdown_core_registry *registry,
+                                               const markdown_core_registry_record *record) {
+    return markdown_core_registry_stands(record) && !(record->back && registry->hidden);
 }
 
 /* The point the log is at now. */
 markdown_core_registry_mark markdown_core_registry_mark_now(const markdown_core_registry *registry);
-/* Pop every record appended after `mark`, last first, and release the
- * storage they were carved from. */
+/* Pop every record appended after `mark`, last first, each undone, and
+ * release the storage they were carved from. */
 void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_core_registry_mark mark);
 
-/* AN EDIT KEEPS WHAT STARTS BEFORE IT (blocks.c, THE REOPEN): the log holds
- * only the records whose definitions start before `start`, in the order it
- * held them, and the index is taken again as lookups ask; `tail`, emptied
- * first, holds the others, in the same order, which the edit may take back
- * (blocks.c, THE SPLICE), each start measured back from `end`, the text's
- * end, as the edit's back is (parser.h). False, with the log as it was,
- * when storage could not be had. */
-bool markdown_core_registry_keep_before(markdown_core_registry *registry, uint32_t start, uint32_t end,
-                                        markdown_core_registry *tail);
-/* The records of `tail` whose definitions start at `start` or after in the
- * text that ends at `end`, appended to the log in the order `tail` holds
- * them. False when storage could not be had. */
-bool markdown_core_registry_take(markdown_core_registry *registry, const markdown_core_registry *tail, uint32_t start,
-                                 uint32_t end);
-/* The keys every reference, footnote and specimen declaration from `start`
- * on declares, each once and in byte order, each with its NUL, into
- * `labels`: two texts declare the same labels there when the bytes are the
- * same. False when storage could not be had. */
-bool markdown_core_registry_labels_from(const markdown_core_registry *registry, uint32_t start,
-                                        markdown_core_strbuf *labels);
-/* The keys as markdown_core_registry_labels_from writes them, of the
- * declarations that start from `from` up to `to`, each start measured back
- * from `end` when `end` is not 0, as a tail's are
- * (markdown_core_registry_keep_before), and then with no lower bound: the
- * records of text an edit replaced count, as those the splice does not take
- * back (markdown_core_registry_take). False when storage could not be had. */
-bool markdown_core_registry_labels_within(const markdown_core_registry *registry, uint32_t from, uint32_t to,
-                                          uint32_t end, markdown_core_strbuf *labels);
+/* AN EDIT READS FROM `start` (blocks.c, THE REOPEN) of a text of `size`
+ * bytes: each kind's declarations that start there or past it go to the
+ * back, which lookups do not see until the splice; the first edit places
+ * them, and one whose log holds more dead bytes than live compacts it
+ * first. False, with the registry as it was, when storage could not be
+ * had. */
+bool markdown_core_registry_reopen(markdown_core_registry *registry, uint32_t start, size_t size);
+/* THE SPLICE (blocks.c): the back's declarations that start before `place`
+ * of the text before the edit go with the text the edit replaced, their
+ * keys kept for markdown_core_registry_lost, the end moves by `delta`, and
+ * lookups see the back again. A `place` past every declaration lets the
+ * whole back go, as a reading that took nothing back does. */
+void markdown_core_registry_splice(markdown_core_registry *registry, size_t place, int64_t delta);
+/* The keys of the declarations of the front, but anchors, that start from
+ * `start` on, each once and in byte order, each with its NUL, into
+ * `labels`. False when storage could not be had. */
+bool markdown_core_registry_made(const markdown_core_registry *registry, uint32_t start, markdown_core_strbuf *labels);
+/* The keys of the declarations, but anchors, the last splice let go, as
+ * markdown_core_registry_made writes them. False when storage could not be
+ * had. */
+bool markdown_core_registry_lost(const markdown_core_registry *registry, markdown_core_strbuf *labels);
+/* Whether a declaration of `kind` for `label` that stands starts before
+ * `from` or at `to` or past it. `*failed` as for markdown_core_registry_find,
+ * and the answer is then false. */
+bool markdown_core_registry_declared_outside(markdown_core_registry *registry, markdown_core_registry_kind kind,
+                                             const unsigned char *label, bufsize_t length, uint32_t from, uint32_t to,
+                                             bool *failed);
+/* The log holds only the declarations that stand, in storage of their
+ * size, and each kind's places shrink to what they hold. A parse that keeps
+ * snapshots, whose headings read the log by position (heading.c), never
+ * compacts. False, with the registry as it was, when storage could not be
+ * had. */
+bool markdown_core_registry_compact(markdown_core_registry *registry);
 
 #ifdef __cplusplus
 }

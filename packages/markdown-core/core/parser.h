@@ -244,12 +244,10 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
  * reference targets by label, an entry's pointer the label's definition and
  * its number where that starts, in the terms of the part of its table that
  * holds it: measured back from the text's end, with
- * MARKDOWN_CORE_LISTED_BACK, when that is the back. Each label table's
- * HOLDERS hold every definition its tables hold that has a label, in order
- * of label and then of which is the label's definition first, so that the
- * label's next definition is at hand when one goes: made, `held`, once the
- * tables first lose a definition or move their focus, which a parse that
- * only streams in may never do. */
+ * MARKDOWN_CORE_LISTED_BACK, when that is the back. When a label's
+ * definition goes, its next is the first of the label's declarations in
+ * the registry, which keeps them in order of where they start, that the
+ * tables hold (ast.c, THE LABEL'S NEXT DEFINITION). */
 enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
 
 typedef struct markdown_core_listed {
@@ -264,8 +262,6 @@ typedef MARKDOWN_CORE_ZIPPER(markdown_core_listed) markdown_core_listed_zipper;
 typedef struct markdown_core_committed_tables {
     markdown_core_listed_zipper starts[MARKDOWN_CORE_DEFINITION_TABLES];
     markdown_core_key_tree labels[MARKDOWN_CORE_LABEL_TABLES];
-    markdown_core_key_tree holders[MARKDOWN_CORE_LABEL_TABLES];
-    bool held;
     /* The label tables' own copies of their keys, which an entry and the
      * separators above it borrow (map.h) while the tables outlive any one
      * definition: carved from blocks newest first, `live` bytes of them
@@ -585,8 +581,8 @@ typedef struct markdown_core_parser_at {
  * from the flushed parse that the reading of the new text may take back
  * whole. The old root's children from the one the edit reads from on, in
  * order, which the records own (ast.c, THE RECORDS), and where the child
- * before them ended; the old lines from line `line` on; the reach and the
- * registry's records the reopen dropped; the definitions below the
+ * before them ended; the old lines from line `line` on; the reach the
+ * reopen dropped; the definitions below the
  * children, each with the index of its child among them as its `start`,
  * in the order the old document listed them; the old reading's place at
  * its flush, and where its text was complete. The edit replaced the old
@@ -613,6 +609,28 @@ typedef struct markdown_core_use {
 } markdown_core_use;
 
 typedef MARKDOWN_CORE_ZIPPER(markdown_core_use) markdown_core_use_zipper;
+
+/* A use the uses' index holds (markdown_core_edit, `names`) has its `size`
+ * this, and `label` the number of its note: its label's bytes went. */
+#define MARKDOWN_CORE_USE_NOTED UINT32_MAX
+
+/* A NAME THE USES' INDEX HOLDS: a lookup's kind and label as the registry
+ * keys them, `size` bytes, and the first of the notes of the uses that
+ * looked it up, `count` of them. */
+typedef struct markdown_core_use_name {
+    uint32_t first, count;
+    bufsize_t size;
+    unsigned char bytes[];
+} markdown_core_use_name;
+
+/* A NOTE OF A USE THE INDEX HOLDS: its name, where the root starts in the
+ * terms of the zipper's part that holds it, the back's when `back`, and the
+ * notes before and after it of the same name. */
+typedef struct markdown_core_use_note {
+    markdown_core_use_name *name;
+    uint32_t start, next, prior;
+    bool back;
+} markdown_core_use_note;
 
 typedef struct markdown_core_edit {
     struct markdown_core_node **children;
@@ -658,7 +676,6 @@ typedef struct markdown_core_edit {
     /* Room for the entries an edit put out of order (S_reach_sort). */
     markdown_core_place *room;
     size_t room_capacity;
-    markdown_core_registry registry;
     /* THE USES (blocks.c): every definition lookup the completion of the
      * document's inline roots made, in order of where the roots start, a
      * zipper whose focus is the rest point. A block an edit keeps reads as
@@ -670,6 +687,16 @@ typedef struct markdown_core_edit {
     markdown_core_use_zipper uses;
     markdown_core_strbuf use_labels;
     size_t uses_from, use_live;
+    /* THE USES' INDEX (blocks.c): the uses by name, made at the first
+     * lookup of the uses of altered labels and kept from then on. `names`
+     * maps each name to its markdown_core_use_name, whose notes are among
+     * the `note_count` of `notes`, those let go linked from `spare`; it holds
+     * every use but what a reading noted when `indexed`. */
+    markdown_core_key_index names;
+    markdown_core_use_note *notes;
+    size_t note_count, note_room;
+    uint32_t spare;
+    bool indexed;
     /* While the finalize completes anew the roots whose misses now find a
      * definition, whose commits noted their uses. */
     bool anew;
@@ -1691,13 +1718,14 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
-/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_labels_from
+/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_registry_made
  * writes them, that the declarations of the text the last reading of an
  * edit read, from `start`, its rest point, up to where it took the old
  * children back, hold and those of the old text it replaced did not, or the
- * other way round. The children before and after keep their declarations,
- * so only a lookup of these keys may answer otherwise. False when storage
- * could not be had. */
+ * other way round, and that are declared now where they were not before, or
+ * the other way round. The children before and after keep their
+ * declarations, so only a lookup of these keys may answer otherwise. False
+ * when storage could not be had. */
 bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered);
 /* THE USES OF ALTERED LABELS (markdown_core_edit, `uses`): one past where
  * each inline root starts that looked up one of the `altered` keys, as
