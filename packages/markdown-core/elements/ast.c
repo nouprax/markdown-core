@@ -2171,11 +2171,16 @@ static const markdown_core_listed *listed_find(const markdown_core_listed_zipper
 
 /* The first definition of `label` in label table `labels` that the tables
  * hold, but those `out` names, into `*node`, and where it starts
- * (listed_at_of) into `*at`; `*node` NULL when there is none. False when
- * storage could not be had. */
+ * (listed_at_of) into `*at`; `*node` NULL when there is none. `gone`, of
+ * table `table` that started at `place` (listed_at_of), was the label's
+ * definition: no definition of its table before it is, so the search of
+ * its table begins past its declaration, when the registry still holds it.
+ * The front's declarations past the last the table's front holds are the
+ * reading's own, which no commit kept yet: the search passes them by. False
+ * when storage could not be had. */
 static bool committed_next(const markdown_core_committed_tables *committed, markdown_core_registry *registry,
-                           uint32_t labels, markdown_core_chunk label, const committed_out *out,
-                           const markdown_core_node **node, uint32_t *at) {
+                           uint32_t labels, markdown_core_chunk label, uint32_t gone, uint32_t place,
+                           const committed_out *out, const markdown_core_node **node, uint32_t *at) {
     *node = NULL;
     for (uint32_t table = 0; table < TABLE_COUNT; table++) {
         if (table_labels[table] != labels) {
@@ -2183,25 +2188,40 @@ static bool committed_next(const markdown_core_committed_tables *committed, mark
         }
         const markdown_core_listed_zipper *zipper = &committed->starts[table];
         bool failed = false;
-        for (const markdown_core_registry_record *record =
-                 markdown_core_registry_first(registry, table_kinds[table], label.data, label.len, &failed);
-             record; record = record->after) {
-            size_t index;
-            const markdown_core_listed *entry = listed_find(zipper, record->back, record->start, &index);
-            if (!entry || (out && out->table == table && !record->back && index >= out->from && index < out->to &&
-                           entry->node != out->kept)) {
-                continue;
-            }
-            markdown_core_chunk held;
-            if (definition_label(entry->node, &held) && held.len == label.len &&
-                !memcmp(held.data, label.data, (size_t)label.len)) {
-                *node = entry->node;
-                *at = listed_at_of(entry, record->back);
-                return true;
-            }
-        }
+        markdown_core_registry_record *first =
+            markdown_core_registry_first(registry, table_kinds[table], label.data, label.len, &failed);
         if (failed) {
             return false;
+        }
+        const markdown_core_registry_record *record = first;
+        if (table == gone) {
+            const markdown_core_registry_record *held = markdown_core_registry_held_at(
+                registry, table_kinds[table], label.data, label.len, (place & MARKDOWN_CORE_LISTED_BACK) != 0,
+                place & ~MARKDOWN_CORE_LISTED_BACK);
+            record = held ? held->after : first;
+        }
+        const bool front = zipper->front.count != 0;
+        const uint32_t last = front ? zipper->front.values[zipper->front.count - 1].start : 0;
+        while (record) {
+            if (!record->back && (!front || record->start > last)) {
+                record = markdown_core_registry_back_first(first);
+                if (!record || !record->back) {
+                    break;
+                }
+            }
+            size_t index;
+            const markdown_core_listed *entry = listed_find(zipper, record->back, record->start, &index);
+            if (entry && !(out && out->table == table && !record->back && index >= out->from && index < out->to &&
+                           entry->node != out->kept)) {
+                markdown_core_chunk held;
+                if (definition_label(entry->node, &held) && held.len == label.len &&
+                    !memcmp(held.data, label.data, (size_t)label.len)) {
+                    *node = entry->node;
+                    *at = listed_at_of(entry, record->back);
+                    return true;
+                }
+            }
+            record = record->after;
         }
     }
     return true;
@@ -2226,7 +2246,7 @@ static bool committed_unlabel(markdown_core_committed_tables *committed, markdow
     }
     const markdown_core_node *next;
     uint32_t at;
-    if (!committed_next(committed, registry, labels, label, out, &next, &at)) {
+    if (!committed_next(committed, registry, labels, label, table, held->extra, out, &next, &at)) {
         return false;
     }
     if (next) {

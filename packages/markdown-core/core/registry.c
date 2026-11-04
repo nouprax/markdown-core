@@ -123,6 +123,7 @@ static void S_link(markdown_core_registry *registry, markdown_core_key_index_slo
     record->before = record->after = NULL;
     if (!slot->key) {
         record->last = record;
+        record->bound = record->back ? NULL : record;
         markdown_core_key_index_commit(&registry->index, slot, record->key);
         slot->value = (size_t)record;
         slot->extra = 1;
@@ -130,28 +131,46 @@ static void S_link(markdown_core_registry *registry, markdown_core_key_index_slo
     }
     markdown_core_registry_record *first = (markdown_core_registry_record *)slot->value;
     markdown_core_registry_record *at = first->last;
+    if (!record->back) {
+        /* A declaration of the front searches from the front's last, which
+         * the bound is near: a move of the focus may have taken it, or those
+         * after it, to the other part since. The back it never walks. */
+        at = first->bound ? first->bound : (first->back ? NULL : first);
+        while (at && at->back) {
+            at = at->before;
+        }
+        while (at && at->after && !at->after->back) {
+            at = at->after;
+        }
+    }
     while (at && S_precedes(record, at)) {
         at = at->before;
     }
     slot->extra++;
+    record->bound = NULL;
     if (!at) {
         record->after = first;
         record->last = first->last;
+        record->bound = first->bound;
         first->before = record;
-        first->last = NULL;
+        first->last = first->bound = NULL;
         slot->value = (size_t)record;
         slot->key = record->key;
-        return;
-    }
-    record->last = NULL;
-    record->before = at;
-    record->after = at->after;
-    if (at->after) {
-        at->after->before = record;
+        first = record;
     } else {
-        first->last = record;
+        record->last = NULL;
+        record->before = at;
+        record->after = at->after;
+        if (at->after) {
+            at->after->before = record;
+        } else {
+            first->last = record;
+        }
+        at->after = record;
     }
-    at->after = record;
+    if (!record->back && (!record->after || record->after->back)) {
+        first->bound = record;
+    }
 }
 
 /* The declaration leaves its key's list. */
@@ -164,10 +183,14 @@ static void S_unlink(markdown_core_registry *registry, markdown_core_registry_re
         markdown_core_key_index_remove(&registry->index, slot);
         return;
     }
+    if (first->bound == record) {
+        first->bound = record->before;
+    }
     if (record == first) {
         markdown_core_registry_record *next = first->after;
         next->before = NULL;
         next->last = first->last;
+        next->bound = first->bound;
         slot->value = (size_t)next;
         slot->key = next->key;
         return;
@@ -332,10 +355,10 @@ const markdown_core_registry_record *markdown_core_registry_find(markdown_core_r
     return S_first(registry, kind, failed);
 }
 
-const markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
-                                                                  markdown_core_registry_kind kind,
-                                                                  const unsigned char *label, bufsize_t length,
-                                                                  bool *failed) {
+markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
+                                                            markdown_core_registry_kind kind,
+                                                            const unsigned char *label, bufsize_t length,
+                                                            bool *failed) {
     if (length <= 0 || !registry->spaces[kind].records) {
         return NULL;
     }
@@ -346,7 +369,62 @@ const markdown_core_registry_record *markdown_core_registry_first(markdown_core_
     }
     const markdown_core_key_index_slot *slot =
         markdown_core_key_index_find(&registry->index, registry->key.ptr, registry->key.size);
-    return slot ? (const markdown_core_registry_record *)slot->value : NULL;
+    return slot ? (markdown_core_registry_record *)slot->value : NULL;
+}
+
+/* Whether `record` is a declaration of `kind` for `label` the index holds. */
+static inline bool S_holds(const markdown_core_registry_record *record, markdown_core_registry_kind kind,
+                           const unsigned char *label, bufsize_t length) {
+    return record->linked && record->key[0] == (unsigned char)kind && record->key_len == length + 1 &&
+           !memcmp(record->key + 1, label, (size_t)length);
+}
+
+const markdown_core_registry_record *markdown_core_registry_held_at(const markdown_core_registry *registry,
+                                                                    markdown_core_registry_kind kind,
+                                                                    const unsigned char *label, bufsize_t length,
+                                                                    bool back, uint32_t start) {
+    if (!registry->placed) {
+        return NULL;
+    }
+    const markdown_core_registry_places *places = &registry->spaces[kind].places;
+    if (!back) {
+        for (size_t i = S_places_front_from(places, start);
+             i < places->front.count && places->front.values[i].start == start; i++) {
+            if (S_holds(places->front.values[i].record, kind, label, length)) {
+                return places->front.values[i].record;
+            }
+        }
+        return NULL;
+    }
+    /* The back's entries nearer the focus are further from the end. */
+    size_t low = 0, high = places->back_count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (places->back[middle].start < start) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    for (size_t i = low; i < places->back_count && places->back[i].start == start; i++) {
+        if (S_holds(places->back[i].record, kind, label, length)) {
+            return places->back[i].record;
+        }
+    }
+    return NULL;
+}
+
+const markdown_core_registry_record *markdown_core_registry_back_first(markdown_core_registry_record *first) {
+    /* The bound is near the front's last (S_link), which it is made again. */
+    markdown_core_registry_record *at = first->bound ? first->bound : (first->back ? NULL : first);
+    while (at && at->back) {
+        at = at->before;
+    }
+    while (at && at->after && !at->after->back) {
+        at = at->after;
+    }
+    first->bound = at;
+    return at ? at->after : first;
 }
 
 const markdown_core_registry_record *markdown_core_registry_find_label(markdown_core_registry *registry,

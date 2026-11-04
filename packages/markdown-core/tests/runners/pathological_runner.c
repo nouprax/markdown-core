@@ -946,6 +946,38 @@ static int pc_uniform_text_visit(const markdown_core_node *node, ts_ast_range ra
     return 0;
 }
 
+/* An edit that reads again many definitions of one label. Each declaration
+ * the reading makes joins its label's list from where the front's last
+ * stands, past none of the old ones the edit put in the back; and each old
+ * definition the edit lets go hands the label on from where it stood, past
+ * none of the reading's own. Walking past either for each of them took 3
+ * seconds at 16000 definitions in a release build, so the count here is
+ * three times that. */
+static int case_duplicate_definitions_edit(pc_context *context) {
+    enum { DEFINITIONS = 50000 };
+    if (pc_build(context, NULL, "[x]: /a\n", DEFINITIONS, "\n[x]\n") != 0) {
+        return -1;
+    }
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    if (markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) != MARKDOWN_CORE_OK) {
+        return -1;
+    }
+    const markdown_core_position start = {1, 1}, end = {DEFINITIONS + 3, 1};
+    int result = -1;
+    if (markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_edit(session, start, end, (const uint8_t *)context->input, context->input_length,
+                                   &document) == MARKDOWN_CORE_OK &&
+        ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
+        pc_expect_count(context, MARKDOWN_CORE_KIND_REFERENCE, DEFINITIONS, "Reference") == 0 &&
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 1, "Link") == 0) {
+        result = 0;
+    }
+    markdown_core_session_close(session);
+    return result;
+}
+
 static int case_reference_collisions(pc_context *context) {
     enum { COLLISIONS = 50000 };
     char bad_key[32] = "";
@@ -1485,6 +1517,7 @@ static const pc_case_entry PC_CASES[] = {
     {"comment_nested_item_blank_runs", case_comment_nested_item_blank_runs},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
+    {"duplicate_definitions_edit", case_duplicate_definitions_edit},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"dump_deep_nesting", case_dump_deep_nesting},
     {"dump_wide_siblings", case_dump_wide_siblings},

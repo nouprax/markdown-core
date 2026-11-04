@@ -71,9 +71,11 @@ typedef enum {
 
 typedef struct markdown_core_registry_record {
     /* A declaration the index holds: the key's declarations before and
-     * after it in its list; and, in the list's first, its last. A
-     * withdrawal: the declaration it withdrew, in `before`. */
-    struct markdown_core_registry_record *before, *after, *last;
+     * after it in its list; and, in the list's first, its last, and
+     * `bound`, a declaration of the list near the front's last, or NULL,
+     * where a declaration of the front begins its search. A withdrawal:
+     * the declaration it withdrew, in `before`. */
+    struct markdown_core_registry_record *before, *after, *last, *bound;
     /* Where the declaring or withdrawing definition starts: in the text, or
      * measured back from the end when the record is in the back. */
     uint32_t start;
@@ -170,10 +172,21 @@ const markdown_core_registry_record *markdown_core_registry_find(markdown_core_r
  * form, that stands, one of a back that lookups do not see as well: the
  * key's next is its `after`, in order of where they start, the front's
  * first. `*failed` as above. */
-const markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
-                                                                  markdown_core_registry_kind kind,
-                                                                  const unsigned char *label, bufsize_t length,
-                                                                  bool *failed);
+markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
+                                                            markdown_core_registry_kind kind,
+                                                            const unsigned char *label, bufsize_t length, bool *failed);
+
+/* The declaration `record` of the index's list that starts where `record`
+ * does, of its key, in the terms of the back when `back` or of the front:
+ * the one of `kind` for `label`, as markdown_core_registry_first takes it,
+ * that the index holds and starts at `start` there, or NULL, as it is when
+ * the kinds hold no places. */
+const markdown_core_registry_record *markdown_core_registry_held_at(const markdown_core_registry *registry,
+                                                                    markdown_core_registry_kind kind,
+                                                                    const unsigned char *label, bufsize_t length,
+                                                                    bool back, uint32_t start);
+/* The first declaration of the back in the list `first` begins, or NULL. */
+const markdown_core_registry_record *markdown_core_registry_back_first(markdown_core_registry_record *first);
 
 /* The earliest declaration of `kind` for the reference-label normal form of
  * `label`, as written, as above; a label that normalizes to nothing, or is
