@@ -115,6 +115,17 @@ static inline bool S_precedes(const markdown_core_registry_record *left, const m
     return left->back ? left->start > right->start : left->start < right->start;
 }
 
+/* A list's last declaration, which its first holds in `before`. */
+static inline markdown_core_registry_record *S_last(const markdown_core_registry_record *first) {
+    return first->before;
+}
+
+/* The declaration before `at` in the list that starts at `first`, or NULL. */
+static inline markdown_core_registry_record *S_prior(const markdown_core_registry_record *first,
+                                                     markdown_core_registry_record *at) {
+    return at == first ? NULL : at->before;
+}
+
 /* The declaration joins its key's list in `slot`, an entry of the index
  * that `markdown_core_key_index_entry` found. Its search begins at the
  * list's hint, the declaration the list last took or let go near, and walks
@@ -124,52 +135,46 @@ static inline bool S_precedes(const markdown_core_registry_record *left, const m
 static void S_link(markdown_core_registry *registry, markdown_core_key_index_slot *slot,
                    markdown_core_registry_record *record) {
     record->linked = true;
-    record->before = record->after = NULL;
+    record->after = NULL;
     if (!slot->key) {
-        record->last = record->hint = record;
-        record->bound = record->back ? NULL : record;
+        record->before = record->hint = record;
         markdown_core_key_index_commit(&registry->index, slot, record->key);
         slot->value = (size_t)record;
         slot->extra = 1;
         return;
     }
     markdown_core_registry_record *first = (markdown_core_registry_record *)slot->value;
-    markdown_core_registry_record *at = first->hint ? first->hint : first->last;
+    markdown_core_registry_record *at = first->hint ? first->hint : S_last(first);
     if (!S_precedes(record, at)) {
         while (at->after && !S_precedes(record, at->after)) {
             at = at->after;
         }
     } else {
         while (at && S_precedes(record, at)) {
-            at = at->before;
+            at = S_prior(first, at);
         }
     }
     slot->extra++;
-    record->bound = record->hint = NULL;
+    record->hint = NULL;
     if (!at) {
         record->after = first;
-        record->last = first->last;
-        record->bound = first->bound;
+        record->before = S_last(first);
         first->before = record;
-        first->last = first->bound = first->hint = NULL;
+        first->hint = NULL;
         slot->value = (size_t)record;
         slot->key = record->key;
         first = record;
     } else {
-        record->last = NULL;
         record->before = at;
         record->after = at->after;
         if (at->after) {
             at->after->before = record;
         } else {
-            first->last = record;
+            first->before = record;
         }
         at->after = record;
     }
     first->hint = record;
-    if (!record->back && (!record->after || record->after->back)) {
-        first->bound = record;
-    }
 }
 
 /* The declaration leaves its key's list. */
@@ -182,26 +187,22 @@ static void S_unlink(markdown_core_registry *registry, markdown_core_registry_re
         markdown_core_key_index_remove(&registry->index, slot);
         return;
     }
-    if (first->bound == record) {
-        first->bound = record->before;
-    }
     /* The next search of the list is likely near the one that went. */
-    first->hint = record->before ? record->before : record->after;
+    markdown_core_registry_record *prior = S_prior(first, record);
+    first->hint = prior ? prior : record->after;
     if (record == first) {
         markdown_core_registry_record *next = first->after;
-        next->before = NULL;
-        next->last = first->last;
-        next->bound = first->bound;
+        next->before = S_last(first);
         next->hint = first->hint;
         slot->value = (size_t)next;
         slot->key = next->key;
         return;
     }
-    record->before->after = record->after;
+    prior->after = record->after;
     if (record->after) {
-        record->after->before = record->before;
+        record->after->before = prior;
     } else {
-        first->last = record->before;
+        first->before = prior;
     }
 }
 
@@ -223,7 +224,7 @@ static inline bool S_append(markdown_core_registry *registry, markdown_core_regi
     record->key[length + 1] = '\0';
     record->key_len = length + 1;
     record->start = start;
-    record->before = record->after = record->last = NULL;
+    record->before = record->after = record->hint = NULL;
     record->live = 0;
     record->withdraws = withdraws;
     record->linked = record->withdrawn = record->back = record->gone = false;
@@ -326,18 +327,18 @@ bool markdown_core_registry_withdraw(markdown_core_registry *registry, markdown_
      * them; or, when none does, the key's last. The list is in order of
      * where they start: the search walks from its hint (S_link). */
     markdown_core_registry_record *first = (markdown_core_registry_record *)slot->value;
-    markdown_core_registry_record *at = first->hint ? first->hint : first->last;
+    markdown_core_registry_record *at = first->hint ? first->hint : S_last(first);
     if (markdown_core_registry_start(registry, at) <= start) {
         while (at->after && markdown_core_registry_start(registry, at->after) <= start) {
             at = at->after;
         }
     } else {
         while (at && markdown_core_registry_start(registry, at) > start) {
-            at = at->before;
+            at = S_prior(first, at);
         }
     }
     markdown_core_registry_record *withdrawn =
-        at && markdown_core_registry_start(registry, at) == start ? at : first->last;
+        at && markdown_core_registry_start(registry, at) == start ? at : S_last(first);
     const uint32_t live = (uint32_t)slot->extra - 1;
     if (!S_append(registry, kind, label, length, start, true)) {
         return false;
@@ -424,15 +425,16 @@ const markdown_core_registry_record *markdown_core_registry_held_at(const markdo
 }
 
 const markdown_core_registry_record *markdown_core_registry_back_first(markdown_core_registry_record *first) {
-    /* The bound is near the front's last (S_link), which it is made again. */
-    markdown_core_registry_record *at = first->bound ? first->bound : (first->back ? NULL : first);
+    /* The walk begins at the hint (S_link), which it leaves at the front's
+     * last for the next. */
+    markdown_core_registry_record *at = first->hint ? first->hint : S_last(first);
     while (at && at->back) {
-        at = at->before;
+        at = S_prior(first, at);
     }
     while (at && at->after && !at->after->back) {
         at = at->after;
     }
-    first->bound = at;
+    first->hint = at ? at : first;
     return at ? at->after : first;
 }
 
@@ -727,7 +729,7 @@ bool markdown_core_registry_declared_outside(markdown_core_registry *registry, m
     S_assemble(registry, kind, label, length);
     const markdown_core_registry_record *first = S_first(registry, kind, failed);
     return first && (markdown_core_registry_start(registry, first) < from ||
-                     markdown_core_registry_start(registry, first->last) >= to);
+                     markdown_core_registry_start(registry, S_last(first)) >= to);
 }
 
 bool markdown_core_registry_compact(markdown_core_registry *registry) {
@@ -792,7 +794,7 @@ bool markdown_core_registry_compact(markdown_core_registry *registry) {
                                         : &places->back[places->back_count - 1 - (i - places->front.count)];
             markdown_core_registry_record *copy = fresh.records[count++];
             memcpy(copy, place->record, sizeof(*copy) + (size_t)place->record->key_len + 1);
-            copy->before = copy->after = copy->last = NULL;
+            copy->before = copy->after = copy->hint = NULL;
             copy->linked = false;
             place->record = copy;
         }
