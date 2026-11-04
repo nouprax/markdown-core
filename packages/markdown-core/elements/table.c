@@ -4,7 +4,7 @@
 #include "element.h"
 #include <inlines.h>
 #include <parser.h>
-#include "registry.h"
+#include "roster.h"
 #include <string.h>
 #include <limits.h>
 #include "utf8.h"

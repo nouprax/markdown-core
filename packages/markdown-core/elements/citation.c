@@ -639,7 +639,7 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
      * declares it. */
     bool failed = false, specimen = false;
     if (!token->suppress && token->key_start == token->start + 1) {
-        specimen = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_SPECIMEN,
+        specimen = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_ROSTER_SPECIMEN,
                                                         &item->as.citation->value, &failed) != NULL;
     }
     if (failed) {

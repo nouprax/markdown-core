@@ -18,7 +18,7 @@ set(HEADERS
     attributes.h
     slab.h
     metadata.h
-    registry.h
+    roster.h
     map.h
     utf8.h
     inlines.h
@@ -42,7 +42,7 @@ set(LIBRARY_SOURCES
     inlines.c
     utf8.c
     buffer.c
-    registry.c
+    roster.c
     map.c
     sink.c
     houdini_html_u.c

@@ -21,7 +21,7 @@
 #include "sink.h"
 #include "node_type.h"
 #include "node.h"
-#include "registry.h"
+#include "roster.h"
 #include "utf8.h"
 #include "inlines.h"
 #include "houdini.h"
@@ -165,7 +165,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
         }
     }
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
-    markdown_core_registry_free(&parser->registry);
+    markdown_core_roster_free(&parser->roster);
     markdown_core_source_order_dispose(&parser->source_order);
     S_release_walk(parser);
     markdown_core_free(parser->block_inputs);
@@ -268,7 +268,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
-    markdown_core_registry_init(&parser->registry);
+    markdown_core_roster_init(&parser->roster);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
      * ownership. */
@@ -1919,8 +1919,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
                                                                              uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-           markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data, anchor->len,
-                                          start);
+           markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
 }
 
 /* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8). A
@@ -1949,15 +1948,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
  * it was read from moves as the paragraph grows. What a completion does
  * besides making the nodes is the stream's to do again for those it keeps:
  * the explicit anchors below them are reserved at every completion, as a
- * snapshot's registry goes with the snapshot, and the lookups they made
+ * snapshot's roster goes with the snapshot, and the lookups they made
  * that found nothing are the paragraph's when the commit completes it (A
  * LOOKUP THAT FOUND NOTHING). The finalize's completion, which sees every
  * definition, asks them again, and reads the content whole when one finds a
  * definition. */
 
-static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
+static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_roster_kind kind,
                           const unsigned char *label, bufsize_t size);
-static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry_kind kind, const unsigned char *label,
+static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_roster_kind kind, const unsigned char *label,
                   bufsize_t size);
 
 /* Whether `node`'s completion settles its content: a snapshot's, of a
@@ -2075,7 +2074,7 @@ static inline size_t S_settled_labels(const markdown_core_settled *settled) {
 /* A lookup the snapshot's reading of the settling paragraph found nothing
  * for, listed after the settled ones. False when storage could not be
  * had. */
-static bool S_settled_miss(markdown_core_settled *settled, markdown_core_registry_kind kind,
+static bool S_settled_miss(markdown_core_settled *settled, markdown_core_roster_kind kind,
                            const markdown_core_chunk *label, bool found) {
     markdown_core_settled_miss *misses =
         markdown_core_reserve(settled->misses, &settled->miss_capacity, settled->miss_total + 1, sizeof(*misses));
@@ -2758,7 +2757,7 @@ MARKDOWN_CORE_ZIPPER_OPS(S_uses, markdown_core_use_zipper, markdown_core_use, S_
 
 /* A use of `label`, `size` bytes as written, of `kind`, by the root that
  * starts at `start`. False when storage could not be had. */
-static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry_kind kind, const unsigned char *label,
+static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_roster_kind kind, const unsigned char *label,
                   bufsize_t size) {
     const markdown_core_use use = {(uint32_t)start, (uint32_t)edit->use_labels.size, (uint32_t)size, kind};
     markdown_core_strbuf_put(&edit->use_labels, label, size);
@@ -2775,13 +2774,13 @@ static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry
 }
 
 /* THE USES' INDEX (markdown_core_edit, `names`): the name of `use`, its
- * kind's byte and its label as the registry keys it, in `name`. False when
+ * kind's byte and its label as the roster keys it, in `name`. False when
  * storage could not be had. */
 static bool S_use_name(const markdown_core_edit *edit, const markdown_core_use *use, markdown_core_strbuf *name) {
     const unsigned char *label = edit->use_labels.ptr + use->label;
     markdown_core_strbuf_clear(name);
     markdown_core_strbuf_putc(name, (int)use->kind);
-    if (use->kind == MARKDOWN_CORE_REGISTRY_SPECIMEN) {
+    if (use->kind == MARKDOWN_CORE_ROSTER_SPECIMEN) {
         markdown_core_strbuf_put(name, label, (bufsize_t)use->size);
     } else {
         markdown_core_utf8proc_normalize_label(name, label, (bufsize_t)use->size);
@@ -2942,7 +2941,7 @@ static void S_uses_drop(markdown_core_edit *edit, size_t count) {
     uses->back_count -= count;
 }
 
-bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_registry_kind kind,
+bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label) {
     /* A committed root's commit noted its uses, which its completion
      * anew repeats (S_complete_misses). */
@@ -3050,7 +3049,7 @@ static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) 
  * only blocks of kinds their structures name (element.h, `trailed_kinds`), and a
  * reading after one of those goes on as it is. The children taken back
  * stand as their publish left them, and so do their lines, the reach of their readings, their
- * registry records, their headings and their definitions, moved by the
+ * roster records, their headings and their definitions, moved by the
  * edit's delta; their facts and content runs are their completion's, which
  * is done, and go. The reopen keeps all of it aside (markdown_core_edit),
  * and the reading checks each child's line as it comes to it, the limit of
@@ -3218,7 +3217,7 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     assert(!edit->uses.back_count);
     markdown_core_array_shrink(&edit->uses.front);
     S_uses_release_back(&edit->uses);
-    (void)markdown_core_registry_compact(&parser->registry);
+    (void)markdown_core_roster_compact(&parser->roster);
     markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
@@ -3381,7 +3380,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit->depth = depth;
     if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
-        !markdown_core_registry_reopen(&parser->registry, (uint32_t)start, input->lines.end)) {
+        !markdown_core_roster_reopen(&parser->roster, (uint32_t)start, input->lines.end)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -3486,7 +3485,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->back_count = 0;
         input->lines.back_count = stream->reach.back_count = 0;
         S_uses_drop(stream->edit, stream->edit->uses.back_count);
-        markdown_core_registry_splice(&parser->registry, SIZE_MAX, 0);
+        markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
     }
     S_edit_next(stream->edit, &input->lines);
     return true;
@@ -3542,7 +3541,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     edit->line = index;
     (void)S_reach_cut(&stream->reach, old);
     S_uses_drop(edit, S_uses_back_from(&edit->uses, old));
-    markdown_core_registry_splice(&parser->registry, old, delta);
+    markdown_core_roster_splice(&parser->roster, old, delta);
     input->lines.end = (size_t)((int64_t)input->lines.end + delta);
     stream->reach.end = (size_t)((int64_t)stream->reach.end + delta);
     edit->uses.end = (size_t)((int64_t)edit->uses.end + delta);
@@ -3805,11 +3804,11 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return 
  * it read declares it now; one it lost is declared now when any does. */
 static bool S_label_flips(markdown_core_parser *parser, const unsigned char *key, bufsize_t size, bool made,
                           uint32_t start, uint32_t to, bool *failed) {
-    const markdown_core_registry_kind kind = (markdown_core_registry_kind)key[0];
+    const markdown_core_roster_kind kind = (markdown_core_roster_kind)key[0];
     if (!made) {
-        return !markdown_core_registry_find(&parser->registry, kind, key + 1, size - 1, failed) && !*failed;
+        return !markdown_core_roster_find(&parser->roster, kind, key + 1, size - 1, failed) && !*failed;
     }
-    return !markdown_core_registry_declared_outside(&parser->registry, kind, key + 1, size - 1, start, to, failed) &&
+    return !markdown_core_roster_declared_outside(&parser->roster, kind, key + 1, size - 1, start, to, failed) &&
            !*failed;
 }
 
@@ -3817,8 +3816,8 @@ bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t st
     const markdown_core_edit *edit = parser->stream->edit;
     const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
     markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
-    bool ok = markdown_core_registry_made(&parser->registry, (uint32_t)start, &made) &&
-              markdown_core_registry_lost(&parser->registry, &lost);
+    bool ok = markdown_core_roster_made(&parser->roster, (uint32_t)start, &made) &&
+              markdown_core_roster_lost(&parser->roster, &lost);
     markdown_core_strbuf_clear(altered);
     /* Both are in byte order: a merge keeps what one holds and the other
      * does not. */
@@ -4207,7 +4206,7 @@ bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, siz
  *
  * THE MARK: what a reading so far says, which a reading put back to the
  * mark finds as the mark found it -- where the reading stands, the input's
- * index, the content map's last mark, the registry, the completion queue,
+ * index, the content map's last mark, the roster, the completion queue,
  * the cell inputs, and what each element's parse record keeps (element.h,
  * `kept_size`), in the dialect's `kept_size` bytes at `kept`, which its
  * taker owns. */
@@ -4218,7 +4217,7 @@ typedef struct markdown_core_parser_mark {
     markdown_core_normalized_line *normalized;
     size_t line_mark_count;
     markdown_core_line_mark last_mark;
-    markdown_core_registry_mark registry;
+    markdown_core_roster_mark roster;
     markdown_core_node *completion_first, *completion_last;
     size_t block_input_count, block_input_cursor;
     size_t reach_count;
@@ -4243,7 +4242,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
         .scanned = parser->input.scanned,
         .normalized = parser->input.normalized,
         .line_mark_count = parser->line_marks.count,
-        .registry = markdown_core_registry_mark_now(&parser->registry),
+        .roster = markdown_core_roster_mark_now(&parser->roster),
         .completion_first = parser->completion_first,
         .completion_last = parser->completion_last,
         .block_input_count = parser->block_input_count,
@@ -4257,7 +4256,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
 }
 
 /* Puts back the parser's state as `mark` found it: where the reading stood,
- * the content map, the registry, the completion queue, the cell inputs and
+ * the content map, the roster, the completion queue, the cell inputs and
  * what the elements' parse records keep. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_core_parser *parser,
                                                                       const S_snapshot_mark *mark) {
@@ -4272,7 +4271,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
     if (mark->line_mark_count) {
         *markdown_core_array_write(&parser->line_marks, mark->line_mark_count - 1) = mark->last_mark;
     }
-    markdown_core_registry_rollback(&parser->registry, mark->registry);
+    markdown_core_roster_rollback(&parser->roster, mark->roster);
     parser->completion_first = mark->completion_first;
     parser->completion_last = mark->completion_last;
     if (mark->completion_last) {
@@ -6043,7 +6042,7 @@ const void *markdown_core_parser_kept(const markdown_core_parser *parser, const 
     const markdown_core_stream *stream = parser->stream;
     assert(parser->snapshot && stream->snapshot_mark);
     const S_snapshot_mark *mark = stream->mark_count ? &stream->marks[0].state : stream->snapshot_mark;
-    *records = mark->registry.count;
+    *records = mark->roster.count;
     return mark->kept + self->kept_offset;
 }
 
@@ -7457,13 +7456,13 @@ static bool S_miss_root(markdown_core_parser *parser, markdown_core_node *root) 
     return true;
 }
 
-const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
-                                                                           markdown_core_registry_kind kind,
-                                                                           const markdown_core_chunk *label,
-                                                                           const markdown_core_registry_record *record,
-                                                                           bool *failed) {
+const markdown_core_roster_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
+                                                                         markdown_core_roster_kind kind,
+                                                                         const markdown_core_chunk *label,
+                                                                         const markdown_core_roster_record *record,
+                                                                         bool *failed) {
     markdown_core_node *root = parser->completing;
-    const bool found = record && markdown_core_registry_starts_before(&parser->registry, record, root->place.start);
+    const bool found = record && markdown_core_roster_starts_before(&parser->roster, record, root->place.start);
     /* A parse that takes edits lists what found a definition too: each is
      * a use of its label (markdown_core_edit, `uses`). */
     if (found && !parser->stream->edit) {
@@ -7488,7 +7487,7 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
 /* A lookup of the committed root `root` that found nothing for `label`, of
  * `size` bytes, recorded for the finalize. False when storage could not be
  * had. */
-static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
+static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_roster_kind kind,
                           const unsigned char *label, bufsize_t size) {
     markdown_core_definition_miss *misses = markdown_core_reserve(
         parser->stream->misses, &parser->stream->miss_capacity, parser->stream->miss_count + 1, sizeof(*misses));
@@ -7533,8 +7532,8 @@ static int S_collect_completed(markdown_core_node **slot, void *context) {
 static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_node *node, uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-           markdown_core_registry_withdraw(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data, anchor->len,
-                                           start);
+           markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
+                                         start);
 }
 
 /* THE ANCHORS COMPLETING A ROOT RESERVED, withdrawn as starting at `start`,
@@ -7966,7 +7965,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         if (!edit->resumed) {
             parser->input.lines.back_count = parser->stream->reach.back_count = 0;
             S_uses_drop(edit, edit->uses.back_count);
-            markdown_core_registry_splice(&parser->registry, SIZE_MAX, 0);
+            markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
         }
         edit->reading = false;
         edit->count = 0;

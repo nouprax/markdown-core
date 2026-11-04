@@ -2124,18 +2124,18 @@ static bool committed_settle(markdown_core_committed_tables *committed) {
            committed_relabel(committed);
 }
 
-/* THE LABEL'S NEXT DEFINITION. The registry holds each label's declarations
+/* THE LABEL'S NEXT DEFINITION. The roster holds each label's declarations
  * that stand in order of where they start, those of the back too, the
- * front's first (registry.h), and the committed tables those of them that
+ * front's first (roster.h), and the committed tables those of them that
  * are COMMITTED: the label's definition after one that goes is the first of
  * them its tables hold, of the References before the Headings. A definition
- * stands in the registry's part that its entry stands in, where it starts
+ * stands in the roster's part that its entry stands in, where it starts
  * in that part's terms. */
 
-/* The registry's kind of each definition table's labels. */
-static const markdown_core_registry_kind table_kinds[TABLE_COUNT] = {
-    MARKDOWN_CORE_REGISTRY_FOOTNOTE, MARKDOWN_CORE_REGISTRY_SPECIMEN, MARKDOWN_CORE_REGISTRY_REFERENCE,
-    MARKDOWN_CORE_REGISTRY_REFERENCE};
+/* The roster's kind of each definition table's labels. */
+static const markdown_core_roster_kind table_kinds[TABLE_COUNT] = {
+    MARKDOWN_CORE_ROSTER_FOOTNOTE, MARKDOWN_CORE_ROSTER_SPECIMEN, MARKDOWN_CORE_ROSTER_REFERENCE,
+    MARKDOWN_CORE_ROSTER_REFERENCE};
 
 /* The entries of table `table`'s front from `from` up to `to`, but the one
  * of `kept`, which go as their labels move on. */
@@ -2174,11 +2174,11 @@ static const markdown_core_listed *listed_find(const markdown_core_listed_zipper
  * (listed_at_of) into `*at`; `*node` NULL when there is none. `gone`, of
  * table `table` that started at `place` (listed_at_of), was the label's
  * definition: no definition of its table before it is, so the search of
- * its table begins past its declaration, when the registry still holds it.
+ * its table begins past its declaration, when the roster still holds it.
  * The front's declarations past the last the table's front holds are the
  * reading's own, which no commit kept yet: the search passes them by. False
  * when storage could not be had. */
-static bool committed_next(const markdown_core_committed_tables *committed, markdown_core_registry *registry,
+static bool committed_next(const markdown_core_committed_tables *committed, markdown_core_roster *roster,
                            uint32_t labels, markdown_core_chunk label, uint32_t gone, uint32_t place,
                            const committed_out *out, const markdown_core_node **node, uint32_t *at) {
     *node = NULL;
@@ -2188,15 +2188,15 @@ static bool committed_next(const markdown_core_committed_tables *committed, mark
         }
         const markdown_core_listed_zipper *zipper = &committed->starts[table];
         bool failed = false;
-        markdown_core_registry_record *first =
-            markdown_core_registry_first(registry, table_kinds[table], label.data, label.len, &failed);
+        markdown_core_roster_record *first =
+            markdown_core_roster_first(roster, table_kinds[table], label.data, label.len, &failed);
         if (failed) {
             return false;
         }
-        const markdown_core_registry_record *record = first;
+        const markdown_core_roster_record *record = first;
         if (table == gone) {
-            const markdown_core_registry_record *held = markdown_core_registry_held_at(
-                registry, table_kinds[table], label.data, label.len, (place & MARKDOWN_CORE_LISTED_BACK) != 0,
+            const markdown_core_roster_record *held = markdown_core_roster_held_at(
+                roster, table_kinds[table], label.data, label.len, (place & MARKDOWN_CORE_LISTED_BACK) != 0,
                 place & ~MARKDOWN_CORE_LISTED_BACK);
             record = held ? held->after : first;
         }
@@ -2204,7 +2204,7 @@ static bool committed_next(const markdown_core_committed_tables *committed, mark
         const uint32_t last = front ? zipper->front.values[zipper->front.count - 1].start : 0;
         while (record) {
             if (!record->back && (!front || record->start > last)) {
-                record = markdown_core_registry_back_first(first);
+                record = markdown_core_roster_back_first(first);
                 if (!record || !record->back) {
                     break;
                 }
@@ -2231,8 +2231,8 @@ static bool committed_next(const markdown_core_committed_tables *committed, mark
  * or holds among those `out` names: when it was its label's
  * definition, the label's next is (committed_next). False when storage
  * could not be had. */
-static bool committed_unlabel(markdown_core_committed_tables *committed, markdown_core_registry *registry,
-                              uint32_t table, const markdown_core_node *node, const committed_out *out) {
+static bool committed_unlabel(markdown_core_committed_tables *committed, markdown_core_roster *roster, uint32_t table,
+                              const markdown_core_node *node, const committed_out *out) {
     markdown_core_chunk label;
     if (!definition_label(node, &label)) {
         return true;
@@ -2246,7 +2246,7 @@ static bool committed_unlabel(markdown_core_committed_tables *committed, markdow
     }
     const markdown_core_node *next;
     uint32_t at;
-    if (!committed_next(committed, registry, labels, label, table, held->extra, out, &next, &at)) {
+    if (!committed_next(committed, roster, labels, label, table, held->extra, out, &next, &at)) {
         return false;
     }
     if (next) {
@@ -2262,13 +2262,13 @@ static bool committed_unlabel(markdown_core_committed_tables *committed, markdow
 
 /* The `count` entries of table `table`'s back nearest the focus go, and
  * the labels they held with them. False when storage could not be had. */
-static bool committed_cut(markdown_core_committed_tables *committed, markdown_core_registry *registry, uint32_t table,
+static bool committed_cut(markdown_core_committed_tables *committed, markdown_core_roster *roster, uint32_t table,
                           size_t count) {
     markdown_core_listed_zipper *zipper = &committed->starts[table];
     assert(count <= zipper->back_count);
     for (size_t i = 0; i < count; i++) {
         const markdown_core_listed entry = zipper->back[--zipper->back_count];
-        if (!committed_unlabel(committed, registry, table, entry.node, NULL)) {
+        if (!committed_unlabel(committed, roster, table, entry.node, NULL)) {
             return false;
         }
     }
@@ -2277,12 +2277,12 @@ static bool committed_cut(markdown_core_committed_tables *committed, markdown_co
 
 /* The front's entries of table `table` from `first` on go, and the labels
  * they held with them. False when storage could not be had. */
-static bool committed_truncate(markdown_core_committed_tables *committed, markdown_core_registry *registry,
-                               uint32_t table, size_t first) {
+static bool committed_truncate(markdown_core_committed_tables *committed, markdown_core_roster *roster, uint32_t table,
+                               size_t first) {
     markdown_core_listed_zipper *zipper = &committed->starts[table];
     const committed_out out = {table, first, zipper->front.count, NULL};
     for (size_t i = first; i < zipper->front.count; i++) {
-        if (!committed_unlabel(committed, registry, table, zipper->front.values[i].node, &out)) {
+        if (!committed_unlabel(committed, roster, table, zipper->front.values[i].node, &out)) {
             return false;
         }
     }
@@ -2448,7 +2448,7 @@ bool markdown_core_publish_withdraw(markdown_core_parser *parser, markdown_core_
         const committed_out out = {table, first, end, root};
         for (size_t i = first; i < end; i++) {
             const markdown_core_node *node = zipper->front.values[i].node;
-            if (node != root && !committed_unlabel(committed, &parser->registry, table, node, &out)) {
+            if (node != root && !committed_unlabel(committed, &parser->roster, table, node, &out)) {
                 return false;
             }
         }
@@ -2476,7 +2476,7 @@ bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, 
     if (at < zipper->front.count && zipper->front.values[at].start == start) {
         const markdown_core_node *old = zipper->front.values[at].node;
         const committed_out out = {table, at, at + 1, NULL};
-        if (!committed_unlabel(committed, &parser->registry, table, old, &out)) {
+        if (!committed_unlabel(committed, &parser->roster, table, old, &out)) {
             return false;
         }
         listed_front_erase(zipper, at, 1, committed);
@@ -2765,7 +2765,7 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
     committed_check(committed);
     for (uint32_t table = 0; table < TABLE_COUNT; table++) {
         if (edit->reading && !edit->resumed && committed->starts[table].back_count &&
-            !committed_cut(committed, &parser->registry, table, committed->starts[table].back_count)) {
+            !committed_cut(committed, &parser->roster, table, committed->starts[table].back_count)) {
             return false;
         }
         const definition_table *listed = &walk->tables[table];
@@ -3086,7 +3086,7 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
         ok = listed_move(zipper, start, size, committed);
         if (ok) {
             committed_follow(committed, table, front, back);
-            ok = child || committed_truncate(committed, &parser->registry, table, 0);
+            ok = child || committed_truncate(committed, &parser->roster, table, 0);
         }
     }
     if (ok) {
@@ -3169,7 +3169,7 @@ bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, 
     const size_t old = (size_t)((int64_t)point - edit->delta);
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_listed_zipper *zipper = &committed->starts[table];
-        if (!committed_cut(committed, &parser->registry, table, listed_back_from(zipper, old))) {
+        if (!committed_cut(committed, &parser->roster, table, listed_back_from(zipper, old))) {
             return false;
         }
         zipper->end = (size_t)((int64_t)zipper->end + edit->delta);

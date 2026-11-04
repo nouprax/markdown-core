@@ -13,7 +13,7 @@ enum { FOOTNOTE_LINK, FOOTNOTE_CITATION };
 static const markdown_core_element *const FOOTNOTE_PEERS[] = {
     [FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [FOOTNOTE_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION, NULL};
 
-static const markdown_core_registry_record *
+static const markdown_core_roster_record *
 markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
                                          bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
@@ -24,20 +24,20 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
  * defines no such label that the call's root sees. The record's label IS the call's normal form -- the
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
-static const markdown_core_registry_record *
+static const markdown_core_roster_record *
 markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
                                          bufsize_t after_close) {
     if (after_close - label_start < 2) {
         return NULL;
     }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
-     * aliases, so the only allocation in here is the registry's own
+     * aliases, so the only allocation in here is the roster's own
      * normalization. */
     markdown_core_chunk label =
         markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
     bool failed = false;
-    const markdown_core_registry_record *record = markdown_core_parser_find_definition(
-        inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_FOOTNOTE, &label, &failed);
+    const markdown_core_roster_record *record = markdown_core_parser_find_definition(
+        inline_state->owner_parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &label, &failed);
     if (failed) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
@@ -188,7 +188,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
         bool caret_written = opener->position < inline_state->input.len &&
                              inline_state->input.data[opener->position] == '^' &&
                              (literal->len > 1 || markdown_core_scaffold_next(label));
-        const markdown_core_registry_record *definition =
+        const markdown_core_roster_record *definition =
             caret_written ? markdown_core_inline_footnote_definition(inline_state, opener->position, initial_pos)
                           : NULL;
         if (definition) {
@@ -210,7 +210,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             }
             /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
-            const markdown_core_chunk defined = markdown_core_registry_label(definition);
+            const markdown_core_chunk defined = markdown_core_roster_label(definition);
             unsigned char *id = markdown_core_alloc(1, (size_t)defined.len + 1);
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -299,7 +299,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * `Footnote` and a resolved `Link` are different values now. */
     markdown_core_node *footnote = *container;
     markdown_core_chunk normal;
-    if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &c, &normal) || !normal.len) {
+    if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &c, &normal) || !normal.len) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;
@@ -319,8 +319,8 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    if (!markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, normal.data, normal.len,
-                                        footnote->place.start)) {
+    if (!markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, normal.data, normal.len,
+                                      footnote->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;
