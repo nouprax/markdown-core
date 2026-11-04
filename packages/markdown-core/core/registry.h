@@ -69,13 +69,11 @@ typedef enum {
     MARKDOWN_CORE_REGISTRY_ANCHOR
 } markdown_core_registry_kind;
 
-typedef struct markdown_core_registry_record markdown_core_registry_record;
-
-struct markdown_core_registry_record {
+typedef struct markdown_core_registry_record {
     /* A declaration the index holds: the key's declarations before and
      * after it in its list; and, in the list's first, its last. A
      * withdrawal: the declaration it withdrew, in `before`. */
-    markdown_core_registry_record *before, *after, *last;
+    struct markdown_core_registry_record *before, *after, *last;
     /* Where the declaring or withdrawing definition starts: in the text, or
      * measured back from the end when the record is in the back. */
     uint32_t start;
@@ -89,7 +87,7 @@ struct markdown_core_registry_record {
      * text it was in is gone, which an edit replaced. */
     bool withdraws, linked, withdrawn, back, gone;
     unsigned char key[];
-};
+} markdown_core_registry_record;
 
 /* Where a declaration of a parse an edit reads starts, and the record. */
 typedef struct {
