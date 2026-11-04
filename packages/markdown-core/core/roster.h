@@ -303,6 +303,12 @@ bool markdown_core_roster_made(const markdown_core_roster *roster, uint32_t star
  * markdown_core_roster_made writes them. False when storage could not be
  * had. */
 bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core_strbuf *labels);
+/* The labels of the anchors an edit's reading may have made or let go,
+ * each with its NUL, some more than once: the front's from `start` on, the
+ * ones the last splice let go, and, while the back is hidden -- a reading
+ * that took nothing back, at its finish -- all of the back's. False when
+ * storage could not be had. */
+bool markdown_core_roster_anchors(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels);
 /* Whether a declaration of `kind` for `label` that stands starts before
  * `from` or at `to` or past it. `*failed` as for markdown_core_roster_find,
  * and the answer is then false. */
