@@ -168,6 +168,15 @@ const markdown_core_registry_record *markdown_core_registry_find(markdown_core_r
                                                                  const unsigned char *label, bufsize_t length,
                                                                  bool *failed);
 
+/* The earliest declaration of `kind` for `label`, in the kind's normal
+ * form, that stands, one of a back that lookups do not see as well: the
+ * key's next is its `after`, in order of where they start, the front's
+ * first. `*failed` as above. */
+const markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
+                                                                  markdown_core_registry_kind kind,
+                                                                  const unsigned char *label, bufsize_t length,
+                                                                  bool *failed);
+
 /* The earliest declaration of `kind` for the reference-label normal form of
  * `label`, as written, as above; a label that normalizes to nothing, or is
  * longer than a link label may be, is declared by nothing. `*failed` as

@@ -2839,7 +2839,7 @@ static bool S_use_note(markdown_core_edit *edit, markdown_core_use *use, bool ba
 }
 
 /* The note `id` leaves the index, and its name when it was the last. */
-static void S_use_forget(markdown_core_edit *edit, uint32_t id) {
+static void S_use_unnote(markdown_core_edit *edit, uint32_t id) {
     markdown_core_use_note *note = &edit->notes[id];
     markdown_core_use_name *held = note->name;
     if (note->prior != UINT32_MAX) {
@@ -2934,7 +2934,7 @@ static void S_uses_drop(markdown_core_edit *edit, size_t count) {
     for (size_t k = 0; k < count; k++) {
         const markdown_core_use *use = &uses->back[uses->back_count - 1 - k];
         if (use->size == MARKDOWN_CORE_USE_NOTED) {
-            S_use_forget(edit, use->label);
+            S_use_unnote(edit, use->label);
         } else {
             edit->use_live -= use->size;
         }

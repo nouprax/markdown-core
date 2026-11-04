@@ -332,6 +332,23 @@ const markdown_core_registry_record *markdown_core_registry_find(markdown_core_r
     return S_first(registry, kind, failed);
 }
 
+const markdown_core_registry_record *markdown_core_registry_first(markdown_core_registry *registry,
+                                                                  markdown_core_registry_kind kind,
+                                                                  const unsigned char *label, bufsize_t length,
+                                                                  bool *failed) {
+    if (length <= 0 || !registry->spaces[kind].records) {
+        return NULL;
+    }
+    S_assemble(registry, kind, label, length);
+    if (registry->key.oom || !S_index_space(registry, kind)) {
+        *failed = true;
+        return NULL;
+    }
+    const markdown_core_key_index_slot *slot =
+        markdown_core_key_index_find(&registry->index, registry->key.ptr, registry->key.size);
+    return slot ? (const markdown_core_registry_record *)slot->value : NULL;
+}
+
 const markdown_core_registry_record *markdown_core_registry_find_label(markdown_core_registry *registry,
                                                                        markdown_core_registry_kind kind,
                                                                        const markdown_core_chunk *label, bool *failed) {
