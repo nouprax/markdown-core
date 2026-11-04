@@ -619,9 +619,7 @@ void markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int
         for (size_t k = 0; k < gone; k++) {
             markdown_core_roster_record *record = places->back[places->back_count - 1 - k].record;
             if (markdown_core_roster_stands(record)) {
-                if (kind != MARKDOWN_CORE_ROSTER_ANCHOR) {
-                    markdown_core_strbuf_put(&roster->lost, record->key, record->key_len + 1);
-                }
+                markdown_core_strbuf_put(&roster->lost, record->key, record->key_len + 1);
                 roster->dead += S_record_size(record->key_len - 1);
             }
             if (record->linked) {
@@ -705,12 +703,35 @@ bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core
     count = 0;
     for (bufsize_t at = 0; at < roster->lost.size;) {
         const bufsize_t size = (bufsize_t)strlen((const char *)roster->lost.ptr + at);
-        keys[count++] = (S_key){roster->lost.ptr + at, size};
+        if (roster->lost.ptr[at] != MARKDOWN_CORE_ROSTER_ANCHOR) {
+            keys[count++] = (S_key){roster->lost.ptr + at, size};
+        }
         at += size + 1;
     }
     const bool ok = S_put_keys(keys, count, labels);
     markdown_core_free(keys);
     return ok;
+}
+
+bool markdown_core_roster_anchors(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels) {
+    const markdown_core_roster_places *places = &roster->spaces[MARKDOWN_CORE_ROSTER_ANCHOR].places;
+    markdown_core_strbuf_clear(labels);
+    for (size_t i = S_places_front_from(places, start); i < places->front.count; i++) {
+        const markdown_core_roster_record *record = places->front.values[i].record;
+        markdown_core_strbuf_put(labels, record->key + 1, record->key_len);
+    }
+    for (size_t i = 0; roster->hidden && i < places->back_count; i++) {
+        const markdown_core_roster_record *record = places->back[i].record;
+        markdown_core_strbuf_put(labels, record->key + 1, record->key_len);
+    }
+    for (bufsize_t at = 0; at < roster->lost.size;) {
+        const bufsize_t size = (bufsize_t)strlen((const char *)roster->lost.ptr + at);
+        if (roster->lost.ptr[at] == MARKDOWN_CORE_ROSTER_ANCHOR) {
+            markdown_core_strbuf_put(labels, roster->lost.ptr + at + 1, size);
+        }
+        at += size + 1;
+    }
+    return !labels->oom && !roster->lost.oom;
 }
 
 bool markdown_core_roster_declared_outside(markdown_core_roster *roster, markdown_core_roster_kind kind,

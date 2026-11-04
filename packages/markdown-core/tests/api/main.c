@@ -5118,7 +5118,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     for (size_t i = 0; i < parser->roster.count; i++) {
         work->definitions += parser->roster.records[i]->key[0] == MARKDOWN_CORE_ROSTER_REFERENCE;
     }
-    work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
+    work->heading_collection_disposed = headings->headings.front.values == NULL && headings->count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
@@ -11483,6 +11483,57 @@ static void session_edits_compaction(test_batch_runner *runner) {
 /* An edit after the flush: refused while the session streams and at a cursor
  * that stands nowhere, and otherwise the parse of the new text, keeping the
  * ids of what it did not change (plan 12.3). */
+/* THE NAMES AN EDIT MOVES (heading.c): an edit names again only the groups
+ * of the stems it touched, and the anchors every heading then shows are a
+ * fresh parse's. The text holds bases that are each other's parent
+ * (`section`, `section-1`, `section-1-1`), a run of one base (`notes`),
+ * explicit anchors that take a heading's name, and bases no other heading
+ * bears on (`part-2`, `part-3`). Each edit types a byte, a line ending, a
+ * whole heading or an anchor at every place, and takes it away again. */
+static void session_edits_name_headings(test_batch_runner *runner) {
+    static const char text[] = "# Section\n\n# Section 1\n\n# Notes\n\nx\n\n# Notes\n\n# Section\n\n"
+                               "# Other {#notes-1}\n\n# Section 1 1\n\n# Part 2\n\n# Notes\n\n# Part 3\n\n"
+                               "# Notes 1\n\n# Section {#section-2}\n";
+    static const char *const typed[] = {"z", "\n", "1", " 1", "# Notes\n\n", "# Section 1\n\n", " {#notes}", "-"};
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                          &session) == MARKDOWN_CORE_OK &&
+                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK && session_as_parsed(session);
+    size_t lines = 1;
+    for (size_t i = 0; i + 1 < sizeof(text); i++) {
+        lines += text[i] == '\n';
+    }
+    for (size_t t = 0; same && t < sizeof(typed) / sizeof(*typed); t++) {
+        const size_t size = strlen(typed[t]);
+        for (int line = 1; same && line <= (int)lines; line++) {
+            for (int column = 1; same; column++) {
+                const markdown_core_position at = {line, column};
+                const markdown_core_status status =
+                    markdown_core_session_edit(session, at, at, (const uint8_t *)typed[t], size, &document);
+                if (status == MARKDOWN_CORE_OUT_OF_BOUNDS) {
+                    break;
+                }
+                same = status == MARKDOWN_CORE_OK && session_as_parsed(session);
+                /* Where the typed text ends: its own lines move the end. */
+                markdown_core_position end = at;
+                for (size_t i = 0; i < size; i++) {
+                    if (typed[t][i] == '\n') {
+                        end.line++;
+                        end.column = 1;
+                    } else {
+                        end.column++;
+                    }
+                }
+                same = same && markdown_core_session_edit(session, at, end, NULL, 0, &document) == MARKDOWN_CORE_OK &&
+                       session_as_parsed(session);
+            }
+        }
+    }
+    OK(runner, same, "the headings an edit names again show the anchors a fresh parse gives them");
+    markdown_core_session_close(session);
+}
+
 static void session_edits(test_batch_runner *runner) {
     static const char source[] = "one\n\ntw\xf0\xa0\x80\x80o\n";
     markdown_core_session *session = NULL;
@@ -12991,6 +13042,7 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_edits(runner);
+    session_edits_name_headings(runner);
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
