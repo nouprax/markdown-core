@@ -2774,12 +2774,170 @@ static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_registry
     return true;
 }
 
+/* THE USES' INDEX (markdown_core_edit, `names`): the name of `use`, its
+ * kind's byte and its label as the registry keys it, in `name`. False when
+ * storage could not be had. */
+static bool S_use_name(const markdown_core_edit *edit, const markdown_core_use *use, markdown_core_strbuf *name) {
+    const unsigned char *label = edit->use_labels.ptr + use->label;
+    markdown_core_strbuf_clear(name);
+    markdown_core_strbuf_putc(name, (int)use->kind);
+    if (use->kind == MARKDOWN_CORE_REGISTRY_SPECIMEN) {
+        markdown_core_strbuf_put(name, label, (bufsize_t)use->size);
+    } else {
+        markdown_core_utf8proc_normalize_label(name, label, (bufsize_t)use->size);
+    }
+    return !name->oom;
+}
+
+/* `use`, of the back when `back`, in the index: its note made, and its
+ * label's bytes dead. False, with the use as it was, when storage could not
+ * be had. */
+static bool S_use_note(markdown_core_edit *edit, markdown_core_use *use, bool back, markdown_core_strbuf *name) {
+    if (!S_use_name(edit, use, name)) {
+        return false;
+    }
+    if (edit->spare == UINT32_MAX && edit->note_count == edit->note_room) {
+        markdown_core_use_note *notes =
+            markdown_core_reserve(edit->notes, &edit->note_room, edit->note_count + 1, sizeof(*notes));
+        if (!notes || edit->note_room > UINT32_MAX) {
+            return false;
+        }
+        edit->notes = notes;
+    }
+    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&edit->names, name->ptr, name->size);
+    if (!slot) {
+        return false;
+    }
+    markdown_core_use_name *held = (markdown_core_use_name *)slot->value;
+    if (!slot->key) {
+        held = markdown_core_alloc(1, sizeof(*held) + (size_t)name->size);
+        if (!held) {
+            return false;
+        }
+        held->first = UINT32_MAX;
+        held->size = name->size;
+        memcpy(held->bytes, name->ptr, (size_t)name->size);
+        slot->value = (size_t)held;
+        markdown_core_key_index_commit(&edit->names, slot, held->bytes);
+    }
+    uint32_t id = edit->spare;
+    if (id == UINT32_MAX) {
+        id = (uint32_t)edit->note_count++;
+    } else {
+        edit->spare = edit->notes[id].next;
+    }
+    edit->notes[id] = (markdown_core_use_note){held, use->start, held->first, UINT32_MAX, back};
+    if (held->first != UINT32_MAX) {
+        edit->notes[held->first].prior = id;
+    }
+    held->first = id;
+    held->count++;
+    edit->use_live -= use->size;
+    use->label = id;
+    use->size = MARKDOWN_CORE_USE_NOTED;
+    return true;
+}
+
+/* The note `id` leaves the index, and its name when it was the last. */
+static void S_use_forget(markdown_core_edit *edit, uint32_t id) {
+    markdown_core_use_note *note = &edit->notes[id];
+    markdown_core_use_name *held = note->name;
+    if (note->prior != UINT32_MAX) {
+        edit->notes[note->prior].next = note->next;
+    } else {
+        held->first = note->next;
+    }
+    if (note->next != UINT32_MAX) {
+        edit->notes[note->next].prior = note->prior;
+    }
+    if (!--held->count) {
+        markdown_core_key_index_slot *slot = markdown_core_key_index_find(&edit->names, held->bytes, held->size);
+        assert(slot && slot->value == (size_t)held);
+        markdown_core_key_index_remove(&edit->names, slot);
+        markdown_core_free(held);
+    }
+    note->name = NULL;
+    note->next = edit->spare;
+    edit->spare = id;
+}
+
+/* Every use the index does not hold put in it, and the index then holds
+ * them all. False when storage could not be had, with what it took held. */
+static bool S_uses_index(markdown_core_edit *edit) {
+    markdown_core_use_zipper *uses = &edit->uses;
+    markdown_core_strbuf name = MARKDOWN_CORE_BUF_INIT();
+    bool ok = true;
+    bool changed = false;
+    for (size_t i = 0; ok && i < uses->front.count; i++) {
+        if (uses->front.values[i].size != MARKDOWN_CORE_USE_NOTED) {
+            /* The front's entries change in place: no copy of them ahead
+             * holds. */
+            if (!changed) {
+                markdown_core_ahead_unsettle(&uses->front.ahead, i);
+                changed = true;
+            }
+            ok = S_use_note(edit, &uses->front.values[i], false, &name);
+        }
+    }
+    for (size_t i = 0; ok && i < uses->back_count; i++) {
+        if (uses->back[i].size != MARKDOWN_CORE_USE_NOTED) {
+            ok = S_use_note(edit, &uses->back[i], true, &name);
+        }
+    }
+    markdown_core_strbuf_free(&name);
+    edit->indexed = ok;
+    return ok;
+}
+
+/* The index follows a move of the focus: the uses it held that crossed it,
+ * the front's past `front` or the back's past `back`, the counts before the
+ * move, stand where they stand now. */
+static void S_uses_follow(markdown_core_edit *edit, size_t front, size_t back) {
+    if (!edit->note_count) {
+        return;
+    }
+    markdown_core_use_zipper *uses = &edit->uses;
+    for (size_t i = front; i < uses->front.count; i++) {
+        const markdown_core_use *use = &uses->front.values[i];
+        if (use->size == MARKDOWN_CORE_USE_NOTED) {
+            edit->notes[use->label].start = use->start;
+            edit->notes[use->label].back = false;
+        }
+    }
+    for (size_t i = back; i < uses->back_count; i++) {
+        const markdown_core_use *use = &uses->back[i];
+        if (use->size == MARKDOWN_CORE_USE_NOTED) {
+            edit->notes[use->label].start = use->start;
+            edit->notes[use->label].back = true;
+        }
+    }
+}
+
+/* The index let go. */
+static void S_uses_unindex(markdown_core_edit *edit) {
+    for (size_t i = 0; i < edit->names.capacity; i++) {
+        if (edit->names.slots[i].key) {
+            markdown_core_free((void *)edit->names.slots[i].value);
+        }
+    }
+    markdown_core_key_index_free(&edit->names);
+    markdown_core_free(edit->notes);
+    edit->notes = NULL;
+    edit->note_count = edit->note_room = 0;
+    edit->spare = UINT32_MAX;
+}
+
 /* The `count` uses of the back nearest the focus go, and their labels'
- * bytes are dead. */
+ * bytes are dead, or their notes leave the index. */
 static void S_uses_drop(markdown_core_edit *edit, size_t count) {
     markdown_core_use_zipper *uses = &edit->uses;
     for (size_t k = 0; k < count; k++) {
-        edit->use_live -= uses->back[uses->back_count - 1 - k].size;
+        const markdown_core_use *use = &uses->back[uses->back_count - 1 - k];
+        if (use->size == MARKDOWN_CORE_USE_NOTED) {
+            S_use_forget(edit, use->label);
+        } else {
+            edit->use_live -= use->size;
+        }
     }
     uses->back_count -= count;
 }
@@ -2812,7 +2970,9 @@ static bool S_uses_settle(markdown_core_edit *edit) {
     for (size_t i = 0; i < S_uses_count(uses); i++) {
         markdown_core_use *use = i < uses->front.count ? &uses->front.values[i]
                                                        : &uses->back[uses->back_count - 1 - (i - uses->front.count)];
-        markdown_core_strbuf_put(&labels, edit->use_labels.ptr + use->label, (bufsize_t)use->size);
+        if (use->size != MARKDOWN_CORE_USE_NOTED) {
+            markdown_core_strbuf_put(&labels, edit->use_labels.ptr + use->label, (bufsize_t)use->size);
+        }
     }
     if (labels.oom) {
         markdown_core_strbuf_free(&labels);
@@ -2824,8 +2984,10 @@ static bool S_uses_settle(markdown_core_edit *edit) {
     for (size_t i = 0; i < S_uses_count(uses); i++) {
         markdown_core_use *use = i < uses->front.count ? &uses->front.values[i]
                                                        : &uses->back[uses->back_count - 1 - (i - uses->front.count)];
-        use->label = at;
-        at += use->size;
+        if (use->size != MARKDOWN_CORE_USE_NOTED) {
+            use->label = at;
+            at += use->size;
+        }
     }
     markdown_core_strbuf_free(&edit->use_labels);
     edit->use_labels = labels;
@@ -2840,6 +3002,16 @@ static bool S_uses_settle(markdown_core_edit *edit) {
 static bool S_uses_flush(markdown_core_parser *parser) {
     markdown_core_edit *edit = parser->stream->edit;
     markdown_core_use_zipper *uses = &edit->uses;
+    /* The index, once made, takes what the reading noted; when it cannot,
+     * the next lookup of it takes them. */
+    if (edit->indexed && edit->uses_from < uses->front.count) {
+        markdown_core_ahead_unsettle(&uses->front.ahead, edit->uses_from);
+        markdown_core_strbuf name = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = edit->uses_from; edit->indexed && i < uses->front.count; i++) {
+            edit->indexed = S_use_note(edit, &uses->front.values[i], false, &name);
+        }
+        markdown_core_strbuf_free(&name);
+    }
     /* A reading notes its roots' uses mostly in order. */
     size_t sorted = edit->uses_from + (uses->front.count > edit->uses_from);
     while (sorted < uses->front.count && uses->front.values[sorted - 1].start <= uses->front.values[sorted].start) {
@@ -2939,7 +3111,9 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
      * on, or up to it. */
     (void)S_lines_move(&input->lines, start, input->size, input);
     (void)S_reach_move(&stream->reach, start, input->size, edit);
+    const size_t front = edit->uses.front.count, back = edit->uses.back_count;
     (void)S_uses_move(&edit->uses, start, input->size, edit);
+    S_uses_follow(edit, front, back);
     edit->uses_from = edit->uses.front.count;
     assert(input->lines.front.count == line || start == input->scanned);
     edit->line = line;
@@ -3676,82 +3850,78 @@ bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t st
     return ok && !altered->oom;
 }
 
-/* Whether `key`, `size` bytes with its NUL, is one of the `altered` keys,
- * `offsets` the start of each, in byte order. */
-static bool S_altered_holds(const markdown_core_strbuf *altered, const bufsize_t *offsets, size_t count,
-                            const unsigned char *key, bufsize_t size) {
+static int S_place_order(const void *a, const void *b) {
+    const size_t left = *(const size_t *)a, other = *(const size_t *)b;
+    return (left > other) - (left < other);
+}
+
+/* Whether `place` lies in one of the `count` spans, pairs of offsets in
+ * order. */
+static bool S_spans_hold(const size_t *spans, size_t count, size_t place) {
     size_t low = 0, high = count;
     while (low < high) {
         const size_t middle = low + (high - low) / 2;
-        const unsigned char *probe = altered->ptr + offsets[middle];
-        const bufsize_t probe_size = (bufsize_t)strlen((const char *)probe) + 1;
-        const int order = memcmp(probe, key, (size_t)(probe_size < size ? probe_size : size));
-        if (!order && probe_size == size) {
-            return true;
-        }
-        if (order < 0 || (!order && probe_size < size)) {
+        if (spans[2 * middle + 1] <= place) {
             low = middle + 1;
         } else {
             high = middle;
         }
     }
-    return false;
+    return low < count && spans[2 * low] <= place;
 }
 
 bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
                                   const size_t *spans, size_t count, size_t **places, size_t *place_count) {
-    const markdown_core_edit *edit = parser->stream->edit;
-    const markdown_core_use_zipper *uses = &edit->uses;
+    markdown_core_edit *edit = parser->stream->edit;
     *places = NULL;
     *place_count = 0;
-    size_t room = 0, key_count = 0, key_room = 0;
-    bufsize_t *offsets = NULL;
+    /* The index is made at the first lookup, and a lookup of each altered
+     * name then finds its uses. */
+    if (!altered->size || (!edit->indexed && !S_uses_index(edit))) {
+        return !altered->size;
+    }
+    size_t room = 0;
     bool ok = true;
     for (bufsize_t item = 0; ok && item < altered->size;) {
-        bufsize_t *more = markdown_core_reserve(offsets, &key_room, key_count + 1, sizeof(*more));
-        ok = more != NULL;
-        if (ok) {
-            offsets = more;
-            offsets[key_count++] = item;
-            item += (bufsize_t)strlen((const char *)altered->ptr + item) + 1;
+        const unsigned char *bytes = altered->ptr + item;
+        const bufsize_t size = (bufsize_t)strlen((const char *)bytes);
+        item += size + 1;
+        const markdown_core_key_index_slot *slot = markdown_core_key_index_find(&edit->names, bytes, size);
+        if (!slot) {
+            continue;
         }
-    }
-    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
-    for (size_t pair = 0; ok && pair < count; pair++) {
-        for (size_t i = S_uses_from(uses, spans[2 * pair]);
-             ok && i < S_uses_count(uses) && S_uses_start(uses, i) < spans[2 * pair + 1]; i++) {
-            const markdown_core_use use = S_uses_at(uses, i);
-            const unsigned char *label = edit->use_labels.ptr + use.label;
-            markdown_core_strbuf_clear(&key);
-            markdown_core_strbuf_putc(&key, (int)use.kind);
-            if (use.kind == MARKDOWN_CORE_REGISTRY_SPECIMEN) {
-                markdown_core_strbuf_put(&key, label, (bufsize_t)use.size);
-            } else {
-                markdown_core_utf8proc_normalize_label(&key, label, (bufsize_t)use.size);
-            }
-            markdown_core_strbuf_putc(&key, 0);
-            ok = !key.oom;
-            const size_t place = (size_t)use.start + 1;
-            if (!ok || (*place_count && (*places)[*place_count - 1] == place) ||
-                !S_altered_holds(altered, offsets, key_count, key.ptr, key.size)) {
+        const markdown_core_use_name *held = (const markdown_core_use_name *)slot->value;
+        for (uint32_t id = held->first; ok && id != UINT32_MAX; id = edit->notes[id].next) {
+            const markdown_core_use_note *note = &edit->notes[id];
+            const size_t start = note->back ? edit->uses.end - note->start : note->start;
+            if (!S_spans_hold(spans, count, start)) {
                 continue;
             }
             size_t *more = markdown_core_reserve(*places, &room, *place_count + 1, sizeof(*more));
             ok = more != NULL;
             if (ok) {
                 *places = more;
-                (*places)[(*place_count)++] = place;
+                (*places)[(*place_count)++] = start + 1;
             }
         }
     }
-    markdown_core_strbuf_free(&key);
-    markdown_core_free(offsets);
     if (!ok) {
         markdown_core_free(*places);
         *places = NULL;
         *place_count = 0;
+        return false;
     }
-    return ok;
+    if (*place_count) {
+        qsort(*places, *place_count, sizeof(**places), S_place_order);
+        size_t kept = 1;
+        for (size_t i = 1; i < *place_count; i++) {
+            if ((*places)[i] != (*places)[kept - 1]) {
+                (*places)[kept++] = (*places)[i];
+            }
+        }
+        *place_count = kept;
+    }
+    return true;
 }
 
 size_t markdown_core_parser_line_of(const markdown_core_parser *parser, size_t offset) {
@@ -3817,6 +3987,7 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
         return false;
     }
     edit->use_labels = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
+    edit->spare = UINT32_MAX;
     edit->point = SIZE_MAX;
     stream->edit = edit;
     /* Room for the log up front, so a step it grows in pays no
@@ -4212,6 +4383,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_array_free(&stream->edit->uses.front);
         S_uses_release_back(&stream->edit->uses);
         markdown_core_strbuf_free(&stream->edit->use_labels);
+        S_uses_unindex(stream->edit);
         markdown_core_free(stream->edit);
     }
     markdown_core_settled *settled = &stream->settled;

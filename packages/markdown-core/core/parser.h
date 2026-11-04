@@ -614,6 +614,28 @@ typedef struct markdown_core_use {
 
 typedef MARKDOWN_CORE_ZIPPER(markdown_core_use) markdown_core_use_zipper;
 
+/* A use the uses' index holds (markdown_core_edit, `names`) has its `size`
+ * this, and `label` the number of its note: its label's bytes went. */
+#define MARKDOWN_CORE_USE_NOTED UINT32_MAX
+
+/* A NAME THE USES' INDEX HOLDS: a lookup's kind and label as the registry
+ * keys them, `size` bytes, and the first of the notes of the uses that
+ * looked it up, `count` of them. */
+typedef struct markdown_core_use_name {
+    uint32_t first, count;
+    bufsize_t size;
+    unsigned char bytes[];
+} markdown_core_use_name;
+
+/* A NOTE OF A USE THE INDEX HOLDS: its name, where the root starts in the
+ * terms of the zipper's part that holds it, the back's when `back`, and the
+ * notes before and after it of the same name. */
+typedef struct markdown_core_use_note {
+    markdown_core_use_name *name;
+    uint32_t start, next, prior;
+    bool back;
+} markdown_core_use_note;
+
 typedef struct markdown_core_edit {
     struct markdown_core_node **children;
     size_t children_capacity;
@@ -669,6 +691,16 @@ typedef struct markdown_core_edit {
     markdown_core_use_zipper uses;
     markdown_core_strbuf use_labels;
     size_t uses_from, use_live;
+    /* THE USES' INDEX (blocks.c): the uses by name, made at the first
+     * lookup of the uses of altered labels and kept from then on. `names`
+     * maps each name to its markdown_core_use_name, whose notes are among
+     * the `note_count` of `notes`, those let go linked from `spare`; it holds
+     * every use but what a reading noted when `indexed`. */
+    markdown_core_key_index names;
+    markdown_core_use_note *notes;
+    size_t note_count, note_room;
+    uint32_t spare;
+    bool indexed;
     /* While the finalize completes anew the roots whose misses now find a
      * definition, whose commits noted their uses. */
     bool anew;
