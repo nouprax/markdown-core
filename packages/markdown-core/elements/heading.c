@@ -1301,8 +1301,10 @@ static bool name_move(name_moves *moves, uint32_t stem, const unsigned char *nam
         markdown_core_key_index_commit(&moves->index, slot, bytes);
         slot->value = 0;
     }
-    const int64_t was = (int64_t)slot->value, now = was + step;
-    slot->value = (size_t)now;
+    /* The count wraps as a size does, so that only zero is read: a count
+     * below zero is a size past half of any. */
+    const size_t was = slot->value, now = was + (size_t)(ptrdiff_t)step;
+    slot->value = now;
     if (!was) {
         moves->nonzero++;
     } else if (!now) {
