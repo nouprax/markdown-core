@@ -4094,15 +4094,21 @@ static int S_reach_order(const void *a, const void *b) {
     return (left > right) - (left < right);
 }
 
-/* Puts the `count` entries of `log` in order of start, and into `*moved`
- * the first of them that moved. An edit leaves each log in order but for
- * the entries it noted, which it put at the end: they are sorted on their
- * own and merged in from the back, which moves no entry before the first of
- * them in order, through `room`, which holds `*capacity` entries. False when
- * storage could not be had. */
-static bool S_reach_sort(markdown_core_place *log, size_t count, markdown_core_ahead *ahead, markdown_core_place **room,
-                         size_t *capacity, size_t *moved) {
-    size_t front = 1;
+/* Puts the `count` entries of `log` in order of start, the first `known` of
+ * which are, and into `*moved` the first of them that moved. An edit leaves
+ * the log in order but for the entries it noted, which it put at the end:
+ * the order is checked from the first not known on, they are sorted on
+ * their own and merged in from the back, which moves no entry before the
+ * first of them in order, through `room`, which holds `*capacity` entries.
+ * False when storage could not be had. */
+static bool S_reach_sort(markdown_core_place *log, size_t count, size_t known, markdown_core_ahead *ahead,
+                         markdown_core_place **room, size_t *capacity, size_t *moved) {
+    size_t front = known > 1 ? (known < count ? known : count) : 1;
+#ifndef NDEBUG
+    for (size_t i = 1; i < front; i++) {
+        assert(log[i - 1].start <= log[i].start);
+    }
+#endif
     while (front < count && log[front - 1].start <= log[front].start) {
         front++;
     }
@@ -4148,17 +4154,24 @@ static bool S_reach_sort(markdown_core_place *log, size_t count, markdown_core_a
     return true;
 }
 
+/* The log's entries with furthest ends stay in place and in order, so the
+ * sort starts past them; the back is in order already, as it takes only
+ * entries of the log once it is in order (S_edit_keep), and loses them in
+ * order. */
 bool markdown_core_parser_sort_reach(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
-    size_t moved, back;
-    /* Measured from the end, the order puts the back's last first. */
+    size_t moved;
     markdown_core_reach_zipper *reach = &stream->reach;
-    if (!S_reach_sort(reach->front.values, reach->front.count, &reach->front.ahead, &edit->room, &edit->room_capacity,
-                      &moved) ||
-        !S_reach_sort(reach->back, reach->back_count, NULL, &edit->room, &edit->room_capacity, &back)) {
+    if (!S_reach_sort(reach->front.values, reach->front.count, edit->furthest_count, &reach->front.ahead, &edit->room,
+                      &edit->room_capacity, &moved)) {
         return false;
     }
+#ifndef NDEBUG
+    for (size_t k = 1; k < reach->back_count; k++) {
+        assert(S_reach_back_start(reach, k - 1) <= S_reach_back_start(reach, k));
+    }
+#endif
     const size_t count = reach->front.count;
     if (count > edit->furthest_capacity) {
         uint32_t *furthest = markdown_core_reserve(edit->furthest, &edit->furthest_capacity, count, sizeof(*furthest));
