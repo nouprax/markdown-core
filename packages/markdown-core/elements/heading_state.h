@@ -62,22 +62,24 @@ typedef MARKDOWN_CORE_ZIPPER(markdown_core_heading_parse) markdown_core_heading_
  * focus, its back measured from their end; the present stems whose parent
  * it is, the stem's own name less one suffix `-k` of its end, linked
  * through `first`, then `next` and `prior`, each a stem's place plus one
- * or zero; what an edit's pass of the names last saw it in, and the suffix
- * that pass tries next for its headings. */
+ * or zero; what an edit's pass of the names last saw it in, the pass an
+ * anchor the edit made or let go names it for, and the suffix that pass
+ * tries next for its headings. */
 typedef MARKDOWN_CORE_ZIPPER(uint32_t) markdown_core_heading_starts;
 
 typedef struct {
     markdown_core_heading_starts starts;
     unsigned char *key;
     bufsize_t size;
-    uint32_t first, next, prior, seen;
+    uint32_t first, next, prior, seen, anchored;
     size_t suffix;
 } markdown_core_heading_stem;
 
 /* WHAT AN EDIT KEEPS OF THE NAMES (heading.c, THE NAMES AN EDIT MOVES):
  * every stem, those free chained from `spare` through `next`, and the index
  * of their keys; where the edit's reading starts and its first heading;
- * the pass under way, and the stems the edit touched, to name again. */
+ * the pass under way, the stems the edit touched, to name again, and the
+ * names of the headings it let go. */
 typedef struct markdown_core_heading_names {
     markdown_core_heading_stem *stems;
     size_t stem_count, stem_room;
@@ -88,6 +90,9 @@ typedef struct markdown_core_heading_names {
     uint32_t pass;
     uint32_t *touched;
     size_t touched_count, touched_room;
+    /* The names of the headings the edit let go, each its stem's place and
+     * size, four bytes each, then its bytes. */
+    markdown_core_strbuf lost;
 } markdown_core_heading_names;
 
 typedef struct {
