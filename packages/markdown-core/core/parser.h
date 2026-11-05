@@ -633,8 +633,15 @@ typedef struct markdown_core_use_note {
 } markdown_core_use_note;
 
 typedef struct markdown_core_edit {
+    /* THE OLD TAIL IN PLACE (blocks.c): the old tail, `held` children, stays
+     * in the root's own storage, from its child `rest` on, and the reading
+     * writes its children over it from there: the first `saved` of the old
+     * ones, each moved out as the reading took its place, are in
+     * `children`, which has room for all of them, and the rest still where
+     * they were (markdown_core_edit_old). */
     struct markdown_core_node **children;
     size_t children_capacity;
+    uint32_t held, saved;
     /* Where the child before the old tail ends, and where the child before
      * `next` does, in the old text: the old children are measured from
      * there by their extents, as nothing moves their places (THE SPLICE). */
@@ -709,6 +716,13 @@ typedef struct markdown_core_edit {
     int64_t delta, lead;
 } markdown_core_edit;
 
+/* The old tail's child `index`, of the root `root` (THE OLD TAIL IN
+ * PLACE). */
+static inline struct markdown_core_node *markdown_core_edit_old(const markdown_core_edit *edit,
+                                                                const struct markdown_core_node *root, uint32_t index) {
+    return index < edit->saved ? edit->children[index] : root->children[edit->rest + index];
+}
+
 struct markdown_core_parser {
     /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
      * COMMITTED in a commit, nothing in a snapshot. */
@@ -781,6 +795,10 @@ struct markdown_core_parser {
      * none for the document, and a cell's `enclosing` while its content is
      * read. */
     uint32_t input_enclosing;
+    /* The child count at which the root's next child takes the place of an
+     * old child of an edit's tail, which moves out first (blocks.c, THE OLD
+     * TAIL IN PLACE); UINT32_MAX when none is in place. */
+    uint32_t room_at;
     /* The active input: the document's text, or a table cell's content
      * while its blocks are read. */
     markdown_core_parser_input input;
