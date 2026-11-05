@@ -3544,10 +3544,10 @@ static bool S_resumes(const markdown_core_parser *parser, size_t start) {
  * before the old tail, takes the old tail back from its child `first` (THE
  * OLD TAIL IN PLACE): those the reading passed, which their records will
  * own, move out first, the ones still in place move to follow the
- * reading's, and those moved out before join them; an old tail that keeps
+ * reading's, and those moved out before are copied back ahead of them; an old tail that keeps
  * its count moves nothing. False, with the root as it was, when storage
  * could not be had. */
-static bool S_tail_join(markdown_core_parser *parser, markdown_core_node *root, uint32_t first) {
+static bool S_tail_mend(markdown_core_parser *parser, markdown_core_node *root, uint32_t first) {
     markdown_core_edit *edit = parser->stream->edit;
     S_tail_out(parser, root, first);
     const uint32_t at = root->child_count, rest = edit->rest, held = edit->held;
@@ -3620,7 +3620,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     /* The children join the root, which owns them once the document took
      * them from its records. */
     const uint32_t tail = root->child_count;
-    if (!S_tail_join(parser, root, first)) {
+    if (!S_tail_mend(parser, root, first)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
