@@ -201,11 +201,15 @@ static void headings_let_go(markdown_core_heading_parse *values, size_t count) {
  * anchors that stand, whatever the other groups hold. An edit names again
  * only the groups of the stems it touched: the bases of the headings its
  * reading let go and of those it read, and the stems an anchor it made or
- * let go names, with their parents (heading_rename). Each stem keeps where
- * its headings start in a zipper of its own about the headings' focus, so
- * that a group's headings come in order from its stems' starts, each found
- * by halves among the headings. The first reopen makes the stems; a parse
- * no edit reopened names its headings as THE COMMITTED NAMES say. */
+ * let go names, with their parents (heading_rename), and of a group only
+ * the headings from the rest point on, until the names behind it are the
+ * names they were: so an edit beside one of many headings of one name
+ * names few of them. Each stem keeps where its headings start in a zipper
+ * of its own about the headings' focus, so that a group's headings come in
+ * order from its stems' starts, each found by halves among the headings,
+ * and who holds a name is found by halves too (name_held). The first
+ * reopen makes the stems; a parse no edit reopened names its headings as
+ * THE COMMITTED NAMES say. */
 static inline uint32_t stem_flip(uint32_t start, size_t end) { return (uint32_t)(end - start); }
 static inline size_t stem_place(const uint32_t *start) { return *start; }
 static inline void stem_leave(markdown_core_heading_stem *stem, size_t first) {
@@ -388,6 +392,7 @@ static bool stems_make(markdown_core_heading_state *state) {
         return false;
     }
     state->names = names;
+    names->lost = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     const markdown_core_heading_parse *values = state->headings.front.values;
     for (size_t i = 0; i < state->count; i++) {
         const markdown_core_heading_parse *heading = &values[i];
@@ -417,6 +422,7 @@ static void stems_free(markdown_core_heading_names *names) {
     markdown_core_free(names->stems);
     markdown_core_key_index_free(&names->index);
     markdown_core_free(names->touched);
+    markdown_core_strbuf_free(&names->lost);
     markdown_core_free(names);
 }
 
@@ -493,6 +499,7 @@ bool markdown_core_headings_reopen(const markdown_core_element_instance *self, m
     const size_t low = state->headings.front.count;
     state->names->rest = start;
     state->names->fresh = low;
+    markdown_core_strbuf_clear(&state->names->lost);
     state->count = state->parsed = low;
     state->spliced = false;
     size_t renamed = 0;
@@ -506,6 +513,19 @@ bool markdown_core_headings_reopen(const markdown_core_element_instance *self, m
         state->named = low;
     }
     return true;
+}
+
+/* The heading, which the edit lets go, of stem `id`, its name noted with
+ * its stem (heading_rename), and cut from the stem's headings before
+ * `place`, in the old text's terms, its end `end`. False when storage could
+ * not be had. */
+static bool stem_lost(markdown_core_heading_names *names, uint32_t id, const markdown_core_heading_parse *heading,
+                      size_t place, size_t end) {
+    const uint32_t size = (uint32_t)heading->name_size;
+    markdown_core_strbuf_put(&names->lost, (const unsigned char *)&id, sizeof(id));
+    markdown_core_strbuf_put(&names->lost, (const unsigned char *)&size, sizeof(size));
+    markdown_core_strbuf_put(&names->lost, heading->name, heading->name_size);
+    return !names->lost.oom && stem_cut(names, id, place, end);
 }
 
 /* The back's headings, from the focus, that start before `point` of the
@@ -522,8 +542,9 @@ bool markdown_core_headings_splice(const markdown_core_element_instance *self, m
     const size_t old = (size_t)((int64_t)point - ((int64_t)end - (int64_t)headings->end));
     const size_t gone = heading_zipper_back_from(headings, old);
     for (size_t k = 0; k < gone; k++) {
-        const uint32_t id = stem_heading(state->names, &headings->back[headings->back_count - 1 - k]);
-        if (id && !stem_cut(state->names, id, old, headings->end)) {
+        const markdown_core_heading_parse *heading = &headings->back[headings->back_count - 1 - k];
+        const uint32_t id = stem_heading(state->names, heading);
+        if (id && !stem_lost(state->names, id, heading, old, headings->end)) {
             return false;
         }
     }
@@ -542,7 +563,7 @@ static bool headings_drop_back(markdown_core_heading_state *state) {
     }
     for (size_t i = 0; i < headings->back_count; i++) {
         const uint32_t id = stem_heading(state->names, &headings->back[i]);
-        if (id && !stem_cut(state->names, id, SIZE_MAX, headings->end)) {
+        if (id && !stem_lost(state->names, id, &headings->back[i], SIZE_MAX, headings->end)) {
             return false;
         }
     }
@@ -1145,32 +1166,183 @@ static void names_reset(markdown_core_heading_state *state) {
     state->records_at = state->records_read = state->named = 0;
 }
 
-/* A heading of a group being named again: where it starts, in the back's
- * terms when `back`, and its stem. */
-typedef struct {
-    uint32_t start, stem;
-    bool back;
-} stem_member;
-
-static int stem_member_order(const void *a, const void *b) {
-    const stem_member *left = a, *other = b;
-    if (left->back != other->back) {
-        return left->back ? 1 : -1;
+/* Where the stem's heading `i` starts in the text: its headings in order,
+ * the back's measured from the headings' end. */
+static size_t stem_place_of(const markdown_core_heading_state *state, const markdown_core_heading_stem *stem,
+                            size_t i) {
+    const markdown_core_heading_starts *starts = &stem->starts;
+    if (i < starts->front.count) {
+        return starts->front.values[i];
     }
-    /* The back's further from the end come first. */
-    const int order = (left->start > other->start) - (left->start < other->start);
-    return left->back ? -order : order;
+    return state->headings.end - starts->back[starts->back_count - 1 - (i - starts->front.count)];
 }
 
-/* The heading of the member, by halves among the headings. */
-static markdown_core_heading_parse *stem_member_heading(markdown_core_heading_state *state, const stem_member *member) {
-    markdown_core_heading_zipper *headings = &state->headings;
-    const size_t at = member->back
-                          ? headings->front.count + heading_zipper_back_from(headings, headings->end - member->start)
-                          : heading_zipper_front_from(headings, member->start);
-    markdown_core_heading_parse *heading = heading_at(state, at);
-    assert(heading->start == member->start);
+/* How many of the stem's headings start before `place`, by halves. */
+static size_t stem_before(const markdown_core_heading_state *state, const markdown_core_heading_stem *stem,
+                          size_t place) {
+    size_t low = 0, high = stem_zipper_count(&stem->starts);
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (stem_place_of(state, stem, middle) < place) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+/* The stem's heading `i`, by halves among the headings, and its place
+ * among them in `*at`. */
+static markdown_core_heading_parse *stem_member(markdown_core_heading_state *state,
+                                                const markdown_core_heading_stem *stem, size_t i, size_t *at) {
+    const size_t place = stem_place_of(state, stem, i);
+    *at = heading_zipper_from(&state->headings, place);
+    markdown_core_heading_parse *heading = heading_at(state, *at);
+    assert((*at < state->headings.front.count ? heading->start : state->headings.end - heading->start) == place);
     return heading;
+}
+
+/* The suffix of the heading's name: zero for its base. */
+static size_t held_suffix(const markdown_core_heading_parse *heading) {
+    size_t suffix = 0;
+    for (bufsize_t i = heading->base_size + 1; i < heading->name_size; i++) {
+        suffix = suffix * 10 + (size_t)(heading->name[i] - '0');
+    }
+    return suffix;
+}
+
+/* Whether a heading that starts before `place` holds `name`, `size` bytes.
+ * Only two can (THE NAMES AN EDIT MOVES): the first of the name's own stem,
+ * when it holds its base, and one of the parent's that holds the name's
+ * suffix. The suffixes of a stem's headings rise in order, from its base
+ * at most at the first: each takes its base, which stays taken, or the
+ * next of its stem's suffixes that is free. */
+static bool name_held(markdown_core_heading_state *state, const unsigned char *name, bufsize_t size, size_t place) {
+    markdown_core_heading_names *names = state->names;
+    size_t at;
+    const uint32_t own = stem_find(names, name, size);
+    if (own && stem_present(stem_of(names, own)) && stem_place_of(state, stem_of(names, own), 0) < place) {
+        const markdown_core_heading_parse *first = stem_member(state, stem_of(names, own), 0, &at);
+        if (first->name_size == first->base_size) {
+            return true;
+        }
+    }
+    const bufsize_t parent = stem_parent(name, size);
+    const uint32_t up = parent ? stem_find(names, name, parent) : 0;
+    if (!up || !stem_present(stem_of(names, up))) {
+        return false;
+    }
+    size_t suffix = 0;
+    for (bufsize_t i = parent + 1; i < size; i++) {
+        suffix = suffix * 10 + (size_t)(name[i] - '0');
+    }
+    const markdown_core_heading_stem *stem = stem_of(names, up);
+    size_t low = 0, high = stem_before(state, stem, place);
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        const size_t found = held_suffix(stem_member(state, stem, middle, &at));
+        if (found == suffix) {
+            return true;
+        }
+        if (found < suffix) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return false;
+}
+
+/* What a pass of the names moved (THE NAMES AN EDIT MOVES): for each stem
+ * and name, how many more of its headings take the name than took it,
+ * over the headings the pass named and those the edit let go; `nonzero`
+ * counts the names whose count is not zero, and `owned` the bytes of the
+ * index's entries, each a stem's place then a name. */
+typedef struct {
+    markdown_core_key_index index;
+    size_t nonzero;
+    unsigned char **owned;
+    size_t owned_count, owned_room;
+    markdown_core_strbuf scratch;
+} name_moves;
+
+/* The count of the stem's `name`, `size` bytes, moves by `step`. False when
+ * storage could not be had. */
+static bool name_move(name_moves *moves, uint32_t stem, const unsigned char *name, bufsize_t size, int step) {
+    markdown_core_strbuf *text = &moves->scratch;
+    markdown_core_strbuf_clear(text);
+    markdown_core_strbuf_put(text, (const unsigned char *)&stem, sizeof(stem));
+    markdown_core_strbuf_put(text, name, size);
+    if (text->oom) {
+        return false;
+    }
+    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&moves->index, text->ptr, text->size);
+    if (!slot) {
+        return false;
+    }
+    if (!slot->key) {
+        unsigned char **wider =
+            markdown_core_reserve(moves->owned, &moves->owned_room, moves->owned_count + 1, sizeof(*wider));
+        unsigned char *bytes = wider ? markdown_core_alloc((size_t)text->size, 1) : NULL;
+        if (!bytes) {
+            if (wider) {
+                moves->owned = wider;
+            }
+            return false;
+        }
+        moves->owned = wider;
+        memcpy(bytes, text->ptr, (size_t)text->size);
+        moves->owned[moves->owned_count++] = bytes;
+        markdown_core_key_index_commit(&moves->index, slot, bytes);
+        slot->value = 0;
+    }
+    const int64_t was = (int64_t)slot->value, now = was + step;
+    slot->value = (size_t)now;
+    if (!was) {
+        moves->nonzero++;
+    } else if (!now) {
+        moves->nonzero--;
+    }
+    return true;
+}
+
+static void name_moves_free(name_moves *moves) {
+    for (size_t i = 0; i < moves->owned_count; i++) {
+        markdown_core_free(moves->owned[i]);
+    }
+    markdown_core_free(moves->owned);
+    markdown_core_key_index_free(&moves->index);
+    markdown_core_strbuf_free(&moves->scratch);
+}
+
+/* A stem's next heading the pass names: where it starts, the stem, and
+ * its place among the stem's. */
+typedef struct {
+    size_t place;
+    uint32_t stem;
+    size_t next;
+} stem_cursor;
+
+/* The heap of cursors, least place first, its `count` from `at` sifted. */
+static void cursors_down(stem_cursor *heap, size_t count, size_t at) {
+    for (;;) {
+        size_t least = at;
+        const size_t left = 2 * at + 1, other = left + 1;
+        if (left < count && heap[left].place < heap[least].place) {
+            least = left;
+        }
+        if (other < count && heap[other].place < heap[least].place) {
+            least = other;
+        }
+        if (least == at) {
+            return;
+        }
+        const stem_cursor swap = heap[at];
+        heap[at] = heap[least];
+        heap[least] = swap;
+        at = least;
+    }
 }
 
 /* The stem joins the queue of a pass marked `mark` unless the pass saw it
@@ -1181,11 +1353,11 @@ static bool stem_enqueue(markdown_core_heading_names *names, uint32_t **queue, s
     if (stem->seen == mark || !stem_present(stem)) {
         return true;
     }
-    uint32_t *grown = markdown_core_reserve(*queue, room, *count + 1, sizeof(**queue));
-    if (!grown) {
+    uint32_t *wider = markdown_core_reserve(*queue, room, *count + 1, sizeof(**queue));
+    if (!wider) {
         return false;
     }
-    *queue = grown;
+    *queue = wider;
     stem->seen = mark;
     (*queue)[(*count)++] = id;
     return true;
@@ -1194,16 +1366,22 @@ static bool stem_enqueue(markdown_core_heading_names *names, uint32_t **queue, s
 /* The groups of the stems an edit touched, each a stem with its present
  * parent and children and theirs in turn, named again (THE NAMES AN EDIT
  * MOVES): their headings in order, each taking the first name of its
- * sequence that no anchor standing reserves and no heading of the groups
- * before it took, past the suffixes its base's earlier headings tried. A
- * heading whose name stays keeps its bytes. */
+ * sequence that no anchor standing reserves and no heading before it
+ * holds, past the suffixes its base's earlier headings tried. The pass
+ * starts at the first heading of the groups the reading made, where the
+ * rest point is, as those before it keep their names, unless an anchor the
+ * edit made or let go names a stem of them, which moves the names of any:
+ * then it starts at their first. It ends once every heading the reading
+ * made is named and the headings named, with those the edit let go, took
+ * the names they took before, stem by stem: the old headings after them
+ * then take theirs again. A heading whose name stays keeps its bytes. */
 static void heading_rename(name_pass *pass) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_heading_state *state = pass->state;
     markdown_core_heading_names *names = state->names;
     const uint32_t mark = ++names->pass;
     uint32_t *queue = names->touched_count ? markdown_core_alloc(names->touched_count, sizeof(*queue)) : NULL;
-    size_t count = 0, room = names->touched_count, members = 0;
+    size_t count = 0, room = names->touched_count;
     if (names->touched_count && !queue) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -1217,9 +1395,10 @@ static void heading_rename(name_pass *pass) {
         }
     }
     /* The group of each: a stem's present parent and children, and theirs. */
+    bool whole = false;
     for (size_t i = 0; i < count && !parser->error; i++) {
         const markdown_core_heading_stem *stem = stem_of(names, queue[i]);
-        members += stem_zipper_count(&stem->starts);
+        whole = whole || stem->anchored == mark;
         const bufsize_t size = stem_parent(stem->key, stem->size);
         const uint32_t parent = size ? stem_find(names, stem->key, size) : 0;
         bool ok = !parent || stem_enqueue(names, &queue, &count, &room, parent, mark);
@@ -1230,35 +1409,63 @@ static void heading_rename(name_pass *pass) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
-    stem_member *order = members ? markdown_core_alloc(members, sizeof(*order)) : NULL;
-    markdown_core_key_index taken;
-    if (parser->error || (members && (!order || !markdown_core_key_index_init(&taken, members)))) {
-        markdown_core_free(order);
+    const size_t from = whole ? 0 : names->rest;
+    stem_cursor *heap = count ? markdown_core_alloc(count, sizeof(*heap)) : NULL;
+    name_moves moves = {.scratch = MARKDOWN_CORE_BUF_INIT()};
+    if (parser->error || (count && (!heap || !markdown_core_key_index_init(&moves.index, 8)))) {
+        markdown_core_free(heap);
         markdown_core_free(queue);
         if (!parser->error) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         return;
     }
-    size_t at = 0;
+    /* Each stem from its first heading at or past where the pass starts,
+     * trying the suffix past its last heading before that took one: the
+     * first, when it takes its base, is the only one that does not. */
+    size_t cursors = 0;
     for (size_t i = 0; i < count; i++) {
         markdown_core_heading_stem *stem = stem_of(names, queue[i]);
+        const size_t first = stem_before(state, stem, from);
         stem->suffix = 1;
-        for (size_t k = 0; k < stem->starts.front.count; k++) {
-            order[at++] = (stem_member){stem->starts.front.values[k], queue[i], false};
+        for (size_t k = first; k > 0; k--) {
+            size_t at;
+            const markdown_core_heading_parse *heading = stem_member(state, stem, k - 1, &at);
+            if (heading->name_size != heading->base_size) {
+                stem->suffix = held_suffix(heading) + 1;
+                break;
+            }
         }
-        for (size_t k = 0; k < stem->starts.back_count; k++) {
-            order[at++] = (stem_member){stem->starts.back[k], queue[i], true};
+        if (first < stem_zipper_count(&stem->starts)) {
+            heap[cursors++] = (stem_cursor){stem_place_of(state, stem, first), queue[i], first};
         }
     }
     markdown_core_free(queue);
-    if (members > 1) {
-        qsort(order, members, sizeof(*order), stem_member_order);
+    for (size_t i = cursors; i-- > 0;) {
+        cursors_down(heap, cursors, i);
+    }
+    /* The names the edit let go, of the stems of these groups. */
+    bool ok = true;
+    for (bufsize_t at = 0; ok && at < names->lost.size;) {
+        uint32_t id, size;
+        memcpy(&id, names->lost.ptr + at, sizeof(id));
+        memcpy(&size, names->lost.ptr + at + sizeof(id), sizeof(size));
+        at += (bufsize_t)(sizeof(id) + sizeof(size));
+        if (stem_of(names, id)->seen == mark) {
+            ok = name_move(&moves, id, names->lost.ptr + at, (bufsize_t)size, -1);
+        }
+        at += (bufsize_t)size;
     }
     markdown_core_strbuf *name = &pass->name;
-    for (size_t i = 0; i < members && !parser->error; i++) {
-        markdown_core_heading_parse *heading = stem_member_heading(state, &order[i]);
-        markdown_core_heading_stem *stem = stem_of(names, order[i].stem);
+    while (ok && cursors && !parser->error) {
+        const stem_cursor cursor = heap[0];
+        markdown_core_heading_stem *stem = stem_of(names, cursor.stem);
+        size_t at;
+        markdown_core_heading_parse *heading = stem_member(state, stem, cursor.next, &at);
+        const bool made = at >= names->fresh && at < state->headings.front.count;
+        if (!whole && !made && !moves.nonzero) {
+            break;
+        }
         const bufsize_t base = heading->base_size;
         markdown_core_strbuf_clear(name);
         markdown_core_strbuf_put(name, heading->name, base);
@@ -1267,28 +1474,40 @@ static void heading_rename(name_pass *pass) {
             const bool reserved =
                 markdown_core_roster_find(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, name->ptr, name->size, &failed);
             if (failed || name->oom) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                ok = false;
                 break;
             }
-            if (!reserved && !markdown_core_key_index_find(&taken, name->ptr, name->size)) {
+            if (!reserved && !name_held(state, name->ptr, name->size, cursor.place)) {
                 break;
             }
             markdown_core_strbuf_truncate(name, base);
             append_anchor_suffix(name, stem->suffix++);
         }
-        markdown_core_key_index_slot *slot =
-            parser->error ? NULL : markdown_core_key_index_entry(&taken, name->ptr, name->size);
-        const unsigned char *bytes = slot ? hand_name(pass, heading, base) : NULL;
-        if (!bytes) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        if (!ok) {
             break;
         }
-        markdown_core_key_index_commit(&taken, slot, bytes);
+        const bool same =
+            !made && heading->name_size == name->size && memcmp(heading->name, name->ptr, (size_t)name->size) == 0;
+        if (!same) {
+            ok = (made || name_move(&moves, cursor.stem, heading->name, heading->name_size, -1)) &&
+                 name_move(&moves, cursor.stem, name->ptr, name->size, 1);
+        }
+        if (!ok || !hand_name(pass, heading, base)) {
+            ok = false;
+            break;
+        }
+        if (cursor.next + 1 < stem_zipper_count(&stem->starts)) {
+            heap[0] = (stem_cursor){stem_place_of(state, stem, cursor.next + 1), cursor.stem, cursor.next + 1};
+        } else {
+            heap[0] = heap[--cursors];
+        }
+        cursors_down(heap, cursors, 0);
     }
-    if (members) {
-        markdown_core_key_index_free(&taken);
+    if (!ok && !parser->error) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    markdown_core_free(order);
+    name_moves_free(&moves);
+    markdown_core_free(heap);
 }
 
 /* An edit's headings named (THE NAMES AN EDIT MOVES): each the reading
@@ -1323,6 +1542,12 @@ static void headings_rename(name_pass *pass) {
         const unsigned char *label = anchors.ptr + at;
         const bufsize_t parent = stem_parent(label, size);
         const uint32_t own = stem_find(names, label, size), up = parent ? stem_find(names, label, parent) : 0;
+        if (own) {
+            stem_of(names, own)->anchored = names->pass + 1;
+        }
+        if (up) {
+            stem_of(names, up)->anchored = names->pass + 1;
+        }
         if ((own && !stem_touch(names, own)) || (up && !stem_touch(names, up))) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -1336,6 +1561,7 @@ static void headings_rename(name_pass *pass) {
         stem_release(names, names->touched[i]);
     }
     names->touched_count = 0;
+    markdown_core_strbuf_clear(&names->lost);
     names->fresh = state->count;
 }
 

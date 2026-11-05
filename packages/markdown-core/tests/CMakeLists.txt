@@ -233,6 +233,7 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/properties.md"
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/comments.md"
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/cross-links.md"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/headings.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md")
 markdown_core_add_test(
