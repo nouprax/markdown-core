@@ -46,13 +46,18 @@
  * own and the children before it in its own, and an edit, which moves no
  * child it takes back, makes again only the chunks of the children it read
  * and of the first it took back -- all from there on when the count of
- * children changed. They are made at the first edit, and an edit that could
- * not have their storage leaves them to the next to make again. */
+ * children changed. The chunks' widths are summed in a Fenwick tree, so the
+ * width of the chunks before one, and the chunk an offset falls in, are a
+ * walk of the tree's levels, however many children the root has. They are
+ * made at the first edit or locate, and an edit that could not have their
+ * storage leaves them to the next to make again. */
 #define SESSION_CHUNK 64
 
 typedef struct {
-    uint32_t *chunks;
-    size_t count, capacity;
+    /* Each chunk's width, and the tree: `sums[i]`, for i from 1, the widths
+     * of the chunks from i minus its lowest set bit to i. */
+    uint32_t *chunks, *sums;
+    size_t count, capacity, sum_capacity;
     bool made;
 } session_widths;
 
@@ -88,18 +93,42 @@ static inline uint32_t child_width(const markdown_core_node *child) {
     return (uint32_t)((int64_t)child->extent.lead + child->extent.span);
 }
 
+/* Adds `step` to chunk `chunk`'s width in the tree. */
+static void widths_add(session_widths *widths, size_t chunk, uint32_t step) {
+    for (size_t i = chunk + 1; i <= widths->count; i += i & (0 - i)) {
+        widths->sums[i] += step;
+    }
+}
+
+/* The width of the chunks before chunk `chunk`. */
+static uint32_t widths_before(const session_widths *widths, size_t chunk) {
+    uint32_t width = 0;
+    for (size_t i = chunk; i; i -= i & (0 - i)) {
+        width += widths->sums[i];
+    }
+    return width;
+}
+
 /* Makes the chunks of the root's children from `first` to `last` again,
- * and all of them from `first` on when `last` is past the root's children.
- * False, with the widths to be made again, when storage could not be had. */
+ * and all of them from `first` on when `last` is past the root's children,
+ * with the tree. False, with the widths to be made again, when storage
+ * could not be had. */
 static bool widths_mend(session_widths *widths, const markdown_core_node *root, size_t first, size_t last) {
     const size_t count = (root->child_count + SESSION_CHUNK - 1) / SESSION_CHUNK;
-    if (last >= root->child_count) {
+    const bool whole = last >= root->child_count;
+    if (whole) {
         uint32_t *chunks = markdown_core_reserve(widths->chunks, &widths->capacity, count, sizeof(*chunks));
         if (count && !chunks) {
             widths->made = false;
             return false;
         }
         widths->chunks = chunks;
+        uint32_t *sums = markdown_core_reserve(widths->sums, &widths->sum_capacity, count + 1, sizeof(*sums));
+        if (!sums) {
+            widths->made = false;
+            return false;
+        }
+        widths->sums = sums;
         widths->count = count;
         last = root->child_count ? root->child_count - 1 : 0;
     }
@@ -110,7 +139,24 @@ static bool widths_mend(session_widths *widths, const markdown_core_node *root, 
         for (size_t i = chunk * SESSION_CHUNK; i < end; i++) {
             width += child_width(root->children[i]);
         }
+        if (!whole) {
+            widths_add(widths, chunk, width - widths->chunks[chunk]);
+        }
         widths->chunks[chunk] = width;
+    }
+    /* Made again from `first` on, the tree is built again whole, in one
+     * pass: each sum passes itself on to the one that holds it. */
+    if (whole) {
+        widths->sums[0] = 0;
+        for (size_t i = 1; i <= count; i++) {
+            widths->sums[i] = widths->chunks[i - 1];
+        }
+        for (size_t i = 1; i <= count; i++) {
+            const size_t up = i + (i & (0 - i));
+            if (up <= count) {
+                widths->sums[up] += widths->sums[i];
+            }
+        }
     }
     return true;
 }
@@ -123,10 +169,7 @@ static bool widths_make(session_widths *widths, const markdown_core_node *root) 
 
 /* Where the root's child `child` starts. */
 static size_t widths_start(const session_widths *widths, const markdown_core_node *root, size_t child) {
-    int64_t at = root->extent.lead;
-    for (size_t chunk = 0; chunk < child / SESSION_CHUNK; chunk++) {
-        at += widths->chunks[chunk];
-    }
+    int64_t at = (int64_t)root->extent.lead + widths_before(widths, child / SESSION_CHUNK);
     for (size_t i = child / SESSION_CHUNK * SESSION_CHUNK; i < child; i++) {
         at += child_width(root->children[i]);
     }
@@ -139,12 +182,20 @@ static size_t widths_end(const session_widths *widths, const markdown_core_node 
 }
 
 /* The child of `root` before the first that ends past `offset`, or its
- * first. */
+ * first. The chunks that end at or before `offset` are found by going down
+ * the tree's levels. */
 static uint32_t widths_child(const session_widths *widths, const markdown_core_node *root, size_t offset) {
     int64_t at = root->extent.lead;
     size_t chunk = 0;
-    while (chunk < widths->count && at + widths->chunks[chunk] <= (int64_t)offset) {
-        at += widths->chunks[chunk++];
+    size_t step = 1;
+    while (step * 2 <= widths->count) {
+        step *= 2;
+    }
+    for (; step && widths->count; step /= 2) {
+        if (chunk + step <= widths->count && at + widths->sums[chunk + step] <= (int64_t)offset) {
+            chunk += step;
+            at += widths->sums[chunk];
+        }
     }
     uint32_t child = chunk < widths->count ? (uint32_t)(chunk * SESSION_CHUNK) : root->child_count;
     while (child < root->child_count && at + child_width(root->children[child]) <= (int64_t)offset) {
@@ -159,13 +210,17 @@ static uint32_t widths_child(const session_widths *widths, const markdown_core_n
 static void widths_check(const session_widths *widths, const markdown_core_node *root) {
     session_widths fresh = {0};
     if (!widths_mend(&fresh, root, 0, SIZE_MAX)) {
+        markdown_core_free(fresh.chunks);
+        markdown_core_free(fresh.sums);
         return;
     }
     assert(fresh.count == widths->count);
     for (size_t i = 0; i < fresh.count; i++) {
         assert(fresh.chunks[i] == widths->chunks[i]);
+        assert(fresh.sums[i + 1] == widths->sums[i + 1]);
     }
     markdown_core_free(fresh.chunks);
+    markdown_core_free(fresh.sums);
     /* The walk measures each child from the one before. */
     markdown_core_walk walk;
     markdown_core_walk_item item;
@@ -254,6 +309,7 @@ static void session_close(markdown_core_session *session) {
     markdown_core_array_free(&session->text);
     if (session->edits) {
         markdown_core_free(session->edits->widths.chunks);
+        markdown_core_free(session->edits->widths.sums);
         markdown_core_free(session->edits->windows);
         markdown_core_free(session->edits);
     }
