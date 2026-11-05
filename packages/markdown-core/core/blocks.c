@@ -152,6 +152,8 @@ static void S_release_walk(markdown_core_parser *parser) {
     parser->content_place_capacity = 0;
 }
 
+static void S_tail_leave(markdown_core_parser *parser, const markdown_core_node *root);
+
 static void S_parser_dispose(markdown_core_parser *parser) {
     if (parser->stream) {
         S_take_back(parser, false);
@@ -175,6 +177,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
         markdown_core_free(parser->cell_input);
     }
     if (parser->root) {
+        S_tail_leave(parser, parser->root);
         markdown_core_node_free(parser->root);
     }
     if (parser->stream) {
@@ -266,6 +269,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->revision = revision;
     parser->pool = revision->pool;
     parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
+    parser->room_at = UINT32_MAX;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
     markdown_core_roster_init(&parser->roster);
@@ -1230,11 +1234,31 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle(markdown_co
     S_complete_later(parser, node, parent);
 }
 
+/* THE OLD TAIL IN PLACE (parser.h, markdown_core_edit): an edit keeps the
+ * old tail in the root's storage, and the reading writes its children over
+ * it. The old child whose place the root's next child takes moves out to
+ * the edit's room for it first, which holds them all, so the move never
+ * fails; storage that holds the old tail never grows while one is in
+ * place. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_tail_stash(markdown_core_parser *parser) {
+    markdown_core_edit *edit = parser->stream->edit;
+    edit->children[edit->saved++] = parser->root->children[parser->room_at];
+    parser->room_at = edit->saved < edit->held ? parser->room_at + 1 : UINT32_MAX;
+}
+
+/* Before `parent` takes a child at the end of its children. */
+static inline void S_tail_room(markdown_core_parser *parser, const markdown_core_node *parent) {
+    if (parent->child_count == parser->room_at && parent == parser->root) {
+        S_tail_stash(parser);
+    }
+}
+
 /* A block made whole joins the end of its parent's children as it settles:
  * the block's own children settled as it was made, and no block of the
  * parent is open or pending. */
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent) {
     assert(parent != markdown_core_parser_current(parser) || !parser->at.pending);
+    S_tail_room(parser, parent);
     if (!markdown_core_node_push_child(parser->pool, parent, node)) {
         S_settle_failed(parser, node);
         return;
@@ -1247,6 +1271,7 @@ void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node
 void markdown_core_block_settle_before(markdown_core_parser *parser, markdown_core_node *node,
                                        markdown_core_node *parent) {
     assert(parent->child_count);
+    S_tail_room(parser, parent);
     if (!markdown_core_node_array_insert_before_last(parser->pool, &parent->children, &parent->child_count, node)) {
         S_settle_failed(parser, node);
         return;
@@ -1450,6 +1475,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
 static inline markdown_core_node *S_open_made(markdown_core_parser *parser, markdown_core_node *parent,
                                               markdown_core_node *child) {
     markdown_core_scaffold_of(child)->parent = parent;
+    S_tail_room(parser, parent);
     if (!markdown_core_node_push_child(parser->pool, parent, child)) {
         S_settle_failed(parser, child);
         return NULL;
@@ -3079,6 +3105,7 @@ static bool S_back_spans(const markdown_core_reach_zipper *reach, size_t old) {
 }
 
 static void S_release_tail(markdown_core_parser *parser);
+static void S_tail_out(markdown_core_parser *parser, const markdown_core_node *root, uint32_t end);
 
 /* The old tail, from the root's child `child` and input line `line`, the
  * rest point `start`, kept aside before the reopen lets it go. False when
@@ -3090,6 +3117,8 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
     markdown_core_parser_input *input = &parser->input;
     const uint32_t count = root->child_count - child;
     assert(S_reach_sorted(&stream->reach));
+    /* Room for every old child the reading may write over (THE OLD TAIL IN
+     * PLACE): what it holds goes as it grows. */
     if (count > edit->children_capacity) {
         markdown_core_node **children =
             markdown_core_reserve(edit->children, &edit->children_capacity, count, sizeof(*children));
@@ -3103,9 +3132,9 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
         return false;
     }
     S_release_tail(parser);
-    if (count) {
-        memcpy(edit->children, root->children + child, count * sizeof(*edit->children));
-    }
+    edit->held = count;
+    edit->saved = 0;
+    parser->room_at = count ? child : UINT32_MAX;
     /* The rest point starts line `line`: what moves is the lines from it
      * on, or up to it. */
     (void)S_lines_move(&input->lines, start, input->size, input);
@@ -3141,7 +3170,8 @@ static size_t S_edit_line(const markdown_core_line_zipper *lines, size_t start) 
  * on, and where its line starts in the new text: one that starts on a line
  * of its own past the edit, and not at the text's start, where the
  * document's prefix is read. */
-static void S_edit_next(markdown_core_edit *edit, const markdown_core_line_zipper *lines) {
+static void S_edit_next(markdown_core_edit *edit, const markdown_core_node *root,
+                        const markdown_core_line_zipper *lines) {
     /* The children a reopened block let go come first (THE NESTED SPLICE). */
     for (; edit->back_next < edit->back_count; edit->back_next++) {
         const markdown_core_back_child *back = &edit->backs[edit->back_next];
@@ -3152,7 +3182,7 @@ static void S_edit_next(markdown_core_edit *edit, const markdown_core_line_zippe
         }
     }
     for (; edit->next < edit->count; edit->next++) {
-        const markdown_core_node *child = edit->children[edit->next];
+        const markdown_core_node *child = markdown_core_edit_old(edit, root, edit->next);
         const uint32_t start = (uint32_t)((int64_t)edit->before + child->extent.lead);
         const size_t line = S_lines_back_start(lines, S_edit_line(lines, start));
         if (edit->before <= line && line >= edit->to && (int64_t)line + edit->delta > 0) {
@@ -3165,15 +3195,16 @@ static void S_edit_next(markdown_core_edit *edit, const markdown_core_line_zippe
 }
 
 /* The reading passes the old tail's child `next`, and tries the next. */
-static void S_edit_pass(markdown_core_edit *edit, const markdown_core_line_zipper *lines) {
+static void S_edit_pass(markdown_core_edit *edit, const markdown_core_node *root,
+                        const markdown_core_line_zipper *lines) {
     if (edit->back_next < edit->back_count) {
         edit->back_next++;
-        S_edit_next(edit, lines);
+        S_edit_next(edit, root, lines);
         return;
     }
-    const markdown_core_node *child = edit->children[edit->next++];
+    const markdown_core_node *child = markdown_core_edit_old(edit, root, edit->next++);
     edit->before = (uint32_t)((int64_t)edit->before + child->extent.lead + child->extent.span);
-    S_edit_next(edit, lines);
+    S_edit_next(edit, root, lines);
 }
 
 /* THE NESTED REOPEN (docs/plans/e1b-nested.md): the rest point of an edit
@@ -3381,6 +3412,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
         !markdown_core_roster_reopen(&parser->roster, (uint32_t)start, input->lines.end)) {
+        S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -3487,7 +3519,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         S_uses_drop(stream->edit, stream->edit->uses.back_count);
         markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
     }
-    S_edit_next(stream->edit, &input->lines);
+    S_edit_next(stream->edit, root, &input->lines);
     return true;
 }
 
@@ -3506,6 +3538,46 @@ static bool S_resumes(const markdown_core_parser *parser, size_t start) {
         return false;
     }
     return !S_back_spans(&stream->reach, (size_t)((int64_t)start - edit->delta));
+}
+
+/* The root, which holds the children the reading gave it after those
+ * before the old tail, takes the old tail back from its child `first` (THE
+ * OLD TAIL IN PLACE): those the reading passed, which their records will
+ * own, move out first, the ones still in place move to follow the
+ * reading's, and those moved out before join them; an old tail that keeps
+ * its count moves nothing. False, with the root as it was, when storage
+ * could not be had. */
+static bool S_tail_join(markdown_core_parser *parser, markdown_core_node *root, uint32_t first) {
+    markdown_core_edit *edit = parser->stream->edit;
+    S_tail_out(parser, root, first);
+    const uint32_t at = root->child_count, rest = edit->rest, held = edit->held;
+    const uint32_t from = edit->saved > first ? edit->saved : first;
+    const uint32_t moved = from - first, kept = held - from;
+    if (first >= held) {
+        return true;
+    }
+    const uint32_t total = at + (held - first);
+    markdown_core_node **items = root->children;
+    if (markdown_core_bytes_size(items) < (size_t)total * sizeof(*items)) {
+        const uint32_t room = markdown_core_node_array_capacity(total);
+        markdown_core_node **grown = markdown_core_node_pool_bytes(parser->pool, (size_t)room * sizeof(*grown));
+        if (!grown) {
+            return false;
+        }
+        memcpy(grown, items, at * sizeof(*grown));
+        memcpy(grown + at + moved, items + rest + from, kept * sizeof(*grown));
+        markdown_core_node_pool_bytes_free(parser->pool, items);
+        root->children = items = grown;
+    } else if (at + moved != rest + from && kept) {
+        memmove(items + at + moved, items + rest + from, kept * sizeof(*items));
+    }
+    if (moved) {
+        memcpy(items + at, edit->children + first, moved * sizeof(*items));
+    }
+    root->child_count = total;
+    /* None is in place now: the root holds those it took back. */
+    edit->saved = held;
+    return true;
 }
 
 /* The reading takes the old tail back from its child `next`, whose line
@@ -3548,22 +3620,23 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     /* The children join the root, which owns them once the document took
      * them from its records. */
     const uint32_t tail = root->child_count;
-    for (uint32_t i = first; i < edit->count; i++) {
-        if (!markdown_core_node_push_child(parser->pool, root, edit->children[i])) {
-            root->child_count = tail;
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return false;
-        }
+    if (!S_tail_join(parser, root, first)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
     }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     if (!document->element->splice_document(document, parser, root, first, (uint32_t)start)) {
+        /* The children taken back are the tail's again, which the failed
+         * parse lets go with those no record took. */
+        memcpy(edit->children + first, root->children + tail, (edit->held - first) * sizeof(*edit->children));
+        edit->saved = edit->held;
         root->child_count = tail;
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, root);
-    for (uint32_t i = tail; i < root->child_count; i++) {
-        if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
+    if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
+        for (uint32_t i = tail; i < root->child_count; i++) {
             root->flags = S_fold(kind, root, root->flags, root->children[i]->flags);
         }
     }
@@ -3773,7 +3846,7 @@ static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *parser, size_t start, size_t index) {
     markdown_core_edit *edit = parser->stream->edit;
     while (edit->point < start) {
-        S_edit_pass(edit, &parser->input.lines);
+        S_edit_pass(edit, parser->root, &parser->input.lines);
     }
     if (edit->point != start) {
         return false;
@@ -3786,7 +3859,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
         }
         return true;
     }
-    S_edit_pass(edit, &parser->input.lines);
+    S_edit_pass(edit, parser->root, &parser->input.lines);
     return false;
 }
 
@@ -4335,9 +4408,33 @@ void markdown_core_parser_release_records(markdown_core_parser *parser, markdown
     records->free = 0;
 }
 
+/* The old tail's children from `index` on that are still in place in the
+ * root `root` up to `end` move out to the edit's room, before the root's
+ * storage changes or goes (THE OLD TAIL IN PLACE). */
+static void S_tail_out(markdown_core_parser *parser, const markdown_core_node *root, uint32_t end) {
+    parser->room_at = UINT32_MAX;
+    markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    if (!edit || edit->saved >= end) {
+        return;
+    }
+    memcpy(edit->children + edit->saved, root->children + edit->rest + edit->saved,
+           (end - edit->saved) * sizeof(*edit->children));
+    edit->saved = end;
+}
+
+/* The same of all that no record holds yet, as a failed parse lets the
+ * root go. */
+static void S_tail_leave(markdown_core_parser *parser, const markdown_core_node *root) {
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    if (edit && edit->unrecorded) {
+        S_tail_out(parser, root, edit->recorded + edit->unrecorded);
+    }
+}
+
 /* The old tail's children nothing holds, which a failed parse lets go. */
 static void S_release_tail(markdown_core_parser *parser) {
     markdown_core_edit *edit = parser->stream->edit;
+    assert(!edit || !edit->unrecorded || edit->saved >= edit->recorded + edit->unrecorded);
     for (uint32_t i = 0; edit && i < edit->unrecorded; i++) {
         markdown_core_node_pool_release(parser->pool, edit->children[edit->recorded + i]);
     }
@@ -7970,6 +8067,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         edit->reading = false;
         edit->count = 0;
         edit->depth = 0;
+        parser->room_at = UINT32_MAX;
         edit->back_count = edit->back_next = 0;
         edit->taken = SIZE_MAX;
         edit->point = SIZE_MAX;
@@ -7984,6 +8082,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     return res;
 
 failed:
+    S_tail_leave(parser, parser->root);
     parser->dialect->document_structure->element->dispose_document(parser->dialect->document_structure, parser);
     markdown_core_parser_release_node(parser, parser->root);
     parser->root = NULL;

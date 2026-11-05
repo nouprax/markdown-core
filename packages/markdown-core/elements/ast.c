@@ -2804,7 +2804,7 @@ static bool record_tail(markdown_core_parser *parser, uint32_t count) {
     }
     uint32_t end = edit->prior;
     for (uint32_t i = 0; i < count; i++) {
-        markdown_core_node *old = edit->children[i];
+        markdown_core_node *old = markdown_core_edit_old(edit, parser->root, i);
         const uint32_t start = (uint32_t)((int64_t)end + old->extent.lead);
         end = start + old->extent.span;
         if (!reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, end}, 1, 1, &last)) {
@@ -3134,12 +3134,15 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     }
     /* What stays is as the last publish left it, the FINAL prefix of each
      * of the root's relations, which the last publish, which keeps nothing,
-     * need not have marked; a reopened block is no part of it. */
+     * need not have marked; a reopened block is no part of it. The walk
+     * finds where the prefix ends from its last (publish_pass_final), so
+     * only the last is marked: the others stand before it. */
     if (value->metadata) {
         value->metadata->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
-    for (uint32_t i = 0; i + (edit->depth ? 1 : 0) < child; i++) {
-        root->children[i]->flags |= MARKDOWN_CORE_NODE__FINAL;
+    const uint32_t final = child - (edit->depth ? 1 : 0);
+    if (final) {
+        root->children[final - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
     return true;
 }
