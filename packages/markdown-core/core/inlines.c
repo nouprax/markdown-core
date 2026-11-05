@@ -1037,7 +1037,10 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_pa
                                                                 markdown_core_inline_state *inline_state, bool root) {
     markdown_core_context_sink *sink = parser->sink;
     if (!root) {
-        if (sink->root && inline_state->input.len > 0) {
+        /* A field of a root another run finishes, as a heading finishes
+         * after the runs of the lines below it began, is not the reporting
+         * root's. */
+        if (sink->root && inline_state->input.len > 0 && (!sink->finishing || sink->finishing == sink->root)) {
             inline_state->context = sink;
             if (S_context_root_offset(inline_state, inline_state->input.len) != sink->root->source.places->content) {
                 inline_state->context = NULL;
@@ -1292,12 +1295,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_finish_run(markdow
 }
 
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    /* The fields a root's run reads as it finishes are its own: the sink
+     * knows the root whose run is finishing (S_context_begin). */
+    markdown_core_context_sink *sink = parser->sink;
+    const bool block = sink && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind);
+    const markdown_core_node *was = block ? sink->finishing : NULL;
+    if (block) {
+        sink->finishing = inline_state->owner;
+    }
     while (!parser->error && !inline_state->error) {
         complete_inline_token(parser, inline_state);
         if (parser->error || inline_state->error || markdown_core_inline_is_eof(inline_state) ||
             !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
+    }
+    if (block) {
+        sink->finishing = was;
     }
     return S_finish_run(parser, inline_state, false);
 }

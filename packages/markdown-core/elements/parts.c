@@ -473,8 +473,8 @@ static bool hold_cells(const markdown_core_node *root, view *r, size_t level) {
  * its text and the runs of the nodes it holds, by one walk. False when the
  * source ends before the node does, `*covered` false, or an allocation
  * failed. */
-static bool read_node(const markdown_core_node *root, const markdown_core_node *node, const uint8_t *source,
-                      size_t length, view *r, bool *covered) {
+static bool read_node(const markdown_core_node *root, const markdown_core_window *window,
+                      const markdown_core_node *node, const uint8_t *source, size_t length, view *r, bool *covered) {
     markdown_core_walk walk;
     markdown_core_walk_item item;
     markdown_core_place *before = NULL, *cell = NULL;
@@ -482,7 +482,7 @@ static bool read_node(const markdown_core_node *root, const markdown_core_node *
     bool in = false, grouped = false;
     *r = (view){0};
     *covered = true;
-    markdown_core_walk_begin(&walk, root);
+    markdown_core_walk_within(&walk, root, window);
     while (markdown_core_walk_next(&walk, &item)) {
         const markdown_core_place *ranges;
         size_t count;
@@ -639,13 +639,13 @@ static bool add_place(ranges *out, const view *r, bufsize_t start, bufsize_t end
 
 /* The source ranges of `node`'s fields of slot kind `slot`, or, when
  * `markers`, of its markers. */
-static markdown_core_status node_places(const markdown_core_node *root, const markdown_core_node *node,
-                                        markdown_core_slot_kind slot, bool markers, const uint8_t *source,
-                                        size_t length, ranges *out) {
+static markdown_core_status node_places(const markdown_core_node *root, const markdown_core_window *window,
+                                        const markdown_core_node *node, markdown_core_slot_kind slot, bool markers,
+                                        const uint8_t *source, size_t length, ranges *out) {
     view r;
     bool covered;
     *out = (ranges){0};
-    if (!read_node(root, node, source, length, &r, &covered)) {
+    if (!read_node(root, window, node, source, length, &r, &covered)) {
         view_free(&r);
         return covered ? MARKDOWN_CORE_ALLOCATION_FAILED : MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
@@ -725,9 +725,10 @@ markdown_core_status markdown_core_document_field(const markdown_core_document *
                                                   const uint8_t *source, size_t length, markdown_core_scope **scopes,
                                                   size_t *count) {
     ranges found;
-    const markdown_core_status status = (unsigned)slot > MARKDOWN_CORE_SLOT_VALUE
-                                            ? MARKDOWN_CORE_OUT_OF_BOUNDS
-                                            : node_places(document->root, node, slot, false, source, length, &found);
+    const markdown_core_status status =
+        (unsigned)slot > MARKDOWN_CORE_SLOT_VALUE
+            ? MARKDOWN_CORE_OUT_OF_BOUNDS
+            : node_places(document->root, NULL, node, slot, false, source, length, &found);
     if (status != MARKDOWN_CORE_OK) {
         *scopes = NULL;
         *count = 0;
@@ -741,7 +742,7 @@ markdown_core_status markdown_core_document_markers(const markdown_core_document
                                                     size_t length, markdown_core_scope **scopes, size_t *count) {
     ranges found;
     const markdown_core_status status =
-        node_places(document->root, node, MARKDOWN_CORE_SLOT_NONE, true, source, length, &found);
+        node_places(document->root, NULL, node, MARKDOWN_CORE_SLOT_NONE, true, source, length, &found);
     if (status != MARKDOWN_CORE_OK) {
         *scopes = NULL;
         *count = 0;
@@ -750,11 +751,12 @@ markdown_core_status markdown_core_document_markers(const markdown_core_document
     return answer(document, source, length, status, &found, scopes, count);
 }
 
-markdown_core_status markdown_core_parts_fields(const markdown_core_node *root, const markdown_core_node *node,
-                                                markdown_core_slot_kind slot, const uint8_t *source, size_t length,
-                                                markdown_core_place **places, size_t *count) {
+markdown_core_status markdown_core_parts_fields(const markdown_core_node *root, const markdown_core_window *window,
+                                                const markdown_core_node *node, markdown_core_slot_kind slot,
+                                                const uint8_t *source, size_t length, markdown_core_place **places,
+                                                size_t *count) {
     ranges found;
-    const markdown_core_status status = node_places(root, node, slot, false, source, length, &found);
+    const markdown_core_status status = node_places(root, window, node, slot, false, source, length, &found);
     *places = status == MARKDOWN_CORE_OK ? found.items : NULL;
     *count = status == MARKDOWN_CORE_OK ? found.count : 0;
     return status;

@@ -663,3 +663,65 @@ uint64_t ts_monotonic_ns(void) {
     return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
 #endif
 }
+
+static bool ts_same_scope(markdown_core_scope a, markdown_core_scope b) {
+    return a.start.line == b.start.line && a.start.column == b.start.column && a.end.line == b.end.line &&
+           a.end.column == b.end.column;
+}
+
+static bool ts_same_opener(markdown_core_opener a, markdown_core_opener b) {
+    return a.kind == b.kind && ts_same_scope(a.scope, b.scope);
+}
+
+static bool ts_same_text(markdown_core_string a, markdown_core_string b) {
+    return a.length == b.length && (!a.length || memcmp(a.data, b.data, a.length) == 0);
+}
+
+/* Whether two contexts list the same blocks, inlines and slots. */
+bool ts_same_context(const markdown_core_context *a, const markdown_core_context *b) {
+    size_t count = markdown_core_context_block_count(a);
+    if (count != markdown_core_context_block_count(b)) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_opener ours, theirs;
+        if (markdown_core_context_block_at(a, i, &ours) != MARKDOWN_CORE_OK ||
+            markdown_core_context_block_at(b, i, &theirs) != MARKDOWN_CORE_OK || !ts_same_opener(ours, theirs)) {
+            return false;
+        }
+    }
+    count = markdown_core_context_inline_count(a);
+    if (count != markdown_core_context_inline_count(b)) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_opener ours, theirs;
+        if (markdown_core_context_inline_at(a, i, &ours) != MARKDOWN_CORE_OK ||
+            markdown_core_context_inline_at(b, i, &theirs) != MARKDOWN_CORE_OK || !ts_same_opener(ours, theirs)) {
+            return false;
+        }
+    }
+    count = markdown_core_context_slot_count(a);
+    if (count != markdown_core_context_slot_count(b)) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_slot ours, theirs;
+        if (markdown_core_context_slot_at(a, i, &ours) != MARKDOWN_CORE_OK ||
+            markdown_core_context_slot_at(b, i, &theirs) != MARKDOWN_CORE_OK || ours.kind != theirs.kind ||
+            ours.owner != theirs.owner || !ts_same_scope(ours.before, theirs.before) ||
+            !ts_same_scope(ours.after, theirs.after) || ours.closed != theirs.closed ||
+            ours.prefix_count != theirs.prefix_count) {
+            return false;
+        }
+        for (size_t at = 0; at < ours.prefix_count; at++) {
+            markdown_core_string mine, other;
+            if (markdown_core_context_slot_prefix_at(a, i, at, &mine) != MARKDOWN_CORE_OK ||
+                markdown_core_context_slot_prefix_at(b, i, at, &other) != MARKDOWN_CORE_OK ||
+                !ts_same_text(mine, other)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}

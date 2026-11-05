@@ -74,11 +74,16 @@ bufsize_t markdown_core_parts_find(markdown_core_parts *parts, bufsize_t from, c
                                    bufsize_t size);
 
 /* The source ranges of `node`'s fields of slot kind `slot`, in the tree
- * `root` parsed from `length` bytes of `source`: one per run of each field,
- * in source order, an array the caller frees with markdown_core_free. */
-markdown_core_status markdown_core_parts_fields(const markdown_core_node *root, const markdown_core_node *node,
-                                                markdown_core_slot_kind slot, const uint8_t *source, size_t length,
-                                                markdown_core_place **places, size_t *count);
+ * `root` parsed from `length` bytes of `source`, which a walk of `root`
+ * within `window` reaches, or of all of it when that is NULL: one per run
+ * of each field, in source order, an array the caller frees with
+ * markdown_core_free. */
+struct markdown_core_window;
+markdown_core_status markdown_core_parts_fields(const markdown_core_node *root,
+                                                const struct markdown_core_window *window,
+                                                const markdown_core_node *node, markdown_core_slot_kind slot,
+                                                const uint8_t *source, size_t length, markdown_core_place **places,
+                                                size_t *count);
 
 /* THE READERS, one for each element whose nodes hold fields; a kind with
  * none has none, and its whole own source is markers (an emphasis's

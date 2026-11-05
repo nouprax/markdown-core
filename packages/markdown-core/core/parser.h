@@ -1639,6 +1639,12 @@ const markdown_core_roster_record *markdown_core_parser_find_at_snapshot(markdow
  * be had. */
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label);
+/* What a parse with a sink finds of `kind` and `label` in the whole
+ * document's roster, when its own has nothing (blocks.c, A LOOKUP IN THE
+ * WHOLE DOCUMENT). */
+const markdown_core_roster_record *markdown_core_parser_find_outer(markdown_core_parser *parser,
+                                                                   markdown_core_roster_kind kind,
+                                                                   const markdown_core_chunk *label, bool *failed);
 static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
                                                                                       markdown_core_roster_kind kind,
                                                                                       const markdown_core_chunk *label,
@@ -1647,6 +1653,9 @@ static inline const markdown_core_roster_record *markdown_core_parser_find_defin
         kind == MARKDOWN_CORE_ROSTER_SPECIMEN
             ? markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed)
             : markdown_core_roster_find_label(&parser->roster, kind, label, failed);
+    if (!record && parser->sink && !*failed) {
+        return markdown_core_parser_find_outer(parser, kind, label, failed);
+    }
     if (parser->snapshot && !*failed) {
         return markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed);
     }

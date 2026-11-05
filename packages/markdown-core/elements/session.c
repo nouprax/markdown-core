@@ -504,6 +504,32 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     return false;
 }
 
+/* The rest point in the root before the line that starts at `start`, as
+ * session_rest finds it: before the root's child `*child`, at the start of
+ * input line `*line`. */
+static void session_rest_root(const markdown_core_session *session, size_t start, uint32_t *child, size_t *line) {
+    const markdown_core_node *root = session->document.root;
+    const session_widths *widths = &session->edits->widths;
+    size_t end;
+    uint32_t at = widths_child(widths, root, start);
+    size_t from = 0;
+    while (at) {
+        from = markdown_core_parser_line_of(session->committed, widths_start(widths, root, at));
+        markdown_core_parser_line_span(session->committed, from, &start, &end);
+        size_t reached;
+        if (markdown_core_parser_spanned(session->committed, start, &reached)) {
+            at = widths_child(widths, root, reached);
+        } else if (widths_end(widths, root, at - 1) > start) {
+            at--;
+        } else {
+            break;
+        }
+        from = 0;
+    }
+    *child = at;
+    *line = from;
+}
+
 /* The rest point the edit reads from, before the root's child `*child`, at
  * the start of input line `*line`: the start of the child before the first
  * that ends past the start of `line`, where the edit begins -- every rule of
@@ -535,23 +561,7 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
                                                                    (uint32_t)widths_end(widths, root, held)}
                                            : (markdown_core_place){0, 0};
     const bool inside = held < root->child_count && session_inside(session, root->children[held], window, edited);
-    uint32_t at = widths_child(widths, root, start);
-    size_t from = 0;
-    while (at) {
-        from = markdown_core_parser_line_of(session->committed, widths_start(widths, root, at));
-        markdown_core_parser_line_span(session->committed, from, &start, &end);
-        size_t reached;
-        if (markdown_core_parser_spanned(session->committed, start, &reached)) {
-            at = widths_child(widths, root, reached);
-        } else if (widths_end(widths, root, at - 1) > start) {
-            at--;
-        } else {
-            break;
-        }
-        from = 0;
-    }
-    *child = at;
-    *line = from;
+    session_rest_root(session, start, child, line);
     rest->depth = 0;
     if (!inside) {
         return true;
@@ -808,8 +818,61 @@ void markdown_core_session_reread(const markdown_core_session *session, size_t *
 }
 
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
-    markdown_core_status status = markdown_core_context_locate(
-        session->context, &session->document, (const uint8_t *)session_source(session), session->text.count, position);
+    /* THE PREFIX FROM A REST POINT (context.c): a flushed session reads the
+     * text before the cursor from the rest point an edit of the cursor's
+     * line would read from in the root, as nothing before it reads past it,
+     * and the query reads the lines from there through the one after the
+     * cursor's, from the session's line table, and the root's children that
+     * hold them, from the child before the rest point's, which some readers
+     * measure the first from. */
+    const markdown_core_node *root = session->document.root;
+    size_t start, end;
+    if (!session->flushed || !root || !root->child_count || position.line < 1 ||
+        !markdown_core_parser_line_span(session->committed, (size_t)position.line - 1, &start, &end)) {
+        markdown_core_status status =
+            markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
+                                         session->text.count, position, NULL);
+        session->located |= status == MARKDOWN_CORE_OK;
+        return status;
+    }
+    if (!session->edits && !(session->edits = markdown_core_alloc(1, sizeof(*session->edits)))) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    const session_widths *widths = &session->edits->widths;
+    if (!widths_make(&session->edits->widths, root) || !markdown_core_parser_sort_reach(session->committed)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    size_t line, next, after;
+    uint32_t child;
+    session_rest_root(session, start, &child, &line);
+    /* From the document's start, the lines reach the first child's too,
+     * past the envelope, whose members a cursor in it reads. */
+    size_t cursor = (size_t)position.line - 1;
+    if (!child) {
+        const size_t opening = markdown_core_parser_line_of(session->committed, widths_start(widths, root, 0));
+        cursor = opening > cursor ? opening : cursor;
+    }
+    const bool more = markdown_core_parser_line_span(session->committed, cursor + 1, &next, &after);
+    markdown_core_locus locus = {.lines = {.count = cursor + 1 + more - line, .base = line}};
+    locus.lines.starts = markdown_core_alloc(locus.lines.count, sizeof(*locus.lines.starts));
+    if (!locus.lines.starts) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    for (size_t i = 0; i < locus.lines.count; i++) {
+        markdown_core_parser_line_span(session->committed, line + i, &locus.lines.starts[i], &after);
+    }
+    locus.from = child ? locus.lines.starts[0] : 0;
+    locus.roster = &session->committed->roster;
+    uint32_t last = widths_child(widths, root, end);
+    while (last + 1 < root->child_count && widths_start(widths, root, last + 1) <= end) {
+        last++;
+    }
+    const uint32_t first = child ? child - 1 : 0;
+    locus.children = (markdown_core_window){first, last, (uint32_t)widths_start(widths, root, first)};
+    markdown_core_status status =
+        markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
+                                     session->text.count, position, &locus);
+    markdown_core_free(locus.lines.starts);
     session->located |= status == MARKDOWN_CORE_OK;
     return status;
 }
@@ -910,7 +973,9 @@ static bool seed_labels(markdown_core_roster *roster, const markdown_core_docume
  * reports what it leaves open to `sink` (sink.h): the sink names the
  * text, and the document is the context query's alone. What the text
  * after the cursor defines, `whole` names: its labels are declared before
- * the parse reads a line, so an occurrence resolves as it does there. */
+ * the parse reads a line, so an occurrence resolves as it does there, or,
+ * when the sink names a session's roster, the lookups go on to that
+ * (blocks.c, A LOOKUP IN THE WHOLE DOCUMENT). */
 markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sink *sink, markdown_core_text_unit unit,
                                                        const markdown_core_document *whole,
                                                        markdown_core_document **document) {
@@ -920,7 +985,7 @@ markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sin
     }
     markdown_core_session session = {0};
     markdown_core_status status = session_open(&session, sink->source, sink->length, unit);
-    if (status == MARKDOWN_CORE_OK && whole && !seed_labels(&session.committed->roster, whole)) {
+    if (status == MARKDOWN_CORE_OK && whole && !sink->outer && !seed_labels(&session.committed->roster, whole)) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status == MARKDOWN_CORE_OK) {
