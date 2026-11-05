@@ -1233,19 +1233,23 @@ static bool name_held(markdown_core_heading_state *state, const unsigned char *n
     if (!up || !stem_present(stem_of(names, up))) {
         return false;
     }
-    size_t suffix = 0;
-    for (bufsize_t i = parent + 1; i < size; i++) {
-        suffix = suffix * 10 + (size_t)(name[i] - '0');
-    }
+    /* Suffixes compared as their digits, none with a leading zero: the
+     * shorter is the less, as a number of any size would be. */
+    const unsigned char *digits = name + parent + 1;
+    const bufsize_t width = size - parent - 1;
     const markdown_core_heading_stem *stem = stem_of(names, up);
     size_t low = 0, high = stem_before(state, stem, place);
     while (low < high) {
         const size_t middle = low + (high - low) / 2;
-        const size_t found = held_suffix(stem_member(state, stem, middle, &at));
-        if (found == suffix) {
+        const markdown_core_heading_parse *heading = stem_member(state, stem, middle, &at);
+        const bufsize_t held =
+            heading->name_size > heading->base_size ? heading->name_size - heading->base_size - 1 : 0;
+        const int order = held != width ? (held < width ? -1 : 1)
+                                        : memcmp(heading->name + heading->base_size + 1, digits, (size_t)width);
+        if (!order) {
             return true;
         }
-        if (found < suffix) {
+        if (order < 0) {
             low = middle + 1;
         } else {
             high = middle;

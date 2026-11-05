@@ -11565,6 +11565,20 @@ static void session_edits_name_headings(test_batch_runner *runner) {
         }
     }
     OK(runner, kept, "the headings an edit of many lines names again show a fresh parse's anchors");
+    /* A base whose number is past any size: no earlier heading holds its
+     * name, as no suffix wraps to the first heading's base. */
+    static const char wide[] = "# a\n\n# a-18446744073709551616\n\nend\n";
+    markdown_core_session *own = NULL;
+    const markdown_core_document *read = NULL;
+    const markdown_core_position from = {3, 3}, to = {3, 4};
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)wide, sizeof(wide) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &own) ==
+               MARKDOWN_CORE_OK &&
+           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK &&
+           markdown_core_session_edit(own, from, to, (const uint8_t *)"a", 1, &read) == MARKDOWN_CORE_OK &&
+           session_as_parsed(own),
+       "a heading whose base ends in a number past any size keeps a fresh parse's anchor");
+    markdown_core_session_close(own);
 }
 
 static void session_edits(test_batch_runner *runner) {
