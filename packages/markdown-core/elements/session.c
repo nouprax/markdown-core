@@ -76,6 +76,7 @@ static void nest_free(session_nest *nest) {
     markdown_core_free(nest->widths.chunks);
     markdown_core_free(nest->widths.sums);
     markdown_core_free(nest->folds.flags);
+    markdown_core_free(nest->folds.passes);
 }
 
 /* What only an edit keeps, made at the first: the widths, and the bytes of
@@ -472,8 +473,9 @@ static bool session_offset(const markdown_core_session *session, markdown_core_p
 typedef struct {
     markdown_core_node *chain[SESSION_DEPTH];
     uint32_t path[SESSION_DEPTH + 1];
-    /* Where each block of the chain starts. */
-    uint32_t starts[SESSION_DEPTH];
+    /* Where each block of the chain starts, and where its child before the
+     * one on the path ends, or where it starts when that is its first. */
+    uint32_t starts[SESSION_DEPTH], priors[SESSION_DEPTH];
     size_t depth, line, close, ends[3];
 } session_rest_point;
 
@@ -634,6 +636,7 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     widths = nest_of(edits, block);
     if (below) {
         rest->path[level + 1] = (uint32_t)held;
+        rest->priors[level] = held ? nest_window(widths, block, window.start, held - 1).end : window.start;
         return true;
     }
     /* As at the root, the block before the one that holds the line is read
@@ -688,6 +691,7 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
             continue;
         }
         rest->path[level + 1] = (uint32_t)child;
+        rest->priors[level] = child ? nest_window(widths, block, window.start, child - 1).end : window.start;
         rest->depth = level + 1;
         rest->line = line;
         return true;
@@ -825,6 +829,16 @@ static void session_mend_nests(markdown_core_session *session, const session_res
             const size_t last = tail != UINT32_MAX && holder->child_count == counts[level] ? tail : SIZE_MAX;
             const size_t marked = rest->path[level + 1] / MARKDOWN_CORE_FOLD_CHUNK;
             nest.folds.count = nest.folds.count < marked ? nest.folds.count : marked;
+            /* The passes of the chunks the reading wrote go, and all from
+             * there on when the children after them moved. */
+            if (last == SIZE_MAX) {
+                nest.folds.pass_count = nest.folds.pass_count < marked ? nest.folds.pass_count : marked;
+            }
+            for (size_t chunk = marked;
+                 last != SIZE_MAX && chunk <= last / MARKDOWN_CORE_FOLD_CHUNK && chunk < nest.folds.pass_count;
+                 chunk++) {
+                nest.folds.passes[chunk].count = 0;
+            }
             if (widths_mend(&nest.widths, holder, rest->path[level + 1], last)) {
 #ifndef NDEBUG
                 nest_check(&nest.widths, holder);
@@ -876,9 +890,13 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     }
     markdown_core_folds *folds[SESSION_DEPTH];
     session_chain_folds(edits, rest, depth, folds);
+    markdown_core_chain_place places[SESSION_DEPTH];
+    for (size_t level = 0; rest && level < rest->depth; level++) {
+        places[level] = (markdown_core_chain_place){rest->starts[level], rest->priors[level]};
+    }
     if (!markdown_core_parser_reopen(session->committed, root, child, line, prior, from, to, delta, past,
-                                     session_source(session), whole, rest ? rest->path : NULL, rest ? rest->depth : 0,
-                                     depth ? folds : NULL)) {
+                                     session_source(session), whole, rest ? rest->path : NULL, places,
+                                     rest ? rest->depth : 0, depth ? folds : NULL)) {
         markdown_core_node_pool_release(&session->pool, root);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }

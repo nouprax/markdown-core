@@ -2787,6 +2787,7 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
 
 static bool reopen_record(markdown_core_tail_records *records, markdown_core_node *node, uint64_t id, uint16_t kind,
                           markdown_core_place place, uint32_t field, uint32_t owner, uint32_t *last);
+static bool record_nest(markdown_core_parser *parser);
 
 /* The records of the old tail's first `count` children, the ones the
  * reading read again, after the root's others: each
@@ -2836,6 +2837,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     markdown_core_edit *edit = parser->stream->edit;
     /* A reading that took nothing back read every old child again. */
     if (edit && edit->unrecorded && !record_tail(parser, edit->unrecorded)) {
+        return false;
+    }
+    if (edit && edit->nest_count && !edit->nest_recorded && !record_nest(parser)) {
         return false;
     }
     publish_walk walk;
@@ -2956,40 +2960,22 @@ static bool reopen_record(markdown_core_tail_records *records, markdown_core_nod
     return true;
 }
 
-/* How many children the reopened block `level` of the chain keeps: those
- * before the next block of the chain and that block, or those before the
- * deepest's first child that goes (blocks.c, THE NESTED REOPEN). */
-static inline uint32_t reopen_kept(const markdown_core_edit *edit, size_t level) {
-    return level + 1 < edit->depth ? edit->path[level + 1] + 1 : edit->path[edit->depth];
-}
-
-/* Where the children the chain's block `level` lets go begin among all it
- * lets go, in the order of the text: after those of the blocks below it
- * (blocks.c, THE NESTED SPLICE). */
-static uint32_t reopen_offset(const markdown_core_edit *edit, size_t level) {
-    uint32_t offset = 0;
-    for (size_t i = level + 1; i < edit->depth; i++) {
-        offset += edit->chain[i]->child_count - reopen_kept(edit, i);
-    }
-    return offset;
-}
-
 /* THE CHAIN'S RECORDS. Each reopened block is recorded below its owner's
  * record as a block that stays, before the children its owner lets go,
- * which follow it there: the next publish matches the block against its
- * record, which gives it its id, and its new children against those of its
- * old ones that go. Each lets go the children past those it keeps, and its
- * relations other than its children, and the children it keeps but the
- * next of the chain, are its FINAL prefix, the last of which ends where its
- * runs say, written in its place, as the reading's publish reads it (THE
- * FINAL PREFIX). Its own place starts where its runs do, which the reading
- * reads. `anchor` is where the first's runs are measured from, and
- * `*root_last` the last of the root's records, plus one, or 0. False when
- * the records could not grow. */
-static bool reopen_chain(markdown_core_tail_records *records, const markdown_core_edit *edit, uint32_t anchor,
-                         uint32_t *root_last) {
+ * which follow it there as the reading passes them (record_nest): the next
+ * publish matches the block against its record, which gives it its id, and
+ * its new children against those of its old ones that go. Each lets go the
+ * children past those it keeps, and its relations other than its children,
+ * and the children it keeps but the next of the chain are its FINAL
+ * prefix, of which only the last is marked, as the walk finds the prefix's
+ * end from its last (THE FINAL PREFIX); it ends where the edit's `places`
+ * say, written in its place. The block starts where they say too, and so
+ * does the next of the chain, which the reading reads: nothing walks the
+ * children the block keeps or lets go. `*root_last` is the last of the
+ * root's records, plus one, or 0. False when the records could not grow. */
+static bool reopen_chain(markdown_core_tail_records *records, const markdown_core_edit *edit, uint32_t *root_last) {
     markdown_core_node *block = edit->chain[0];
-    markdown_core_place window = runs_window(block, anchor);
+    markdown_core_place window = {edit->places[0].start, edit->places[0].start + block->extent.span};
     if (!reopen_record(records, NULL, block->id, block->kind, window, 1, 1, root_last)) {
         return false;
     }
@@ -2997,11 +2983,10 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
     for (size_t level = 0; level < edit->depth; level++) {
         block = edit->chain[level];
         const bool deeper = level + 1 < edit->depth;
-        const uint32_t kept = reopen_kept(edit, level), final = deeper ? kept - 1 : kept;
-        const uint32_t offset = reopen_offset(edit, level);
+        const uint32_t final = deeper ? edit->keeps[level] - 1 : edit->keeps[level];
         edit->owners[level] = owner;
         edit->ends[level] = window.end;
-        uint32_t last = 0, next = 0;
+        uint32_t next = 0;
         markdown_core_place next_window = {0};
         markdown_core_relation_cursor cursor;
         markdown_core_relation relation;
@@ -3013,32 +2998,19 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
                 }
                 continue;
             }
-            /* The children, measured from where the block starts, one after
-             * another: the next block of the chain is recorded first, and
-             * the children that go after it. */
             assert(!relation.continues && relation.items == block->children);
-            const uint32_t field = cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
-            uint32_t at = window.start;
-            for (uint32_t i = 0; i < block->child_count; i++) {
-                markdown_core_node *child = block->children[i];
-                const markdown_core_place place = runs_window(child, at);
-                if (i >= kept) {
-                    edit->backs[offset + i - kept] =
-                        (markdown_core_back_child){child, (uint32_t)level, at, place.start, place.end};
-                }
-                at = place.end;
-                if (i < final) {
-                    child->flags |= MARKDOWN_CORE_NODE__FINAL;
-                    if (i + 1 == final) {
-                        child->place.end = place.end;
-                    }
-                } else if (i == final && deeper) {
-                    if (!reopen_record(records, NULL, child->id, child->kind, place, field, owner, &last)) {
-                        return false;
-                    }
-                    next = last;
-                    next_window = place;
-                } else if (!reopen_record(records, child, child->id, child->kind, place, field, owner, &last)) {
+            if (final) {
+                markdown_core_node *child = block->children[final - 1];
+                child->flags |= MARKDOWN_CORE_NODE__FINAL;
+                child->place.end = edit->places[level].prior;
+            }
+            if (deeper) {
+                markdown_core_node *child = block->children[final];
+                const uint32_t start = edit->places[level + 1].start;
+                next_window = (markdown_core_place){start, start + child->extent.span};
+                assert(start == (uint32_t)((int64_t)edit->places[level].prior + child->extent.lead));
+                const uint32_t field = cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
+                if (!reopen_record(records, NULL, child->id, child->kind, next_window, field, owner, &next)) {
                     return false;
                 }
             }
@@ -3051,25 +3023,59 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
     return true;
 }
 
+/* The field of the children of `block` among its relations. */
+static uint32_t children_field(const markdown_core_node *block) {
+    markdown_core_relation_cursor cursor;
+    markdown_core_relation relation;
+    markdown_core_relations_begin(&cursor, block);
+    while (markdown_core_relations_next(&cursor, &relation)) {
+        if (relation.holder == block) {
+            return cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
+        }
+    }
+    return 0;
+}
+
+/* The records of the old children of the chain the reading passed, those
+ * before the first it took back, or all of them, in the order of the text,
+ * each after the record of the next block of the chain below its block's,
+ * or first there, measured by their extents from where the one before
+ * ends, and each owning its child from then on (THE CHAIN'S RECORDS). The
+ * reading moved them all out of the blocks (blocks.c, THE OLD NESTED TAIL
+ * IN PLACE). False when storage could not be had. */
+static bool record_nest(markdown_core_parser *parser) {
+    markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_tail_records *records = &parser->stream->records;
+    const uint32_t end =
+        edit->taken != SIZE_MAX && edit->taken < edit->nest_count ? (uint32_t)edit->taken : edit->nest_count;
+    assert(!edit->nest_recorded);
+    for (size_t level = edit->depth; level-- > 0 && edit->nest_recorded < end;) {
+        const markdown_core_node *block = edit->chain[level];
+        const uint32_t field = children_field(block);
+        uint32_t last = level + 1 < edit->depth ? edit->owners[level + 1] : 0;
+        uint32_t before = level + 1 < edit->depth ? edit->ends[level + 1] : edit->places[level].prior;
+        for (uint32_t i = 0; i < edit->holds[level] && edit->nest_recorded < end; i++) {
+            assert(edit->saves[level] > i);
+            markdown_core_node *old = edit->nested[edit->bases[level] + i];
+            const uint32_t start = (uint32_t)((int64_t)before + old->extent.lead);
+            before = start + old->extent.span;
+            if (!reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, before}, field,
+                               edit->owners[level], &last)) {
+                return false;
+            }
+            edit->nest_recorded++;
+        }
+    }
+    return true;
+}
+
 bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child,
                                   uint32_t start) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_document_value *value = root->as.document;
     markdown_core_node *metadata = child ? NULL : value->metadata;
     markdown_core_edit *edit = stream->edit;
-    /* The children the chain lets go, numbered in the order of the text,
-     * before the root's (blocks.c, THE NESTED SPLICE). */
-    const uint32_t backs =
-        edit->depth ? reopen_offset(edit, 0) + edit->chain[0]->child_count - reopen_kept(edit, 0) : 0;
     bool ok = true;
-    if (backs > edit->back_capacity) {
-        markdown_core_back_child *list = markdown_core_reserve(edit->backs, &edit->back_capacity, backs, sizeof(*list));
-        ok = list != NULL;
-        edit->backs = list ? list : edit->backs;
-    }
-    edit->back_count = ok ? backs : 0;
-    edit->back_next = 0;
-    edit->taken = SIZE_MAX;
     /* The committed definitions that start before the rest point stay where
      * they are, and the others go to the back, where an edit before them
      * moves none of them: the splice takes back those the reading did not
@@ -3101,14 +3107,15 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     uint32_t last = 0;
     ok = !metadata || reopen_record(records, metadata, metadata->id, metadata->kind, metadata->place, 0, 1, &last);
     if (ok && edit->depth) {
-        /* The first of the chain's runs are measured from where the child
-         * before it ends, which is where it ends less their width. */
+        /* The child before the chain's ends where the chain's lead is
+         * measured from. */
         markdown_core_node *first = root->children[child - 1];
-        const uint32_t anchor = edit->prior - runs_window(first, 0).end;
+        const uint32_t anchor = (uint32_t)((int64_t)edit->places[0].start - first->extent.lead);
+        assert(anchor == edit->prior - runs_window(first, 0).end);
         if (child > 1) {
             root->children[child - 2]->place.end = anchor;
         }
-        ok = reopen_chain(records, edit, anchor, &last);
+        ok = reopen_chain(records, edit, &last);
     }
     /* The old children are recorded as the reading passes them: those it
      * takes back are the root's again, and need none (record_tail). */
@@ -3126,9 +3133,14 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     edit->recorded = 0;
     edit->unrecorded = root->child_count - child;
     root->child_count = child;
+    /* The chain's old children past those each block keeps stay in its
+     * storage, the edit's from now on (blocks.c, THE OLD NESTED TAIL IN
+     * PLACE). */
     for (size_t level = 0; level < edit->depth; level++) {
-        edit->chain[level]->child_count = reopen_kept(edit, level);
+        edit->chain[level]->child_count = edit->keeps[level];
     }
+    edit->nest_count = edit->depth ? edit->bases[0] + edit->holds[0] : 0;
+    edit->nest_recorded = 0;
     if (metadata) {
         value->metadata = NULL;
     }
@@ -3151,17 +3163,6 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
  * are the committed back's that start from where the reading took them
  * back, which stand where they stood from the text's end; those before it
  * the reading read again, and listed, and they go. */
-/* The records from the one `*link` names on let go of their nodes, which
- * the reading took back, and go. */
-static void records_cut(markdown_core_parser *parser, markdown_core_tail_records *records, uint32_t *link) {
-    const uint32_t at = *link;
-    *link = 0;
-    for (uint32_t record = at; record; record = records->items[record - 1].next) {
-        records->items[record - 1].node = NULL;
-    }
-    records_free(parser, at, false);
-}
-
 bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
@@ -3178,27 +3179,8 @@ bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, 
         zipper->end = (size_t)((int64_t)zipper->end + edit->delta);
     }
     committed_check(committed);
-    /* The records of each block's old children are in their order, and
-     * those of the children taken back are the last: from the first taken
-     * back in its block, and all a block above it let go, which follow the
-     * record of the block below. */
-    markdown_core_tail_records *records = &stream->records;
-    if (edit->taken != SIZE_MAX) {
-        const markdown_core_back_child *back = &edit->backs[edit->taken];
-        for (size_t level = back->level + 1; level-- > 0;) {
-            uint32_t *link = &records->items[edit->owners[level] - 1].held;
-            if (level == back->level) {
-                while (*link && records->items[*link - 1].node != back->node) {
-                    link = &records->items[*link - 1].next;
-                }
-                assert(*link);
-            } else {
-                assert(*link && !records->items[*link - 1].node);
-                link = &records->items[*link - 1].next;
-            }
-            records_cut(parser, records, link);
-        }
-    }
+    /* The chain's old children the reading took back have no records:
+     * those before them get theirs as the publish starts (record_nest). */
     return !edit->unrecorded || record_tail(parser, child < edit->unrecorded ? child : edit->unrecorded);
 }
 
