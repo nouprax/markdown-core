@@ -3444,6 +3444,16 @@ static bool walk_more_after(const markdown_core_walk_frame *frame) {
     return false;
 }
 
+/* The window's level whose holder owns `frame`, or NULL. */
+static const markdown_core_window_level *walk_level(const markdown_core_walk *walk,
+                                                    const markdown_core_walk_frame *frame) {
+    const size_t level = walk->count - 1;
+    if (!walk->window || level >= walk->window->depth || walk->window->levels[level].holder != frame->cursor.owner) {
+        return NULL;
+    }
+    return &walk->window->levels[level];
+}
+
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item) {
     if (walk->failed) {
         return false;
@@ -3469,21 +3479,27 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
             frame->active = true;
             frame->group_pending = frame->relation.group != NULL;
             frame->next = 0;
-            /* Within a window, the root's frame reads its children from the
-             * window's first to its last, and its other relations, which
-             * come before its children, only when the first is its first. */
-            const markdown_core_window *window = walk->count == 1 ? walk->window : NULL;
-            if (window && frame->relation.holder == walk->root) {
-                if (window->first >= frame->relation.count) {
+            /* Within a window, a holder's frame reads its children from its
+             * level's first to its last, which a relation that holds a
+             * slice of them counts from the slice's start, and its other
+             * relations, which come before its children, only when the
+             * first is its first. */
+            const markdown_core_window_level *at = walk_level(walk, frame);
+            if (at && frame->relation.holder == at->holder) {
+                const size_t from = (size_t)(frame->relation.items - at->holder->children);
+                const size_t count = frame->relation.count;
+                if ((size_t)at->last < from || (size_t)at->first >= from + count) {
                     frame->active = false;
                     continue;
                 }
-                frame->next = window->first;
-                frame->anchor = window->start - frame->relation.items[window->first]->source.runs->items[0].lead;
-                if (window->last < frame->relation.count) {
-                    frame->relation.count = (size_t)window->last + 1;
+                if (at->first > from) {
+                    frame->next = at->first - from;
+                    frame->anchor = at->start - frame->relation.items[frame->next]->source.runs->items[0].lead;
                 }
-            } else if (window && window->first) {
+                if ((size_t)at->last + 1 < from + count) {
+                    frame->relation.count = (size_t)at->last + 1 - from;
+                }
+            } else if (at && at->first) {
                 frame->active = false;
                 continue;
             }

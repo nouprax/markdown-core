@@ -896,14 +896,21 @@ static markdown_core_status session_look_read(void *owner, markdown_core_context
     return ok && !sink->failed ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 
+static void session_look_line(void *owner, size_t offset, size_t *line, size_t *start) {
+    const session_look *look = owner;
+    *line = markdown_core_parser_line_of(look->session->committed, offset);
+    *start = session_line_start(look->session, *line);
+}
+
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
     /* THE PREFIX FROM A REST POINT (context.c): a flushed session reads the
      * text before the cursor from the rest point an edit of the cursor's
-     * line reads from (THE LOOK), and the query reads the lines from the
-     * rest point in the root through the one after the cursor's, from the
-     * session's line table, and the root's children that hold them, from
-     * the child before the rest point's, which some readers measure the
-     * first from. */
+     * line reads from (THE LOOK), and the query reads the lines from that
+     * rest point through the one after the cursor's, from the session's
+     * line table, and the blocks that hold them: down the rest point's
+     * chain, and at its level the children from the one before the rest
+     * point's, which some readers measure the first from, through the one
+     * that holds the cursor's line. */
     const markdown_core_node *root = session->document.root;
     size_t start, end;
     if (!session->flushed || !root || !root->child_count || position.line < 1 ||
@@ -918,60 +925,70 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     const session_widths *widths = &session->edits->widths;
-    if (!widths_make(&session->edits->widths, root) || !markdown_core_parser_sort_reach(session->committed)) {
+    if (!widths_make(&session->edits->widths, root)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    size_t line, next, after;
-    uint32_t child;
-    session_rest_root(session, start, &child, &line);
+    session_rest_point rest;
+    session_look look = {.session = session, .rest = &rest};
+    if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    markdown_core_locus locus = {.look = session_look_read, .line = session_look_line, .owner = &look};
+    /* Down the chain, each block's one child that holds the next, where
+     * it starts, as session_rest_in measured them, and at the rest point's
+     * level the children through the one that holds the cursor's line. */
+    const markdown_core_place *windows = session->edits->windows;
+    const markdown_core_node *holder = root;
+    for (size_t level = 0, base = 0; level <= rest.depth; level++) {
+        markdown_core_window_level *at = &locus.window.levels[level];
+        const bool deepest = level == rest.depth;
+        const uint32_t first = !deepest ? rest.path[level] : !level ? look.child : rest.path[level];
+        at->holder = holder;
+        at->first = at->last = deepest && first ? first - 1 : first;
+        if (!level) {
+            at->start = (uint32_t)widths_start(widths, root, at->first);
+            if (deepest) {
+                at->last = widths_child(widths, root, end);
+                while (at->last + 1 < root->child_count && widths_start(widths, root, at->last + 1) <= end) {
+                    at->last++;
+                }
+            }
+        } else {
+            at->start = windows[base + at->first].start;
+            if (deepest) {
+                at->last = first;
+                while (at->last + 1 < holder->child_count && windows[base + at->last + 1].start <= end) {
+                    at->last++;
+                }
+                look.before = first ? windows[base + first - 1].end : 0;
+            }
+        }
+        if (!deepest) {
+            look.starts[level] = at->start;
+            if (level) {
+                base += holder->child_count;
+            }
+            holder = rest.chain[level];
+        }
+    }
+    locus.window.depth = rest.depth + 1;
     /* From the document's start, the lines reach the first child's too,
      * past the envelope, whose members a cursor in it reads. */
-    size_t cursor = (size_t)position.line - 1;
-    if (!child) {
+    size_t cursor = (size_t)position.line - 1, next, after;
+    if (!rest.depth && !look.child) {
         const size_t opening = markdown_core_parser_line_of(session->committed, widths_start(widths, root, 0));
         cursor = opening > cursor ? opening : cursor;
     }
     const bool more = markdown_core_parser_line_span(session->committed, cursor + 1, &next, &after);
-    markdown_core_locus locus = {.lines = {.count = cursor + 1 + more - line, .base = line}};
+    locus.lines = (markdown_core_source_lines){.count = cursor + 1 + more - look.line, .base = look.line};
     locus.lines.starts = markdown_core_alloc(locus.lines.count, sizeof(*locus.lines.starts));
     if (!locus.lines.starts) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     for (size_t i = 0; i < locus.lines.count; i++) {
-        markdown_core_parser_line_span(session->committed, line + i, &locus.lines.starts[i], &after);
-    }
-    uint32_t last = widths_child(widths, root, end);
-    while (last + 1 < root->child_count && widths_start(widths, root, last + 1) <= end) {
-        last++;
-    }
-    const uint32_t first = child ? child - 1 : 0;
-    locus.children = (markdown_core_window){first, last, (uint32_t)widths_start(widths, root, first)};
-    /* The look reads from the rest point an edit of the cursor's line reads
-     * from, below the root's child when it is there (session_rest). */
-    session_rest_point rest;
-    session_look look = {.session = session, .rest = &rest};
-    if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
-        markdown_core_free(locus.lines.starts);
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    /* Where each block of the chain starts, as session_rest_in measured
-     * them, and where the deepest's child before the rest point ends. */
-    for (size_t level = 0, base = 0; level < rest.depth; level++) {
-        const markdown_core_place window =
-            !level ? (markdown_core_place){(uint32_t)widths_start(widths, root, rest.path[0]),
-                                           (uint32_t)widths_end(widths, root, rest.path[0])}
-                   : session->edits->windows[base + rest.path[level]];
-        if (level) {
-            base += rest.chain[level - 1]->child_count;
-        }
-        look.starts[level] = window.start;
-        if (level + 1 == rest.depth && rest.path[rest.depth]) {
-            look.before = session->edits->windows[base + rest.path[rest.depth] - 1].end;
-        }
+        markdown_core_parser_line_span(session->committed, look.line + i, &locus.lines.starts[i], &after);
     }
     look.span = (uint32_t)(position.line - look.line + 2);
-    locus.look = session_look_read;
-    locus.owner = &look;
     markdown_core_status status =
         markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
                                      session->text.count, position, &locus);

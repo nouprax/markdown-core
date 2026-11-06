@@ -86,7 +86,9 @@ typedef struct {
     holding *holdings;
     size_t holding_count;
     bool nested;
-    /* The root's children the query reads, or NULL for all of them. */
+    /* The part of the document the query reads, or NULL for all of it:
+     * its window of the tree, and its lines. */
+    const markdown_core_locus *locus;
     const markdown_core_window *window;
     struct column_mark *marks;
     struct tail_memo *tail;
@@ -112,19 +114,28 @@ typedef struct tail_memo {
 
 #ifndef NDEBUG
 /* Whether the query's lines hold `offset`: a table of some lines only holds
- * the offsets from its first start through the end of its last line. */
+ * the offsets through the end of its last line, and the locus answers for
+ * those before its first. */
 static bool lines_hold(const context_query *query, size_t offset) {
     const size_t *starts = query->lines.starts;
     size_t last = starts[query->lines.count - 1];
     while (last < query->length && query->source[last] != '\n' && query->source[last] != '\r') {
         last++;
     }
-    return !query->window || (starts[0] <= offset && offset <= last + 1);
+    return !query->locus || offset <= last + 1;
 }
 #endif
 
-static size_t query_line(const context_query *query, size_t offset) {
+/* The line that holds `offset`, counted from 0 in the text, and where it
+ * starts: from the query's lines, or from the locus for a byte before
+ * them, as of a block the cursor's is nested in. */
+static size_t query_line(const context_query *query, size_t offset, size_t *start) {
     assert(lines_hold(query, offset));
+    if (query->locus && offset < query->lines.starts[0]) {
+        size_t line;
+        query->locus->line(query->locus->owner, offset, &line, start);
+        return line;
+    }
     size_t lo = 0, hi = query->lines.count;
     while (hi - lo > 1) {
         const size_t mid = lo + (hi - lo) / 2;
@@ -134,15 +145,23 @@ static size_t query_line(const context_query *query, size_t offset) {
             hi = mid;
         }
     }
-    return lo;
+    *start = query->lines.starts[lo];
+    return query->lines.base + lo;
+}
+
+/* Where the line that holds `offset` starts. */
+static size_t line_start(const context_query *query, size_t offset) {
+    size_t start;
+    query_line(query, offset, &start);
+    return start;
 }
 
 /* The line holding `offset`, as a 1-based number, and the UTF-16 units from
  * its start to `offset`, counted on from the nearer mark before it; the
  * count is left in mark `which`. */
 static size_t query_units(const context_query *query, size_t offset, int32_t *line, size_t which) {
-    const size_t at = query_line(query, offset);
-    size_t from = query->lines.starts[at], units = 0;
+    size_t from, units = 0;
+    const size_t at = query_line(query, offset, &from);
     for (size_t i = 0; i < 2; i++) {
         const column_mark *mark = &query->marks[i];
         if (mark->set && mark->line == at && mark->offset <= offset && mark->offset >= from) {
@@ -155,16 +174,20 @@ static size_t query_units(const context_query *query, size_t offset, int32_t *li
         units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
     }
     query->marks[which] = (column_mark){at, offset, units, true};
-    *line = (int32_t)(query->lines.base + at + 1);
+    *line = (int32_t)(at + 1);
     return units;
 }
 
 static markdown_core_scope query_scope(const context_query *query, size_t start, size_t end) {
-    if (query->document->unit == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
-        return markdown_core_source_scope(&query->lines, query->source,
-                                          (markdown_core_place){(uint32_t)start, (uint32_t)end}, query->document->unit);
-    }
     markdown_core_scope scope;
+    if (query->document->unit == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
+        size_t from;
+        scope.start.line = (int32_t)(query_line(query, start, &from) + 1);
+        scope.start.column = (int32_t)(start - from + 1);
+        scope.end.line = (int32_t)(query_line(query, end, &from) + 1);
+        scope.end.column = (int32_t)(end - from);
+        return scope;
+    }
     scope.start.column = (int32_t)query_units(query, start, &scope.start.line, 0) + 1;
     scope.end.column = (int32_t)query_units(query, end, &scope.end.line, 1);
     return scope;
@@ -493,8 +516,9 @@ static bool field_misses(const context_query *query, const markdown_core_node *n
                                                                                    : MARKDOWN_CORE_SLOT_BIB};
     /* Written from an earlier line, a quote-led value must reach the
      * cursor's: one that no quote closes ends with its own line. */
-    const size_t line = query_line(query, query->cursor);
-    const size_t reach = quoted && query_line(query, from) < line ? query->lines.starts[line] : 0;
+    size_t start, other;
+    const size_t line = query_line(query, query->cursor, &start);
+    const size_t reach = quoted && query_line(query, from, &other) < line ? start : 0;
     bool held = false, reached = !reach;
     for (size_t k = 0; k < (key ? 2u : 1u) && !(held && reached); k++) {
         markdown_core_place *places;
@@ -538,9 +562,9 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
     /* At the start of a later line of the field, past only the line's
      * container prefix, which no inline node holds, the cursor's own byte
      * is the field's. */
+    size_t at, other;
     if (probe + 1 == query->cursor && query->cursor < query->length &&
-        query_line(query, first) < query_line(query, query->cursor)) {
-        size_t at = query->lines.starts[query_line(query, query->cursor)];
+        query_line(query, first, &other) < query_line(query, query->cursor, &at)) {
         while (at < query->cursor &&
                (query->source[at] == ' ' || query->source[at] == '\t' || query->source[at] == '>')) {
             at++;
@@ -715,7 +739,7 @@ static bool take_blocks(markdown_core_context *context, const context_query *que
  * attribute block that no quote of its kind closes before the line. */
 static void leave(markdown_core_context *context, const context_query *query,
                   const markdown_core_context_opener *opener) {
-    const size_t line = query->lines.starts[query_line(query, query->cursor)];
+    const size_t line = line_start(query, query->cursor);
     if (opener->place.end > line || !opener->place.end) {
         return;
     }
@@ -830,7 +854,7 @@ static bool spaced(const context_query *query, size_t end) {
  * when recognition ran out of memory. */
 static bool tail_ends(const context_query *query, size_t brace, size_t line, bool colons, bool *ends) {
     tail_memo *tail = query->tail;
-    const size_t from = query->lines.starts[query_line(query, brace)];
+    const size_t from = line_start(query, brace);
     if (!tail->parser.data || tail->from != from || tail->to != line) {
         markdown_core_attribute_parser_free(&tail->parser);
         tail->from = from;
@@ -1133,10 +1157,10 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
     /* A quote-led value begun on an earlier line that the document's node
      * does not carry to the cursor's ended with its own line, as no quote
      * closes it: a name on the cursor's line begins the next member. */
-    const size_t row = query_line(query, query->cursor);
-    if (!kept && field->kind == MARKDOWN_CORE_SLOT_VALUE && query_line(query, field->start) < row &&
+    size_t at, other;
+    const size_t row = query_line(query, query->cursor, &at);
+    if (!kept && field->kind == MARKDOWN_CORE_SLOT_VALUE && query_line(query, field->start, &other) < row &&
         among(query->source[field->start - field->lead], "\"'")) {
-        size_t at = query->lines.starts[row];
         while (at < query->cursor && among(query->source[at], " \t>")) {
             at++;
         }
@@ -1516,7 +1540,7 @@ static bool member_slot(const context_query *query, const markdown_core_metadata
         if (at->style == MARKDOWN_CORE_YAML_LITERAL) {
             /* Its first line's text starts past the indentation every
              * line of it has. */
-            const size_t first = query->lines.starts[query_line(query, at->from)];
+            const size_t first = line_start(query, at->from);
             const size_t start = line == first ? at->from : line + (at->from - first);
             if (line >= first && line <= at->to && start <= last && start <= cursor && blanks(query, line, start)) {
                 *from = start;
@@ -1604,7 +1628,7 @@ static bool take_envelope(markdown_core_context *context, const context_query *q
     if (cursor < payload || cursor >= close) {
         return true;
     }
-    const size_t line = query->lines.starts[query_line(query, cursor)], last = line_end(query, cursor);
+    const size_t line = line_start(query, cursor), last = line_end(query, cursor);
     markdown_core_metadata_places places = {.line = line};
     if (!markdown_core_metadata_places_read(query->source, metadata->place.end, &places)) {
         markdown_core_free(places.items);
@@ -1666,7 +1690,8 @@ static markdown_core_status context_at(const markdown_core_document *document, c
                            .length = length,
                            .marks = marks,
                            .tail = &tail,
-                           .window = locus ? &locus->children : NULL};
+                           .locus = locus,
+                           .window = locus ? &locus->window : NULL};
     if (locus) {
         query.lines = locus->lines;
     } else if (!markdown_core_source_lines_read(&query.lines, source, length)) {

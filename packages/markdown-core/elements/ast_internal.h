@@ -170,11 +170,24 @@ typedef struct markdown_core_walk_frame {
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 
-/* A WINDOW of the root's children: those from `first` to `last`, of which
- * the first's source starts at `start` in the text. A walk within it reads
- * the root and them, as the whole walk reads them, and no other node. */
-typedef struct markdown_core_window {
+/* A WINDOW of the tree: at each of its `depth` levels, the children of the
+ * level's `holder` from `first` to `last`, of which the first's source
+ * starts at `start` in the text. The first level's holder is the root, and
+ * each later level's the one child the level above keeps to, its `first`
+ * and `last`. A walk within it reads the holders and the deepest level's
+ * children, as the whole walk reads them, and no other node, but for the
+ * other relations of a holder, which come before its children, when its
+ * level keeps to its first child. */
+#define MARKDOWN_CORE_WINDOW_DEPTH 33
+
+typedef struct markdown_core_window_level {
+    const markdown_core_node *holder;
     uint32_t first, last, start;
+} markdown_core_window_level;
+
+typedef struct markdown_core_window {
+    markdown_core_window_level levels[MARKDOWN_CORE_WINDOW_DEPTH];
+    size_t depth;
 } markdown_core_window;
 
 typedef struct markdown_core_walk {
@@ -211,18 +224,21 @@ bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
 
 /* THE LOCUS OF A LOCATE (context.c, THE PREFIX FROM A REST POINT):
- * `lines`, the lines from a rest point of the document's root at or before
- * the cursor's line through the one after the cursor's; `children`, the
- * root's children that hold them; and the reading of the text before the
- * cursor. */
+ * `lines`, the lines from the rest point an edit of the cursor's line reads
+ * from through the one after the cursor's; `window`, the blocks that hold
+ * them, down the chain to the rest point's level; and the reading of the
+ * text before the cursor. */
 struct markdown_core_context_sink;
 typedef struct markdown_core_locus {
     markdown_core_source_lines lines;
-    markdown_core_window children;
+    markdown_core_window window;
     /* The session's reading of the text before the cursor for `sink`, from
      * the rest point an edit of the cursor's line reads from (session.c,
      * THE LOOK). */
     markdown_core_status (*look)(void *owner, struct markdown_core_context_sink *sink);
+    /* The line that holds `offset`, a byte before `lines`, counted from 0
+     * in the text, and where it starts. */
+    void (*line)(void *owner, size_t offset, size_t *line, size_t *start);
     void *owner;
 } markdown_core_locus;
 
