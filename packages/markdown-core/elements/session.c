@@ -586,8 +586,12 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
         return false;
     }
     const markdown_core_place holder = nest_window(widths, block, window.start, held);
-    if (holder.end > start &&
-        session_rest_in(session, block->children[held], holder, level + 1, edited, opens + 1, rest)) {
+    const bool below = holder.end > start &&
+                       session_rest_in(session, block->children[held], holder, level + 1, edited, opens + 1, rest);
+    /* A rest point looked for below may have made a nest, which moves the
+     * nests: the block's is found again. */
+    widths = nest_of(edits, block);
+    if (below) {
         rest->path[level + 1] = (uint32_t)held;
         return true;
     }
