@@ -4956,9 +4956,9 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
     const markdown_core_parser_input was = *input;
     const markdown_core_parser_at at = parser->at;
     const markdown_core_node_internal_flags flags = root->flags;
-    const size_t uses = edit->uses.front.count, use_bytes = edit->use_labels.size, use_live = edit->use_live;
-    const size_t misses = stream->miss_count, miss_roots = stream->miss_root_count,
-                 miss_bytes = stream->miss_labels.size;
+    const size_t uses = edit->uses.front.count, use_live = edit->use_live;
+    const size_t misses = stream->miss_count, miss_roots = stream->miss_root_count;
+    const bufsize_t use_bytes = edit->use_labels.size, miss_bytes = stream->miss_labels.size;
     /* The flush's maps are complete, as at a reopen. */
     markdown_core_array_truncate(&parser->line_marks, MARKDOWN_CORE_IDENTITY_MARK + 1);
 
