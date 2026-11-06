@@ -3323,14 +3323,17 @@ static const char *const S_kind_name[] = {
 /* clang-format on */
 /* END GENERATED */
 
-static inline markdown_core_node_kind public_kind(const markdown_core_node *node) {
-    unsigned index = (unsigned)node->kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    return ((unsigned)node->kind & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_INLINE
-               ? S_inline_kind[index]
-               : S_block_kind[index];
+static inline markdown_core_node_kind stored_kind(uint16_t kind) {
+    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    return ((unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_INLINE ? S_inline_kind[index]
+                                                                                             : S_block_kind[index];
 }
 
+static inline markdown_core_node_kind public_kind(const markdown_core_node *node) { return stored_kind(node->kind); }
+
 markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node) { return public_kind(node); }
+
+markdown_core_node_kind markdown_core_kind_public(uint16_t kind) { return stored_kind(kind); }
 
 markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, const char **name) {
     if ((unsigned)kind >= sizeof(S_kind_name) / sizeof(*S_kind_name)) {
@@ -3393,10 +3396,15 @@ void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node
     *walk = (markdown_core_walk){.root = root};
 }
 
+void markdown_core_walk_within(markdown_core_walk *walk, const markdown_core_node *root,
+                               const markdown_core_window *window) {
+    *walk = (markdown_core_walk){.root = root, .window = window};
+}
+
 void markdown_core_walk_end(markdown_core_walk *walk) {
     markdown_core_free(walk->frames);
     markdown_core_free(walk->ranges);
-    *walk = (markdown_core_walk){.root = walk->root, .failed = walk->failed};
+    *walk = (markdown_core_walk){.root = walk->root, .window = walk->window, .failed = walk->failed};
 }
 
 /* A node whose relations hold nothing takes no frame. */
@@ -3461,6 +3469,24 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
             frame->active = true;
             frame->group_pending = frame->relation.group != NULL;
             frame->next = 0;
+            /* Within a window, the root's frame reads its children from the
+             * window's first to its last, and its other relations, which
+             * come before its children, only when the first is its first. */
+            const markdown_core_window *window = walk->count == 1 ? walk->window : NULL;
+            if (window && frame->relation.holder == walk->root) {
+                if (window->first >= frame->relation.count) {
+                    frame->active = false;
+                    continue;
+                }
+                frame->next = window->first;
+                frame->anchor = window->start - frame->relation.items[window->first]->source.runs->items[0].lead;
+                if (window->last < frame->relation.count) {
+                    frame->relation.count = (size_t)window->last + 1;
+                }
+            } else if (window && window->first) {
+                frame->active = false;
+                continue;
+            }
         }
         if (frame->group_pending) {
             frame->group_pending = false;
@@ -3533,6 +3559,7 @@ bool markdown_core_source_lines_read(markdown_core_source_lines *lines, const ui
         return false;
     }
     lines->count = 0;
+    lines->base = 0;
     lines->starts[lines->count++] = 0;
     for (size_t i = 0; i < length; i++) {
         if (source[i] == '\n' || (source[i] == '\r' && !(i + 1 < length && source[i + 1] == '\n'))) {
@@ -3578,9 +3605,9 @@ markdown_core_scope markdown_core_source_scope(const markdown_core_source_lines 
                                                markdown_core_place place, markdown_core_text_unit unit) {
     size_t start_line = source_line_of(lines, place.start), end_line = source_line_of(lines, place.end);
     markdown_core_scope scope;
-    scope.start.line = (int32_t)(start_line + 1);
+    scope.start.line = (int32_t)(lines->base + start_line + 1);
     scope.start.column = (int32_t)(source_columns(source, lines->starts[start_line], place.start, unit) + 1);
-    scope.end.line = (int32_t)(end_line + 1);
+    scope.end.line = (int32_t)(lines->base + end_line + 1);
     scope.end.column = (int32_t)source_columns(source, lines->starts[end_line], place.end, unit);
     return scope;
 }
@@ -3673,8 +3700,8 @@ void markdown_core_scopes_free(markdown_core_scope *scopes) { markdown_core_free
 bool markdown_core_position_offset(const markdown_core_source_lines *lines, const uint8_t *source, size_t length,
                                    markdown_core_position position, markdown_core_text_unit unit, bool cursor,
                                    size_t *offset) {
-    size_t line = (size_t)position.line - 1;
-    if (line >= lines->count) {
+    size_t line = (size_t)position.line - 1 - lines->base;
+    if ((size_t)position.line - 1 < lines->base || line >= lines->count) {
         return false;
     }
     return markdown_core_column_offset(source, lines->starts[line],
@@ -5096,7 +5123,7 @@ static void dump_group_line(dump_buffer *buffer, const char *name, size_t count,
 /* The scopes of a node's source ranges, in UTF-8 columns (markdown_core_source_scope),
  * joined by commas. */
 static void buffer_scope(dump_buffer *buffer, const markdown_core_place *ranges, size_t count) {
-    markdown_core_source_lines lines = {buffer->lines, buffer->line_count};
+    markdown_core_source_lines lines = {buffer->lines, buffer->line_count, 0};
     for (size_t i = 0; i < count; i++) {
         markdown_core_scope scope =
             markdown_core_source_scope(&lines, buffer->source, ranges[i], MARKDOWN_CORE_TEXT_UNIT_UTF8);

@@ -55,11 +55,17 @@ bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, 
  * or where its owner's starts. */
 markdown_core_place markdown_core_node_window(const markdown_core_node *node, uint32_t anchor);
 
+/* The public kind of a node kind as the tree stores it. */
+markdown_core_node_kind markdown_core_kind_public(uint16_t kind);
+
 /* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,
- * after CR, or after CRLF, which is one terminator. */
+ * after CR, or after CRLF, which is one terminator. A table may hold some
+ * of them only, from line `base` (counted from 0) on: its first start is
+ * that line's, and a line past its last ends where the source does. */
 typedef struct {
     size_t *starts;
     size_t count;
+    size_t base;
 } markdown_core_source_lines;
 
 /* Reads the line starts of `length` bytes of `source`: false when the table
@@ -84,23 +90,13 @@ bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, c
 
 /* Parses `sink`'s text, the text before a cursor, as a fresh parse whose
  * parser reports what it leaves open to `sink`, with the labels `whole`
- * defines declared (session.c). */
+ * defines declared (session.c). A sink whose `base` is not zero reads text
+ * that starts inside the document, at a rest point. */
 struct markdown_core_context_sink;
 markdown_core_status markdown_core_parse_before_cursor(struct markdown_core_context_sink *sink,
                                                        markdown_core_text_unit unit,
                                                        const markdown_core_document *whole,
                                                        markdown_core_document **document);
-
-/* A session's context state (context.c, THE SESSION'S CONTEXT): a new
- * empty context, or NULL when the allocation failed; the context at
- * `position` of `document`, parsed from `length` bytes of `source`, which
- * replaces what `context` holds and leaves it as it was on a failure; and
- * the empty context `context` becomes again. */
-markdown_core_context *markdown_core_context_new(void);
-markdown_core_status markdown_core_context_locate(markdown_core_context *context,
-                                                  const markdown_core_document *document, const uint8_t *source,
-                                                  size_t length, markdown_core_position position);
-void markdown_core_context_clear(markdown_core_context *context);
 
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;
@@ -175,8 +171,17 @@ typedef struct markdown_core_walk_frame {
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 
+/* A WINDOW of the root's children: those from `first` to `last`, of which
+ * the first's source starts at `start` in the text. A walk within it reads
+ * the root and them, as the whole walk reads them, and no other node. */
+typedef struct markdown_core_window {
+    uint32_t first, last, start;
+} markdown_core_window;
+
 typedef struct markdown_core_walk {
     const markdown_core_node *root;
+    /* The window the walk keeps to, or NULL. */
+    const markdown_core_window *window;
     bool started, failed, at_group;
     markdown_core_walk_frame *frames;
     size_t count, capacity;
@@ -189,6 +194,10 @@ typedef struct markdown_core_walk {
 } markdown_core_walk;
 
 void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node *root);
+/* The walk of the root `root` within `window`, or the whole walk when it is
+ * NULL. */
+void markdown_core_walk_within(markdown_core_walk *walk, const markdown_core_node *root,
+                               const markdown_core_window *window);
 /* The next item, or false at the end or when the walk could not allocate
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
@@ -201,6 +210,31 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
  * under the same owner, which is how the canonical dump draws its branches. */
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
+
+/* THE LOCUS OF A LOCATE (context.c, THE PREFIX FROM A REST POINT): `from`,
+ * where the line of a rest point of the document's root at or before the
+ * cursor's line starts; `lines`, the lines from that one through the one
+ * after the cursor's; `children`, the root's children that hold them; and
+ * `roster`, the session's, which the labels are looked up in. */
+typedef struct markdown_core_locus {
+    size_t from;
+    markdown_core_source_lines lines;
+    markdown_core_window children;
+    struct markdown_core_roster *roster;
+} markdown_core_locus;
+
+/* A session's context state (context.c, THE SESSION'S CONTEXT): a new
+ * empty context, or NULL when the allocation failed; the context at
+ * `position` of `document`, parsed from `length` bytes of `source`, which
+ * replaces what `context` holds and leaves it as it was on a failure, read
+ * in `locus`, or in the whole document when it is NULL; and the empty
+ * context `context` becomes again. */
+markdown_core_context *markdown_core_context_new(void);
+markdown_core_status markdown_core_context_locate(markdown_core_context *context,
+                                                  const markdown_core_document *document, const uint8_t *source,
+                                                  size_t length, markdown_core_position position,
+                                                  const markdown_core_locus *locus);
+void markdown_core_context_clear(markdown_core_context *context);
 
 #ifdef __cplusplus
 }

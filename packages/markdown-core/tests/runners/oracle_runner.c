@@ -2250,6 +2250,14 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
         tree_free(&original);
         return;
     }
+    /* A flushed session of the text locates what the query reads (context.c,
+     * THE PREFIX FROM A REST POINT), at every position. */
+    markdown_core_session *session = NULL;
+    const markdown_core_document *flushed = NULL;
+    if (markdown_core_session_new(source, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
+        markdown_core_session_flush(session, &flushed) != MARKDOWN_CORE_OK) {
+        fail(r, source, length, 0, "session", "the example does not parse in a session");
+    }
     /* A slot the context reports at several positions is checked once. */
     size_t seen[64][4], seen_count = 0;
     size_t line_start = 0;
@@ -2263,6 +2271,10 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
         if (markdown_core_document_context(document, source, length, position, &context) != MARKDOWN_CORE_OK) {
             fail(r, source, length, at, "query", "the context query fails");
             break;
+        }
+        if (flushed && (markdown_core_session_locate(session, position) != MARKDOWN_CORE_OK ||
+                        !ts_same_context(markdown_core_session_context(session), context))) {
+            fail(r, source, length, at, "session", "the session locates another context than the query");
         }
         bool closed = false;
         for (size_t i = 0; i < markdown_core_context_slot_count(context); i++) {
@@ -2326,6 +2338,7 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
             line_start = at + 1;
         }
     }
+    markdown_core_session_close(session);
     markdown_core_document_free(document);
     tree_free(&original);
 }

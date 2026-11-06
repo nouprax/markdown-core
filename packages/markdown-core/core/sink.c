@@ -113,7 +113,7 @@ void markdown_core_context_field_add(markdown_core_context_sink *sink, const mar
 }
 
 void markdown_core_context_sink_clear(markdown_core_context_sink *sink) {
-    markdown_core_free((void *)sink->blocks);
+    markdown_core_free(sink->blocks);
     markdown_core_free(sink->openers);
     markdown_core_free(sink->fields);
     markdown_core_free(sink->opener_slots);

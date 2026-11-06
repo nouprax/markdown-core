@@ -114,7 +114,7 @@ typedef struct {
     markdown_core_roster_places places;
 } markdown_core_roster_space;
 
-typedef struct {
+typedef struct markdown_core_roster {
     markdown_core_roster_record **records;
     size_t count, capacity;
     markdown_core_roster_space spaces[MARKDOWN_CORE_ROSTER_ANCHOR + 1];

@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -85,6 +86,8 @@ typedef struct {
     holding *holdings;
     size_t holding_count;
     bool nested;
+    /* The root's children the query reads, or NULL for all of them. */
+    const markdown_core_window *window;
     struct column_mark *marks;
     struct tail_memo *tail;
 } context_query;
@@ -107,7 +110,21 @@ typedef struct tail_memo {
     markdown_core_attribute_parser parser;
 } tail_memo;
 
+#ifndef NDEBUG
+/* Whether the query's lines hold `offset`: a table of some lines only holds
+ * the offsets from its first start through the end of its last line. */
+static bool lines_hold(const context_query *query, size_t offset) {
+    const size_t *starts = query->lines.starts;
+    size_t last = starts[query->lines.count - 1];
+    while (last < query->length && query->source[last] != '\n' && query->source[last] != '\r') {
+        last++;
+    }
+    return !query->window || (starts[0] <= offset && offset <= last + 1);
+}
+#endif
+
 static size_t query_line(const context_query *query, size_t offset) {
+    assert(lines_hold(query, offset));
     size_t lo = 0, hi = query->lines.count;
     while (hi - lo > 1) {
         const size_t mid = lo + (hi - lo) / 2;
@@ -138,7 +155,7 @@ static size_t query_units(const context_query *query, size_t offset, int32_t *li
         units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
     }
     query->marks[which] = (column_mark){at, offset, units, true};
-    *line = (int32_t)(at + 1);
+    *line = (int32_t)(query->lines.base + at + 1);
     return units;
 }
 
@@ -181,7 +198,7 @@ static bool read_holdings(context_query *query) {
     bool grown = true;
     markdown_core_walk walk;
     markdown_core_walk_item item;
-    markdown_core_walk_begin(&walk, query->document->root);
+    markdown_core_walk_within(&walk, query->document->root, query->window);
     for (size_t order = 0; grown && markdown_core_walk_next(&walk, &item); order++) {
         const markdown_core_place *ranges;
         size_t count;
@@ -482,8 +499,8 @@ static bool field_misses(const context_query *query, const markdown_core_node *n
     for (size_t k = 0; k < (key ? 2u : 1u) && !(held && reached); k++) {
         markdown_core_place *places;
         size_t count;
-        if (markdown_core_parts_fields(query->document->root, node, kinds[k], query->source, query->length, &places,
-                                       &count) == MARKDOWN_CORE_ALLOCATION_FAILED) {
+        if (markdown_core_parts_fields(query->document->root, query->window, node, kinds[k], query->source,
+                                       query->length, &places, &count) == MARKDOWN_CORE_ALLOCATION_FAILED) {
             return false;
         }
         for (size_t i = 0; i < count; i++) {
@@ -679,14 +696,16 @@ static bool take_blocks(markdown_core_context *context, const context_query *que
      * passed takes the end it found. */
     size_t from = SIZE_MAX, end = 0;
     for (size_t i = 0; i < sink->block_count; i++) {
-        const markdown_core_node *block = sink->blocks[i];
-        size_t start = block->place.start < query->cursor ? block->place.start : query->cursor;
+        const markdown_core_context_block *block = &sink->blocks[i];
+        const size_t place = sink->base + block->start;
+        size_t start = place < query->cursor ? place : query->cursor;
         if (start < from || start > end) {
             from = start;
             end = line_end(query, start);
         }
-        context->blocks[context->block_count++] = (markdown_core_opener){
-            markdown_core_node_get_kind(block), query_scope(query, start, end < query->cursor ? end : query->cursor)};
+        context->blocks[context->block_count++] =
+            (markdown_core_opener){markdown_core_kind_public(block->kind),
+                                   query_scope(query, start, end < query->cursor ? end : query->cursor)};
     }
     return true;
 }
@@ -961,7 +980,7 @@ static bool held_end(const context_query *query, size_t offset, size_t *end) {
     } else {
         markdown_core_walk walk;
         markdown_core_walk_item item;
-        markdown_core_walk_begin(&walk, query->document->root);
+        markdown_core_walk_within(&walk, query->document->root, query->window);
         while (markdown_core_walk_next(&walk, &item)) {
             const markdown_core_place *runs;
             size_t count;
@@ -1623,28 +1642,51 @@ static bool take_envelope(markdown_core_context *context, const context_query *q
     return true;
 }
 
-markdown_core_status markdown_core_document_context(const markdown_core_document *document, const uint8_t *source,
-                                                    size_t length, markdown_core_position position,
-                                                    markdown_core_context **context) {
+/* THE PREFIX FROM A REST POINT. The parse of the text before the cursor
+ * reports only what is open where the text ends, all of it in the root's
+ * child that holds the cursor's line, so it may start at a rest point of
+ * the root before that line, the locus's `from` (session.c): nothing
+ * before it reads past it, so the blocks it reads are the ones a parse
+ * from the text's start reads, and the labels come from the whole document
+ * either way. It reads the text from there as a text that starts inside a
+ * document, which no envelope opens, and what it reports is measured from
+ * there. What the query then asks of the document is about the bytes from
+ * there through the cursor's line, so it reads the lines and the root's
+ * children of the locus only, and its cost keeps to them, however long the
+ * document is. */
+static markdown_core_status context_at(const markdown_core_document *document, const uint8_t *source, size_t length,
+                                       markdown_core_position position, const markdown_core_locus *locus,
+                                       markdown_core_context **context) {
     if (position.line < 1 || position.column < 1) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     column_mark marks[2] = {{0}};
     tail_memo tail = {0};
-    context_query query = {.document = document, .source = source, .length = length, .marks = marks, .tail = &tail};
-    if (!markdown_core_source_lines_read(&query.lines, source, length)) {
+    context_query query = {.document = document,
+                           .source = source,
+                           .length = length,
+                           .marks = marks,
+                           .tail = &tail,
+                           .window = locus ? &locus->children : NULL};
+    if (locus) {
+        query.lines = locus->lines;
+    } else if (!markdown_core_source_lines_read(&query.lines, source, length)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    size_t *const owned = locus ? NULL : query.lines.starts;
     if (!markdown_core_position_offset(&query.lines, source, length, position, document->unit, true, &query.cursor)) {
-        markdown_core_free(query.lines.starts);
+        markdown_core_free(owned);
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     if (!read_holdings(&query)) {
         markdown_core_free(query.holdings);
-        markdown_core_free(query.lines.starts);
+        markdown_core_free(owned);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    markdown_core_context_sink sink = {.source = source, .length = query.cursor};
+    size_t from = locus ? locus->from : 0;
+    assert(from <= query.cursor);
+    markdown_core_context_sink sink = {
+        .source = source + from, .length = query.cursor - from, .base = from, .outer = locus ? locus->roster : NULL};
     markdown_core_document *before = NULL;
     markdown_core_context *made = markdown_core_alloc(1, sizeof(*made));
     bool inside = false;
@@ -1652,6 +1694,20 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
         made && take_envelope(made, &query, &inside) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK && !inside) {
         status = markdown_core_parse_before_cursor(&sink, document->unit, document, &before);
+    }
+    if (status == MARKDOWN_CORE_OK && from) {
+        for (size_t i = 0; i < sink.opener_count; i++) {
+            sink.openers[i].place.start += (uint32_t)from;
+            sink.openers[i].place.end += (uint32_t)from;
+        }
+        for (size_t i = 0; i < sink.field_count; i++) {
+            markdown_core_context_field *field = &sink.fields[i];
+            field->start += (uint32_t)from;
+            for (uint32_t k = 0; k < field->prefix_count; k++) {
+                field->prefix[k].start += (uint32_t)from;
+                field->prefix[k].end += (uint32_t)from;
+            }
+        }
     }
     if (status == MARKDOWN_CORE_OK && !inside &&
         (sink.failed || !take_blocks(made, &query, &sink) || !take_inlines(made, &query, &sink) ||
@@ -1662,13 +1718,19 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     markdown_core_context_sink_clear(&sink);
     markdown_core_attribute_parser_free(&tail.parser);
     markdown_core_free(query.holdings);
-    markdown_core_free(query.lines.starts);
+    markdown_core_free(owned);
     if (status != MARKDOWN_CORE_OK) {
         markdown_core_context_free(made);
         return status;
     }
     *context = made;
     return MARKDOWN_CORE_OK;
+}
+
+markdown_core_status markdown_core_document_context(const markdown_core_document *document, const uint8_t *source,
+                                                    size_t length, markdown_core_position position,
+                                                    markdown_core_context **context) {
+    return context_at(document, source, length, position, NULL, context);
 }
 
 /* The bytes after which a slot may begin empty (markdown_core_slot_cues).
@@ -1748,9 +1810,10 @@ markdown_core_context *markdown_core_context_new(void) { return markdown_core_al
 
 markdown_core_status markdown_core_context_locate(markdown_core_context *context,
                                                   const markdown_core_document *document, const uint8_t *source,
-                                                  size_t length, markdown_core_position position) {
+                                                  size_t length, markdown_core_position position,
+                                                  const markdown_core_locus *locus) {
     markdown_core_context *fresh = NULL;
-    markdown_core_status status = markdown_core_document_context(document, source, length, position, &fresh);
+    markdown_core_status status = context_at(document, source, length, position, locus, &fresh);
     if (status != MARKDOWN_CORE_OK) {
         return status;
     }

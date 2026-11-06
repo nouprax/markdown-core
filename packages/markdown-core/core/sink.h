@@ -69,6 +69,16 @@ typedef struct markdown_core_context_field {
     uint32_t lead;
 } markdown_core_context_field;
 
+/* A block the parse of the text before a cursor leaves open, as the text
+ * ends: its node kind as the tree stores it, and where it starts in the
+ * parse's text. A record and not the node, because closing the document
+ * may take the node back (a paragraph all of whose lines were reference
+ * definitions) and give its storage to another. */
+typedef struct markdown_core_context_block {
+    uint16_t kind;
+    uint32_t start;
+} markdown_core_context_block;
+
 /* THE CONTEXT SINK (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1):
  * what the parse of the text before a cursor reports of what it leaves open,
  * the parse's `sink`, NULL in every other parse. `source` is the text and
@@ -79,6 +89,15 @@ typedef struct markdown_core_context_field {
 typedef struct markdown_core_context_sink {
     const unsigned char *source;
     size_t length;
+    /* Where the parse's text starts in the document's: the places it
+     * lists are its own text's, and the blocks' measure from there. A text
+     * that starts inside the document is one no envelope opens. */
+    size_t base;
+    /* The roster of the whole document, a session's, or NULL: a lookup
+     * that finds no declaration in the parse's own goes on to it, so an
+     * occurrence resolves as it does in the document (blocks.c, A LOOKUP
+     * IN THE WHOLE DOCUMENT). */
+    struct markdown_core_roster *outer;
     /* The inline root whose run reports, which reached the end, or NULL,
      * and, once a report needs them, its source places that read content
      * with the content bytes before each, so a lookup is a binary search. */
@@ -86,7 +105,10 @@ typedef struct markdown_core_context_sink {
     uint32_t *root_places, *root_reads;
     size_t root_place_count;
     bool root_indexed;
-    const markdown_core_node **blocks;
+    /* The root whose run is finishing, which the fields read then are of,
+     * or NULL. */
+    const struct markdown_core_node *finishing;
+    markdown_core_context_block *blocks;
     size_t block_count, block_capacity;
     markdown_core_context_opener *openers;
     size_t opener_count, opener_capacity;

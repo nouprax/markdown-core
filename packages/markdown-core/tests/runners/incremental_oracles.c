@@ -1473,62 +1473,6 @@ static void check_reread(run *state, const char *where, size_t step, void *subje
 #define CUE_SAMPLE 4
 #define CUE_WRITTEN 8
 
-static bool same_opener(markdown_core_opener a, markdown_core_opener b) {
-    return a.kind == b.kind && same_scope(a.scope, b.scope);
-}
-
-static bool same_text(markdown_core_string a, markdown_core_string b) {
-    return a.length == b.length && (!a.length || memcmp(a.data, b.data, a.length) == 0);
-}
-
-/* Whether two contexts list the same blocks, inlines and slots. */
-static bool same_context(const markdown_core_context *a, const markdown_core_context *b) {
-    size_t count = markdown_core_context_block_count(a);
-    if (count != markdown_core_context_block_count(b)) {
-        return false;
-    }
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_opener ours, theirs;
-        if (markdown_core_context_block_at(a, i, &ours) != MARKDOWN_CORE_OK ||
-            markdown_core_context_block_at(b, i, &theirs) != MARKDOWN_CORE_OK || !same_opener(ours, theirs)) {
-            return false;
-        }
-    }
-    count = markdown_core_context_inline_count(a);
-    if (count != markdown_core_context_inline_count(b)) {
-        return false;
-    }
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_opener ours, theirs;
-        if (markdown_core_context_inline_at(a, i, &ours) != MARKDOWN_CORE_OK ||
-            markdown_core_context_inline_at(b, i, &theirs) != MARKDOWN_CORE_OK || !same_opener(ours, theirs)) {
-            return false;
-        }
-    }
-    count = markdown_core_context_slot_count(a);
-    if (count != markdown_core_context_slot_count(b)) {
-        return false;
-    }
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_slot ours, theirs;
-        if (markdown_core_context_slot_at(a, i, &ours) != MARKDOWN_CORE_OK ||
-            markdown_core_context_slot_at(b, i, &theirs) != MARKDOWN_CORE_OK || ours.kind != theirs.kind ||
-            ours.owner != theirs.owner || !same_scope(ours.before, theirs.before) ||
-            !same_scope(ours.after, theirs.after) || ours.closed != theirs.closed ||
-            ours.prefix_count != theirs.prefix_count) {
-            return false;
-        }
-        for (size_t at = 0; at < ours.prefix_count; at++) {
-            markdown_core_string mine, other;
-            if (markdown_core_context_slot_prefix_at(a, i, at, &mine) != MARKDOWN_CORE_OK ||
-                markdown_core_context_slot_prefix_at(b, i, at, &other) != MARKDOWN_CORE_OK || !same_text(mine, other)) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
 /* Whether a cursor may stand after byte `at` of `model`, a slot cue: not
  * between the CR and the LF of a CRLF, nor before a continuation byte, where
  * no position stands. */
@@ -1579,7 +1523,7 @@ static void check_cues(run *state, const char *where, size_t step, ih_unit unit,
             markdown_core_document_context(fresh, model->bytes, model->length, position, &theirs) != MARKDOWN_CORE_OK) {
             fail(state, status == MARKDOWN_CORE_ALLOCATION_FAILED ? "harness" : "4.1",
                  "%s step %zu: the context at %d:%d failed", where, step, position.line, position.column);
-        } else if (!same_context(mine, theirs)) {
+        } else if (!ts_same_context(mine, theirs)) {
             fail(state, "4.1", "%s step %zu: the context at %d:%d differs from the expected document's", where, step,
                  position.line, position.column);
         }

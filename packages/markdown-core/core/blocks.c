@@ -2567,6 +2567,25 @@ static int walk_owned_trees(markdown_core_parser *parser) {
     return !parser->error;
 }
 
+/* A LOOKUP IN THE WHOLE DOCUMENT. The parse of the text before a cursor
+ * reads a part of a session's document, from a rest point to the cursor,
+ * and the document defines labels the part does not: a lookup its own
+ * roster answers nothing goes on to the document's, which holds every
+ * declaration standing there. A parse with no such roster, which reads a
+ * document's text from its start, had the document's labels declared
+ * before it read a line (session.c). */
+const markdown_core_roster_record *markdown_core_parser_find_outer(markdown_core_parser *parser,
+                                                                   markdown_core_roster_kind kind,
+                                                                   const markdown_core_chunk *label, bool *failed) {
+    markdown_core_roster *outer = parser->sink->outer;
+    if (!outer) {
+        return NULL;
+    }
+    return kind == MARKDOWN_CORE_ROSTER_SPECIMEN
+               ? markdown_core_roster_find(outer, kind, label->data, label->len, failed)
+               : markdown_core_roster_find_label(outer, kind, label, failed);
+}
+
 /* THE END OF THE BLOCK PHASE: every block still open closes at the end of
  * the input, the blocks of the table cells queued for it are read, and the
  * document closes last, so it is the last block the queue holds, where its
@@ -2579,14 +2598,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_blocks(markdown_core_p
     markdown_core_context_sink *sink = parser->sink;
     for (markdown_core_node *open = parser->root; open != parser->at.current && open->child_count;) {
         open = open->children[open->child_count - 1];
-        const markdown_core_node **blocks =
+        markdown_core_context_block *blocks =
             markdown_core_reserve(sink->blocks, &sink->block_capacity, sink->block_count + 1, sizeof(*blocks));
         if (!blocks) {
             sink->failed = true;
             return;
         }
         sink->blocks = blocks;
-        blocks[sink->block_count++] = open;
+        blocks[sink->block_count++] = (markdown_core_context_block){open->kind, open->place.start};
     }
 }
 
@@ -5244,7 +5263,7 @@ bound:;
         limit = stream->edit->point;
     }
 read:
-    if (at_root && !parser->at.line_number && limit) {
+    if (at_root && !parser->at.line_number && limit && !(parser->sink && parser->sink->base)) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         if (stream) {
             S_meet_from_stop(parser);
