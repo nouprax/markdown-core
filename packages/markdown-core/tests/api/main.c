@@ -11391,6 +11391,119 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* Whether the session's context at its cursor is the document query's at
+ * `at` of a fresh parse of its text. */
+static bool session_as_queried(markdown_core_session *session, markdown_core_position at) {
+    const size_t size = markdown_core_session_text_size(session);
+    uint8_t *text = malloc(size + 1);
+    if (!text) {
+        return false;
+    }
+    markdown_core_session_text(session, text);
+    markdown_core_document *fresh = facade_parse(text, size);
+    markdown_core_context *queried = NULL;
+    const markdown_core_context *located = markdown_core_session_context(session);
+    bool same = fresh && markdown_core_document_context(fresh, text, size, at, &queried) == MARKDOWN_CORE_OK &&
+                markdown_core_context_block_count(queried) == markdown_core_context_block_count(located) &&
+                markdown_core_context_inline_count(queried) == markdown_core_context_inline_count(located) &&
+                markdown_core_context_slot_count(queried) == markdown_core_context_slot_count(located);
+    for (size_t i = 0; same && i < markdown_core_context_block_count(queried); i++) {
+        markdown_core_opener left, right;
+        same = markdown_core_context_block_at(queried, i, &left) == MARKDOWN_CORE_OK &&
+               markdown_core_context_block_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
+               !memcmp(&left.scope, &right.scope, sizeof(left.scope));
+    }
+    for (size_t i = 0; same && i < markdown_core_context_inline_count(queried); i++) {
+        markdown_core_opener left, right;
+        same = markdown_core_context_inline_at(queried, i, &left) == MARKDOWN_CORE_OK &&
+               markdown_core_context_inline_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
+               !memcmp(&left.scope, &right.scope, sizeof(left.scope));
+    }
+    for (size_t i = 0; same && i < markdown_core_context_slot_count(queried); i++) {
+        markdown_core_slot left, right;
+        same = markdown_core_context_slot_at(queried, i, &left) == MARKDOWN_CORE_OK &&
+               markdown_core_context_slot_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
+               left.owner == right.owner && !memcmp(&left.before, &right.before, sizeof(left.before)) &&
+               !memcmp(&left.after, &right.after, sizeof(left.after)) && left.closed == right.closed;
+    }
+    markdown_core_context_free(queried);
+    if (fresh) {
+        markdown_core_document_free(fresh);
+    }
+    free(text);
+    return same;
+}
+
+/* A long list, and a long one nested in one of its items, find the rest
+ * point of a line by the widths of their items and fold the items kept
+ * from the marks of the chunks before (session.c, THE NESTS): a locate at
+ * lines across the chunks' bounds is the document query's, and edits that
+ * make the list tight, loose and tight again, add items and take them
+ * away, each after locates that mark chunks past it, read as a parse
+ * does. */
+static void session_edits_wide_list(test_batch_runner *runner) {
+    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
+    for (int item = 0; item < 150; item++) {
+        char line[96];
+        snprintf(line, sizeof(line), item == 70 ? "- item %03d [r]\n" : "- item %03d with *em* and [r\n", item);
+        markdown_core_strbuf_puts(&text, line);
+        if (item == 120) {
+            markdown_core_strbuf_puts(&text, "\n");
+        }
+        if (item == 40) {
+            for (int inner = 0; inner < 140; inner++) {
+                snprintf(line, sizeof(line), "  - inner %03d `code\n", inner);
+                markdown_core_strbuf_puts(&text, line);
+            }
+        }
+    }
+    markdown_core_strbuf_puts(&text, "\n[r]: /u\n");
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool same =
+        !text.oom &&
+        markdown_core_session_new(text.ptr, text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    static const uint32_t lines[] = {2, 40, 42, 64, 65, 66, 105, 106, 107, 129, 130, 131, 170, 182, 200, 211, 250, 288};
+    static const uint32_t columns[] = {3, 9, 20, 26};
+    for (size_t l = 0; same && l < sizeof(lines) / sizeof(lines[0]); l++) {
+        for (size_t c = 0; same && c < sizeof(columns) / sizeof(columns[0]); c++) {
+            const markdown_core_position at = {lines[l], columns[c]};
+            const markdown_core_status located = markdown_core_session_locate(session, at);
+            same = located == MARKDOWN_CORE_OUT_OF_BOUNDS ||
+                   (located == MARKDOWN_CORE_OK && session_as_queried(session, at));
+        }
+    }
+    OK(runner, same, "a locate in a long list is the document query");
+    typedef struct {
+        markdown_core_position from, to;
+        const char *text;
+    } list_edit;
+    static const list_edit edits[] = {
+        {{262, 1}, {263, 1}, ""},  {{130, 1}, {130, 1}, "\n"},
+        {{200, 5}, {200, 5}, "x"}, {{131, 1}, {132, 1}, ""},
+        {{66, 3}, {66, 3}, "y"},   {{66, 1}, {66, 1}, "  - more\n"},
+        {{3, 1}, {3, 1}, "\n"},    {{4, 1}, {5, 1}, ""},
+        {{107, 1}, {109, 1}, ""},  {{250, 1}, {250, 1}, "- one\n- two\n"},
+    };
+    for (size_t e = 0; same && e < sizeof(edits) / sizeof(edits[0]); e++) {
+        const list_edit *edit = &edits[e];
+        for (size_t l = 0; same && l < sizeof(lines) / sizeof(lines[0]); l += 3) {
+            const markdown_core_position at = {lines[l], 9};
+            const markdown_core_status located = markdown_core_session_locate(session, at);
+            same = located == MARKDOWN_CORE_OUT_OF_BOUNDS ||
+                   (located == MARKDOWN_CORE_OK && session_as_queried(session, at));
+        }
+        same = same && markdown_core_session_locate(session, edit->from) == MARKDOWN_CORE_OK &&
+               markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
+                                          strlen(edit->text), &document) == MARKDOWN_CORE_OK &&
+               session_as_parsed(session);
+        OK(runner, same, "edit %zu of a long list reads as a parse does", e);
+    }
+    markdown_core_session_close(session);
+    markdown_core_strbuf_free(&text);
+}
+
 /* The allocator sweep of 12.7: an edit refused at each of its allocations
  * in turn either leaves the session as it was or fails it, and the session
  * then frees everything it holds. The edits type into a paragraph and a
@@ -13138,6 +13251,7 @@ int main(void) {
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
+    session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);
     session_edits_compaction(runner);

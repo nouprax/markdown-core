@@ -1703,6 +1703,21 @@ bool markdown_core_parser_commit(markdown_core_parser *parser, const char *sourc
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
 markdown_core_node *markdown_core_parser_flush(markdown_core_parser *parser);
 void markdown_core_parser_discard(markdown_core_parser *parser);
+/* THE FOLD MARKS of a block of the chain a reading reopens (blocks.c,
+ * S_reopen_level): `flags[c]`, for each of its first `count` chunks of
+ * MARKDOWN_CORE_FOLD_CHUNK children, its flags as its children through the
+ * chunk's last folded into it, from a reopen with none. Its children
+ * fold only the bits its kind folds (S_fold), all clear before the
+ * first, so its reopen folds the kept children from the last mark before
+ * the last of them, not from its first. The caller keeps them while the
+ * children they mark stand as they are. */
+#define MARKDOWN_CORE_FOLD_CHUNK 64
+
+typedef struct markdown_core_folds {
+    markdown_core_node_internal_flags *flags;
+    size_t count, capacity;
+} markdown_core_folds;
+
 /* A flushed transaction put back at input line `line`, a rest point of
  * the flushed document `root` before its child `child`, to read the new
  * text `source` of an edit that replaced the old text from `from` to `to`
@@ -1713,11 +1728,13 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * either. `prior` is where the child before `child` ends, or the
  * root starts. With `depth`, the rest point is below the root (THE NESTED
  * REOPEN): the child before `child` and the `depth - 1` blocks `path`
- * names below it are reopened, the deepest at its child `path[depth]`.
- * False, with the transaction failed, when storage could not be had. */
+ * names below it are reopened, the deepest at its child `path[depth]`,
+ * each folding its kept children from its `folds`, when they are not
+ * NULL. False, with the transaction failed, when storage could not be
+ * had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
-                                 bool whole, const uint32_t *path, size_t depth);
+                                 bool whole, const uint32_t *path, size_t depth, markdown_core_folds *const *folds);
 /* THE COMPACTION (plan 12.4): after a reading of the whole text, gives back
  * the storage the input and the reading hold past what the text needs, as
  * the most text before left it. */
@@ -1742,6 +1759,9 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
+/* The child of the chain's block `level` the old children it took back
+ * begin at, or UINT32_MAX when it took none back into that block. */
+uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level);
 /* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_roster_made
  * writes them, that the declarations of the text the last reading of an
  * edit read, from `start`, its rest point, up to where it took the old
@@ -1822,7 +1842,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
  * left as the flush left it. False when storage could not be had. */
 bool markdown_core_parser_look(markdown_core_parser *parser, struct markdown_core_node *root, uint32_t child,
                                size_t line, const char *source, size_t length, const uint32_t *path, size_t depth,
-                               const uint32_t *starts, size_t before, uint32_t span);
+                               const uint32_t *starts, size_t before, uint32_t span, markdown_core_folds *const *folds);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

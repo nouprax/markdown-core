@@ -3333,12 +3333,23 @@ static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, con
     return true;
 }
 
+/* The bits of a block's flags its children fold into it (S_fold). */
+static inline markdown_core_node_internal_flags S_folded_bits(const markdown_core_kind_record *kind) {
+    return (
+        markdown_core_node_internal_flags)(((kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES)
+                                                ? MARKDOWN_CORE_NODE__ENDS_BLANK | MARKDOWN_CORE_NODE__BLANK_SPACED |
+                                                      MARKDOWN_CORE_NODE__BLANK_FOLDED
+                                                : 0) |
+                                           ((kind->flags & MARKDOWN_CORE_KIND_FOLDS) ? kind->structure->element->folds
+                                                                                     : 0));
+}
+
 /* The chain's block `node`, at `level`, open as the reading needs it at the
  * rest point, the first `kept` of its children its own, which a reading
  * of the line before reads blank to when `blank` says so; `deepest` when it
  * is the chain's last. */
 static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *node, uint32_t kept, bool blank,
-                           bool deepest) {
+                           bool deepest, markdown_core_folds *folds) {
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, node);
     node->flags =
         (markdown_core_node_internal_flags)((node->flags | MARKDOWN_CORE_NODE__OPEN) &
@@ -3351,8 +3362,24 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
         structure->element->reopen_block(structure, parser, node, blank);
     }
     if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
-        for (uint32_t i = 0; i < kept; i++) {
+        /* From the last mark before the last kept child, so that the last
+         * folds again, as what the kind keeps of a fold is the last's. */
+        const markdown_core_node_internal_flags mask = S_folded_bits(kind);
+        size_t mark = folds && kept ? (kept - 1) / MARKDOWN_CORE_FOLD_CHUNK : 0;
+        mark = folds && mark > folds->count ? folds->count : mark;
+        if (mark) {
+            node->flags = (markdown_core_node_internal_flags)((node->flags & ~mask) | (folds->flags[mark - 1] & mask));
+        }
+        for (uint32_t i = (uint32_t)(mark * MARKDOWN_CORE_FOLD_CHUNK); i < kept; i++) {
             node->flags = S_fold(kind, node, node->flags, node->children[i]->flags);
+            if (folds && (i + 1) % MARKDOWN_CORE_FOLD_CHUNK == 0 && (i + 1) / MARKDOWN_CORE_FOLD_CHUNK > folds->count) {
+                markdown_core_node_internal_flags *grew =
+                    markdown_core_reserve(folds->flags, &folds->capacity, folds->count + 1, sizeof(*folds->flags));
+                if (grew) {
+                    folds->flags = grew;
+                    folds->flags[folds->count++] = (markdown_core_node_internal_flags)(node->flags & mask);
+                }
+            }
         }
     }
     if (deepest && blank) {
@@ -3368,13 +3395,15 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
 /* The chain stands open as the reading needs it at the rest point, whose
  * line before, which the deepest block took, reads blank to the blocks
  * from `blank` down (markdown_core_parser_rest_blank). */
-static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *root, size_t blank) {
+static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *root, size_t blank,
+                           markdown_core_folds *const *folds) {
     const markdown_core_edit *edit = parser->stream->edit;
     markdown_core_node *holder = root;
     for (size_t level = 0; level < edit->depth; level++) {
         markdown_core_node *node = edit->chain[level];
         const bool deeper = level + 1 < edit->depth;
-        S_reopen_level(parser, node, deeper ? edit->path[level + 1] : edit->path[edit->depth], level >= blank, !deeper);
+        S_reopen_level(parser, node, deeper ? edit->path[level + 1] : edit->path[edit->depth], level >= blank, !deeper,
+                       folds ? folds[level] : NULL);
         markdown_core_scaffold_of(node)->parent = holder;
         markdown_core_scaffold_of(node)->next = NULL;
         holder = node;
@@ -3403,7 +3432,7 @@ static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *roo
  * the parse failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
-                                 bool whole, const uint32_t *path, size_t depth) {
+                                 bool whole, const uint32_t *path, size_t depth, markdown_core_folds *const *folds) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
@@ -3517,7 +3546,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     root->flags |= MARKDOWN_CORE_NODE__OPEN;
     parser->root = root;
     if (depth) {
-        S_reopen_chain(parser, root, blank);
+        S_reopen_chain(parser, root, blank, folds);
     }
     if (whole) {
         stream->edit->count = 0;
@@ -3822,11 +3851,7 @@ static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index
             }
         }
         /* It closes as it did, but for what its children fold. */
-        const unsigned folded =
-            ((kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES)
-                 ? MARKDOWN_CORE_NODE__ENDS_BLANK | MARKDOWN_CORE_NODE__BLANK_SPACED | MARKDOWN_CORE_NODE__BLANK_FOLDED
-                 : 0) |
-            ((kind->flags & MARKDOWN_CORE_KIND_FOLDS) ? kind->structure->element->folds : 0);
+        const unsigned folded = S_folded_bits(kind);
         S_shut(parser, block);
         block->flags = (markdown_core_node_internal_flags)(((edit->states[level] & ~folded) | (block->flags & folded)) &
                                                            ~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED |
@@ -3875,6 +3900,10 @@ size_t markdown_core_parser_resumed(const markdown_core_parser *parser) {
 }
 
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser) { return parser->stream->edit->tail; }
+
+uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level) {
+    return parser->stream->edit->tails[level];
+}
 
 /* Whether the key `key`, `size` bytes with its kind's byte, which the
  * reading from `start` up to `to` declared and the old text it replaced did
@@ -4900,7 +4929,8 @@ typedef struct S_look_level {
  * storage could not be had, with the parse as it was all the same. */
 bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                const char *source, size_t length, const uint32_t *path, size_t depth,
-                               const uint32_t *starts, size_t before, uint32_t span) {
+                               const uint32_t *starts, size_t before, uint32_t span,
+                               markdown_core_folds *const *folds) {
     markdown_core_stream *const stream = parser->stream;
     markdown_core_edit *const edit = stream->edit;
     markdown_core_parser_input *const input = &parser->input;
@@ -5006,7 +5036,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
             markdown_core_node *open = levels[level].node;
             open->place.start = starts[level - 1];
             S_reopen_level(parser, open, level < depth ? levels[level].kept - 1 : levels[level].kept,
-                           level - 1 >= blank, level == depth);
+                           level - 1 >= blank, level == depth, folds ? folds[level - 1] : NULL);
         }
         S_parse_source(parser, (const unsigned char *)source, length);
         if (!parser->error) {
