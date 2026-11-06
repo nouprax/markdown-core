@@ -592,13 +592,7 @@ typedef struct markdown_core_parser_at {
  * from `next` on back, `resumed` is where, and `tail` the index of the
  * first among the root's children, whose leads move by `lead`; 0 when it
  * took none back. */
-/* A child a reopened block let go (THE NESTED SPLICE): the block of the
- * chain it was a child of, and its old window, from where the child before
- * it ended. */
-typedef struct markdown_core_back_child {
-    struct markdown_core_node *node;
-    uint32_t level, prior, start, end;
-} markdown_core_back_child;
+struct markdown_core_folds;
 
 /* A USE OF A LABEL (markdown_core_edit, `uses`): where the inline root
  * whose completion looked the label up starts, and the lookup's kind and
@@ -665,18 +659,34 @@ typedef struct markdown_core_edit {
     size_t depth, chain_capacity;
     /* THE NESTED SPLICE (blocks.c): for each block of the chain, where it
      * ended in the old text (`ends`), its flags there (`states`), its
-     * record in the publish's (`owners`, ast.c), and where the children
-     * the reading took back begin among its own (`tails`), UINT32_MAX when
-     * it took none. `backs` are the children the chain let go, in the order
-     * of the text, the deepest block's first, `back_next` the next the
-     * reading may take back, and `taken` the first it took, SIZE_MAX when
-     * it took none of them; `level` is the block they went back to, and
-     * `shift` what the first's lead moves by. `closed` is where the old
-     * close of the root's child ended, and `reach_from` the first entry of
-     * the log its reading noted. */
-    uint32_t *ends, *states, *owners, *tails;
-    markdown_core_back_child *backs;
-    size_t back_count, back_capacity, back_next, taken, level, reach_from;
+     * record in the publish's (`owners`, ast.c), where the children the
+     * reading took back begin among its own (`tails`), UINT32_MAX when it
+     * took none, how many children it keeps (`keeps`), and the fold marks
+     * of its children (`folds`), or NULL. `shift` is what the lead of the
+     * first it took back moves by. `closed` is where the old close of the
+     * root's child ended, and `reach_from` the first entry of the log its
+     * reading noted.
+     *
+     * THE OLD NESTED TAIL IN PLACE (blocks.c): each block of the chain
+     * holds the `holds` old children past those it keeps in its own storage,
+     * as the root holds its old tail (THE OLD TAIL IN PLACE), and the reading
+     * writes the block's new children over them: the first `saves` moved out
+     * to `nested`, from its entry `bases`, as the reading took their
+     * places. `nested` has room for all of them, `nest_count`, numbered in
+     * the order of the text, the deepest block's first. The reading tries
+     * them in that order: the next is the old child `nest_index` of the
+     * block `nest_level`, the one before it ended at `nest_prior` in the old
+     * text, and `nest_on` is false once it tried them all. `taken` is the
+     * number of the first it took back, SIZE_MAX when it took none, and
+     * `level` its block. The first `nest_recorded` have records (ast.c,
+     * record_nest); those past them up to the first taken back the parse
+     * lets go when it fails. */
+    uint32_t *ends, *states, *owners, *tails, *keeps, *holds, *saves, *bases;
+    struct markdown_core_folds **folds;
+    struct markdown_core_node **nested;
+    size_t nested_capacity, taken, level, reach_from, nest_level;
+    uint32_t nest_count, nest_index, nest_prior, nest_recorded;
+    bool nest_on;
     uint32_t closed;
     int64_t shift;
     /* Whether the parse is an edit's reading. */
@@ -729,6 +739,14 @@ typedef struct markdown_core_edit {
 static inline struct markdown_core_node *markdown_core_edit_old(const markdown_core_edit *edit,
                                                                 const struct markdown_core_node *root, uint32_t index) {
     return index < edit->saved ? edit->children[index] : root->children[edit->rest + index];
+}
+
+/* The old child `index` past those it keeps of the chain's block `level`
+ * (THE OLD NESTED TAIL IN PLACE). */
+static inline struct markdown_core_node *markdown_core_edit_nested(const markdown_core_edit *edit, size_t level,
+                                                                   uint32_t index) {
+    return index < edit->saves[level] ? edit->nested[edit->bases[level] + index]
+                                      : edit->chain[level]->children[edit->keeps[level] + index];
 }
 
 struct markdown_core_parser {
@@ -803,10 +821,15 @@ struct markdown_core_parser {
      * none for the document, and a cell's `enclosing` while its content is
      * read. */
     uint32_t input_enclosing;
-    /* The child count at which the root's next child takes the place of an
-     * old child of an edit's tail, which moves out first (blocks.c, THE OLD
-     * TAIL IN PLACE); UINT32_MAX when none is in place. */
-    uint32_t room_at;
+    /* The child count at which the next child of `room_holder`, the root or
+     * a block of an edit's chain, takes the place of an old child of an
+     * edit's tail, which moves out first (blocks.c, THE OLD TAIL IN PLACE);
+     * UINT32_MAX when none is in place. `room_level` is the chain's block
+     * that holds it, and `root_room` the root's, while a block of the chain
+     * does. */
+    uint32_t room_at, root_room;
+    const struct markdown_core_node *room_holder;
+    size_t room_level;
     /* The active input: the document's text, or a table cell's content
      * while its blocks are read. */
     markdown_core_parser_input input;
@@ -1721,9 +1744,22 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * children they mark stand as they are. */
 #define MARKDOWN_CORE_FOLD_CHUNK 64
 
+/* THE FOLD PASSES of the same block: for each chunk of its children, up
+ * to two of the bits its kind folds, `from`, which its children fold to
+ * `to` as they fold into it one after another, `count` of them, none when
+ * the chunk's children are not those it was asked for (blocks.c,
+ * S_fold_old). The caller clears a chunk's as its children change, and
+ * all from one on as children move. */
+typedef struct markdown_core_fold_pass {
+    markdown_core_node_internal_flags from[2], to[2];
+    uint32_t count;
+} markdown_core_fold_pass;
+
 typedef struct markdown_core_folds {
     markdown_core_node_internal_flags *flags;
     size_t count, capacity;
+    markdown_core_fold_pass *passes;
+    size_t pass_count, pass_capacity;
 } markdown_core_folds;
 
 /* A flushed transaction put back at input line `line`, a rest point of

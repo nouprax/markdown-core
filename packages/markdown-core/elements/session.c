@@ -76,6 +76,7 @@ static void nest_free(session_nest *nest) {
     markdown_core_free(nest->widths.chunks);
     markdown_core_free(nest->widths.sums);
     markdown_core_free(nest->folds.flags);
+    markdown_core_free(nest->folds.passes);
 }
 
 /* What only an edit keeps, made at the first: the widths, and the bytes of
@@ -828,6 +829,16 @@ static void session_mend_nests(markdown_core_session *session, const session_res
             const size_t last = tail != UINT32_MAX && holder->child_count == counts[level] ? tail : SIZE_MAX;
             const size_t marked = rest->path[level + 1] / MARKDOWN_CORE_FOLD_CHUNK;
             nest.folds.count = nest.folds.count < marked ? nest.folds.count : marked;
+            /* The passes of the chunks the reading wrote go, and all from
+             * there on when the children after them moved. */
+            if (last == SIZE_MAX) {
+                nest.folds.pass_count = nest.folds.pass_count < marked ? nest.folds.pass_count : marked;
+            }
+            for (size_t chunk = marked;
+                 last != SIZE_MAX && chunk <= last / MARKDOWN_CORE_FOLD_CHUNK && chunk < nest.folds.pass_count;
+                 chunk++) {
+                nest.folds.passes[chunk].count = 0;
+            }
             if (widths_mend(&nest.widths, holder, rest->path[level + 1], last)) {
 #ifndef NDEBUG
                 nest_check(&nest.widths, holder);
