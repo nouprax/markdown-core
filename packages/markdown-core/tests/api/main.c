@@ -11347,6 +11347,50 @@ static void session_edits_uses(test_batch_runner *runner) {
     }
 }
 
+/* A block identifier after a nested list names the list from where the
+ * list starts, past its line's indentation: no edit of the identifier's
+ * line reads from the list's first item, which would keep the name the
+ * list had, and no locate there does either (session.c, session_rest_in).
+ * A locate at any place leaves the session as it was: every edit after it
+ * reads as a parse does. */
+static void session_edits_nested_identifier(test_batch_runner *runner) {
+    static const char source[] = "- outer\n  - inner\n\n  #inner#\n\n  rest\n";
+    static const char *const typed[] = {"", "x"};
+    for (size_t t = 0; t < sizeof(typed) / sizeof(typed[0]); t++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        const markdown_core_position at = {4, 10};
+        bool edited = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                                &session) == MARKDOWN_CORE_OK &&
+                      markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+                      markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK &&
+                      markdown_core_session_edit(session, at, at, (const uint8_t *)typed[t], strlen(typed[t]),
+                                                 &document) == MARKDOWN_CORE_OK;
+        OK(runner, edited && session_as_parsed(session), "typing \"%s\" after the identifier reads as a parse does",
+           typed[t]);
+        markdown_core_session_close(session);
+    }
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                          &session) == MARKDOWN_CORE_OK &&
+                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    for (uint32_t line = 1; same && line <= 6; line++) {
+        for (uint32_t column = 1; same && column <= 10; column++) {
+            const markdown_core_position at = {line, column};
+            const markdown_core_status located = markdown_core_session_locate(session, at);
+            if (located == MARKDOWN_CORE_OUT_OF_BOUNDS) {
+                continue;
+            }
+            same = located == MARKDOWN_CORE_OK &&
+                   markdown_core_session_edit(session, at, at, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
+                   session_as_parsed(session);
+        }
+    }
+    OK(runner, same, "an edit after a locate anywhere reads as a parse does");
+    markdown_core_session_close(session);
+}
+
 /* The allocator sweep of 12.7: an edit refused at each of its allocations
  * in turn either leaves the session as it was or fails it, and the session
  * then frees everything it holds. The edits type into a paragraph and a
@@ -13093,6 +13137,7 @@ int main(void) {
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
+    session_edits_nested_identifier(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);
     session_edits_compaction(runner);

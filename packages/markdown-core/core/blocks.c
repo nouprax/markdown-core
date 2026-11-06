@@ -2567,25 +2567,6 @@ static int walk_owned_trees(markdown_core_parser *parser) {
     return !parser->error;
 }
 
-/* A LOOKUP IN THE WHOLE DOCUMENT. The parse of the text before a cursor
- * reads a part of a session's document, from a rest point to the cursor,
- * and the document defines labels the part does not: a lookup its own
- * roster answers nothing goes on to the document's, which holds every
- * declaration standing there. A parse with no such roster, which reads a
- * document's text from its start, had the document's labels declared
- * before it read a line (session.c). */
-const markdown_core_roster_record *markdown_core_parser_find_outer(markdown_core_parser *parser,
-                                                                   markdown_core_roster_kind kind,
-                                                                   const markdown_core_chunk *label, bool *failed) {
-    markdown_core_roster *outer = parser->sink->outer;
-    if (!outer) {
-        return NULL;
-    }
-    return kind == MARKDOWN_CORE_ROSTER_SPECIMEN
-               ? markdown_core_roster_find(outer, kind, label->data, label->len, failed)
-               : markdown_core_roster_find_label(outer, kind, label, failed);
-}
-
 /* THE END OF THE BLOCK PHASE: every block still open closes at the end of
  * the input, the blocks of the table cells queued for it are read, and the
  * document closes last, so it is the last block the queue holds, where its
@@ -3352,6 +3333,38 @@ static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, con
     return true;
 }
 
+/* The chain's block `node`, at `level`, open as the reading needs it at the
+ * rest point, the first `kept` of its children its own, which a reading
+ * of the line before reads blank to when `blank` says so; `deepest` when it
+ * is the chain's last. */
+static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *node, uint32_t kept, bool blank,
+                           bool deepest) {
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, node);
+    node->flags =
+        (markdown_core_node_internal_flags)((node->flags | MARKDOWN_CORE_NODE__OPEN) &
+                                            ~(MARKDOWN_CORE_NODE__FINAL | MARKDOWN_CORE_NODE__COMMITTED |
+                                              MARKDOWN_CORE_NODE__ENDS_BLANK | MARKDOWN_CORE_NODE__BLANK_SPACED |
+                                              MARKDOWN_CORE_NODE__BLANK_FOLDED | MARKDOWN_CORE_NODE__LAST_LINE_BLANK |
+                                              MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION));
+    const markdown_core_element_instance *structure = kind->structure;
+    if (structure && structure->element->reopen_block) {
+        structure->element->reopen_block(structure, parser, node, blank);
+    }
+    if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
+        for (uint32_t i = 0; i < kept; i++) {
+            node->flags = S_fold(kind, node, node->flags, node->children[i]->flags);
+        }
+    }
+    if (deepest && blank) {
+        /* The deepest block took the blank line before, as
+         * add_text_to_container sets it. */
+        S_set_last_line_blank(node, !(kind->flags & MARKDOWN_CORE_KIND_BLANK_OPAQUE) &&
+                                        (!(kind->flags & MARKDOWN_CORE_KIND_BLANK_ASK)
+                                             ? !S_kind_accepts_lines(kind, node)
+                                             : structure->element->blank_line(structure, parser, node)));
+    }
+}
+
 /* The chain stands open as the reading needs it at the rest point, whose
  * line before, which the deepest block took, reads blank to the blocks
  * from `blank` down (markdown_core_parser_rest_blank). */
@@ -3360,33 +3373,8 @@ static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *roo
     markdown_core_node *holder = root;
     for (size_t level = 0; level < edit->depth; level++) {
         markdown_core_node *node = edit->chain[level];
-        const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, node);
-        node->flags =
-            (markdown_core_node_internal_flags)((node->flags | MARKDOWN_CORE_NODE__OPEN) &
-                                                ~(MARKDOWN_CORE_NODE__FINAL | MARKDOWN_CORE_NODE__COMMITTED |
-                                                  MARKDOWN_CORE_NODE__ENDS_BLANK | MARKDOWN_CORE_NODE__BLANK_SPACED |
-                                                  MARKDOWN_CORE_NODE__BLANK_FOLDED |
-                                                  MARKDOWN_CORE_NODE__LAST_LINE_BLANK |
-                                                  MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION));
-        const markdown_core_element_instance *structure = kind->structure;
-        if (structure && structure->element->reopen_block) {
-            structure->element->reopen_block(structure, parser, node, level >= blank);
-        }
         const bool deeper = level + 1 < edit->depth;
-        const uint32_t kept = deeper ? edit->path[level + 1] : edit->path[edit->depth];
-        if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
-            for (uint32_t i = 0; i < kept; i++) {
-                node->flags = S_fold(kind, node, node->flags, node->children[i]->flags);
-            }
-        }
-        if (!deeper && level >= blank) {
-            /* The deepest block took the blank line before, as
-             * add_text_to_container sets it. */
-            S_set_last_line_blank(node, !(kind->flags & MARKDOWN_CORE_KIND_BLANK_OPAQUE) &&
-                                            (!(kind->flags & MARKDOWN_CORE_KIND_BLANK_ASK)
-                                                 ? !S_kind_accepts_lines(kind, node)
-                                                 : structure->element->blank_line(structure, parser, node)));
-        }
+        S_reopen_level(parser, node, deeper ? edit->path[level + 1] : edit->path[edit->depth], level >= blank, !deeper);
         markdown_core_scaffold_of(node)->parent = holder;
         markdown_core_scaffold_of(node)->next = NULL;
         holder = node;
@@ -4880,6 +4868,226 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
     return result;
 }
 
+/* A block the look holds open, as it stood: its children, the first
+ * `kept` of which the look leaves it, and those after them that a reading
+ * of at most `span` blocks may write over, `saved` of them in `room`; its
+ * place and its scaffold. */
+typedef struct S_look_level {
+    markdown_core_node *node;
+    uint32_t count, kept, saved;
+    markdown_core_node **room;
+    markdown_core_place place;
+    markdown_core_scaffold scaffold;
+} S_look_level;
+
+/* THE LOOK (docs/plans locate-reading.md): a flushed parse read again from
+ * the rest point an edit of the cursor's line reads from, as the reopen
+ * puts the reading there (THE REOPEN, THE NESTED REOPEN), through the
+ * first `length` bytes of `source`, the text as it stands, as a snapshot
+ * reads the text so far: what is open where those bytes end goes to the
+ * parse's sink, and nothing is committed. The rest point is before the
+ * root `root`'s child `child`, at input line `line`, or below it, at
+ * `path` of `depth` blocks, the root's child that holds it the child
+ * before `child`; `starts` holds where each block of the chain starts, and
+ * `before` where the deepest's child before the rest point ends. The root
+ * and the chain are lent as the snapshot lends what is open (THE
+ * LENDING), with their children past the rest point out of their counts,
+ * and those a reading of the `span` blocks at most that start on the lines
+ * it reads may write over kept aside; the lines' focus moves to the rest
+ * point, where the reading appends its own. The snapshot's rollback, the
+ * take-back and what was kept aside leave the parse as the flush left it,
+ * but for where the focus stands, which no reading depends on. False when
+ * storage could not be had, with the parse as it was all the same. */
+bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
+                               const char *source, size_t length, const uint32_t *path, size_t depth,
+                               const uint32_t *starts, size_t before, uint32_t span) {
+    markdown_core_stream *const stream = parser->stream;
+    markdown_core_edit *const edit = stream->edit;
+    markdown_core_parser_input *const input = &parser->input;
+    assert(!parser->root && !parser->error && !stream->mark_count && !stream->held && edit && !edit->reading);
+    assert(line <= S_lines_count(&input->lines));
+    assert(!depth || child);
+    const size_t start = line < S_lines_count(&input->lines) ? S_lines_start(&input->lines, line) : input->scanned;
+    S_look_level *levels = markdown_core_alloc(depth + 1, sizeof(*levels));
+    markdown_core_node **room = levels ? markdown_core_alloc((depth + 1) * (size_t)span + 1, sizeof(*room)) : NULL;
+    if (!room || !S_lines_ready(&input->lines, start, input->size)) {
+        markdown_core_free(room);
+        markdown_core_free(levels);
+        return false;
+    }
+    /* The blocks held open, the root first, and the children each keeps. */
+    markdown_core_node *node = root;
+    for (size_t level = 0; level <= depth; level++) {
+        const uint32_t kept = !level ? child : level < depth ? path[level] + 1 : path[depth];
+        S_look_level *entry = &levels[level];
+        *entry = (S_look_level){node,
+                                node->child_count,
+                                kept,
+                                0,
+                                room + level * (size_t)span,
+                                node->place,
+                                *markdown_core_scaffold_of(node)};
+        assert(kept <= node->child_count && (level == depth || kept));
+        for (uint32_t i = kept; i < node->child_count && entry->saved < span; i++) {
+            entry->room[entry->saved++] = node->children[i];
+        }
+        node = level < depth ? node->children[kept - 1] : NULL;
+    }
+    (void)S_lines_move(&input->lines, start, input->size, input);
+    assert(input->lines.front.count == line || start == input->scanned);
+    /* The line before the rest point, read blank or not to the chain's
+     * blocks from `blank` down, as the reopen reads it. */
+    size_t blank = depth;
+    markdown_core_node *const deepest = levels[depth].node;
+    markdown_core_place ended = {0};
+    if (depth && path[depth]) {
+        markdown_core_node *chain[64];
+        assert(depth <= sizeof(chain) / sizeof(*chain));
+        for (size_t level = 0; level < depth; level++) {
+            chain[level] = levels[level + 1].node;
+        }
+        markdown_core_node *last = deepest->children[path[depth] - 1];
+        ended = last->place;
+        last->place.end = (uint32_t)before;
+        blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, chain, depth, line, before);
+        assert(blank != SIZE_MAX);
+    }
+    /* What the flush left of the reading, which the look puts back. */
+    const markdown_core_parser_input was = *input;
+    const markdown_core_parser_at at = parser->at;
+    const markdown_core_node_internal_flags flags = root->flags;
+    const size_t uses = edit->uses.front.count, use_bytes = edit->use_labels.size, use_live = edit->use_live;
+    const size_t misses = stream->miss_count, miss_roots = stream->miss_root_count,
+                 miss_bytes = stream->miss_labels.size;
+    /* The flush's maps are complete, as at a reopen. */
+    markdown_core_array_truncate(&parser->line_marks, MARKDOWN_CORE_IDENTITY_MARK + 1);
+
+    input->scanned = input->size = input->complete = start;
+    input->source = (const unsigned char *)source;
+    input->epoch = ++parser->epochs;
+    input->last_line_ready = false;
+    const markdown_core_input_line *last = line ? &input->lines.front.values[line - 1] : NULL;
+    parser->at = (markdown_core_parser_at){
+        .block_root = root,
+        .current = deepest,
+        .line_number = (int)line + input->first_line - 1,
+        .line_start = last ? (bufsize_t)last->start : 0,
+        .line_end = last ? (bufsize_t)last->end : 0,
+        .last_line_end = last ? (bufsize_t)last->end : 0,
+        .lookahead_cursor = (const unsigned char *)source + start,
+    };
+    parser->claimed_cursor = NULL;
+    parser->reading = false;
+    parser->block_input_count = parser->block_input_cursor = 0;
+    for (size_t level = 0; level <= depth; level++) {
+        markdown_core_node *open = levels[level].node;
+        open->child_count = levels[level].kept;
+        markdown_core_scaffold_of(open)->parent = level ? levels[level - 1].node : NULL;
+        markdown_core_scaffold_of(open)->next = NULL;
+    }
+    root->flags |= MARKDOWN_CORE_NODE__OPEN;
+    parser->root = root;
+
+    S_snapshot_mark mark = {.kept = (unsigned char *)stream->candidate_room + parser->dialect->candidate_state_size};
+    S_mark(parser, &mark);
+    parser->settle_flags = 0;
+    parser->snapshot = true;
+    stream->snapshot_mark = &mark;
+    /* Every block held open is lent, the root last: the reading ends with
+     * the document closing, however little of it there is. */
+    bool lent = true;
+    stream->boundary = NULL;
+    for (markdown_core_node *open = deepest; lent && open; open = markdown_core_scaffold_parent(open)) {
+        lent = S_lend(parser, open);
+    }
+    if (lent) {
+        /* The chain's views stand open as the reopen leaves its blocks. */
+        for (size_t level = 1; level <= depth; level++) {
+            markdown_core_node *open = levels[level].node;
+            open->place.start = starts[level - 1];
+            S_reopen_level(parser, open, level < depth ? levels[level].kept - 1 : levels[level].kept,
+                           level - 1 >= blank, level == depth);
+        }
+        S_parse_source(parser, (const unsigned char *)source, length);
+        if (!parser->error) {
+            S_close_tail(parser);
+        }
+        if (!parser->error) {
+            S_complete_settled(parser);
+        }
+    }
+#ifndef NDEBUG
+    for (size_t i = 0; i < stream->lend_count; i++) {
+        for (size_t level = 0; level <= depth; level++) {
+            assert(stream->lends[i].address != levels[level].node ||
+                   stream->lends[i].address->child_count <= levels[level].kept + span);
+        }
+    }
+#endif
+    const bool ok = !parser->error;
+    S_take_back(parser, true);
+    S_rollback(parser, &mark);
+    stream->claimant = NULL;
+    stream->snapshot_mark = NULL;
+    parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
+    parser->snapshot = false;
+    parser->error = MARKDOWN_CORE_PARSE_OK;
+
+    /* The blocks as they stood, with the children the reading wrote over. */
+    for (size_t level = 0; level <= depth; level++) {
+        const S_look_level *entry = &levels[level];
+        markdown_core_node *open = entry->node;
+        assert(open->child_count == entry->kept);
+        for (uint32_t i = 0; i < entry->saved; i++) {
+            open->children[entry->kept + i] = entry->room[i];
+        }
+        open->child_count = entry->count;
+        open->place = entry->place;
+        *markdown_core_scaffold_of(open) = entry->scaffold;
+    }
+    if (depth && path[depth]) {
+        deepest->children[path[depth] - 1]->place = ended;
+    }
+    root->flags = flags;
+    parser->root = NULL;
+    parser->at = at;
+    parser->claimed_cursor = NULL;
+    parser->block_input_count = parser->block_input_cursor = 0;
+    *input = (markdown_core_parser_input){.source = was.source,
+                                          .size = was.size,
+                                          .scanned = was.scanned,
+                                          .complete = was.complete,
+                                          .lines = input->lines,
+                                          .normalized = input->normalized,
+                                          .facts = input->facts,
+                                          .fact_count = input->fact_count,
+                                          .fact_capacity = input->fact_capacity,
+                                          .mapped = was.mapped,
+                                          .first_line = was.first_line,
+                                          .epoch = ++parser->epochs,
+                                          .last_line = input->last_line,
+                                          .last_line_ready = false};
+    markdown_core_array_truncate(&edit->uses.front, uses);
+    edit->use_labels.size = use_bytes;
+    edit->use_live = use_live;
+    for (size_t i = miss_roots; i < stream->miss_root_count; i++) {
+        if (stream->miss_roots[i].position.places) {
+            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
+        }
+    }
+    stream->miss_count = misses;
+    stream->miss_root_count = miss_roots;
+    stream->miss_labels.size = miss_bytes;
+    stream->miss_root = NULL;
+    if (stream->settled.address) {
+        S_settled_release(parser, &stream->settled);
+    }
+    stream->settled.root = NULL;
+    markdown_core_free(room);
+    markdown_core_free(levels);
+    return ok;
+}
+
 /* Materializing a normalized view is an allocation boundary, separate from
  * the ordinary borrowed view resolved inline by both consumers. */
 static const unsigned char *S_normalize_input_line(markdown_core_parser *parser, const markdown_core_input_line *line,
@@ -5263,7 +5471,7 @@ bound:;
         limit = stream->edit->point;
     }
 read:
-    if (at_root && !parser->at.line_number && limit && !(parser->sink && parser->sink->base)) {
+    if (at_root && !parser->at.line_number && limit) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         if (stream) {
             S_meet_from_stop(parser);

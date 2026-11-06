@@ -529,10 +529,12 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
         }
         /* What the block's first line opens its reading decided, which
          * must not have read the edited line: the line after its own, which
-         * the reach does not note, or one past it. */
+         * the reach does not note, or one past it, from anywhere on its
+         * line -- a block identifier after the block names it from where it
+         * starts, which is past the line's indentation. */
         if (!child && (edited <= line + 1 || (markdown_core_parser_spanned_inside(parser, start, line_start,
                                                                                   rest->close, rest->ends, &reached) &&
-                                              reached == line_start))) {
+                                              markdown_core_parser_line_of(parser, reached) == line))) {
             return false;
         }
         if (markdown_core_parser_spanned_inside(parser, line_start, rest->close, rest->close, rest->ends, &reached)) {
@@ -873,14 +875,35 @@ void markdown_core_session_reread(const markdown_core_session *session, size_t *
     *to = edits ? edits->reread_to : 0;
 }
 
+/* THE LOOK (blocks.c): what the locate reads the text before the cursor
+ * with, from the rest point it found. */
+typedef struct session_look {
+    markdown_core_session *session;
+    uint32_t child, span;
+    size_t line, before;
+    const session_rest_point *rest;
+    uint32_t starts[SESSION_DEPTH];
+} session_look;
+
+static markdown_core_status session_look_read(void *owner, markdown_core_context_sink *sink) {
+    const session_look *look = owner;
+    markdown_core_parser *parser = look->session->committed;
+    parser->sink = sink;
+    const bool ok = markdown_core_parser_look(parser, look->session->document.root, look->child, look->line,
+                                              session_source(look->session), sink->length, look->rest->path,
+                                              look->rest->depth, look->starts, look->before, look->span);
+    parser->sink = NULL;
+    return ok && !sink->failed ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+}
+
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
     /* THE PREFIX FROM A REST POINT (context.c): a flushed session reads the
      * text before the cursor from the rest point an edit of the cursor's
-     * line would read from in the root, as nothing before it reads past it,
-     * and the query reads the lines from there through the one after the
-     * cursor's, from the session's line table, and the root's children that
-     * hold them, from the child before the rest point's, which some readers
-     * measure the first from. */
+     * line reads from (THE LOOK), and the query reads the lines from the
+     * rest point in the root through the one after the cursor's, from the
+     * session's line table, and the root's children that hold them, from
+     * the child before the rest point's, which some readers measure the
+     * first from. */
     const markdown_core_node *root = session->document.root;
     size_t start, end;
     if (!session->flushed || !root || !root->child_count || position.line < 1 ||
@@ -917,14 +940,38 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
     for (size_t i = 0; i < locus.lines.count; i++) {
         markdown_core_parser_line_span(session->committed, line + i, &locus.lines.starts[i], &after);
     }
-    locus.from = child ? locus.lines.starts[0] : 0;
-    locus.roster = &session->committed->roster;
     uint32_t last = widths_child(widths, root, end);
     while (last + 1 < root->child_count && widths_start(widths, root, last + 1) <= end) {
         last++;
     }
     const uint32_t first = child ? child - 1 : 0;
     locus.children = (markdown_core_window){first, last, (uint32_t)widths_start(widths, root, first)};
+    /* The look reads from the rest point an edit of the cursor's line reads
+     * from, below the root's child when it is there (session_rest). */
+    session_rest_point rest;
+    session_look look = {.session = session, .rest = &rest};
+    if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
+        markdown_core_free(locus.lines.starts);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    /* Where each block of the chain starts, as session_rest_in measured
+     * them, and where the deepest's child before the rest point ends. */
+    for (size_t level = 0, base = 0; level < rest.depth; level++) {
+        const markdown_core_place window =
+            !level ? (markdown_core_place){(uint32_t)widths_start(widths, root, rest.path[0]),
+                                           (uint32_t)widths_end(widths, root, rest.path[0])}
+                   : session->edits->windows[base + rest.path[level]];
+        if (level) {
+            base += rest.chain[level - 1]->child_count;
+        }
+        look.starts[level] = window.start;
+        if (level + 1 == rest.depth && rest.path[rest.depth]) {
+            look.before = session->edits->windows[base + rest.path[rest.depth] - 1].end;
+        }
+    }
+    look.span = (uint32_t)(position.line - look.line + 2);
+    locus.look = session_look_read;
+    locus.owner = &look;
     markdown_core_status status =
         markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
                                      session->text.count, position, &locus);
@@ -1029,9 +1076,7 @@ static bool seed_labels(markdown_core_roster *roster, const markdown_core_docume
  * reports what it leaves open to `sink` (sink.h): the sink names the
  * text, and the document is the context query's alone. What the text
  * after the cursor defines, `whole` names: its labels are declared before
- * the parse reads a line, so an occurrence resolves as it does there, or,
- * when the sink names a session's roster, the lookups go on to that
- * (blocks.c, A LOOKUP IN THE WHOLE DOCUMENT). */
+ * the parse reads a line, so an occurrence resolves as it does there. */
 markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sink *sink, markdown_core_text_unit unit,
                                                        const markdown_core_document *whole,
                                                        markdown_core_document **document) {
@@ -1041,7 +1086,7 @@ markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sin
     }
     markdown_core_session session = {0};
     markdown_core_status status = session_open(&session, sink->source, sink->length, unit);
-    if (status == MARKDOWN_CORE_OK && whole && !sink->outer && !seed_labels(&session.committed->roster, whole)) {
+    if (status == MARKDOWN_CORE_OK && whole && !seed_labels(&session.committed->roster, whole)) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status == MARKDOWN_CORE_OK) {
