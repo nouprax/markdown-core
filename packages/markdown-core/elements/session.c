@@ -89,6 +89,10 @@ typedef struct {
      * mended, and those a locate since looked in. */
     session_nest *nests;
     size_t nest_count, nest_capacity;
+    /* The nests by holder: an open table of `slot_count` slots, a power
+     * of two, each a nest's number plus one, or 0 (nest_find). */
+    size_t *slots;
+    size_t slot_count;
     /* The most text the session has held since it last read all of it into
      * storage of its own (THE COMPACTION). */
     size_t peak;
@@ -362,6 +366,7 @@ static void session_close(markdown_core_session *session) {
             nest_free(&session->edits->nests[i]);
         }
         markdown_core_free(session->edits->nests);
+        markdown_core_free(session->edits->slots);
         markdown_core_free(session->edits);
     }
     markdown_core_context_free(session->context);
@@ -491,13 +496,49 @@ static bool session_inside(const markdown_core_session *session, const markdown_
            markdown_core_parser_line_of(parser, window.end - 1) >= edited;
 }
 
+/* The slot of the table that holds the nest of `holder`, or the empty one
+ * where it would go; NULL when there is no table. */
+static size_t *nest_slot(const session_edits *edits, const markdown_core_node *holder) {
+    if (!edits->slot_count) {
+        return NULL;
+    }
+    const size_t mask = edits->slot_count - 1;
+    size_t at = (size_t)(((uint64_t)(uintptr_t)holder >> 4) * UINT64_C(0x9E3779B97F4A7C15) >> 32) & mask;
+    while (edits->slots[at] && edits->nests[edits->slots[at] - 1].holder != holder) {
+        at = (at + 1) & mask;
+    }
+    return &edits->slots[at];
+}
+
+/* The table made again with `count` slots, a power of two, from the nests.
+ * False, with the table as it was, when storage could not be had. */
+static bool nest_index(session_edits *edits, size_t count) {
+    size_t *slots = markdown_core_alloc(count, sizeof(*slots));
+    if (!slots) {
+        return false;
+    }
+    markdown_core_free(edits->slots);
+    edits->slots = slots;
+    edits->slot_count = count;
+    for (size_t i = 0; i < edits->nest_count; i++) {
+        *nest_slot(edits, edits->nests[i].holder) = i + 1;
+    }
+    return true;
+}
+
 /* The nest of `holder`, a block below the root, made when there is none;
  * NULL when storage could not be had. */
 static session_nest *nest_find(session_edits *edits, const markdown_core_node *holder) {
-    for (size_t i = 0; i < edits->nest_count; i++) {
-        if (edits->nests[i].holder == holder) {
-            return &edits->nests[i];
+    size_t *slot = nest_slot(edits, holder);
+    if (slot && *slot) {
+        return &edits->nests[*slot - 1];
+    }
+    /* Room in the table for one more, at most half full. */
+    if ((edits->nest_count + 1) * 2 > edits->slot_count) {
+        if (!nest_index(edits, edits->slot_count ? edits->slot_count * 2 : 16)) {
+            return NULL;
         }
+        slot = nest_slot(edits, holder);
     }
     session_nest *grew =
         markdown_core_reserve(edits->nests, &edits->nest_capacity, edits->nest_count + 1, sizeof(*edits->nests));
@@ -511,7 +552,7 @@ static session_nest *nest_find(session_edits *edits, const markdown_core_node *h
         nest_free(nest);
         return NULL;
     }
-    edits->nest_count++;
+    *slot = ++edits->nest_count;
     return nest;
 }
 
@@ -795,6 +836,20 @@ static void session_mend_nests(markdown_core_session *session, const session_res
         nest_free(&nest);
     }
     edits->nest_count = kept;
+    /* The table, made again for the nests kept, or none of them. */
+    size_t slots = 16;
+    while (slots < (kept + 1) * 2) {
+        slots *= 2;
+    }
+    if (!nest_index(edits, slots)) {
+        for (size_t i = 0; i < edits->nest_count; i++) {
+            nest_free(&edits->nests[i]);
+        }
+        edits->nest_count = 0;
+        markdown_core_free(edits->slots);
+        edits->slots = NULL;
+        edits->slot_count = 0;
+    }
 }
 
 /* The flushed parse put back before the root's child `child`, at input line

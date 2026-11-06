@@ -3372,7 +3372,10 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
         }
         for (uint32_t i = (uint32_t)(mark * MARKDOWN_CORE_FOLD_CHUNK); i < kept; i++) {
             node->flags = S_fold(kind, node, node->flags, node->children[i]->flags);
-            if (folds && (i + 1) % MARKDOWN_CORE_FOLD_CHUNK == 0 && (i + 1) / MARKDOWN_CORE_FOLD_CHUNK > folds->count) {
+            /* Only the next mark in order: one a failed reserve left out
+             * stops the marks there, whose places are their chunks. */
+            if (folds && (i + 1) % MARKDOWN_CORE_FOLD_CHUNK == 0 &&
+                (i + 1) / MARKDOWN_CORE_FOLD_CHUNK == folds->count + 1) {
                 markdown_core_node_internal_flags *grew =
                     markdown_core_reserve(folds->flags, &folds->capacity, folds->count + 1, sizeof(*folds->flags));
                 if (grew) {
