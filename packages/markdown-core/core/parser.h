@@ -632,6 +632,13 @@ typedef struct markdown_core_use_note {
     bool back;
 } markdown_core_use_note;
 
+/* Where a block of an edit's chain (markdown_core_edit, `chain`) starts in
+ * the old text, and where the last child of its FINAL prefix ends there,
+ * or where it starts when it has none (ast.c, THE CHAIN'S RECORDS). */
+typedef struct markdown_core_chain_place {
+    uint32_t start, prior;
+} markdown_core_chain_place;
+
 typedef struct markdown_core_edit {
     /* THE OLD TAIL IN PLACE (blocks.c): the old tail, `held` children, stays
      * in the root's own storage, from its child `rest` on, and the reading
@@ -654,6 +661,7 @@ typedef struct markdown_core_edit {
      * and past them where the deepest's first child that goes was. */
     struct markdown_core_node **chain;
     uint32_t *path;
+    markdown_core_chain_place *places;
     size_t depth, chain_capacity;
     /* THE NESTED SPLICE (blocks.c): for each block of the chain, where it
      * ended in the old text (`ends`), its flags there (`states`), its
@@ -1730,11 +1738,12 @@ typedef struct markdown_core_folds {
  * REOPEN): the child before `child` and the `depth - 1` blocks `path`
  * names below it are reopened, the deepest at its child `path[depth]`,
  * each folding its kept children from its `folds`, when they are not
- * NULL. False, with the transaction failed, when storage could not be
- * had. */
+ * NULL, and each where `places` says. False, with the transaction failed,
+ * when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
-                                 bool whole, const uint32_t *path, size_t depth, markdown_core_folds *const *folds);
+                                 bool whole, const uint32_t *path, const markdown_core_chain_place *places,
+                                 size_t depth, markdown_core_folds *const *folds);
 /* THE COMPACTION (plan 12.4): after a reading of the whole text, gives back
  * the storage the input and the reading hold past what the text needs, as
  * the most text before left it. */

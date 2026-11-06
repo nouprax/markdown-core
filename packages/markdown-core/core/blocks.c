@@ -3302,7 +3302,8 @@ size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const
 /* The chain the reading reopens, from the root's child `path[0]` down
  * through `path[1..depth-1]`, kept in the edit with `path`, and the flags
  * each block closed with. False when storage could not be had. */
-static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, const uint32_t *path, size_t depth) {
+static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, const uint32_t *path,
+                         const markdown_core_chain_place *places, size_t depth) {
     if (depth + 1 > edit->chain_capacity) {
         size_t capacity = edit->chain_capacity;
         markdown_core_node **chain = markdown_core_reserve(edit->chain, &capacity, depth + 1, sizeof(*chain));
@@ -3319,6 +3320,13 @@ static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, con
             }
             *lists[i] = list;
         }
+        capacity = edit->chain_capacity;
+        markdown_core_chain_place *kept =
+            markdown_core_reserve(edit->places, &capacity, depth + 1, sizeof(*edit->places));
+        if (!kept) {
+            return false;
+        }
+        edit->places = kept;
         edit->chain_capacity = capacity;
     }
     markdown_core_node *node = root;
@@ -3330,6 +3338,7 @@ static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, con
         edit->tails[i] = UINT32_MAX;
     }
     memcpy(edit->path, path, (depth + 1) * sizeof(*path));
+    memcpy(edit->places, places, depth * sizeof(*places));
     return true;
 }
 
@@ -3435,7 +3444,8 @@ static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *roo
  * the parse failed, when storage could not be had. */
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
-                                 bool whole, const uint32_t *path, size_t depth, markdown_core_folds *const *folds) {
+                                 bool whole, const uint32_t *path, const markdown_core_chain_place *places,
+                                 size_t depth, markdown_core_folds *const *folds) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_parser_input *input = &parser->input;
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
@@ -3443,7 +3453,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     const size_t start = line < S_lines_count(&input->lines) ? S_lines_start(&input->lines, line) : input->scanned;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     stream->edit->depth = 0;
-    if (depth && !S_chain_keep(stream->edit, root, path, depth)) {
+    if (depth && !S_chain_keep(stream->edit, root, path, places, depth)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -4521,6 +4531,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->children);
         markdown_core_free(stream->edit->chain);
         markdown_core_free(stream->edit->path);
+        markdown_core_free(stream->edit->places);
         markdown_core_free(stream->edit->ends);
         markdown_core_free(stream->edit->states);
         markdown_core_free(stream->edit->owners);

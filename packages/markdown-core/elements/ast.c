@@ -2980,16 +2980,17 @@ static uint32_t reopen_offset(const markdown_core_edit *edit, size_t level) {
  * record, which gives it its id, and its new children against those of its
  * old ones that go. Each lets go the children past those it keeps, and its
  * relations other than its children, and the children it keeps but the
- * next of the chain, are its FINAL prefix, the last of which ends where its
- * runs say, written in its place, as the reading's publish reads it (THE
- * FINAL PREFIX). Its own place starts where its runs do, which the reading
- * reads. `anchor` is where the first's runs are measured from, and
- * `*root_last` the last of the root's records, plus one, or 0. False when
- * the records could not grow. */
-static bool reopen_chain(markdown_core_tail_records *records, const markdown_core_edit *edit, uint32_t anchor,
-                         uint32_t *root_last) {
+ * next of the chain are its FINAL prefix, of which only the last is
+ * marked, as the walk finds the prefix's end from its last (THE FINAL
+ * PREFIX); it ends where the edit's `places` say, written in its place. The
+ * block starts where they say too, and the next of the chain, which the
+ * reading reads, and each child that goes, are measured by their extents
+ * from where the child before ends: nothing walks the children the block
+ * keeps. `*root_last` is the last of the root's records, plus one, or 0.
+ * False when the records could not grow. */
+static bool reopen_chain(markdown_core_tail_records *records, const markdown_core_edit *edit, uint32_t *root_last) {
     markdown_core_node *block = edit->chain[0];
-    markdown_core_place window = runs_window(block, anchor);
+    markdown_core_place window = {edit->places[0].start, edit->places[0].start + block->extent.span};
     if (!reopen_record(records, NULL, block->id, block->kind, window, 1, 1, root_last)) {
         return false;
     }
@@ -3013,26 +3014,26 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
                 }
                 continue;
             }
-            /* The children, measured from where the block starts, one after
-             * another: the next block of the chain is recorded first, and
-             * the children that go after it. */
             assert(!relation.continues && relation.items == block->children);
             const uint32_t field = cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
-            uint32_t at = window.start;
-            for (uint32_t i = 0; i < block->child_count; i++) {
+            uint32_t at = edit->places[level].prior;
+            if (final) {
+                markdown_core_node *child = block->children[final - 1];
+                child->flags |= MARKDOWN_CORE_NODE__FINAL;
+                child->place.end = at;
+            }
+            for (uint32_t i = final; i < block->child_count; i++) {
                 markdown_core_node *child = block->children[i];
-                const markdown_core_place place = runs_window(child, at);
+                const uint32_t start = (uint32_t)((int64_t)at + child->extent.lead);
+                const markdown_core_place place = {start, start + child->extent.span};
+                assert(place.start == runs_window(child, at).start && place.end == runs_window(child, at).end);
                 if (i >= kept) {
                     edit->backs[offset + i - kept] =
                         (markdown_core_back_child){child, (uint32_t)level, at, place.start, place.end};
                 }
                 at = place.end;
-                if (i < final) {
-                    child->flags |= MARKDOWN_CORE_NODE__FINAL;
-                    if (i + 1 == final) {
-                        child->place.end = place.end;
-                    }
-                } else if (i == final && deeper) {
+                if (i == final && deeper) {
+                    assert(place.start == edit->places[level + 1].start);
                     if (!reopen_record(records, NULL, child->id, child->kind, place, field, owner, &last)) {
                         return false;
                     }
@@ -3101,14 +3102,15 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     uint32_t last = 0;
     ok = !metadata || reopen_record(records, metadata, metadata->id, metadata->kind, metadata->place, 0, 1, &last);
     if (ok && edit->depth) {
-        /* The first of the chain's runs are measured from where the child
-         * before it ends, which is where it ends less their width. */
+        /* The child before the chain's ends where the chain's lead is
+         * measured from. */
         markdown_core_node *first = root->children[child - 1];
-        const uint32_t anchor = edit->prior - runs_window(first, 0).end;
+        const uint32_t anchor = (uint32_t)((int64_t)edit->places[0].start - first->extent.lead);
+        assert(anchor == edit->prior - runs_window(first, 0).end);
         if (child > 1) {
             root->children[child - 2]->place.end = anchor;
         }
-        ok = reopen_chain(records, edit, anchor, &last);
+        ok = reopen_chain(records, edit, &last);
     }
     /* The old children are recorded as the reading passes them: those it
      * takes back are the root's again, and need none (record_tail). */
