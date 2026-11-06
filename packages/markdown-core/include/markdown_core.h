@@ -491,6 +491,15 @@ MARKDOWN_CORE_API void markdown_core_session_text(const markdown_core_session *s
  * append, flush, edit or close, so a caller that reads the text after each
  * step copies nothing. */
 MARKDOWN_CORE_API markdown_core_string markdown_core_session_source(const markdown_core_session *session);
+/** How many lines the flushed session's text has, counting the empty line
+ * after a last line ending; 0 before the flush. */
+MARKDOWN_CORE_API size_t markdown_core_session_lines(const markdown_core_session *session);
+/** Line `line` of the flushed session's text, counted from 1, lent without
+ * its line ending as markdown_core_session_source lends the text, in
+ * constant time. MARKDOWN_CORE_SESSION_STREAMING before the flush, and
+ * MARKDOWN_CORE_OUT_OF_BOUNDS for a line the text does not have. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_line(const markdown_core_session *session, size_t line,
+                                                                  markdown_core_string *text);
 /** Destroys the session: its text, its parse state, its documents and its
  * context go with it, and nothing it lent may be read afterwards. A session
  * may be closed at any point of its life, flushed or not. */

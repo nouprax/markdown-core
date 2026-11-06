@@ -1867,6 +1867,9 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
 bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
                                          const size_t ends[3], size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
+/* How many lines the input has, the empty one after a last line ending
+ * counted, which markdown_core_parser_line_span answers for. */
+size_t markdown_core_parser_line_count(const markdown_core_parser *parser);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the
  * headings that settled, and the completion queue is completed with a

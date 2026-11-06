@@ -248,11 +248,10 @@ markdown_core_lsp_status markdown_core_lsp_update(markdown_core_lsp_server *serv
         }
     }
     for (size_t i = 0; i < count; i++) {
-        markdown_core_string text = markdown_core_session_source(held->session);
         size_t start, end;
         markdown_core_position from, to;
-        lsp_text_locate(text, edits[i].scope.start, server->unit, &start, &from);
-        lsp_text_locate(text, edits[i].scope.end, server->unit, &end, &to);
+        lsp_text_locate(held->session, edits[i].scope.start, server->unit, &start, &from);
+        lsp_text_locate(held->session, edits[i].scope.end, server->unit, &end, &to);
         const markdown_core_document *document;
         if (markdown_core_session_edit(held->session, from, to, edits[i].text, edits[i].size, &document) !=
             MARKDOWN_CORE_OK) {
@@ -293,7 +292,7 @@ markdown_core_lsp_status markdown_core_lsp_complete(markdown_core_lsp_server *se
     }
     size_t offset;
     markdown_core_position cursor;
-    lsp_text_locate(markdown_core_session_source(held->session), position, server->unit, &offset, &cursor);
+    lsp_text_locate(held->session, position, server->unit, &offset, &cursor);
     /* The providers of section 5 read the session's context there; until
      * they land, every slot has no candidates. */
     if (markdown_core_session_locate(held->session, cursor) != MARKDOWN_CORE_OK) {

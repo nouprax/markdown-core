@@ -475,7 +475,7 @@ static void sync_case(prng_state *prng, markdown_core_text_unit unit, size_t ind
             markdown_core_lsp_position position = pick_position(prng, &text);
             markdown_core_position cursor, model_cursor;
             size_t offset;
-            lsp_text_locate(held, position, unit, &offset, &cursor);
+            lsp_text_locate(session, position, unit, &offset, &cursor);
             size_t at = model_locate(&text, position, unit, &model_cursor);
             size_t model_offset = model_bytes(text.scalars, at, want);
             markdown_core_context *context;
