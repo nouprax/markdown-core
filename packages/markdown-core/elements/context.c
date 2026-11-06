@@ -697,7 +697,7 @@ static bool take_blocks(markdown_core_context *context, const context_query *que
     size_t from = SIZE_MAX, end = 0;
     for (size_t i = 0; i < sink->block_count; i++) {
         const markdown_core_context_block *block = &sink->blocks[i];
-        const size_t place = sink->base + block->start;
+        const size_t place = block->start;
         size_t start = place < query->cursor ? place : query->cursor;
         if (start < from || start > end) {
             from = start;
@@ -1643,17 +1643,16 @@ static bool take_envelope(markdown_core_context *context, const context_query *q
 }
 
 /* THE PREFIX FROM A REST POINT. The parse of the text before the cursor
- * reports only what is open where the text ends, all of it in the root's
- * child that holds the cursor's line, so it may start at a rest point of
- * the root before that line, the locus's `from` (session.c): nothing
- * before it reads past it, so the blocks it reads are the ones a parse
- * from the text's start reads, and the labels come from the whole document
- * either way. It reads the text from there as a text that starts inside a
- * document, which no envelope opens, and what it reports is measured from
- * there. What the query then asks of the document is about the bytes from
- * there through the cursor's line, so it reads the lines and the root's
- * children of the locus only, and its cost keeps to them, however long the
- * document is. */
+ * reports only what is open where the text ends, so a session reads it
+ * from the rest point an edit of the cursor's line reads from, with the
+ * edit's own reading, which it then puts back (session.c and blocks.c,
+ * THE LOOK): nothing before the rest point reads past it, so what the
+ * reading reports is what a parse from the text's start reports, and the
+ * labels come from the whole document either way. What the query then
+ * asks of the document is about the bytes from a rest point of the root
+ * through the cursor's line, so it reads the lines and the root's children
+ * of the locus only, and its cost keeps to them, however long the document
+ * is. Without a locus, the text before the cursor is parsed whole. */
 static markdown_core_status context_at(const markdown_core_document *document, const uint8_t *source, size_t length,
                                        markdown_core_position position, const markdown_core_locus *locus,
                                        markdown_core_context **context) {
@@ -1683,31 +1682,15 @@ static markdown_core_status context_at(const markdown_core_document *document, c
         markdown_core_free(owned);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    size_t from = locus ? locus->from : 0;
-    assert(from <= query.cursor);
-    markdown_core_context_sink sink = {
-        .source = source + from, .length = query.cursor - from, .base = from, .outer = locus ? locus->roster : NULL};
+    markdown_core_context_sink sink = {.source = source, .length = query.cursor};
     markdown_core_document *before = NULL;
     markdown_core_context *made = markdown_core_alloc(1, sizeof(*made));
     bool inside = false;
     markdown_core_status status =
         made && take_envelope(made, &query, &inside) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK && !inside) {
-        status = markdown_core_parse_before_cursor(&sink, document->unit, document, &before);
-    }
-    if (status == MARKDOWN_CORE_OK && from) {
-        for (size_t i = 0; i < sink.opener_count; i++) {
-            sink.openers[i].place.start += (uint32_t)from;
-            sink.openers[i].place.end += (uint32_t)from;
-        }
-        for (size_t i = 0; i < sink.field_count; i++) {
-            markdown_core_context_field *field = &sink.fields[i];
-            field->start += (uint32_t)from;
-            for (uint32_t k = 0; k < field->prefix_count; k++) {
-                field->prefix[k].start += (uint32_t)from;
-                field->prefix[k].end += (uint32_t)from;
-            }
-        }
+        status = locus ? locus->look(locus->owner, &sink)
+                       : markdown_core_parse_before_cursor(&sink, document->unit, document, &before);
     }
     if (status == MARKDOWN_CORE_OK && !inside &&
         (sink.failed || !take_blocks(made, &query, &sink) || !take_inlines(made, &query, &sink) ||

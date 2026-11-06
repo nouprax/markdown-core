@@ -90,8 +90,7 @@ bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, c
 
 /* Parses `sink`'s text, the text before a cursor, as a fresh parse whose
  * parser reports what it leaves open to `sink`, with the labels `whole`
- * defines declared (session.c). A sink whose `base` is not zero reads text
- * that starts inside the document, at a rest point. */
+ * defines declared (session.c). */
 struct markdown_core_context_sink;
 markdown_core_status markdown_core_parse_before_cursor(struct markdown_core_context_sink *sink,
                                                        markdown_core_text_unit unit,
@@ -211,16 +210,20 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
 
-/* THE LOCUS OF A LOCATE (context.c, THE PREFIX FROM A REST POINT): `from`,
- * where the line of a rest point of the document's root at or before the
- * cursor's line starts; `lines`, the lines from that one through the one
- * after the cursor's; `children`, the root's children that hold them; and
- * `roster`, the session's, which the labels are looked up in. */
+/* THE LOCUS OF A LOCATE (context.c, THE PREFIX FROM A REST POINT):
+ * `lines`, the lines from a rest point of the document's root at or before
+ * the cursor's line through the one after the cursor's; `children`, the
+ * root's children that hold them; and the reading of the text before the
+ * cursor. */
+struct markdown_core_context_sink;
 typedef struct markdown_core_locus {
-    size_t from;
     markdown_core_source_lines lines;
     markdown_core_window children;
-    struct markdown_core_roster *roster;
+    /* The session's reading of the text before the cursor for `sink`, from
+     * the rest point an edit of the cursor's line reads from (session.c,
+     * THE LOOK). */
+    markdown_core_status (*look)(void *owner, struct markdown_core_context_sink *sink);
+    void *owner;
 } markdown_core_locus;
 
 /* A session's context state (context.c, THE SESSION'S CONTEXT): a new

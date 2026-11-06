@@ -89,15 +89,6 @@ typedef struct markdown_core_context_block {
 typedef struct markdown_core_context_sink {
     const unsigned char *source;
     size_t length;
-    /* Where the parse's text starts in the document's: the places it
-     * lists are its own text's, and the blocks' measure from there. A text
-     * that starts inside the document is one no envelope opens. */
-    size_t base;
-    /* The roster of the whole document, a session's, or NULL: a lookup
-     * that finds no declaration in the parse's own goes on to it, so an
-     * occurrence resolves as it does in the document (blocks.c, A LOOKUP
-     * IN THE WHOLE DOCUMENT). */
-    struct markdown_core_roster *outer;
     /* The inline root whose run reports, which reached the end, or NULL,
      * and, once a report needs them, its source places that read content
      * with the content bytes before each, so a lookup is a binary search. */
