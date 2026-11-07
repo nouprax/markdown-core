@@ -49,7 +49,6 @@ All integers are little-endian and unaligned.
 | `u8`, `u32`, `u64`, `i32`, `i64` | fixed width |
 | `Bool` | `u8`, 0 or 1 |
 | `Int` | `i64` |
-| `Double` | IEEE 754 binary64 bits |
 | `String` | `u32` byte length, then that many UTF-8 bytes |
 | an enum `E` | `u8` index into `enums.E`, from 0 |
 
@@ -150,8 +149,8 @@ the source, as the facade's scope query does; extents take no part.
 A reader validates the *encoding*: the header, lengths, counts against the
 bytes and the stack, kinds against the fields that take them, `Bool` and enum
 and branch ranges, definition table ids, reference label ids, and integers that
-its own model cannot represent. The semantic invariants of the AST (heading levels, table spans,
-list facts) are the parser's to keep and the C suites' to test; a reader does
+its own model cannot represent. The semantic invariants of the AST (heading levels, table
+widths, list facts) are the parser's to keep and the C suites' to test; a reader does
 not re-derive them.
 
 ## Queries

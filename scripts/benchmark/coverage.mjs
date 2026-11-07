@@ -64,7 +64,7 @@ export const featureOwners = {
     specimens: { elements: ["SPECIMEN"], certificates: ["specimen-reset"] },
     strikethrough: { elements: ["STRIKETHROUGH"], certificates: ["run-strike"] },
     "superscript-and-subscript": { elements: ["SUPERSCRIPT", "SUBSCRIPT"], certificates: ["run-super", "run-sub"] },
-    tables: { elements: ["TABLE"], certificates: ["grid-cell", "simple-matrix", "headless-matrix", "sparse-grid"] },
+    tables: { elements: ["TABLE"], certificates: [] },
     "task-lists": { elements: [], certificates: ["task-value"] },
     "thematic-breaks": { elements: ["THEMATIC_BREAK"], certificates: [] },
     topics: { elements: ["TOPIC"], certificates: [] }

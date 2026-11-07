@@ -143,7 +143,7 @@ private struct LineVisitor: MarkupVisitor {
             "Table",
             node,
             fields: ["columns=[\(dump(columns: node.columns))]"],
-            children: node.head.count + node.content.count + node.foot.count
+            children: node.head.count + node.content.count
         )
     }
 
@@ -268,24 +268,12 @@ private struct LineVisitor: MarkupVisitor {
         line("Topic", node, fields: ["name=\(dump(escaped: node.name))"])
     }
 
-    mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) {
-        line("TableCaption", node, children: node.content.count)
-    }
-
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
         line("TableRow", node, children: node.cells.count)
     }
 
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) {
-        line(
-            "TableCell",
-            node,
-            fields: [
-                "rowspan=\(node.rowspan)",
-                "colspan=\(node.colspan)",
-            ],
-            children: node.content.count
-        )
+        line("TableCell", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) {
@@ -341,7 +329,7 @@ private struct LineVisitor: MarkupVisitor {
 }
 
 private func dump(columns value: [TableColumn]) -> String {
-    value.map { "\($0.flow.rawValue):\($0.relative.map(dump(decimal:)) ?? "null")" }.joined(separator: ",")
+    value.map(\.flow.rawValue).joined(separator: ",")
 }
 
 // Canonical spellings for values in the debug dump.
@@ -416,31 +404,6 @@ private func dump(escaped value: String) -> String {
         }
     }
     return result + "\""
-}
-
-/// Normalize the runtime's shortest round-trip digits to the dump's decimal
-/// notation in [1e-6, 1e21), scientific notation outside that interval.
-private func dump(decimal value: Double) -> String {
-    let parts = String(value).lowercased().split(separator: "e")
-    let mantissa = parts[0].split(separator: ".")
-    var digits = String(mantissa.joined())
-    // swift-format-ignore: NeverForceUnwrap
-    let exponent = parts.count == 2 ? Int(parts[1])! : 0
-    var point = mantissa[0].count + exponent
-    while digits.first == "0" {
-        digits.removeFirst()
-        point -= 1
-    }
-    while digits.last == "0" { digits.removeLast() }
-    if point <= -6 || point > 21 {
-        let tail = digits.dropFirst()
-        return String(digits.prefix(1)) + (tail.isEmpty ? "" : "." + tail) + "e" + (point > 0 ? "+" : "")
-            + String(point - 1)
-    }
-    if point <= 0 { return "0." + String(repeating: "0", count: -point) + digits }
-    if point >= digits.count { return digits + String(repeating: "0", count: point - digits.count) }
-    let index = digits.index(digits.startIndex, offsetBy: point)
-    return String(digits[..<index]) + "." + digits[index...]
 }
 
 private func dump(attributes value: Attributes) -> String {

@@ -63,7 +63,6 @@ export const rejectedConstructs = Object.freeze({
     "inline-directive": Object.freeze([]),
     "attribute-block": Object.freeze([]),
     superscript: Object.freeze([]),
-    "grid-table": Object.freeze([]),
     citation: Object.freeze([]),
     "bracketed-span": Object.freeze([]),
     "image-dimensions": Object.freeze([]),
@@ -505,17 +504,6 @@ pair(
     inline("[", p, " @", k, ", ", v, "]"),
     inline("[", p, "](/", k, ' "', v, '")')
 );
-for (const id of ["leading-caption", "trailing-caption"]) {
-    const table = ["| ", k, " |\n| --- |\n| ", v, " |\n\n"];
-    pair(
-        id,
-        "tables",
-        ["captions", id],
-        id === "leading-caption" ? ["Table: ", p, "\n", ...table] : [...table, ": ", p, "\n\n"],
-        id === "leading-caption" ? [p, "\n\n", ...table] : [...table, p, "\n\n"],
-        { gfm: true }
-    );
-}
 pair(
     "mixed-definitions",
     "definition-lists",
@@ -712,7 +700,6 @@ for (const [id, feature, rejects, parts, options] of [
     ],
     ["list-limit", "lists", "ordered-list-marker", ["1234567890. ", b, "\n\n"], {}],
     ["footnote", "footnotes", "footnote-reference", inline("[^", k, "]"), { gfm: true }],
-    ["grid", "tables", "grid-table", ["+---+\n|", k, "\n+---+\n\n"], { control: ["q---q\n|", k, "\nq---q\n\n"] }],
     ["citation", "citations", "citation", inline("@-", k), { control: inline("q-", k) }],
     ["span", "bracketed-spans", "bracketed-span", inline("[", b, "]{"), { control: inline("[", b, "]q") }],
     ["topic", "topics", "topic", inline("#", k, "#"), { control: inline("q", k, "q") }]

@@ -116,7 +116,7 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
  * the previous node of its relation, or to the owner's start, and its first
  * run to where the source of that node ends, or the owner's begins. A
  * relation that `continues` goes on from the one before it, as a table's
- * content and foot rows go on from its head rows: its first node is measured
+ * body rows go on from its head rows: its first node is measured
  * from the last of the one before, or from where that one is. */
 typedef struct markdown_core_relation {
     const char *group;

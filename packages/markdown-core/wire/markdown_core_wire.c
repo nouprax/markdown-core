@@ -95,13 +95,6 @@ static void put_i32(wire_buffer *buffer, int32_t value) { put_u32(buffer, (uint3
 /* Int. */
 static void put_int(wire_buffer *buffer, int64_t value) { put_u64(buffer, (uint64_t)value); }
 
-/* Double. */
-static void put_double(wire_buffer *buffer, double value) {
-    uint64_t bits;
-    memcpy(&bits, &value, sizeof(bits));
-    put_u64(buffer, bits);
-}
-
 static void put_bool(wire_buffer *buffer, bool value) { put_u8(buffer, value ? 1 : 0); }
 
 /* A u32 count, the encoding of `[T]`'s length and of a node-valued field. */
@@ -328,11 +321,10 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
         edges[1] = nodes_edge(children);
         return 2;
     case MARKDOWN_CORE_KIND_TABLE:
-        /* head, content and foot are one sequence of rows the record
+        /* head and content are one sequence of rows the record
          * partitions. */
-        edges[0] = field_edge(node, markdown_core_node_table_caption);
-        edges[1] = nodes_edge(children);
-        return 2;
+        edges[0] = nodes_edge(children);
+        return 1;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
         edges[0] = field_edge(node, markdown_core_node_directive_label);
         edges[1] = nodes_edge(children);
@@ -384,7 +376,6 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_HEADING:
     case MARKDOWN_CORE_KIND_LIST:
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
@@ -457,24 +448,18 @@ static void put_list_fields(wire_buffer *buffer, const markdown_core_node *node)
     put_bool(buffer, tight);
 }
 
-static void put_table_fields(wire_buffer *buffer, const markdown_core_node *node, const wire_edge *edges) {
-    size_t columns, head, content, foot, index;
-    markdown_core_node_table_properties(node, &columns, &head, &content, &foot);
-    put_node_presence(buffer, &edges[0]);
+static void put_table_fields(wire_buffer *buffer, const markdown_core_node *node) {
+    size_t columns, head, content, index;
+    markdown_core_node_table_properties(node, &columns, &head, &content);
     put_count(buffer, columns);
     for (index = 0; index < columns && !buffer->failed; ++index) {
-        /* TableColumn { flow: Flow, relative: Double? }. */
+        /* TableColumn { flow: Flow }. */
         markdown_core_table_column column;
         markdown_core_node_table_column_at(node, index, &column);
         put_index(buffer, column.flow, MARKDOWN_CORE_FLOW_NONE);
-        put_bool(buffer, column.relative.has_value);
-        if (column.relative.has_value) {
-            put_double(buffer, column.relative.value);
-        }
     }
     put_count(buffer, head);
     put_count(buffer, content);
-    put_count(buffer, foot);
 }
 
 /* The FootnoteTarget branches, in the contract's order. */
@@ -589,16 +574,8 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         break;
     }
     case MARKDOWN_CORE_KIND_TABLE:
-        put_table_fields(buffer, node, edges);
+        put_table_fields(buffer, node);
         break;
-    case MARKDOWN_CORE_KIND_TABLE_CELL: {
-        int64_t rowspan, colspan;
-        markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
-        put_int(buffer, rowspan);
-        put_int(buffer, colspan);
-        put_nodes_count(buffer, &edges[0]);
-        break;
-    }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
         markdown_core_node_directive_properties(node, &first);
@@ -665,8 +642,8 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_NONE:
         break;
     case MARKDOWN_CORE_KIND_PARAGRAPH:
-    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
     case MARKDOWN_CORE_KIND_TABLE_ROW:
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
     case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
     case MARKDOWN_CORE_KIND_EMPHASIS:
     case MARKDOWN_CORE_KIND_STRONG:

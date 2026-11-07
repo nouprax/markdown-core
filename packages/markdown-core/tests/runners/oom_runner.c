@@ -259,7 +259,7 @@ static const char OOM_TABLE_CORPUS[] =
     "| h |\n| - |\n| b |\n: cap\n:::note[bad\n%%\nunclosed\n";
 
 static const oom_case OOM_CASES[] = {
-    {"table candidates and mapped owned inputs", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
+    {"pipe tables beside the bytes of other table syntax", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
     {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
      sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
     {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},

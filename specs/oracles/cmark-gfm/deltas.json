@@ -85,8 +85,8 @@
         {
             "id": "table-row-groups",
             "kind": "ast-shape",
-            "summary": "The canonical table stores head/content/foot groups and positive cell spans; pipe tables have one head row and unit spans.",
-            "handling": "The oracle projection groups its first row as TableHead, its remaining rows as TableBody, and adds an empty TableFoot; cells gain rowspan=1 and colspan=1. Native table topology and spans are compared unchanged.",
+            "summary": "The canonical table stores its rows in a head group and a body group; the oracle states its rows as one list.",
+            "handling": "The oracle projection groups its first row as TableHead and its remaining rows as TableBody. Native table topology is compared unchanged.",
             "evidence": "docs/specs/dialect/tables.md; canonical table fixtures and existing pipe-table oracle corpus."
         },
         {

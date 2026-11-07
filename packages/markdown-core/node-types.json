@@ -78,7 +78,7 @@
         {
             "name": "TABLE_CELL",
             "kind": "TableCell",
-            "record": "markdown_core_table_cell",
+            "record": null,
             "structure": "TABLE"
         },
         {
@@ -127,12 +127,6 @@
             "record": "markdown_core_definition_body_value",
             "structure": "DEFINITION_LIST",
             "note": "A private collection root, not a public Markup kind."
-        },
-        {
-            "name": "TABLE_CAPTION",
-            "kind": "TableCaption",
-            "record": null,
-            "structure": "TABLE"
         },
         {
             "name": "METADATA",

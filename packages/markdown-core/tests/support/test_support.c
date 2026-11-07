@@ -401,8 +401,8 @@ static ts_ast_range ts_source_window(const markdown_core_node *node, int64_t bas
 
 /* A node's relations in canonical field order, read through the public
  * facade alone: each relation's first node is measured from where the
- * owner's source starts, at `start`. A table's rows, in head, content and
- * foot order, are one relation. */
+ * owner's source starts, at `start`. A table's rows, in head then content
+ * order, are one relation. */
 static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *node, int64_t start) {
     ts_walk_stack relations = {0};
     size_t relation = 0;
@@ -412,10 +412,6 @@ static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *no
     switch (markdown_core_node_get_kind(node)) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
         TS_RELATION(ts_field(node, markdown_core_node_document_metadata));
-        TS_CHAIN(children);
-        break;
-    case MARKDOWN_CORE_KIND_TABLE:
-        TS_RELATION(ts_field(node, markdown_core_node_table_caption));
         TS_CHAIN(children);
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:

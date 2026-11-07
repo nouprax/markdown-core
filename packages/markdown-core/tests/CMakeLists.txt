@@ -585,12 +585,6 @@ markdown_core_add_test(
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/definition-lists.md"
     --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/table-syntax.md"
-    --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/table-sparse.md"
-    --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/table-mapped.md"
-    --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/citations.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/specimens.md"

@@ -47,13 +47,12 @@ public enum class NodeKind(
     SUBSCRIPT(36, "Subscript"),
     DEFINITION_LIST(37, "DefinitionList"),
     DEFINITION(38, "Definition"),
-    TABLE_CAPTION(39, "TableCaption"),
-    CITATION(40, "Citation"),
-    FOOTNOTE(41, "Footnote"),
-    SPECIMEN(42, "Specimen"),
-    METADATA(43, "Metadata"),
-    REFERENCE(44, "Reference"),
-    TOPIC(45, "Topic"),
+    CITATION(39, "Citation"),
+    FOOTNOTE(40, "Footnote"),
+    SPECIMEN(41, "Specimen"),
+    METADATA(42, "Metadata"),
+    REFERENCE(43, "Reference"),
+    TOPIC(44, "Topic"),
     ;
 
     /** The kind's name in the canonical AST, as C's `markdown_core_node_kind_name` answers it. */

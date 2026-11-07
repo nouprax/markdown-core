@@ -192,18 +192,17 @@ Text directives can appear inside table cells.
 | :badge[beta] |
 .
 Document scope=1:1..3:16 anchor=null attributes={} children=1
-└── Table scope=1:1..3:16 anchor=null attributes={} columns=[none:null] children=2
+└── Table scope=1:1..3:16 anchor=null attributes={} columns=[none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:10 anchor=null attributes={} children=1
-    │       └── TableCell scope=1:2..1:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:2..1:9 anchor=null attributes={} children=1
     │           └── Text scope=1:3..1:8 anchor=null attributes={} literal="status" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:16 anchor=null attributes={} children=1
-    │       └── TableCell scope=3:2..3:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Directive scope=3:3..3:14 anchor=null attributes={} name="badge" children=0
-    │               └── DirectiveLabel scope=3:9..3:14 anchor=null attributes={} children=1
-    │                   └── Text scope=3:10..3:13 anchor=null attributes={} literal="beta" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:16 anchor=null attributes={} children=1
+            └── TableCell scope=3:2..3:15 anchor=null attributes={} children=1
+                └── Directive scope=3:3..3:14 anchor=null attributes={} name="badge" children=0
+                    └── DirectiveLabel scope=3:9..3:14 anchor=null attributes={} children=1
+                        └── Text scope=3:10..3:13 anchor=null attributes={} literal="beta" children=0
 ````````````````````````````````
 
 A text directive with only a name is not recognized when it is followed by a

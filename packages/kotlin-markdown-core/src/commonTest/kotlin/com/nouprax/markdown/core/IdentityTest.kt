@@ -17,7 +17,7 @@ class IdentityTest {
     @Test
     fun aFreshParseNumbersEveryOwnedNodeFromOneInWalkOrder() {
         // Unique across every owned relation -- content, labels, titles,
-        // captions, terms, bodies, affixes, inline notes, metadata -- because
+        // terms, bodies, affixes, inline notes, metadata -- because
         // the walk visits every one of them.
         for (testCase in canonicalAstCases) {
             val ids = nodes(Document.parse(testCase.source)).map { it.id.value }
@@ -301,27 +301,25 @@ class ScopeTest {
     }
 
     @Test
-    fun tableRowsAreOneRelationInHeadContentAndFootOrder() {
-        val source =
-            "+---+---+\n| h     |\n+===+===+\n| a | b |\n+---+   +\n| c | d |\n+===+===+\n| f     |\n+===+===+\n"
+    fun tableRowsAreOneRelationInHeadThenContentOrder() {
+        val source = "| h |\n| - |\n| a |\n| b |\n"
         val document = Document.parse(source)
         val table = assertIs<Table>(document.content.single())
         val head = table.head.single()
-        val body = table.content.first()
-        val foot = table.foot.single()
-        // The first content row leads from the end of the last head row, and
-        // the first foot row from the end of the last content row, never from
-        // the table's start: its extent and its first run alike.
-        assertEquals(listOf(Run(10, 9u)), head.runs)
-        assertEquals(Extent(11, 19u), body.extent)
-        assertEquals(listOf(Run(11, 19u)), body.runs)
-        assertEquals(Extent(11, 9u), foot.extent)
-        assertEquals(listOf(Run(11, 9u)), foot.runs)
-        assertEquals(listOf(Scope(Position(4, 1), Position(5, 9))), document.scope(body, source))
-        assertEquals(listOf(Scope(Position(8, 1), Position(8, 9))), document.scope(foot, source))
-        val cell = foot.cells.single()
-        val text = assertIs<Paragraph>(cell.content.single()).content.single()
-        assertSame(text, document.node(Position(8, 3), source))
+        val (body, last) = table.content
+        // The first content row leads from the end of the head row, past the
+        // delimiter row, never from the table's start: its extent and its
+        // first run alike.
+        assertEquals(listOf(Run(0, 5u)), head.runs)
+        assertEquals(Extent(7, 5u), body.extent)
+        assertEquals(listOf(Run(7, 5u)), body.runs)
+        assertEquals(Extent(1, 5u), last.extent)
+        assertEquals(listOf(Run(1, 5u)), last.runs)
+        assertEquals(listOf(Scope(Position(3, 1), Position(3, 5))), document.scope(body, source))
+        assertEquals(listOf(Scope(Position(4, 1), Position(4, 5))), document.scope(last, source))
+        val cell = last.cells.single()
+        val text = cell.content.single()
+        assertSame(text, document.node(Position(4, 3), source))
     }
 
     @Test

@@ -29,33 +29,6 @@
             "coreDigest": "fec4c013b06bcdcc42317020eac925f388e44b681191716d80de15100fdf017c"
         },
         {
-            "id": "multiline-table",
-            "item": "P11c",
-            "status": "projection",
-            "reason": "The table syntax is implemented. The normative relative field stores each source interior width divided by their sum. Pandoc stores widths including separators against its default page width. Both original values remain compared; this is a documented semantic width difference, not a missing producer or an AST-only equivalence.",
-            "inputDigest": "31017a429fd3f7d01127eed33c83565196bf0250ebf8abd659361caa8e193fee",
-            "oracleDigest": "3384260a4c3bcf7f52c053e0465818204d94d25370a0789124b3ce893d79e990",
-            "coreDigest": "2a4108c17374bd66898dd4fa510dce311311a194e606da8881fe65c0f69a5775"
-        },
-        {
-            "id": "grid-table-block-cells",
-            "item": "P11d",
-            "status": "projection",
-            "reason": "The table syntax is implemented. The normative relative field stores each source interior width divided by their sum. Pandoc stores widths including separators against its default page width. Both original values remain compared; this is a documented semantic width difference, not a missing producer or an AST-only equivalence.",
-            "inputDigest": "e3f2adfd6c2b97d1fce4b953d128724261d28dec1a7c1103f26235a255b9476f",
-            "oracleDigest": "14847ca290a00b31b87b6957a93e0e04641a27c3b36b799c4f7570caf81d8a1e",
-            "coreDigest": "07519f22d0d656bf24f108840328da3aa7ff6eb70d15a77e84e9d3093ddfbe1c"
-        },
-        {
-            "id": "grid-table-row-and-column-spans",
-            "item": "P11d",
-            "status": "projection",
-            "reason": "The table syntax is implemented. The normative relative field stores each source interior width divided by their sum. Pandoc stores widths including separators against its default page width. Both original values remain compared; this is a documented semantic width difference, not a missing producer or an AST-only equivalence.",
-            "inputDigest": "206bef115bc4526effee567d071147b6786467c2ad1a80e052325d5794497eea",
-            "oracleDigest": "d898a2d3b9f064c28daf28c63b3b2a1c8971cbb8b67362b311416f3b4dc6530b",
-            "coreDigest": "bf7641d1ae31c7a551ea048f1ce277c1e9d3cbd701792b4fb7e8f10beddc56e5"
-        },
-        {
             "id": "example-lists-and-reference",
             "item": "P9b",
             "status": "projection",

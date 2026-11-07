@@ -140,7 +140,7 @@ test("selecting a grammar input includes its counterpart and complete boundary h
         const paired = ["insertion-strong-paired-common", "insertion-strong-paired-dialect"];
         for (const name of paired) assert.deepEqual(Object.keys(documents(name)).sort(), paired);
         const boundary = ["boundary-common", "boundary-dialect", "host-common", "host-dialect"].map(
-            (part) => `grid-cell-${part}`
+            (part) => `image-dimensions-${part}`
         );
         for (const name of boundary) {
             const units = documents(name);

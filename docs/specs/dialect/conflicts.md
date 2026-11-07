@@ -28,7 +28,6 @@ differences and explains overlapping syntax.
 | Raw HTML | Block content is opaque, but text between separate inline tags still parses as Markdown. |
 | Ordered lists | The first marker always sets the start; nested ordered lists must start at one. |
 | Footnote duplicates | All definitions survive; references select the first normalized ID. |
-| Grid tables | Malformed geometry rejects the complete candidate instead of dropping source or emitting a partial grid. |
 | Presentation | No smart punctuation, emoji shortcode expansion, code execution, math rendering, resource loading, or citation formatting. |
 
 Properties are not general YAML. Cross links do not resolve vault paths.
@@ -46,7 +45,7 @@ block start, the effective precedence is:
 3. Quotes/callouts, list and specimen markers with optional task prefixes.
 4. Leaf, named-container, and nameless-container directives.
 5. ATX headings, then Setext headings.
-6. Table candidates, including captions.
+6. Table candidates.
 7. Thematic breaks, then footnote and link reference definitions.
 8. Definition lists, standalone block identifiers, then paragraphs.
 

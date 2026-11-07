@@ -30,16 +30,15 @@ Formula expressions parse as inline content inside table cells.
 | $x+y$ |
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:null] children=2
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:8 anchor=null attributes={} children=1
-    │       └── TableCell scope=1:2..1:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:2..1:7 anchor=null attributes={} children=1
     │           └── Text scope=1:3..1:6 anchor=null attributes={} literal="expr" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=1
-    │       └── TableCell scope=3:2..3:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Formula scope=3:3..3:7 anchor=null attributes={} mode=embedded literal="x+y" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:9 anchor=null attributes={} children=1
+            └── TableCell scope=3:2..3:8 anchor=null attributes={} children=1
+                └── Formula scope=3:3..3:7 anchor=null attributes={} mode=embedded literal="x+y" children=0
 ````````````````````````````````
 
 GitHub's `$`...`$` form treats the backticks as formula delimiters, not as body

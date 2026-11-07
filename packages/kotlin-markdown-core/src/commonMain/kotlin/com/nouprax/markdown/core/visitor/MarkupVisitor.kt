@@ -58,11 +58,6 @@ public interface MarkupVisitor {
     ): Unit
 
     public fun visit(
-        tableCaption: TableCaption,
-        phase: MarkupVisitPhase,
-    ): Unit
-
-    public fun visit(
         tableRow: TableRow,
         phase: MarkupVisitPhase,
     ): Unit

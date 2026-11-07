@@ -6,7 +6,7 @@
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:931",
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:946",
             "input": ":n[[Target]]\n\n> [!note] [Target]\n> body\n\n^[inline [Target]]\n\n[^f]: [Target]\n\n# Target\n",
             "findings": [
                 {
@@ -21,7 +21,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:1063",
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:1078",
             "input": "# Shared\n\n^[a [declaration]{#shared}]\n\n:d[[decl]{#shared-1}]\n",
             "findings": [
                 {
@@ -60,7 +60,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-callouts.txt:757",
+            "source": "packages/markdown-core/tests/fixtures/dialect-callouts.txt:756",
             "input": "> [!Mixed]- **bold** *em* ~~strike~~ ==mark== `code` $x$ [[Note|label]] ![[Pic]] [ref] ![alt](/img) :tag[==marked==] ^[inline] [^n]\n> body [ref]\n\n[ref]: /u \"title\"\n[^n]: definition\n",
             "findings": [
                 {
@@ -99,7 +99,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:731",
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:730",
             "input": "[@a x\\ ] [\\ @a] ^[@a\\ ]^\n",
             "findings": [
                 {
@@ -513,7 +513,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:752",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:751",
             "input": "> before^[first\n> second] after\n\n- ^[list\n  continued]\n",
             "findings": [
                 {
@@ -537,7 +537,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:787",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:786",
             "input": ":a[^[first]] ^[second]\n\n:::note[^[third]]\n^[fourth]\n:::\n",
             "findings": [
                 {
@@ -579,7 +579,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:830",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:829",
             "input": "^[unclosed ^[closed]\n",
             "findings": [
                 {
@@ -594,7 +594,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:846",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:845",
             "input": "^[\n] ^[&#32;] ^[\\ ]\n",
             "findings": [
                 {
@@ -627,7 +627,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:876",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:875",
             "input": "^[[[note]]] ^[[x]]\n",
             "findings": [
                 {
@@ -651,7 +651,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:898",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:897",
             "input": "^[see http://example.com] ^[https://example.com/a?q=1] ^[ftp://example.com/a] ^[www.example.com/a]\n",
             "findings": [
                 {
@@ -693,7 +693,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:939",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:938",
             "input": "^[http://example.com/a\\]b] http://example.com/a] ^[http://example.com/a\\\\] tail\n",
             "findings": [
                 {
@@ -717,7 +717,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:967",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:966",
             "input": "^[before ^[http://example.com] after] :d[^[www.example.com]]\n",
             "findings": [
                 {
@@ -750,7 +750,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:1000",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:999",
             "input": "^^^^text^^word^^^[note]^^end^\n",
             "findings": [
                 {
@@ -761,6 +761,51 @@
                     "parentKind": "Citation",
                     "parentScope": "1:19..1:22",
                     "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:1024",
+            "input": "x ^[n]\nmore\nmore [^b]\n[^b]: y\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:3..1:6",
+                    "parentKind": "Citation",
+                    "parentScope": "1:5..1:5",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:1052",
+            "input": "^[n]\na | b\n| - | - |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:4",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:3",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:1075",
+            "input": "^[n] x\nmore\na | b\n| - | - |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:4",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:3",
+                    "closedBy": "unassigned"
                 }
             ]
         },
@@ -780,7 +825,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-insertion.txt:817",
+            "source": "packages/markdown-core/tests/fixtures/dialect-insertion.txt:816",
             "input": "> [!note] ++title++\n> ++body++\n\n:badge[++label++]\n\n^[++note++]\n",
             "findings": [
                 {
@@ -849,7 +894,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:394",
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:393",
             "input": "[^a\\ b^]{} ^[a\\ b] :d[^x^ ~y~]\n",
             "findings": [
                 {
@@ -864,7 +909,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:675",
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:674",
             "input": "^:d[^[a\\ b]]^ ~:d[^a\\ b^]~ ^[~:d[a\\ b]~]\n",
             "findings": [
                 {
@@ -888,7 +933,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:792",
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:791",
             "input": "^a[^[b c]]{}z^\n",
             "findings": [
                 {
@@ -903,7 +948,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:808",
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:807",
             "input": "^a[^[b\\ c]]{}z^\n",
             "findings": [
                 {
@@ -918,7 +963,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:878",
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:877",
             "input": "[^^]{} [^^](u) ![^^](i) :d[^^] ^[^^]\n",
             "findings": [
                 {
@@ -933,7 +978,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:84",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:81",
             "input": "| a | b |\n| - | - |\nno pipes\n| short |\n| x | y | extra |\n\n| z |\n",
             "findings": [
                 {
@@ -948,7 +993,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:264",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:254",
             "input": "| a | b | c |\n| - | - | - |\n||x|\n|x||\n|x|\n|\t|\t|\t|\n",
             "findings": [
                 {
@@ -972,183 +1017,18 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:703",
-            "input": "----------------\nLeft       Right\n------- --------\na       b\nc\n\nd       e\n----------------\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "4:1..4:1,4:10..5:1",
-                    "parentKind": "TableCell",
-                    "parentScope": "4:1..4:8,5:1..5:1",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:768",
-            "input": "+-------+-------+\n| first | - i   |\n| again +-------+\n|       | x     |\n+-------+-------+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0",
-                    "violation": "containment",
-                    "kind": "TableCell",
-                    "scope": "2:2..2:8,3:2..3:8,4:2..4:8",
-                    "parentKind": "TableRow",
-                    "parentScope": "2:1..3:17",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:7,2:18..3:0,3:3..3:7",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8,4:2..4:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:860",
-            "input": "+---+---+\n| a | b |\n| c     |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:7,2:10..3:0,3:3..3:3",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:879",
-            "input": "+---+---+\n| a     |\n| c | d |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:3,2:10..3:0,3:3..3:7",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1067",
-            "input": "+---------------+\n| | h |         |\n| |---|         |\n| | v |         |\n+---------------+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Table",
-                    "scope": "2:3..4:7",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:16,3:2..3:16,4:2..4:16",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1093",
-            "input": "-------------------------------------------------------------\n Centered   Default           Right Left\n  Header    Aligned         Aligned Aligned\n----------- ------- --------------- -------------------------\n   First    row                12.0 Example of a row that\n                                    spans multiple lines.\n\n  Second    row                 5.0 Here's another one.\n-------------------------------------------------------------\n\nTable: Here's the caption.\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:2..2:9,2:41..3:0,3:2..3:8",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:1..2:12,3:1..3:12",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.1.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:13..2:19,2:41..3:0,3:13..3:19",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:13..2:20,3:13..3:20",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.2.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:31..2:35,2:41..3:0,3:29..3:35",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:21..2:36,3:21..3:36",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.3.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:37..3:0,3:37..3:43",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:37..2:40,3:37..3:43",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.2.0.3.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "5:37..6:0,6:37..6:57",
-                    "parentKind": "TableCell",
-                    "parentScope": "5:37..5:57,6:37..6:57",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1284",
-            "input": "-----------------------------\nLeft            Right\n--------------- -------------\n  - one         b\n    - two       c\n\n-----------------------------\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "List",
-                    "scope": "4:3..5:9",
-                    "parentKind": "TableCell",
-                    "parentScope": "4:1..4:16,5:1..5:16",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.1.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "4:17..5:0,5:17..5:17",
-                    "parentKind": "TableCell",
-                    "parentScope": "4:17..4:17,5:17..5:17",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1322",
-            "input": "+------------+\n| Term       |\n| :          |\n+------------+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "DefinitionList",
-                    "scope": "2:3..3:3",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:13,3:2..3:13",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1504",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:627",
             "input": "| a | b |\n| - | - |\n:badge[short]\n| first | second | ignored |\n\n> | a | b | c |\n> | - | - | - |\n> short\n> | first | second | third | ignored |\n",
             "findings": [
+                {
+                    "nodePath": "0.0.1.0.1",
+                    "violation": "sibling-overlap",
+                    "kind": "TableCell",
+                    "scope": "3:13..3:13",
+                    "previousKind": "TableCell",
+                    "previousScope": "3:1..3:13",
+                    "closedBy": "unassigned"
+                },
                 {
                     "nodePath": "0.1.0.1.0.1",
                     "violation": "sibling-overlap",
@@ -1170,178 +1050,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1555",
-            "input": "+---+---+\n| a     |\n+   +---+\n| b | c |\n+   +   +\n| d     |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0",
-                    "violation": "containment",
-                    "kind": "TableCell",
-                    "scope": "2:2..2:8,3:2..3:8,4:2..4:8,5:2..5:8,6:2..6:8",
-                    "parentKind": "TableRow",
-                    "parentScope": "2:1..3:9",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:3,2:10..3:0,3:3..3:8,3:10..4:0,4:3..4:7,4:10..5:0,5:3..5:5,5:10..6:0,6:3..6:3",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8,4:2..4:8,5:2..5:8,6:2..6:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1858",
-            "input": "+---+---+\n| a + b |\n| cd    |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:7,2:10..3:0,3:3..3:4",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1877",
-            "input": "+---+---+\n| cd    |\n| a + b |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:4,2:10..3:0,3:3..3:7",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1896",
-            "input": "+---+---+\n| a + b |\n| c | d |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0",
-                    "violation": "containment",
-                    "kind": "TableCell",
-                    "scope": "2:2..2:4,3:2..3:4",
-                    "parentKind": "TableRow",
-                    "parentScope": "2:1..2:9",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "containment",
-                    "kind": "TableCell",
-                    "scope": "2:6..2:8,3:6..3:8",
-                    "parentKind": "TableRow",
-                    "parentScope": "2:1..2:9",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:3,2:10..3:0,3:3..3:3",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:4,3:2..3:4",
-                    "closedBy": "unassigned"
-                },
-                {
-                    "nodePath": "0.0.1.0.1.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:7..2:7,2:10..3:0,3:7..3:7",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:6..2:8,3:6..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1921",
-            "input": "+---+---+\n| a + b |\n| cd    |\n+---+---+\n| e | f |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:7,2:10..3:0,3:3..3:4",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1949",
-            "input": "+---+---+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+---+---+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.0.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "2:3..2:7,2:10..3:0,3:3..3:4",
-                    "parentKind": "TableCell",
-                    "parentScope": "2:2..2:8,3:2..3:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1977",
-            "input": "+---+---+\n| e | f |\n+===+===+\n| a + b |\n| cd    |\n+===+===+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.2.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "4:3..4:7,4:10..5:0,5:3..5:4",
-                    "parentKind": "TableCell",
-                    "parentScope": "4:2..4:8,5:2..5:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2005",
-            "input": "+---+---+\n| h | j |\n+===+===+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+===+===+\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.0.0",
-                    "violation": "containment",
-                    "kind": "Paragraph",
-                    "scope": "4:3..4:7,4:10..5:0,5:3..5:4",
-                    "parentKind": "TableCell",
-                    "parentScope": "4:2..4:8,5:2..5:8",
-                    "closedBy": "unassigned"
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2610",
-            "input": " Name\tCount\n ----    -----\n ab\t4\n",
-            "findings": [
-                {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "3:5..3:5",
-                    "previousKind": "TableCell",
-                    "previousScope": "3:2..3:5",
-                    "closedBy": "An empty simple-table segment that starts beyond its line uses the line's last byte, shared with the cell before it. Here a tab after one space of indentation reaches its physical stop and moves the second column past the row's end, as in Pandoc; the placement is the same accepted rule as other empty cells."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/elements.txt:262",
+            "source": "packages/markdown-core/tests/fixtures/elements.txt:254",
             "input": "| a | b | c |\n| --- | --- | ---\n| x\n| a | b\n| 1 | 2 | 3 | 4 | 5 |\n",
             "findings": [
                 {
@@ -1374,7 +1083,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/elements.txt:305",
+            "source": "packages/markdown-core/tests/fixtures/elements.txt:296",
             "input": "| a | b |\n| --- | --- |\n| Escaped pipes are \\|okay\\|. | Like \\| this. |\n| Within `\\|code\\| is okay` too. |\n| _**`c\\|`**_ \\| complex\n| don't **\\_reparse\\_**\n",
             "findings": [
                 {
@@ -1398,7 +1107,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3708",
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3704",
             "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
             "findings": [
                 {

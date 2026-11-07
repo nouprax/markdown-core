@@ -270,68 +270,25 @@ context's start and closing delimiter, preserving the footnote boundary.
 Element-owned fields participate in the same iterative destruction walk.
 Before freeing an element payload, the core visits its owned-root slots,
 splices their chains into the walk, and clears the slots. The element frees
-only its remaining value storage. Directive labels use this contract, and
-table captions use the same operation. The operation allocates nothing and does
+only its remaining value storage. Directive labels use this contract. The
+operation allocates nothing and does
 not recurse through field nesting. Kind conversion continues to preserve the
 element's opaque state, including its owned fields.
 
-## Mapped table block inputs
+## Table block inputs
 
-Table candidates retain source slices and temporary geometry until recognition
-succeeds. A grid uses connected source regions to validate complete rectangles and group
-boundaries, then emits sparse anchor cells. Its compacted active frontier holds
-at most twice the column count; closed regions are the final candidate cells,
-ordered by their source anchors with the shared stable radix operation. Temporary
-geometry is released on acceptance, rejection, or allocation failure. No
-occupied-coordinate matrix becomes part of the public AST.
-
-Multiline and grid cell bodies enqueue mapped inputs on their owning nodes.
-The parser drains that queue, including newly discovered nested cells, before
-running document-wide completion and inline parsing. Each input uses the same
-block parser, roster, heading collection and definition owner. The active
-block root bounds finalization without creating a second Document or recursing
-into the document parser. Content marks compose through nested slices when
-blocks and inline payloads are created; scopes are never repaired afterward.
-
-Queued inputs borrow nodes owned by the document. Cell buffers and maps live
-until their block parse ends; pending buffers remain node-owned on failure.
-The lookahead cache belongs to the active input and resets only its used slots.
-Failed multiline suffix queries retain container-and-offset-qualified absence
-facts so later candidates do not repeatedly scan the same suffix.
+A pipe table is recognized at its delimiter row, which takes the last line of
+the open paragraph as its head row. Each later row is read from its own line,
+and its cells are split before inline parsing; a cell borrows its trimmed
+authored bytes only while its row is parsed. No cell holds blocks, so a table
+queues no input of its own. The row chain and its head and body counts
+describe the rows; Swift, Kotlin and ES copy them with the rest of the
+immutable result.
 
 Generated scanners accept exact read-only slices. Their cursor and marker
 are offsets; a virtual NUL at the slice limit handles termination without
 writing a sentinel, requiring padding or forming an out-of-bounds pointer.
 Both scanner families are reproducible raw output of the pinned re2c version.
-
-A table query borrows its current line, immutable input lines and the parser's
-normalized EOF line until commitment finishes. One parser-owned line workspace
-is reused between queries; per-query column geometry and separator intervals
-are released before the next query. Deferred cell parsing starts after this
-borrow ends. Dash-run facts are scanned once per captured line and reused by
-all candidate grammars. Intervals are materialized only when needed; paragraph
-header precedence is queried only after its separator grammar matches.
-
-Streaming block opening and captured table/caption queries share one core
-prefix recognizer. It returns borrowed marker facts; only streaming commitment
-opens nodes. Element probes share their producers' grammar and obtain later
-lines through a caller-owned reader, using either the current container
-lookahead or captured source lines. Probing a comment closer therefore does
-not nest a parser transaction. Paragraph interruption keeps its real list,
-HTML and indentation rules, and queries do not alter the streaming line's
-thematic-break failure cache.
-
-Deferred cells can register headings and references out of physical order.
-Document completion stably orders entries by original line and column using the
-same key-aware radix operation. Explicit reference definitions take priority over
-implicit heading definitions, then the earliest authored definition wins.
-
-The table caption is an independent element-owned root, visited before rows.
-C exposes it through `markdown_core_node_table_caption`; Swift, Kotlin and ES
-copy it with the rest of the immutable result. JNI uses the shared optional
-node-field continuation, and Wasm's fixed node record uses its owner-typed
-`fieldIndex` for either a directive label or a table caption. The row chain and
-its head/body/foot counts continue to describe rows alone.
 
 Allocation failure and semantic refusal can occur in one token construction.
 The transaction retains the first cause: a constructor may return an owned

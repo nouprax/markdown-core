@@ -3,7 +3,7 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "5e3a682ff1d4cef0f30c131c3ef1cb3a4ca74a9bb29b058d2fe6530e6e52e38c"
+        "sha256": "13d3f81463e1d33552f240d2da5d914a11dade6ae0a017eff3733bca296cab6e"
     },
     "features": [
         {
@@ -93,7 +93,7 @@
         {
             "feature": "attributes",
             "specification": "docs/specs/dialect/attributes.md",
-            "sha256": "9e65cfb068267af864b8f5919437204f3dce1a04393c6eac7a01a45dcdc70499",
+            "sha256": "b124350ef60951c0e5a891d1d92012ee20d0e8d0418b48b2382d9e4b7a4bdbe6",
             "sections": [
                 {
                     "title": "Attributes",
@@ -136,7 +136,7 @@
                     "title": "Attachment sites",
                     "line": 78,
                     "level": 2,
-                    "sha256": "8a737d8cf1aa5aed2c12fe62a18acd229b1b644006b05eacba9ebb980057e0ba",
+                    "sha256": "ab56ff010d4f8b0e94320eab776454f343235251fa82764c02b5a7dcee1ea54c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -433,7 +433,7 @@
         {
             "feature": "block-identifiers",
             "specification": "docs/specs/dialect/block-identifiers.md",
-            "sha256": "380de2549725fe86903807353f2bd687bbf67656b1092fb815aa1eb4fd135dd1",
+            "sha256": "b5c2f45d71c227fcd8745936b94f57c3fe3171a26b6c063fbc0d3d00c509ca0e",
             "sections": [
                 {
                     "title": "Block identifiers",
@@ -459,7 +459,7 @@
                     "title": "Lists, quotes, and tables",
                     "line": 34,
                     "level": 2,
-                    "sha256": "2916af7f8c27cc2f87fd4b4b5993e56c0d777477e4c0676f841fa6e2d549009f",
+                    "sha256": "71e323ac806c82037e203914d150a24b8052472afada8233a61cc439b66ff144",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["anchor", "block-id-container-list", "block-id-container-table"]
@@ -467,7 +467,7 @@
                 },
                 {
                     "title": "Boundaries",
-                    "line": 57,
+                    "line": 56,
                     "level": 2,
                     "sha256": "ade3384c9120feaf09378490501ba151bd90c1ac054aeade19786910876961ad",
                     "disposition": {
@@ -594,7 +594,7 @@
         {
             "feature": "callouts",
             "specification": "docs/specs/dialect/callouts.md",
-            "sha256": "80816585e6c9de40da0d0152cc34ded0e683768bdddc60d87f61feb81d0c4ca2",
+            "sha256": "5781fb3982c1c127e56dbe5170e5963ef245f949935f7b6ae56cb38341126bf5",
             "sections": [
                 {
                     "title": "Quotes and callouts",
@@ -630,7 +630,7 @@
                     "title": "Metadata boundaries",
                     "line": 53,
                     "level": 2,
-                    "sha256": "d018da6eec0308f28406e1c72000a6a17a979aa9261e9c7dc21c3b85615dd9aa",
+                    "sha256": "cde1c30ed5af316bd31bec2fd2a141b267512c3d2ca58cd6b3ee16d697c585d2",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["callout"]
@@ -918,7 +918,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "665377f9745c92cefa55fba696e7e523e235eb5a846e23c603f5d0fdd48f94ac",
+            "sha256": "fdcf9647b9525062241284fb292652048e5d9f306aed7fe0d763607edacb74fa",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -934,7 +934,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "dfc224fbc9cad76ea5ebc370f00b20d66b21ae2c00be6230d282e6719aecdfb0",
+                    "sha256": "9fa04cdec6112775c703af38afc19fe07b440826154fd9e82afade9fed86edb3",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -953,29 +953,28 @@
                             "common-inline-html",
                             "decimal-list",
                             "footnote-retention",
-                            "fallback-grid",
                             "common-paragraph"
                         ]
                     }
                 },
                 {
                     "title": "Block recognition",
-                    "line": 38,
+                    "line": 37,
                     "level": 2,
-                    "sha256": "b2739e0d66d978aa329c26e2a7228a95adbffe65234f88826e8be5de192035da",
+                    "sha256": "df1a417d25cb4c309c9b0bc3b9e4e66f97db0a4152b40e6b78f71436bc783bd4",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
                             "composition-directive-callout",
                             "common-setext-two",
                             "metadata-types",
-                            "leading-caption"
+                            "gfm-pipe-table"
                         ]
                     }
                 },
                 {
                     "title": "Inline recognition",
-                    "line": 69,
+                    "line": 68,
                     "level": 2,
                     "sha256": "8e9bd4560a73b2d7510302064e0ca1635d4c8e9b9f1b299bcd5dc8f67ad03ac0",
                     "disposition": {
@@ -991,7 +990,7 @@
                 },
                 {
                     "title": "Literal content and incomplete syntax",
-                    "line": 93,
+                    "line": 92,
                     "level": 2,
                     "sha256": "0794901c97d1d31cfc63ba503a14f39c0cc83bff908a7090cf6c7e788685ff0d",
                     "disposition": {
@@ -1178,7 +1177,7 @@
         {
             "feature": "definition-lists",
             "specification": "docs/specs/dialect/definition-lists.md",
-            "sha256": "98be7a5c60d3825521a47d0afcdb912e1501d8d07068d1c9e0a666bea7ce8df8",
+            "sha256": "5053c7544909500bc74a7528a2c60e3b0fc0115174aa2aa9b503d66ce7537135",
             "sections": [
                 {
                     "title": "Definition lists",
@@ -1214,7 +1213,7 @@
                     "title": "Recognition boundaries",
                     "line": 59,
                     "level": 2,
-                    "sha256": "3ba597105a308a36cb4a1a58e39d922db3e085952290508a91c25cf4f9e85329",
+                    "sha256": "bd0f3f78f6f6fb16b130f1f26ae4f8ad6103746c1996a57408289e4b880dd992",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["loose-definition", "mixed-definitions"]
@@ -2614,23 +2613,23 @@
         {
             "feature": "tables",
             "specification": "docs/specs/dialect/tables.md",
-            "sha256": "06db97e9612d51ad718dc412952a956b348fe3f9cd9c58430ee803a5f49cf7e3",
+            "sha256": "f4735e3cd6316976fa3020a2c5dfc5718888bbb40a89fb3fed39abdfe3ad0c64",
             "sections": [
                 {
                     "title": "Tables",
                     "line": 1,
                     "level": 1,
-                    "sha256": "9188173a3bc6df5960c9a54f44daa5e6868f43042741cd94bc686690dcc1814a",
+                    "sha256": "f37aaaf3a7373ee9acf913f5320de14229fdf7bf2105974a43c6e2a86ab08fa1",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": ["gfm-pipe-table", "simple-matrix", "multiline-matrix", "grid-cell"]
+                        "certificates": ["gfm-pipe-table"]
                     }
                 },
                 {
                     "title": "Pipe tables",
                     "line": 10,
                     "level": 2,
-                    "sha256": "80a068a7a58bed3565457224f5930433d71b55463dac95d378d2dceaed30485a",
+                    "sha256": "80b67e160d528321d40ce35df4b14643a8d500f6691c528508f5b0d3792ba9eb",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-pipe-table", "gfm-pipe-ragged"]
@@ -2638,126 +2637,37 @@
                 },
                 {
                     "title": "Pipes inside cells",
-                    "line": 35,
+                    "line": 34,
                     "level": 3,
-                    "sha256": "24ee697e2207d1b66b63ee46888ed15778d36a2d0dd0d65702ccbc02a1258cea",
+                    "sha256": "1a41f686661a2dfd8ba333ca98e1398e9d075ff988cb8a22ae8a50aca35fb342",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-pipe-ragged", "cross-link-table", "cross-embed-table"]
                     }
                 },
                 {
-                    "title": "Captions",
-                    "line": 52,
+                    "title": "Source positions",
+                    "line": 51,
                     "level": 2,
-                    "sha256": "1b58db42d0cb982880eec4dfd05abe2737832b8a505631ebda1fa3d822f2e029",
+                    "sha256": "8b767c705023f300fb1f8b1731b384e5308f703c557a66f6f537689c2d049b92",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": ["leading-caption", "trailing-caption", "sparse-grid"]
-                    }
-                },
-                {
-                    "title": "Simple tables",
-                    "line": 80,
-                    "level": 2,
-                    "sha256": "7f21bd98a09eb774805246bb210d11742a388c00931d1905f1d8f5985a3aec51",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["simple-matrix", "headless-matrix"]
-                    }
-                },
-                {
-                    "title": "Multiline tables",
-                    "line": 121,
-                    "level": 2,
-                    "sha256": "19e707c0324e6f0f62a4c2ee271c78549538987b1a92209fffcc221f23bcae21",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["multiline-matrix", "headless-multiline"]
-                    }
-                },
-                {
-                    "title": "Grid tables",
-                    "line": 152,
-                    "level": 2,
-                    "sha256": "fe30992633d63c6f1b361f79fe8d6afefb493ed6dfcaf2e775407dd0fda88de4",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["grid-cell", "sparse-grid"]
-                    }
-                },
-                {
-                    "title": "Merged cells",
-                    "line": 170,
-                    "level": 3,
-                    "sha256": "508b139f9366bce0c108f5101bfb29282592d3894bf7cef20b84247a137119b5",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["sparse-grid"]
-                    }
-                },
-                {
-                    "title": "Foot rows",
-                    "line": 198,
-                    "level": 3,
-                    "sha256": "952c3083226671357904ded75e7c06f5b5cc52344ccd9ddd2c35618b6934f730",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["sparse-grid"]
-                    }
-                },
-                {
-                    "title": "Boundaries and row groups",
-                    "line": 215,
-                    "level": 3,
-                    "sha256": "faca7291a0bf25095ff339473653b0e5f70f70dfc85d61f6817a0fb003c40f01",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["sparse-grid", "fallback-grid"]
-                    }
-                },
-                {
-                    "title": "Column widths and source positions",
-                    "line": 236,
-                    "level": 2,
-                    "sha256": "b25b5934bc8365b34b6313397f3d28ea5608a1d2dfd390db55af8f89888a4a7a",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": [
-                            "grid-cell",
-                            "multiline-matrix",
-                            "headless-multiline",
-                            "block-id-container-table"
-                        ],
-                        "note": "Authored geometry has explicit local boundary proofs; numeric width output and original-coordinate contracts remain parity/regression responsibilities."
+                        "certificates": ["gfm-pipe-table", "block-id-container-table"]
                     }
                 },
                 {
                     "title": "Competing block syntax",
-                    "line": 272,
+                    "line": 64,
                     "level": 2,
-                    "sha256": "15848b2923c6f996b4242f01a024271bd4e138e33638837236011e4bdc58d0fd",
+                    "sha256": "fcae09010a8815f68a421d16e10481d2b85971e819eee4e2d360a0e81797cdec",
                     "disposition": {
                         "kind": "grammar",
-                        "certificates": [
-                            "common-setext-one",
-                            "common-setext-two",
-                            "simple-matrix",
-                            "multiline-matrix",
-                            "grid-cell",
-                            "fallback-grid"
-                        ]
+                        "certificates": ["common-setext-one", "common-setext-two", "gfm-pipe-table"]
                     }
                 }
             ],
             "elements": ["TABLE"],
             "certificates": [
-                {
-                    "id": "fallback-grid",
-                    "scope": "paired-document-grammar",
-                    "identity": true,
-                    "facets": ["fallback", "rejected-prefix"]
-                },
                 {
                     "id": "gfm-pipe-ragged",
                     "scope": "paired-document-grammar",
@@ -2769,54 +2679,6 @@
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["pipe-tables", "alignment", "inline-cells"]
-                },
-                {
-                    "id": "grid-cell",
-                    "scope": "boundary-grammar",
-                    "identity": false,
-                    "facets": []
-                },
-                {
-                    "id": "headless-matrix",
-                    "scope": "boundary-grammar",
-                    "identity": false,
-                    "facets": []
-                },
-                {
-                    "id": "headless-multiline",
-                    "scope": "boundary-grammar",
-                    "identity": false,
-                    "facets": []
-                },
-                {
-                    "id": "leading-caption",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["captions", "leading-caption"]
-                },
-                {
-                    "id": "multiline-matrix",
-                    "scope": "boundary-grammar",
-                    "identity": false,
-                    "facets": []
-                },
-                {
-                    "id": "simple-matrix",
-                    "scope": "boundary-grammar",
-                    "identity": false,
-                    "facets": []
-                },
-                {
-                    "id": "sparse-grid",
-                    "scope": "boundary-grammar",
-                    "identity": false,
-                    "facets": []
-                },
-                {
-                    "id": "trailing-caption",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["captions", "trailing-caption"]
                 }
             ]
         },

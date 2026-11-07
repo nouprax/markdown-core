@@ -340,7 +340,7 @@ void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markdown_core_relation_cursor *cursor,
                                                                            markdown_core_relation *relation,
                                                                            bool *more) {
-    static const char *const table_groups[] = {"TableHead", "TableBody", "TableFoot"};
+    static const char *const table_groups[] = {"TableHead", "TableBody"};
     const markdown_core_node *node = cursor->owner;
     int step = cursor->step++;
     /* An absent optional field steps on to the next relation at once. */
@@ -357,23 +357,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
         return step == 1 && relation_children(relation, NULL, node);
     case SHAPE_TABLE: {
         markdown_core_table *table = node->opaque;
-        if (step == 0) {
-            if (table->caption) {
-                *more = true;
-                return relation_one(relation, &table->caption);
-            }
-            step = cursor->step++;
-        }
-        if (step > 3) {
+        if (step > 1) {
             return false;
         }
-        /* A table's rows, in head, content and foot order, are its children,
-         * which a table always has: each group is a slice of them. */
-        const uint32_t count = step == 1 ? table->head_count : step == 2 ? table->content_count : table->foot_count;
-        *relation =
-            (markdown_core_relation){table_groups[step - 1], node->children + cursor->index, count, step > 1, node};
+        /* A table's rows, in head then content order, are its children, which
+         * a table always has: each group is a slice of them. */
+        const uint32_t count = step == 0 ? table->head_count : table->content_count;
+        *relation = (markdown_core_relation){table_groups[step], node->children + cursor->index, count, step > 0, node};
         cursor->index += count;
-        *more = step < 3;
+        *more = step < 1;
         return true;
     }
     case SHAPE_DIRECTIVE:
@@ -3221,7 +3213,6 @@ static const markdown_core_node_kind S_block_kind[MARKDOWN_CORE_NODE_KIND_COUNT]
     [MARKDOWN_CORE_NODE_SPECIMEN & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SPECIMEN,
     [MARKDOWN_CORE_NODE_DEFINITION_LIST & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DEFINITION_LIST,
     [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DEFINITION,
-    [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_TABLE_CAPTION,
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_METADATA,
     [MARKDOWN_CORE_NODE_REFERENCE & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_REFERENCE,
 };
@@ -3294,7 +3285,6 @@ static const char *const S_kind_name[] = {
     "Subscript",
     "DefinitionList",
     "Definition",
-    "TableCaption",
     "Citation",
     "Footnote",
     "Specimen",
@@ -4089,14 +4079,12 @@ markdown_core_status markdown_core_node_formula_properties(const markdown_core_n
 }
 
 markdown_core_status markdown_core_node_table_properties(const markdown_core_node *node, size_t *column_count,
-                                                         size_t *head_count, size_t *content_count,
-                                                         size_t *foot_count) {
+                                                         size_t *head_count, size_t *content_count) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_TABLE));
     const markdown_core_table *table = table_of(node);
     *column_count = table->column_count;
     *head_count = table->head_count;
     *content_count = table->content_count;
-    *foot_count = table->foot_count;
     return MARKDOWN_CORE_OK;
 }
 
@@ -4108,21 +4096,6 @@ markdown_core_status markdown_core_node_table_column_at(const markdown_core_node
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     *column = table->columns[index];
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_node_table_caption(const markdown_core_node *node,
-                                                      const markdown_core_node **caption) {
-    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_TABLE));
-    *caption = table_of(node)->caption;
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan,
-                                                         int64_t *colspan) {
-    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_TABLE_CELL));
-    *rowspan = node->as.table_cell->rowspan;
-    *colspan = node->as.table_cell->colspan;
     return MARKDOWN_CORE_OK;
 }
 
@@ -4812,56 +4785,6 @@ static void buffer_optional_bool(dump_buffer *buffer, markdown_core_optional_boo
     }
 }
 
-/* Find the shortest significant digit sequence that round-trips. Use the
- * process locale only inside snprintf/strtod, then emit ASCII digits with a
- * fixed decimal/exponent policy, so locale never reaches the dump. Widths are
- * finite and positive by the table contract. */
-static void buffer_double(dump_buffer *buffer, double value) {
-    char scientific[64], digits[18];
-    for (int precision = 0; precision < 17; precision++) {
-        snprintf(scientific, sizeof(scientific), "%.*e", precision, value);
-        if (strtod(scientific, NULL) == value) {
-            break;
-        }
-    }
-    char *exponent = strchr(scientific, 'e');
-    int power = (int)strtol(exponent + 1, NULL, 10);
-    size_t length = 0;
-    for (char *c = scientific; c < exponent; c++) {
-        if (*c >= '0' && *c <= '9') {
-            digits[length++] = *c;
-        }
-    }
-    while (length > 1 && digits[length - 1] == '0') {
-        length--;
-    }
-    if (power < -6 || power >= 21) {
-        buffer_bytes(buffer, (const uint8_t *)digits, 1);
-        if (length > 1) {
-            buffer_cstr(buffer, ".");
-            buffer_bytes(buffer, (const uint8_t *)digits + 1, length - 1);
-        }
-        buffer_cstr(buffer, "e");
-        if (power >= 0) {
-            buffer_cstr(buffer, "+");
-        }
-        buffer_i64(buffer, power);
-    } else if (power < 0) {
-        buffer_cstr(buffer, "0.");
-        for (int i = -1; i > power; i--) {
-            buffer_cstr(buffer, "0");
-        }
-        buffer_bytes(buffer, (const uint8_t *)digits, length);
-    } else {
-        for (int i = 0; i <= power || i < (int)length; i++) {
-            if (i == power + 1) {
-                buffer_cstr(buffer, ".");
-            }
-            buffer_bytes(buffer, (const uint8_t *)(i < (int)length ? &digits[i] : "0"), 1);
-        }
-    }
-}
-
 static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent);
 static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_value *record);
 
@@ -5022,21 +4945,8 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
                 buffer_cstr(buffer, ",");
             }
             buffer_cstr(buffer, flow_name(column.flow));
-            buffer_cstr(buffer, ":");
-            if (column.relative.has_value) {
-                buffer_double(buffer, column.relative.value);
-            } else {
-                buffer_cstr(buffer, "null");
-            }
         }
         buffer_cstr(buffer, "]");
-        break;
-    }
-    case MARKDOWN_CORE_KIND_TABLE_CELL: {
-        buffer_cstr(buffer, " rowspan=");
-        buffer_i64(buffer, node->as.table_cell->rowspan);
-        buffer_cstr(buffer, " colspan=");
-        buffer_i64(buffer, node->as.table_cell->colspan);
         break;
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:

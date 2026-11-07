@@ -619,27 +619,21 @@ static void check_table_model(void) {
     }
     const markdown_core_node *root = markdown_core_document_root(document);
     const markdown_core_node *table = child_at(root, 0);
-    size_t columns = 0, head = 0, content = 0, foot = 0;
-    ok(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "a table answers its properties");
-    check(columns == 4 && head == 1 && content == 1 && foot == 0, "pipe table group partition");
-    check(child_count(table) == head + content + foot, "table rows have one structural owner");
+    size_t columns = 0, head = 0, content = 0;
+    ok(markdown_core_node_table_properties(table, &columns, &head, &content), "a table answers its properties");
+    check(columns == 4 && head == 1 && content == 1, "pipe table group partition");
+    check(child_count(table) == head + content, "table rows have one structural owner");
     const markdown_core_flow expected[] = {MARKDOWN_CORE_FLOW_LEFT, MARKDOWN_CORE_FLOW_CENTER, MARKDOWN_CORE_FLOW_RIGHT,
                                            MARKDOWN_CORE_FLOW_NONE};
     for (size_t i = 0; i < columns; i++) {
-        markdown_core_table_column column = {MARKDOWN_CORE_FLOW_NONE, {true, 0}};
+        markdown_core_table_column column = {MARKDOWN_CORE_FLOW_NONE};
         ok(markdown_core_node_table_column_at(table, i, &column), "a column below the count answers");
-        check(column.flow == expected[i] && !column.relative.has_value, "column authored facts");
+        check(column.flow == expected[i], "column authored facts");
     }
     const markdown_core_nodes rows = markdown_core_node_children(table);
     for (size_t r = 0; r < rows.count; r++) {
         const markdown_core_nodes cells = markdown_core_node_children(rows.items[r]);
         check(cells.count == 4, "pipe rows have every logical column");
-        for (size_t c = 0; c < cells.count; c++) {
-            const markdown_core_node *cell = cells.items[c];
-            int64_t rowspan = 0, colspan = 0;
-            ok(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan), "a cell answers its spans");
-            check(rowspan == 1 && colspan == 1, "inherited unit spans");
-        }
     }
     markdown_core_document_free(document);
 }
@@ -713,7 +707,6 @@ static void check_kind_boundary(void) {
     markdown_core_destination destination;
     markdown_core_referent referent;
     int32_t level = 7;
-    int64_t span;
     size_t size;
     bool flag;
     /* A paragraph has no field any kind accessor reads. */
@@ -724,10 +717,8 @@ static void check_kind_boundary(void) {
         markdown_core_node_code_block_properties(paragraph, &optional, &optional, &string, &flag, &flag),
         markdown_core_node_literal(paragraph, &string),
         markdown_core_node_formula_properties(paragraph, &placement, &string),
-        markdown_core_node_table_properties(paragraph, &size, &size, &size, &size),
+        markdown_core_node_table_properties(paragraph, &size, &size, &size),
         markdown_core_node_table_column_at(paragraph, 0, &column),
-        markdown_core_node_table_caption(paragraph, &node),
-        markdown_core_node_table_cell_spans(paragraph, &span, &span),
         markdown_core_node_directive_properties(paragraph, &optional),
         markdown_core_node_definition_compact(paragraph, &flag),
         markdown_core_node_definition_term(paragraph, &nodes),
@@ -789,16 +780,16 @@ static void check_index_boundary(void) {
     const markdown_core_node *directive = child_at(paragraph, 1);
     const markdown_core_node *table = child_at(root, 2);
     const markdown_core_node *node = root;
-    markdown_core_table_column column = {MARKDOWN_CORE_FLOW_RIGHT, {true, 7}};
+    markdown_core_table_column column = {MARKDOWN_CORE_FLOW_RIGHT};
     markdown_core_string name = {NULL, 7}, text = {NULL, 7};
-    size_t columns = 0, head, content, foot;
+    size_t columns = 0, head, content;
 
-    ok(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "a table answers its columns");
+    ok(markdown_core_node_table_properties(table, &columns, &head, &content), "a table answers its columns");
     check(columns == 2 && markdown_core_node_table_column_at(table, 1, &column) == MARKDOWN_CORE_OK,
           "the last column answers");
-    column = (markdown_core_table_column){MARKDOWN_CORE_FLOW_RIGHT, {true, 7}};
+    column = (markdown_core_table_column){MARKDOWN_CORE_FLOW_RIGHT};
     check(markdown_core_node_table_column_at(table, columns, &column) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              column.relative.value == 7,
+              column.flow == MARKDOWN_CORE_FLOW_RIGHT,
           "a column at the count is out of bounds");
 
     check(markdown_core_document_footnote_count(document) == 0 &&

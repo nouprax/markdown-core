@@ -48,6 +48,10 @@ document documents/identity-typing-paragraph-5-of-1000.md
 script documents/identity-typing-paragraph-5-of-1000.md scripts/identity-typing-paragraph-5-of-1000.script
 document documents/hard-type-in-middle-paragraph.md
 script documents/hard-type-in-middle-paragraph.md scripts/hard-type-in-middle-paragraph.script
+document documents/hard-term-enters-list-in-directive.md
+script documents/hard-term-enters-list-in-directive.md scripts/hard-term-enters-list-in-directive.script
+document documents/hard-term-enters-list-in-quote.md
+script documents/hard-term-enters-list-in-quote.md scripts/hard-term-enters-list-in-quote.script
 document documents/hard-open-fence.md
 script documents/hard-open-fence.md scripts/hard-open-fence.script
 document documents/hard-open-comment.md
@@ -300,24 +304,6 @@ stream ../canonical-ast/definition-lists.md tokens
 stream ../canonical-ast/definition-lists.md scalars
 stream ../canonical-ast/definition-lists.md rows
 stream ../canonical-ast/definition-lists.md splits
-document ../canonical-ast/table-syntax.md
-script ../canonical-ast/table-syntax.md scripts/table-syntax.script
-stream ../canonical-ast/table-syntax.md tokens
-stream ../canonical-ast/table-syntax.md scalars
-stream ../canonical-ast/table-syntax.md rows
-stream ../canonical-ast/table-syntax.md splits
-document ../canonical-ast/table-sparse.md
-script ../canonical-ast/table-sparse.md scripts/table-sparse.script
-stream ../canonical-ast/table-sparse.md tokens
-stream ../canonical-ast/table-sparse.md scalars
-stream ../canonical-ast/table-sparse.md rows
-stream ../canonical-ast/table-sparse.md splits
-document ../canonical-ast/table-mapped.md
-script ../canonical-ast/table-mapped.md scripts/table-mapped.script
-stream ../canonical-ast/table-mapped.md tokens
-stream ../canonical-ast/table-mapped.md scalars
-stream ../canonical-ast/table-mapped.md rows
-stream ../canonical-ast/table-mapped.md splits
 document ../canonical-ast/topics.md
 script ../canonical-ast/topics.md scripts/topics.script
 stream ../canonical-ast/topics.md tokens

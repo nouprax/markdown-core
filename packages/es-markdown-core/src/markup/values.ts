@@ -32,7 +32,7 @@ export interface Scope {
  * for an inline node. `lead` is the signed distance from the end of the
  * previous node in the same relation -- or from the owner's start, for the
  * first node of a relation -- to this node's start, and `span` the length of
- * its range. A table's rows, in head, content and foot order, are one
+ * its range. A table's rows, in head then content order, are one
  * relation. Neither changes when text before the node shifts; scopes are
  * computed on request from the runs and the source, and extents take no part.
  */

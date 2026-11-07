@@ -221,13 +221,8 @@ private fun describe(node: Markup): Line =
         }
 
         is Table -> {
-            val columns =
-                node.columns.joinToString(",") { "${it.flow.token()}:${it.relative?.let(::decimal) ?: "null"}" }
-            Line("Table", node.head.size + node.content.size + node.foot.size, listOf("columns=[$columns]"))
-        }
-
-        is TableCaption -> {
-            Line("TableCaption", node.content.size)
+            val columns = node.columns.joinToString(",") { it.flow.token() }
+            Line("Table", node.head.size + node.content.size, listOf("columns=[$columns]"))
         }
 
         is TableRow -> {
@@ -235,7 +230,7 @@ private fun describe(node: Markup): Line =
         }
 
         is TableCell -> {
-            Line("TableCell", node.content.size, listOf("rowspan=${node.rowspan}", "colspan=${node.colspan}"))
+            Line("TableCell", node.content.size)
         }
 
         is DirectiveBlock -> {
@@ -483,37 +478,6 @@ private fun escaped(value: String): String =
         }
         append('"')
     }
-
-/** Emit shortest round-trip digits with the same notation thresholds on every runtime. */
-private fun decimal(value: Double): String {
-    val parts = value.toString().lowercase().split('e')
-    val mantissa = parts[0].split('.')
-    var digits = mantissa.joinToString("")
-    var point = mantissa[0].length + if (parts.size == 2) parts[1].toInt() else 0
-    while (digits.startsWith('0')) {
-        digits = digits.drop(1)
-        point--
-    }
-    digits = digits.trimEnd('0')
-    // Some runtimes print two significant digits for subnormal values where
-    // one already round-trips. Test rounded prefixes, preserving the value.
-    for (length in 1 until digits.length) {
-        val rounded = digits.take(length).toLong() + if (digits[length] >= '5') 1 else 0
-        val candidate = rounded.toString()
-        if ((candidate + "e" + (point - length)).toDouble() == value) {
-            point += candidate.length - length
-            digits = candidate.trimEnd('0')
-            break
-        }
-    }
-    if (point <= -6 || point > 21) {
-        return digits.take(1) + (if (digits.length > 1) "." + digits.drop(1) else "") +
-            "e" + (if (point > 0) "+" else "") + (point - 1)
-    }
-    if (point <= 0) return "0." + "0".repeat(-point) + digits
-    if (point >= digits.length) return digits + "0".repeat(point - digits.length)
-    return digits.take(point) + "." + digits.drop(point)
-}
 
 private fun attributes(value: Attributes): String =
     (

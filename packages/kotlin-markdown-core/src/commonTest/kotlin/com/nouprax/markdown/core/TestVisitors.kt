@@ -91,11 +91,6 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(table), phase)
 
     override fun visit(
-        tableCaption: TableCaption,
-        phase: MarkupVisitPhase,
-    ): Unit = record(name(tableCaption), phase)
-
-    override fun visit(
         tableRow: TableRow,
         phase: MarkupVisitPhase,
     ): Unit = record("row", phase)
@@ -318,11 +313,6 @@ internal class RecordingVisitor : MarkupVisitor {
         table: Table,
         phase: MarkupVisitPhase,
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(table) else Unit
-
-    override fun visit(
-        tableCaption: TableCaption,
-        phase: MarkupVisitPhase,
-    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(tableCaption) else Unit
 
     override fun visit(
         tableRow: TableRow,
@@ -565,11 +555,6 @@ internal class RecordingWalkingVisitor(
     ): Unit = record(table, phase)
 
     override fun visit(
-        tableCaption: TableCaption,
-        phase: MarkupVisitPhase,
-    ): Unit = record(tableCaption, phase)
-
-    override fun visit(
         tableRow: TableRow,
         phase: MarkupVisitPhase,
     ) {
@@ -793,11 +778,6 @@ internal class NodeVisitor : MarkupVisitor {
         table: Table,
         phase: MarkupVisitPhase,
     ): Unit = record(table, phase)
-
-    override fun visit(
-        tableCaption: TableCaption,
-        phase: MarkupVisitPhase,
-    ): Unit = record(tableCaption, phase)
 
     override fun visit(
         tableRow: TableRow,

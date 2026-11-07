@@ -9,7 +9,6 @@ struct DocumentBuilder {
     private struct Relations {
         var children: [Int] = []
         var metadata: Int?
-        var caption: Int?
         var label: Int?
         var title: [Int] = []
         var term: [Int] = []
@@ -61,8 +60,6 @@ struct DocumentBuilder {
         var relations = Relations()
         relations.children = enqueue(nodes: markdown_core_node_children(node))
         switch markdown_core_node_get_kind(node) {
-        case MARKDOWN_CORE_KIND_TABLE:
-            relations.caption = enqueue(field: answer { markdown_core_node_table_caption(node, $0) })
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
             relations.label = enqueue(field: answer { markdown_core_node_directive_label(node, $0) })
         case MARKDOWN_CORE_KIND_CALLOUT:
@@ -218,9 +215,7 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_CODE_BLOCK: return CodeBlockRecord(from: node)
         case MARKDOWN_CORE_KIND_HTML_BLOCK: return HTMLBlockRecord(from: node)
         case MARKDOWN_CORE_KIND_FORMULA_BLOCK: return FormulaBlockRecord(from: node)
-        case MARKDOWN_CORE_KIND_TABLE:
-            let caption = take(relations.caption, as: TableCaptionRecord.self)
-            return TableRecord(from: node, caption: caption, rows: children)
+        case MARKDOWN_CORE_KIND_TABLE: return TableRecord(from: node, rows: children)
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
             return DirectiveBlockRecord(
                 from: node,
@@ -250,7 +245,6 @@ extension DocumentBuilder {
             return DirectiveRecord(from: node, label: take(relations.label, as: DirectiveLabelRecord.self))
         case MARKDOWN_CORE_KIND_CITE: return CiteRecord(from: node, citations: take(relations.citations))
         case MARKDOWN_CORE_KIND_TOPIC: return TopicRecord(from: node)
-        case MARKDOWN_CORE_KIND_TABLE_CAPTION: return TableCaptionRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_TABLE_ROW: return TableRowRecord(from: node, cells: children)
         case MARKDOWN_CORE_KIND_TABLE_CELL: return TableCellRecord(from: node, content: children)
         // A C enum switch is never exhaustive in Swift; the one kind

@@ -37,7 +37,7 @@ private typealias Comment = Testing.Comment
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
             "Link", "Embedded", "Directive",
             "Cite", "Topic", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
-            "TableRow", "TableCell", "TableCaption",
+            "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
         for (document, source) in zip(documents, sources) {
@@ -64,7 +64,7 @@ private typealias Comment = Testing.Comment
         let table = try #require(document.content[2] as? Table)
         #expect(table.columns.map(\.flow) == [.center])
         #expect(table.head.count == 1)
-        #expect(table.content.count == 1 && table.foot.isEmpty)
+        #expect(table.content.count == 1)
         #expect(table.head[0].cells.count == 1)
         let paragraph = try #require(document.content[3] as? Paragraph)
         let link = try #require(paragraph.content[0] as? Link)
@@ -198,7 +198,6 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }

@@ -159,8 +159,7 @@ A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
 byte range the engine keeps, a block's in the UTF-8 source and an inline
 node's in its inline root's content, which starts at 0: `lead` is signed, from
 the end of the previous node in the same relation (or the owner's start) to
-the node's start, and `span` is its length. A table's rows, in head, content
-and foot order, are one relation. A node's `runs` are its own source ranges in
+the node's start, and `span` is its length. A table's rows, in head then content order, are one relation. A node's `runs` are its own source ranges in
 source order, each `Run(lead, span)` in bytes, and every node has at least
 one. The first run's lead is from the end of the source of the previous node
 in the same relation, or from the start of the owner's source for a
@@ -354,16 +353,9 @@ On JDK 26 and later, JVM applications should launch with
 `--enable-native-access=ALL-UNNAMED` so the package-private JNI loader can load
 the bundled native library without a restricted-native-access warning.
 
-Pipe, simple, multiline and grid tables share one model. `caption` is an
-optional `TableCaption` with inline `content`; `Table:`, `table:` and `:` accept
-a preceding or following caption. Between tables, an uncaptained preceding
-table claims it first. Walkers visit the caption before `head`, `content`, and
-`foot`. Multiline and grid cells use ordinary block content and authored relative
-widths; pipe and simple cells use inline content and null widths. Grid cells
-carry `rowspan` and `colspan` once in their starting row. Source-defined rows
-with no starting cells retain `cells=[]`; an authored empty cell retains
-`content=[]`. Consumers derive occupied coordinates and layout from these rows
-and spans.
+Tables are pipe tables. A table has its `columns`, one `head` row and its
+body rows in `content`; walkers visit `head` before `content`. Every cell
+holds inline `content`; an authored empty cell retains `content=[]`.
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
 fenced code, links/media, reference definitions and angle autolinks. Each node
@@ -387,8 +379,8 @@ Heading attributes stay on the heading, and generated targets add no scope.
 The always-on dialect includes inline code, heading, fenced code and link
 attributes; automatic anchors and implicit heading references; bracketed spans;
 superscript and subscript; bibliography citations; named and nameless fenced
-containers; fancy ordered lists and example lists; definition lists; table
-captions; and simple, multiline and grid tables. These 18 feature groups use
+containers; fancy ordered lists and example lists; and definition lists. These 14
+feature groups use
 one immutable AST and the same behavior on every binding. The
 [dialect contract](../../docs/specs/dialect.md) specifies syntax, precedence and intentional differences
 from the pinned Pandoc reader. Citation numbering, example-list resolution,

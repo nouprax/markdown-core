@@ -17,21 +17,20 @@ Document scope=1:1..13:55 anchor=null attributes={} children=6
 │   ├── Embedded scope=3:19..3:33 anchor=null attributes={} dest=url("/empty") title=null dimensions=(width=3,height=4) children=0
 │   ├── Text scope=3:34..3:34 anchor=null attributes={} literal=" " children=0
 │   └── CrossEmbedded scope=3:35..3:52 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=200) children=0
-├── Table scope=5:1..7:31 anchor=null attributes={} columns=[none:null,none:null] children=2
+├── Table scope=5:1..7:31 anchor=null attributes={} columns=[none,none] children=2
 │   ├── TableHead children=1
 │   │   └── TableRow scope=5:1..5:16 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=5:2..5:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=5:2..5:8 anchor=null attributes={} children=1
 │   │       │   └── Text scope=5:3..5:7 anchor=null attributes={} literal="image" children=0
-│   │       └── TableCell scope=5:10..5:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=5:10..5:15 anchor=null attributes={} children=1
 │   │           └── Text scope=5:11..5:14 anchor=null attributes={} literal="next" children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=7:1..7:31 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=7:2..7:18 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │       │   └── Embedded scope=7:3..7:17 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=10,height=20) children=1
-│   │       │       └── Text scope=7:5..7:6 anchor=null attributes={} literal="é" children=0
-│   │       └── TableCell scope=7:20..7:30 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Embedded scope=7:21..7:29 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=30,height=null) children=0
-│   └── TableFoot children=0
+│   └── TableBody children=1
+│       └── TableRow scope=7:1..7:31 anchor=null attributes={} children=2
+│           ├── TableCell scope=7:2..7:18 anchor=null attributes={} children=1
+│           │   └── Embedded scope=7:3..7:17 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=10,height=20) children=1
+│           │       └── Text scope=7:5..7:6 anchor=null attributes={} literal="é" children=0
+│           └── TableCell scope=7:20..7:30 anchor=null attributes={} children=1
+│               └── Embedded scope=7:21..7:29 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=30,height=null) children=0
 ├── Reference scope=9:1..9:20 anchor=null attributes={} label="r" dest=url("/shared") title="title" children=0
 ├── Paragraph scope=11:1..11:72 anchor=null attributes={} children=5
 │   ├── CrossEmbedded scope=11:1..11:41 anchor=null attributes={} dest=cross(path="movie.mp4",anchor=null) label="raw *caption*" dimensions=(width=2147483647,height=2) children=0

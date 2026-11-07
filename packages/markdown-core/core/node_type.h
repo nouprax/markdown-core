@@ -58,14 +58,13 @@ typedef enum {
     MARKDOWN_CORE_NODE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0013,
     /* A private collection root, not a public Markup kind. */
     MARKDOWN_CORE_NODE_DEFINITION_BODY = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0014,
-    MARKDOWN_CORE_NODE_TABLE_CAPTION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0015,
     /* Read by the document element's prefix reader (properties.c) and never
      * parsed as a block, so no element defines its structure. */
-    MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0016,
+    MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0015,
     /* A link reference definition: a leaf block the close of the paragraph that
      * held it makes whole, so it is never open on the spine and no element
      * defines its structure. */
-    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0017,
+    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0016,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,

@@ -33,15 +33,15 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **31 specification features, 140 sections, 33 registered elements,
-195 certificates and 854 generated documents**, 427 in each of two
+There are **31 specification features, 133 sections, 33 registered elements,
+186 certificates and 792 generated documents**, 396 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
-Of the 140 sections, **135 link to grammar certificates and five are explicitly
+Of the 133 sections, **128 link to grammar certificates and five are explicitly
 context-only** (automatic-anchor output, anchor ownership, two navigation
 introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **183 certify whole declared languages and 12 certify local boundary
+Of these, **180 certify whole declared languages and 6 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -75,7 +75,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Tasks | Standard states, custom/Unicode markers, nested ordered tasks, heading bodies and missing-separator fallback. |
 | Definition lists | Tight/loose, multiple/empty definitions and multiple blocks. |
 | Quotes/callouts | Same-input plain/nested/lazy quotes; variable type and all three collapse states have invertible counterparts. |
-| Tables | Same-input pipe/alignment/ragged/escaped-pipe forms, both captions; simple, headless, multiline, grid, spans, sparse rows and footer use geometry boundaries. |
+| Tables | Same-input pipe/alignment/ragged/escaped-pipe forms. |
 | Directives | Inline label/attribute/both, Unicode names, leaf forms, named/nameless/unbraced/nested containers and fallback. |
 | Properties | All ten fields, text/number/bool/null/list distinctions, invalid-before-valid/duplicates, unknown fields and literal indentation in complete boundary hosts. |
 | Attributes | Quoted/unquoted/empty/bare values, ordered duplicates, escapes/entities/newline, IDs/classes and every documented owner category. |

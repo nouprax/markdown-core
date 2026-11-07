@@ -165,27 +165,11 @@ class State {
                 return;
             }
             this.start();
-            const columns = node.columns.map((column) => `${column.flow}:${column.relative ?? "null"}`).join(",");
-            this.line(
-                "Table",
-                node,
-                [`columns=[${columns}]`],
-                node.head.length + node.content.length + node.foot.length,
-                [
-                    ...(node.caption === null ? [] : [{ name: null, count: 1 }]),
-                    { name: "TableHead", count: node.head.length },
-                    { name: "TableBody", count: node.content.length },
-                    { name: "TableFoot", count: node.foot.length }
-                ]
-            );
-        },
-        tableCaption: (node, phase) => {
-            if (phase === "exit") {
-                this.end();
-                return;
-            }
-            this.start();
-            this.container("TableCaption", node, [], node.content);
+            const columns = node.columns.map((column) => column.flow).join(",");
+            this.line("Table", node, [`columns=[${columns}]`], node.head.length + node.content.length, [
+                { name: "TableHead", count: node.head.length },
+                { name: "TableBody", count: node.content.length }
+            ]);
         },
         tableRow: (node, phase) => {
             if (phase === "exit") {
@@ -201,7 +185,7 @@ class State {
                 return;
             }
             this.start();
-            this.container("TableCell", node, [`rowspan=${node.rowspan}`, `colspan=${node.colspan}`], node.content);
+            this.container("TableCell", node, [], node.content);
         },
         definitionList: (node, phase) => {
             if (phase === "exit") {

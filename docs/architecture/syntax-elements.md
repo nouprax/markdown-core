@@ -35,7 +35,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | List: authored marker facts, decimal/alpha/Roman and automatic numbering | `list.c` | `012cb4e1`, `5f5a516c` |
 | Task marker: one Unicode marker at list-item creation | `tasklist.c`, called by `list.c` | `9f5e630c` |
 | DefinitionList: terms, bodies, compactness, indentation and lookahead | `definition_list.c` | `5f5a516c` |
-| Table: groups, columns, spans, pipe/grid/simple/multiline forms and captions | `table.c` | `798717b7`, `a540b69e` |
+| Table: pipe rows, head and body groups, columns | `table.c` | `798717b7`, `a540b69e` |
 | Attributes: one brace grammar and attachment operations | `attributes.c` | `1ad40aed`, `8d9177fa` |
 | Heading: ATX/setext openers, suffix ownership, generated anchors and implicit references | `heading.c` | Inherited; `25282384`, `8d9177fa` |
 | Block identifier: `#anchor-id#` suffix and separate-line attachment | `block_identifier.c`, writing the shared anchor value | `d6abfbd0` |
@@ -242,7 +242,7 @@ An element whose code reads another element's state declares that element
 in its descriptor's `peers`. Sealing resolves each declared peer once, in
 declaration order, into `self->peers`: the peer's instance, or NULL when the
 dialect does not hold it, and the reading element decides what an absent peer
-means (a definition list without tables has no caption to yield to). A call
+means (a citation key in a dialect without code spans scans no backtick run). A call
 into another element's grammar takes that element's instance, so every record
 a hook reaches was resolved before the first line was read, and no parse-time
 code looks an element up by name. `markdown_core_parser_instance` answers the

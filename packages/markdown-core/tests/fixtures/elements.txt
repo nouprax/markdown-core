@@ -17,25 +17,24 @@ Here's a well-formed table, doing everything it should.
 | mno | pqr |
 .
 Document scope=1:1..4:13 anchor=null attributes={} children=1
-└── Table scope=1:1..4:13 anchor=null attributes={} columns=[none:null,none:null] children=3
+└── Table scope=1:1..4:13 anchor=null attributes={} columns=[none,none] children=3
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="abc" children=0
-    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:11 anchor=null attributes={} literal="def" children=0
-    ├── TableBody children=2
-    │   ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=3:2..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="ghi" children=0
-    │   │   └── TableCell scope=3:8..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │       └── Text scope=3:9..3:11 anchor=null attributes={} literal="jkl" children=0
-    │   └── TableRow scope=4:1..4:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=4:2..4:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="mno" children=0
-    │       └── TableCell scope=4:8..4:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=4:9..4:11 anchor=null attributes={} literal="pqr" children=0
-    └── TableFoot children=0
+    └── TableBody children=2
+        ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
+        │   ├── TableCell scope=3:2..3:6 anchor=null attributes={} children=1
+        │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="ghi" children=0
+        │   └── TableCell scope=3:8..3:12 anchor=null attributes={} children=1
+        │       └── Text scope=3:9..3:11 anchor=null attributes={} literal="jkl" children=0
+        └── TableRow scope=4:1..4:13 anchor=null attributes={} children=2
+            ├── TableCell scope=4:2..4:6 anchor=null attributes={} children=1
+            │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="mno" children=0
+            └── TableCell scope=4:8..4:12 anchor=null attributes={} children=1
+                └── Text scope=4:9..4:11 anchor=null attributes={} literal="pqr" children=0
 ````````````````````````````````
 
 We're going to mix up the table now; we'll demonstrate that inline formatting
@@ -55,29 +54,28 @@ Hi!
 Document scope=1:1..8:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:6 anchor=null attributes={} literal="Hello!" children=0
-├── Table scope=3:1..6:37 anchor=null attributes={} columns=[none:null,none:null] children=3
+├── Table scope=3:1..6:37 anchor=null attributes={} columns=[none,none] children=3
 │   ├── TableHead children=1
 │   │   └── TableRow scope=3:1..3:18 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=3:2..3:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=3:2..3:8 anchor=null attributes={} children=1
 │   │       │   └── Emphasis scope=3:3..3:7 anchor=null attributes={} children=1
 │   │       │       └── Text scope=3:4..3:6 anchor=null attributes={} literal="abc" children=0
-│   │       └── TableCell scope=3:10..3:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=3:10..3:17 anchor=null attributes={} children=1
 │   │           └── Text scope=3:11..3:16 anchor=null attributes={} literal="セン" children=0
-│   ├── TableBody children=2
-│   │   ├── TableRow scope=5:1..5:48 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=5:2..5:45 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=5:3..5:44 anchor=null attributes={} literal="1. Block elements inside cells don't work." children=0
-│   │   │   └── TableCell scope=5:47..5:47 anchor=null attributes={} rowspan=1 colspan=1 children=0
-│   │   └── TableRow scope=6:1..6:37 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=6:2..6:32 anchor=null attributes={} rowspan=1 colspan=1 children=3
-│   │       │   ├── Text scope=6:3..6:6 anchor=null attributes={} literal="But " children=0
-│   │       │   ├── Emphasis scope=6:7..6:30 anchor=null attributes={} children=1
-│   │       │   │   └── Strong scope=6:8..6:29 anchor=null attributes={} children=1
-│   │       │   │       └── Text scope=6:10..6:27 anchor=null attributes={} literal="inline elements do" children=0
-│   │       │   └── Text scope=6:31..6:31 anchor=null attributes={} literal="." children=0
-│   │       └── TableCell scope=6:34..6:36 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Text scope=6:35..6:35 anchor=null attributes={} literal="x" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=2
+│       ├── TableRow scope=5:1..5:48 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=5:2..5:45 anchor=null attributes={} children=1
+│       │   │   └── Text scope=5:3..5:44 anchor=null attributes={} literal="1. Block elements inside cells don't work." children=0
+│       │   └── TableCell scope=5:47..5:47 anchor=null attributes={} children=0
+│       └── TableRow scope=6:1..6:37 anchor=null attributes={} children=2
+│           ├── TableCell scope=6:2..6:32 anchor=null attributes={} children=3
+│           │   ├── Text scope=6:3..6:6 anchor=null attributes={} literal="But " children=0
+│           │   ├── Emphasis scope=6:7..6:30 anchor=null attributes={} children=1
+│           │   │   └── Strong scope=6:8..6:29 anchor=null attributes={} children=1
+│           │   │       └── Text scope=6:10..6:27 anchor=null attributes={} literal="inline elements do" children=0
+│           │   └── Text scope=6:31..6:31 anchor=null attributes={} literal="." children=0
+│           └── TableCell scope=6:34..6:36 anchor=null attributes={} children=1
+│               └── Text scope=6:35..6:35 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=8:1..8:3 anchor=null attributes={} children=1
     └── Text scope=8:1..8:3 anchor=null attributes={} literal="Hi!" children=0
 ````````````````````````````````
@@ -108,31 +106,28 @@ Document scope=1:1..15:7 anchor=null attributes={} children=6
 │   ├── Text scope=3:1..3:45 anchor=null attributes={} literal="| Not enough table | to be considered table |" children=0
 │   ├── SoftBreak scope=3:46..4:0 anchor=null attributes={} children=0
 │   └── Text scope=4:1..4:45 anchor=null attributes={} literal="| Not enough table | to be considered table |" children=0
-├── Table scope=6:1..7:46 anchor=null attributes={} columns=[none:null,none:null] children=1
+├── Table scope=6:1..7:46 anchor=null attributes={} columns=[none,none] children=1
 │   ├── TableHead children=1
 │   │   └── TableRow scope=6:1..6:46 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=6:2..6:20 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=6:2..6:20 anchor=null attributes={} children=1
 │   │       │   └── Text scope=6:3..6:19 anchor=null attributes={} literal="Just enough table" children=0
-│   │       └── TableCell scope=6:22..6:45 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=6:22..6:45 anchor=null attributes={} children=1
 │   │           └── Text scope=6:23..6:44 anchor=null attributes={} literal="to be considered table" children=0
-│   ├── TableBody children=0
-│   └── TableFoot children=0
+│   └── TableBody children=0
 ├── Paragraph scope=9:1..9:14 anchor=null attributes={} children=1
 │   └── Text scope=9:1..9:14 anchor=null attributes={} literal="| ---- | --- |" children=0
-├── Table scope=11:1..12:3 anchor=null attributes={} columns=[none:null] children=1
+├── Table scope=11:1..12:3 anchor=null attributes={} columns=[none] children=1
 │   ├── TableHead children=1
 │   │   └── TableRow scope=11:1..11:3 anchor=null attributes={} children=1
-│   │       └── TableCell scope=11:2..11:2 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=11:2..11:2 anchor=null attributes={} children=1
 │   │           └── Text scope=11:2..11:2 anchor=null attributes={} literal="x" children=0
-│   ├── TableBody children=0
-│   └── TableFoot children=0
-└── Table scope=14:1..15:7 anchor=null attributes={} columns=[none:null] children=1
+│   └── TableBody children=0
+└── Table scope=14:1..15:7 anchor=null attributes={} columns=[none] children=1
     ├── TableHead children=1
     │   └── TableRow scope=14:1..14:7 anchor=null attributes={} children=1
-    │       └── TableCell scope=14:2..14:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=14:2..14:6 anchor=null attributes={} children=1
     │           └── Text scope=14:3..14:5 anchor=null attributes={} literal="xyz" children=0
-    ├── TableBody children=0
-    └── TableFoot children=0
+    └── TableBody children=0
 ````````````````````````````````
 
 A "simpler" table, GFM style:
@@ -143,20 +138,19 @@ abc | def
 xyz | ghi
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:1..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:1..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="abc" children=0
-    │       └── TableCell scope=1:6..1:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:9 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:9 anchor=null attributes={} literal="def" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:1..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="xyz" children=0
-    │       └── TableCell scope=3:6..3:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:7..3:9 anchor=null attributes={} literal="ghi" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:9 anchor=null attributes={} children=2
+            ├── TableCell scope=3:1..3:4 anchor=null attributes={} children=1
+            │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="xyz" children=0
+            └── TableCell scope=3:6..3:9 anchor=null attributes={} children=1
+                └── Text scope=3:7..3:9 anchor=null attributes={} literal="ghi" children=0
 ````````````````````````````````
 
 We are making the parser slighly more lax here. Here is a table with spaces at
@@ -175,29 +169,28 @@ Hi!
 Document scope=1:1..8:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:6 anchor=null attributes={} literal="Hello!" children=0
-├── Table scope=3:1..6:37 anchor=null attributes={} columns=[none:null,none:null] children=3
+├── Table scope=3:1..6:37 anchor=null attributes={} columns=[none,none] children=3
 │   ├── TableHead children=1
 │   │   └── TableRow scope=3:1..3:18 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=3:2..3:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=3:2..3:8 anchor=null attributes={} children=1
 │   │       │   └── Emphasis scope=3:3..3:7 anchor=null attributes={} children=1
 │   │       │       └── Text scope=3:4..3:6 anchor=null attributes={} literal="abc" children=0
-│   │       └── TableCell scope=3:10..3:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=3:10..3:17 anchor=null attributes={} children=1
 │   │           └── Text scope=3:11..3:16 anchor=null attributes={} literal="セン" children=0
-│   ├── TableBody children=2
-│   │   ├── TableRow scope=5:1..5:38 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=5:2..5:34 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=5:3..5:33 anchor=null attributes={} literal="this row has a space at the end" children=0
-│   │   │   └── TableCell scope=5:36..5:36 anchor=null attributes={} rowspan=1 colspan=1 children=0
-│   │   └── TableRow scope=6:1..6:37 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=6:2..6:32 anchor=null attributes={} rowspan=1 colspan=1 children=3
-│   │       │   ├── Text scope=6:3..6:6 anchor=null attributes={} literal="But " children=0
-│   │       │   ├── Emphasis scope=6:7..6:30 anchor=null attributes={} children=1
-│   │       │   │   └── Strong scope=6:8..6:29 anchor=null attributes={} children=1
-│   │       │   │       └── Text scope=6:10..6:27 anchor=null attributes={} literal="inline elements do" children=0
-│   │       │   └── Text scope=6:31..6:31 anchor=null attributes={} literal="." children=0
-│   │       └── TableCell scope=6:34..6:36 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Text scope=6:35..6:35 anchor=null attributes={} literal="x" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=2
+│       ├── TableRow scope=5:1..5:38 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=5:2..5:34 anchor=null attributes={} children=1
+│       │   │   └── Text scope=5:3..5:33 anchor=null attributes={} literal="this row has a space at the end" children=0
+│       │   └── TableCell scope=5:36..5:36 anchor=null attributes={} children=0
+│       └── TableRow scope=6:1..6:37 anchor=null attributes={} children=2
+│           ├── TableCell scope=6:2..6:32 anchor=null attributes={} children=3
+│           │   ├── Text scope=6:3..6:6 anchor=null attributes={} literal="But " children=0
+│           │   ├── Emphasis scope=6:7..6:30 anchor=null attributes={} children=1
+│           │   │   └── Strong scope=6:8..6:29 anchor=null attributes={} children=1
+│           │   │       └── Text scope=6:10..6:27 anchor=null attributes={} literal="inline elements do" children=0
+│           │   └── Text scope=6:31..6:31 anchor=null attributes={} literal="." children=0
+│           └── TableCell scope=6:34..6:36 anchor=null attributes={} children=1
+│               └── Text scope=6:35..6:35 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=8:1..8:3 anchor=null attributes={} children=1
     └── Text scope=8:1..8:3 anchor=null attributes={} literal="Hi!" children=0
 ````````````````````````````````
@@ -210,32 +203,31 @@ aaa | bbb | ccc | ddd | eee
 fff | ggg | hhh | iii | jjj
 .
 Document scope=1:1..3:27 anchor=null attributes={} children=1
-└── Table scope=1:1..3:27 anchor=null attributes={} columns=[left:null,none:null,center:null,none:null,right:null] children=2
+└── Table scope=1:1..3:27 anchor=null attributes={} columns=[left,none,center,none,right] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:27 anchor=null attributes={} children=5
-    │       ├── TableCell scope=1:1..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:1..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:1..1:3 anchor=null attributes={} literal="aaa" children=0
-    │       ├── TableCell scope=1:6..1:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:6..1:10 anchor=null attributes={} children=1
     │       │   └── Text scope=1:7..1:9 anchor=null attributes={} literal="bbb" children=0
-    │       ├── TableCell scope=1:12..1:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:12..1:16 anchor=null attributes={} children=1
     │       │   └── Text scope=1:13..1:15 anchor=null attributes={} literal="ccc" children=0
-    │       ├── TableCell scope=1:18..1:22 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:18..1:22 anchor=null attributes={} children=1
     │       │   └── Text scope=1:19..1:21 anchor=null attributes={} literal="ddd" children=0
-    │       └── TableCell scope=1:24..1:27 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:24..1:27 anchor=null attributes={} children=1
     │           └── Text scope=1:25..1:27 anchor=null attributes={} literal="eee" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:27 anchor=null attributes={} children=5
-    │       ├── TableCell scope=3:1..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="fff" children=0
-    │       ├── TableCell scope=3:6..3:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:7..3:9 anchor=null attributes={} literal="ggg" children=0
-    │       ├── TableCell scope=3:12..3:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:13..3:15 anchor=null attributes={} literal="hhh" children=0
-    │       ├── TableCell scope=3:18..3:22 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:19..3:21 anchor=null attributes={} literal="iii" children=0
-    │       └── TableCell scope=3:24..3:27 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:25..3:27 anchor=null attributes={} literal="jjj" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:27 anchor=null attributes={} children=5
+            ├── TableCell scope=3:1..3:4 anchor=null attributes={} children=1
+            │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="fff" children=0
+            ├── TableCell scope=3:6..3:10 anchor=null attributes={} children=1
+            │   └── Text scope=3:7..3:9 anchor=null attributes={} literal="ggg" children=0
+            ├── TableCell scope=3:12..3:16 anchor=null attributes={} children=1
+            │   └── Text scope=3:13..3:15 anchor=null attributes={} literal="hhh" children=0
+            ├── TableCell scope=3:18..3:22 anchor=null attributes={} children=1
+            │   └── Text scope=3:19..3:21 anchor=null attributes={} literal="iii" children=0
+            └── TableCell scope=3:24..3:27 anchor=null attributes={} children=1
+                └── Text scope=3:25..3:27 anchor=null attributes={} literal="jjj" children=0
 ````````````````````````````````
 
 ### Table cell count mismatches
@@ -267,35 +259,34 @@ than the header are truncated.
 | 1 | 2 | 3 | 4 | 5 |
 .
 Document scope=1:1..5:21 anchor=null attributes={} children=1
-└── Table scope=1:1..5:21 anchor=null attributes={} columns=[none:null,none:null,none:null] children=4
+└── Table scope=1:1..5:21 anchor=null attributes={} columns=[none,none,none] children=4
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=3
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       ├── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │       │   └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    │       └── TableCell scope=1:10..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:10..1:12 anchor=null attributes={} children=1
     │           └── Text scope=1:11..1:11 anchor=null attributes={} literal="c" children=0
-    ├── TableBody children=3
-    │   ├── TableRow scope=3:1..3:3 anchor=null attributes={} children=3
-    │   │   ├── TableCell scope=3:2..3:3 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="x" children=0
-    │   │   ├── TableCell scope=3:3..3:3 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │   │   └── TableCell scope=3:3..3:3 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │   ├── TableRow scope=4:1..4:7 anchor=null attributes={} children=3
-    │   │   ├── TableCell scope=4:2..4:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="a" children=0
-    │   │   ├── TableCell scope=4:6..4:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Text scope=4:7..4:7 anchor=null attributes={} literal="b" children=0
-    │   │   └── TableCell scope=4:7..4:7 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │   └── TableRow scope=5:1..5:21 anchor=null attributes={} children=3
-    │       ├── TableCell scope=5:2..5:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=5:3..5:3 anchor=null attributes={} literal="1" children=0
-    │       ├── TableCell scope=5:6..5:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=5:7..5:7 anchor=null attributes={} literal="2" children=0
-    │       └── TableCell scope=5:10..5:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=5:11..5:11 anchor=null attributes={} literal="3" children=0
-    └── TableFoot children=0
+    └── TableBody children=3
+        ├── TableRow scope=3:1..3:3 anchor=null attributes={} children=3
+        │   ├── TableCell scope=3:2..3:3 anchor=null attributes={} children=1
+        │   │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="x" children=0
+        │   ├── TableCell scope=3:3..3:3 anchor=null attributes={} children=0
+        │   └── TableCell scope=3:3..3:3 anchor=null attributes={} children=0
+        ├── TableRow scope=4:1..4:7 anchor=null attributes={} children=3
+        │   ├── TableCell scope=4:2..4:4 anchor=null attributes={} children=1
+        │   │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="a" children=0
+        │   ├── TableCell scope=4:6..4:7 anchor=null attributes={} children=1
+        │   │   └── Text scope=4:7..4:7 anchor=null attributes={} literal="b" children=0
+        │   └── TableCell scope=4:7..4:7 anchor=null attributes={} children=0
+        └── TableRow scope=5:1..5:21 anchor=null attributes={} children=3
+            ├── TableCell scope=5:2..5:4 anchor=null attributes={} children=1
+            │   └── Text scope=5:3..5:3 anchor=null attributes={} literal="1" children=0
+            ├── TableCell scope=5:6..5:8 anchor=null attributes={} children=1
+            │   └── Text scope=5:7..5:7 anchor=null attributes={} literal="2" children=0
+            └── TableCell scope=5:10..5:12 anchor=null attributes={} children=1
+                └── Text scope=5:11..5:11 anchor=null attributes={} literal="3" children=0
 ````````````````````````````````
 
 ### Embedded pipes
@@ -311,39 +302,38 @@ Tables with embedded pipes could be tricky.
 | don't **\_reparse\_**
 .
 Document scope=1:1..6:23 anchor=null attributes={} children=1
-└── Table scope=1:1..6:23 anchor=null attributes={} columns=[none:null,none:null] children=5
+└── Table scope=1:1..6:23 anchor=null attributes={} columns=[none,none] children=5
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=4
-    │   ├── TableRow scope=3:1..3:47 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=3:2..3:30 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Text scope=3:3..3:29 anchor=null attributes={} literal="Escaped pipes are |okay|." children=0
-    │   │   └── TableCell scope=3:32..3:46 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │       └── Text scope=3:33..3:45 anchor=null attributes={} literal="Like | this." children=0
-    │   ├── TableRow scope=4:1..4:34 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=4:2..4:33 anchor=null attributes={} rowspan=1 colspan=1 children=3
-    │   │   │   ├── Text scope=4:3..4:9 anchor=null attributes={} literal="Within " children=0
-    │   │   │   ├── Code scope=4:10..4:27 anchor=null attributes={} literal="|code| is okay" children=0
-    │   │   │   └── Text scope=4:28..4:32 anchor=null attributes={} literal=" too." children=0
-    │   │   └── TableCell scope=4:34..4:34 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │   ├── TableRow scope=5:1..5:24 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=5:2..5:24 anchor=null attributes={} rowspan=1 colspan=1 children=2
-    │   │   │   ├── Emphasis scope=5:3..5:13 anchor=null attributes={} children=1
-    │   │   │   │   └── Strong scope=5:4..5:12 anchor=null attributes={} children=1
-    │   │   │   │       └── Code scope=5:6..5:10 anchor=null attributes={} literal="c|" children=0
-    │   │   │   └── Text scope=5:14..5:24 anchor=null attributes={} literal=" | complex" children=0
-    │   │   └── TableCell scope=5:24..5:24 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │   └── TableRow scope=6:1..6:23 anchor=null attributes={} children=2
-    │       ├── TableCell scope=6:2..6:23 anchor=null attributes={} rowspan=1 colspan=1 children=2
-    │       │   ├── Text scope=6:3..6:8 anchor=null attributes={} literal="don't " children=0
-    │       │   └── Strong scope=6:9..6:23 anchor=null attributes={} children=1
-    │       │       └── Text scope=6:11..6:21 anchor=null attributes={} literal="_reparse_" children=0
-    │       └── TableCell scope=6:23..6:23 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    └── TableFoot children=0
+    └── TableBody children=4
+        ├── TableRow scope=3:1..3:47 anchor=null attributes={} children=2
+        │   ├── TableCell scope=3:2..3:30 anchor=null attributes={} children=1
+        │   │   └── Text scope=3:3..3:29 anchor=null attributes={} literal="Escaped pipes are |okay|." children=0
+        │   └── TableCell scope=3:32..3:46 anchor=null attributes={} children=1
+        │       └── Text scope=3:33..3:45 anchor=null attributes={} literal="Like | this." children=0
+        ├── TableRow scope=4:1..4:34 anchor=null attributes={} children=2
+        │   ├── TableCell scope=4:2..4:33 anchor=null attributes={} children=3
+        │   │   ├── Text scope=4:3..4:9 anchor=null attributes={} literal="Within " children=0
+        │   │   ├── Code scope=4:10..4:27 anchor=null attributes={} literal="|code| is okay" children=0
+        │   │   └── Text scope=4:28..4:32 anchor=null attributes={} literal=" too." children=0
+        │   └── TableCell scope=4:34..4:34 anchor=null attributes={} children=0
+        ├── TableRow scope=5:1..5:24 anchor=null attributes={} children=2
+        │   ├── TableCell scope=5:2..5:24 anchor=null attributes={} children=2
+        │   │   ├── Emphasis scope=5:3..5:13 anchor=null attributes={} children=1
+        │   │   │   └── Strong scope=5:4..5:12 anchor=null attributes={} children=1
+        │   │   │       └── Code scope=5:6..5:10 anchor=null attributes={} literal="c|" children=0
+        │   │   └── Text scope=5:14..5:24 anchor=null attributes={} literal=" | complex" children=0
+        │   └── TableCell scope=5:24..5:24 anchor=null attributes={} children=0
+        └── TableRow scope=6:1..6:23 anchor=null attributes={} children=2
+            ├── TableCell scope=6:2..6:23 anchor=null attributes={} children=2
+            │   ├── Text scope=6:3..6:8 anchor=null attributes={} literal="don't " children=0
+            │   └── Strong scope=6:9..6:23 anchor=null attributes={} children=1
+            │       └── Text scope=6:11..6:21 anchor=null attributes={} literal="_reparse_" children=0
+            └── TableCell scope=6:23..6:23 anchor=null attributes={} children=0
 ````````````````````````````````
 
 ### Oddly-formatted markers
@@ -355,13 +345,12 @@ This shouldn't assert.
 --- |
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
-└── Table scope=1:1..2:5 anchor=null attributes={} columns=[none:null] children=1
+└── Table scope=1:1..2:5 anchor=null attributes={} columns=[none] children=1
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
-    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── TableBody children=0
-    └── TableFoot children=0
+    └── TableBody children=0
 ````````````````````````````````
 
 ### Escaping
@@ -386,40 +375,39 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
 \a `\a`
 .
 Document scope=1:1..17:7 anchor=null attributes={} children=6
-├── Table scope=1:1..7:13 anchor=null attributes={} columns=[none:null,none:null] children=6
+├── Table scope=1:1..7:13 anchor=null attributes={} columns=[none,none] children=6
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
 │   │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-│   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
 │   │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-│   ├── TableBody children=5
-│   │   ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=3:2..3:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=3:3..3:4 anchor=null attributes={} literal="\\" children=0
-│   │   │   └── TableCell scope=3:7..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │       └── Code scope=3:8..3:11 anchor=null attributes={} literal="\\\\" children=0
-│   │   ├── TableRow scope=4:1..4:17 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=4:2..4:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=4:3..4:6 anchor=null attributes={} literal="\\\\" children=0
-│   │   │   └── TableCell scope=4:9..4:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │       └── Code scope=4:10..4:15 anchor=null attributes={} literal="\\\\\\\\" children=0
-│   │   ├── TableRow scope=5:1..5:13 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=5:2..5:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=5:3..5:4 anchor=null attributes={} literal="_" children=0
-│   │   │   └── TableCell scope=5:7..5:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │       └── Code scope=5:8..5:11 anchor=null attributes={} literal="\\_" children=0
-│   │   ├── TableRow scope=6:1..6:13 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=6:2..6:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=6:3..6:4 anchor=null attributes={} literal="|" children=0
-│   │   │   └── TableCell scope=6:7..6:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │       └── Code scope=6:8..6:11 anchor=null attributes={} literal="|" children=0
-│   │   └── TableRow scope=7:1..7:13 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=7:2..7:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=7:3..7:4 anchor=null attributes={} literal="\\a" children=0
-│   │       └── TableCell scope=7:7..7:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Code scope=7:8..7:11 anchor=null attributes={} literal="\\a" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=5
+│       ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=3:2..3:5 anchor=null attributes={} children=1
+│       │   │   └── Text scope=3:3..3:4 anchor=null attributes={} literal="\\" children=0
+│       │   └── TableCell scope=3:7..3:12 anchor=null attributes={} children=1
+│       │       └── Code scope=3:8..3:11 anchor=null attributes={} literal="\\\\" children=0
+│       ├── TableRow scope=4:1..4:17 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=4:2..4:7 anchor=null attributes={} children=1
+│       │   │   └── Text scope=4:3..4:6 anchor=null attributes={} literal="\\\\" children=0
+│       │   └── TableCell scope=4:9..4:16 anchor=null attributes={} children=1
+│       │       └── Code scope=4:10..4:15 anchor=null attributes={} literal="\\\\\\\\" children=0
+│       ├── TableRow scope=5:1..5:13 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=5:2..5:5 anchor=null attributes={} children=1
+│       │   │   └── Text scope=5:3..5:4 anchor=null attributes={} literal="_" children=0
+│       │   └── TableCell scope=5:7..5:12 anchor=null attributes={} children=1
+│       │       └── Code scope=5:8..5:11 anchor=null attributes={} literal="\\_" children=0
+│       ├── TableRow scope=6:1..6:13 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=6:2..6:5 anchor=null attributes={} children=1
+│       │   │   └── Text scope=6:3..6:4 anchor=null attributes={} literal="|" children=0
+│       │   └── TableCell scope=6:7..6:12 anchor=null attributes={} children=1
+│       │       └── Code scope=6:8..6:11 anchor=null attributes={} literal="|" children=0
+│       └── TableRow scope=7:1..7:13 anchor=null attributes={} children=2
+│           ├── TableCell scope=7:2..7:5 anchor=null attributes={} children=1
+│           │   └── Text scope=7:3..7:4 anchor=null attributes={} literal="\\a" children=0
+│           └── TableCell scope=7:7..7:12 anchor=null attributes={} children=1
+│               └── Code scope=7:8..7:11 anchor=null attributes={} literal="\\a" children=0
 ├── Paragraph scope=9:1..9:7 anchor=null attributes={} children=2
 │   ├── Text scope=9:1..9:3 anchor=null attributes={} literal="\\ " children=0
 │   └── Code scope=9:4..9:7 anchor=null attributes={} literal="\\\\" children=0
@@ -446,23 +434,22 @@ Document scope=1:1..17:7 anchor=null attributes={} children=6
 | ok <br> sure |
 .
 Document scope=1:1..4:16 anchor=null attributes={} children=1
-└── Table scope=1:1..4:16 anchor=null attributes={} columns=[none:null] children=3
+└── Table scope=1:1..4:16 anchor=null attributes={} columns=[none] children=3
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
-    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── TableBody children=2
-    │   ├── TableRow scope=3:1..3:26 anchor=null attributes={} children=1
-    │   │   └── TableCell scope=3:2..3:25 anchor=null attributes={} rowspan=1 colspan=1 children=3
-    │   │       ├── HTML scope=3:3..3:10 anchor=null attributes={} literal="<strong>" children=0
-    │   │       ├── Text scope=3:11..3:15 anchor=null attributes={} literal="hello" children=0
-    │   │       └── HTML scope=3:16..3:24 anchor=null attributes={} literal="</strong>" children=0
-    │   └── TableRow scope=4:1..4:16 anchor=null attributes={} children=1
-    │       └── TableCell scope=4:2..4:15 anchor=null attributes={} rowspan=1 colspan=1 children=3
-    │           ├── Text scope=4:3..4:5 anchor=null attributes={} literal="ok " children=0
-    │           ├── HTML scope=4:6..4:9 anchor=null attributes={} literal="<br>" children=0
-    │           └── Text scope=4:10..4:14 anchor=null attributes={} literal=" sure" children=0
-    └── TableFoot children=0
+    └── TableBody children=2
+        ├── TableRow scope=3:1..3:26 anchor=null attributes={} children=1
+        │   └── TableCell scope=3:2..3:25 anchor=null attributes={} children=3
+        │       ├── HTML scope=3:3..3:10 anchor=null attributes={} literal="<strong>" children=0
+        │       ├── Text scope=3:11..3:15 anchor=null attributes={} literal="hello" children=0
+        │       └── HTML scope=3:16..3:24 anchor=null attributes={} literal="</strong>" children=0
+        └── TableRow scope=4:1..4:16 anchor=null attributes={} children=1
+            └── TableCell scope=4:2..4:15 anchor=null attributes={} children=3
+                ├── Text scope=4:3..4:5 anchor=null attributes={} literal="ok " children=0
+                ├── HTML scope=4:6..4:9 anchor=null attributes={} literal="<br>" children=0
+                └── Text scope=4:10..4:14 anchor=null attributes={} literal=" sure" children=0
 ````````````````````````````````
 
 ### Reference-style links
@@ -482,22 +469,21 @@ Document scope=1:1..7:50 anchor=null attributes={} children=3
 │   ├── Link scope=1:18..1:37 anchor=null attributes={} dest=reference("freedom planet 2") title=null children=1
 │   │   └── Text scope=1:19..1:34 anchor=null attributes={} literal="Freedom Planet 2" children=0
 │   └── Text scope=1:38..1:38 anchor=null attributes={} literal="." children=0
-├── Table scope=3:1..5:57 anchor=null attributes={} columns=[none:null] children=2
+├── Table scope=3:1..5:57 anchor=null attributes={} columns=[none] children=2
 │   ├── TableHead children=1
 │   │   └── TableRow scope=3:1..3:60 anchor=null attributes={} children=1
-│   │       └── TableCell scope=3:2..3:59 anchor=null attributes={} rowspan=1 colspan=1 children=3
+│   │       └── TableCell scope=3:2..3:59 anchor=null attributes={} children=3
 │   │           ├── Text scope=3:3..3:19 anchor=null attributes={} literal="Here's a link to " children=0
 │   │           ├── Link scope=3:20..3:39 anchor=null attributes={} dest=reference("freedom planet 2") title=null children=1
 │   │           │   └── Text scope=3:21..3:36 anchor=null attributes={} literal="Freedom Planet 2" children=0
 │   │           └── Text scope=3:40..3:58 anchor=null attributes={} literal=" in a table header." children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=5:1..5:57 anchor=null attributes={} children=1
-│   │       └── TableCell scope=5:2..5:56 anchor=null attributes={} rowspan=1 colspan=1 children=3
-│   │           ├── Text scope=5:3..5:19 anchor=null attributes={} literal="Here's a link to " children=0
-│   │           ├── Link scope=5:20..5:39 anchor=null attributes={} dest=reference("freedom planet 2") title=null children=1
-│   │           │   └── Text scope=5:21..5:36 anchor=null attributes={} literal="Freedom Planet 2" children=0
-│   │           └── Text scope=5:40..5:55 anchor=null attributes={} literal=" in a table row." children=0
-│   └── TableFoot children=0
+│   └── TableBody children=1
+│       └── TableRow scope=5:1..5:57 anchor=null attributes={} children=1
+│           └── TableCell scope=5:2..5:56 anchor=null attributes={} children=3
+│               ├── Text scope=5:3..5:19 anchor=null attributes={} literal="Here's a link to " children=0
+│               ├── Link scope=5:20..5:39 anchor=null attributes={} dest=reference("freedom planet 2") title=null children=1
+│               │   └── Text scope=5:21..5:36 anchor=null attributes={} literal="Freedom Planet 2" children=0
+│               └── Text scope=5:40..5:55 anchor=null attributes={} literal=" in a table row." children=0
 └── Reference scope=7:1..7:50 anchor=null attributes={} label="freedom planet 2" dest=url("http://www.freedomplanet2.com/") title=null children=0
 ````````````````````````````````
 
@@ -509,23 +495,22 @@ Document scope=1:1..7:50 anchor=null attributes={} children=3
 | d || e |
 .
 Document scope=1:1..3:10 anchor=null attributes={} children=1
-└── Table scope=1:1..3:10 anchor=null attributes={} columns=[none:null,none:null,none:null] children=2
+└── Table scope=1:1..3:10 anchor=null attributes={} columns=[none,none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=3
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       ├── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │       │   └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    │       └── TableCell scope=1:10..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:10..1:12 anchor=null attributes={} children=1
     │           └── Text scope=1:11..1:11 anchor=null attributes={} literal="c" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:10 anchor=null attributes={} children=3
-    │       ├── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="d" children=0
-    │       ├── TableCell scope=3:6..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │       └── TableCell scope=3:7..3:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:8..3:8 anchor=null attributes={} literal="e" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:10 anchor=null attributes={} children=3
+            ├── TableCell scope=3:2..3:4 anchor=null attributes={} children=1
+            │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="d" children=0
+            ├── TableCell scope=3:6..3:6 anchor=null attributes={} children=0
+            └── TableCell scope=3:7..3:9 anchor=null attributes={} children=1
+                └── Text scope=3:8..3:8 anchor=null attributes={} literal="e" children=0
 ````````````````````````````````
 
 ### Interaction with emphasis
@@ -536,21 +521,20 @@ Document scope=1:1..3:10 anchor=null attributes={} children=1
 |***(a)***|
 .
 Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Table scope=1:1..3:11 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:11 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:11 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Emphasis scope=3:2..3:10 anchor=null attributes={} children=1
-    │       │       └── Strong scope=3:3..3:9 anchor=null attributes={} children=1
-    │       │           └── Text scope=3:5..3:7 anchor=null attributes={} literal="(a)" children=0
-    │       └── TableCell scope=3:11..3:11 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:11 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:10 anchor=null attributes={} children=1
+            │   └── Emphasis scope=3:2..3:10 anchor=null attributes={} children=1
+            │       └── Strong scope=3:3..3:9 anchor=null attributes={} children=1
+            │           └── Text scope=3:5..3:7 anchor=null attributes={} literal="(a)" children=0
+            └── TableCell scope=3:11..3:11 anchor=null attributes={} children=0
 ````````````````````````````````
 
 ### a table can be recognised when separated from a paragraph of text without an empty line
@@ -567,20 +551,19 @@ Document scope=1:1..5:5 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="123" children=0
 │   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="456" children=0
-└── Table scope=3:1..5:5 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=3:1..5:5 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=3:2..3:4 anchor=null attributes={} children=1
     │       │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=3:6..3:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=3:6..3:8 anchor=null attributes={} children=1
     │           └── Text scope=3:7..3:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=5:1..5:5 anchor=null attributes={} children=2
-    │       ├── TableCell scope=5:1..5:2 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=5:1..5:1 anchor=null attributes={} literal="d" children=0
-    │       └── TableCell scope=5:4..5:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=5:5..5:5 anchor=null attributes={} literal="e" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=5:1..5:5 anchor=null attributes={} children=2
+            ├── TableCell scope=5:1..5:2 anchor=null attributes={} children=1
+            │   └── Text scope=5:1..5:1 anchor=null attributes={} literal="d" children=0
+            └── TableCell scope=5:4..5:5 anchor=null attributes={} children=1
+                └── Text scope=5:5..5:5 anchor=null attributes={} literal="e" children=0
 ````````````````````````````````
 
 The lead a table is split out of is not a cell, so it is not pipe-unescaped:
@@ -596,15 +579,14 @@ pre \\| lead
 Document scope=1:1..3:9 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:12 anchor=null attributes={} literal="pre \\| lead" children=0
-└── Table scope=2:1..3:9 anchor=null attributes={} columns=[none:null,none:null] children=1
+└── Table scope=2:1..3:9 anchor=null attributes={} columns=[none,none] children=1
     ├── TableHead children=1
     │   └── TableRow scope=2:1..2:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=2:2..2:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=2:2..2:4 anchor=null attributes={} children=1
     │       │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=2:6..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=2:6..2:8 anchor=null attributes={} children=1
     │           └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=0
-    └── TableFoot children=0
+    └── TableBody children=0
 ````````````````````````````````
 
 The lead, the header row and its cells are all recovered from the paragraph's
@@ -621,15 +603,14 @@ Document scope=1:1..3:15 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:15 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
     │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="123" children=0
-    └── Table scope=2:3..3:15 anchor=null attributes={} columns=[none:null,none:null] children=1
+    └── Table scope=2:3..3:15 anchor=null attributes={} columns=[none,none] children=1
         ├── TableHead children=1
         │   └── TableRow scope=2:3..2:11 anchor=null attributes={} children=2
-        │       ├── TableCell scope=2:4..2:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │       ├── TableCell scope=2:4..2:6 anchor=null attributes={} children=1
         │       │   └── Text scope=2:5..2:5 anchor=null attributes={} literal="a" children=0
-        │       └── TableCell scope=2:8..2:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+        │       └── TableCell scope=2:8..2:10 anchor=null attributes={} children=1
         │           └── Text scope=2:9..2:9 anchor=null attributes={} literal="b" children=0
-        ├── TableBody children=0
-        └── TableFoot children=0
+        └── TableBody children=0
 ````````````````````````````````
 
 ## Strikethroughs
@@ -1165,25 +1146,24 @@ Autolink and tables.
 | https://github.com www.github.com | http://pokemon.com |
 .
 Document scope=1:1..3:58 anchor=null attributes={} children=1
-└── Table scope=1:1..3:58 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:58 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:58 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:36 anchor=null attributes={} rowspan=1 colspan=1 children=3
-    │       │   ├── Link scope=3:3..3:20 anchor=null attributes={} dest=url("https://github.com") title=null children=1
-    │       │   │   └── Text scope=3:3..3:20 anchor=null attributes={} literal="https://github.com" children=0
-    │       │   ├── Text scope=3:21..3:21 anchor=null attributes={} literal=" " children=0
-    │       │   └── Link scope=3:22..3:35 anchor=null attributes={} dest=url("http://www.github.com") title=null children=1
-    │       │       └── Text scope=3:22..3:35 anchor=null attributes={} literal="www.github.com" children=0
-    │       └── TableCell scope=3:38..3:57 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Link scope=3:39..3:56 anchor=null attributes={} dest=url("http://pokemon.com") title=null children=1
-    │               └── Text scope=3:39..3:56 anchor=null attributes={} literal="http://pokemon.com" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:58 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:36 anchor=null attributes={} children=3
+            │   ├── Link scope=3:3..3:20 anchor=null attributes={} dest=url("https://github.com") title=null children=1
+            │   │   └── Text scope=3:3..3:20 anchor=null attributes={} literal="https://github.com" children=0
+            │   ├── Text scope=3:21..3:21 anchor=null attributes={} literal=" " children=0
+            │   └── Link scope=3:22..3:35 anchor=null attributes={} dest=url("http://www.github.com") title=null children=1
+            │       └── Text scope=3:22..3:35 anchor=null attributes={} literal="www.github.com" children=0
+            └── TableCell scope=3:38..3:57 anchor=null attributes={} children=1
+                └── Link scope=3:39..3:56 anchor=null attributes={} dest=url("http://pokemon.com") title=null children=1
+                    └── Text scope=3:39..3:56 anchor=null attributes={} literal="http://pokemon.com" children=0
 ````````````````````````````````
 
 ## Task lists

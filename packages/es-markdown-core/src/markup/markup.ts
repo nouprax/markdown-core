@@ -33,7 +33,7 @@ import type { Superscript } from "./superscript.js";
 import type { DefinitionList, Definition } from "./definition-list.js";
 import type { Subscript } from "./subscript.js";
 import type { Strong } from "./strong.js";
-import type { Table, TableCaption, TableCell, TableRow } from "./table.js";
+import type { Table, TableCell, TableRow } from "./table.js";
 import type { Text } from "./text.js";
 import type { ThematicBreak } from "./thematic-break.js";
 import type { Topic } from "./topic.js";
@@ -50,7 +50,6 @@ export type Markup =
     | HTMLBlock
     | FormulaBlock
     | Table
-    | TableCaption
     | TableRow
     | TableCell
     | DirectiveBlock

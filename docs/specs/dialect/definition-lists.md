@@ -69,7 +69,7 @@ or at least one padding column. One through four padding columns are consumed
 under the inherited list rules; extra indentation can produce code. A marker-only
 line gets its content from continuation lines.
 
-A complete table candidate, including an eligible caption, takes precedence.
+A complete table candidate takes precedence.
 Definition lists do not interrupt an existing multiline paragraph. An invalid
 prefix leaves normal Markdown parsing active: `:word` without marker spacing
 can still be an inline [directive](directives.md).

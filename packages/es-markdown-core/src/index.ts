@@ -35,7 +35,7 @@ export type { Span } from "./markup/span.js";
 export type { Superscript } from "./markup/superscript.js";
 export type { Subscript } from "./markup/subscript.js";
 export type { Strong } from "./markup/strong.js";
-export type { Table, TableCaption, TableCell, TableRow, TableColumn } from "./markup/table.js";
+export type { Table, TableCell, TableRow, TableColumn } from "./markup/table.js";
 export type { Text } from "./markup/text.js";
 export type { ThematicBreak } from "./markup/thematic-break.js";
 export type { Topic } from "./markup/topic.js";

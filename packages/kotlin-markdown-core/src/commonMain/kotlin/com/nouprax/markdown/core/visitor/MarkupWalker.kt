@@ -29,7 +29,6 @@ internal class MarkupWalker(
             is HTMLBlock -> visitor.visit(node, phase)
             is FormulaBlock -> visitor.visit(node, phase)
             is Table -> visitor.visit(node, phase)
-            is TableCaption -> visitor.visit(node, phase)
             is TableRow -> visitor.visit(node, phase)
             is TableCell -> visitor.visit(node, phase)
             is DirectiveBlock -> visitor.visit(node, phase)

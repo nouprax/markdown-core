@@ -2233,6 +2233,51 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
     }
 }
 
+/* THE LAST LINES REMAIN OPEN. The line the text ends in, which the content
+ * holds as far as it goes, can still turn out to start a block that
+ * interrupts the paragraph -- a definition's label once its colon comes --
+ * and a later line can take the line before it -- a delimiter row makes it
+ * a table's head -- while the last line holds only bytes some element
+ * `claims` (element.h). A paragraph that loses its first line is no longer
+ * one, and its nodes go with it; one that loses a later line goes on
+ * without it, and must not have settled on it. So a snapshot's read
+ * settles nothing on a last line after the first, nor, while that line is
+ * claimed, on the one before it unless that one is the first, nor on the
+ * line ending before them: the bound is where that line ending begins. */
+static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdown_core_node *node, bufsize_t size) {
+    /* A paragraph whose content marks all name one source line has no
+     * line after its first: nothing to scan. */
+    const markdown_core_content_map *map = &node->content_map;
+    if (map->count <= 1 ||
+        parser->line_marks.values[map->first].line == parser->line_marks.values[map->first + map->count - 1].line) {
+        return size;
+    }
+    const unsigned char *text = markdown_core_node_text(node).data;
+    bufsize_t at = size;
+    bool claimed = true;
+    while (at > 0 && !markdown_core_is_line_end(text[at - 1])) {
+        at--;
+        claimed = claimed && parser->dialect->claims[text[at]];
+    }
+    if (!at) {
+        return size;
+    }
+    while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
+        at--;
+    }
+    bufsize_t before = at;
+    while (claimed && before > 0 && !markdown_core_is_line_end(text[before - 1])) {
+        before--;
+    }
+    if (claimed && before > 0) {
+        at = before;
+        while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
+            at--;
+        }
+    }
+    return at;
+}
+
 /* A snapshot completes the paragraph `node`, whose content is `size` bytes:
  * it takes the settled nodes as its first children when they are its, and
  * parses its content from the point, listing where the next point may be
@@ -2248,7 +2293,7 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     settled->root = node;
     settled->offset = node->content_map.offset;
     if (settles) {
-        settled->size = size;
+        settled->size = S_settle_bound(parser, node, size);
     }
     settled->miss_total = settled->miss_count;
     markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
@@ -2337,7 +2382,7 @@ static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node)
     const uint32_t held = (uint32_t)settled->nodes.count;
     for (size_t k = settle->count; k-- > 0;) {
         const markdown_core_settle_start *start = &settle->starts[k];
-        if (start->start > settle->undecided) {
+        if (start->start > settle->undecided || start->start > settled->size) {
             continue;
         }
         const uint32_t at = S_child_at(node, held, start->start);

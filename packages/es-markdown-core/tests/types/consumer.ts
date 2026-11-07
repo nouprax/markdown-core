@@ -172,9 +172,6 @@ const visitor: MarkupVisitor = {
     table: (node) => {
         void node.kind;
     },
-    tableCaption: (node) => {
-        void node.kind;
-    },
     tableRow: () => undefined,
     tableCell: (node) => {
         void node.kind;
@@ -300,7 +297,6 @@ const walkingVisitor: MarkupVisitor = {
     htmlBlock: () => undefined,
     formulaBlock: () => undefined,
     table: () => undefined,
-    tableCaption: () => undefined,
     tableRow: () => undefined,
     tableCell: () => undefined,
     directiveBlock: () => undefined,

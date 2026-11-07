@@ -660,6 +660,14 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
             child--;
             continue;
         }
+        /* A child before that the child's line may still have gone on in
+         * was open as that line began, which no close below the root notes
+         * (element.h, `awaits`). */
+        if (child &&
+            (markdown_core_parser_block_kind(parser, block->children[child - 1])->flags & MARKDOWN_CORE_KIND_AWAITS)) {
+            child--;
+            continue;
+        }
         if (markdown_core_parser_spanned(parser, line_start, &reached) && reached < rest->close) {
             return false;
         }

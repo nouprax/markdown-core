@@ -15,16 +15,15 @@ Document scope=1:1..24:16 anchor=null attributes={} children=8
 │       └── Text scope=9:3..9:7 anchor=null attributes={} literal="quote" children=0
 ├── Paragraph scope=13:1..13:11 anchor="lead" attributes={} children=1
 │   └── Text scope=13:1..13:4 anchor=null attributes={} literal="Lead" children=0
-├── Table scope=14:1..18:7 anchor="table" attributes={} columns=[none:null] children=2
+├── Table scope=14:1..18:7 anchor="table" attributes={} columns=[none] children=2
 │   ├── TableHead children=1
 │   │   └── TableRow scope=14:1..14:5 anchor=null attributes={} children=1
-│   │       └── TableCell scope=14:2..14:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=14:2..14:4 anchor=null attributes={} children=1
 │   │           └── Text scope=14:3..14:3 anchor=null attributes={} literal="h" children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=16:1..16:5 anchor=null attributes={} children=1
-│   │       └── TableCell scope=16:2..16:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Text scope=16:3..16:3 anchor=null attributes={} literal="c" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=1
+│       └── TableRow scope=16:1..16:5 anchor=null attributes={} children=1
+│           └── TableCell scope=16:2..16:4 anchor=null attributes={} children=1
+│               └── Text scope=16:3..16:3 anchor=null attributes={} literal="c" children=0
 ├── Paragraph scope=20:1..20:26 anchor=null attributes={} children=3
 │   ├── CrossLink scope=20:1..20:15 anchor=null attributes={} dest=cross(path="",anchor="paragraph") label=null children=0
 │   ├── Text scope=20:16..20:16 anchor=null attributes={} literal=" " children=0
