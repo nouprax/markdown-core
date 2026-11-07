@@ -317,7 +317,8 @@ class ScopeTest {
         assertEquals(listOf(Run(1, 5u)), last.runs)
         assertEquals(listOf(Scope(Position(3, 1), Position(3, 5))), document.scope(body, source))
         assertEquals(listOf(Scope(Position(4, 1), Position(4, 5))), document.scope(last, source))
-        val text = last.cells.single().content.single()
+        val cell = last.cells.single()
+        val text = cell.content.single()
         assertSame(text, document.node(Position(4, 3), source))
     }
 
