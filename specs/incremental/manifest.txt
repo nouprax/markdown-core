@@ -318,6 +318,42 @@ stream ../canonical-ast/topics.md tokens
 stream ../canonical-ast/topics.md scalars
 stream ../canonical-ast/topics.md rows
 stream ../canonical-ast/topics.md splits
+document documents/hard-stream-head-in-root.md
+script documents/hard-stream-head-in-root.md scripts/hard-stream-head-in-root.script
+stream documents/hard-stream-head-in-root.md tokens
+stream documents/hard-stream-head-in-root.md scalars
+stream documents/hard-stream-head-in-root.md rows
+stream documents/hard-stream-head-in-root.md splits
+document documents/hard-stream-note-in-root.md
+script documents/hard-stream-note-in-root.md scripts/hard-stream-note-in-root.script
+stream documents/hard-stream-note-in-root.md tokens
+stream documents/hard-stream-note-in-root.md scalars
+stream documents/hard-stream-note-in-root.md rows
+stream documents/hard-stream-note-in-root.md splits
+document documents/hard-stream-head-in-quote.md
+script documents/hard-stream-head-in-quote.md scripts/hard-stream-head-in-quote.script
+stream documents/hard-stream-head-in-quote.md tokens
+stream documents/hard-stream-head-in-quote.md scalars
+stream documents/hard-stream-head-in-quote.md rows
+stream documents/hard-stream-head-in-quote.md splits
+document documents/hard-stream-note-in-quote.md
+script documents/hard-stream-note-in-quote.md scripts/hard-stream-note-in-quote.script
+stream documents/hard-stream-note-in-quote.md tokens
+stream documents/hard-stream-note-in-quote.md scalars
+stream documents/hard-stream-note-in-quote.md rows
+stream documents/hard-stream-note-in-quote.md splits
+document documents/hard-stream-head-in-item.md
+script documents/hard-stream-head-in-item.md scripts/hard-stream-head-in-item.script
+stream documents/hard-stream-head-in-item.md tokens
+stream documents/hard-stream-head-in-item.md scalars
+stream documents/hard-stream-head-in-item.md rows
+stream documents/hard-stream-head-in-item.md splits
+document documents/hard-stream-note-in-item.md
+script documents/hard-stream-note-in-item.md scripts/hard-stream-note-in-item.script
+stream documents/hard-stream-note-in-item.md tokens
+stream documents/hard-stream-note-in-item.md scalars
+stream documents/hard-stream-note-in-item.md rows
+stream documents/hard-stream-note-in-item.md splits
 document documents/prose-ascii-16k.md parts 128 131 131 131 131 131 131 131 131 134 151 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 166 166 166 166
 script documents/prose-ascii-16k.md scripts/prose-ascii-16k.script
 stream documents/prose-ascii-16k.md tokens

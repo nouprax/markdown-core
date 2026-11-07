@@ -1423,6 +1423,49 @@ export function parseScripts(text) {
 
 /* ------------------------------------------------------------- outputs */
 
+/**
+ * The hard stream cases: a paragraph's last line, which a stream settles
+ * nodes on, leaves it as more text comes -- a delimiter row makes it a pipe
+ * table's head, or a footnote definition starts on it -- at the top level and
+ * inside a quote and a list item, with inline footnotes on the lines that
+ * stay and on the ones that leave.
+ */
+export function hardStreams() {
+    const cases = [];
+    for (const [kind, lead, prefix] of [
+        ["root", "", ""],
+        ["quote", "", "> "],
+        ["item", "- item\n\n", "  "]
+    ]) {
+        const lines = (...rows) => lead + rows.map((row) => `${`${prefix}${row}`.trimEnd()}\n`).join("") + "\nafter\n";
+        cases.push({
+            name: `hard-stream-head-in-${kind}`,
+            text: lines(
+                "*one* `two` ^[n1] three",
+                "*four* `five` ^[n2] | six",
+                "- | -",
+                "| *seven* | ^[n3] |",
+                "",
+                "*eight* `nine`",
+                "ten | ^[n4] eleven",
+                ":- | -:"
+            )
+        });
+        cases.push({
+            name: `hard-stream-note-in-${kind}`,
+            text: lines(
+                "*one* `two` ^[n1] three [^a]",
+                "*four* `five` ^[n2] six",
+                "[^a]: *note* `a` ^[n3]",
+                "",
+                "*seven* ^[n4] [^b] `eight`",
+                "[^b]: b"
+            )
+        });
+    }
+    return cases;
+}
+
 const canonicalNames = () =>
     JSON.parse(fs.readFileSync(path.join(root, CANONICAL, "manifest.json"), "utf8")).cases.map((entry) => entry.name);
 
@@ -1451,6 +1494,10 @@ export function correctnessSet() {
             sites: [],
             parts: null
         });
+    }
+    for (const { name, text } of hardStreams()) {
+        documents.push({ name, path: `documents/${name}.md`, text, alphabet: "ascii", sites: [], parts: null });
+        files.set(`documents/${name}.md`, text);
     }
     for (const shape of [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)])
         for (const alphabet of Object.keys(alphabets)) {
