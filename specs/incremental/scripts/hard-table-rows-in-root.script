@@ -1,0 +1,19 @@
+markdown-core incremental script 2
+script hard-table-rows-in-root hard
+flush
+edit 353 353 7a
+expect within 335 383
+edit 353 354 -
+expect within 335 383
+edit 351 351 7c206e6577207c206e207c206e207c0a
+expect within 335 399
+edit 351 367 -
+expect within 335 383
+edit 351 351 7c2073686f7274207c0a
+edit 351 361 -
+edit 351 352 -
+edit 351 351 7c
+edit 27 28 78
+edit 27 28 2d
+edit 1 1 2071207c
+edit 1 5 -

@@ -3489,7 +3489,7 @@ static inline markdown_core_node_internal_flags S_folded_bits(const markdown_cor
  * of the line before reads blank to when `blank` says so; `deepest` when it
  * is the chain's last. */
 static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *node, uint32_t kept, bool blank,
-                           bool deepest, markdown_core_folds *folds) {
+                           bool deepest, const markdown_core_node *next, markdown_core_folds *folds) {
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, node);
     node->flags =
         (markdown_core_node_internal_flags)((node->flags | MARKDOWN_CORE_NODE__OPEN) &
@@ -3499,7 +3499,7 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
                                               MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION));
     const markdown_core_element_instance *structure = kind->structure;
     if (structure && structure->element->reopen_block) {
-        structure->element->reopen_block(structure, parser, node, blank);
+        structure->element->reopen_block(structure, parser, node, next, blank);
     }
     if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
         /* From the last mark before the last kept child, so that the last
@@ -3546,6 +3546,7 @@ static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *roo
         markdown_core_node *node = edit->chain[level];
         const bool deeper = level + 1 < edit->depth;
         S_reopen_level(parser, node, deeper ? edit->path[level + 1] : edit->path[edit->depth], level >= blank, !deeper,
+                       !deeper && edit->holds[level] ? markdown_core_edit_nested(edit, level, 0) : NULL,
                        folds ? folds[level] : NULL);
         markdown_core_scaffold_of(node)->parent = holder;
         markdown_core_scaffold_of(node)->next = NULL;
@@ -3978,7 +3979,10 @@ static bool S_resumes_in(markdown_core_parser *parser, size_t start, size_t inde
             return false;
         }
     }
-    return true;
+    /* What the block's element counted of its children before reads as the
+     * old reading's did, last, as the block counts the old ones in. */
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
+    return !structure->element->resumes || structure->element->resumes(structure, parser, block, back);
 }
 
 /* THE FOLD PASSES (parser.h, markdown_core_fold_pass): what the chunk
@@ -5322,6 +5326,9 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
     parser->claimed_cursor = NULL;
     parser->reading = false;
     parser->block_input_count = parser->block_input_cursor = 0;
+    /* The old child the deepest reads again from, before it lets it go. */
+    const markdown_core_node *next =
+        levels[depth].kept < levels[depth].node->child_count ? levels[depth].node->children[levels[depth].kept] : NULL;
     for (size_t level = 0; level <= depth; level++) {
         markdown_core_node *open = levels[level].node;
         open->child_count = levels[level].kept;
@@ -5349,7 +5356,8 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
             markdown_core_node *open = levels[level].node;
             open->place.start = starts[level - 1];
             S_reopen_level(parser, open, level < depth ? levels[level].kept - 1 : levels[level].kept,
-                           level - 1 >= blank, level == depth, folds ? folds[level - 1] : NULL);
+                           level - 1 >= blank, level == depth, level == depth ? next : NULL,
+                           folds ? folds[level - 1] : NULL);
         }
         S_parse_source(parser, (const unsigned char *)source, length);
         if (!parser->error) {

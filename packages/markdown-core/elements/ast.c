@@ -362,7 +362,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
         }
         /* A table's rows, in head then content order, are its children, which
          * a table always has: each group is a slice of them. */
-        const uint32_t count = step == 0 ? table->head_count : table->content_count;
+        const uint32_t count = step == 0 ? table->head_count : (uint32_t)node->child_count - table->head_count;
         *relation = (markdown_core_relation){table_groups[step], node->children + cursor->index, count, step > 0, node};
         cursor->index += count;
         *more = step < 1;
@@ -2990,13 +2990,20 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
                 }
                 continue;
             }
-            assert(!relation.continues && relation.items == block->children);
-            if (final) {
+            /* The children may be slices of more than one relation, in
+             * order (a table's head, then its content). */
+            const size_t at = (size_t)(relation.items - block->children);
+            assert(at + relation.count <= block->child_count);
+            if (final && final - 1 >= at && final - 1 < at + relation.count) {
                 markdown_core_node *child = block->children[final - 1];
                 child->flags |= MARKDOWN_CORE_NODE__FINAL;
                 child->place.end = edit->places[level].prior;
+            } else if (relation.count && at + relation.count < final) {
+                /* A relation the kept children hold whole is a FINAL prefix
+                 * of its own. */
+                relation.items[relation.count - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
             }
-            if (deeper) {
+            if (deeper && final >= at && final < at + relation.count) {
                 markdown_core_node *child = block->children[final];
                 const uint32_t start = edit->places[level + 1].start;
                 next_window = (markdown_core_place){start, start + child->extent.span};
@@ -3464,7 +3471,10 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
                     frame->active = false;
                     continue;
                 }
-                if (at->first > from) {
+                /* The first child the window keeps is measured from where
+                 * the window says it starts: a relation that goes on from
+                 * one the window passed over has no end to go on from. */
+                if (at->first >= from) {
                     frame->next = at->first - from;
                     frame->anchor = at->start - frame->relation.items[frame->next]->source.runs->items[0].lead;
                 }
@@ -4084,7 +4094,7 @@ markdown_core_status markdown_core_node_table_properties(const markdown_core_nod
     const markdown_core_table *table = table_of(node);
     *column_count = table->column_count;
     *head_count = table->head_count;
-    *content_count = table->content_count;
+    *content_count = node->child_count - table->head_count;
     return MARKDOWN_CORE_OK;
 }
 

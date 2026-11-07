@@ -9347,7 +9347,7 @@ static void prefix_lines(markdown_core_strbuf *out, const char *base, const char
 static int shifted_column(int column, int shift) { return column ? column + shift : 0; }
 
 static bool same_columns(const markdown_core_table *a, const markdown_core_table *b) {
-    if (a->column_count != b->column_count || a->head_count != b->head_count || a->content_count != b->content_count) {
+    if (a->column_count != b->column_count || a->head_count != b->head_count) {
         return false;
     }
     for (size_t i = 0; i < a->column_count; i++) {
@@ -10221,6 +10221,34 @@ static bool session_as_queried(markdown_core_session *session, markdown_core_pos
     }
     free(text);
     return same;
+}
+
+/* A table's head row and its content rows are two relations of its
+ * children, the content going on from where the head ends: a locate in a
+ * content row reads a window of the table's rows that starts past the
+ * head, which measures its first row from where the window says it starts
+ * (ast.c, markdown_core_walk_next). At every place of the text, the
+ * session's context is the document query's, the code span a row leaves
+ * open among it. */
+static void session_locates_table_rows(test_batch_runner *runner) {
+    static const char source[] = "e||\n-|-\n/\n`\nle\"\n| [r] | x |\n\n[r]: /u\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                          &session) == MARKDOWN_CORE_OK &&
+                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    markdown_core_position at = {1, 1};
+    for (const char *c = source; same && *c; c++) {
+        const markdown_core_status located = markdown_core_session_locate(session, at);
+        same = located == MARKDOWN_CORE_OK && session_as_queried(session, at);
+        if (*c == '\n') {
+            at = (markdown_core_position){at.line + 1, 1};
+        } else {
+            at.column++;
+        }
+    }
+    OK(runner, same, "a locate in a table's content rows is the document query, at %d:%d", at.line, at.column);
+    markdown_core_session_close(session);
 }
 
 /* A long list, and a long one nested in one of its items, find the rest
@@ -11996,6 +12024,7 @@ int main(void) {
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
+    session_locates_table_rows(runner);
     session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);

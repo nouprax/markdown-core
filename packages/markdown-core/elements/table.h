@@ -11,10 +11,13 @@
 typedef struct {
     size_t column_count;
     markdown_core_table_column *columns;
-    uint32_t head_count, content_count;
+    uint32_t head_count;
     /* The columns and runs are those of the table this one is a view of
      * (opaque_view_func), which it reads and does not free. */
     bool views_columns;
+    /* The cells the rows so far invented, past each one's last written
+     * cell, to the head's width; each content row holds the count before it
+     * in its `internal_offset`, which a reopen at the row reads back. */
     size_t autocompleted_cells;
 } markdown_core_table;
 

@@ -1159,6 +1159,52 @@ export function hardScripts() {
         ["quote", "> m\n> : a\n>\n> y\n> # h\n", 18]
     ])
         add(`term-enters-list-in-${kind}`, text, (s) => s.edit(at, at + 3, ": d").edit(at, at + 3, "# h"));
+    /* A pipe table reads again from the row before the edited one and
+     * resyncs at the row after it, at the top level and inside a quote and a
+     * list item, when the rows before invented as many cells; the edits also
+     * add and remove rows, a short one too, and break the delimiter row and
+     * the head. */
+    for (const [kind, lead, prefix] of [
+        ["root", "", ""],
+        ["quote", "", "> "],
+        ["item", "- item\n\n", "  "]
+    ]) {
+        const head = `${lead}${prefix}| a | b | c |\n${prefix}| - | :-: | -: |\n`;
+        const rows = Array.from({ length: 40 }, (_, i) => `${prefix}| r${String(i).padStart(2, "0")} | x | y |\n`);
+        const text = head + rows.join("") + "\nafter\n";
+        const row = (i) => bytes(head) + bytes(rows.slice(0, i).join(""));
+        const cell = (i) => row(i) + bytes(prefix) + 2;
+        add(`table-rows-in-${kind}`, text, (s) =>
+            s
+                .insert(cell(20), "z")
+                .within(row(19), row(22))
+                .remove(cell(20), cell(20) + 1)
+                .within(row(19), row(22))
+                .insert(row(20), `${prefix}| new | n | n |\n`)
+                .within(row(19), row(23))
+                .remove(row(20), row(21))
+                .within(row(19), row(22))
+                .toggle(row(20), `${prefix}| short |\n`)
+                .remove(row(20) + bytes(prefix), row(20) + bytes(prefix) + 1)
+                .insert(row(20) + bytes(prefix), "|")
+                .edit(row(0) - 4, row(0) - 3, "x")
+                .edit(row(0) - 4, row(0) - 3, "-")
+                .insert(bytes(lead) + bytes(prefix) + 1, " q |")
+                .remove(bytes(lead) + bytes(prefix) + 1, bytes(lead) + bytes(prefix) + 5)
+        );
+    }
+    /* A table takes no more rows once those before it invented more than
+     * 0x80000 cells to the head's width: each row of two cells here invents
+     * 512, so the 1025th row is the last the table takes, and one cell less
+     * in an earlier row makes the cap refuse it, which no resync may skip. */
+    {
+        const columns = 514;
+        const head = `${"| a ".repeat(columns)}|\n${"| - ".repeat(columns)}|\n`;
+        const rows = Array.from({ length: 1030 }, () => "|x|y|\n");
+        const text = head + rows.join("");
+        const at = bytes(head) + 10 * bytes(rows[0]);
+        add("table-cap", text, (s) => s.remove(at + 2, at + 4).insert(at + 2, "y|"));
+    }
     /* Fences, comments and HTML blocks opened before unchanged text and
      * closed again. */
     for (const [kind, opener, closer] of [

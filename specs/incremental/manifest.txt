@@ -52,6 +52,14 @@ document documents/hard-term-enters-list-in-directive.md
 script documents/hard-term-enters-list-in-directive.md scripts/hard-term-enters-list-in-directive.script
 document documents/hard-term-enters-list-in-quote.md
 script documents/hard-term-enters-list-in-quote.md scripts/hard-term-enters-list-in-quote.script
+document documents/hard-table-rows-in-root.md
+script documents/hard-table-rows-in-root.md scripts/hard-table-rows-in-root.script
+document documents/hard-table-rows-in-quote.md
+script documents/hard-table-rows-in-quote.md scripts/hard-table-rows-in-quote.script
+document documents/hard-table-rows-in-item.md
+script documents/hard-table-rows-in-item.md scripts/hard-table-rows-in-item.script
+document documents/hard-table-cap.md
+script documents/hard-table-cap.md scripts/hard-table-cap.script
 document documents/hard-open-fence.md
 script documents/hard-open-fence.md scripts/hard-open-fence.script
 document documents/hard-open-comment.md

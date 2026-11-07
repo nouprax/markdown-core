@@ -650,7 +650,7 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     /* The first child of a block whose children abut starts the block's
      * own first line: the block, reopened with none, reads it as a later
      * child's (blocks.c, markdown_core_parser_abuts). */
-    const bool first = markdown_core_parser_abuts(parser, block) && opens >= above &&
+    const bool first = markdown_core_parser_abuts(parser, block) && !structure->element->headed && opens >= above &&
                        markdown_core_parser_line_of(parser, widths_start_at(widths, block, window.start, 0)) == opens;
     while (child || first) {
         const size_t line = markdown_core_parser_line_of(parser, widths_start_at(widths, block, window.start, child));
