@@ -2233,43 +2233,15 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
     }
 }
 
-static const uint8_t *S_gate_candidates(const markdown_core_dialect *dialect, markdown_core_block_hook hook, int key,
-                                        size_t *count);
-
-/* Whether a block start that interrupts a paragraph may be asked about a
- * line whose first byte is `c`: a scan or an interrupt owner its gate
- * admits there, or an opener that `interrupts_paragraph`. */
-static bool S_may_interrupt(const markdown_core_dialect *dialect, unsigned char c) {
-    size_t count;
-    S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_SCAN, c, &count);
-    if (count) {
-        return true;
-    }
-    S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT, c, &count);
-    if (count) {
-        return true;
-    }
-    const uint8_t *list = S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_OPEN, c, &count);
-    const markdown_core_element_instance *const *owners = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
-    for (size_t i = 0; i < count; i++) {
-        if (owners[list ? list[i] : i]->element->interrupts_paragraph) {
-            return true;
-        }
-    }
-    return false;
-}
-
 /* THE LAST LINES REMAIN OPEN. The line the text ends in, which the content
  * holds as far as it goes, can still turn out to start a block that
  * interrupts the paragraph -- a definition's label once its colon comes --
- * while a block start that may is asked about its first byte
- * (S_may_interrupt), and a later line can take the line before it -- a delimiter row makes it
+ * and a later line can take the line before it -- a delimiter row makes it
  * a table's head -- while the last line holds only bytes some element
  * `claims` (element.h). A paragraph that loses its first line is no longer
  * one, and its nodes go with it; one that loses a later line goes on
  * without it, and must not have settled on it. So a snapshot's read
- * settles nothing on a last line after the first that either holds, nor,
- * while that line is
+ * settles nothing on a last line after the first, nor, while that line is
  * claimed, on the one before it unless that one is the first, nor on the
  * line ending before them: the bound is where that line ending begins. */
 static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdown_core_node *node, bufsize_t size) {
@@ -2288,9 +2260,6 @@ static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdo
         claimed = claimed && parser->dialect->claims[text[at]];
     }
     if (!at) {
-        return size;
-    }
-    if (!claimed && !S_may_interrupt(parser->dialect, text[at])) {
         return size;
     }
     while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
