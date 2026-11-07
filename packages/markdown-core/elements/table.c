@@ -5,6 +5,7 @@
 #include <inlines.h>
 #include <parser.h>
 #include "roster.h"
+#include <assert.h>
 #include <string.h>
 #include <limits.h>
 #include "utf8.h"
@@ -473,13 +474,22 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
     /* A pipe row begins at its own first non-space byte, as its header does:
      * `parser->at.offset` is the container's content, which holds the row's
      * indentation or the tail of a tab its container prefix shares. */
-    table_row_block = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW,
-                                                     parser->at.first_nonspace + 1);
+    /* The row is whole once its line is read: it settles into the table,
+     * which stays the current block, and a reopen at the next row finds
+     * none open inside it. */
+    bufsize_t completed_at = len;
+    while (completed_at > 0 && (input[completed_at - 1] == '\n' || input[completed_at - 1] == '\r')) {
+        completed_at--;
+    }
+    table_row_block = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, parser->at.line_number,
+                                  parser->at.first_nonspace + 1, parser->at.line_number, (int)completed_at);
     if (!table_row_block) {
-
         return NULL;
     }
-    markdown_core_node_set_element(table_row_block, self);
+    (void)self;
+    /* The count before the row, which the cap is no further past than one
+     * row's width. */
+    table_row_block->internal_offset = table->autocompleted_cells < INT_MAX ? (int)table->autocompleted_cells : INT_MAX;
 
     {
         int i, table_columns = (int)table->column_count;
@@ -499,7 +509,6 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             markdown_core_block_settle(parser, node, table_row_block);
         }
 
-        table->content_count++;
         table->autocompleted_cells += (size_t)(table_columns - i);
 
         /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
@@ -515,10 +524,6 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
          * line. The overlap is the honest cost of pointing AT something rather
          * than at nothing, and it is registered in
          * specs/positions/containment.json rather than hidden. */
-        bufsize_t completed_at = len;
-        while (completed_at > 0 && (input[completed_at - 1] == '\n' || input[completed_at - 1] == '\r')) {
-            completed_at--;
-        }
         for (; i < table_columns; ++i) {
             markdown_core_node *node = new_cell(parser, (int)completed_at);
             if (!node) {
@@ -530,10 +535,11 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         }
     }
 
+    markdown_core_block_settle(parser, table_row_block, parent_container);
     markdown_core_parser_advance_offset(parser, (char *)input, len - 1 - markdown_core_parser_get_offset(parser),
                                         false);
 
-    return table_row_block;
+    return parent_container;
 }
 
 /* A pipe table opens at its delimiter row, whose header is the last line of
@@ -603,14 +609,46 @@ static void opaque_adopt(const markdown_core_element *self, markdown_core_node *
     }
 }
 
-static const markdown_core_node_type TABLE_TRAILED[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+/* A reopen at the old row `next` counts what the rows before it invented
+ * again, as the row holds it. */
+static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node, const markdown_core_node *next, bool blank) {
+    (void)self;
+    (void)parser;
+    (void)blank;
+    if (node->kind != MARKDOWN_CORE_NODE_TABLE) {
+        return;
+    }
+    assert(next && next->kind == MARKDOWN_CORE_NODE_TABLE_ROW);
+    ((markdown_core_table *)node->opaque)->autocompleted_cells = next ? (size_t)next->internal_offset : 0;
+}
+
+/* A row read again stands as the old one did when the rows before it
+ * invented as many cells: the cap refuses the same rows after it, and the
+ * counts the old rows hold stay exact. */
+static bool resumes(const markdown_core_element_instance *self, const markdown_core_parser *parser,
+                    const markdown_core_node *node, const markdown_core_node *next) {
+    (void)self;
+    (void)parser;
+    const size_t now = ((const markdown_core_table *)node->opaque)->autocompleted_cells;
+    return (now < INT_MAX ? (int)now : INT_MAX) == next->internal_offset;
+}
+
+static const markdown_core_node_type TABLE_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     /* A block identifier on the line after it writes it
      * (block_identifier.c). */
-    .trailed_kinds = TABLE_TRAILED,
+    .trailed_kinds = TABLE_KINDS,
     /* A delimiter row makes the paragraph line before it the head. */
     .claims = " \t|:-",
+    /* An edit reads again from a row, the rows before it kept: each is one
+     * line, and none takes the next. */
+    .reopens = true,
+    .reopen_block = reopen_block,
+    .resumes = resumes,
+    .abuts = TABLE_KINDS,
+    .headed = true,
 
     .name = "table",
     .last_block_matches = matches,

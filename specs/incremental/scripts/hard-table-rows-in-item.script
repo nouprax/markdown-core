@@ -1,0 +1,19 @@
+markdown-core incremental script 2
+script hard-table-rows-in-item hard
+flush
+edit 407 407 7a
+expect within 385 439
+edit 407 408 -
+expect within 385 439
+edit 403 403 20207c206e6577207c206e207c206e207c0a
+expect within 385 457
+edit 403 421 -
+expect within 385 439
+edit 403 403 20207c2073686f7274207c0a
+edit 403 415 -
+edit 405 406 -
+edit 405 405 7c
+edit 39 40 78
+edit 39 40 2d
+edit 11 11 2071207c
+edit 11 15 -

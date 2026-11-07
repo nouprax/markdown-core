@@ -186,7 +186,7 @@ struct markdown_core_element {
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
     /* The block kinds of the element a later line may write once the block
-     * closed -- a block identifier its anchor, a caption its table -- so an
+     * closed -- a block identifier its anchor -- so an
      * edit's reading takes no old blocks back after one (blocks.c, THE
      * SPLICE), terminated by MARKDOWN_CORE_NODE_NONE, or NULL. */
     const markdown_core_node_type *trailed_kinds;
@@ -199,10 +199,25 @@ struct markdown_core_element {
     /* The builder state of `node`, reopened at the start of a child's line,
      * that is neither a fold nor the engine's: the element's flags as a
      * fresh parse holds them there, the line before blank past the
-     * containers' prefixes when `blank` says so. It runs before the
+     * containers' prefixes when `blank` says so, or what its children before
+     * counted, as `next`, the old child the reading begins at when the block
+     * is the chain's deepest, holds it (NULL otherwise). It runs before the
      * children before the line are folded into the block again. NULL when
      * the element keeps no such state. */
-    void (*reopen_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, bool);
+    void (*reopen_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                         const markdown_core_node *next, bool blank);
+    /* Whether the reading of `node`, at the start of the line of its old
+     * child `next`, stands in the element's own state as the old reading
+     * did there, as the last test before the reading takes `next` and the
+     * old children after it back (blocks.c, THE NESTED SPLICE). NULL when
+     * what `reopen_block` gives back is all of it. */
+    bool (*resumes)(const markdown_core_element_instance *, const markdown_core_parser *,
+                    const markdown_core_node *node, const markdown_core_node *next);
+    /* The block's first child is read with the block's opening and never
+     * as a later child: no reopen rests at it, though the children abut (a
+     * table's head row). */
+    bool headed;
+
     /* The block kinds of the element whose children each start a line of
      * their own with a marker that no line of the child before takes, not
      * even lazily -- a list's items: a reopen may rest at one on the line

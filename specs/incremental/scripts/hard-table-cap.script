@@ -1,0 +1,5 @@
+markdown-core incremental script 2
+script hard-table-cap hard
+flush
+edit 4178 4180 -
+edit 4178 4178 797c

@@ -1,0 +1,19 @@
+markdown-core incremental script 2
+script hard-table-rows-in-quote hard
+flush
+edit 399 399 7a
+expect within 377 431
+edit 399 400 -
+expect within 377 431
+edit 395 395 3e207c206e6577207c206e207c206e207c0a
+expect within 377 449
+edit 395 413 -
+expect within 377 431
+edit 395 395 3e207c2073686f7274207c0a
+edit 395 407 -
+edit 397 398 -
+edit 397 397 7c
+edit 31 32 78
+edit 31 32 2d
+edit 3 3 2071207c
+edit 3 7 -

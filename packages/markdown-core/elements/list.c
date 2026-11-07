@@ -315,9 +315,10 @@ static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MA
  * out by none of its items yet, and its last line was blank as the line
  * before the item's was; an item keeps no state of its own. */
 static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, bool blank) {
+                         markdown_core_node *node, const markdown_core_node *next, bool blank) {
     (void)self;
     (void)parser;
+    (void)next;
     if (node->kind != MARKDOWN_CORE_NODE_LIST) {
         return;
     }
