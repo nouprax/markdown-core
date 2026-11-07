@@ -106,8 +106,10 @@ class AstTest {
             listOf("enter:Table", "enter:TableRow", "enter:TableRow", "enter:TableRow"),
             visitor.events.filter { it in listOf("enter:Table", "enter:TableRow") },
         )
-        val dump = holding(table).dump("head")
+        val source = "| a | b |\n| :- | - |\n| c | d |\n| e | f |\n"
+        val dump = Document.parse(source).dump(source)
         assertTrue(dump.contains("columns=[left,none] children=3"))
+        assertTrue(dump.contains("TableHead children=1"))
         assertTrue(dump.contains("TableBody children=2"))
     }
 
@@ -231,23 +233,6 @@ class AstTest {
         }
     }
 }
-
-/** A document whose only content is [table], with the table's runs, over a source at least as long as its span. */
-private fun holding(table: Table): Document =
-    Document(
-        listOf(table),
-        null,
-        TextUnit.UTF16,
-        emptyList(),
-        emptyList(),
-        emptyList(),
-        emptyMap(),
-        MarkupID(1),
-        table.extent,
-        table.runs,
-        null,
-        Attributes.empty,
-    )
 
 /** The node lines of a dump: value lines (`Citation`, `Footnote`) and group lines are not kinds. */
 private fun dumpKinds(dump: String): kotlin.collections.List<String> =
