@@ -2245,6 +2245,13 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
  * claimed, on the one before it unless that one is the first, nor on the
  * line ending before them: the bound is where that line ending begins. */
 static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdown_core_node *node, bufsize_t size) {
+    /* A paragraph whose content marks all name one source line has no
+     * line after its first: nothing to scan. */
+    const markdown_core_content_map *map = &node->content_map;
+    if (map->count <= 1 ||
+        parser->line_marks.values[map->first].line == parser->line_marks.values[map->first + map->count - 1].line) {
+        return size;
+    }
     const unsigned char *text = markdown_core_node_text(node).data;
     bufsize_t at = size;
     bool claimed = true;
