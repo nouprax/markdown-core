@@ -702,7 +702,7 @@ static inline publish_relation publish_next(const publish_frame *frame, const pu
 /* THE DECIDED CONTENT (parser.h) a node published in place lies in:
  * DECIDED, UNDECIDED, or a HOLDER's, which holds both (A NODE PUBLISHED IN
  * PLACE). */
-typedef enum { DECIDED, UNDECIDED, HOLDER } publish_decided;
+typedef enum { DECIDED, UNDECIDED, HOLDER, BOUND } publish_decided;
 
 /* THE IMAGE OF AN OLD ANCHOR. An edit replaced the old text from `from` to
  * `to` and moved what follows by `delta` (parser.h, `edit_from`): an old
@@ -1190,7 +1190,11 @@ typedef struct {
      * they are among its holder's children. */
     markdown_core_holder holds, relation_holds;
     markdown_core_node *const *relation_children;
-    uint8_t old, decided, relation_decided;
+    /* For BOUND content, the decided content it is otherwise, and the
+     * children from `relation_final` up to `relation_settled`, which are
+     * UNDECIDED. */
+    uint32_t relation_final, relation_settled;
+    uint8_t old, decided, relation_decided, relation_under;
     bool persists, published, keeps, committed;
 } publish_match_frame;
 
@@ -1314,12 +1318,44 @@ static inline publish_decided publish_held(const markdown_core_parser *parser, c
     return index + 1 < holds->count ? DECIDED : UNDECIDED;
 }
 
+/* The decided content of the child at `index` of the relation in hand of
+ * the node `frame` is for, its holder's or the paragraph's whose settled
+ * nodes it holds: one the stream settled past the FINAL bound is UNDECIDED,
+ * as it stays in the tree but can leave it (blocks.c, A SETTLED LINE THAT
+ * LEAVES). */
+static publish_decided publish_ruled(const markdown_core_parser *parser, publish_match_frame *frame,
+                                     const markdown_core_node *node, size_t index, markdown_core_holder *entry) {
+    if (frame->relation_decided == BOUND) {
+        if (index >= frame->relation_final && index < frame->relation_settled) {
+            return UNDECIDED;
+        }
+        if (frame->relation_under != HOLDER) {
+            return (publish_decided)frame->relation_under;
+        }
+    }
+    return publish_held(parser, &frame->relation_holds, node, index, entry);
+}
+
 /* The decided content of the relation in hand of the node `frame` is for,
  * held by `holder`, its first item at `item` (A NODE PUBLISHED IN PLACE). */
 static void publish_relation_decided(const markdown_core_parser *parser, publish_match_frame *frame,
                                      const markdown_core_node *holder, relation_shape shape, markdown_core_node **item,
                                      markdown_core_node **end) {
     frame->relation_decided = frame->decided;
+    /* The content of the paragraph whose settled nodes the stream holds,
+     * past the FINAL bound. */
+    const markdown_core_settled *settled = parser->stream ? &parser->stream->settled : NULL;
+    if (settled && holder && holder == settled->root && settled->fixed.count < settled->nodes.count) {
+        frame->relation_under = frame->decided;
+        frame->relation_decided = BOUND;
+        frame->relation_final = settled->fixed.count;
+        frame->relation_settled = (uint32_t)settled->nodes.count;
+        frame->relation_children = holder->children;
+        if (frame->decided == HOLDER) {
+            frame->relation_holds = frame->holds;
+        }
+        return;
+    }
     if (frame->decided != HOLDER) {
         return;
     }
@@ -1495,6 +1531,34 @@ static void records_free(markdown_core_parser *parser, uint32_t at, bool release
         *record = (markdown_core_tail_record){.next = records->free};
         records->free = at;
         at = next;
+    }
+}
+
+void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_core_node *root,
+                                markdown_core_node *const *nodes, uint32_t count) {
+    markdown_core_tail_records *records = &parser->stream->records;
+    uint32_t at = 0;
+    for (size_t i = 0; i < records->count && !at; i++) {
+        const markdown_core_tail_record *record = &records->items[i];
+        if (root->id && record->id == root->id && record->kind == root->kind && !record->node) {
+            at = record->held;
+        }
+    }
+    /* The owner's records name its content's nodes in source order, as the
+     * nodes are. */
+    for (uint32_t i = 0; i < count; i++) {
+        markdown_core_node *node = nodes[i];
+        while (node->id && at &&
+               (records->items[at - 1].node || records->items[at - 1].id != node->id ||
+                records->items[at - 1].kind != node->kind)) {
+            at = records->items[at - 1].next;
+        }
+        if (node->id && at) {
+            records->items[at - 1].node = node;
+            at = records->items[at - 1].next;
+        } else {
+            markdown_core_parser_release_node(parser, node);
+        }
     }
 }
 
@@ -1719,7 +1783,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
                 }
                 continue;
             }
-            if (frame->old == OLD_NONE && frame->relation_decided != HOLDER) {
+            if (frame->old == OLD_NONE && frame->relation_decided < HOLDER) {
                 /* The nodes from the one in hand that continue nothing, do
                  * not persist and that no record keeps are published whole
                  * as what continues nothing, above the frames, which find
@@ -1765,10 +1829,10 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             /* Every node below one that does not persist is new, but in
              * the last publish. */
             assert(frame->persists || !published || !walk->keeps);
-            decided = frame->relation_decided == HOLDER
-                          ? publish_held(parser, &frame->relation_holds, child,
-                                         (size_t)(hand.item - 1 - frame->relation_children), &holds)
-                          : (publish_decided)frame->relation_decided;
+            decided =
+                frame->relation_decided >= HOLDER
+                    ? publish_ruled(parser, frame, child, (size_t)(hand.item - 1 - frame->relation_children), &holds)
+                    : (publish_decided)frame->relation_decided;
             committed = frame->committed || (child->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
                         (frame->holder && (frame->holder->flags & MARKDOWN_CORE_NODE__COMMITTED));
             walk->decided = (uint8_t)decided;

@@ -2040,6 +2040,9 @@ static void S_settled_clear(markdown_core_settled *settled) {
     settled->miss_count = settled->miss_total = 0;
     markdown_core_strbuf_truncate(&settled->labels, 0);
     settled->anchored_count = 0;
+    settled->fixed = (markdown_core_settled_step){0};
+    settled->step_count = 0;
+    settled->bound = 0;
     markdown_core_free(settled->places);
     settled->places = NULL;
 }
@@ -2240,10 +2243,11 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
  * a table's head -- while the last line holds only bytes some element
  * `claims` (element.h). A paragraph that loses its first line is no longer
  * one, and its nodes go with it; one that loses a later line goes on
- * without it, and must not have settled on it. So a snapshot's read
- * settles nothing on a last line after the first, nor, while that line is
- * claimed, on the one before it unless that one is the first, nor on the
- * line ending before them: the bound is where that line ending begins. */
+ * without it, and nothing FINAL may lie on it. So the FINAL bound of a
+ * snapshot's read lies before a last line after the first, and, while that
+ * line is claimed, before the one before it unless that one is the first,
+ * and before the white space ending the line before them, which the
+ * content loses with them (A SETTLED LINE THAT LEAVES). */
 static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdown_core_node *node, bufsize_t size) {
     /* A paragraph whose content marks all name one source line has no
      * line after its first: nothing to scan. */
@@ -2262,7 +2266,7 @@ static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdo
     if (!at) {
         return size;
     }
-    while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
+    while (at > 0 && markdown_core_is_whitespace(text[at - 1])) {
         at--;
     }
     bufsize_t before = at;
@@ -2271,11 +2275,42 @@ static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdo
     }
     if (claimed && before > 0) {
         at = before;
-        while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
+        while (at > 0 && markdown_core_is_whitespace(text[at - 1])) {
             at--;
         }
     }
     return at;
+}
+
+/* A SETTLED LINE THAT LEAVES. A read settles the content up to its point,
+ * as far as the text goes (THE SETTLE POINT), but a publish makes FINAL only
+ * the settled nodes before the FINAL bound (THE LAST LINES REMAIN OPEN):
+ * those after it keep their ids from one publish to the next and promise
+ * nothing (ast.c, THE FINAL PREFIX). When a line leaves the paragraph, its
+ * content is what it was up to that line, and the settled nodes go back to
+ * where they stood when a read settled them at a point the content still
+ * holds: what settled after leaves, owned by the record the last publish
+ * kept of it, and the read goes on from that point. The FINAL ones never
+ * leave, as the bound lies before every line that can. */
+static void S_settled_cut(markdown_core_parser *parser, markdown_core_settled *settled, const markdown_core_node *node,
+                          bufsize_t size) {
+    size_t k = settled->step_count;
+    while (k && settled->steps[k - 1].point > size) {
+        k--;
+    }
+    const markdown_core_settled_step to = k ? settled->steps[k - 1] : settled->fixed;
+    if (to.point > size) {
+        return;
+    }
+    markdown_core_publish_cede(parser, node, settled->nodes.values + to.count,
+                               (uint32_t)settled->nodes.count - to.count);
+    markdown_core_array_truncate(&settled->nodes, to.count);
+    settled->point = to.point;
+    settled->miss_count = settled->miss_total = to.misses;
+    markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
+    settled->anchored_count = to.anchored;
+    settled->step_count = k;
+    settled->size = size;
 }
 
 /* A snapshot completes the paragraph `node`, whose content is `size` bytes:
@@ -2293,7 +2328,8 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     settled->root = node;
     settled->offset = node->content_map.offset;
     if (settles) {
-        settled->size = S_settle_bound(parser, node, size);
+        settled->size = size;
+        settled->bound = S_settle_bound(parser, node, size);
     }
     settled->miss_total = settled->miss_count;
     markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
@@ -2321,8 +2357,12 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_pa
                                                                 bool settles) {
     markdown_core_settled *settled = &parser->stream->settled;
     const bufsize_t size = S_content_bytes(node);
-    if (settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind &&
-        !S_settled_holds(settled, node, size)) {
+    const bool same =
+        settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind;
+    if (same && settled->offset == node->content_map.offset && size < settled->size) {
+        S_settled_cut(parser, settled, node, size);
+    }
+    if (same && !S_settled_holds(settled, node, size)) {
         S_settled_leave(parser, settled, node);
     } else if (settled->address && !S_settled_holds(settled, node, size)) {
         S_settled_release(parser, settled);
@@ -2376,7 +2416,7 @@ static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, bufsiz
 
 /* The settling paragraph `node` is complete: its nodes before the point its
  * read leaves settle. False when storage could not be had. */
-static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node) {
+static bool S_settle_more(markdown_core_parser *parser, markdown_core_node *node) {
     markdown_core_settled *settled = &parser->stream->settled;
     const markdown_core_inline_settle *settle = &settled->settle;
     const uint32_t held = (uint32_t)settled->nodes.count;
@@ -2416,7 +2456,34 @@ static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node)
         }
         settled->point = start->start;
         settled->miss_count += start->misses;
+        markdown_core_settled_step *steps =
+            markdown_core_reserve(settled->steps, &settled->step_room, settled->step_count + 1, sizeof(*steps));
+        if (!steps) {
+            return false;
+        }
+        settled->steps = steps;
+        steps[settled->step_count++] = (markdown_core_settled_step){(uint32_t)settled->nodes.count, settled->point,
+                                                                    settled->miss_count, settled->anchored_count};
         return true;
+    }
+    return true;
+}
+
+/* The same, and the settled nodes before the FINAL bound become the ones a
+ * publish makes FINAL (A SETTLED LINE THAT LEAVES). */
+static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node) {
+    if (!S_settle_more(parser, node)) {
+        return false;
+    }
+    markdown_core_settled *settled = &parser->stream->settled;
+    size_t k = 0;
+    while (k < settled->step_count && settled->steps[k].point <= settled->bound) {
+        k++;
+    }
+    if (k) {
+        settled->fixed = settled->steps[k - 1];
+        settled->step_count -= k;
+        memmove(settled->steps, settled->steps + k, settled->step_count * sizeof(*settled->steps));
     }
     return true;
 }
@@ -4851,6 +4918,7 @@ static void S_release_stream(markdown_core_parser *parser) {
     markdown_core_settled *settled = &stream->settled;
     S_settled_release(parser, settled);
     markdown_core_array_free(&settled->nodes);
+    markdown_core_free(settled->steps);
     markdown_core_free(settled->misses);
     markdown_core_strbuf_free(&settled->labels);
     markdown_core_free(settled->anchored);
