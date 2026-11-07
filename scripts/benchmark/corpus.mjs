@@ -638,10 +638,7 @@ function renderHosts(id, p) {
     }
     const b = slot("body", "inline", renderBody(p.body));
     const t = slot("tail", "inline", renderBody(p.tail));
-    const value = slot("value", "word", p.value);
-    const key = slot("key", "word", p.key);
     const target = slot("target", "word", p.target);
-    const anchor = slot("anchor", "word", p.anchor);
     const pair = (a, r) => [host(a), host(r)];
     const literal = slot("literal", "phrase", p.words.join(" "));
     if (id.startsWith("metadata")) return [metadataHost(id, p, "dialect"), metadataHost(id, p, "common")];

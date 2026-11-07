@@ -35,4 +35,3 @@ public class Table internal constructor(
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()
-

@@ -333,7 +333,7 @@ export function fromCanonical(value) {
     return result;
 }
 
-export function assertCanaries(run, product) {
+export function assertCanaries(run) {
     const from = "markdown_strict+inline_code_attributes";
     const input = "`你好🧭`{#id .same .same k=1 k=2}\n";
     const expected = node("Document", {}, [
