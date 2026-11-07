@@ -354,10 +354,6 @@ typedef struct {
     int block_type;
 } markdown_core_html_block;
 
-typedef struct {
-    int64_t rowspan, colspan;
-} markdown_core_table_cell;
-
 /* Every arm points to the kind's ordinary typed record. Construction places
  * the record after an aligned node allocation header; a kind with no fields
  * has no record. Retyping keeps node identity stable and reuses slot capacity
@@ -381,7 +377,6 @@ typedef union {
     markdown_core_definition *definition;
     markdown_core_definition_body_value *definition_body;
     markdown_core_html_block *html_block;
-    markdown_core_table_cell *table_cell;
 } markdown_core_node_data;
 
 struct markdown_core_node {

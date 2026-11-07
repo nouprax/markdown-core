@@ -2233,6 +2233,29 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
     }
 }
 
+/* THE LAST LINES REMAIN OPEN. A later line can take the paragraph's last
+ * line from it -- a delimiter row makes it a table's head -- and the line
+ * the text ends in, which the content holds as far as it goes, can still
+ * turn out to be that row, or to start a block that interrupts the
+ * paragraph. So a snapshot's read settles nothing on the last two lines of
+ * the paragraph's `size` bytes of content, nor the line ending before them:
+ * the bound is where that line ending begins, 0 when the content has two
+ * lines or fewer. The paragraph holds its settled nodes while its content
+ * keeps the bytes before it. */
+static bufsize_t S_settle_bound(const markdown_core_node *node, bufsize_t size) {
+    const unsigned char *text = markdown_core_node_text(node).data;
+    bufsize_t at = size;
+    for (int lines = 0; lines < 2 && at > 0; lines++) {
+        while (at > 0 && !markdown_core_is_line_end(text[at - 1])) {
+            at--;
+        }
+        while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
+            at--;
+        }
+    }
+    return at;
+}
+
 /* A snapshot completes the paragraph `node`, whose content is `size` bytes:
  * it takes the settled nodes as its first children when they are its, and
  * parses its content from the point, listing where the next point may be
@@ -2248,7 +2271,7 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     settled->root = node;
     settled->offset = node->content_map.offset;
     if (settles) {
-        settled->size = size;
+        settled->size = S_settle_bound(node, size);
     }
     settled->miss_total = settled->miss_count;
     markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
@@ -2337,7 +2360,7 @@ static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node)
     const uint32_t held = (uint32_t)settled->nodes.count;
     for (size_t k = settle->count; k-- > 0;) {
         const markdown_core_settle_start *start = &settle->starts[k];
-        if (start->start > settle->undecided) {
+        if (start->start > settle->undecided || start->start > settled->size) {
             continue;
         }
         const uint32_t at = S_child_at(node, held, start->start);

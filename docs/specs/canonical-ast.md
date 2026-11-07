@@ -36,7 +36,7 @@ maintaining the contract and comparison policies.
 - Collections are ordered and read-only. Their order is source order unless a
   field below states otherwise.
 - `TableRow` and `TableCell` are scoped `Markup` kinds reached through typed
-  table properties. Being owned by `head`, `content`, `foot`, and `cells`
+  table properties. Being owned by `head`, `content`, and `cells`
   does not make them non-node structural records.
 - `DirectiveLabel` is `Markup` owned by a directive's typed `label` field. It
   is not an element of the directive's `content` and is not exposed through a
@@ -87,7 +87,7 @@ content of its inline root, which starts at 0. `lead` runs from the end of
 the previous node in the same relation, or from the owner's start for a
 relation's first node, to this node's start; `span` is the length of this
 node's range. Each typed field of an owner and each definition body is a
-relation of its own, and a table's rows, in head, content and foot order, are
+relation of its own, and a table's rows, in head then content order, are
 one relation. `lead` is signed, because ranges may overlap or nest as the
 rules below define. No node stores a line, a column or
 an absolute offset, and bindings copy extents and runs verbatim.
@@ -102,11 +102,9 @@ range start and end together.
 
 Between its first run and its last, a node's runs cover exactly its own
 source: the source between two runs is not the node's, such as the container
-prefixes between the lines of a leaf block inside a container, or the other
-columns between the lines of a grid or multiline table cell. Runs that touch
-are one run. A node's own source on a line can be empty: a multiline table
-cell's is, at the line's end, on a line that ends before the cell's column.
-Empty own source is an empty run, which is one run with a run it touches. An
+prefixes between the lines of a leaf block inside a container. Runs that touch
+are one run. A node's own source on a line can be empty, such as an autocompleted
+table cell's. Empty own source is an empty run, which is one run with a run it touches. An
 inline node's runs are its window of the source less the gaps between its
 root's runs, where its window runs from where its root read its first content
 byte to where it read its last, or is the empty range where its start was read
@@ -140,10 +138,9 @@ the decoded `literal` determine these values. For example, the source
 while its literal is `é & 🚀`. The canonical dump prints UTF-8 columns.
 
 SoftBreak and LineBreak locate the authored break using this same convention;
-their scopes do not promise retrievable string slices. A multiline table cell
-can occupy segments on lines shared with other cells. A spanning grid cell can
-reach beyond its starting row. These positions describe editor locations,
-not a partition of the source into independently sliceable substrings.
+their scopes do not promise retrievable string slices. These positions describe
+editor locations, not a partition of the source into independently sliceable
+substrings.
 
 Every binding computes scopes with this one rule from the runs
 the C parser produced; none rescans, normalizes, expands, rejects, or otherwise
@@ -201,29 +198,11 @@ keyed sections follow the bracketed item rule. An item includes neither a
 separator semicolon nor a closing bracket. A parenthesized specimen `Cite`
 includes parentheses, while its item covers `@label`.
 
-A table includes its claimed caption, whose scope includes the caption marker.
-A simple, multiline, or grid table and each of its rows begin at the table's
-margin on their first line: the indentation shared by a simple table's header,
-dashes and first row, or by all of a multiline or grid table's lines, measured
-after container prefixes, so a table scope starts after the block indentation
-those lines share and its container's prefix. A later simple row indented less
-begins at its first non-space byte. When the margin falls inside a tab,
-whether a container prefix consumed part of it or it is a line's own
-indentation, that tab is the byte there. A pipe row covers its physical line
-from its first non-space byte; cells cover the segments between pipes, and
-synthesized empty cells use the row's end. A simple row covers its line from
-where it begins, and a simple cell covers its trimmed segment. An empty segment
-uses its start byte, or the line's last byte if the segment starts beyond the
-line; the first column's segment starts where the row begins.
-
-Multiline rows cover their lines from the margin. Grid rows cover the lines
-following their opening boundary through the line before the next row begins,
-excluding the final table border. A row without physical content lines uses its
-closing boundary. Multiline/grid cells span their first through last line
-segments, one source range per line, clipped to each line's end; a cell without
-physical content lines uses the corresponding closing-boundary segment.
-Joined-segment soft breaks cover the original line ending. A row-spanning grid cell can end below its owning row,
-as the containment exception above permits.
+A table and its head row begin at the head row's first non-space byte, after
+the block indentation and its container's prefix. A pipe row covers its
+physical line from its first non-space byte; cells cover the segments between
+pipes, and synthesized empty cells use the row's end. An empty segment uses its
+start byte.
 
 ## Shared value types
 
@@ -398,10 +377,9 @@ them without checking.
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is trimmed, escape/entity-decoded, and excludes attached attributes; `language` is its first space/tab-delimited token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |
 | `FormulaBlock` | `literal: String` | mode is `standalone` |
-| `Table` | `caption: TableCaption?`, `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]`, `foot: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content/foot order; pipe tables have one head row, no foot rows, null relative widths, and unit spans; no span crosses a group boundary |
-| `TableCaption` | `content: [Markup]` | independently owned inline caption, visited before the table row groups |
-| `TableRow` | `cells: [TableCell]` | cells whose upper-left coordinate starts in this row, in logical order; no row-local header state |
-| `TableCell` | `rowspan: Int`, `colspan: Int`, `content: [Markup]` | positive spans; inline or block content is stored as parsed without paragraph normalization |
+| `Table` | `columns: [TableColumn]`, `head: [TableRow]`, `content: [TableRow]` | non-empty columns define the logical grid; rows are owned exactly once in head/content order: one head row, then the body rows |
+| `TableRow` | `cells: [TableCell]` | cells in column order; no row-local header state |
+| `TableCell` | `content: [Markup]` | inline content, stored as parsed |
 | `DirectiveBlock` | `name: String?`, `label: DirectiveLabel?`, `content: [Markup]` | null name for a nameless container, otherwise a letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; block content |
 | `DirectiveLabel` | `content: [Markup]` | inline content; the scope spans the brackets, so an empty label is still a place |
 | `Text` | `literal: String` | leaf |
@@ -447,36 +425,22 @@ its brackets.
 ### Typed table ownership
 
 ```text
-Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow])
-TableCaption(content: [Markup])
-TableColumn(flow: Flow, relative: Double?)
+Table(columns: [TableColumn], head: [TableRow], content: [TableRow])
+TableColumn(flow: Flow)
 TableRow(cells: [TableCell])
-TableCell(rowspan: Int, colspan: Int, content: [Markup])
+TableCell(content: [Markup])
 ```
 
 Tables, rows, and cells are immutable `Markup`; a column is an unscoped value.
-The C child chain contains the rows in head/content/foot order, partitioned by
+The C child chain contains the rows in head then content order, partitioned by
 counts stored on the table. No row duplicates its owning group's identity.
-Bindings expose the three named arrays directly. Walkers visit the independently
-owned caption first, then the three row groups in that order. Pipe tables produce one head row, body rows in `content`, empty
-`foot`, `relative=null`, and unit spans. Missing cells keep their scope at the
-row's end. Pipe and simple cells keep their inline nodes directly; multiline and grid
-cells store the ordinary parsed block sequence in the same `content` field.
+Bindings expose the two named arrays directly, and walkers visit them in that
+order. A table has one head row and its body rows in `content`. Every row has
+one cell per column: missing cells are synthesized and keep their scope at the
+row's end, and cells past the last column are dropped. A cell keeps its inline
+nodes directly. An authored empty cell is a `TableCell` with empty `content`.
 
 The [tables guide](dialect/tables.md) defines the source geometry.
-To recover logical coordinates, process head, content, and foot rows in order.
-Track columns occupied by active rowspans; place each starting cell in the first
-free column, occupying its colspan for its rowspan. Every row must be completely
-covered, with no overlap or overrun, and no span may cross a row-group boundary.
-A row with no starting cells is valid only when earlier spans cover it completely. `columns` is non-empty; a present `relative`
-is a positive finite authored width share. `TableCaption.content` contains
-inlines, and its scope includes its authored marker. Table scope includes the
-caption, whether it precedes or follows the grid. Rows retain source-defined boundaries, including a row with `cells=[]` when
-all its coordinates are covered by earlier spans. An authored empty cell is
-instead a `TableCell` with empty `content`. A spanning cell is stored once in
-its starting row; the parser does not emit covered-coordinate placeholders or
-layout-derived rows. Consumers recover coordinate occupancy and layout from
-the ordered rows and spans.
 
 ## Slots
 
@@ -559,7 +523,7 @@ walker uses the same type relationship for the per-kind scheduling table.
 Walking does not expose an iterator or a generic child projection. Each
 node-kind traversal branch selects its own typed, owned relations. Relations
 are visited in canonical field order and arrays retain their stored order:
-`Table.head`, `Table.content`, and `Table.foot` are visited in that order, while `DirectiveBlock.label` precedes
+`Table.head` and `Table.content` are visited in that order, while `DirectiveBlock.label` precedes
 `DirectiveBlock.content`. A directive label therefore participates in a
 complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.

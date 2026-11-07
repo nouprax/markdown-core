@@ -194,10 +194,6 @@ function convert(node, definitions, parentType = "root") {
         return [{ kind: "Cite", fields: {}, children: [citationItem({ referent: `footnote(label=${label})` })] }];
     }
     if (node.type === "footnoteDefinition") fields.label = (node.identifier ?? node.label ?? "").toLowerCase();
-    if (node.type === "tableCell") {
-        fields.rowspan = "1";
-        fields.colspan = "1";
-    }
     if (node.type === "inlineMath" || node.type === "math") fields.literal = node.value ?? "";
     if (node.type === "textDirective" || node.type === "leafDirective" || node.type === "containerDirective") {
         fields.name = node.name ?? "";
@@ -214,12 +210,11 @@ function convert(node, definitions, parentType = "root") {
         const width = node.align.length;
         for (const row of children) {
             row.children = row.children.slice(0, width);
-            while (row.children.length < width)
-                row.children.push({ kind: "TableCell", fields: { rowspan: "1", colspan: "1" }, children: [] });
+            while (row.children.length < width) row.children.push({ kind: "TableCell", fields: {}, children: [] });
         }
     }
     if (node.type === "table") {
-        fields.columns = `[${node.align.map((alignment) => `${alignment ?? "none"}:null`).join(",")}]`;
+        fields.columns = `[${node.align.map((alignment) => alignment ?? "none").join(",")}]`;
         children = tableGroups(children);
     }
     // A directive's label becomes a nested `DirectiveLabel` in this comparison
@@ -294,7 +289,6 @@ export const MDAST_COMPARED = {
     Link: ["dest", "title"],
     Embedded: ["dest", "title"],
     Table: ["columns"],
-    TableCell: ["rowspan", "colspan"],
     // §5.6: footnote label bytes used to be compared by NOBODY, on either
     // side. mdast's `label` is the authored spelling and so is this side's, so
     // there is something to compare as of Step 9b.2. `identifier` is NOT

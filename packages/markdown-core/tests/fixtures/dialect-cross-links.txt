@@ -175,25 +175,24 @@ Document scope=1:1..1:30 anchor=null attributes={} children=1
 | [[a | b]] |
 .
 Document scope=1:1..4:13 anchor=null attributes={} children=1
-└── Table scope=1:1..4:13 anchor=null attributes={} columns=[none:null,none:null] children=3
+└── Table scope=1:1..4:13 anchor=null attributes={} columns=[none,none] children=3
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
-    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="y" children=0
-    ├── TableBody children=2
-    │   ├── TableRow scope=3:1..3:16 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=3:2..3:11 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── CrossLink scope=3:3..3:10 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b" children=0
-    │   │   └── TableCell scope=3:13..3:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │       └── Text scope=3:14..3:14 anchor=null attributes={} literal="c" children=0
-    │   └── TableRow scope=4:1..4:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=4:2..4:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="[[a" children=0
-    │       └── TableCell scope=4:8..4:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=4:9..4:11 anchor=null attributes={} literal="b]]" children=0
-    └── TableFoot children=0
+    └── TableBody children=2
+        ├── TableRow scope=3:1..3:16 anchor=null attributes={} children=2
+        │   ├── TableCell scope=3:2..3:11 anchor=null attributes={} children=1
+        │   │   └── CrossLink scope=3:3..3:10 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b" children=0
+        │   └── TableCell scope=3:13..3:15 anchor=null attributes={} children=1
+        │       └── Text scope=3:14..3:14 anchor=null attributes={} literal="c" children=0
+        └── TableRow scope=4:1..4:13 anchor=null attributes={} children=2
+            ├── TableCell scope=4:2..4:6 anchor=null attributes={} children=1
+            │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="[[a" children=0
+            └── TableCell scope=4:8..4:12 anchor=null attributes={} children=1
+                └── Text scope=4:9..4:11 anchor=null attributes={} literal="b]]" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -393,20 +392,19 @@ A | B
 [[note\|label]] | ![[image\|100x145]]
 .
 Document scope=1:1..3:37 anchor=null attributes={} children=1
-└── Table scope=1:1..3:37 anchor=null attributes={} columns=[left:null,right:null] children=2
+└── Table scope=1:1..3:37 anchor=null attributes={} columns=[left,right] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:1..1:2 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:1..1:2 anchor=null attributes={} children=1
     │       │   └── Text scope=1:1..1:1 anchor=null attributes={} literal="A" children=0
-    │       └── TableCell scope=1:4..1:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:4..1:5 anchor=null attributes={} children=1
     │           └── Text scope=1:5..1:5 anchor=null attributes={} literal="B" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:37 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:1..3:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── CrossLink scope=3:1..3:15 anchor=null attributes={} dest=cross(path="note",anchor=null) label="label" children=0
-    │       └── TableCell scope=3:18..3:37 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── CrossEmbedded scope=3:19..3:37 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=145) children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:37 anchor=null attributes={} children=2
+            ├── TableCell scope=3:1..3:16 anchor=null attributes={} children=1
+            │   └── CrossLink scope=3:1..3:15 anchor=null attributes={} dest=cross(path="note",anchor=null) label="label" children=0
+            └── TableCell scope=3:18..3:37 anchor=null attributes={} children=1
+                └── CrossEmbedded scope=3:19..3:37 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=145) children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -415,20 +413,19 @@ Document scope=1:1..3:37 anchor=null attributes={} children=1
 | [[note#^id\|]] | [[a\|b\|c]] |
 .
 Document scope=1:1..3:32 anchor=null attributes={} children=1
-└── Table scope=1:1..3:32 anchor=null attributes={} columns=[center:null,right:null] children=2
+└── Table scope=1:1..3:32 anchor=null attributes={} columns=[center,right] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:22 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:17 anchor=null attributes={} children=1
     │       │   └── CrossLink scope=1:3..1:16 anchor=null attributes={} dest=cross(path="note",anchor=null) label="head" children=0
-    │       └── TableCell scope=1:19..1:21 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:19..1:21 anchor=null attributes={} children=1
     │           └── Text scope=1:20..1:20 anchor=null attributes={} literal="B" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:32 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── CrossLink scope=3:3..3:16 anchor=null attributes={} dest=cross(path="note",anchor="id") label="" children=0
-    │       └── TableCell scope=3:19..3:31 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── CrossLink scope=3:20..3:30 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b|c" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:32 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:17 anchor=null attributes={} children=1
+            │   └── CrossLink scope=3:3..3:16 anchor=null attributes={} dest=cross(path="note",anchor="id") label="" children=0
+            └── TableCell scope=3:19..3:31 anchor=null attributes={} children=1
+                └── CrossLink scope=3:20..3:30 anchor=null attributes={} dest=cross(path="a",anchor=null) label="b|c" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -561,20 +558,19 @@ Document scope=1:1..1:55 anchor=null attributes={} children=1
 | ![[Note\|é\|10x20]] | [[Note\|100]] |
 .
 Document scope=1:1..3:40 anchor=null attributes={} children=1
-└── Table scope=1:1..3:40 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:40 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:20 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:8 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="embed" children=0
-    │       └── TableCell scope=1:10..1:19 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:10..1:19 anchor=null attributes={} children=1
     │           └── Text scope=1:11..1:18 anchor=null attributes={} literal="ordinary" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:40 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:23 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── CrossEmbedded scope=3:3..3:22 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="é" dimensions=(width=10,height=20) children=0
-    │       └── TableCell scope=3:25..3:39 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── CrossLink scope=3:26..3:38 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="100" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:40 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:23 anchor=null attributes={} children=1
+            │   └── CrossEmbedded scope=3:3..3:22 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="é" dimensions=(width=10,height=20) children=0
+            └── TableCell scope=3:25..3:39 anchor=null attributes={} children=1
+                └── CrossLink scope=3:26..3:38 anchor=null attributes={} dest=cross(path="Note",anchor=null) label="100" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

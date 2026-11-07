@@ -107,7 +107,7 @@ function dispatch<Kind extends Markup["kind"]>(
 
 /** A chain that continues the relation of the chain before it: its first
  * node leads from where the source of that chain's last node ends. A table's
- * body and foot rows continue its head rows. */
+ * body rows continue its head rows. */
 interface Continuation {
     readonly continues: readonly Markup[];
 }
@@ -136,12 +136,8 @@ const relations: {
     heading: (node) => [node.content],
     list: (node) => [node.items],
     listItem: (node) => [node.content],
-    // A table's rows, in head, content and foot order, are one relation.
-    table: (node) =>
-        node.caption === null
-            ? [node.head, { continues: node.content }, { continues: node.foot }]
-            : [[node.caption], node.head, { continues: node.content }, { continues: node.foot }],
-    tableCaption: (node) => [node.content],
+    // A table's rows, in head then content order, are one relation.
+    table: (node) => [node.head, { continues: node.content }],
     tableRow: (node) => [node.cells],
     tableCell: (node) => [node.content],
     directiveBlock: (node) => (node.label === null ? [node.content] : [[node.label], node.content]),

@@ -3605,20 +3605,19 @@ right, or center alignment respectively.
 | baz | bim |
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=1
-└── Table scope=1:1..3:13 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:13 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:11 anchor=null attributes={} literal="bar" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
-    │       └── TableCell scope=3:8..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:9..3:11 anchor=null attributes={} literal="bim" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:6 anchor=null attributes={} children=1
+            │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
+            └── TableCell scope=3:8..3:12 anchor=null attributes={} children=1
+                └── Text scope=3:9..3:11 anchor=null attributes={} literal="bim" children=0
 ````````````````````````````````
 
 Cells in one column don't need to match length, though it's easier to read if
@@ -3630,20 +3629,19 @@ they are. Likewise, use of leading and trailing pipes may be inconsistent:
 bar | baz
 .
 Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── Table scope=1:1..3:9 anchor=null attributes={} columns=[center:null,right:null] children=2
+└── Table scope=1:1..3:9 anchor=null attributes={} columns=[center,right] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:16 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="abc" children=0
-    │       └── TableCell scope=1:8..1:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:8..1:15 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:14 anchor=null attributes={} literal="defghi" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:1..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="bar" children=0
-    │       └── TableCell scope=3:6..3:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:7..3:9 anchor=null attributes={} literal="baz" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:9 anchor=null attributes={} children=2
+            ├── TableCell scope=3:1..3:4 anchor=null attributes={} children=1
+            │   └── Text scope=3:1..3:3 anchor=null attributes={} literal="bar" children=0
+            └── TableCell scope=3:6..3:9 anchor=null attributes={} children=1
+                └── Text scope=3:7..3:9 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
 Include a pipe in a cell's content by escaping it, including inside other
@@ -3656,24 +3654,23 @@ inline spans:
 | b **\|** im |
 .
 Document scope=1:1..4:15 anchor=null attributes={} children=1
-└── Table scope=1:1..4:15 anchor=null attributes={} columns=[none:null] children=3
+└── Table scope=1:1..4:15 anchor=null attributes={} columns=[none] children=3
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:10 anchor=null attributes={} children=1
-    │       └── TableCell scope=1:2..1:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:2..1:9 anchor=null attributes={} children=1
     │           └── Text scope=1:3..1:7 anchor=null attributes={} literal="f|oo" children=0
-    ├── TableBody children=2
-    │   ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=1
-    │   │   └── TableCell scope=3:2..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=3
-    │   │       ├── Text scope=3:3..3:4 anchor=null attributes={} literal="b " children=0
-    │   │       ├── Code scope=3:5..3:8 anchor=null attributes={} literal="|" children=0
-    │   │       └── Text scope=3:9..3:11 anchor=null attributes={} literal=" az" children=0
-    │   └── TableRow scope=4:1..4:15 anchor=null attributes={} children=1
-    │       └── TableCell scope=4:2..4:14 anchor=null attributes={} rowspan=1 colspan=1 children=3
-    │           ├── Text scope=4:3..4:4 anchor=null attributes={} literal="b " children=0
-    │           ├── Strong scope=4:5..4:10 anchor=null attributes={} children=1
-    │           │   └── Text scope=4:7..4:8 anchor=null attributes={} literal="|" children=0
-    │           └── Text scope=4:11..4:13 anchor=null attributes={} literal=" im" children=0
-    └── TableFoot children=0
+    └── TableBody children=2
+        ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=1
+        │   └── TableCell scope=3:2..3:12 anchor=null attributes={} children=3
+        │       ├── Text scope=3:3..3:4 anchor=null attributes={} literal="b " children=0
+        │       ├── Code scope=3:5..3:8 anchor=null attributes={} literal="|" children=0
+        │       └── Text scope=3:9..3:11 anchor=null attributes={} literal=" az" children=0
+        └── TableRow scope=4:1..4:15 anchor=null attributes={} children=1
+            └── TableCell scope=4:2..4:14 anchor=null attributes={} children=3
+                ├── Text scope=4:3..4:4 anchor=null attributes={} literal="b " children=0
+                ├── Strong scope=4:5..4:10 anchor=null attributes={} children=1
+                │   └── Text scope=4:7..4:8 anchor=null attributes={} literal="|" children=0
+                └── Text scope=4:11..4:13 anchor=null attributes={} literal=" im" children=0
 ````````````````````````````````
 
 The table is broken at the first empty line, or beginning of another
@@ -3686,20 +3683,19 @@ block-level structure:
 > bar
 .
 Document scope=1:1..4:5 anchor=null attributes={} children=2
-├── Table scope=1:1..3:13 anchor=null attributes={} columns=[none:null,none:null] children=2
+├── Table scope=1:1..3:13 anchor=null attributes={} columns=[none,none] children=2
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
 │   │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="abc" children=0
-│   │       └── TableCell scope=1:8..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=1:8..1:12 anchor=null attributes={} children=1
 │   │           └── Text scope=1:9..1:11 anchor=null attributes={} literal="def" children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=3:2..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
-│   │       └── TableCell scope=3:8..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Text scope=3:9..3:11 anchor=null attributes={} literal="baz" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=1
+│       └── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
+│           ├── TableCell scope=3:2..3:6 anchor=null attributes={} children=1
+│           │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
+│           └── TableCell scope=3:8..3:12 anchor=null attributes={} children=1
+│               └── Text scope=3:9..3:11 anchor=null attributes={} literal="baz" children=0
 └── Callout scope=4:1..4:5 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
         └── Text scope=4:3..4:5 anchor=null attributes={} literal="bar" children=0
@@ -3714,24 +3710,23 @@ bar
 bar
 .
 Document scope=1:1..6:3 anchor=null attributes={} children=2
-├── Table scope=1:1..4:3 anchor=null attributes={} columns=[none:null,none:null] children=3
+├── Table scope=1:1..4:3 anchor=null attributes={} columns=[none,none] children=3
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
 │   │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="abc" children=0
-│   │       └── TableCell scope=1:8..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=1:8..1:12 anchor=null attributes={} children=1
 │   │           └── Text scope=1:9..1:11 anchor=null attributes={} literal="def" children=0
-│   ├── TableBody children=2
-│   │   ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=3:2..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
-│   │   │   └── TableCell scope=3:8..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │       └── Text scope=3:9..3:11 anchor=null attributes={} literal="baz" children=0
-│   │   └── TableRow scope=4:1..4:3 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=4:1..4:3 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="bar" children=0
-│   │       └── TableCell scope=4:3..4:3 anchor=null attributes={} rowspan=1 colspan=1 children=0
-│   └── TableFoot children=0
+│   └── TableBody children=2
+│       ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
+│       │   ├── TableCell scope=3:2..3:6 anchor=null attributes={} children=1
+│       │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
+│       │   └── TableCell scope=3:8..3:12 anchor=null attributes={} children=1
+│       │       └── Text scope=3:9..3:11 anchor=null attributes={} literal="baz" children=0
+│       └── TableRow scope=4:1..4:3 anchor=null attributes={} children=2
+│           ├── TableCell scope=4:1..4:3 anchor=null attributes={} children=1
+│           │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="bar" children=0
+│           └── TableCell scope=4:3..4:3 anchor=null attributes={} children=0
 └── Paragraph scope=6:1..6:3 anchor=null attributes={} children=1
     └── Text scope=6:1..6:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -3764,24 +3759,23 @@ cells are inserted.  If there are greater, the excess is ignored:
 | bar | baz | boo |
 .
 Document scope=1:1..4:19 anchor=null attributes={} children=1
-└── Table scope=1:1..4:19 anchor=null attributes={} columns=[none:null,none:null] children=3
+└── Table scope=1:1..4:19 anchor=null attributes={} columns=[none,none] children=3
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="abc" children=0
-    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:11 anchor=null attributes={} literal="def" children=0
-    ├── TableBody children=2
-    │   ├── TableRow scope=3:1..3:7 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=3:2..3:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
-    │   │   └── TableCell scope=3:7..3:7 anchor=null attributes={} rowspan=1 colspan=1 children=0
-    │   └── TableRow scope=4:1..4:19 anchor=null attributes={} children=2
-    │       ├── TableCell scope=4:2..4:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="bar" children=0
-    │       └── TableCell scope=4:8..4:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=4:9..4:11 anchor=null attributes={} literal="baz" children=0
-    └── TableFoot children=0
+    └── TableBody children=2
+        ├── TableRow scope=3:1..3:7 anchor=null attributes={} children=2
+        │   ├── TableCell scope=3:2..3:6 anchor=null attributes={} children=1
+        │   │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
+        │   └── TableCell scope=3:7..3:7 anchor=null attributes={} children=0
+        └── TableRow scope=4:1..4:19 anchor=null attributes={} children=2
+            ├── TableCell scope=4:2..4:6 anchor=null attributes={} children=1
+            │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="bar" children=0
+            └── TableCell scope=4:8..4:12 anchor=null attributes={} children=1
+                └── Text scope=4:9..4:11 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
 If there are no rows in the body, no `<tbody>` is generated in HTML output:
@@ -3791,15 +3785,14 @@ If there are no rows in the body, no `<tbody>` is generated in HTML output:
 | --- | --- |
 .
 Document scope=1:1..2:13 anchor=null attributes={} children=1
-└── Table scope=1:1..2:13 anchor=null attributes={} columns=[none:null,none:null] children=1
+└── Table scope=1:1..2:13 anchor=null attributes={} columns=[none,none] children=1
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:13 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:6 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="abc" children=0
-    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:8..1:12 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:11 anchor=null attributes={} literal="def" children=0
-    ├── TableBody children=0
-    └── TableFoot children=0
+    └── TableBody children=0
 ````````````````````````````````
 
 </div>

@@ -50,9 +50,9 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 195);
-    assert.equal(full.length, 183);
-    assert.equal(split.length, 12);
+    assert.equal(grammarCertificates.length, 186);
+    assert.equal(full.length, 180);
+    assert.equal(split.length, 6);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
         grammarCatalog()
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 854);
+    assert.equal(corpus.cases.length, 792);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 427);
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 13);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 195);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 396);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 186);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
@@ -290,7 +290,7 @@ test("regeneration removes superseded and former scale-suffixed inputs from arch
         writeGrammarCorpus(directory, { units: 1 });
         fs.writeFileSync(path.join(directory, "grammar-removed-boundary-dialect.x1.md"), "obsolete");
         fs.writeFileSync(path.join(directory, "removed-boundary-common.md"), "obsolete");
-        fs.writeFileSync(path.join(directory, "grammar-grid-cell-boundary-common.x2.md"), "obsolete");
+        fs.writeFileSync(path.join(directory, "grammar-image-dimensions-boundary-common.x2.md"), "obsolete");
         fs.writeFileSync(path.join(directory, "notes.md"), "review notes");
         const current = writeGrammarCorpus(directory, { units: 1 });
         assert.deepEqual(
@@ -313,7 +313,7 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
                 "--corpus-only",
                 "--quiet",
                 "--case",
-                "grid-cell-boundary-dialect",
+                "image-dimensions-boundary-dialect",
                 "--out",
                 directory
             ],
@@ -323,7 +323,7 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
         assert.deepEqual(
             Object.keys(units).sort(),
             ["boundary-common", "boundary-dialect", "host-common", "host-dialect"]
-                .map((part) => `grid-cell-${part}`)
+                .map((part) => `image-dimensions-${part}`)
                 .sort()
         );
         assert.ok(fs.existsSync(path.join(directory, "corpus/grammar-corpus.json")));
@@ -334,12 +334,12 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
 
 test("grammar reporting keeps the boundary ratio separate and rejects missing measured halves", () => {
     const corpus = buildGrammarCorpus({ units: 1 });
-    const proofs = corpus.proofs.filter((p) => p.id === "grid-cell");
+    const proofs = corpus.proofs.filter((p) => p.id === "image-dimensions");
     const stages = (ir) => ({
         stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: ir } } }
     });
     const cases = corpus.cases
-        .filter((c) => c.id === "grid-cell")
+        .filter((c) => c.id === "image-dimensions")
         .map((c) => ({
             ...c,
             case: c.name,
@@ -481,7 +481,6 @@ test("a certificate compares with a reference only when that reference implement
         "fallback-cross-link",
         "fallback-directive",
         "fallback-formula",
-        "fallback-grid",
         "fallback-image-dimensions",
         "fallback-insertion",
         "fallback-mark",
@@ -515,7 +514,7 @@ test("a certificate compares with a reference only when that reference implement
 
 test("a control keeps every field and frame byte and replaces only trigger punctuation with letters", () => {
     const controlled = grammarCertificates.filter((c) => featureGrammars.get(c.id)?.control);
-    assert.equal(controlled.length, 13);
+    assert.equal(controlled.length, 12);
     for (const certificate of controlled) {
         const production = featureGrammars.get(certificate.id);
         assert.ok(validateControl(production.common, production.control) > 0);
@@ -550,7 +549,7 @@ test("the complete syntax and element inventories fail closed when a feature, ru
     const coverage = validateFeatureCoverage(root, corpus);
     assert.equal(coverage.features, 31);
     assert.equal(coverage.elements, 33);
-    assert.equal(coverage.sections, 140);
+    assert.equal(coverage.sections, 133);
     assert.throws(
         () =>
             validateFeatureCoverage(root, {
@@ -611,7 +610,7 @@ test("section coverage requires explicit proof links before a ledger can be rege
     assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
     const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1 }));
     const all = ledger.features.flatMap((feature) => feature.sections);
-    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 135);
+    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 128);
     assert.equal(all.filter((section) => section.disposition.kind === "context").length, 5);
     assert.deepEqual(
         new Set(all.flatMap((section) => section.disposition.certificates ?? [])),
@@ -639,7 +638,7 @@ test("reference measurements are limited to the exact certified input side", () 
     }
     assert.throws(() => grammarEngines({ id: "insertion-strong", side: "common", part: "unknown" }));
     assert.throws(() => grammarEngines({ id: "insertion-strong", side: "control", part: "paired" }));
-    assert.throws(() => grammarEngines({ id: "grid-cell", side: "common", part: "paired" }));
+    assert.throws(() => grammarEngines({ id: "image-dimensions", side: "common", part: "paired" }));
     assert.throws(() => grammarEngines({ id: "unknown-certificate", side: "common", part: "paired" }));
 });
 

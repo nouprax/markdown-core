@@ -104,7 +104,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5435",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5428",
             "input": "- foo\n- bar\n\n<!-- -->\n\n- baz\n- bim\n",
             "findings": [
                 {
@@ -118,7 +118,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5456",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5449",
             "input": "-   foo\n\n    notcode\n\n-   foo\n\n<!-- -->\n\n    code\n",
             "findings": [
                 {
@@ -132,7 +132,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5854",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5847",
             "input": "`hi`lo`\n",
             "findings": [
                 {
@@ -146,7 +146,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5886",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5879",
             "input": "`foo`\n",
             "findings": [
                 {
@@ -160,7 +160,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5897",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5890",
             "input": "`` foo ` bar ``\n",
             "findings": [
                 {
@@ -174,7 +174,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5907",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5900",
             "input": "` `` `\n",
             "findings": [
                 {
@@ -188,7 +188,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5915",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5908",
             "input": "`  ``  `\n",
             "findings": [
                 {
@@ -202,7 +202,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5924",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5917",
             "input": "` a`\n",
             "findings": [
                 {
@@ -216,7 +216,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5933",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5926",
             "input": "`\u00a0b\u00a0`\n",
             "findings": [
                 {
@@ -230,7 +230,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5941",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5934",
             "input": "`\u00a0`\n`  `\n",
             "findings": [
                 {
@@ -252,7 +252,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5952",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5945",
             "input": "``\nfoo\nbar  \nbaz\n``\n",
             "findings": [
                 {
@@ -266,7 +266,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5962",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5955",
             "input": "``\nfoo \n``\n",
             "findings": [
                 {
@@ -280,7 +280,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5973",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5966",
             "input": "`foo   bar \nbaz`\n",
             "findings": [
                 {
@@ -294,7 +294,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:5990",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5983",
             "input": "`foo\\`bar`\n",
             "findings": [
                 {
@@ -308,7 +308,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6001",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:5994",
             "input": "``foo`bar``\n",
             "findings": [
                 {
@@ -322,7 +322,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6007",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:6000",
             "input": "` foo `` bar `\n",
             "findings": [
                 {
@@ -336,7 +336,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6019",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:6012",
             "input": "*foo`*`\n",
             "findings": [
                 {
@@ -350,7 +350,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6028",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:6021",
             "input": "[not a `link](/foo`)\n",
             "findings": [
                 {
@@ -364,7 +364,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6038",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:6031",
             "input": "`<a href=\"`\">`\n",
             "findings": [
                 {
@@ -378,7 +378,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6056",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:6049",
             "input": "`<https://foo.bar.`baz>`\n",
             "findings": [
                 {
@@ -392,7 +392,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:6091",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:6084",
             "input": "`foo``bar``\n",
             "findings": [
                 {
@@ -406,7 +406,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:7430",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:7423",
             "input": "*a `*`*\n",
             "findings": [
                 {
@@ -420,7 +420,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:7437",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:7430",
             "input": "_a `_`_\n",
             "findings": [
                 {
@@ -434,7 +434,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:7608",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:7601",
             "input": "[link](<foo\nbar>)\n",
             "findings": [
                 {
@@ -448,7 +448,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:7870",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:7863",
             "input": "[link *foo **bar** `#`*](/uri)\n",
             "findings": [
                 {
@@ -462,7 +462,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:7944",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:7937",
             "input": "[foo`](/uri)`\n",
             "findings": [
                 {
@@ -476,7 +476,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:8024",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:8017",
             "input": "[link *foo **bar** `#`*][ref]\n\n[ref]: /uri\n",
             "findings": [
                 {
@@ -490,7 +490,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:8098",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:8091",
             "input": "[foo`][ref]`\n\n[ref]: /uri\n",
             "findings": [
                 {
@@ -504,7 +504,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9034",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9027",
             "input": "<a  /><b2\ndata=\"foo\" >\n",
             "findings": [
                 {
@@ -518,7 +518,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9045",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9038",
             "input": "<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />\n",
             "findings": [
                 {
@@ -532,7 +532,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9134",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9127",
             "input": "foo <!-- this is a --\ncomment - with hyphens -->\n",
             "findings": [
                 {
@@ -546,7 +546,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9287",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9280",
             "input": "`code  \nspan`\n",
             "findings": [
                 {
@@ -560,7 +560,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9295",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9288",
             "input": "`code\\\nspan`\n",
             "findings": [
                 {
@@ -574,7 +574,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9305",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9298",
             "input": "<a href=\"foo  \nbar\">\n",
             "findings": [
                 {
@@ -588,7 +588,7 @@
             ]
         },
         {
-            "source": ".tools/cmark/0.31.2/test/spec.txt:9314",
+            "source": ".tools/cmark/0.31.2/test/spec.txt:9307",
             "input": "<a href=\"foo\\\nbar\">\n",
             "findings": [
                 {

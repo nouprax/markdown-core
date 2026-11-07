@@ -18,17 +18,16 @@ Document scope=1:1..11:14 anchor=null attributes={} children=5
 │       ├── CrossLink scope=3:14..3:21 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
 │       ├── Text scope=3:22..3:22 anchor=null attributes={} literal=" " children=0
 │       └── Comment scope=3:23..3:33 anchor=null attributes={} literal="body" children=0
-├── Table scope=5:1..7:14 anchor=null attributes={} columns=[none:null] children=2
+├── Table scope=5:1..7:14 anchor=null attributes={} columns=[none] children=2
 │   ├── TableHead children=1
 │   │   └── TableRow scope=5:1..5:8 anchor=null attributes={} children=1
-│   │       └── TableCell scope=5:2..5:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=5:2..5:7 anchor=null attributes={} children=1
 │   │           └── Text scope=5:3..5:6 anchor=null attributes={} literal="mark" children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=7:1..7:14 anchor=null attributes={} children=1
-│   │       └── TableCell scope=7:2..7:13 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Mark scope=7:3..7:12 anchor=null attributes={} children=1
-│   │               └── Text scope=7:5..7:10 anchor=null attributes={} literal="中|x" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=1
+│       └── TableRow scope=7:1..7:14 anchor=null attributes={} children=1
+│           └── TableCell scope=7:2..7:13 anchor=null attributes={} children=1
+│               └── Mark scope=7:3..7:12 anchor=null attributes={} children=1
+│                   └── Text scope=7:5..7:10 anchor=null attributes={} literal="中|x" children=0
 ├── Paragraph scope=9:1..9:9 anchor=null attributes={} children=3
 │   ├── Text scope=9:1..9:4 anchor=null attributes={} literal="Call" children=0
 │   ├── Cite scope=9:5..9:8 anchor=null attributes={} children=1

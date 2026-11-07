@@ -43,19 +43,18 @@ Document scope=1:1..16:14 anchor=null attributes={} children=7
 │       ├── Formula scope=5:33..5:41 anchor=null attributes={} mode=embedded literal="++raw++" children=0
 │       ├── Text scope=5:42..5:42 anchor=null attributes={} literal=" " children=0
 │       └── Code scope=5:43..5:51 anchor=null attributes={} literal="++raw++" children=0
-├── Table scope=7:1..9:18 anchor=null attributes={} columns=[none:null] children=2
+├── Table scope=7:1..9:18 anchor=null attributes={} columns=[none] children=2
 │   ├── TableHead children=1
 │   │   └── TableRow scope=7:1..7:12 anchor=null attributes={} children=1
-│   │       └── TableCell scope=7:2..7:11 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=7:2..7:11 anchor=null attributes={} children=1
 │   │           └── Text scope=7:3..7:10 anchor=null attributes={} literal="inserted" children=0
-│   ├── TableBody children=1
-│   │   └── TableRow scope=9:1..9:18 anchor=null attributes={} children=1
-│   │       └── TableCell scope=9:2..9:17 anchor=null attributes={} rowspan=1 colspan=1 children=3
-│   │           ├── Text scope=9:3..9:3 anchor=null attributes={} literal="+" children=0
-│   │           ├── Insertion scope=9:4..9:15 anchor=null attributes={} children=1
-│   │           │   └── Text scope=9:6..9:13 anchor=null attributes={} literal="中|文" children=0
-│   │           └── Text scope=9:16..9:16 anchor=null attributes={} literal="+" children=0
-│   └── TableFoot children=0
+│   └── TableBody children=1
+│       └── TableRow scope=9:1..9:18 anchor=null attributes={} children=1
+│           └── TableCell scope=9:2..9:17 anchor=null attributes={} children=3
+│               ├── Text scope=9:3..9:3 anchor=null attributes={} literal="+" children=0
+│               ├── Insertion scope=9:4..9:15 anchor=null attributes={} children=1
+│               │   └── Text scope=9:6..9:13 anchor=null attributes={} literal="中|文" children=0
+│               └── Text scope=9:16..9:16 anchor=null attributes={} literal="+" children=0
 ├── Callout scope=11:1..12:10 anchor=null attributes={} variant="note" collapsed=null children=1
 │   ├── Title children=1
 │   │   └── Insertion scope=11:11..11:19 anchor=null attributes={} children=1

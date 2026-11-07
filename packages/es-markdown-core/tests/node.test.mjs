@@ -331,31 +331,6 @@ test("api: the dialect has no switches, so a plain parse recognizes every featur
     }
 });
 
-test("ast: captions and sparse rows survive native release and walk in ownership order", () => {
-    const source = ": Caption\n\n+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n";
-    const document = Document.parse(source);
-    const table = document.content[0];
-    assert.equal(table.caption.kind, "tableCaption");
-    assert.equal(table.caption.content[0].literal, "Caption");
-    assert.deepEqual(table.content[1].cells, []);
-    assert.equal(table.content[0].cells[0].rowspan, 2);
-    assert.equal(table.content[0].cells[0].content[1].content[0].literal, "c");
-    const events = [];
-    walk(
-        table,
-        walkingVisitor((node, phase) => {
-            if (phase === "enter") events.push(node.kind);
-        })
-    );
-    assert.deepEqual(events.slice(0, 4), ["table", "tableCaption", "text", "tableRow"]);
-    assert.deepEqual(document.scope(table.caption, source), [
-        {
-            start: { line: 1, column: 1 },
-            end: { line: 1, column: 9 }
-        }
-    ]);
-});
-
 test("ast: typed fields are copied from the native result", () => {
     const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
@@ -1638,35 +1613,25 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
     assert.ok(events.indexOf("footnote") < events.indexOf("specimen"));
 });
 
-test("ast: table groups, column widths and spans survive the wire as owned facts", () => {
+test("ast: table groups and columns survive the wire as owned facts", () => {
     const writer = new MessageWriter();
     const row = (...literals) => {
-        for (const literal of literals)
-            writer
-                .text(literal)
-                .record("tableCell")
-                .int(1)
-                .int(literal === "f" ? 2 : 1)
-                .u32(1);
+        for (const literal of literals) writer.text(literal).record("tableCell").u32(1);
         writer.record("tableRow").u32(literals.length);
     };
     row("h", "i");
     row("b", "c");
-    row("f", "g");
-    // No caption; two columns; one row in each of head, content and foot.
-    writer.record("table").bool(false).u32(2).u8(0).optional(0.1, MessageWriter.prototype.double);
-    const bytes = writer.u8(3).bool(false).u32(1).u32(1).u32(1).root(1).document();
+    row("d", "e");
+    // Two columns; one head row and two body rows.
+    writer.record("table").u32(2).u8(0);
+    const bytes = writer.u8(3).u32(1).u32(2).root(1).document();
     const document = decoder(bytes).decode();
     bytes.fill(0);
     const value = document.content[0];
     assert.equal(value.head[0].cells[0].content[0].literal, "h");
     assert.equal(value.content[0].cells[0].content[0].literal, "b");
-    assert.equal(value.foot[0].cells[0].content[0].literal, "f");
-    assert.equal(value.foot[0].cells[0].colspan, 2);
-    assert.deepEqual(value.columns, [
-        { flow: "none", relative: 0.1 },
-        { flow: "right", relative: null }
-    ]);
+    assert.equal(value.content[1].cells[1].content[0].literal, "e");
+    assert.deepEqual(value.columns, [{ flow: "none" }, { flow: "right" }]);
     assert.ok(!("isHeader" in value.head[0]));
     const visited = [];
     walk(
@@ -1675,9 +1640,9 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
             if (phase === "enter" && node.kind === "text") visited.push(node.literal);
         })
     );
-    assert.deepEqual(visited, ["h", "i", "b", "c", "f", "g"]);
-    assert.match(document.dump(value, ""), /columns=\[none:0.1,right:null\] children=3/);
-    assert.match(document.dump(value, ""), /TableFoot children=1/);
+    assert.deepEqual(visited, ["h", "i", "b", "c", "d", "e"]);
+    assert.match(document.dump(value, ""), /columns=\[none,right\] children=3/);
+    assert.match(document.dump(value, ""), /TableBody children=2/);
 });
 
 test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists", () => {
@@ -2153,47 +2118,30 @@ test("api: a node's scopes are its own runs, one per run in source order", () =>
     assert.deepEqual(blocks.scope(rule, fenced), [scope(4, 1, 4, 3)]);
 });
 
-test("api: a table's rows, in head, content and foot order, are one relation", () => {
+test("api: a table's rows, in head then content order, are one relation", () => {
     const scope = (line, end) => [{ start: { line, column: 1 }, end: { line, column: end } }];
-    // The caption is a relation of its own, so the first head row leads from
-    // the table's start; the first body row leads from the end of the last
-    // head row, and the first foot row from the end of the last body row.
-    const source = ": Cap\n\n+---+\n| h |\n+===+\n| a |\n+===+\n| f |\n+===+\n";
+    // The head row leads from the table's start; the first body row leads
+    // from the end of the head row, past the delimiter row.
+    const source = "| h |\n| - |\n| a |\n| b |\n";
     const document = Document.parse(source, { unit: "utf8" });
     const [table] = document.content;
-    const rows = [...table.head, ...table.content, ...table.foot];
-    assert.equal(table.caption.kind, "tableCaption");
+    const rows = [...table.head, ...table.content];
     assert.deepEqual(
         rows.map((row) => [row.extent, row.runs]),
         [
-            [{ lead: 13, span: 5 }, [{ lead: 13, span: 5 }]],
+            [{ lead: 0, span: 5 }, [{ lead: 0, span: 5 }]],
             [{ lead: 7, span: 5 }, [{ lead: 7, span: 5 }]],
-            [{ lead: 7, span: 5 }, [{ lead: 7, span: 5 }]]
+            [{ lead: 1, span: 5 }, [{ lead: 1, span: 5 }]]
         ]
     );
     assert.deepEqual(
         rows.map((row) => document.scope(row, source)),
-        [scope(4, 5), scope(6, 5), scope(8, 5)]
+        [scope(1, 5), scope(3, 5), scope(4, 5)]
     );
-    const [foot] = table.foot[0].cells[0].content[0].content;
-    assert.deepEqual(document.scope(foot, source), [{ start: { line: 8, column: 3 }, end: { line: 8, column: 3 } }]);
-    assert.equal(document.nodeAt({ line: 8, column: 3 }, source), foot);
-    assert.ok(document.dump(source).includes("TableFoot children=1\n        └── TableRow scope=8:1..8:5 "));
-
-    // A table without head rows: its first body row is the relation's first
-    // node, which leads from the table's start.
-    const bare = "+---+\n| a |\n+---+\n| b |\n+---+\n";
-    const parsed = Document.parse(bare, { unit: "utf8" });
-    const [body] = parsed.content;
-    assert.deepEqual(body.head, []);
-    assert.deepEqual(
-        body.content.map((row) => row.runs),
-        [[{ lead: 6, span: 5 }], [{ lead: 7, span: 5 }]]
-    );
-    assert.deepEqual(
-        body.content.map((row) => parsed.scope(row, bare)),
-        [scope(2, 5), scope(4, 5)]
-    );
+    const [last] = table.content[1].cells[0].content;
+    assert.deepEqual(document.scope(last, source), [{ start: { line: 4, column: 3 }, end: { line: 4, column: 3 } }]);
+    assert.equal(document.nodeAt({ line: 4, column: 3 }, source), last);
+    assert.ok(document.dump(source).includes("TableBody children=2\n        ├── TableRow scope=3:1..3:5 "));
 });
 
 test("api: every node has runs, and its scopes are one per run in source order", () => {

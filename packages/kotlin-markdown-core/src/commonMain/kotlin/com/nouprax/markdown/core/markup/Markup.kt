@@ -77,12 +77,10 @@ public sealed class Markup {
             }
 
             is Table -> {
-                listOfNotNull(
-                    caption?.let { Relation(null, listOf(it)) },
-                    // A table's rows, in head, content and foot order, are one relation.
+                listOf(
+                    // A table's rows, in head then content order, are one relation.
                     Relation("TableHead", head),
                     Relation("TableBody", content, continues = true),
-                    Relation("TableFoot", foot, continues = true),
                 )
             }
 
@@ -132,10 +130,6 @@ public sealed class Markup {
             }
 
             is ListItem -> {
-                listOf(Relation(null, content))
-            }
-
-            is TableCaption -> {
                 listOf(Relation(null, content))
             }
 
@@ -254,16 +248,12 @@ public sealed class Markup {
                 other is Table && columns == other.columns
             }
 
-            is TableCaption -> {
-                other is TableCaption
-            }
-
             is TableRow -> {
                 other is TableRow
             }
 
             is TableCell -> {
-                other is TableCell && rowspan == other.rowspan && colspan == other.colspan
+                other is TableCell
             }
 
             is DirectiveBlock -> {

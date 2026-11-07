@@ -29,9 +29,9 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | --- | --- | --- |
 | 1 | `empty-superscript-and-subscript`: empty scripts | Both sides now produce an empty Superscript for `^^`. The only remaining difference is `~~`: Core reserves double tildes for strikethrough and retains an unmatched pair as text; this Pandoc reader produces an empty Subscript. |
 | 2 | `pandoc-reference-attribute-merge`: reference attribute merging | Core preserves classes and attribute records in definition-then-occurrence order, including duplicates. Pandoc deduplicates, overrides, and reorders them. For example, Core retains both declarations in `k=def ... k=occ`, while Pandoc retains only the occurrence's `k=occ`. |
-| 3 | `multiline-table`: multiline table column widths | Core stores each source column width as a proportion of the total column width. Pandoc includes separators in widths and divides by the default page width. The difference is numerical column width; table content is implemented and agrees. |
-| 4 | `grid-table-block-cells`: widths of grid tables containing blocks | The same width semantics as item 3. For source interior widths 15, 15, and 20, Core stores `0.3, 0.3, 0.4`, while Pandoc stores `16/72, 16/72, 21/72`. Paragraphs, lists, and other block content within cells agree. |
-| 5 | `grid-table-row-and-column-spans`: widths of tables with spans | The same width difference remains. Row/column-span geometry and cell content agree; rowspan/colspan support is not missing. |
+| 3 | `multiline-table`: multiline table column widths | **Removed from the registry.** Multiline tables are no longer part of the dialect, so the case left the corpus. |
+| 4 | `grid-table-block-cells`: widths of grid tables containing blocks | **Removed from the registry.** Grid tables and captions are no longer part of the dialect. |
+| 5 | `grid-table-row-and-column-spans`: widths of tables with spans | **Removed from the registry.** Grid tables are no longer part of the dialect. |
 | 6 | `example-lists-and-reference`: specimen definitions and references | Core keeps each Specimen definition as a block where it was written and preserves exact reference labels. Pandoc emits numbered example Lists and replaces references with number text. Core delegates numbering to consumers. |
 | 7 | `p6-escaped-space`: escaped spaces in scripts | For `^a\ b^` and `~*c\ d*~`, Core produces scripts and decodes their escaped spaces to NBSP; this Pandoc reader does not produce scripts. Core preserves the original backslash and whitespace outside scripts or when a candidate fails, without global replacement. |
 | 8 | `p6-whitespace-recovery`: Unicode whitespace in scripts | **Fixed and removed from the registry.** Only a raw space, tab or line ending ends a script candidate, as in Pandoc's reader, so `^a b^` containing U+2003 EM SPACE is a superscript on both sides. Both sides also agree on recovery after the earlier ASCII-space failure in this case. |
@@ -66,7 +66,6 @@ requires distinguishing reader configuration from failed-candidate fallback.
 
 The clearest repeated relationships are:
 
-- 3–5: one column-width rule across three table cases.
 - 6, 25, 26: one specimen definition/reference model across ordinary content,
   forward references, and headings.
 - 12, 16, 18, 31: one global explicit-ID reservation rule across four declaration

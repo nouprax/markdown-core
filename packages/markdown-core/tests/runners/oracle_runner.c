@@ -1927,48 +1927,10 @@ static bool unheld(const char *kind, const char *owner, const uint8_t *source, s
     return false;
 }
 
-/* Whether the line at `at` is a grid table's border or a simple table's
- * rule: lines whose columns their bytes' positions set. */
-static bool ruled(const uint8_t *source, size_t length, size_t at) {
-    size_t dashes = 0, i = at;
-    for (; i < length && source[i] != '\n'; i++) {
-        if (source[i] == '-' || source[i] == '=') {
-            dashes++;
-        } else if (!among(source[i], " :+|")) {
-            return false;
-        }
-    }
-    return dashes >= 3 && (source[at] == '+' || !memchr(source + at, '|', i - at));
-}
-
-/* Whether the cursor's line is a row of a table its layout sets: a value
- * of another size moves its columns. */
-static bool laid(const uint8_t *source, size_t length, size_t from) {
-    size_t start = from, end = from;
-    while (start > 0 && source[start - 1] != '\n') {
-        start--;
-    }
-    while (end < length && source[end] != '\n') {
-        end++;
-    }
-    size_t before = start;
-    if (before > 0) {
-        before--;
-        while (before > 0 && source[before - 1] != '\n') {
-            before--;
-        }
-    }
-    return (start > 0 && ruled(source, length, before)) || (end + 1 < length && ruled(source, length, end + 1));
-}
-
 static void check_spell(report *r, const uint8_t *source, size_t length, size_t cursor, size_t from, size_t to,
                         const markdown_core_context *context, size_t index, const markdown_core_slot *slot, bool row,
                         const char *what, const char *kind, const char *owner) {
     markdown_core_insertion *witness = NULL;
-    const bool laid_out = laid(source, length, from);
-    if (laid_out && to - from != SENTINEL_LENGTH) {
-        return;
-    }
     /* A `|` in the slot may keep its line from a table's row, and a quote
      * in it may end a title or a value the line opens before it: the
      * slot's text is what the reading around it stands on. */
@@ -2061,7 +2023,7 @@ static void check_spell(report *r, const uint8_t *source, size_t length, size_t 
          (key >= 7 && (!memcmp(source + key - 7, " class=", 7) || !memcmp(source + key - 7, "{class=", 7))));
     for (size_t v = 0; v < VALUE_COUNT; v++) {
         const char *value = VALUES[v];
-        if ((special && (!*value || holds(value, " \t"))) || (laid_out && strlen(value) != SENTINEL_LENGTH)) {
+        if (special && (!*value || holds(value, " \t"))) {
             continue;
         }
         markdown_core_insertion *made = NULL;

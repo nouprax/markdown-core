@@ -120,32 +120,12 @@ export const boundaryGrammars = {
         feature: "properties",
         reason: "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained."
     },
-    "multiline-matrix": {
-        feature: "tables",
-        reason: "Column-interval equality, physical-line segmentation and logical-row block parsing have no counterpart in the supplied GFM pipe-table grammar; all cell payloads are paired locally."
-    },
-    "headless-multiline": {
-        feature: "tables",
-        reason: "Column-interval equality, physical-line segmentation and logical-row block parsing have no counterpart in the supplied GFM pipe-table grammar; all cell payloads are paired locally."
-    },
     "image-dimensions": {
         feature: "links-and-images",
         reason: "Positive bounded width/height recognition is absent from the pinned cmark image grammar; image label and destination are paired locally without attributing numeric validation to the reference."
     },
     "embed-dimensions": {
         reason: "Numeric image width/height has no field in the supplied CommonMark image counterpart; target and label remain locally paired."
-    },
-    "headless-matrix": {
-        reason: "Headless-row classification differs from the reference header rule; every cell value is retained in the local product."
-    },
-    "sparse-grid": {
-        reason: "Spans, sparse rows, footer and empty-caption recognition remain residual; all six independent cell fields are retained."
-    },
-    "grid-cell": {
-        reason: "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product."
-    },
-    "simple-matrix": {
-        reason: "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product."
     },
     metadataempty: {
         reason: "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained."
@@ -433,7 +413,6 @@ function chainBody(seed, depth, letters) {
     return result;
 }
 /* A grid column is a character: geometry counts scalars, not UTF-16 units. */
-const columns = (text) => [...text].length;
 
 /** A host is a lossless sequence of literal residuals and named grammar slots.
  * No regexp extraction can silently lose a delimiter or a second field.
@@ -677,137 +656,17 @@ function renderHosts(id, p) {
             ],
             ["probe ![", literal, "](/", target, ") end\n\n"]
         );
-    if (id === "multiline-matrix" || id === "headless-multiline") {
-        const last = slot("last", "word", p.words[0]),
-            footer = slot("footer", "word", p.words[1]);
-        const fields = [key, target, value, anchor, last, footer];
-        const width = Math.max(...fields.map((f) => columns(f.source))) + 3;
-        const full = "-".repeat(width * 2 + 2) + "\n",
-            segmented = "-".repeat(width) + "  " + "-".repeat(width) + "\n";
-        const line = (a, b) => [a, " ".repeat(width + 2 - columns(a.source)), b, "\n"];
-        return pair(
-            [
-                ...(id === "multiline-matrix"
-                    ? [full, line(key, target), segmented]
-                    : [segmented, line(key, target), "\n"]),
-                line(value, anchor),
-                line(value, anchor),
-                "\n",
-                line(last, footer),
-                full,
-                "\n"
-            ],
-            fields.flatMap((field) => ["> ", field, "\n\n"])
-        );
-    }
     if (id === "embed-dimensions")
         return pair(
             ["See ![[", target, "|", literal, `|${p.start}x${p.start + 1}]] here.\n\n`],
             ["See ![", literal, "](/", target, ") here.\n\n"]
         );
-    if (id === "headless-matrix") {
-        const width =
-            Math.max(columns(key.source), columns(target.source), columns(value.source), columns(anchor.source)) + 2;
-        const rule = "-".repeat(width) + "  " + "-".repeat(width) + "\n";
-        return pair(
-            [
-                rule,
-                key,
-                " ".repeat(width - columns(key.source) + 2),
-                target,
-                "\n",
-                value,
-                " ".repeat(width - columns(value.source) + 2),
-                anchor,
-                "\n",
-                rule,
-                "\n"
-            ],
-            ["| ", key, " | ", target, " |\n| --- | --- |\n| ", value, " | ", anchor, " |\n\n"]
-        );
-    }
-    if (id === "sparse-grid") {
-        const d = slot("last", "word", p.words[0]),
-            footer = slot("footer", "word", p.words[1]);
-        const width = Math.max(...[key, target, value, anchor, d, footer].map((x) => columns(x.source))) + 2;
-        const rule = (left, right) => `+${left.repeat(width)}+${right.repeat(width)}+\n`;
-        const cell = (field) => [" ", field, " ".repeat(width - columns(field.source) - 1)];
-        const spanning = (field) => ["| ", field, " ".repeat(2 * width - columns(field.source)), "|\n"];
-        return pair(
-            [
-                rule("-", "-"),
-                spanning(key),
-                rule("=", "="),
-                "|",
-                cell(target),
-                "|",
-                cell(value),
-                "|\n",
-                rule("-", " "),
-                "|",
-                cell(anchor),
-                "|",
-                cell(d),
-                "|\n",
-                rule("-", "-"),
-                rule(" ", " "),
-                rule("=", "="),
-                spanning(footer),
-                rule("=", "="),
-                "\nTable:\n\n---\n\n"
-            ],
-            [key, target, value, anchor, d, footer].flatMap((field) => ["> ", field, "\n\n"])
-        );
-    }
     if (id === "task-value") return pair(["- [~] ", b, "\n- [~] ", t, "\n\n"], ["- [x] ", b, "\n- [x] ", t, "\n\n"]);
     if (id === "decimal-list")
         return pair(
             [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"],
             [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"]
         );
-    if (id === "grid-cell") {
-        const width = Math.max(columns(b.source), columns(t.source)) + 2;
-        const border = `+${"-".repeat(width)}+\n`;
-        return pair(
-            [
-                border,
-                "| ",
-                b,
-                " ".repeat(width - columns(b.source) - 1),
-                "|\n",
-                `|${" ".repeat(width)}|\n`,
-                "| ",
-                t,
-                " ".repeat(width - columns(t.source) - 1),
-                "|\n",
-                border,
-                "\n"
-            ],
-            ["> ", b, "\n>\n> ", t, "\n\n"]
-        );
-    }
-    if (id === "simple-matrix") {
-        const cells = [key, target, value, anchor];
-        const w = Math.max(columns(key.source), columns(value.source), 4) + 2;
-        const z = Math.max(columns(target.source), columns(anchor.source), 4) + 2;
-        return pair(
-            [
-                key,
-                " ".repeat(w - columns(key.source) + 2),
-                target,
-                "\n",
-                "-".repeat(w),
-                "  ",
-                "-".repeat(z),
-                "\n",
-                value,
-                " ".repeat(w - columns(value.source) + 2),
-                anchor,
-                "\n\n"
-            ],
-            ["| ", cells[0], " | ", cells[1], " |\n| :--- | :--- |\n| ", cells[2], " | ", cells[3], " |\n\n"]
-        );
-    }
     throw new Error(`no grammar host: ${id}`);
 }
 

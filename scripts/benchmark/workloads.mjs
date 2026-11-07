@@ -1151,6 +1151,14 @@ export function hardScripts() {
     add("type-in-middle-paragraph", "one\n\ntwo\n\nthree\n", (s) =>
         s.insert(6, "x").reread(0, 11).remove(6, 7).reread(0, 10)
     );
+    /* A definition marker after a paragraph makes it a term of the
+     * definition list before it, past a blank line, inside a container
+     * too, where no close is noted. */
+    for (const [kind, text, at] of [
+        ["directive", ":::x\nm\n: a\n\ny\n# h\n:::\n", 14],
+        ["quote", "> m\n> : a\n>\n> y\n> # h\n", 18]
+    ])
+        add(`term-enters-list-in-${kind}`, text, (s) => s.edit(at, at + 3, ": d").edit(at, at + 3, "# h"));
     /* Fences, comments and HTML blocks opened before unchanged text and
      * closed again. */
     for (const [kind, opener, closer] of [

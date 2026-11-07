@@ -18,7 +18,7 @@ public value class MarkupID(
  * content, which starts at 0. [lead] is the signed distance from the end of
  * the previous node in the same relation, or from the owner's start for the
  * first node, to this node's start, and [span] is the length of its range. A
- * table's rows, in head, content and foot order, are one relation.
+ * table's rows, in head then content order, are one relation.
  */
 public data class Extent(
     public val lead: Int,

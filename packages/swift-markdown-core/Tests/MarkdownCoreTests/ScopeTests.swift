@@ -189,37 +189,32 @@ import Testing
         )
     }
 
-    @Test("a table's rows, in head, content and foot order, are one relation")
+    @Test("a table's rows, in head then content order, are one relation")
     func tableRows() throws {
-        let source = "+---+\n| h |\n+===+\n| a |\n+===+\n| f |\n+===+\n\nTable: *Cap*\n"
+        let source = "| h |\n| - |\n| a |\n| b |\n"
         let document = try Document.parse(source)
         let table = try #require(document.content.first as? Table)
-        let caption = try #require(table.caption)
         func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
             Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
         }
-        // The caption is a relation of its own, and the head's first row
-        // leads from the table's start, not from the caption's end.
-        #expect(caption.extent == Extent(lead: 43, span: 12))
-        #expect(caption.runs == [Run(lead: 43, span: 12)])
-        #expect(table.head[0].extent == Extent(lead: 6, span: 5))
-        #expect(table.head[0].runs == [Run(lead: 6, span: 5)])
-        // The body's first row leads from the end of the head's last, and the
-        // foot's from the end of the body's last.
+        // The head row leads from the table's start, the body's first row
+        // from the end of the head row, past the delimiter row, and each
+        // later row from the end of the one before.
+        #expect(table.head[0].extent == Extent(lead: 0, span: 5))
+        #expect(table.head[0].runs == [Run(lead: 0, span: 5)])
         #expect(table.content[0].extent == Extent(lead: 7, span: 5))
         #expect(table.content[0].runs == [Run(lead: 7, span: 5)])
-        #expect(table.foot[0].extent == Extent(lead: 7, span: 5))
-        #expect(table.foot[0].runs == [Run(lead: 7, span: 5)])
-        #expect(try document.scope(of: caption, in: source) == [place((9, 1), (9, 12))])
-        #expect(try document.scope(of: table.head[0], in: source) == [place((2, 1), (2, 5))])
-        #expect(try document.scope(of: table.content[0], in: source) == [place((4, 1), (4, 5))])
-        #expect(try document.scope(of: table.foot[0], in: source) == [place((6, 1), (6, 5))])
-        #expect(try document.node(at: Position(line: 6, column: 1), in: source)?.isEqual(table.foot[0]) == true)
+        #expect(table.content[1].extent == Extent(lead: 1, span: 5))
+        #expect(table.content[1].runs == [Run(lead: 1, span: 5)])
+        #expect(try document.scope(of: table.head[0], in: source) == [place((1, 1), (1, 5))])
+        #expect(try document.scope(of: table.content[0], in: source) == [place((3, 1), (3, 5))])
+        #expect(try document.scope(of: table.content[1], in: source) == [place((4, 1), (4, 5))])
+        #expect(try document.node(at: Position(line: 4, column: 1), in: source)?.isEqual(table.content[1]) == true)
         // The dump still draws each group's line.
         #expect(
             try document.dump(table, in: source).contains(
-                "└── TableFoot children=1\n"
-                    + "    └── TableRow scope=6:1..6:5 anchor=null attributes={} children=1\n"
+                "└── TableBody children=2\n"
+                    + "    ├── TableRow scope=3:1..3:5 anchor=null attributes={} children=1\n"
             )
         )
     }

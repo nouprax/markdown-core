@@ -65,8 +65,7 @@ const COMPARED = {
     HTMLBlock: ["literal"],
     Comment: ["literal"],
     Link: ["dest", "title"],
-    Embedded: ["dest", "title"],
-    TableCell: ["rowspan", "colspan"]
+    Embedded: ["dest", "title"]
 };
 
 const LITERAL_BEARING = new Set(["text", "code", "code_block", "html_block", "html_inline"]);
@@ -121,10 +120,6 @@ export function parseUpstreamXml(xml, fired) {
         if (kind === undefined) kind = `?${name}`;
         const node = { kind, fields: attributes, children: [] };
         if (kind === "Cite") node.children.push(citationItem({}));
-        if (name === "table_cell") {
-            node.fields.rowspan = "1";
-            node.fields.colspan = "1";
-        }
         if (name === "item") {
             node.fields.completed = "null";
         }
@@ -157,8 +152,7 @@ export function tableGroups(rows, fired) {
     fired?.add("table-row-groups");
     return [
         { kind: "TableHead", fields: {}, children: rows.slice(0, 1) },
-        { kind: "TableBody", fields: {}, children: rows.slice(1) },
-        { kind: "TableFoot", fields: {}, children: [] }
+        { kind: "TableBody", fields: {}, children: rows.slice(1) }
     ];
 }
 

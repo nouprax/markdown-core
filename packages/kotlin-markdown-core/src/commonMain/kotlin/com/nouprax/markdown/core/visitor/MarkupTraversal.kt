@@ -4,7 +4,7 @@ package com.nouprax.markdown.core
  * One owned node-valued field of a node: its nodes in stored order, and the
  * name of the group line the dump draws for it, or null when its nodes nest
  * directly under the owner. A relation that [continues] goes on from the one
- * before it, as a table's content and foot rows go on from its head rows, so
+ * before it, as a table's body rows go on from its head rows, so
  * together they are one relation: its first node is measured from the node
  * before it in that one relation, or from the owner when there is none.
  */

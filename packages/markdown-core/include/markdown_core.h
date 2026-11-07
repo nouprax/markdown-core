@@ -143,7 +143,7 @@ typedef struct markdown_core_scope {
  * node. `lead` is the signed distance from the end of the previous node in
  * the same relation -- or from the owner's start, for the first node of a
  * relation -- to this node's start, and `span` the length of its range. A
- * table's rows, in head, content and foot order, are one relation. An
+ * table's rows, in head then content order, are one relation. An
  * inline root's content starts at 0. */
 #ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
 #define MARKDOWN_CORE_EXTENT_TYPEDEF
@@ -286,13 +286,12 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_SUBSCRIPT = 36,
     MARKDOWN_CORE_KIND_DEFINITION_LIST = 37,
     MARKDOWN_CORE_KIND_DEFINITION = 38,
-    MARKDOWN_CORE_KIND_TABLE_CAPTION = 39,
-    MARKDOWN_CORE_KIND_CITATION = 40,
-    MARKDOWN_CORE_KIND_FOOTNOTE = 41,
-    MARKDOWN_CORE_KIND_SPECIMEN = 42,
-    MARKDOWN_CORE_KIND_METADATA = 43,
-    MARKDOWN_CORE_KIND_REFERENCE = 44,
-    MARKDOWN_CORE_KIND_TOPIC = 45,
+    MARKDOWN_CORE_KIND_CITATION = 39,
+    MARKDOWN_CORE_KIND_FOOTNOTE = 40,
+    MARKDOWN_CORE_KIND_SPECIMEN = 41,
+    MARKDOWN_CORE_KIND_METADATA = 42,
+    MARKDOWN_CORE_KIND_REFERENCE = 43,
+    MARKDOWN_CORE_KIND_TOPIC = 44,
     /* END GENERATED */
 } markdown_core_node_kind;
 
@@ -348,12 +347,6 @@ typedef struct markdown_core_ordered_list_delimiter {
     bool closed;
 } markdown_core_ordered_list_delimiter;
 
-/** A positive authored width share, or absent when no width was authored. */
-typedef struct markdown_core_optional_double {
-    bool has_value;
-    double value;
-} markdown_core_optional_double;
-
 typedef enum markdown_core_placement {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
@@ -369,7 +362,6 @@ typedef enum markdown_core_flow {
 
 typedef struct markdown_core_table_column {
     markdown_core_flow flow;
-    markdown_core_optional_double relative;
 } markdown_core_table_column;
 
 typedef struct markdown_core_optional_i64 {
@@ -789,22 +781,16 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_topic_name(const markdown_c
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_formula_properties(const markdown_core_node *node,
                                                                              markdown_core_placement *mode,
                                                                              markdown_core_string *literal);
-/** A `Table`. The node's children are its rows, in head/content/foot order.
- * These counts partition that single owned chain; row membership is a table
- * fact. */
+/** A `Table`. The node's children are its rows: the head row, then the
+ * content rows. These counts partition that single owned chain; row
+ * membership is a table fact. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_properties(const markdown_core_node *node,
                                                                            size_t *column_count, size_t *head_count,
-                                                                           size_t *content_count, size_t *foot_count);
+                                                                           size_t *content_count);
 /** A `Table`'s column; OUT_OF_BOUNDS for an index at or past the column
  * count. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
                                                                           markdown_core_table_column *column);
-/** A `Table`'s independently owned caption field, or NULL when it has none. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_caption(const markdown_core_node *node,
-                                                                        const markdown_core_node **caption);
-/** A `TableCell`. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_cell_spans(const markdown_core_node *node,
-                                                                           int64_t *rowspan, int64_t *colspan);
 /** A `Directive` or `DirectiveBlock`. A directive's name is absent only for a
  * nameless DirectiveBlock. There is no `mode`: an inline `Directive` is
  * always embedded and a `DirectiveBlock` always standalone, so the value was

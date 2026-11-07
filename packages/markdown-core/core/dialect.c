@@ -310,6 +310,9 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
              kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_TRAILED;
         }
+        for (const markdown_core_node_type *kind = dialect->instances[i].element->awaits; kind && *kind; kind++) {
+            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
+        }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */
 }

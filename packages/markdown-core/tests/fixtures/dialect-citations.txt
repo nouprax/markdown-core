@@ -708,24 +708,23 @@ Document scope=1:1..1:61 anchor=null attributes={} children=1
 | [pre @a suffix\|tail; @b] |
 .
 Document scope=1:1..3:29 anchor=null attributes={} children=1
-└── Table scope=1:1..3:29 anchor=null attributes={} columns=[none:null] children=2
+└── Table scope=1:1..3:29 anchor=null attributes={} columns=[none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
-    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:29 anchor=null attributes={} children=1
-    │       └── TableCell scope=3:2..3:28 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Cite scope=3:3..3:27 anchor=null attributes={} children=2
-    │               ├── Citation scope=3:4..3:22 anchor=null attributes={} referent=bib(key="a",mode=normal) children=0
-    │               │   ├── CitationPrefix children=1
-    │               │   │   └── Text scope=3:4..3:6 anchor=null attributes={} literal="pre" children=0
-    │               │   └── CitationSuffix children=1
-    │               │       └── Text scope=3:11..3:22 anchor=null attributes={} literal="suffix|tail" children=0
-    │               └── Citation scope=3:25..3:26 anchor=null attributes={} referent=bib(key="b",mode=normal) children=0
-    │                   ├── CitationPrefix children=0
-    │                   └── CitationSuffix children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:29 anchor=null attributes={} children=1
+            └── TableCell scope=3:2..3:28 anchor=null attributes={} children=1
+                └── Cite scope=3:3..3:27 anchor=null attributes={} children=2
+                    ├── Citation scope=3:4..3:22 anchor=null attributes={} referent=bib(key="a",mode=normal) children=0
+                    │   ├── CitationPrefix children=1
+                    │   │   └── Text scope=3:4..3:6 anchor=null attributes={} literal="pre" children=0
+                    │   └── CitationSuffix children=1
+                    │       └── Text scope=3:11..3:22 anchor=null attributes={} literal="suffix|tail" children=0
+                    └── Citation scope=3:25..3:26 anchor=null attributes={} referent=bib(key="b",mode=normal) children=0
+                        ├── CitationPrefix children=0
+                        └── CitationSuffix children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

@@ -6,7 +6,7 @@ import MarkdownCoreC
 /// The extent and the first run of a relation's first node lead from the
 /// owner's start, and each later node's from the end of the node before it. A
 /// relation that `continues` the one before it goes on from where that one
-/// ended: a table's rows, in head, content and foot order, are one relation.
+/// ended: a table's rows, in head then content order, are one relation.
 struct Relation {
     let name: String?
     let indices: Range<Int>

@@ -114,14 +114,13 @@ export const sectionDispositions = {
             "common-inline-html",
             "decimal-list",
             "footnote-retention",
-            "fallback-grid",
             "common-paragraph"
         ),
         "Block recognition": grammar(
             "composition-directive-callout",
             "common-setext-two",
             "metadata-types",
-            "leading-caption"
+            "gfm-pipe-table"
         ),
         "Inline recognition": grammar(
             "composition-literal-islands",
@@ -277,28 +276,11 @@ export const sectionDispositions = {
         "Delimiter boundaries": grammar("fallback-script", "run-super", "run-sub")
     },
     tables: {
-        Tables: grammar("gfm-pipe-table", "simple-matrix", "multiline-matrix", "grid-cell"),
+        Tables: grammar("gfm-pipe-table"),
         "Pipe tables": grammar("gfm-pipe-table", "gfm-pipe-ragged"),
         "Pipes inside cells": grammar("gfm-pipe-ragged", "cross-link-table", "cross-embed-table"),
-        Captions: grammar("leading-caption", "trailing-caption", "sparse-grid"),
-        "Simple tables": grammar("simple-matrix", "headless-matrix"),
-        "Multiline tables": grammar("multiline-matrix", "headless-multiline"),
-        "Grid tables": grammar("grid-cell", "sparse-grid"),
-        "Merged cells": grammar("sparse-grid"),
-        "Foot rows": grammar("sparse-grid"),
-        "Boundaries and row groups": grammar("sparse-grid", "fallback-grid"),
-        "Column widths and source positions": {
-            ...grammar("grid-cell", "multiline-matrix", "headless-multiline", "block-id-container-table"),
-            note: "Authored geometry has explicit local boundary proofs; numeric width output and original-coordinate contracts remain parity/regression responsibilities."
-        },
-        "Competing block syntax": grammar(
-            "common-setext-one",
-            "common-setext-two",
-            "simple-matrix",
-            "multiline-matrix",
-            "grid-cell",
-            "fallback-grid"
-        )
+        "Source positions": grammar("gfm-pipe-table", "block-id-container-table"),
+        "Competing block syntax": grammar("common-setext-one", "common-setext-two", "gfm-pipe-table")
     },
     "task-lists": {
         "Task lists": grammar("gfm-task-open", "gfm-task-lower", "gfm-task-upper"),

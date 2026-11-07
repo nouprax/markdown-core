@@ -97,7 +97,6 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     );
     assert.equal(document.content[2].head.length, 1);
     assert.equal(document.content[2].content.length, 1);
-    assert.deepEqual(document.content[2].foot, []);
     assert.equal(document.content[2].head[0].cells.length, 1);
     assert.equal(document.content[2].head[0].cells[0].content[0].literal, "a");
     assert.equal(document.content[2].content[0].cells[0].content[0].literal, "b");

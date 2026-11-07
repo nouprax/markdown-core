@@ -40,10 +40,7 @@ const orderValidators = {
     "callout.title-before-content": (tree) =>
         /Callout scope=.* children=[1-9]\d*\n[^\n]*Title children=[1-9]\d*[\s\S]*Paragraph scope=/.test(tree),
     "document.source-order": (tree) => tree.startsWith("Document scope="),
-    "table.caption-head-content-foot": (tree) =>
-        /TableCaption scope=[\s\S]*TableHead children=[\s\S]*TableBody children=[\s\S]*TableFoot children=/.test(tree),
-    "table.head-content-foot": (tree) =>
-        /TableHead children=\d+[\s\S]*TableBody children=\d+[\s\S]*TableFoot children=\d+/.test(tree),
+    "table.head-content": (tree) => /TableHead children=\d+[\s\S]*TableBody children=\d+/.test(tree),
     "directive.label-before-content": (tree) =>
         /DirectiveBlock scope=.* children=[1-9]\d*\n[\s\S]*DirectiveLabel scope=[\s\S]*Paragraph scope=/.test(tree),
     "markup.attributes.source-order": (tree) =>

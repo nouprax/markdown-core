@@ -40,7 +40,6 @@ export type NativeKind =
     | "subscript"
     | "definitionList"
     | "definition"
-    | "tableCaption"
     | "citation"
     | "footnote"
     | "specimen"
@@ -89,7 +88,6 @@ export const kinds: readonly (NativeKind | "none")[] = [
     "subscript",
     "definitionList",
     "definition",
-    "tableCaption",
     "citation",
     "footnote",
     "specimen",

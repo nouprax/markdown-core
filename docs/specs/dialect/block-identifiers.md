@@ -51,8 +51,7 @@ same container. End of input can replace the following blank line.
 
 The eligible block must be immediately adjacent across those blank lines.
 A reference definition between it and the marker prevents attachment even
-though the definition emits no AST node. A table caption can belong to the
-table before its identifier attaches.
+though the definition emits no AST node.
 
 ## Boundaries
 

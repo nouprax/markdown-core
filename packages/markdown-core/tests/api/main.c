@@ -2102,7 +2102,7 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
     const char *first_bad_element = sweep.first_bad_element;
     markdown_core_node_free(probe_doc);
 
-    OK(runner, gated >= 13, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
+    OK(runner, gated >= 12, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
     OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
     if (violations) {
         fprintf(stderr, "element %s opened a block on byte 0x%02x, which its gate excludes\n",
@@ -2111,15 +2111,15 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
 
     /* The sweep above offers ONE line, so it can only bind a grammar that one
      * line decides. A block whose opener needs a LATER line is invisible to
-     * it -- and that is not hypothetical: a Pandoc simple table is introduced
-     * by its header row, whose bytes are arbitrary prose, and the dashes that
-     * make it a table are on the next line. Gating such an opener on the
+     * it -- and that is not hypothetical: a pipe table is introduced by its
+     * header row, whose first bytes are arbitrary prose, and the delimiter row
+     * that makes it a table is on the next line. Gating such an opener on the
      * bytes of its first line deletes the construct while every single-line
      * probe still passes. Pin the shape here so the sweep is never mistaken
      * for the whole law. */
-    static const char *const simple_table = "  Right     Left\n------- --------\n     12     12\n";
-    markdown_core_node *doc = parse(simple_table);
-    OK(runner, doc != NULL, "a simple table with a prose header parses");
+    static const char *const pipe_table = "Right | Left\n--- | ---\n12 | 12\n";
+    markdown_core_node *doc = parse(pipe_table);
+    OK(runner, doc != NULL, "a pipe table with a prose header parses");
     if (doc) {
         markdown_core_node *first = child_at(doc, 0);
         STR_EQ(runner, first ? markdown_core_node_get_type_string(first) : "", "table",
@@ -4432,64 +4432,27 @@ static markdown_core_node *published_node_new(markdown_core_node_type type, uint
 }
 
 static void table_values(test_batch_runner *runner) {
-    const char source[] = "| a | b |\n| - | - |\n| c | d |\n| e | f |\n";
+    const char source[] = "| a | b |\n| - | :-: |\n| c | d |\n| e | f |\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, sizeof(source) - 1);
     OK(runner, document != NULL, "table value fixture parses");
     if (!document) {
         return;
     }
-    markdown_core_node *root = document->root;
-    markdown_core_node *table = child_at(root, 0);
-    markdown_core_table *properties = (markdown_core_table *)table->opaque;
-    properties->content_count = 1;
-    properties->foot_count = 1;
-    for (uint32_t r = 0; r < table->child_count; r++) {
-        markdown_core_node *row = table->children[r];
-        markdown_core_node *cell = child_at(row, 0);
-        markdown_core_node_free(take_last_child(row));
-        while (cell->child_count) {
-            markdown_core_node_free(take_last_child(cell));
-        }
-        cell->as.table_cell->colspan = 2;
-        markdown_core_node *block = published_node_new(MARKDOWN_CORE_NODE_PARAGRAPH, 0);
-        OK(runner, append_child(cell, block), "cell owns block content directly");
-        int64_t rowspan, colspan;
-        EXPECT_OK(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan));
-        OK(runner, rowspan == 1 && colspan == 2, "facade retains non-unit spans");
-    }
-    size_t columns, head, content, foot;
-    EXPECT_OK(markdown_core_node_table_properties(table, &columns, &head, &content, &foot));
-    OK(runner, columns == 2 && head == 1 && content == 1 && foot == 1,
-       "all three row groups retain independent counts");
-    static const struct {
-        double width;
-        const char *dump;
-    } widths[] = {{0.1, "0.1"},
-                  {1e-6, "0.000001"},
-                  {1e-7, "1e-7"},
-                  {1e20, "100000000000000000000"},
-                  {1e21, "1e+21"},
-                  {5e-324, "5e-324"},
-                  {1.2345678901234567, "1.2345678901234567"}};
-    for (size_t i = 0; i < sizeof(widths) / sizeof(widths[0]); i++) {
-        properties->columns[0].relative = (markdown_core_optional_double){true, widths[i].width};
-        markdown_core_table_column column = facade_column_at(table, 0);
-        OK(runner, column.relative.has_value && column.relative.value == widths[i].width,
-           "column width is an authored double");
-        uint8_t *dump = NULL;
-        size_t length = 0;
-        char expected[128];
-        snprintf(expected, sizeof(expected), "columns=[none:%s,none:null] children=3", widths[i].dump);
-        OK(runner,
-           (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source,
-                                        sizeof(source) - 1, &dump, &length) == MARKDOWN_CORE_OK),
-           "table values dump");
-        OK(runner,
-           dump && strstr((const char *)dump, expected) && strstr((const char *)dump, "TableFoot children=1") &&
-               strstr((const char *)dump, "rowspan=1 colspan=2"),
-           "dump retains groups, spans, and canonical relative-width digits");
-        markdown_core_dump_free(dump);
-    }
+    markdown_core_node *table = child_at(document->root, 0);
+    size_t columns, head, content;
+    EXPECT_OK(markdown_core_node_table_properties(table, &columns, &head, &content));
+    OK(runner, columns == 2 && head == 1 && content == 2, "a pipe table has one head row and its body rows");
+    markdown_core_table_column column = facade_column_at(table, 1);
+    OK(runner, column.flow == MARKDOWN_CORE_FLOW_CENTER, "a column keeps its authored alignment");
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    OK(runner,
+       markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source,
+                                   sizeof(source) - 1, &dump, &length) == MARKDOWN_CORE_OK,
+       "table values dump");
+    OK(runner, dump && strstr((const char *)dump, "columns=[none,center] children=3"),
+       "the dump draws each column's alignment and counts the rows");
+    markdown_core_dump_free(dump);
     markdown_core_document_free(document);
 }
 
@@ -5038,13 +5001,12 @@ static void universal_values(test_batch_runner *runner) {
 typedef struct {
     size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t definition_lists, citation_brace_bytes, tables, table_frontier;
-    size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
+    size_t definition_lists, citation_brace_bytes;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool heading_collection_disposed;
     size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
     size_t inline_hooks;
-    size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
+    size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes;
     size_t delimiter_pushes;
     size_t pooled_delimiters;
     size_t content_mark_queries;
@@ -5060,8 +5022,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         return;
     }
     const markdown_core_properties_work *properties = self->state;
-    const markdown_core_table_work *tables =
-        markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE));
     const markdown_core_heading_state *headings =
         ELEMENT_STATE(parser, markdown_core_heading_state, MARKDOWN_CORE_ELEMENT_HEADING);
     work->cross_link = ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->scan;
@@ -5091,7 +5051,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     }
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
-    work->table_scratch_growth = tables->scratch_growth;
     work->brackets = ELEMENT_STATE(parser, markdown_core_bracket_work, MARKDOWN_CORE_ELEMENT_LINK)->work;
     work->citations = ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->work;
     work->citation_brace_bytes =
@@ -5100,12 +5059,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->list_markers = ELEMENT_STATE(parser, markdown_core_list_work, MARKDOWN_CORE_ELEMENT_LIST)->markers;
     work->comment = ELEMENT_STATE(parser, markdown_core_comment_work, MARKDOWN_CORE_ELEMENT_COMMENT)->scan;
     work->lookahead = parser->block_lookahead_work;
-    work->tables = tables->scan;
-    work->table_frontier = tables->frontier_peak;
-    work->table_workspace_growth = tables->workspace_growth;
-    work->table_geometry_lines = tables->geometry_lines;
-    work->table_separator_scans = tables->separator_scans;
-    work->table_horizontal_work = tables->horizontal;
     work->block_identifier =
         ELEMENT_STATE(parser, markdown_core_block_identifier_work, MARKDOWN_CORE_ELEMENT_PARAGRAPH)->scan;
     work->callout = ELEMENT_STATE(parser, markdown_core_callout_work, MARKDOWN_CORE_ELEMENT_CALLOUT)->scan;
@@ -7644,351 +7597,6 @@ static void block_identifier_ownership(test_batch_runner *runner) {
     }
 }
 
-/* Invalid opening borders remain ordinary text without materializing scalar
- * columns or grid topology. Track live allocations as well as geometry work,
- * including long valid prefixes whose rejection occurs near the line end. */
-/* Whole-width and cell-width borders have different semantic extents. Work
- * stays within one whole-line recognition plus the interior cell intervals,
- * independently of row count, column count, scalar width and container prefix. */
-static void grid_border_recognition_work(test_batch_runner *runner) {
-    const int widths[] = {8, 257}, columns[] = {1, 3, 17}, rows[] = {1, 9};
-    for (size_t w = 0; w < sizeof(widths) / sizeof(*widths); w++) {
-        for (size_t c = 0; c < sizeof(columns) / sizeof(*columns); c++) {
-            for (size_t r = 0; r < sizeof(rows) / sizeof(*rows); r++) {
-                for (int quoted = 0; quoted <= 1; quoted++) {
-                    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-                    for (int line = 0; line <= 2 * rows[r]; line++) {
-                        if (quoted) {
-                            markdown_core_strbuf_puts(&source, "> ");
-                        }
-                        markdown_core_strbuf_putc(&source, line % 2 ? '|' : '+');
-                        for (int col = 0; col < columns[c]; col++) {
-                            if (line % 2) {
-                                markdown_core_strbuf_puts(&source, col % 2 ? "表" : "x");
-                            }
-                            for (int pos = line % 2; pos < widths[w]; pos++) {
-                                markdown_core_strbuf_putc(&source, line % 2 ? ' ' : '-');
-                            }
-                            markdown_core_strbuf_putc(&source, line % 2 ? '|' : '+');
-                        }
-                        markdown_core_strbuf_puts(&source, "  \t\n");
-                    }
-                    inline_work work = {0};
-                    markdown_core_node *root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size,
-                                                                                       measure_inline_work, &work);
-                    OK(runner, root != NULL, "grid border facts preserve parsing");
-                    if (root) {
-                        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), rows[r] * columns[c],
-                               "whole-border facts do not collapse cell ownership");
-                        size_t intervals = (size_t)(rows[r] - 1) * columns[c] * (widths[w] + 2);
-                        OK(runner, work.table_horizontal_work <= (size_t)source.size + intervals,
-                           "one whole extent plus cell intervals: rows=%d columns=%d width=%d work=%zu bound=%zu",
-                           rows[r], columns[c], widths[w], work.table_horizontal_work, (size_t)source.size + intervals);
-                    }
-                    markdown_core_node_free(root);
-                    markdown_core_strbuf_free(&source);
-                }
-            }
-        }
-    }
-    static const struct {
-        const char *border;
-        int cells, rowspan;
-    } partial[] = {{"+---+---+", 4, 1}, {"+   +---+", 3, 2}, {"+:-:+---+", 4, 1}, {"+===+---+", 0, 0}};
-    for (size_t i = 0; i < sizeof(partial) / sizeof(*partial); i++) {
-        char source[128];
-        snprintf(source, sizeof(source), "+---+---+\n| a | b |\n%s\n| c | d |\n+---+---+\n", partial[i].border);
-        markdown_core_node *root = parse(source);
-        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), partial[i].cells,
-               "partial and mixed borders retain their own interval grammar");
-        if (partial[i].cells) {
-            markdown_core_node *cell = child_at(child_at(child_at(root, 0), 0), 0);
-            int64_t rowspan, colspan;
-            EXPECT_OK(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan));
-            OK(runner, rowspan == partial[i].rowspan, "the partial boundary alone determines spanning");
-        }
-        markdown_core_node_free(root);
-    }
-}
-
-static void grid_opening_memory(test_batch_runner *runner) {
-    const char *runs[] = {"\t", " ", "表", "-", "="};
-    for (size_t shape = 0; shape < sizeof(runs) / sizeof(*runs); shape++) {
-        for (size_t count = 4096; count <= 1048576; count *= 16) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            markdown_core_strbuf_puts(&source, "x---");
-            for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, runs[shape]);
-            }
-            markdown_core_strbuf_puts(&source, shape == 3 ? "x---+\nnext\n" : "---+\nnext\n");
-            size_t baseline = 0;
-            for (int grid = 0; grid <= 1; grid++) {
-                source.ptr[0] = grid ? '+' : 'x';
-                properties_probe_arm();
-                inline_work work = {0};
-                markdown_core_node *root = markdown_core_parse_document_with_setup(
-                    (const char *)source.ptr, source.size, measure_inline_work, &work);
-                OK(runner, root != NULL, "invalid grid opener parses: shape=%zu count=%zu grid=%d", shape, count, grid);
-                if (root) {
-                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "invalid border stays text");
-                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
-                           "invalid opener and continuation remain one paragraph");
-                    markdown_core_string literal;
-                    OK(runner,
-                       literal_of(child_at(child_at(root, 0), 0), &literal) &&
-                           literal.length == (size_t)source.size - 6 &&
-                           !memcmp(literal.data, source.ptr, (size_t)source.size - 6),
-                       "fallback preserves the complete opening line");
-                    INT_EQ(runner, work.table_geometry_lines, 0,
-                           "invalid grid opening allocates no column geometry: shape=%zu count=%zu", shape, count);
-                    OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
-                       "invalid opening rejection has bounded source work");
-                }
-                markdown_core_node_free(root);
-                properties_probe_disarm();
-                if (!grid) {
-                    baseline = properties_peak_bytes;
-                }
-                OK(runner, properties_peak_bytes <= 2 * baseline,
-                   "invalid grid memory stays within paragraph fallback: shape=%zu count=%zu grid=%d peak=%zu "
-                   "baseline=%zu",
-                   shape, count, grid, properties_peak_bytes, baseline);
-                INT_EQ(runner, properties_live_bytes, 0, "invalid grid fallback releases all tracked allocations");
-            }
-            markdown_core_strbuf_free(&source);
-        }
-    }
-}
-
-/* Failed grammar searches, row growth and column growth all use the same
- * candidate algorithm. Work counts source inspections, independent of time. */
-static void table_candidate_work(test_batch_runner *runner) {
-    for (size_t shape = 0; shape < 13; shape++) {
-        for (size_t n = 32; n <= 512; n *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            size_t tables = 0;
-            if (shape == 0) {
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "--------\n");
-                }
-            }
-            if (shape == 1) {
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "--- ---\nvalue\n\n");
-                }
-            }
-            if (shape == 2) {
-                markdown_core_strbuf_puts(&source, "+---+---+\n");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "| a | b |\n+---+---+\n");
-                }
-                tables = 1;
-            }
-            if (shape == 3) {
-                markdown_core_strbuf_putc(&source, '+');
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "---+");
-                }
-                markdown_core_strbuf_puts(&source, "\n|");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, " a |");
-                }
-                markdown_core_strbuf_puts(&source, "\n+");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "---+");
-                }
-                markdown_core_strbuf_putc(&source, '\n');
-                tables = 1;
-            }
-            if (shape == 4) {
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "> --------\n");
-                }
-            }
-            if (shape == 5) {
-                markdown_core_strbuf_puts(&source, "+---+---+\n| a | b |\n");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "+   +   +\n| a | b |\n");
-                }
-                markdown_core_strbuf_puts(&source, "+---+---+\n");
-                tables = 1;
-            }
-            if (shape == 6) {
-                markdown_core_strbuf_puts(&source, "| h |\n| - |\n| b |\n: cap\n%%\n");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "unclosed comment and caption content\n");
-                }
-                tables = 1;
-            }
-            if (shape == 7 || shape == 8) {
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, shape == 7 ? "ordinary paragraph\n\n"
-                                                                  : "> header with Unicode: 表\n> ---x ---\n> \n");
-                }
-            }
-            if (shape >= 9 && shape <= 11) {
-                markdown_core_strbuf_puts(&source, shape == 11 ? "+-------+\n" : "+---+---+\n");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "| a + b |\n");
-                }
-                if (shape == 9) {
-                    markdown_core_strbuf_puts(&source, "| cd    |\n");
-                }
-                markdown_core_strbuf_puts(&source, "+---+---+\n");
-                tables = 1;
-            }
-            if (shape == 12) {
-                markdown_core_strbuf_putc(&source, '+');
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "---+");
-                }
-                markdown_core_strbuf_puts(&source, "\n|");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, i + 1 == n ? " a |" : " a +");
-                }
-                markdown_core_strbuf_puts(&source, "\n|");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, i + 1 == n ? " b |" : " b  ");
-                }
-                markdown_core_strbuf_puts(&source, "\n+");
-                for (size_t i = 0; i < n; i++) {
-                    markdown_core_strbuf_puts(&source, "---+");
-                }
-                markdown_core_strbuf_putc(&source, '\n');
-                tables = 1;
-            }
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "table candidate succeeds transactionally: shape=%zu n=%zu", shape, n);
-            if (root) {
-                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), tables,
-                       "table grammar result: shape=%zu n=%zu", shape, n);
-                if (shape == 7 || shape == 8) {
-                    OK(runner, work.table_workspace_growth <= 1, "failed candidates reuse the source workspace");
-                    INT_EQ(runner, work.table_geometry_lines, 0, "rejected separators allocate no column geometry");
-                    OK(runner, work.table_separator_scans <= 2 * n,
-                       "each captured line is lexed once despite several candidate grammars");
-                }
-                if (shape >= 9) {
-                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), shape == 10 ? n + 1 : 1,
-                           "only perimeter plus signs define rows: shape=%zu n=%zu", shape, n);
-                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), shape == 10 ? 2 : 1,
-                           "complete vertical walls define cells: shape=%zu n=%zu", shape, n);
-                }
-                OK(runner, work.table_frontier <= (shape == 3 || shape == 12 ? 2 * n : 4),
-                   "grid frontier depends on columns, not rows or spans: shape=%zu n=%zu slots=%zu", shape, n,
-                   work.table_frontier);
-                OK(runner, work.tables + work.lookahead <= 100 * (size_t)source.size,
-                   "table source work is bounded: shape=%zu n=%zu bytes=%d work=%zu", shape, n, source.size,
-                   work.tables + work.lookahead);
-            }
-            markdown_core_node_free(root);
-            markdown_core_strbuf_free(&source);
-        }
-    }
-}
-
-/* Failed geometries must not hide a later matching opener/footer, and both
- * byte work and line visits stay bounded across distinct exact interval keys. */
-static void simple_table_footer_work(test_batch_runner *runner) {
-    for (size_t shape = 0; shape < 5; shape++) {
-        for (size_t n = 32; n <= 512; n *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            for (size_t i = 0; i < n; i++) {
-                if (shape == 3) {
-                    markdown_core_strbuf_puts(&source, "> ");
-                }
-                if (shape == 1 || shape == 2) {
-                    markdown_core_strbuf_puts(&source, "-- ");
-                    for (size_t j = 0; j <= i; j++) {
-                        markdown_core_strbuf_putc(&source, shape == 2 ? ' ' : '-');
-                    }
-                    markdown_core_strbuf_puts(&source, "--");
-                } else {
-                    for (size_t j = 0; j < i + 2; j++) {
-                        markdown_core_strbuf_puts(&source, j ? " -" : "-");
-                    }
-                }
-                markdown_core_strbuf_putc(&source, '\n');
-            }
-            if (shape == 4) {
-                markdown_core_strbuf_puts(&source, "--- ---\na   b\n--- ---\nfollowing prose");
-            }
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "distinct simple candidates parse: shape=%zu n=%zu", shape, n);
-            if (root) {
-                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 4 ? 1 : 0,
-                       "failed footer facts preserve later matching geometry");
-                OK(runner, work.table_separator_scans <= 8 * n + 32,
-                   "separator visits are linear: shape=%zu n=%zu scans=%zu", shape, n, work.table_separator_scans);
-                OK(runner, work.table_geometry_lines <= 3 * n + 16,
-                   "failed suffixes do not rebuild column maps: shape=%zu n=%zu lines=%zu", shape, n,
-                   work.table_geometry_lines);
-                OK(runner, work.tables + work.lookahead <= 32 * (size_t)source.size,
-                   "distinct footer comparisons have bounded byte work: shape=%zu n=%zu work=%zu", shape, n,
-                   work.tables + work.lookahead);
-                markdown_core_node_free(root);
-            }
-            markdown_core_strbuf_free(&source);
-        }
-    }
-}
-
-/* Caption queries and ordinary opening queries share negative grid facts.
- * A failed extent or row-group search must leave valid suffixes eligible. */
-static void grid_caption_search_work(test_batch_runner *runner) {
-    for (size_t shape = 0; shape < 6; shape++) {
-        for (size_t n = 32; n <= 512; n *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            const char *prefix = shape == 1 ? "> " : "";
-            const char *border = shape == 2 ? "+-------+-------+-------+-------+\n" : "+---+\n";
-            const char *equal = shape == 2 ? "+=======+=======+=======+=======+\n" : "+===+\n";
-            const char *body = shape == 2 ? "| a     | b     | c     | d     |\n" : "| a |\n";
-            markdown_core_strbuf_puts(&source, prefix);
-            markdown_core_strbuf_puts(&source, "Table: cap\n");
-            for (size_t i = 0; i < n; i++) {
-                markdown_core_strbuf_puts(&source, prefix);
-                markdown_core_strbuf_puts(&source, border);
-            }
-            if (shape == 4) {
-                markdown_core_strbuf_puts(&source, "+-----+\n| abc |\n+-----+\n");
-            } else if (shape == 3) {
-                markdown_core_strbuf_puts(&source, "| a |\n");
-            } else {
-                for (size_t i = 0; i < (shape == 5 ? 4u : 2u); i++) {
-                    markdown_core_strbuf_puts(&source, prefix);
-                    markdown_core_strbuf_puts(&source, equal);
-                    markdown_core_strbuf_puts(&source, prefix);
-                    markdown_core_strbuf_puts(&source, body);
-                }
-                markdown_core_strbuf_puts(&source, prefix);
-                markdown_core_strbuf_puts(&source, shape == 5 ? equal : border);
-            }
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "grid caption query completes: shape=%zu n=%zu", shape, n);
-            if (root) {
-                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 3 ? 0 : 1,
-                       "negative grid facts preserve the valid suffix: shape=%zu n=%zu", shape, n);
-                const markdown_core_node *owner = shape == 1 ? child_at(child_at(root, 0), 0) : child_at(root, 0);
-                OK(runner,
-                   (owner->kind == MARKDOWN_CORE_NODE_TABLE &&
-                    facade_field(owner, markdown_core_node_table_caption) != NULL) == (shape != 3),
-                   "the caption is claimed only by a valid suffix: shape=%zu n=%zu", shape, n);
-                OK(runner, work.tables + work.lookahead <= 128 * (size_t)source.size,
-                   "grid suffix work is source-linear: shape=%zu n=%zu bytes=%d work=%zu", shape, n, source.size,
-                   work.tables + work.lookahead);
-                markdown_core_node_free(root);
-            }
-            markdown_core_strbuf_free(&source);
-        }
-    }
-}
-
 /* Exact slices may be read-only and need neither a NUL nor padding. Every
  * scanner exercises successful syntax and all truncated prefixes, with ASan
  * guarding an allocation that ends precisely at each prefix boundary. */
@@ -8093,35 +7701,6 @@ static void malformed_scalar_terminates(test_batch_runner *runner) {
             markdown_core_document_free(document);
         }
     }
-}
-
-/* A line of separated dashes keeps a headerless multiline candidate alive: no
- * closing boundary is ever found, so the search walks to end of input. That
- * search judges with dash counts and blank flags, both read from raw bytes, so
- * it must not build the per-scalar column map for the lines it passes. Before,
- * `block-hr.x1` decoded 56,680 of its 56,704 non-blank characters into a map
- * that the failing candidate then discarded. Geometry must stay flat in the
- * number of lines the search crosses. */
-static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runner) {
-    size_t geometry[2] = {0, 0};
-    for (size_t step = 0; step < 2; step++) {
-        size_t lines = step ? 512 : 32;
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, " -  -  -  -  -\n");
-        for (size_t i = 0; i < lines; i++) {
-            markdown_core_strbuf_puts(&source, "prose line with several words and no table in it\n");
-        }
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "dash-run document parses: lines=%zu", lines);
-        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "no table is produced: lines=%zu", lines);
-        geometry[step] = work.table_geometry_lines;
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
-    }
-    OK(runner, geometry[1] <= geometry[0] + 4,
-       "a 16x longer boundary search builds no more column geometry: %zu then %zu", geometry[0], geometry[1]);
 }
 
 /* THE DEFINITION GATE READS A PREFIX, NEVER A LINE. The transaction that
@@ -8399,191 +7978,6 @@ static void the_dialect_refuses_the_element_the_projection_could_not_index(test_
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 1, "the projection still dispatches to the list owner");
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1, "and to the definition owner");
     markdown_core_node_free(root);
-}
-
-/* Table is the one element whose opening grammar spans two lines: a Pandoc
- * simple table WITH a header has an arbitrary-prose first line, so no
- * first-byte gate can exclude it, and the opener used to open a full lookahead
- * transaction on every line just to fetch the next one and find out.
- *
- * With the two-line gate a document that holds no separator anywhere must
- * make the opener capture no line at all -- `table_separator_scans` counts
- * lines the opener captured and lexed, so zero is the whole claim.
- *
- * The gate reads that second line from raw source, and a bare CR ends a line
- * here: an implementation reaching for `memchr` for '\n' runs past one and
- * stops recognizing real simple tables in CR-only input. The endings loop
- * below is what makes that a test failure rather than a corpus blind spot. */
-static void table_open_gate_admits_only_possible_tables(test_batch_runner *runner) {
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-    for (size_t i = 0; i < 256; i++) {
-        markdown_core_strbuf_puts(&source, "an ordinary prose line with no separator on it\n\n");
-    }
-    inline_work work = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-    OK(runner, root != NULL, "prose-only document parses");
-    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "prose-only document produces no table");
-    INT_EQ(runner, work.table_separator_scans, 0, "the opener captures no line where no table can open");
-    markdown_core_node_free(root);
-    markdown_core_strbuf_free(&source);
-
-    /* The line end matters in a way the table below cannot show. Reading the
-     * second line with `memchr` for '\n' does not LOSE a table here -- the
-     * gate only over-admits -- it silently runs the scan to end of input, so
-     * one separator anywhere makes every line look possible again. In CR-only
-     * input that is the difference between no captures and one per line. */
-    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT();
-    for (size_t i = 0; i < 256; i++) {
-        markdown_core_strbuf_puts(&cr, "an ordinary prose line with no separator on it\r\r");
-    }
-    markdown_core_strbuf_puts(&cr, "-- --\r");
-    inline_work cr_work = {0};
-    markdown_core_node *cr_root =
-        markdown_core_parse_document_with_setup((char *)cr.ptr, cr.size, measure_inline_work, &cr_work);
-    OK(runner, cr_root != NULL, "CR-only prose document parses");
-    OK(runner, cr_work.table_separator_scans <= 4, "a CR line ends the line the gate reads: %zu captures",
-       cr_work.table_separator_scans);
-    markdown_core_node_free(cr_root);
-    markdown_core_strbuf_free(&cr);
-
-    /* A separator one line down is exactly what the gate must not miss. */
-    static const char *const endings[] = {"\n", "\r", "\r\n"};
-    static const char *const rows[] = {"Right Left", "----- ----", "12    12"};
-    for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
-        markdown_core_strbuf table = MARKDOWN_CORE_BUF_INIT();
-        for (size_t r = 0; r < sizeof(rows) / sizeof(*rows); r++) {
-            markdown_core_strbuf_puts(&table, rows[r]);
-            markdown_core_strbuf_puts(&table, endings[e]);
-        }
-        markdown_core_strbuf_puts(&table, endings[e]);
-        markdown_core_node *built = markdown_core_parse_document_with_setup((char *)table.ptr, table.size, NULL, NULL);
-        OK(runner, built != NULL, "simple table parses with ending %zu", e);
-        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE), 1,
-               "the gate admits a simple table whatever ends its header line: ending=%zu", e);
-        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE_CELL), 4, "and it keeps its cells: ending=%zu", e);
-        markdown_core_node_free(built);
-        markdown_core_strbuf_free(&table);
-    }
-
-    /* A BOUNDARY ALONE OPENS NOTHING. The two grammars that start on a single
-     * dash run -- a multiline table with a header, a simple table with a
-     * header -- both refuse when the line below it is blank, so a thematic
-     * break followed by a blank line is asked of neither: no line captured,
-     * no column geometry built. The same boundary with a row below it is a
-     * table, which is what the gate must keep admitting. */
-    markdown_core_strbuf breaks = MARKDOWN_CORE_BUF_INIT();
-    /* Opened by prose: a document that begins with `---` begins frontmatter. */
-    markdown_core_strbuf_puts(&breaks, "prose\n\n");
-    for (size_t i = 0; i < 256; i++) {
-        markdown_core_strbuf_puts(&breaks, "---\n\n- item\n\n");
-    }
-    inline_work break_work = {0};
-    markdown_core_node *break_root =
-        markdown_core_parse_document_with_setup((char *)breaks.ptr, breaks.size, measure_inline_work, &break_work);
-    OK(runner, break_root != NULL, "thematic breaks and empty items followed by blanks parse");
-    INT_EQ(runner, count_kind(break_root, MARKDOWN_CORE_NODE_THEMATIC_BREAK), 256, "as thematic breaks");
-    INT_EQ(runner, count_kind(break_root, MARKDOWN_CORE_NODE_TABLE), 0, "and no table");
-    INT_EQ(runner, break_work.table_separator_scans, 0, "a boundary with a blank below it captures no line");
-    INT_EQ(runner, break_work.table_geometry_lines, 0, "and builds no column geometry");
-    markdown_core_node_free(break_root);
-    markdown_core_strbuf_free(&breaks);
-
-    /* NOR DOES A SEGMENTED RULE. Two or more dash runs open a headless simple
-     * or multiline table, and each begins its body on the very next line, so
-     * `- - -` and `--- ---` above a blank line are rules and nothing is
-     * captured. The same rules with a row below them stay tables. */
-    static const char *const rules[] = {"- - -", "--- ---"};
-    for (size_t r = 0; r < sizeof(rules) / sizeof(*rules); r++) {
-        markdown_core_strbuf segmented = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&segmented, "prose\n\n");
-        for (size_t i = 0; i < 256; i++) {
-            markdown_core_strbuf_puts(&segmented, rules[r]);
-            markdown_core_strbuf_puts(&segmented, "\n\nab cd\n\n");
-        }
-        inline_work segmented_work = {0};
-        markdown_core_node *segmented_root = markdown_core_parse_document_with_setup(
-            (char *)segmented.ptr, segmented.size, measure_inline_work, &segmented_work);
-        OK(runner, segmented_root != NULL, "segmented rules followed by blanks parse: rule=%zu", r);
-        INT_EQ(runner, count_kind(segmented_root, MARKDOWN_CORE_NODE_THEMATIC_BREAK), 256,
-               "as thematic breaks: rule=%zu", r);
-        INT_EQ(runner, count_kind(segmented_root, MARKDOWN_CORE_NODE_TABLE), 0, "and no table: rule=%zu", r);
-        INT_EQ(runner, segmented_work.table_separator_scans, 0,
-               "a segmented rule with a blank below it captures no line: rule=%zu", r);
-        markdown_core_node_free(segmented_root);
-        markdown_core_strbuf_free(&segmented);
-
-        markdown_core_strbuf headless = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&headless, rules[r]);
-        markdown_core_strbuf_puts(&headless, "\nab  cd\n");
-        markdown_core_strbuf_puts(&headless, rules[r]);
-        markdown_core_strbuf_puts(&headless, "\n");
-        markdown_core_node *headless_root = markdown_core_parse_document((char *)headless.ptr, (size_t)headless.size);
-        INT_EQ(runner, count_kind(headless_root, MARKDOWN_CORE_NODE_TABLE), 1,
-               "the same rule with a row below it is a headless table: rule=%zu", r);
-        markdown_core_node_free(headless_root);
-        markdown_core_strbuf_free(&headless);
-    }
-
-    /* A SEPARATOR IS ITS LINE'S TAIL. The line under a header must end in the
-     * separator a container prefix leaves behind, so dashes among words are
-     * not one: prose whose second line hyphenates two words captures no line,
-     * and a separator under a quote marker still opens its table. */
-    markdown_core_strbuf hyphens = MARKDOWN_CORE_BUF_INIT();
-    for (size_t i = 0; i < 256; i++) {
-        markdown_core_strbuf_puts(&hyphens, "alpha beta gamma\nwell-known and so-called words\n\n");
-    }
-    inline_work hyphen_work = {0};
-    markdown_core_node *hyphen_root =
-        markdown_core_parse_document_with_setup((char *)hyphens.ptr, hyphens.size, measure_inline_work, &hyphen_work);
-    OK(runner, hyphen_root != NULL, "hyphenated prose parses");
-    INT_EQ(runner, count_kind(hyphen_root, MARKDOWN_CORE_NODE_PARAGRAPH), 256, "as paragraphs");
-    INT_EQ(runner, hyphen_work.table_separator_scans, 0, "dashes among words capture no line");
-    markdown_core_node_free(hyphen_root);
-    markdown_core_strbuf_free(&hyphens);
-
-    static const char quoted[] = "> Right  Left\n> -----  ----\n> 12     12\n";
-    markdown_core_node *quoted_root = markdown_core_parse_document(quoted, sizeof(quoted) - 1);
-    INT_EQ(runner, count_kind(quoted_root, MARKDOWN_CORE_NODE_TABLE), 1, "a quoted separator still opens its table");
-    markdown_core_node_free(quoted_root);
-
-    static const char multiline[] = "-------------\n"
-                                    "Right  Left\n"
-                                    "-----  ----\n"
-                                    "12     12\n"
-                                    "-------------\n";
-    markdown_core_node *bounded = markdown_core_parse_document(multiline, sizeof(multiline) - 1);
-    OK(runner, bounded != NULL, "a multiline table with a header parses");
-    INT_EQ(runner, count_kind(bounded, MARKDOWN_CORE_NODE_TABLE), 1, "the gate admits the boundary a row follows");
-    markdown_core_node_free(bounded);
-
-    /* A CAPTION ENDS AT A BLANK LINE. The table after a trailing caption's
-     * blank is the next construct, parsed once by its own opener; it used to
-     * be parsed inside the caption's transaction as well and thrown away. The
-     * column geometry the two documents build on their own is exactly what
-     * the one document builds. */
-    static const char first[] = "Right  Left\n-----  ----\n12     12\n\nTable: caption\n";
-    static const char second[] = "Up  Down\n--  ----\n1   2\n";
-    inline_work first_work = {0}, second_work = {0}, both_work = {0};
-    markdown_core_node *first_root =
-        markdown_core_parse_document_with_setup(first, sizeof(first) - 1, measure_inline_work, &first_work);
-    markdown_core_node *second_root =
-        markdown_core_parse_document_with_setup(second, sizeof(second) - 1, measure_inline_work, &second_work);
-    markdown_core_strbuf both = MARKDOWN_CORE_BUF_INIT();
-    markdown_core_strbuf_puts(&both, first);
-    markdown_core_strbuf_puts(&both, "\n");
-    markdown_core_strbuf_puts(&both, second);
-    markdown_core_node *both_root =
-        markdown_core_parse_document_with_setup((char *)both.ptr, both.size, measure_inline_work, &both_work);
-    OK(runner, first_root && second_root && both_root, "a captioned table, a table, and the two together parse");
-    INT_EQ(runner, count_kind(both_root, MARKDOWN_CORE_NODE_TABLE), 2, "the two together are two tables");
-    INT_EQ(runner, both_work.table_geometry_lines, first_work.table_geometry_lines + second_work.table_geometry_lines,
-           "the table after the trailing caption's blank is parsed once: %zu lines of geometry, %zu + %zu apart",
-           both_work.table_geometry_lines, first_work.table_geometry_lines, second_work.table_geometry_lines);
-    markdown_core_node_free(first_root);
-    markdown_core_node_free(second_root);
-    markdown_core_node_free(both_root);
-    markdown_core_strbuf_free(&both);
 }
 
 /* THE INLINE-HOOK PROJECTION'S WORK INVARIANT.
@@ -8999,182 +8393,6 @@ static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
            "a refused split preserves one complete paragraph");
     markdown_core_node_free(root);
-}
-
-typedef struct {
-    test_batch_runner *runner;
-    bool entered, matches;
-    bool bounded_lookahead;
-    size_t lookahead_limit;
-} table_transaction_probe;
-
-/* Exercise the existing non-committing caption query while the real source
- * driver owns the current line. A scan hook only observes; the normal table
- * producer still parses and constructs the document afterwards. */
-static bool probe_table_transactions(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     block_start_context *context, block_start *start) {
-    (void)self;
-    (void)start;
-    table_transaction_probe *probe = parser->context;
-    if (probe->entered) {
-        return false;
-    }
-    probe->entered = true;
-    for (int pass = 0; pass < 4; pass++) {
-        payload_probe_calls before = payload_probe_snapshot();
-        size_t geometry =
-            markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE))
-                ->geometry_lines;
-        size_t lookahead_work = parser->block_lookahead_work;
-        markdown_core_block_lookahead lookahead;
-        bool begun =
-            markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
-        bool matched = begun && markdown_core_table_caption_probe(
-                                    markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE), &lookahead,
-                                    context->input, context->first, context->indent, false);
-        payload_probe_calls after = payload_probe_snapshot();
-        OK(probe->runner, begun && !parser->error && matched == probe->matches,
-           "cold and warm table transactions agree on recognition");
-        if (probe->bounded_lookahead) {
-            OK(probe->runner, parser->block_lookahead_work - lookahead_work <= probe->lookahead_limit,
-               "a grammar-impossible successor is not replayed: work=%zu limit=%zu",
-               parser->block_lookahead_work - lookahead_work, probe->lookahead_limit);
-        }
-        if (probe->matches) {
-            OK(probe->runner,
-               markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE))
-                       ->geometry_lines > geometry,
-               "a warm query still rebuilds candidate geometry in retained storage");
-        }
-        if (pass == 0) {
-            OK(probe->runner, after.allocations > before.allocations,
-               "the cold query observes real workspace allocation");
-        } else {
-            INT_EQ(probe->runner, after.allocations, before.allocations,
-                   "a warm table transaction makes zero allocator calls");
-            INT_EQ(probe->runner, after.releases, before.releases, "a warm table transaction makes zero release calls");
-        }
-    }
-    return false;
-}
-
-static const markdown_core_element TABLE_TRANSACTION_PROBE = {
-    .name = "table-transaction-probe", .scan_block_start = probe_table_transactions, .scan_block_gate = {.bytes = "T"}};
-
-static bool configure_table_transaction_probe(markdown_core_dialect_builder *builder, void *context) {
-    (void)context;
-    return markdown_core_dialect_builder_attach(builder, &TABLE_TRANSACTION_PROBE);
-}
-
-/* After a caption's blank, only the first nonblank line is a candidate.
- * Its following line is inspected as raw source, not replayed as a container
- * lookahead. Test unrelated rejected shapes, all terminators, and EOF. */
-static void table_caption_candidate_admission(test_batch_runner *runner) {
-    const char *starts[] = {"plain text", "***", "# heading", "`code`", ": nope"};
-    const char *endings[] = {"\n", "\r\n", "\r"};
-    for (size_t shape = 0; shape < sizeof(starts) / sizeof(*starts); shape++) {
-        for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
-            for (int final = 0; final <= 1; final++) {
-                char source[200];
-                snprintf(source, sizeof(source), "Table: caption%s%s%s%sordinary successor%s", endings[e], endings[e],
-                         starts[shape], endings[e], final ? endings[e] : "");
-                table_transaction_probe probe = {.runner = runner, .bounded_lookahead = true, .lookahead_limit = 2};
-                payload_probe_arm();
-                markdown_core_node *root = markdown_core_parse_document_with_setup(
-                    source, strlen(source), configure_table_transaction_probe, &probe);
-                OK(runner, root && probe.entered, "rejected caption candidates leave an ordinary document");
-                markdown_core_node_free(root);
-                INT_EQ(runner, payload_live, 0, "a rejected candidate releases its workspace");
-                payload_probe_disarm();
-            }
-        }
-    }
-    const char *tables[] = {"| h |\n| - |\n| b |", "h   j\n--- ---\nv   w", "+---+\n| x |\n+---+",
-                            "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------"};
-    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
-        for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
-            for (int quoted = 0; quoted <= 1; quoted++) {
-                markdown_core_strbuf body = MARKDOWN_CORE_BUF_INIT(), source = MARKDOWN_CORE_BUF_INIT();
-                markdown_core_strbuf_puts(&body, "term\n\n: caption\n\n");
-                markdown_core_strbuf_puts(&body, tables[t]);
-                for (int at = 0; at < body.size; at++) {
-                    if (quoted && (!at || body.ptr[at - 1] == '\n')) {
-                        markdown_core_strbuf_puts(&source, "> ");
-                    }
-                    if (body.ptr[at] == '\n') {
-                        markdown_core_strbuf_puts(&source, endings[e]);
-                    } else {
-                        markdown_core_strbuf_putc(&source, body.ptr[at]);
-                    }
-                }
-                markdown_core_node *root = parse((char *)source.ptr);
-                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0,
-                       "table caption precedence survives the necessary-condition gate");
-                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 1,
-                       "all candidate grammars remain eligible through container prefixes and EOF");
-                markdown_core_node_free(root);
-                markdown_core_strbuf_free(&source);
-                markdown_core_strbuf_free(&body);
-            }
-        }
-    }
-}
-
-static void table_candidates_reuse_scratch(test_batch_runner *runner) {
-    static const struct {
-        const char *body;
-        bool matches;
-    } queries[] = {
-        {"| h | q |\n| - | - |\n| a | b |\n", true},
-        {"h   j\n--- ---\nv   w\n--- ---\n", true},
-        {"-------\nh   j\n--- ---\nv   w\n\nx   y\n-------\n", true},
-        {"+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n", true},
-        {"+---+---+\n| a | b |\n", false},
-    };
-    for (size_t i = 0; i < sizeof(queries) / sizeof(*queries); i++) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "Table: caption\n\n");
-        markdown_core_strbuf_puts(&source, queries[i].body);
-        table_transaction_probe probe = {.runner = runner, .matches = queries[i].matches};
-        payload_probe_arm();
-        markdown_core_node *root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size,
-                                                                           configure_table_transaction_probe, &probe);
-        OK(runner, root && probe.entered, "the source driver entered the allocator-observed table query");
-        if (root) {
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), queries[i].matches ? 1 : 0,
-                   "speculation preserves subsequent table construction");
-        }
-        markdown_core_node_free(root);
-        INT_EQ(runner, payload_live, 0, "the table transaction owner releases every workspace and AST allocation");
-        payload_probe_disarm();
-        markdown_core_strbuf_free(&source);
-    }
-    static const char tables[] = "| h | q |\n| - | - |\n| a | b |\n\n"
-                                 "h   j\n--- ---\nv   w\n--- ---\n\n"
-                                 "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------\n\n"
-                                 "+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n\n";
-    size_t growth = 0;
-    for (size_t repetitions = 1; repetitions <= 64; repetitions *= 8) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        for (size_t i = 0; i < repetitions; i++) {
-            markdown_core_strbuf_puts(&source, tables);
-        }
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "interleaved table grammars parse after scratch reuse");
-        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 4 * repetitions,
-               "resetting a candidate preserves every subsequent table");
-        if (repetitions == 1) {
-            growth = work.table_scratch_growth;
-            OK(runner, growth > 0, "table scratch growth counter observes real reservations");
-        } else {
-            INT_EQ(runner, work.table_scratch_growth, growth,
-                   "scratch allocation depends on peak candidate shape, not number of tables");
-        }
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
-    }
 }
 
 /* One semantic decision authorizes one commit. A stateful predicate that
@@ -9804,35 +9022,15 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
         "1. ::x[*e*]\n",
         "  1. >  ::n[]\n",
         "> > :::n[\xE4\xB8\xAD]\n",
-        /* Block directives in grid and multiline cells: first and later
-         * columns, a prefix inside the cell, a container spanning cell lines,
-         * and a label holding an inline directive. */
-        "+------------+\n| ::note[ab] |\n+------------+\n",
-        "+-----------+\n| > ::n[ab] |\n+-----------+\n",
-        "+----+---------------+\n| x  | > ::n[*e*]    |\n+----+---------------+\n",
-        "+-------------+\n| :::note[ab] |\n| body        |\n| :::         |\n+-------------+\n",
-        "+----------------+\n| - ::n[a :m[b]] |\n+----------------+\n",
-        "----------------------\nLeft       Right\n---------- -----------\na          ::n[ab]\nc\n\nd          e\n"
-        "----------------------\n",
-        /* Inline directives, at the edge of a simple, grid and multiline cell,
-         * with a label over a line ending, and in a pipe cell. */
+        /* Inline directives, with a label over a line ending, and in a pipe
+         * cell. */
         "text :n[a] more\n",
         "> - x :n[lbl]\n",
-        "h      k\n------ ------\n:m[ab] y\n\n",
-        "+-----------+\n| x :n[a]   |\n+-----------+\n",
-        "+-----------+\n| x :n{#y}  |\n+-----------+\n",
-        "----------------------\nLeft       Right\n---------- -----------\nx :m[ab]   yyyy\nc\n\nd          e\n"
-        "----------------------\n",
         "> x :m[a\n> b]{.c}\n",
-        "+-----------+\n| x :m[a    |\n| b]        |\n+-----------+\n",
         "| :m[ab] | y |\n| - | - |\n| a | b |\n",
-        /* A tab inside a block label is one source byte but several bytes of
-         * a grid or multiline cell's input. */
-        "+--------------+\n| ::nn[a\tb] |\n+--------------+\n",
-        "+--------------------+\n| ::note[a\tb :x[c]] |\n+--------------------+\n",
-        "----------------------\nLeft       Right\n---------- -----------\na          ::n[a\tb]\nc\n\nd          e\n"
-        "----------------------\n",
+        /* A tab inside a label is one source byte. */
         "> ::n[a\t*b*]\n",
+        "| x :m[a\tb] | y |\n| - | - |\n| a | b |\n",
     };
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
         const char *source = sources[i];
@@ -10130,102 +9328,6 @@ static void lazy_after_marker_as_after_paragraph(test_batch_runner *runner) {
     OK(runner, kept > 0 && left > 0, "some lines are lazy and some open blocks: %zu and %zu", kept, left);
 }
 
-/* A grid or multiline cell is a rectangle of the source: its lines, between
- * its first and last column. */
-static bool cell_holds_place(const markdown_core_node *cell, int line, int column) {
-    return line >= START_LINE(cell) && line <= END_LINE(cell) && column >= START_COLUMN(cell) &&
-           column <= END_COLUMN(cell);
-}
-
-/* Whether `node` is `ancestor` or in its subtree. */
-static bool node_holds(const markdown_core_node *ancestor, const markdown_core_node *node) {
-    tree_iter *iter = tree_iter_new((markdown_core_node *)ancestor);
-    bool held = false;
-    for (markdown_core_event_type event; !held && (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
-        held = event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter) == node;
-    }
-    tree_iter_free(iter);
-    return held;
-}
-
-/* A BLOCK IN A CELL ENDS IN ITS CELL. The parser reads a grid or multiline
- * cell's content as an input of its own, whose bytes it projects to the
- * source's. A block that a following empty line closes ends where the
- * content before that line ends: at the top level that is right after the
- * line terminator, `L:0`, as `- item\n\nnext` gives the list `1:1..2:0`; in a
- * cell it is the end of the cell's segment on the line above, a byte of that
- * cell, because a cell's blank segment is empty in its input. So every node
- * that starts in a cell -- a footnote defined there too -- starts on a byte
- * and ends at a place in that cell. Cells nest, so the cell is the innermost
- * one holding the node's start, other than the node's own: a row starts on
- * its first cell. */
-static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "+--------+-----+\n| - item | x   |\n|        |     |\n| next   | y   |\n+--------+-----+\n",
-        "+-----+--------+\n| x   | - a    |\n|     |   - b  |\n|     |        |\n|     | c      |\n+-----+--------+\n",
-        "+----------+-----+\n|     code | x   |\n|          |     |\n| next     | y   |\n+----------+-----+\n",
-        "+---------+-----+\n| [^f]: a | x   |\n|         |     |\n| next    | y   |\n+---------+-----+\n",
-        "+--------+\n| - a    |\n|        |\n+--------+\n",
-        "+----------------+\n| +----------+   |\n| | - a      |   |\n| |          |   |\n| | b        |   |\n| "
-        "+----------+   |\n+----------------+\n",
-        "------------------\nLeft     Right\n-------- ---------\n- a      x\n"
-        "  - b    y\n\nc        z\n------------------\n",
-        /* A multiline cell's blank segment, on a line the next cell holds text on. */
-        "------------------\nLeft     Right\n-------- ---------\n- a      x\n         y\nc        z\n\n"
-        "d        w\n------------------\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[i];
-        const int shown = (int)strcspn(source, "\n");
-        markdown_core_node *doc = parse(source);
-        const markdown_core_node *cells[32];
-        size_t cell_count = 0, checked = 0;
-        {
-            tree_iter *iter = tree_iter_new(doc);
-            markdown_core_event_type event;
-            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-                markdown_core_node *node = tree_iter_get_node(iter);
-                if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_CELL &&
-                    cell_count < sizeof(cells) / sizeof(cells[0])) {
-                    cells[cell_count++] = node;
-                }
-            }
-            tree_iter_free(iter);
-        }
-        {
-            tree_iter *iter = tree_iter_new(doc);
-            markdown_core_event_type event;
-            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-                markdown_core_node *node = tree_iter_get_node(iter);
-                if (event != MARKDOWN_CORE_EVENT_ENTER || START_LINE(node) <= 0) {
-                    continue;
-                }
-                OK(runner, START_COLUMN(node) >= 1, "a node from %d:%d in %.*s starts on a byte", START_LINE(node),
-                   START_COLUMN(node), shown, source);
-                const markdown_core_node *cell = NULL;
-                for (size_t c = 0; c < cell_count; c++) {
-                    if (!node_holds(node, cells[c]) &&
-                        cell_holds_place(cells[c], START_LINE(node), START_COLUMN(node)) &&
-                        (!cell || cell_holds_place(cell, START_LINE(cells[c]), START_COLUMN(cells[c])))) {
-                        cell = cells[c];
-                    }
-                }
-                if (!cell) {
-                    continue;
-                }
-                checked++;
-                OK(runner, cell_holds_place(cell, END_LINE(node), END_COLUMN(node)),
-                   "a node from %d:%d in %.*s ends in its cell %d:%d..%d:%d, not at %d:%d", START_LINE(node),
-                   START_COLUMN(node), shown, source, START_LINE(cell), START_COLUMN(cell), END_LINE(cell),
-                   END_COLUMN(cell), END_LINE(node), END_COLUMN(node));
-            }
-            tree_iter_free(iter);
-        }
-        OK(runner, checked > 0, "%.*s puts nodes in a cell", shown, source);
-        markdown_core_node_free(doc);
-    }
-}
-
 /* `base` with `first` before its first line, `rest` before each later
  * nonblank line and `blank` on each blank one. */
 static void prefix_lines(markdown_core_strbuf *out, const char *base, const char *first, const char *rest,
@@ -10245,22 +9347,19 @@ static void prefix_lines(markdown_core_strbuf *out, const char *base, const char
 static int shifted_column(int column, int shift) { return column ? column + shift : 0; }
 
 static bool same_columns(const markdown_core_table *a, const markdown_core_table *b) {
-    if (a->column_count != b->column_count || a->head_count != b->head_count || a->content_count != b->content_count ||
-        a->foot_count != b->foot_count) {
+    if (a->column_count != b->column_count || a->head_count != b->head_count || a->content_count != b->content_count) {
         return false;
     }
     for (size_t i = 0; i < a->column_count; i++) {
-        if (a->columns[i].flow != b->columns[i].flow ||
-            a->columns[i].relative.has_value != b->columns[i].relative.has_value ||
-            (a->columns[i].relative.has_value && a->columns[i].relative.value != b->columns[i].relative.value)) {
+        if (a->columns[i].flow != b->columns[i].flow) {
             return false;
         }
     }
     return true;
 }
 
-/* Walk two table trees in lockstep, captions included: the same kinds, text,
- * spans and columns, and every scope moved by exactly `shift` bytes. Returns
+/* Walk two table trees in lockstep: the same kinds, text and columns, and
+ * every scope moved by exactly `shift` bytes. Returns
  * the number of nodes that differ. */
 static size_t shifted_table_differences(markdown_core_node *base, markdown_core_node *moved, int shift) {
     tree_iter *a = tree_iter_new(base), *b = tree_iter_new(moved);
@@ -10280,16 +9379,8 @@ static size_t shifted_table_differences(markdown_core_node *base, markdown_core_
         bool same = x->kind == y->kind && START_LINE(x) == START_LINE(y) && END_LINE(x) == END_LINE(y) &&
                     START_COLUMN(y) == shifted_column(START_COLUMN(x), shift) &&
                     END_COLUMN(y) == shifted_column(END_COLUMN(x), shift) && hx == hy && (!hx || strings_equal(lx, ly));
-        if (same && x->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
-            same = x->as.table_cell->rowspan == y->as.table_cell->rowspan &&
-                   x->as.table_cell->colspan == y->as.table_cell->colspan;
-        }
         if (same && x->kind == MARKDOWN_CORE_NODE_TABLE) {
-            const markdown_core_table *tx = x->opaque, *ty = y->opaque;
-            same = same_columns(tx, ty) && !tx->caption == !ty->caption;
-            if (same && tx->caption) {
-                differences += shifted_table_differences(tx->caption, ty->caption, shift);
-            }
+            same = same_columns(x->opaque, y->opaque);
         }
         differences += !same;
     }
@@ -10319,7 +9410,7 @@ static bool table_nodes_nest(markdown_core_node *table) {
  * meaning, and a container's prefix is not part of the block it holds. So
  * under every prefix below -- spaces, a list item, a quote, a quote whose tab
  * the prefix consumes in part -- each table must parse to the tree it has
- * unprefixed: the same column flows and widths, cells, spans and text, and
+ * unprefixed: the same column flows, cells and text, and
  * every scope in it moved by exactly the prefix's bytes, inside its container.
  * Before the margin model, alignment probed the first column at the
  * container's content, so indentation right- or center-aligned it; the table
@@ -10334,19 +9425,10 @@ static void table_geometry_ignores_indentation(test_batch_runner *runner) {
         const char *source;
         bool tab;
     } tables[] = {
-        {"Name  Count\n----  -----\nab    4\n      5\n", false},
-        {"-------   ------   ----------\n     12   12          12\n     34   34          34\n-------   ------   "
-         "----------\n",
-         false},
-        {"---- ----\na    b\n     c\n---- ----\n", false},
-        {"------------\nLeft  Right\n----- ------\na     b\n\n      d\nc\n------------\n", false},
-        {"----- ------\n a     b\n\nc     d\n------------\n", false},
-        {"+---+---+\n| a | b |\n+===+===+\n| c     |\n+---+---+\n", false},
         {"| a | b |\n| :- | -: |\n| c |\n", false},
-        {"Table: cap\n\nName  Count\n----  -----\nab    4\n", false},
-        {"Name  Count\n----  -----\nab    4\n\nTable: cap\n", false},
-        {"+----------------+\n| Name  Count    |\n| ----  -----    |\n|  ab    4       |\n+----------------+\n", false},
-        {"Name\tCount\n----    -----\nab\t4\n", true},
+        {"a | b\n--|--\nc | d\n", false},
+        {"| a | :--: |\n| - | - |\n| *c* | `d` |\n\n", false},
+        {"| a\t| b |\n| - | - |\n| c\t| d |\n", true},
     };
     static const struct {
         const char *first, *rest, *blank;
@@ -10382,111 +9464,6 @@ static void table_geometry_ignores_indentation(test_batch_runner *runner) {
         }
         markdown_core_node_free(base_doc);
     }
-}
-
-/* WHERE INDENTATION IS NOT SHARED, IT IS GEOMETRY. A header indented past the
- * separator has leading space in its columns (right-aligned, as Pandoc
- * reads it), so the table and that row begin at the margin the lines share,
- * on the space. Text written left of the first dash run is the first
- * column's and moves the margin to it. A tab a quote prefix consumes in part
- * contributes only the columns left to its stop, so it lines up with spaces.
- * A grid line must begin with its wall: text before it is no grid line. */
-static void table_margin_is_shared_indentation(test_batch_runner *runner) {
-    static const struct {
-        const char *source;
-        markdown_core_flow flows[2];
-        int table[2], row[2], cell[4];
-    } cases[] = {
-        {" Name  Count\n----  -----\nab    4\n",
-         {MARKDOWN_CORE_FLOW_RIGHT, MARKDOWN_CORE_FLOW_RIGHT},
-         {1, 1},
-         {1, 1},
-         {1, 2, 1, 5}},
-        {"Name  Count\n ---  -----\n ab    4\n",
-         {MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_NONE},
-         {1, 1},
-         {1, 1},
-         {1, 1, 1, 4}},
-        {">\tName  Count\n>   ----  -----\n>   ab    4\n",
-         {MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_NONE},
-         {1, 3},
-         {1, 3},
-         {1, 3, 1, 6}},
-        {"- Name\tCount\n  ----  -----\n  ab    4\n",
-         {MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_NONE},
-         {1, 3},
-         {1, 3},
-         {1, 3, 1, 6}},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        const char *source = cases[i].source;
-        const int shown = (int)strcspn(source, "\n");
-        markdown_core_node *doc = parse(source), *table = first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE);
-        OK(runner, table != NULL, "%.*s is a table", shown, source);
-        if (table) {
-            const markdown_core_table *value = table->opaque;
-            markdown_core_node *row = child_at(table, 0), *cell = row ? child_at(row, 0) : NULL;
-            OK(runner, value->columns[0].flow == cases[i].flows[0] && value->columns[1].flow == cases[i].flows[1],
-               "%.*s aligns against its dash runs", shown, source);
-            OK(runner, START_LINE(table) == cases[i].table[0] && START_COLUMN(table) == cases[i].table[1],
-               "%.*s starts at its margin", shown, source);
-            OK(runner, row && START_LINE(row) == cases[i].row[0] && START_COLUMN(row) == cases[i].row[1],
-               "%.*s's first row starts at the margin", shown, source);
-            OK(runner,
-               cell && START_LINE(cell) == cases[i].cell[0] && START_COLUMN(cell) == cases[i].cell[1] &&
-                   END_LINE(cell) == cases[i].cell[2] && END_COLUMN(cell) == cases[i].cell[3],
-               "%.*s's first cell covers its text", shown, source);
-            OK(runner, table_nodes_nest(table), "%.*s nests", shown, source);
-        }
-        markdown_core_node_free(doc);
-    }
-    for (int indent = 0; indent < 3; indent++) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        for (int line = 0; line < 3; line++) {
-            for (int column = 0; column < indent; column++) {
-                markdown_core_strbuf_putc(&source, ' ');
-            }
-            markdown_core_strbuf_puts(&source, line == 1 ? "x | a |\n" : "  +---+\n");
-        }
-        markdown_core_node *doc = parse((const char *)source.ptr);
-        OK(runner, first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE) == NULL,
-           "a line with text left of the wall is no grid line (indent %d)", indent);
-        markdown_core_node_free(doc);
-        markdown_core_strbuf_free(&source);
-    }
-}
-
-/* A SIMPLE TABLE'S MARGIN IS FIXED BY THE LINES IT OPENS WITH: its header,
- * its dashes and its first row (owner, 2026-10-17). The table, its header
- * and its first row begin at the margin those lines share; a later row
- * indented less begins at its own text, which its first cell owns, and the
- * rows before it keep their places. A later row indented further begins at
- * the margin, its first cell at its text. */
-static void simple_table_margin_from_opening_lines(test_batch_runner *runner) {
-    static const char source[] = "  A    B\n  ---  ---\n  x    y\nc      d\n   z\n";
-    static const int rows[][6] = {
-        /* row start line, column; first cell start line, column, end line, column */
-        {1, 3, 1, 3, 1, 3},
-        {3, 3, 3, 3, 3, 3},
-        {4, 1, 4, 1, 4, 1},
-        {5, 3, 5, 4, 5, 4},
-    };
-    markdown_core_node *doc = parse(source), *table = first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE);
-    OK(runner, table && START_LINE(table) == 1 && START_COLUMN(table) == 3 && END_LINE(table) == 5,
-       "the table begins at the margin of its opening lines");
-    for (size_t i = 0; table && i < sizeof(rows) / sizeof(rows[0]); i++) {
-        markdown_core_node *row = child_at(table, i), *cell = row ? child_at(row, 0) : NULL;
-        OK(runner,
-           row && cell && START_LINE(row) == rows[i][0] && START_COLUMN(row) == rows[i][1] &&
-               START_LINE(cell) == rows[i][2] && START_COLUMN(cell) == rows[i][3] && END_LINE(cell) == rows[i][4] &&
-               END_COLUMN(cell) == rows[i][5],
-           "row %zu begins at the margin or at its text left of it, as its first cell does", i);
-    }
-    markdown_core_node *last = table ? child_at(table, 2) : NULL, *second = last ? child_at(last, 1) : NULL;
-    OK(runner, second && START_LINE(second) == 4 && START_COLUMN(second) == 8,
-       "the row indented less keeps its later columns at the dash runs");
-    OK(runner, table && table_nodes_nest(table), "the table nests");
-    markdown_core_node_free(doc);
 }
 
 /* The row of `doc` that starts on `line`, as its cells and every node in
@@ -10528,7 +9505,7 @@ static char *describe_row_on(markdown_core_node *doc, int line) {
  * each cell holds its bytes: trimmed of the whitespace around them, its
  * escaped pipes contracted, a tab kept a tab. So the row's cells, and every
  * node in them, are the same whether it heads a table after a paragraph,
- * heads one after a leading caption, or is a body row -- in their literals
+ * heads one after a blank line, or is a body row -- in their literals
  * and in their scopes -- under any container prefix. */
 static void pipe_rows_are_one_row(test_batch_runner *runner) {
     static const char *const rows[] = {
@@ -10539,23 +9516,22 @@ static void pipe_rows_are_one_row(test_batch_runner *runner) {
     for (size_t p = 0; p < sizeof(prefixes) / sizeof(prefixes[0]); p++) {
         const char *first = prefixes[p][0], *rest = prefixes[p][1];
         for (size_t r = 0; r < sizeof(rows) / sizeof(rows[0]); r++) {
-            char headed[160], captioned[160], body[160];
+            char headed[160], parted[160], body[160];
             snprintf(headed, sizeof(headed), "%s%s\n%s| - | - |\n", first, rows[r], rest);
-            snprintf(captioned, sizeof(captioned), "%sTable: cap\n%s\n%s%s\n%s| - | - |\n", first, rest, rest, rows[r],
-                     rest);
+            snprintf(parted, sizeof(parted), "%sprose\n%s\n%s%s\n%s| - | - |\n", first, rest, rest, rows[r], rest);
             snprintf(body, sizeof(body), "%s| x | y |\n%s| - | - |\n%s%s\n", first, rest, rest, rows[r]);
-            markdown_core_node *headed_doc = parse(headed), *captioned_doc = parse(captioned), *body_doc = parse(body);
-            char *after_paragraph = describe_row_on(headed_doc, 1), *after_caption = describe_row_on(captioned_doc, 3),
+            markdown_core_node *headed_doc = parse(headed), *parted_doc = parse(parted), *body_doc = parse(body);
+            char *after_paragraph = describe_row_on(headed_doc, 1), *after_blank = describe_row_on(parted_doc, 3),
                  *in_body = describe_row_on(body_doc, 3);
             OK(runner,
-               after_paragraph && after_caption && in_body && !strcmp(after_caption, after_paragraph) &&
+               after_paragraph && after_blank && in_body && !strcmp(after_blank, after_paragraph) &&
                    !strcmp(in_body, after_paragraph),
-               "%s%s is one row as a header, after a caption and in the body", first, rows[r]);
+               "%s%s is one row as a header, after a blank line and in the body", first, rows[r]);
             markdown_core_free(after_paragraph);
-            markdown_core_free(after_caption);
+            markdown_core_free(after_blank);
             markdown_core_free(in_body);
             markdown_core_node_free(headed_doc);
-            markdown_core_node_free(captioned_doc);
+            markdown_core_node_free(parted_doc);
             markdown_core_node_free(body_doc);
         }
     }
@@ -10908,231 +9884,6 @@ static void a_flanking_transparent_byte_is_ascii(test_batch_runner *runner) {
         if (doc) {
             markdown_core_node_free(doc);
         }
-    }
-}
-
-static void simple_table_body_boundaries(test_batch_runner *runner) {
-    const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
-    const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
-                                             MARKDOWN_CORE_NODE_CODE_BLOCK};
-    const char *endings[] = {"\n", "\r", "\r\n"};
-    for (size_t tail = 0; tail < 3; tail++) {
-        for (size_t ending = 0; ending < 3; ending++) {
-            for (int gap = 0; gap < 2; gap++) {
-                for (int terminated = 0; terminated < 2; terminated++) {
-                    markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(), source = MARKDOWN_CORE_BUF_INIT();
-                    markdown_core_strbuf_puts(&normalized, "h    i\n---- ----\na    b\n");
-                    if (gap) {
-                        markdown_core_strbuf_putc(&normalized, '\n');
-                    }
-                    markdown_core_strbuf_puts(&normalized, tails[tail]);
-                    for (int i = 0; i < normalized.size - !terminated; i++) {
-                        if (normalized.ptr[i] == '\n') {
-                            markdown_core_strbuf_puts(&source, endings[ending]);
-                        } else {
-                            markdown_core_strbuf_putc(&source, normalized.ptr[i]);
-                        }
-                    }
-                    markdown_core_node *root = parse((const char *)source.ptr),
-                                       *table = root ? child_at(root, 0) : NULL;
-                    OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
-                       "simple body survives line ending and EOF");
-                    if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
-                        markdown_core_table *value = table->opaque;
-                        INT_EQ(runner, value->content_count, gap ? 1 : (tail == 2 ? 4 : 3),
-                               "body owns every adjacent source line");
-                        markdown_core_node *after = child_at(root, 1);
-                        OK(runner, gap ? after && after->kind == kinds[tail] : !after,
-                           "only blank-separated block syntax opens a sibling");
-                        INT_EQ(runner, END_LINE(table), gap ? 3 : (tail == 2 ? 6 : 5),
-                               "simple table retains authored scope");
-                    }
-                    markdown_core_node_free(root);
-                    markdown_core_strbuf_free(&source);
-                    markdown_core_strbuf_free(&normalized);
-                }
-            }
-        }
-    }
-}
-
-/* A caption is a paragraph: the same block openers interrupt it, while
- * non-interrupting list markers, HTML and indentation remain inline content.
- * Exercise every table producer and a real container-prefix source view. */
-static void table_caption_boundaries(test_batch_runner *runner) {
-    const char *tables[] = {"| h |\n| - |\n| b |\n", "h    i\n---- ----\na    b\n\n",
-                            "---------\nh    i\n---- ----\na    b\n\nc    d\n---------\n\n", "+---+\n| x |\n+---+\n"};
-    const struct {
-        const char *source;
-        markdown_core_node_type kind;
-    } blocks[] = {{"```c\ncode\n```\n", MARKDOWN_CORE_NODE_CODE_BLOCK},
-                  {"~~~\ncode\n~~~\n", MARKDOWN_CORE_NODE_CODE_BLOCK},
-                  {"# heading\n", MARKDOWN_CORE_NODE_HEADING},
-                  {"> quote\n", MARKDOWN_CORE_NODE_CALLOUT},
-                  {"1. item\n", MARKDOWN_CORE_NODE_LIST},
-                  {"- item\n", MARKDOWN_CORE_NODE_LIST},
-                  {"(a) item\n", MARKDOWN_CORE_NODE_LIST},
-                  {"***\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
-                  {"<div>\nbody\n</div>\n", MARKDOWN_CORE_NODE_HTML_BLOCK},
-                  {"<!-- comment -->\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK},
-                  {"$$\nx\n$$\n", MARKDOWN_CORE_NODE_FORMULA_BLOCK},
-                  {"\\\\[\nx\n\\\\]\n", MARKDOWN_CORE_NODE_FORMULA_BLOCK},
-                  {":::note\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
-                  {"::: {.note}\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
-                  {"::note[label]\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
-                  {"%%\ncomment\n%%\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK}};
-    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
-        int caption_line = 1;
-        for (const char *at = tables[t]; *at; at++) {
-            caption_line += *at == '\n';
-        }
-        for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); b++) {
-            for (int quoted = 0; quoted < 2; quoted++) {
-                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(), source = MARKDOWN_CORE_BUF_INIT();
-                markdown_core_strbuf_puts(&input, tables[t]);
-                markdown_core_strbuf_puts(&input, ": cap\n");
-                markdown_core_strbuf_puts(&input, blocks[b].source);
-                for (int at = 0; at < input.size; at++) {
-                    if (quoted && (at == 0 || input.ptr[at - 1] == '\n')) {
-                        markdown_core_strbuf_puts(&source, "> ");
-                    }
-                    markdown_core_strbuf_putc(&source, input.ptr[at]);
-                }
-                markdown_core_node *root = parse((char *)source.ptr);
-                markdown_core_node *owner = root && quoted ? child_at(root, 0) : root;
-                markdown_core_node *table = owner ? child_at(owner, 0) : NULL;
-                OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
-                   "caption table survives interruption: table=%zu block=%zu quoted=%d", t, b, quoted);
-                if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
-                    markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
-                    OK(runner, caption && child_at(caption, 0), "caption owns its paragraph content");
-                    if (caption && child_at(caption, 0)) {
-                        LITERAL_EQ(runner, child_at(caption, 0), "cap", "block bytes do not enter caption text");
-                        INT_EQ(runner, END_LINE(caption), caption_line, "caption scope ends before the block");
-                    }
-                    INT_EQ(runner, END_LINE(table), caption_line, "table scope ends with its caption");
-                    markdown_core_node *after = child_at(owner, 1);
-                    OK(runner, after && after->kind == blocks[b].kind,
-                       "ordinary block owns its source: table=%zu block=%zu quoted=%d", t, b, quoted);
-                    if (after) {
-                        INT_EQ(runner, START_LINE(after), caption_line + 1, "block retains source line");
-                    }
-                }
-                markdown_core_node_free(root);
-                markdown_core_strbuf_free(&source);
-                markdown_core_strbuf_free(&input);
-            }
-        }
-    }
-    const char *continuations[] = {"2. stays\n",         "<x>\n",          "    text\n", "+ \n",
-                                   ":::note[unclosed\n", "%%\nno closer\n"};
-    for (size_t i = 0; i < sizeof(continuations) / sizeof(*continuations); i++) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, tables[0]);
-        markdown_core_strbuf_puts(&source, ": cap\n");
-        markdown_core_strbuf_puts(&source, continuations[i]);
-        markdown_core_node *root = parse((char *)source.ptr);
-        markdown_core_node *table = root ? child_at(root, 0) : NULL;
-        OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE && !child_at(root, 1),
-           "non-interrupting source stays in caption: case=%zu", i);
-        if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
-            markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
-            OK(runner, caption && END_LINE(caption) > 4, "caption continues past its first line: case=%zu", i);
-        }
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
-    }
-}
-
-static void table_mapped_ownership(test_batch_runner *runner) {
-    const char *source =
-        "+------------------------+------------------------+\n| [r]: /first            | [r]: /second           |\n|   "
-        "                     |                        |\n| # Same                 | # Same                 |\n|       "
-        "                 |                        |\n| [^f]: first            | [^f]: second           |\n|           "
-        "             |                        |\n| [r] [^f]               | [r] [^f]               "
-        "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n";
-    markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "mapped cell block parsing completes");
-    if (!document) {
-        return;
-    }
-    /* Columns are read from the parse's places, which a bare parse keeps. */
-    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
-    markdown_core_node *table = child_at(root, 0), *row = child_at(table, 0);
-    markdown_core_node *resolved_row = child_at(child_at(document->root, 0), 0);
-    markdown_core_node *first = child_at(row, 0), *second = child_at(row, 1);
-    STR_EQ(runner, (const char *)child_at(first, 1)->attributes.anchor.data, "same",
-           "first cell heading owns unsuffixed anchor");
-    STR_EQ(runner, (const char *)child_at(second, 1)->attributes.anchor.data, "same-1",
-           "same-line later heading is ordered by original column");
-    INT_EQ(runner, START_COLUMN(child_at(second, 1)), 28, "mapped block starts in original source column");
-    INT_EQ(runner, START_COLUMN(child_at(second, 0)), 28, "a cell's Reference starts in its original column");
-    for (size_t cell_index = 0; cell_index < resolved_row->child_count; cell_index++) {
-        markdown_core_node *cell = resolved_row->children[cell_index];
-        markdown_core_destination dest = facade_destination(child_at(last_child_of(cell), 0));
-        const markdown_core_node *target = dest.kind == MARKDOWN_CORE_DESTINATION_REFERENCE
-                                               ? markdown_core_document_reference_for(document, dest.label)
-                                               : NULL;
-        OK(runner, target == child_at(child_at(resolved_row, 0), 0),
-           "first authored definition wins across queued cells");
-    }
-    node_list notes = footnotes_of(root);
-    OK(runner, notes.count == 2, "both cell definitions stay in their cells");
-    if (notes.count == 2) {
-        INT_EQ(runner, START_COLUMN(notes.nodes[0]), 3, "first definition original column");
-        INT_EQ(runner, START_COLUMN(notes.nodes[1]), 28, "second definition original column");
-    }
-    free(notes.nodes);
-    markdown_core_node_free(root);
-    markdown_core_document_free(document);
-}
-
-/* Nested mapped inputs use the parser queue; source depth does not recurse
- * into another document parser, and the innermost scope stays physical. */
-static void table_nested_inputs(test_batch_runner *runner) {
-    for (int depth = 16; depth <= 128; depth *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        int width = 1;
-        markdown_core_strbuf_puts(&source, "x\n");
-        for (int level = 0; level < depth; level++) {
-            markdown_core_strbuf outer = MARKDOWN_CORE_BUF_INIT();
-            markdown_core_strbuf_putc(&outer, '+');
-            for (int c = 0; c < width + 2; c++) {
-                markdown_core_strbuf_putc(&outer, '-');
-            }
-            markdown_core_strbuf_puts(&outer, "+\n");
-            int first = 0;
-            for (int i = 0; i < source.size; i++) {
-                if (source.ptr[i] != '\n') {
-                    continue;
-                }
-                markdown_core_strbuf_puts(&outer, "| ");
-                markdown_core_strbuf_put(&outer, source.ptr + first, i - first);
-                markdown_core_strbuf_puts(&outer, " |\n");
-                first = i + 1;
-            }
-            markdown_core_strbuf_putc(&outer, '+');
-            for (int c = 0; c < width + 2; c++) {
-                markdown_core_strbuf_putc(&outer, '-');
-            }
-            markdown_core_strbuf_puts(&outer, "+\n");
-            markdown_core_strbuf_free(&source);
-            source = outer;
-            width += 4;
-        }
-        markdown_core_node *root = markdown_core_parse_document((char *)source.ptr, source.size);
-        OK(runner, root != NULL, "nested mapped block inputs parse: depth=%d", depth);
-        if (root) {
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), depth, "one table per authored grid");
-            markdown_core_node *leaf = root;
-            while (child_at(leaf, 0)) {
-                leaf = child_at(leaf, 0);
-            }
-            INT_EQ(runner, START_LINE(leaf), depth + 1, "nested physical line is preserved");
-            INT_EQ(runner, START_COLUMN(leaf), 2 * depth + 1, "nested physical column is preserved");
-        }
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
     }
 }
 
@@ -12617,34 +11368,6 @@ static void session_snapshot_openers(test_batch_runner *runner) {
     }
 }
 
-/* A SIMPLE TABLE READS A ROW AT A TIME, IN EVERY SNAPSHOT (step 7, plan
- * 5.7): the text arrives byte by byte, and after each append the snapshot's
- * dump is a fresh parse's of the same text. A headed table opens once its
- * header, its dashes and its first row are there, a headerless one once its
- * footer is; each row after the dashes is read on its own as it comes, as
- * inline text whatever block it looks like, until a blank line ends the
- * table or a footer closes it. A later row indented less than the margin
- * begins at its own text; a closing directive fence above still ends the
- * table, and a caption follows a closed table. */
-static void session_snapshot_simple_tables(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "Name    Count\n------  -----\nApples      4\nPears       2\n------  -----\nafter\n",
-        "  A    B\n  ---  ---\n  x    y\nc      d\n   z\n\nTable: cap\n",
-        "A    B\n---  ---\n# h  > q\n```  :x\nTable: y\n- i  1. j\n\nafter\n",
-        "---  ---\nx    y\n\tz  w\n---  ---\nTable: t\n",
-        "A    B\n---  ---\n---  ---\nafter\n",
-        "> A    B\n> ---  ---\n> a    b\nlazy\n\n- A    B\n  ---  ---\n  a    b\n c\n",
-        ":::note\nA    B\n---  ---\na    b\n:::\n\nafter\n",
-        "+------------+\n| A    B     |\n| ---  ---   |\n| a    b     |\n|   c    d   |\n+------------+\n",
-    };
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        size_t at = 0;
-        OK(runner, snapshots_dump_as_parses(sources[i], &at),
-           "every snapshot reads a simple table a row at a time as a parse of its text, up to byte %zu of %zu: %s", at,
-           strlen(sources[i]), sources[i]);
-    }
-}
-
 /* A SETTLED LOOKUP IS ASKED AGAIN AT THE FINALIZE (step 8, THE SETTLE
  * POINT): the text arrives byte by byte and flushes to a fresh parse's
  * dump. The paragraph settles a reference or note that finds nothing, and
@@ -13202,10 +11925,7 @@ int main(void) {
     paragraphs_start_on_their_first_byte(runner);
     lazy_lines_parse_as_prefixed(runner);
     lazy_after_marker_as_after_paragraph(runner);
-    cell_blocks_end_in_their_cell(runner);
     table_geometry_ignores_indentation(runner);
-    table_margin_is_shared_indentation(runner);
-    simple_table_margin_from_opening_lines(runner);
     pipe_rows_are_one_row(runner);
     create_tree(runner);
     attachment_containment(runner);
@@ -13234,13 +11954,8 @@ int main(void) {
     autolink_source_pos(runner);
     table_source_map_growth(runner);
     table_values(runner);
-    grid_border_recognition_work(runner);
-    grid_opening_memory(runner);
-    table_candidate_work(runner);
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
-    multiline_boundary_search_builds_no_geometry(runner);
-    table_open_gate_admits_only_possible_tables(runner);
     inline_hook_projection_ignores_non_owners(runner);
     properties_envelope_derives_each_line_once(runner);
     properties_rejected_members_borrow_source(runner);
@@ -13250,8 +11965,6 @@ int main(void) {
     construction_checks_containment(runner);
     semantic_rejection_preserves_its_cause(runner);
     rejected_token_allocation_failures(runner);
-    table_caption_candidate_admission(runner);
-    table_candidates_reuse_scratch(runner);
     parser_attachment_commits_one_decision(runner);
     formula_containment_follows_recognition(runner);
     delimiter_boundary_floors(runner);
@@ -13266,12 +11979,6 @@ int main(void) {
     a_finish_step_is_asked_where_it_can_act(runner);
     a_flanking_transparent_byte_is_ascii(runner);
     standalone_formula_as_owned_root(runner);
-    simple_table_body_boundaries(runner);
-    simple_table_footer_work(runner);
-    grid_caption_search_work(runner);
-    table_caption_boundaries(runner);
-    table_mapped_ownership(runner);
-    table_nested_inputs(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
@@ -13298,7 +12005,6 @@ int main(void) {
     session_snapshot_tables(runner);
     session_snapshot_lists(runner);
     session_snapshot_openers(runner);
-    session_snapshot_simple_tables(runner);
     session_settled_lookups_at_flush(runner);
     session_snapshot_candidates(runner);
     session_held_scalars(runner);

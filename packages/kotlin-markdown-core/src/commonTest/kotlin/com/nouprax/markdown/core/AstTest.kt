@@ -2,6 +2,7 @@ package com.nouprax.markdown.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -64,46 +65,14 @@ class AstTest {
     }
 
     @Test
-    fun tableColumnWidthsUseCanonicalDecimals() {
-        val widths =
-            listOf(
-                0.1 to "0.1",
-                1e-6 to "0.000001",
-                1e-7 to "1e-7",
-                1e20 to "100000000000000000000",
-                1e21 to "1e+21",
-                Double.MIN_VALUE to "5e-324",
-                1.2345678901234567 to "1.2345678901234567",
-            )
-        for ((width, expected) in widths) {
-            val table =
-                Table(
-                    null,
-                    listOf(TableColumn(Flow.NONE, width)),
-                    emptyList(),
-                    emptyList(),
-                    emptyList(),
-                    MarkupID(2),
-                    Extent(0, 1u),
-                    listOf(Run(0, 1u)),
-                    null,
-                    Attributes.empty,
-                )
-            assertTrue(holding(table).dump("x").contains("columns=[none:$expected]"))
-        }
-    }
-
-    @Test
-    fun tablesPreserveGroupsSpansAndDirectBlockContent() {
-        val documents = listOf(Document.parse("# head"), Document.parse("body"), Document.parse("---"))
+    fun tablesKeepRowsAndColumns() {
+        val documents = listOf(Document.parse("head"), Document.parse("body"), Document.parse("last"))
         val rows =
             documents.map {
                 TableRow(
                     listOf(
                         TableCell(
-                            1,
-                            2,
-                            it.content,
+                            assertIs<Paragraph>(it.content.single()).content,
                             MarkupID(4),
                             Extent(0, 0u),
                             listOf(Run(0, 0u)),
@@ -120,29 +89,26 @@ class AstTest {
             }
         val table =
             Table(
-                null,
-                listOf(TableColumn(Flow.LEFT, 0.1), TableColumn(Flow.NONE, null)),
+                listOf(TableColumn(Flow.LEFT), TableColumn(Flow.NONE)),
                 listOf(rows[0]),
-                listOf(rows[1]),
-                listOf(rows[2]),
+                listOf(rows[1], rows[2]),
                 MarkupID(2),
                 Extent(0, 6u),
                 listOf(Run(0, 6u)),
                 null,
                 Attributes.empty,
             )
-        assertTrue(table.head[0].cells[0].content[0] is Heading)
-        assertTrue(table.foot[0].cells[0].content[0] is ThematicBreak)
-        assertEquals(2, table.content[0].cells[0].colspan)
+        assertEquals("head", assertIs<Text>(table.head[0].cells[0].content[0]).literal)
+        assertEquals("last", assertIs<Text>(table.content[1].cells[0].content[0]).literal)
         val visitor = RecordingWalkingVisitor()
         table.walk(visitor)
         assertEquals(
-            listOf("enter:Heading", "enter:Paragraph", "enter:ThematicBreak"),
-            visitor.events.filter { it in listOf("enter:Heading", "enter:Paragraph", "enter:ThematicBreak") },
+            listOf("enter:Table", "enter:TableRow", "enter:TableRow", "enter:TableRow"),
+            visitor.events.filter { it in listOf("enter:Table", "enter:TableRow") },
         )
-        val dump = holding(table).dump("# head")
-        assertTrue(dump.contains("columns=[left:0.1,none:null] children=3"))
-        assertTrue(dump.contains("TableFoot children=1"))
+        val dump = holding(table).dump("head")
+        assertTrue(dump.contains("columns=[left,none] children=3"))
+        assertTrue(dump.contains("TableBody children=2"))
     }
 
     @Test
@@ -222,7 +188,6 @@ class AstTest {
         assertEquals(listOf(Flow.CENTER), table.columns.map { it.flow })
         assertEquals(1, table.head.size)
         assertEquals(1, table.content.size)
-        assertTrue(table.foot.isEmpty())
         assertEquals(
             5,
             document

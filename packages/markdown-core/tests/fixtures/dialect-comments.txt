@@ -230,20 +230,19 @@ on a table row splits the cell and the unmatched `%%` bytes are text:
 | c %% | d %% |
 .
 Document scope=1:1..3:15 anchor=null attributes={} children=1
-└── Table scope=1:1..3:15 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:15 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:15 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=3:3..3:6 anchor=null attributes={} literal="c %%" children=0
-    │       └── TableCell scope=3:9..3:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=3:10..3:13 anchor=null attributes={} literal="d %%" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:15 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:7 anchor=null attributes={} children=1
+            │   └── Text scope=3:3..3:6 anchor=null attributes={} literal="c %%" children=0
+            └── TableCell scope=3:9..3:14 anchor=null attributes={} children=1
+                └── Text scope=3:10..3:13 anchor=null attributes={} literal="d %%" children=0
 ````````````````````````````````
 
 ## Adjacent, escaped, unmatched, and percent runs
@@ -566,20 +565,19 @@ empty comment in a cell is a comment:
 | %%c\|d%% | %%%% |
 .
 Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Table scope=1:1..3:19 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:19 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:6..1:8 anchor=null attributes={} children=1
     │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:19 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:11 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Comment scope=3:3..3:10 anchor=null attributes={} literal="c|d" children=0
-    │       └── TableCell scope=3:13..3:18 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Comment scope=3:14..3:17 anchor=null attributes={} literal="" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:19 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:11 anchor=null attributes={} children=1
+            │   └── Comment scope=3:3..3:10 anchor=null attributes={} literal="c|d" children=0
+            └── TableCell scope=3:13..3:18 anchor=null attributes={} children=1
+                └── Comment scope=3:14..3:17 anchor=null attributes={} literal="" children=0
 ````````````````````````````````
 
 Footnote content holds inline and block comments like any other content:
@@ -850,13 +848,12 @@ b
 %%
 .
 Document scope=1:1..9:2 anchor=null attributes={} children=3
-├── Table scope=1:1..2:5 anchor=null attributes={} columns=[none:null] children=1
+├── Table scope=1:1..2:5 anchor=null attributes={} columns=[none] children=1
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
-│   │       └── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       └── TableCell scope=1:2..1:4 anchor=null attributes={} children=1
 │   │           └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-│   ├── TableBody children=0
-│   └── TableFoot children=0
+│   └── TableBody children=0
 ├── Comment scope=3:1..5:2 anchor=null attributes={} literal="x\n" children=0
 └── Paragraph scope=7:1..9:2 anchor=null attributes={} children=1
     └── Comment scope=7:1..9:2 anchor=null attributes={} literal=" a\nb\n" children=0

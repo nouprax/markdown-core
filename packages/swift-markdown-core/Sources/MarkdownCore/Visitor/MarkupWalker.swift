@@ -27,7 +27,6 @@ func dispatch<V: MarkupVisitor>(_ node: any Markup, to visitor: inout V, phase: 
     case let node as List: visitor.visit(node, phase: phase)
     case let node as ListItem: visitor.visit(node, phase: phase)
     case let node as Table: visitor.visit(node, phase: phase)
-    case let node as TableCaption: visitor.visit(node, phase: phase)
     case let node as TableRow: visitor.visit(node, phase: phase)
     case let node as TableCell: visitor.visit(node, phase: phase)
     case let node as DirectiveBlock: visitor.visit(node, phase: phase)

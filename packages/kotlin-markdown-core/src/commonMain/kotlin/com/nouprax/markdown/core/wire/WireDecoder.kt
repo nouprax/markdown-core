@@ -200,18 +200,14 @@ internal object WireDecoder {
                 }
 
                 NodeKind.TABLE -> {
-                    val caption = presence()
-                    val columns = list { TableColumn(index(flows), optional { double() }) }
+                    val columns = list { TableColumn(index(flows)) }
                     val head = count()
                     val content = count()
-                    val foot = count()
-                    take(caption, head, content, foot)
+                    take(head, content)
                     Table(
-                        optional(caption),
                         columns,
                         typed(head),
                         typed(content),
-                        typed(foot),
                         id,
                         extent,
                         runs,
@@ -315,9 +311,7 @@ internal object WireDecoder {
                 }
 
                 NodeKind.TABLE_CELL -> {
-                    val rowspan = int().toInt()
-                    val colspan = int().toInt()
-                    TableCell(rowspan, colspan, content(), id, extent, runs, anchor, attributes)
+                    TableCell(content(), id, extent, runs, anchor, attributes)
                 }
 
                 NodeKind.DIRECTIVE_LABEL -> {
@@ -386,10 +380,6 @@ internal object WireDecoder {
                         anchor,
                         attributes,
                     )
-                }
-
-                NodeKind.TABLE_CAPTION -> {
-                    TableCaption(content(), id, extent, runs, anchor, attributes)
                 }
 
                 NodeKind.CITATION -> {
@@ -575,8 +565,6 @@ internal object WireDecoder {
         }
 
         private fun int(): Long = little(take(Long.SIZE_BYTES), Long.SIZE_BYTES)
-
-        private fun double(): Double = Double.fromBits(int())
 
         private fun u8(): Int = bytes[take(1)].toInt() and 0xff
 

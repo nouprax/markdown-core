@@ -91,9 +91,9 @@ differences retain global explicit-anchor reservation (including inline code),
 Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
 and CommonMark reference adjacency. CLI canaries independently pin these Pandoc
 behaviors; the projections preserve both sides rather than erase differences.
-P11 implements captions, simple, multiline and grid tables on all surfaces.
-The three former multiline/grid gap entries now compare identical non-width
-content and retain their explicit width-semantic difference.
+P11 implemented captions, simple, multiline and grid tables; they have since
+left the dialect, which keeps pipe tables only, and their cases left the
+corpus.
 
 Representation projections are shared by concept, not selected by case:
 `Plain` uses paragraph content, Pandoc spaces join adjacent Text values, empty
@@ -114,18 +114,9 @@ owned by Markdown Core fixtures because Pandoc JSON does not expose compatible
 source ranges. Attribute cases compare all three projected components and
 their order; the records sequence may not collapse into a unique-key map.
 
-Table comparison retains column alignment and width, row groups, cell spans and
-cell content. Pandoc-only cell alignment is outside the canonical intersection.
+Table comparison retains column alignment, the head and body rows and cell
+content. Pandoc-only cell alignment is outside the canonical intersection.
 Ordered-list variants and delimiters map to the canonical value spelling.
-Native-JSON canaries additionally pin caption ownership in 48 combinations of
-placement, table form and marker: a table claims a preceding caption, otherwise
-a following one; a following candidate stays available to the next table when
-the preceding table already has a caption. Eleven grid canaries preserve sparse
-cell ownership, source-defined fully covered rows, boundary-only rows, and
-authored empty cells. A native `Row` with `cells=[]` is retained; it is not
-expanded into placeholders. These assertions check both native oracle constructors and product ownership.
-The [delivery record](../../../docs/plans/2026-09-12-pandoc-tables-and-compositions.md)
-records the source geometry and parser/consumer boundary.
 
 P7/P9a/P9b retire the bibliography, fancy-list and example-list feature gaps.
 Cite comparison keeps every key, mode and ordered prefix/suffix tree. Pandoc's

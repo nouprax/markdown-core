@@ -1,14 +1,8 @@
 #include "definition_list.h"
 #include "attributes.h"
 #include "link.h"
-#include "table.h"
 #include "block_internal.h"
 #include "directive.h"
-
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { DEFINITION_LIST_TABLE };
-static const markdown_core_element *const DEFINITION_LIST_PEERS[] = {
-    [DEFINITION_LIST_TABLE] = &MARKDOWN_CORE_ELEMENT_TABLE, NULL};
 
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
@@ -165,10 +159,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
 
 /* THE TERM'S READING of a line `input` in `parent` its admission admits:
  * whether a definition marker line follows it, after one blank line at
- * most, that is no caption of a table. A candidate's decision, `decides`,
- * writes nothing. */
+ * most. */
 static bool definition_term_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                  markdown_core_node *parent, markdown_core_chunk *input, bool *compact, bool decides) {
+                                  markdown_core_node *parent, markdown_core_chunk *input, bool *compact) {
     markdown_core_definition_list_work *counts = self->state;
     markdown_core_chunk term = {input->data + parser->at.first_nonspace, input->len - parser->at.first_nonspace, 0};
     if (term.data[0] == '[') {
@@ -192,11 +185,6 @@ static bool definition_term_reads(const markdown_core_element_instance *self, ma
     int first, indent, blanks;
     bool matched = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && blanks <= 1 &&
                    markdown_core_block_definition_marker(&next, first, indent);
-    if (matched && next.data[first] == ':') {
-        /* A dialect without tables has no caption to yield to. */
-        const markdown_core_element_instance *table = self->peers[DEFINITION_LIST_TABLE];
-        matched = !table || !markdown_core_table_caption_probe(table, &lookahead, &next, first, indent, decides);
-    }
     if (matched) {
         *compact = blanks == 0;
     }
@@ -304,7 +292,7 @@ static markdown_core_node *try_paragraph(const markdown_core_element_instance *s
     bool compact = false;
     markdown_core_parser_clear_end_read(parser);
     const bool term = definition_term_admits(self, parser, parent, &input) &&
-                      definition_term_reads(self, parser, parent, &input, &compact, false);
+                      definition_term_reads(self, parser, parent, &input, &compact);
     if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const definition_candidate candidate = {DEFINITION_TERM, 0};
@@ -355,7 +343,7 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     if (candidate->call == DEFINITION_TERM) {
         bool compact = false;
         claims = definition_term_admits(self, parser, container, &line) &&
-                 definition_term_reads(self, parser, container, &line, &compact, true);
+                 definition_term_reads(self, parser, container, &line, &compact);
     } else {
         int next;
         claims = definition_body_continues(parser, container, candidate->continuation, &next);
@@ -387,11 +375,15 @@ static bool close_block(const markdown_core_element_instance *self, markdown_cor
     return true;
 }
 
+static const markdown_core_node_type DEFINITION_LIST_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION_LIST,
+                                                                MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
-    .peers = DEFINITION_LIST_PEERS,
     .state_size = sizeof(markdown_core_definition_list_work),
     .close_block = close_block,
     .reopens = true,
+    /* A term after blank lines joins the list before it. */
+    .awaits = DEFINITION_LIST_KINDS,
 
     .accepts_blank = accepts_blank,
 

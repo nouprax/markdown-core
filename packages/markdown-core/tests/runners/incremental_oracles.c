@@ -876,7 +876,7 @@ static bool kind_is(const view *taken, size_t index, const char *kind) {
  * asks its lookups, or a block with an inline field, a callout's title or a
  * definition's term, which asks them from its field. */
 static bool inline_root(const view *taken, size_t index) {
-    static const char *const kinds[] = {"Paragraph", "Heading", "TableCaption", "TableCell", "Callout", "Definition"};
+    static const char *const kinds[] = {"Paragraph", "Heading", "TableCell", "Callout", "Definition"};
     size_t kind;
     for (kind = 0; kind < sizeof(kinds) / sizeof(kinds[0]); kind++) {
         if (kind_is(taken, index, kinds[kind])) {

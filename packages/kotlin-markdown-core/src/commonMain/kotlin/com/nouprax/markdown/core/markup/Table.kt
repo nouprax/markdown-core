@@ -1,16 +1,13 @@
 package com.nouprax.markdown.core
 
-/** A logical column, with an authored width share when present. */
+/** A logical column. */
 @ConsistentCopyVisibility
 public data class TableColumn internal constructor(
     public val flow: Flow,
-    public val relative: Double?,
 )
 
-/** Inline or block content as parsed, without paragraph normalization. */
+/** Inline content as parsed. */
 public class TableCell internal constructor(
-    public val rowspan: Int,
-    public val colspan: Int,
     public val content: kotlin.collections.List<Markup>,
     override val id: MarkupID,
     override val extent: Extent,
@@ -29,11 +26,9 @@ public class TableRow internal constructor(
 ) : Markup()
 
 public class Table internal constructor(
-    public val caption: TableCaption?,
     public val columns: kotlin.collections.List<TableColumn>,
     public val head: kotlin.collections.List<TableRow>,
     public val content: kotlin.collections.List<TableRow>,
-    public val foot: kotlin.collections.List<TableRow>,
     override val id: MarkupID,
     override val extent: Extent,
     override val runs: kotlin.collections.List<Run>,
@@ -41,12 +36,3 @@ public class Table internal constructor(
     override val attributes: Attributes,
 ) : Markup()
 
-/** An independently owned table caption with ordinary inline content. */
-public class TableCaption internal constructor(
-    public val content: kotlin.collections.List<Markup>,
-    override val id: MarkupID,
-    override val extent: Extent,
-    override val runs: kotlin.collections.List<Run>,
-    override val anchor: String?,
-    override val attributes: Attributes,
-) : Markup()

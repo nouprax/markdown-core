@@ -10,9 +10,9 @@
 
 :plain :empty[]{} :attrs{#kept .a class="b a" k=1 k=2}
 
-| none |
-| ---- |
-| cell |
+| none | empty |
+| ---- | ----- |
+| cell |       |
 
 ```txt
 unclosed

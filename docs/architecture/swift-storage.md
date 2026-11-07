@@ -9,7 +9,7 @@ that inherits the internal base `MarkupRecord`. The base holds what every kind
 has (`id`, `extent`, `runs`, `anchor`, `attributes`) and every owned child record, in
 one array in canonical walk order across the node's relations. A kind adds
 only `let` scalars and says how its relations partition that array
-(`relation(at:)`): a table's caption, head, body and foot; a citation's inline
+(`relation(at:)`): a table's head and body; a citation's inline
 note, prefix and suffix; a definition's term and each body. Public getters
 return views of that array; they never copy descendants. Liveness is ARC: a
 retained node keeps its own subtree alive and nothing else.
@@ -57,7 +57,7 @@ and no lock.
 Scopes are not stored. `scope(of:in:)` walks the document once to place the
 node, whose source ranges are its own runs: its first run leads from where
 the source of the node before it in its relation ends, or from where its
-owner's source starts, and a table's rows, in head, body and foot order, are
+owner's source starts, and a table's rows, in head then body order, are
 one relation. Extents take no part. It converts each range
 with the source's line starts to lines and columns in the document's unit;
 `node(at:in:)` converts the position to a byte offset and returns the last

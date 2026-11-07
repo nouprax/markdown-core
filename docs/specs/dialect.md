@@ -54,7 +54,7 @@ returns this structure; your application decides how to display it.
 | Checkboxes and custom task markers | [Task lists](dialect/task-lists.md) |
 | Terms with one or more definitions | [Definition lists](dialect/definition-lists.md) |
 | Quotes and titled or collapsible notices | [Quotes and callouts](dialect/callouts.md) |
-| Pipe, simple, multiline, and grid tables with captions | [Tables](dialect/tables.md) |
+| Pipe tables | [Tables](dialect/tables.md) |
 | Named directives and fenced containers | [Directives](dialect/directives.md) |
 | Document properties | [Properties](dialect/properties.md) |
 | IDs, classes, and key/value annotations | [Attributes](dialect/attributes.md) |

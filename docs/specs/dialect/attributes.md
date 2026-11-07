@@ -91,7 +91,7 @@ escapes or character references.
 Every AST node has an `attributes` value, but only supported attachment rules
 populate it. Other nodes have empty classes and records. A missing container,
 `{}`, and a container holding only an ID have the same empty attributes value.
-Tables, rows, cells, and captions do not accept attributes; a table can receive
+Tables, rows, and cells do not accept attributes; a table can receive
 a [block identifier](block-identifiers.md).
 
 ### Inline code

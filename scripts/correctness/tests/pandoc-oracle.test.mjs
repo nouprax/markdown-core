@@ -103,13 +103,10 @@ test("list variants and table columns compare as values rather than wire spellin
     assert.deepEqual(canonical, list);
     const table = fromCanonical(
         parseCanonicalDump(
-            "Document scope=1:1..1:1 anchor=null attributes={} children=1\n└── Table scope=1:1..1:1 anchor=null attributes={} columns=[left:null,right:0.25] children=0\n"
+            "Document scope=1:1..1:1 anchor=null attributes={} children=1\n└── Table scope=1:1..1:1 anchor=null attributes={} columns=[left,right] children=0\n"
         )
     );
-    assert.deepEqual(table.children[0].columns, [
-        { flow: "left", relative: null },
-        { flow: "right", relative: 0.25 }
-    ]);
+    assert.deepEqual(table.children[0].columns, [{ flow: "left" }, { flow: "right" }]);
 });
 
 test("citation projection compares keys, modes and ordered affixes without fallback rendering", () => {

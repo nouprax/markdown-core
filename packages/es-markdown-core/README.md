@@ -167,7 +167,7 @@ source starts where its first run starts and ends where its last ends, and the
 bytes between two runs are not the node's, such as the `> ` prefixes between
 the lines of a paragraph in a block quote; runs that touch are one run, so a
 block whose own source is its range has one run, its range. A table's rows, in
-head, content and foot order, are one relation, so the extent and the first
+head then content order, are one relation, so the extent and the first
 run of its first body row lead from the end of its last head row.
 `document.scope(node, source)` answers one scope per run of the node, in
 source order, and `document.nodeAt(position, source)` the last node one of
@@ -340,16 +340,9 @@ from the source in UTF-8 columns. The
 text is intended for logs, snapshots, and debugging rather than persistence or
 data interchange.
 
-Pipe, simple, multiline and grid tables share one model. `caption` is an
-optional `TableCaption` with inline `content`; `Table:`, `table:` and `:` accept
-a preceding or following caption. Between tables, an uncaptained preceding
-table claims it first. Walkers visit the caption before `head`, `content`, and
-`foot`. Multiline and grid cells use ordinary block content and authored relative
-widths; pipe and simple cells use inline content and null widths. Grid cells
-carry `rowspan` and `colspan` once in their starting row. Source-defined rows
-with no starting cells retain `cells=[]`; an authored empty cell retains
-`content=[]`. Consumers derive occupied coordinates and layout from these rows
-and spans.
+Tables are pipe tables. A table has its `columns`, one `head` row and its
+body rows in `content`; walkers visit `head` before `content`. Every cell
+holds inline `content`; an authored empty cell retains `content=[]`.
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
 fenced code, direct links/media, resolved references, reference definitions
@@ -373,8 +366,8 @@ the heading, and generated targets add no scope.
 The always-on dialect includes inline code, heading, fenced code and link
 attributes; automatic anchors and implicit heading references; bracketed spans;
 superscript and subscript; bibliography citations; named and nameless fenced
-containers; fancy ordered lists and example lists; definition lists; table
-captions; and simple, multiline and grid tables. These 18 feature groups use
+containers; fancy ordered lists and example lists; and definition lists. These 14
+feature groups use
 one immutable AST and the same behavior on every binding. The
 [dialect contract](../../docs/specs/dialect.md) specifies syntax, precedence and intentional differences
 from the pinned Pandoc reader. Citation numbering, example-list resolution,

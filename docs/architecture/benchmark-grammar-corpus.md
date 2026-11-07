@@ -2,13 +2,13 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 195 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 854 documents, each measured once:
-in each of [two alphabets](#alphabets), 183 whole declared-language pairs, 12
-local boundary pairs with complete hosts, and 13 controls for
+contains all 186 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 792 documents, each measured once:
+in each of [two alphabets](#alphabets), 180 whole declared-language pairs, 6
+local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-31 syntax-guide features, 140 sections and 33 registered elements. Its explicit
-section mapping names certificates for 135 source-language sections and gives
+31 syntax-guide features, 133 sections and 33 registered elements. Its explicit
+section mapping names certificates for 128 source-language sections and gives
 reviewed context-only dispositions for five sections. Certificates are registered
 directly from their source grammars and specification obligations.
 
@@ -83,7 +83,7 @@ A letter keeps its position: the UTF-8 twin of an ASCII document spells the
 same Word with the letter at the same index of its alphabet. So respelling a
 UTF-8 document letter by letter gives its ASCII twin exactly, except in a field
 bounded in bytes, which holds fewer UTF-8 letters at its limit; the tests check
-this for every document. Grid geometry counts characters, not bytes.
+this for every document.
 
 Some positions admit only ASCII letters in their own grammar: a block
 identifier (`#id#`), a callout type (`[!type]`) and an email address's local
@@ -308,9 +308,9 @@ zero copying cost. This covers reference-label reuse, specimen definition/call
 bindings and inherited attributes. Equality constraints are checked from bytes;
 an inconsistent second label is rejected instead of overwritten in a map.
 
-T3 and T7 now provide whole declared-language counterparts for thirteen formerly
+T3 and T7 now provide whole declared-language counterparts for eleven formerly
 split families: four numeral lists, two default lists, all three callout states,
-citation affixes, both caption placements, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix and caption/table fields all survive independently.
+citation affixes, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix fields all survive independently.
 Named containers use the `:::name` production; `::: name` belongs to the
 nameless grammar. The source encoding preserves that normative distinction.
 
@@ -329,12 +329,10 @@ single-line-body reset grammar, not every unrestricted continuation shape.
 
 ## Boundary corpus and its limits (T5)
 
-Twelve families retain local proofs:
+Six families retain local proofs:
 
 | Families | Residual outside the certified local grammar |
 | --- | --- |
-| grid-cell, simple-matrix, headless-matrix, sparse-grid | Column geometry, interval equality, padding, spans, sparse rows and footer grammar. |
-| multiline-matrix, headless-multiline | Physical-line segmentation and logical-row block parsing, including the required second row. |
 | metadataempty, metadata, metadata-types, metadata-literal | Initial envelope, typed members, ten fields, first-valid retention, recovery and literal indentation. |
 | embed-dimensions, image-dimensions | Bounded positive numeric dimensions and suffix selection. |
 
@@ -391,7 +389,7 @@ references implement each construct:
 | Strikethrough | cmark-gfm | fallback-strike |
 | Footnote reference | cmark-gfm | fallback-footnote |
 | Task-list marker | cmark-gfm | fallback-task-separator |
-| Superscript, insertion, mark, inline formula, percent comment, cross link, inline directive, attribute block, grid table, citation, bracketed span, image dimensions, metadata envelope, topic | none | the other fourteen `fallback-*` certificates |
+| Superscript, insertion, mark, inline formula, percent comment, cross link, inline directive, attribute block, citation, bracketed span, image dimensions, metadata envelope, topic | none | the other thirteen `fallback-*` certificates |
 
 When the certificate's reference implements the construct, B and R both attempt
 and reject the same prefix. Such a certificate is an ordinary equivalence.

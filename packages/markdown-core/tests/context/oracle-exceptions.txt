@@ -23,25 +23,13 @@ dialect-specimens.txt:291 slot specimen Citation # the key is also a specimen's 
 dialect-citations.txt:638 slot bib Citation # a heading's text declares a reference label
 dialect-citations.txt:638 slot specimen Citation # a heading's text declares a reference label
 
-# A multiline table aligns its cells by column: a sentinel shifts the
-# columns, and the table reads a different shape.
-dialect-tables.txt:997 slot dest CrossLink # column-aligned cells
-dialect-tables.txt:1026 slot dest CrossLink # column-aligned cells
-dialect-tables.txt:1045 slot dest CrossLink # column-aligned cells
-
 # `[[a#^]]` keeps `^` as its anchor; a sentinel after it makes the anchor a
 # block identifier, whose value drops the `^`.
-dialect-cross-links.txt:225 slot anchor CrossLink # the anchor's value is normalized
+dialect-cross-links.txt:224 slot anchor CrossLink # the anchor's value is normalized
 
 # A label that goes on to another line is normalized across the line
 # break, so a sentinel at its edge lands beside a collapsed space.
-spec.txt:9702 slot label Reference # a label on two lines
-
-# A table caption's lines are read by the table's own lookahead, which tells
-# the context sink nothing: a line after a caption gets no context. A known
-# gap, not an oracle limit.
-dialect-tables.txt:1726 missed DirectiveBlock.attributes # line after a table caption
-dialect-tables.txt:1726 missed DirectiveBlock.name # line after a table caption
+spec.txt:9695 slot label Reference # a label on two lines
 
 # A directive's label that the text before the cursor leaves open is prose
 # there, so its opening `[` meets the bytes after it, `[[` a cross link's;

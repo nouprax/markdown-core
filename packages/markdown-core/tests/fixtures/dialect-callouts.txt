@@ -685,20 +685,19 @@ Document scope=1:1..17:5 anchor=null attributes={} children=5
 ├── Callout scope=10:1..13:11 anchor=null attributes={} variant="note" collapsed=null children=1
 │   ├── Title children=1
 │   │   └── Text scope=10:11..10:11 anchor=null attributes={} literal="T" children=0
-│   └── Table scope=11:3..13:11 anchor=null attributes={} columns=[none:null,none:null] children=2
+│   └── Table scope=11:3..13:11 anchor=null attributes={} columns=[none,none] children=2
 │       ├── TableHead children=1
 │       │   └── TableRow scope=11:3..11:11 anchor=null attributes={} children=2
-│       │       ├── TableCell scope=11:4..11:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│       │       ├── TableCell scope=11:4..11:6 anchor=null attributes={} children=1
 │       │       │   └── Text scope=11:5..11:5 anchor=null attributes={} literal="a" children=0
-│       │       └── TableCell scope=11:8..11:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│       │       └── TableCell scope=11:8..11:10 anchor=null attributes={} children=1
 │       │           └── Text scope=11:9..11:9 anchor=null attributes={} literal="b" children=0
-│       ├── TableBody children=1
-│       │   └── TableRow scope=13:3..13:11 anchor=null attributes={} children=2
-│       │       ├── TableCell scope=13:4..13:6 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│       │       │   └── Text scope=13:5..13:5 anchor=null attributes={} literal="c" children=0
-│       │       └── TableCell scope=13:8..13:10 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│       │           └── Text scope=13:9..13:9 anchor=null attributes={} literal="d" children=0
-│       └── TableFoot children=0
+│       └── TableBody children=1
+│           └── TableRow scope=13:3..13:11 anchor=null attributes={} children=2
+│               ├── TableCell scope=13:4..13:6 anchor=null attributes={} children=1
+│               │   └── Text scope=13:5..13:5 anchor=null attributes={} literal="c" children=0
+│               └── TableCell scope=13:8..13:10 anchor=null attributes={} children=1
+│                   └── Text scope=13:9..13:9 anchor=null attributes={} literal="d" children=0
 └── Callout scope=15:1..17:5 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
     │   └── Text scope=15:11..15:11 anchor=null attributes={} literal="T" children=0

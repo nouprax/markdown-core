@@ -97,10 +97,10 @@ test("composition results keep the actual trees and never inherit a seed waiver"
 
 test("nested and opaque witnesses cover all features without reusing adjacency waivers", () => {
     const cases = compositionEvidenceCases(source, corpus, seeds);
-    assert.equal(cases.length, 306 + 3 * 18);
+    assert.equal(cases.length, 182 + 2 * 14);
     assert.equal(new Set(cases.map((value) => value.id)).size, cases.length);
-    for (const context of ["blockquote", "grid-cell", "code-block"]) {
-        assert.equal(cases.filter((value) => value.context === context).length, 18);
+    for (const context of ["blockquote", "code-block"]) {
+        assert.equal(cases.filter((value) => value.context === context).length, 14);
     }
     assert.deepEqual(
         cases,

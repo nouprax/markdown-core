@@ -210,6 +210,12 @@ struct markdown_core_element {
      * one back there (blocks.c, THE NESTED REOPEN), terminated by
      * MARKDOWN_CORE_NODE_NONE, or NULL. */
     const markdown_core_node_type *abuts;
+    /* The block kinds of the element a block after it, past blank lines,
+     * may still go on in as its line is read -- a definition term joins the
+     * definition list before it: below the root, where no close is noted
+     * (blocks.c, THE REACH), a reopen does not rest at the child after one
+     * (THE NESTED REOPEN), terminated by MARKDOWN_CORE_NODE_NONE, or NULL. */
+    const markdown_core_node_type *awaits;
     int maximum_block_indent;
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);

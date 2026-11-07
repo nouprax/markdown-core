@@ -105,7 +105,6 @@ export function compositionEvidenceCases(source, corpus, seeds) {
                         .join("\n"),
                 []
             ],
-            ["grid-cell", gridCell, ["grid_tables"]],
             [
                 "code-block",
                 (value) =>
@@ -130,20 +129,6 @@ export function compositionEvidenceCases(source, corpus, seeds) {
         }
     }
     return result;
-}
-
-function gridCell(input) {
-    const lines = input.split("\n");
-    const widths = lines.map((line) => {
-        let column = 2; // the left border and the cell's leading space
-        for (const scalar of line) column += scalar === "\t" ? 4 - (column % 4) : 1;
-        return column;
-    });
-    const width = Math.max(...widths);
-    const border = `+${"-".repeat(width)}+`;
-    return [border, ...lines.map((line, index) => `| ${line}${" ".repeat(width - widths[index])} |`), border].join(
-        "\n"
-    );
 }
 
 /** A fixed integer PRNG, explicit alphabet, and stable reader make mutations

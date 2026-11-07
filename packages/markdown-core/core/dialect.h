@@ -195,7 +195,10 @@ enum {
     MARKDOWN_CORE_KIND_FOLDS = 1u << 12,
     /* A later line may write a block of the kind once it closed
      * (element.h, `trailed_kinds`). */
-    MARKDOWN_CORE_KIND_TRAILED = 1u << 13
+    MARKDOWN_CORE_KIND_TRAILED = 1u << 13,
+    /* A block after one of the kind may still go on in it (element.h,
+     * `awaits`). */
+    MARKDOWN_CORE_KIND_AWAITS = 1u << 14
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;

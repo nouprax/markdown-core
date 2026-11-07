@@ -657,21 +657,20 @@ Document scope=1:1..1:45 anchor=null attributes={} children=1
 | `x`{#c .cell} | [x](/u){.link} |
 .
 Document scope=1:1..3:34 anchor=null attributes={} children=1
-└── Table scope=1:1..3:34 anchor=null attributes={} columns=[none:null,none:null] children=2
+└── Table scope=1:1..3:34 anchor=null attributes={} columns=[none,none] children=2
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:15 anchor=null attributes={} children=2
-    │       ├── TableCell scope=1:2..1:7 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       ├── TableCell scope=1:2..1:7 anchor=null attributes={} children=1
     │       │   └── Text scope=1:3..1:6 anchor=null attributes={} literal="Code" children=0
-    │       └── TableCell scope=1:9..1:14 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       └── TableCell scope=1:9..1:14 anchor=null attributes={} children=1
     │           └── Text scope=1:10..1:13 anchor=null attributes={} literal="Link" children=0
-    ├── TableBody children=1
-    │   └── TableRow scope=3:1..3:34 anchor=null attributes={} children=2
-    │       ├── TableCell scope=3:2..3:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Code scope=3:3..3:15 anchor="c" attributes={.cell} literal="x" children=0
-    │       └── TableCell scope=3:18..3:33 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Link scope=3:19..3:32 anchor=null attributes={.link} dest=url("/u") title=null children=1
-    │               └── Text scope=3:20..3:20 anchor=null attributes={} literal="x" children=0
-    └── TableFoot children=0
+    └── TableBody children=1
+        └── TableRow scope=3:1..3:34 anchor=null attributes={} children=2
+            ├── TableCell scope=3:2..3:16 anchor=null attributes={} children=1
+            │   └── Code scope=3:3..3:15 anchor="c" attributes={.cell} literal="x" children=0
+            └── TableCell scope=3:18..3:33 anchor=null attributes={} children=1
+                └── Link scope=3:19..3:32 anchor=null attributes={.link} dest=url("/u") title=null children=1
+                    └── Text scope=3:20..3:20 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

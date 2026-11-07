@@ -79,20 +79,18 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
     case definitionList = 37
     /// `Definition`.
     case definition = 38
-    /// `TableCaption`.
-    case tableCaption = 39
     /// `Citation`.
-    case citation = 40
+    case citation = 39
     /// `Footnote`.
-    case footnote = 41
+    case footnote = 40
     /// `Specimen`.
-    case specimen = 42
+    case specimen = 41
     /// `Metadata`.
-    case metadata = 43
+    case metadata = 42
     /// `Reference`.
-    case reference = 44
+    case reference = 43
     /// `Topic`.
-    case topic = 45
+    case topic = 44
 
     /// Indexed by ordinal from 1.
     private static let names = [
@@ -134,7 +132,6 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
         "Subscript",
         "DefinitionList",
         "Definition",
-        "TableCaption",
         "Citation",
         "Footnote",
         "Specimen",

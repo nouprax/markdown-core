@@ -22,7 +22,6 @@ static size_t nodes_visited;
 /* Reads each node's kind-specific fields; an accessor that refuses a node of
  * the kind it reads fails the walk. */
 static int inspect_node(const markdown_core_node *node, ts_ast_range range, void *context) {
-    int64_t rowspan, colspan;
     int32_t level;
     bool flag;
     markdown_core_string literal;
@@ -48,9 +47,6 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
         status = markdown_core_node_list_item_marker(node, &optional);
-        break;
-    case MARKDOWN_CORE_KIND_TABLE_CELL:
-        status = markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
@@ -137,9 +133,8 @@ static const struct {
     PROBE("x @\xe4 y\n"),                       /* citation key */
     PROBE("\xe4@key y\n"),                      /* citation opener */
     PROBE("(@\xe4) item\n"),                    /* specimen label */
-    PROBE("| a |\n| - |\n| b |\n:\xe4\n"),      /* table caption */
+    PROBE("| a |\n| - |\n| b |\n:\xe4\n"),      /* table row without a pipe */
     PROBE("| \xe4\xb8 |\n| - |\n"),             /* pipe table cell */
-    PROBE("+---+\n| \xe4 |\n+---+\n"),          /* grid table columns */
     PROBE("- [\xe4] task\n"),                   /* task marker */
     PROBE("---\ntitle: \xe4\xb8\n---\nbody\n"), /* front-matter printable */
 #undef PROBE

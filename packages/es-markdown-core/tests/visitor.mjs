@@ -12,7 +12,6 @@ export const emptyVisitor = {
     htmlBlock: () => {},
     formulaBlock: () => {},
     table: () => {},
-    tableCaption: () => {},
     tableRow: () => {},
     tableCell: () => {},
     directiveBlock: () => {},

@@ -84,7 +84,7 @@
         {
             "id": "gfm-autolink-literal",
             "input": "<https://foo.bar/baz bim>\n",
-            "note": ".tools/cmark/0.31.2/test/spec.txt:8845: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8838: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
         },
         {
             "id": "bibliography-citations",
@@ -94,17 +94,17 @@
         {
             "id": "gfm-autolink-literal",
             "input": "< https://foo.bar >\n",
-            "note": ".tools/cmark/0.31.2/test/spec.txt:8908: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8901: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
         },
         {
             "id": "gfm-autolink-literal",
             "input": "https://example.com\n",
-            "note": ".tools/cmark/0.31.2/test/spec.txt:8929: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8922: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
         },
         {
             "id": "gfm-autolink-literal",
             "input": "foo@bar.example.com\n",
-            "note": ".tools/cmark/0.31.2/test/spec.txt:8936: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
+            "note": ".tools/cmark/0.31.2/test/spec.txt:8929: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
         },
         {
             "id": "refdef-title-rewind",

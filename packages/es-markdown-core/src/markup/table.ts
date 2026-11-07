@@ -3,15 +3,9 @@ import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
 
 export interface Table extends MarkupBase<"table"> {
-    readonly caption: TableCaption | null;
     readonly columns: readonly TableColumn[];
     readonly head: readonly TableRow[];
     readonly content: readonly TableRow[];
-    readonly foot: readonly TableRow[];
-}
-
-export interface TableCaption extends MarkupBase<"tableCaption"> {
-    readonly content: readonly Markup[];
 }
 
 export interface TableRow extends MarkupBase<"tableRow"> {
@@ -19,13 +13,10 @@ export interface TableRow extends MarkupBase<"tableRow"> {
 }
 
 export interface TableCell extends MarkupBase<"tableCell"> {
-    readonly rowspan: number;
-    readonly colspan: number;
-    /** Inline or block content as parsed, without paragraph normalization. */
+    /** Inline content as parsed. */
     readonly content: readonly Markup[];
 }
 
 export interface TableColumn {
     readonly flow: Flow;
-    readonly relative: number | null;
 }

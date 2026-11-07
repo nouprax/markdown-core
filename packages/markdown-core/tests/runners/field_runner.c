@@ -358,26 +358,6 @@ static bool ordinal(const uint8_t *text, size_t size) {
     return true;
 }
 
-/* Whether `size` bytes at `text` are the keyword `word`, in either case,
- * with the spaces around it. */
-static bool heads(const uint8_t *text, size_t size, const char *word) {
-    size_t at = 0, n = strlen(word);
-    while (at < size && (text[at] == ' ' || text[at] == '\t')) {
-        at++;
-    }
-    for (size_t i = 0; i < n; i++, at++) {
-        if (at >= size || (text[at] | 0x20) != word[i]) {
-            return false;
-        }
-    }
-    for (; at < size; at++) {
-        if (!syntax(text[at])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 /* A field as the runner keeps it: its node, slot kind and byte range. */
 typedef struct {
     const markdown_core_node *node;
@@ -636,11 +616,10 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
             size_t from, to;
             extent(source, length, scopes[i], &from, &to);
             r->checks++;
-            /* A list item's ordinal, the fence and the word that make a
-             * fence a formula's, and a caption's `Table:` are syntax. */
+            /* A list item's ordinal and the fence and the word that make a
+             * fence a formula's are syntax. */
             const bool counts = (!strcmp(kind, "ListItem") && ordinal(source + from, to - from)) ||
-                                (!strcmp(kind, "FormulaBlock") && (source[from] == '`' || source[from] == '~')) ||
-                                (!strcmp(kind, "TableCaption") && heads(source + from, to - from, "table:"));
+                                (!strcmp(kind, "FormulaBlock") && (source[from] == '`' || source[from] == '~'));
             for (size_t k = from; k < to && k < length; k++) {
                 taken[k] = true;
                 if (!counts && !syntax(source[k])) {

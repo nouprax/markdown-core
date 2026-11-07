@@ -12,7 +12,7 @@ import type { Reference } from "../markup/reference.js";
 import type { Specimen } from "../markup/specimen.js";
 import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
-import type { TableCaption, TableCell, TableColumn, TableRow } from "../markup/table.js";
+import type { TableCell, TableColumn, TableRow } from "../markup/table.js";
 import type { Definition } from "../markup/definition-list.js";
 import { MarkdownCoreError, type ErrorCode } from "../common/markdown-core-error.js";
 import { MarkupDumper } from "../visitor/markup-dumper.js";
@@ -173,7 +173,7 @@ export class Decoder {
             case "superscript":
             case "subscript":
             case "directiveLabel":
-            case "tableCaption": {
+            case "tableCell": {
                 const content = this.count();
                 return { ...base, content: this.nodes(content).take(content) } as MarkupValue;
             }
@@ -237,19 +237,15 @@ export class Decoder {
             case "formula":
                 return { ...(base as Base<"formula">), mode: this.index(placements), literal: this.string() };
             case "table": {
-                const caption = this.presence();
                 const columns = this.list(() => this.column());
                 const head = this.count();
                 const content = this.count();
-                const foot = this.count();
-                const nodes = this.nodes(caption + head + content + foot);
+                const nodes = this.nodes(head + content);
                 return {
                     ...(base as Base<"table">),
-                    caption: nodes.optional(caption) as TableCaption | null,
                     columns,
                     head: nodes.take(head) as TableRow[],
-                    content: nodes.take(content) as TableRow[],
-                    foot: nodes.take(foot) as TableRow[]
+                    content: nodes.take(content) as TableRow[]
                 };
             }
             case "tableRow": {
@@ -257,17 +253,6 @@ export class Decoder {
                 return {
                     ...(base as Base<"tableRow">),
                     cells: this.nodes(cells).take(cells) as TableCell[]
-                };
-            }
-            case "tableCell": {
-                const rowspan = this.int();
-                const colspan = this.int();
-                const content = this.count();
-                return {
-                    ...(base as Base<"tableCell">),
-                    rowspan,
-                    colspan,
-                    content: this.nodes(content).take(content)
                 };
             }
             case "directiveBlock": {
@@ -524,7 +509,7 @@ export class Decoder {
     }
 
     private column(): TableColumn {
-        return { flow: this.index(flows), relative: this.optional(() => this.double()) };
+        return { flow: this.index(flows) };
     }
 
     private dimensions(): Dimensions {
@@ -600,10 +585,6 @@ export class Decoder {
     private id(): number {
         const start = this.take(8);
         return this.view.getUint32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
-    }
-
-    private double(): number {
-        return this.view.getFloat64(this.take(8), true);
     }
 
     private u8(): number {
