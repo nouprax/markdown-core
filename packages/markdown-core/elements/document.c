@@ -91,7 +91,7 @@ static size_t read_document_prefix(const markdown_core_element_instance *self, m
     }
     markdown_core_parser_clear_end_read(parser);
     size_t fence;
-    const bool closed = markdown_core_properties_closed(self->state, parser, &fence);
+    const bool closed = markdown_core_properties_closed(self->state, parser, self->element, &fence);
     if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const bool opened = false;
@@ -133,8 +133,8 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
                                                          markdown_core_parser *parser, const void *state) {
     (void)state;
     size_t fence;
-    return markdown_core_properties_closed(self->state, parser, &fence) ? MARKDOWN_CORE_CANDIDATE_ACCEPT
-                                                                        : MARKDOWN_CORE_CANDIDATE_REJECT;
+    return markdown_core_properties_closed(self->state, parser, self->element, &fence) ? MARKDOWN_CORE_CANDIDATE_ACCEPT
+                                                                                       : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
@@ -146,6 +146,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .read_document_prefix = read_document_prefix,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
+    .stops = markdown_core_properties_stops,
     .candidate_state_size = sizeof(bool),
     .prepare_document = prepare_document,
     .finish_document = finish_document,

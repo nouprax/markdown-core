@@ -1,0 +1,11 @@
+markdown-core incremental script 2
+script hard-unclosed-comment-in-quote hard
+flush
+edit 16 16 78
+edit 16 17 -
+edit 19 19 3e2025250a
+edit 19 24 -
+edit 29 29 3e2025250a
+edit 29 34 -
+edit 2 2 78
+edit 2 3 -

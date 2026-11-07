@@ -380,6 +380,15 @@ struct markdown_core_element {
                                                    void *, const markdown_core_candidate_line *, bool *);
     markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
                                                          const void *);
+    /* THE STOP LINES (blocks.c, AN OPENER READ TO THE END): a test of one
+     * line of the text as written, without its line ending, true for every
+     * line the element's reading from an opener in the document's root
+     * could stop at -- its closer -- and for others as it likes. A reading
+     * that read to the text's end and found none decides the same while no
+     * line after its opener is one, whatever the lines are: it notes its
+     * opener (markdown_core_parser_reach_open), and not what it read. NULL
+     * for an element whose readings note what they read. */
+    bool (*stops)(const unsigned char *line, size_t length);
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
     /* What `try_interrupting_block` needs on a non-indented line. */
