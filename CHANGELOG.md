@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Lend one line of a flushed session: `markdown_core_session_lines` counts
+  the text's lines, the empty one after a last line ending included, and
+  `markdown_core_session_line(session, line, &text)` lends line `line`,
+  counted from 1, without its ending, in constant time
+  (`MARKDOWN_CORE_SESSION_STREAMING` before the flush,
+  `MARKDOWN_CORE_OUT_OF_BOUNDS` for a line the text does not have). The
+  language engine places a protocol position on that one line instead of
+  counting line endings from the text's start, so a didChange or a
+  completion no longer costs more the further down the document it is.
+
 - Bind the language engine in Swift, Kotlin and ECMAScript (LSP plan, step
   4b): the Swift product `MarkdownCoreLSP`, Kotlin's package
   `com.nouprax.markdown.core.lsp` and the ECMAScript entry point

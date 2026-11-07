@@ -11174,11 +11174,27 @@ static void session_appends(test_batch_runner *runner) {
     markdown_core_string lent = markdown_core_session_source(session);
     OK(runner, lent.length == sizeof(source) + 2 && memcmp(lent.data, text, lent.length) == 0,
        "the lent text is the text");
+    markdown_core_string line = {0};
+    OK(runner,
+       markdown_core_session_lines(session) == 0 &&
+           markdown_core_session_line(session, 1, &line) == MARKDOWN_CORE_SESSION_STREAMING,
+       "a streaming session lends no line");
     const markdown_core_document *final = NULL;
     OK(runner,
        markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && final &&
            final == markdown_core_session_document(session),
        "flush answers the session's final document");
+    OK(runner,
+       markdown_core_session_lines(session) == 4 && markdown_core_session_line(session, 3, &line) == MARKDOWN_CORE_OK &&
+           line.length == 8 && memcmp(line.data, "two \xf0\xa0\x80\x80", 8) == 0 &&
+           line.data == markdown_core_session_source(session).data + 5 &&
+           markdown_core_session_line(session, 2, &line) == MARKDOWN_CORE_OK && line.length == 0 &&
+           markdown_core_session_line(session, 4, &line) == MARKDOWN_CORE_OK && line.length == 3,
+       "a flushed session lends each line without its ending");
+    OK(runner,
+       markdown_core_session_line(session, 0, &line) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+           markdown_core_session_line(session, 5, &line) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+       "a line the text does not have is OUT_OF_BOUNDS");
     document = NULL;
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_SESSION_FLUSHED &&
@@ -11189,6 +11205,28 @@ static void session_appends(test_batch_runner *runner) {
     OK(runner, facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0) != NULL,
        "the final document stays readable");
     markdown_core_session_close(session);
+
+    /* Every line ending ends a line, and one at the text's end leaves an
+     * empty line after it. */
+    static const char endings[] = "a\r\nb\rc\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)endings, sizeof(endings) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                 &session) == MARKDOWN_CORE_OK &&
+           markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK,
+       "a session of three line endings flushes");
+    if (session) {
+        markdown_core_string a = {0}, b = {0}, c = {0}, last = {0};
+        OK(runner,
+           markdown_core_session_lines(session) == 4 &&
+               markdown_core_session_line(session, 1, &a) == MARKDOWN_CORE_OK &&
+               markdown_core_session_line(session, 2, &b) == MARKDOWN_CORE_OK &&
+               markdown_core_session_line(session, 3, &c) == MARKDOWN_CORE_OK &&
+               markdown_core_session_line(session, 4, &last) == MARKDOWN_CORE_OK && a.length == 1 && a.data[0] == 'a' &&
+               b.length == 1 && b.data[0] == 'b' && c.length == 1 && c.data[0] == 'c' && last.length == 0,
+           "CRLF, CR and LF each end a line");
+        markdown_core_session_close(session);
+    }
 
     /* A snapshot's lookup sees the definitions written before its root, and
      * the final document's every one (plan 5.5, 5.10). */

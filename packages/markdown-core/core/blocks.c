@@ -4312,6 +4312,13 @@ bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t l
     return false;
 }
 
+size_t markdown_core_parser_line_count(const markdown_core_parser *parser) {
+    const markdown_core_parser_input *input = &parser->input;
+    const size_t size = input->size;
+    return input->lines.front.count + input->lines.back_count +
+           (!size || input->source[size - 1] == '\n' || input->source[size - 1] == '\r');
+}
+
 /* THE REACH (parser.h): what a reading of the document decided before an
  * offset from bytes past it, which a reading from that offset does not read
  * again -- the rest point an edit reads from is one no such reading spans

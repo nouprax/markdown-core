@@ -1237,6 +1237,30 @@ markdown_core_string markdown_core_session_source(const markdown_core_session *s
     return text;
 }
 
+size_t markdown_core_session_lines(const markdown_core_session *session) {
+    return session->flushed ? markdown_core_parser_line_count(session->committed) : 0;
+}
+
+markdown_core_status markdown_core_session_line(const markdown_core_session *session, size_t line,
+                                                markdown_core_string *text) {
+    if (!session->flushed) {
+        return MARKDOWN_CORE_SESSION_STREAMING;
+    }
+    size_t start, end;
+    if (!line || !markdown_core_parser_line_span(session->committed, line - 1, &start, &end)) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    const uint8_t *bytes = (const uint8_t *)session_source(session);
+    if (end > start && bytes[end - 1] == '\n') {
+        end--;
+    }
+    if (end > start && bytes[end - 1] == '\r') {
+        end--;
+    }
+    *text = (markdown_core_string){bytes + start, end - start};
+    return MARKDOWN_CORE_OK;
+}
+
 void markdown_core_session_text(const markdown_core_session *session, uint8_t *bytes) {
     if (session->text.count) {
         memcpy(bytes, session->text.values, session->text.count);
