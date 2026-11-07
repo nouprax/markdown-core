@@ -3249,7 +3249,7 @@ static void S_openers_aside(markdown_core_edit *edit, size_t start) {
             edit->openers[kept++] = opener;
         }
     }
-    edit->opener_count = kept;
+    edit->opener_count = (uint32_t)kept;
 }
 
 /* The splice at `old`, a place of the old text: the openers put aside from
@@ -3267,7 +3267,7 @@ static void S_openers_cut(markdown_core_edit *edit, size_t old, int64_t delta) {
         }
         edit->openers[kept++] = opener;
     }
-    edit->opener_count = kept;
+    edit->opener_count = (uint32_t)kept;
 }
 
 /* The lines of the input from `line` on go. */
@@ -4546,7 +4546,7 @@ void markdown_core_parser_reach_open(markdown_core_parser *parser, const markdow
         return;
     }
     markdown_core_unclosed *openers =
-        markdown_core_reserve(edit->openers, &edit->opener_room, edit->opener_count + 1, sizeof(*openers));
+        markdown_core_realloc(edit->openers, ((size_t)edit->opener_count + 1) * sizeof(*openers));
     if (!openers) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;

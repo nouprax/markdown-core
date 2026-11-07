@@ -725,6 +725,7 @@ typedef struct markdown_core_edit {
     int64_t shift;
     /* Whether the parse is an edit's reading. */
     bool reading;
+    uint32_t opener_count;
     /* The number of the back's first line (parser_input, `lines`), in the
      * text the reopen put back. */
     size_t line;
@@ -736,9 +737,9 @@ typedef struct markdown_core_edit {
     markdown_core_place *room;
     size_t room_capacity;
     /* AN OPENER READ TO THE END (blocks.c): the openers whose readings note
-     * no reach, `opener_count` of them, with room for `opener_room`. */
+     * no reach, `opener_count` of them, in storage of just that size, as
+     * they are few and seldom change. */
     markdown_core_unclosed *openers;
-    size_t opener_count, opener_room;
     /* THE USES (blocks.c): every definition lookup the completion of the
      * document's inline roots made, in order of where the roots start, a
      * zipper whose focus is the rest point. A block an edit keeps reads as
@@ -1485,8 +1486,8 @@ typedef struct {
     /* The element whose opener the reading is, when the element has stop
      * lines (element.h, `stops`), and whether the reading found one: set
      * by markdown_core_parser_lookahead_opener before the end. */
-    const struct markdown_core_element *opener;
     bool closed;
+    const struct markdown_core_element *opener;
 } markdown_core_block_lookahead;
 
 /* The reading is one of `element`'s opener, which `closed` says whether it
