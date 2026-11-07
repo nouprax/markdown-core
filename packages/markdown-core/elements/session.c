@@ -1028,9 +1028,11 @@ static bool session_stop_in(const markdown_core_element *element, const uint8_t 
  * reads from, the first whose element has a stop line among the lines the
  * edit of the bytes from `from` to `to` of line `line` on, with `length`
  * bytes of `text`, writes, in `*start`: the edit reads from before it.
+ * With `cut`, the last line written ends at `to`, as the text before a
+ * cursor at `from` does.
  * False when none has. An opener from `rest` on its reading reads again. */
 static bool session_stops(const markdown_core_session *session, size_t line, size_t from, size_t to,
-                          const uint8_t *text, size_t length, size_t rest, size_t *start) {
+                          const uint8_t *text, size_t length, bool cut, size_t rest, size_t *start) {
     size_t count;
     const markdown_core_unclosed *openers = markdown_core_parser_openers(session->committed, &count);
     size_t first = SIZE_MAX;
@@ -1047,7 +1049,7 @@ static bool session_stops(const markdown_core_session *session, size_t line, siz
     const uint8_t *source = (const uint8_t *)session_source(session);
     const size_t line_start = session_line_start(session, line);
     size_t line_end = to;
-    while (line_end < session->text.count && source[line_end] != '\n' && source[line_end] != '\r') {
+    while (!cut && line_end < session->text.count && source[line_end] != '\n' && source[line_end] != '\r') {
         line_end++;
     }
     const size_t size = (from - line_start) + length + (line_end - to);
@@ -1111,7 +1113,7 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     size_t rest_start, rest_end;
     markdown_core_parser_line_span(session->committed, line, &rest_start, &rest_end);
     size_t opened;
-    if (session_stops(session, (size_t)start.line - 1, from, to, text, length, rest_start, &opened)) {
+    if (session_stops(session, (size_t)start.line - 1, from, to, text, length, false, rest_start, &opened)) {
         if (!session_rest(session, markdown_core_parser_line_of(session->committed, opened), &child, &line, &rest)) {
             return MARKDOWN_CORE_ALLOCATION_FAILED;
         }
@@ -1236,6 +1238,18 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
     session_rest_point rest;
     session_look look = {.session = session, .rest = &rest};
     if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    /* The text before the cursor ends in the cursor's line cut there, which
+     * may be a stop line of an opener before the rest point that the whole
+     * line is not: the look reads from before the opener then (THE OPENERS
+     * AN EDIT MAY CLOSE), as the text it reads has no line past it. */
+    size_t point, opened;
+    if (session_offset(session, position, &point) &&
+        session_stops(session, (size_t)position.line - 1, point, point, NULL, 0, true,
+                      session_line_start(session, look.line), &opened) &&
+        !session_rest(session, markdown_core_parser_line_of(session->committed, opened), &look.child, &look.line,
+                      &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     markdown_core_locus locus = {.look = session_look_read, .line = session_look_line, .owner = &look};
