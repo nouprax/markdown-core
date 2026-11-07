@@ -232,6 +232,15 @@ void markdown_core_parser_release_records(markdown_core_parser *parser, markdown
  * others, and all of them when that publish kept no record of `root`, are
  * released. False, with them all released, when the records could not
  * grow. */
+/* The `count` top-level nodes `nodes` the stream settled in the content of
+ * the paragraph `root` past its FINAL bound leave it, as the line they lie
+ * on leaves it (blocks.c, A SETTLED LINE THAT LEAVES): the record the last
+ * publish kept of each one, which stayed in the tree, owns it from now on
+ * (ast.c, THE RECORDS), and the next publish matches the new content
+ * against them. One no record names is released. */
+void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_core_node *root,
+                                markdown_core_node *const *nodes, uint32_t count);
+
 bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
                                      markdown_core_node *const *nodes, uint32_t count);
 
@@ -388,6 +397,15 @@ typedef struct {
     bool found;
 } markdown_core_settled_miss;
 
+/* Where the settled nodes stood once a read settled more of them: how many
+ * there were, the point, and how many of the lookups and the anchored nodes
+ * were theirs. */
+typedef struct {
+    uint32_t count;
+    bufsize_t point;
+    size_t misses, anchored;
+} markdown_core_settled_step;
+
 /* THE SETTLED NODES OF AN OPEN PARAGRAPH (blocks.c, THE SETTLE POINT): the
  * paragraph at `address` whose id is `id` and kind `kind`, as the last
  * snapshot that completed it read it -- its content from `offset` in its
@@ -407,7 +425,14 @@ typedef struct {
     struct markdown_core_node *address, *root;
     uint64_t id;
     uint16_t kind;
-    bufsize_t offset, size, point, from;
+    bufsize_t offset, size, point, from, bound;
+    /* The settled nodes a publish makes FINAL, those before the FINAL bound
+     * `bound`, and where the later ones stood as each read settled them,
+     * which a line that leaves takes back to (blocks.c, A SETTLED LINE
+     * THAT LEAVES). */
+    markdown_core_settled_step fixed;
+    markdown_core_settled_step *steps;
+    size_t step_count, step_room;
     MARKDOWN_CORE_ARRAY(struct markdown_core_node *) nodes;
     uint32_t mark, at;
     markdown_core_places *places;
