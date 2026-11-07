@@ -289,6 +289,12 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
+    /* The bytes a line may hold and still make the paragraph line before it
+     * a block of the element's, as a table's delimiter row makes its head:
+     * while a streamed paragraph's last line holds only such bytes, the line
+     * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
+     * Projected into the dialect's `claims`. NULL for none. */
+    const char *claims;
     bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,

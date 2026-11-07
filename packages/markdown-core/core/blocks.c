@@ -2233,22 +2233,37 @@ static void S_settled_take(markdown_core_parser *parser, markdown_core_node *nod
     }
 }
 
-/* THE LAST LINES REMAIN OPEN. A later line can take the paragraph's last
- * line from it -- a delimiter row makes it a table's head -- and the line
- * the text ends in, which the content holds as far as it goes, can still
- * turn out to be that row, or to start a block that interrupts the
- * paragraph. So a snapshot's read settles nothing on the last two lines of
- * the paragraph's `size` bytes of content, nor the line ending before them:
- * the bound is where that line ending begins, 0 when the content has two
- * lines or fewer. The paragraph holds its settled nodes while its content
- * keeps the bytes before it. */
-static bufsize_t S_settle_bound(const markdown_core_node *node, bufsize_t size) {
+/* THE LAST LINES REMAIN OPEN. The line the text ends in, which the content
+ * holds as far as it goes, can still turn out to start a block that
+ * interrupts the paragraph -- a definition's label once its colon comes --
+ * and a later line can take the line before it -- a delimiter row makes it
+ * a table's head -- while the last line holds only bytes some element
+ * `claims` (element.h). A paragraph that loses its first line is no longer
+ * one, and its nodes go with it; one that loses a later line goes on
+ * without it, and must not have settled on it. So a snapshot's read
+ * settles nothing on a last line after the first, nor, while that line is
+ * claimed, on the one before it unless that one is the first, nor on the
+ * line ending before them: the bound is where that line ending begins. */
+static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdown_core_node *node, bufsize_t size) {
     const unsigned char *text = markdown_core_node_text(node).data;
     bufsize_t at = size;
-    for (int lines = 0; lines < 2 && at > 0; lines++) {
-        while (at > 0 && !markdown_core_is_line_end(text[at - 1])) {
-            at--;
-        }
+    bool claimed = true;
+    while (at > 0 && !markdown_core_is_line_end(text[at - 1])) {
+        at--;
+        claimed = claimed && parser->dialect->claims[text[at]];
+    }
+    if (!at) {
+        return size;
+    }
+    while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
+        at--;
+    }
+    bufsize_t before = at;
+    while (claimed && before > 0 && !markdown_core_is_line_end(text[before - 1])) {
+        before--;
+    }
+    if (claimed && before > 0) {
+        at = before;
         while (at > 0 && markdown_core_is_line_end(text[at - 1])) {
             at--;
         }
@@ -2271,7 +2286,7 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     settled->root = node;
     settled->offset = node->content_map.offset;
     if (settles) {
-        settled->size = S_settle_bound(node, size);
+        settled->size = S_settle_bound(parser, node, size);
     }
     settled->miss_total = settled->miss_count;
     markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));

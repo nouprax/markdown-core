@@ -297,6 +297,8 @@ typedef struct markdown_core_dialect {
      * the byte the stripped line would show first (see
      * definition_next_lines_admit). */
     bool container_prefix[256];
+    /* Every byte an element's `claims` declares. */
+    bool claims[256];
     /* The inline-content families, in descriptor order. */
     const markdown_core_element_instance *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];

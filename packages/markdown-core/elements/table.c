@@ -609,6 +609,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     /* A block identifier on the line after it writes it
      * (block_identifier.c). */
     .trailed_kinds = TABLE_TRAILED,
+    /* A delimiter row makes the paragraph line before it the head. */
+    .claims = " \t|:-",
 
     .name = "table",
     .last_block_matches = matches,

@@ -689,6 +689,10 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
             dialect->container_prefix[*c] = true;
         }
+        const char *claims = instances[i].element->claims;
+        for (const unsigned char *c = (const unsigned char *)claims; claims && *c; c++) {
+            dialect->claims[*c] = true;
+        }
     }
 
     size_t at = 0;
