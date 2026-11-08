@@ -1322,7 +1322,9 @@ export function hardScripts() {
             ["indented", "    first\n", "x", "", "    "]
         ]) {
             const line = (i) =>
-                i === 9 || i === 10 || i === 22 ? `${prefix.trimEnd()}\n` : `${prefix}${indent}${word(i * 2 + 1)} ${word(i * 2 + 2)}\n`;
+                i === 9 || i === 10 || i === 22
+                    ? `${prefix.trimEnd()}\n`
+                    : `${prefix}${indent}${word(i * 2 + 1)} ${word(i * 2 + 2)}\n`;
             const lines = Array.from({ length: 24 }, (_, i) => line(i));
             const lead = "lead\n\n";
             const head = lead + opens + opener + lines.slice(0, 12).join("");
@@ -1345,7 +1347,11 @@ export function hardScripts() {
                     .toggle(last + 1, "x")
                     .toggle(last, `${closer}\n${prefix}`)
                     .toggle(bytes(text) - 1, "x")
-                    .edit(at, at + bytes(lines[12]) + bytes(lines[13]) - bytes(prefix) - bytes(indent), `y\n${prefix}${indent}z`)
+                    .edit(
+                        at,
+                        at + bytes(lines[12]) + bytes(lines[13]) - bytes(prefix) - bytes(indent),
+                        `y\n${prefix}${indent}z`
+                    )
             );
         }
     }
