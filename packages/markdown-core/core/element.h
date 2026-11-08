@@ -182,6 +182,10 @@ struct markdown_core_element {
     markdown_core_node *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
                                      markdown_core_node *, markdown_core_chunk *);
     bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* The flags of the block that its container's prefix match sets line by
+     * line, which a lookahead puts back. A line that holds a byte other
+     * than spaces, tabs and container prefix bytes sets them as no line
+     * before it matters, which THE LEAP (blocks.c) relies on. */
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;

@@ -98,6 +98,24 @@ document documents/hard-literal-indented.md
 script documents/hard-literal-indented.md scripts/hard-literal-indented.script
 document documents/hard-literal-indented-tab.md
 script documents/hard-literal-indented-tab.md scripts/hard-literal-indented-tab.script
+document documents/hard-literal-quote-fence.md
+script documents/hard-literal-quote-fence.md scripts/hard-literal-quote-fence.script
+document documents/hard-literal-quote-pre.md
+script documents/hard-literal-quote-pre.md scripts/hard-literal-quote-pre.script
+document documents/hard-literal-quote-indented.md
+script documents/hard-literal-quote-indented.md scripts/hard-literal-quote-indented.script
+document documents/hard-literal-item-fence.md
+script documents/hard-literal-item-fence.md scripts/hard-literal-item-fence.script
+document documents/hard-literal-item-pre.md
+script documents/hard-literal-item-pre.md scripts/hard-literal-item-pre.script
+document documents/hard-literal-item-indented.md
+script documents/hard-literal-item-indented.md scripts/hard-literal-item-indented.script
+document documents/hard-literal-quoted-item-fence.md
+script documents/hard-literal-quoted-item-fence.md scripts/hard-literal-quoted-item-fence.script
+document documents/hard-literal-quoted-item-pre.md
+script documents/hard-literal-quoted-item-pre.md scripts/hard-literal-quoted-item-pre.script
+document documents/hard-literal-quoted-item-indented.md
+script documents/hard-literal-quoted-item-indented.md scripts/hard-literal-quoted-item-indented.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

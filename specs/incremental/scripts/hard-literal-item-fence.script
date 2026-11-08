@@ -1,0 +1,24 @@
+markdown-core incremental script 2
+script hard-literal-item-fence hard
+flush
+edit 77 77 78
+edit 77 78 -
+edit 76 76 6060600a2020
+edit 76 82 -
+edit 74 74 780a
+edit 74 76 -
+edit 76 76 2320680a2020
+edit 76 82 -
+edit 76 76 0a2020
+edit 76 79 -
+edit 76 76 0a0a
+edit 76 78 -
+edit 73 74 -
+edit 73 73 0a
+edit 157 157 78
+edit 157 158 -
+edit 156 156 6060600a2020
+edit 156 162 -
+edit 174 174 78
+edit 174 175 -
+edit 76 89 790a20207a

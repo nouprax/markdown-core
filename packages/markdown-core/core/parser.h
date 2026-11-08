@@ -674,11 +674,12 @@ typedef struct markdown_core_unclosed {
  * line that starts at `at` of the new text, SIZE_MAX when it does not, to
  * the back's line `last` from the focus, the last of the block's whose
  * content it reads again. `next` is where the old child the reading tries
- * next starts its line (THE SPLICE). */
+ * next starts its line (THE SPLICE). `blanks` when a block of the chain
+ * above it keeps flags that a line sets (element.h, `speculative_flags`). */
 typedef struct markdown_core_leap {
     markdown_core_strbuf aside;
     size_t at, next, last;
-    bool cr;
+    bool cr, blanks;
 } markdown_core_leap;
 
 typedef struct markdown_core_edit {

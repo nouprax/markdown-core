@@ -1307,6 +1307,48 @@ export function hardScripts() {
                 .edit(at, at + bytes(lines[12]) + bytes(lines[13]), `y${ending}${indent}z`)
         );
     }
+    /* THE LEAP below the root: the same blocks in a quote, a list item and
+     * a quote's list item, whose lines carry the containers' prefixes and
+     * blank lines -- two in a row at the list's indentation zero, which the
+     * list takes -- and edits that end the container there. */
+    for (const [where, opens, prefix] of [
+        ["quote", "> ", "> "],
+        ["item", "- ", "  "],
+        ["quoted-item", "> - ", ">   "]
+    ]) {
+        for (const [kind, opener, closer, after, indent] of [
+            ["fence", "```\n", "```", "```\n", ""],
+            ["pre", "<pre>\n", "</pre>", "</pre>\n", ""],
+            ["indented", "    first\n", "x", "", "    "]
+        ]) {
+            const line = (i) =>
+                i === 9 || i === 10 || i === 22 ? `${prefix.trimEnd()}\n` : `${prefix}${indent}${word(i * 2 + 1)} ${word(i * 2 + 2)}\n`;
+            const lines = Array.from({ length: 24 }, (_, i) => line(i));
+            const lead = "lead\n\n";
+            const head = lead + opens + opener + lines.slice(0, 12).join("");
+            const text = head + lines.slice(12).join("") + (after ? prefix + after : "") + "\nafter\n";
+            const at = bytes(head) + bytes(prefix) + bytes(indent);
+            const last = bytes(head) + bytes(lines.slice(12, 23).join("")) + bytes(prefix) + bytes(indent);
+            /* The line after the blank lines, whose indentation an edit takes
+             * away: the block ends after lines it read blank. */
+            const blanked = bytes(lead + opens + opener + lines.slice(0, 11).join("")) + bytes(prefix);
+            add(`literal-${where}-${kind}`, text, (s) =>
+                (indent ? s.remove(blanked, blanked + bytes(indent)).insert(blanked, indent) : s)
+                    .toggle(at + 1, "x")
+                    .toggle(at, `${closer}\n${prefix}`)
+                    .toggle(at - bytes(indent) - bytes(prefix), "x\n")
+                    .toggle(at - bytes(indent), "# h\n" + prefix)
+                    .toggle(at, `\n${prefix}`)
+                    .toggle(at, "\n\n")
+                    .remove(at - 1 - bytes(indent) - bytes(prefix), at - bytes(indent) - bytes(prefix))
+                    .insert(at - 1 - bytes(indent) - bytes(prefix), "\n")
+                    .toggle(last + 1, "x")
+                    .toggle(last, `${closer}\n${prefix}`)
+                    .toggle(bytes(text) - 1, "x")
+                    .edit(at, at + bytes(lines[12]) + bytes(lines[13]) - bytes(prefix) - bytes(indent), `y\n${prefix}${indent}z`)
+            );
+        }
+    }
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
