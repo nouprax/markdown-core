@@ -3508,6 +3508,17 @@ size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const
     if (before > start) {
         return markdown_core_parser_abuts(parser, chain[depth - 1]) ? depth : SIZE_MAX;
     }
+    /* A line a block of literal lines took is blank only when its own bytes
+     * are, past the prefixes the chain's containers took: a literal byte a
+     * container's prefix may be, as a `>` in code, is the block's. */
+    if (markdown_core_parser_block_kind(parser, chain[depth - 1])->flags & MARKDOWN_CORE_KIND_LINES) {
+        for (size_t at = start + S_lines_at(&parser->input.lines, line - 1).own;
+             at < end && text[at] != '\n' && text[at] != '\r'; at++) {
+            if (text[at] != ' ' && text[at] != '\t') {
+                return depth;
+            }
+        }
+    }
     bool raw = true;
     for (size_t at = start; at < end && text[at] != '\n' && text[at] != '\r'; at++) {
         const unsigned char c = text[at];
