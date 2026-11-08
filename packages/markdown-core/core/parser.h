@@ -667,6 +667,20 @@ typedef struct markdown_core_unclosed {
     bool aside;
 } markdown_core_unclosed;
 
+/* THE LEAP (blocks.c): an edit whose rest point is a later line of a block
+ * of literal lines keeps the block's old content from that line on in
+ * `aside` (`cr` when it holds a carriage return), and the reading leaps
+ * over the old lines past the edit while the block stays open, from the
+ * line that starts at `at` of the new text, SIZE_MAX when it does not, to
+ * the back's line `last` from the focus, the last of the block's whose
+ * content it reads again. `next` is where the old child the reading tries
+ * next starts its line (THE SPLICE). */
+typedef struct markdown_core_leap {
+    markdown_core_strbuf aside;
+    size_t at, next, last;
+    bool cr;
+} markdown_core_leap;
+
 typedef struct markdown_core_edit {
     /* THE OLD TAIL IN PLACE (blocks.c): the old tail, `held` children, stays
      * in the root's own storage, from its child `rest` on, and the reading
@@ -720,12 +734,14 @@ typedef struct markdown_core_edit {
     struct markdown_core_node **nested;
     size_t nested_capacity, taken, level, reach_from, nest_level;
     uint32_t nest_count, nest_index, nest_prior, nest_recorded;
-    bool nest_on;
-    uint32_t closed;
+    uint32_t closed, opener_count;
     int64_t shift;
+    bool nest_on;
     /* Whether the parse is an edit's reading. */
     bool reading;
-    uint32_t opener_count;
+    /* Of THE USES' INDEX below, kept here where the record has room. */
+    bool indexed, anew;
+    uint32_t spare;
     /* The number of the back's first line (parser_input, `lines`), in the
      * text the reopen put back. */
     size_t line;
@@ -740,6 +756,9 @@ typedef struct markdown_core_edit {
      * no reach, `opener_count` of them, in storage of just that size, as
      * they are few and seldom change. */
     markdown_core_unclosed *openers;
+    /* THE LEAP (blocks.c), made at the first edit that rests in a block of
+     * literal lines. */
+    markdown_core_leap *leap;
     /* THE USES (blocks.c): every definition lookup the completion of the
      * document's inline roots made, in order of where the roots start, a
      * zipper whose focus is the rest point. A block an edit keeps reads as
@@ -755,15 +774,12 @@ typedef struct markdown_core_edit {
      * lookup of the uses of altered labels and kept from then on. `names`
      * maps each name to its markdown_core_use_name, whose notes are among
      * the `note_count` of `notes`, those let go linked from `spare`; it holds
-     * every use but what a reading noted when `indexed`. */
+     * every use but what a reading noted when `indexed`. `anew` is set while
+     * the finalize completes anew the roots whose misses now find a
+     * definition, whose commits noted their uses. */
     markdown_core_key_index names;
     markdown_core_use_note *notes;
     size_t note_count, note_room;
-    uint32_t spare;
-    bool indexed;
-    /* While the finalize completes anew the roots whose misses now find a
-     * definition, whose commits noted their uses. */
-    bool anew;
     /* The old tail's children no record holds yet, nor the root, the
      * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
      * them go when it fails before its publish. */

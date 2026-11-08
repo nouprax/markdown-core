@@ -74,6 +74,30 @@ document documents/hard-unclosed-properties.md
 script documents/hard-unclosed-properties.md scripts/hard-unclosed-properties.script
 document documents/hard-unclosed-comment-in-quote.md
 script documents/hard-unclosed-comment-in-quote.md scripts/hard-unclosed-comment-in-quote.script
+document documents/hard-literal-pre.md
+script documents/hard-literal-pre.md scripts/hard-literal-pre.script
+document documents/hard-literal-pre-closed.md
+script documents/hard-literal-pre-closed.md scripts/hard-literal-pre-closed.script
+document documents/hard-literal-pre-crlf.md
+script documents/hard-literal-pre-crlf.md scripts/hard-literal-pre-crlf.script
+document documents/hard-literal-pre-cr.md
+script documents/hard-literal-pre-cr.md scripts/hard-literal-pre-cr.script
+document documents/hard-literal-html-comment.md
+script documents/hard-literal-html-comment.md scripts/hard-literal-html-comment.script
+document documents/hard-literal-div.md
+script documents/hard-literal-div.md scripts/hard-literal-div.script
+document documents/hard-literal-fence.md
+script documents/hard-literal-fence.md scripts/hard-literal-fence.script
+document documents/hard-literal-fence-open.md
+script documents/hard-literal-fence-open.md scripts/hard-literal-fence-open.script
+document documents/hard-literal-fence-offset.md
+script documents/hard-literal-fence-offset.md scripts/hard-literal-fence-offset.script
+document documents/hard-literal-fence-tab.md
+script documents/hard-literal-fence-tab.md scripts/hard-literal-fence-tab.script
+document documents/hard-literal-indented.md
+script documents/hard-literal-indented.md scripts/hard-literal-indented.script
+document documents/hard-literal-indented-tab.md
+script documents/hard-literal-indented-tab.md scripts/hard-literal-indented-tab.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

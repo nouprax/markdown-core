@@ -707,6 +707,35 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     return false;
 }
 
+/* Whether the edit that begins on line `edited` rests at that line inside
+ * `block`, the root's child `held`, whose source is `window`, as `rest`
+ * then says: a block of literal lines that holds the line past its first
+ * (blocks.c, THE LEAP), which no reading from before the line read past,
+ * but the block's own close, as `rest` notes it. */
+static bool session_literal(const markdown_core_session *session, markdown_core_node *block, uint32_t held,
+                            markdown_core_place window, size_t edited, session_rest_point *rest) {
+    const markdown_core_parser *parser = session->committed;
+    if (!(markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
+        markdown_core_parser_line_of(parser, window.start) >= edited ||
+        markdown_core_parser_line_of(parser, window.end - 1) < edited) {
+        return false;
+    }
+    const size_t start = session_line_start(session, edited);
+    size_t reached;
+    if (markdown_core_parser_spanned(parser, start, &reached) &&
+        (reached < window.start ||
+         markdown_core_parser_spanned_inside(parser, start, window.start, rest->close, rest->ends, &reached))) {
+        return false;
+    }
+    rest->chain[0] = block;
+    rest->starts[0] = rest->priors[0] = window.start;
+    rest->path[0] = held;
+    rest->path[1] = 0;
+    rest->depth = 1;
+    rest->line = edited;
+    return true;
+}
+
 /* The rest point in the root before the line that starts at `start`, as
  * session_rest finds it: before the root's child `*child`, at the start of
  * input line `*line`. */
@@ -766,7 +795,9 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     const bool inside = held < root->child_count && session_inside(session, root->children[held], window, edited);
     session_rest_root(session, start, child, line);
     rest->depth = 0;
-    if (!inside) {
+    if (!inside && (held >= root->child_count ||
+                    !(markdown_core_parser_block_kind(session->committed, root->children[held])->flags &
+                      MARKDOWN_CORE_KIND_LINES))) {
         return true;
     }
     /* Its close, noted as a line after it was read, from the first after
@@ -776,6 +807,13 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     rest->ends[0] = window.end + 1;
     rest->ends[1] = (held + 1 < root->child_count ? widths_start(widths, root, held + 1) : session->text.count) + 1;
     rest->ends[2] = session_line_start(session, markdown_core_parser_line_of(session->committed, window.end - 1)) + 1;
+    if (!inside) {
+        if (session_literal(session, root->children[held], held, window, edited, rest)) {
+            *child = held + 1;
+            *line = rest->line;
+        }
+        return true;
+    }
     if (session_rest_in(session, root->children[held], window, 0, edited, 0, rest)) {
         rest->path[0] = held;
         *child = held + 1;
@@ -1257,7 +1295,10 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
      * it starts, as session_rest_in measured them, and at the rest point's
      * level the children through the one that holds the cursor's line. */
     const markdown_core_node *holder = root;
-    for (size_t level = 0; level <= rest.depth; level++) {
+    /* A rest point inside a block of literal lines (session_literal) is
+     * below a block with no children: the window keeps to the block. */
+    const size_t levels = rest.depth - (rest.depth && !rest.chain[rest.depth - 1]->child_count);
+    for (size_t level = 0; level <= levels; level++) {
         markdown_core_window_level *at = &locus.window.levels[level];
         const bool deepest = level == rest.depth;
         const uint32_t first = !deepest ? rest.path[level] : !level ? look.child : rest.path[level];
@@ -1291,7 +1332,7 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
             holder = rest.chain[level];
         }
     }
-    locus.window.depth = rest.depth + 1;
+    locus.window.depth = levels + 1;
     session_chain_folds(session->edits, &rest, rest.depth, look.folds);
     /* From the document's start, the lines reach the first child's too,
      * past the envelope, whose members a cursor in it reads. */

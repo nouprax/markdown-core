@@ -202,8 +202,10 @@ struct markdown_core_element {
      * containers' prefixes when `blank` says so, or what its children before
      * counted, as `next`, the old child the reading begins at when the block
      * is the chain's deepest, holds it (NULL otherwise). It runs before the
-     * children before the line are folded into the block again. NULL when
-     * the element keeps no such state. */
+     * children before the line are folded into the block again. A block of
+     * literal lines reopens at a later line of its own (blocks.c, THE
+     * LEAP), with no children and `next` NULL. NULL when the element keeps
+     * no such state. */
     void (*reopen_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                          const markdown_core_node *next, bool blank);
     /* Whether the reading of `node`, at the start of the line of its old
