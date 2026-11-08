@@ -1268,7 +1268,7 @@ export function hardScripts() {
         ["pre", "lead\n\n", "<pre>\n", "\n", "</pre>", "", ""],
         ["pre-closed", "", "<pre a>\n", "\n", "</pre>", "</pre>\n\nafter\n", ""],
         ["pre-crlf", "lead\r\n\r\n", "<pre>\r\n", "\r\n", "</pre>", "", ""],
-        ["pre-cr", "lead\r\r", "<pre>\r", "\r", "</pre>", "", ""],
+        ["pre-cr", "lead\r\r", "<pre>\r", "\r", "</pre>", "end\n", ""],
         ["html-comment", "lead\n\n", "<!--\n", "\n", "-->", "", ""],
         ["div", "lead\n\n", "<div>\n", "\n", "\n", "\nafter\n", ""],
         ["fence", "lead\n\n", "```\n", "\n", "```", "```\n\nafter\n", ""],
