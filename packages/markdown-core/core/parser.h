@@ -241,8 +241,11 @@ void markdown_core_parser_release_records(markdown_core_parser *parser, markdown
 void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_core_node *root,
                                 markdown_core_node *const *nodes, uint32_t count);
 
+/* The same of the `count` nodes `nodes` the content of `root` lets go,
+ * the first of which the last publish measured from `source` bytes past
+ * where the root starts (blocks.c, THE SEAMS). */
 bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
-                                     markdown_core_node *const *nodes, uint32_t count);
+                                     markdown_core_node *const *nodes, uint32_t count, uint32_t source);
 
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
@@ -677,11 +680,40 @@ typedef struct markdown_core_unclosed {
  * next starts its line (THE SPLICE). `blanks` when a block of the chain
  * above it keeps flags that a line sets (element.h, `speculative_flags`).
  * `prose` when the block was a paragraph as the reading reopened it, whose
- * inline content it reads again whatever it becomes. */
+ * inline content it reads again whatever it becomes.
+ *
+ * THE SEAMS of that paragraph's inline content (blocks.c): the paragraph
+ * `node`, whose id is `id`, as the last edit's reading completed it, and
+ * the `seam_count` seams it found then, in order; `seam` the one the
+ * reading takes its first children to, all zero for none, and `taken`
+ * where its uses start in the uses' front. The
+ * reading's parse of the content lists what may be seams in `settle`,
+ * from the child `held` on, while `active`, with the anchors the roster
+ * held as it began, `anchors`. */
+typedef struct {
+    /* Where it is in the content, the first child after it, how many of
+     * the paragraph's uses lie before it, and the line of the paragraph
+     * it starts, counted from its first; where the child before it ends in
+     * the text, past where the paragraph starts, as the content's places
+     * read it; and the place of the content's places that reads its last
+     * byte, and the content offset that place starts at. */
+    bufsize_t offset;
+    uint32_t index, uses, line, source, place, read;
+} markdown_core_seam;
+
 typedef struct markdown_core_leap {
     markdown_core_strbuf aside;
     size_t at, next, last;
     bool cr, blanks, prose;
+    bool armed, active;
+    const struct markdown_core_node *node;
+    uint64_t id;
+    markdown_core_seam *seams;
+    size_t seam_count, seam_room;
+    markdown_core_seam seam;
+    uint32_t held;
+    size_t taken, anchors;
+    markdown_core_inline_settle settle;
 } markdown_core_leap;
 
 typedef struct markdown_core_edit {
@@ -1170,11 +1202,19 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
+/* The paragraph `node` an edit's reading reopened at a seam lets go of
+ * the children it kept, as it becomes a block of another kind (blocks.c,
+ * THE SEAMS). */
+void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node);
+
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_node *node,
                                                                                     markdown_core_node *parent,
                                                                                     markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
+    if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
+        markdown_core_parser_unseam(parser, node);
+    }
     return markdown_core_node_set_kind(node, parent, kind);
 }
 

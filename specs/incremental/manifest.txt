@@ -126,6 +126,16 @@ document documents/hard-paragraph-leap-in-item.md
 script documents/hard-paragraph-leap-in-item.md scripts/hard-paragraph-leap-in-item.script
 document documents/hard-paragraph-leap-lazy.md
 script documents/hard-paragraph-leap-lazy.md scripts/hard-paragraph-leap-lazy.script
+document documents/hard-paragraph-seams.md
+script documents/hard-paragraph-seams.md scripts/hard-paragraph-seams.script
+document documents/hard-paragraph-seams-crlf.md
+script documents/hard-paragraph-seams-crlf.md scripts/hard-paragraph-seams-crlf.script
+document documents/hard-paragraph-seams-cr.md
+script documents/hard-paragraph-seams-cr.md scripts/hard-paragraph-seams-cr.script
+document documents/hard-paragraph-seams-noted.md
+script documents/hard-paragraph-seams-noted.md scripts/hard-paragraph-seams-noted.script
+document documents/hard-paragraph-seams-anchored.md
+script documents/hard-paragraph-seams-anchored.md scripts/hard-paragraph-seams-anchored.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

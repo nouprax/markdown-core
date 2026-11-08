@@ -28,3 +28,5 @@ packages/markdown-core/tests/canonical-ast/** text eol=lf
 # Line endings the incremental set tests, kept as written.
 specs/incremental/documents/hard-literal-pre-cr.md -text
 specs/incremental/documents/hard-literal-pre-crlf.md -text
+specs/incremental/documents/hard-paragraph-seams-cr.md -text
+specs/incremental/documents/hard-paragraph-seams-crlf.md -text
