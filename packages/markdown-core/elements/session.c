@@ -477,6 +477,10 @@ typedef struct {
      * one on the path ends, or where it starts when that is its first. */
     uint32_t starts[SESSION_DEPTH], priors[SESSION_DEPTH];
     size_t depth, line, close, ends[3];
+    /* Whether a paragraph may hold it (blocks.c, THE LEAP): an edit's may,
+     * and a look's may not, as the look reads the paragraph's text before
+     * the cursor whole. */
+    bool prose;
 } session_rest_point;
 
 static size_t session_line_start(const markdown_core_session *session, size_t line) {
@@ -581,15 +585,21 @@ static markdown_core_place nest_window(const session_widths *widths, const markd
 
 /* Whether the edit that begins on line `edited` rests at that line inside
  * `block`, the child `held` of the chain's block `level` - 1 or of the root,
- * whose source is `window`, as `rest` then says: a block of literal lines
- * that holds the line past its first (blocks.c, THE LEAP), which no reading
+ * whose source is `window`, as `rest` then says: a block of literal lines,
+ * or a paragraph when `rest` lets one, that holds the line past its first
+ * and leaps (blocks.c, THE LEAP, markdown_core_parser_leaps), which no reading
  * from before the line read past, but the root's child's own close, as
  * `rest` notes it, from where that child starts. */
 static bool session_literal(const markdown_core_session *session, markdown_core_node *block, uint32_t held,
                             markdown_core_place window, size_t level, size_t edited, session_rest_point *rest) {
     const markdown_core_parser *parser = session->committed;
-    if (level == SESSION_DEPTH || !(markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
-        markdown_core_parser_line_of(parser, window.start) >= edited ||
+    const bool lines = markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES;
+    /* A paragraph only of the document, whose lines' own bytes are all its
+     * content's (blocks.c, S_leap_lines). Its first line is read with the
+     * next, which a call of the paragraph's opener reads ahead (element.h,
+     * try_opening_paragraph): it rests from its third line on. */
+    if (level == SESSION_DEPTH || (!lines && (!rest->prose || level)) || !markdown_core_parser_leaps(parser, block) ||
+        markdown_core_parser_line_of(parser, window.start) + (lines ? 0 : 1) >= edited ||
         markdown_core_parser_line_of(parser, window.end - 1) < edited) {
         return false;
     }
@@ -799,9 +809,8 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     const bool inside = held < root->child_count && session_inside(session, root->children[held], window, edited);
     session_rest_root(session, start, child, line);
     rest->depth = 0;
-    if (!inside && (held >= root->child_count ||
-                    !(markdown_core_parser_block_kind(session->committed, root->children[held])->flags &
-                      MARKDOWN_CORE_KIND_LINES))) {
+    if (!inside &&
+        (held >= root->child_count || !markdown_core_parser_leaps(session->committed, root->children[held]))) {
         return true;
     }
     /* Its close, noted as a line after it was read, from the first after
@@ -1036,6 +1045,7 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
         uint32_t child;
         size_t line;
         session_rest_point rest;
+        rest.prose = false;
         if (!session_rest(session, markdown_core_parser_line_of(session->committed, inside), &child, &line, &rest)) {
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
             break;
@@ -1152,6 +1162,7 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     uint32_t child;
     size_t line;
     session_rest_point rest;
+    rest.prose = true;
     if (!session_rest(session, (size_t)start.line - 1, &child, &line, &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -1281,6 +1292,7 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     session_rest_point rest;
+    rest.prose = false;
     session_look look = {.session = session, .rest = &rest};
     if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;

@@ -118,6 +118,14 @@ document documents/hard-literal-quoted-item-indented.md
 script documents/hard-literal-quoted-item-indented.md scripts/hard-literal-quoted-item-indented.script
 document documents/hard-literal-quoted-item-prefix-byte.md
 script documents/hard-literal-quoted-item-prefix-byte.md scripts/hard-literal-quoted-item-prefix-byte.script
+document documents/hard-paragraph-leap.md
+script documents/hard-paragraph-leap.md scripts/hard-paragraph-leap.script
+document documents/hard-paragraph-leap-in-quote.md
+script documents/hard-paragraph-leap-in-quote.md scripts/hard-paragraph-leap-in-quote.script
+document documents/hard-paragraph-leap-in-item.md
+script documents/hard-paragraph-leap-in-item.md scripts/hard-paragraph-leap-in-item.script
+document documents/hard-paragraph-leap-lazy.md
+script documents/hard-paragraph-leap-lazy.md scripts/hard-paragraph-leap-lazy.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

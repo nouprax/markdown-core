@@ -675,11 +675,13 @@ typedef struct markdown_core_unclosed {
  * the back's line `last` from the focus, the last of the block's whose
  * content it reads again. `next` is where the old child the reading tries
  * next starts its line (THE SPLICE). `blanks` when a block of the chain
- * above it keeps flags that a line sets (element.h, `speculative_flags`). */
+ * above it keeps flags that a line sets (element.h, `speculative_flags`).
+ * `prose` when the block was a paragraph as the reading reopened it, whose
+ * inline content it reads again whatever it becomes. */
 typedef struct markdown_core_leap {
     markdown_core_strbuf aside;
     size_t at, next, last;
-    bool cr, blanks;
+    bool cr, blanks, prose;
 } markdown_core_leap;
 
 typedef struct markdown_core_edit {
@@ -1855,6 +1857,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
  * the storage the input and the reading hold past what the text needs, as
  * the most text before left it. */
 void markdown_core_parser_compact(markdown_core_parser *parser);
+/* Whether an edit of a later line of `block`, a leaf, may rest at that line
+ * and leap past its old lines (blocks.c, THE LEAP). */
+bool markdown_core_parser_leaps(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* Whether the children of `block` abut (element.h, `abuts`). */
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* How the line before the rest point line `line` reads to the `depth`

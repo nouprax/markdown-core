@@ -3179,6 +3179,23 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
             root->children[child - 2]->place.end = anchor;
         }
         ok = reopen_chain(records, edit, &last);
+        /* A deepest block that lets go of children and holds none for the
+         * reading to take back reads them again: a leaf's inline content
+         * (blocks.c, THE LEAP). They are its content's old nodes, which the
+         * next publish matches its new ones against. */
+        markdown_core_node *deepest = edit->chain[edit->depth - 1];
+        const uint32_t kept = edit->keeps[edit->depth - 1];
+        if (ok && !edit->holds[edit->depth - 1] && deepest->child_count > kept) {
+            ok =
+                markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept);
+            deepest->child_count = kept;
+            /* None kept: the reading settles its new children into an array
+             * of its own (blocks.c, S_settle_scaffold). */
+            if (!kept) {
+                markdown_core_node_pool_bytes_free(parser->pool, deepest->children);
+                deepest->children = NULL;
+            }
+        }
     }
     /* The old children are recorded as the reading passes them: those it
      * takes back are the root's again, and need none (record_tail). */

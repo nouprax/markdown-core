@@ -3322,7 +3322,7 @@ static void S_tail_out(markdown_core_parser *parser, const markdown_core_node *r
  * rest point `start`, kept aside before the reopen lets it go. False when
  * storage could not be had. */
 static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *root, uint32_t child, size_t line,
-                        uint32_t prior, size_t start, size_t to, int64_t delta) {
+                        uint32_t prior, size_t start, size_t own, size_t to, int64_t delta) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_parser_input *input = &parser->input;
@@ -3339,7 +3339,7 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
         edit->children = children;
     }
     if (!S_lines_ready(&input->lines, start, input->size) || !S_reach_ready(&stream->reach, start, input->size) ||
-        !S_uses_ready(&edit->uses, start, input->size)) {
+        !S_uses_ready(&edit->uses, own, input->size)) {
         return false;
     }
     S_release_tail(parser);
@@ -3353,7 +3353,7 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
     (void)S_reach_move(&stream->reach, start, input->size, edit);
     S_openers_aside(edit, start);
     const size_t front = edit->uses.front.count, back = edit->uses.back_count;
-    (void)S_uses_move(&edit->uses, start, input->size, edit);
+    (void)S_uses_move(&edit->uses, own, input->size, edit);
     S_uses_follow(edit, front, back);
     edit->uses_from = edit->uses.front.count;
     assert(input->lines.front.count == line || start == input->scanned);
@@ -3485,6 +3485,27 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
+/* Whether `block` is a leaf a rest point may be in (THE LEAP). */
+static inline bool S_leaf(const markdown_core_parser *parser, const markdown_core_node *block) {
+    return markdown_core_parser_block_kind(parser, block)->flags &
+           (MARKDOWN_CORE_KIND_LINES | MARKDOWN_CORE_KIND_IS_PARAGRAPH);
+}
+
+/* A block of literal lines leaps, and so does a paragraph whose text is all
+ * its own, from its first byte to its last: one whose
+ * front a definition may take, which may read past its first line, does
+ * not. */
+bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdown_core_node *block) {
+    const unsigned flags = markdown_core_parser_block_kind(parser, block)->flags;
+    if (flags & MARKDOWN_CORE_KIND_LINES) {
+        return true;
+    }
+    /* Its lines' bytes are its content's, which a text with NUL, read as
+     * U+FFFD, does not keep (S_leap_lines). */
+    return (flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) && !parser->input.mapped && !block->cut_front &&
+           !block->cut_back && block->content.size && block->content.ptr[0] != '[';
+}
+
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const markdown_core_node *block) {
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
     for (const markdown_core_node_type *kind = structure ? structure->element->abuts : NULL; kind && *kind; kind++) {
@@ -3546,8 +3567,8 @@ size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const
 /* The chain the reading reopens, from the root's child `path[0]` down
  * through `path[1..depth-1]`, kept in the edit with `path`, and the flags
  * each block closed with. False when storage could not be had. */
-static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, const uint32_t *path,
-                         const markdown_core_chain_place *places, size_t depth) {
+static bool S_chain_keep(const markdown_core_parser *parser, markdown_core_edit *edit, markdown_core_node *root,
+                         const uint32_t *path, const markdown_core_chain_place *places, size_t depth) {
     if (depth + 1 > edit->chain_capacity) {
         size_t capacity = edit->chain_capacity;
         markdown_core_node **chain = markdown_core_reserve(edit->chain, &capacity, depth + 1, sizeof(*chain));
@@ -3596,8 +3617,11 @@ static bool S_chain_keep(markdown_core_edit *edit, markdown_core_node *root, con
      * (THE OLD NESTED TAIL IN PLACE). */
     uint32_t count = 0;
     for (size_t i = depth; i-- > 0;) {
-        edit->keeps[i] = i + 1 < depth ? path[i + 1] + 1 : path[depth];
-        edit->holds[i] = edit->chain[i]->child_count - edit->keeps[i];
+        edit->keeps[i] = i + 1 < depth ? path[i + 1] + 1 : S_leaf(parser, edit->chain[i]) ? 0 : path[depth];
+        /* A leaf's children are its inline content, which it reads again
+         * (THE LEAP): none is a tail. */
+        edit->holds[i] =
+            i + 1 == depth && S_leaf(parser, edit->chain[i]) ? 0 : edit->chain[i]->child_count - edit->keeps[i];
         edit->saves[i] = 0;
         edit->bases[i] = count;
         count += edit->holds[i];
@@ -3641,7 +3665,7 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
     if (structure && structure->element->reopen_block) {
         structure->element->reopen_block(structure, parser, node, next, blank);
     }
-    if (kind->flags & MARKDOWN_CORE_KIND_LINES) {
+    if (kind->flags & (MARKDOWN_CORE_KIND_LINES | MARKDOWN_CORE_KIND_IS_PARAGRAPH)) {
         /* Its content's marks were the flush's, which the reading let go
          * (THE LEAP). */
         node->content_map = (markdown_core_content_map){0, 0, 0};
@@ -3739,6 +3763,45 @@ static bool S_line_full(const markdown_core_parser *parser, const unsigned char 
     return false;
 }
 
+/* THE LEAP of a paragraph: the content marks of the `count` lines of the
+ * content's `size` bytes at `text`, which the content holds from `offset`
+ * on, read from the front's lines from `line` on, as the reading marked
+ * them: each line's content from the first byte past its own bytes'
+ * spaces and tabs (markdown_core_input_line, `own`) to its end. False when
+ * storage could not be had. */
+static bool S_leap_lines(markdown_core_parser *parser, markdown_core_node *block, const unsigned char *text,
+                         size_t size, size_t offset, size_t line, size_t count, bool cr) {
+    const markdown_core_parser_input *input = &parser->input;
+    const unsigned char *source = input->source;
+    size_t at = 0;
+    for (size_t n = 0; n < count; n++) {
+        const markdown_core_input_line *read = &input->lines.front.values[line + n];
+        size_t first = read->start + read->own;
+        while (first < read->end && (source[first] == ' ' || source[first] == '\t')) {
+            first++;
+        }
+        size_t next = S_line_ends(text, size, at, 1, cr);
+        next = next == SIZE_MAX ? size : next;
+        if (!S_append_input_marks(parser, block, (int)(line + n) + input->first_line, (bufsize_t)read->start,
+                                  (int)(first - read->start + 1), (bufsize_t)(next - at), (bufsize_t)(offset + at))) {
+            return false;
+        }
+        at = next;
+    }
+    return true;
+}
+
+/* THE LEAP of a paragraph, whose content's first `cut` bytes are its first
+ * lines', from the front's `first` to the rest point's `line`: their marks
+ * as the reading made them, and its inline nodes go, as the reading reads
+ * its inline content again. False when storage could not be had. */
+static bool S_leap_prose(markdown_core_parser *parser, markdown_core_node *block, size_t first, size_t line,
+                         size_t cut) {
+    assert(!block->child_count);
+    block->content_map = (markdown_core_content_map){0, 0, 0};
+    return S_leap_lines(parser, block, block->content.ptr, cut, 0, first, line - first, parser->stream->edit->leap->cr);
+}
+
 /* THE LEAP. A block of literal lines reads each of its lines as its opener
  * left it: what it is -- a fence's character and length, an HTML block's
  * type -- it set as it opened, and a line it reads decides nothing about
@@ -3783,6 +3846,11 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     size_t cut = S_line_ends(content->ptr, size, 0, line - first, leap->cr);
     assert(cut != SIZE_MAX);
     cut = cut == SIZE_MAX ? size : cut;
+    const bool prose = markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
+    leap->prose = prose;
+    if (prose && !S_leap_prose(parser, block, first, line, cut)) {
+        return false;
+    }
     markdown_core_strbuf_clear(&leap->aside);
     markdown_core_strbuf_put(&leap->aside, content->ptr + cut, (bufsize_t)(size - cut));
     if (leap->aside.oom) {
@@ -3803,8 +3871,10 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
         return true;
     }
     leap->last = back - 1 - shut;
-    /* The first old line past the edit. */
-    const size_t past = S_lines_back_from(&input->lines, edit->to);
+    /* The first old line past the edit; a paragraph's next, as the line a
+     * paragraph's line is read with may be one before it, which a table's
+     * delimiter row or a definition reads (THE LEAP). */
+    const size_t past = S_lines_back_from(&input->lines, edit->to) + prose;
     if (past < leap->last) {
         leap->at = (size_t)((int64_t)S_lines_back_start(&input->lines, past) + delta);
     }
@@ -3845,15 +3915,23 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit->taken = SIZE_MAX;
     if (stream->edit->leap) {
         stream->edit->leap->at = SIZE_MAX;
+        stream->edit->leap->prose = false;
     }
-    if (depth && !S_chain_keep(stream->edit, root, path, places, depth)) {
+    if (depth && !S_chain_keep(parser, stream->edit, root, path, places, depth)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     stream->edit->depth = depth;
-    if (!S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
-        !document->element->reopen_document(document, parser, root, child, (uint32_t)start) ||
-        !markdown_core_roster_reopen(&parser->roster, (uint32_t)start, input->lines.end)) {
+    /* A paragraph the rest point is in reads its inline content again whole
+     * (THE LEAP): what that content made, its lookups, anchors, headings
+     * and definitions, goes from where the paragraph starts. */
+    const markdown_core_node *leaf = depth ? stream->edit->chain[depth - 1] : NULL;
+    const size_t own = leaf && (markdown_core_parser_block_kind(parser, leaf)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH)
+                           ? (size_t)places[depth - 1].start
+                           : start;
+    if (!S_edit_keep(parser, root, child, line, prior, start, own, past > to ? past : to, delta) ||
+        !document->element->reopen_document(document, parser, root, child, (uint32_t)own) ||
+        !markdown_core_roster_reopen(&parser->roster, (uint32_t)own, input->lines.end)) {
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -3867,7 +3945,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
          * the chain was open on the line before (session_rest_in). */
         /* In a block of literal lines, the line before is one it took, which
          * reads blank as its bytes say (THE LEAP). */
-        if (markdown_core_parser_block_kind(parser, deepest)->flags & MARKDOWN_CORE_KIND_LINES) {
+        if (S_leaf(parser, deepest)) {
             blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, stream->edit->chain, depth,
                                                     line, 0);
             blank = blank == SIZE_MAX ? depth : blank;
@@ -3986,8 +4064,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     }
     /* A chain whose deepest block reads literal lines rests at a later line
      * of it (THE LEAP). */
-    const bool lines = depth && (markdown_core_parser_block_kind(parser, stream->edit->chain[depth - 1])->flags &
-                                 MARKDOWN_CORE_KIND_LINES);
+    const bool lines = depth && S_leaf(parser, stream->edit->chain[depth - 1]);
     if (lines && !S_leap_ready(parser, line, delta)) {
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -4468,6 +4545,12 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    if ((markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) &&
+        !S_leap_lines(parser, block, aside + from, to - from, (size_t)block->content.size - (to - from),
+                      lines->front.count - (land - k), land - k, leap->cr)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
     edit->line += land;
     input->scanned = resume;
     const markdown_core_input_line *before = &lines->front.values[lines->front.count - 1];
@@ -4494,8 +4577,11 @@ static void S_leap(markdown_core_parser *parser, size_t start) {
     markdown_core_line_zipper *lines = &input->lines;
     markdown_core_node *block = edit->chain[edit->depth - 1];
     leap->at = SIZE_MAX;
-    if (parser->at.current == block && !parser->at.pending && !stream->mark_count && !stream->requested &&
-        !stream->held) {
+    /* The block the reading lands in is still the leaf it reopened: a
+     * paragraph a line made another block, as a table, takes no old line
+     * back. */
+    if (parser->at.current == block && S_leaf(parser, block) && !parser->at.pending && !stream->mark_count &&
+        !stream->requested && !stream->held) {
         const size_t old = (size_t)((int64_t)start - edit->delta);
         const size_t k = S_lines_back_from(lines, old);
         const bool here = k < leap->last && S_lines_back_start(lines, k) == old;
@@ -9022,14 +9108,16 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
  * nothing to do. */
 /* The blocks of the chain an edit's reading reopened leave the completion
  * queue, which they joined as they settled again: their completion is done
- * (THE NESTED REOPEN). */
+ * (THE NESTED REOPEN). A paragraph the rest point is in stays: its inline
+ * content is read again whole (THE LEAP). */
 static void S_unqueue_chain(markdown_core_parser *parser) {
     const markdown_core_edit *edit = parser->stream->edit;
+    const size_t depth = edit->depth && edit->leap && edit->leap->prose ? edit->depth - 1 : edit->depth;
     markdown_core_node *last = NULL;
     for (markdown_core_node *node = parser->completion_first; node;) {
         markdown_core_node *next = markdown_core_scaffold_next(node);
         bool chained = false;
-        for (size_t i = 0; i < edit->depth && !chained; i++) {
+        for (size_t i = 0; i < depth && !chained; i++) {
             chained = edit->chain[i] == node;
         }
         if (chained) {
