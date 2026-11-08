@@ -3209,6 +3209,67 @@ static bool S_uses_flush(markdown_core_parser *parser) {
     return S_uses_settle(edit);
 }
 
+/* AN OPENER READ TO THE END (element.h, `stops`): the reading of an
+ * opener in the document's root that finds no stop line -- a `%%` comment
+ * or an envelope its text leaves open -- reads every line to the text's end,
+ * and what it decides does not depend on what they are: only on where the
+ * first stop line after the opener is, and there is none. Its reach would
+ * span every point after the opener, and every edit after it would read
+ * from it again, and every locate. It notes its opener instead, and an
+ * edit reads from before the opener only when the lines it writes hold a
+ * stop line of the opener's element; one that writes the opener's own line
+ * reads from before it as it is (session.c, session_stops). A reading that
+ * found its stop line notes what it read, and the opener goes. The openers
+ * are few: a stop line after an opener in the root closes it, so each
+ * element has one at most, past every stop line of the root. An edit's
+ * reading puts aside those it reads again from before (S_openers_aside);
+ * its splice keeps those of the old tail it took back, moved by the edit,
+ * and those it read again go, as their reading noted them anew. */
+static bool S_opener_find(const markdown_core_edit *edit, const markdown_core_element *element, size_t start,
+                          size_t *at) {
+    for (size_t i = 0; i < edit->opener_count; i++) {
+        const markdown_core_unclosed *opener = &edit->openers[i];
+        if (!opener->aside && opener->element == element && opener->start == start) {
+            *at = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The reopen at the rest point `start`: the openers a reading before it put
+ * aside and did not take back go, as it read them again, and those from
+ * `start` on are put aside. */
+static void S_openers_aside(markdown_core_edit *edit, size_t start) {
+    size_t kept = 0;
+    for (size_t i = 0; i < edit->opener_count; i++) {
+        markdown_core_unclosed opener = edit->openers[i];
+        if (!opener.aside) {
+            opener.aside = opener.start >= start;
+            edit->openers[kept++] = opener;
+        }
+    }
+    edit->opener_count = (uint32_t)kept;
+}
+
+/* The splice at `old`, a place of the old text: the openers put aside from
+ * it on are the old tail's and move by `delta`; those before it go. */
+static void S_openers_cut(markdown_core_edit *edit, size_t old, int64_t delta) {
+    size_t kept = 0;
+    for (size_t i = 0; i < edit->opener_count; i++) {
+        markdown_core_unclosed opener = edit->openers[i];
+        if (opener.aside) {
+            if (opener.start < old) {
+                continue;
+            }
+            opener.start = (uint32_t)((int64_t)opener.start + delta);
+            opener.aside = false;
+        }
+        edit->openers[kept++] = opener;
+    }
+    edit->opener_count = (uint32_t)kept;
+}
+
 /* The lines of the input from `line` on go. */
 static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) {
     S_lines_truncate(&input->lines, line, input);
@@ -3290,6 +3351,7 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
      * on, or up to it. */
     (void)S_lines_move(&input->lines, start, input->size, input);
     (void)S_reach_move(&stream->reach, start, input->size, edit);
+    S_openers_aside(edit, start);
     const size_t front = edit->uses.front.count, back = edit->uses.back_count;
     (void)S_uses_move(&edit->uses, start, input->size, edit);
     S_uses_follow(edit, front, back);
@@ -3878,6 +3940,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
     input->lines.back_count -= gone;
     edit->line = index;
     (void)S_reach_cut(&stream->reach, old);
+    S_openers_cut(edit, old, delta);
     S_uses_drop(edit, S_uses_back_from(&edit->uses, old));
     markdown_core_roster_splice(&parser->roster, old, delta);
     input->lines.end = (size_t)((int64_t)input->lines.end + delta);
@@ -4472,6 +4535,43 @@ void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start,
     }
 }
 
+void markdown_core_parser_reach_open(markdown_core_parser *parser, const markdown_core_element *element, size_t start) {
+    if (!markdown_core_parser_reaches(parser)) {
+        return;
+    }
+    assert(element->stops);
+    markdown_core_edit *edit = parser->stream->edit;
+    size_t at;
+    if (S_opener_find(edit, element, start, &at)) {
+        return;
+    }
+    markdown_core_unclosed *openers =
+        markdown_core_realloc(edit->openers, ((size_t)edit->opener_count + 1) * sizeof(*openers));
+    if (!openers) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    edit->openers = openers;
+    openers[edit->opener_count++] = (markdown_core_unclosed){element, (uint32_t)start, false};
+}
+
+void markdown_core_parser_reach_shut(markdown_core_parser *parser, const markdown_core_element *element, size_t start) {
+    if (!markdown_core_parser_reaches(parser)) {
+        return;
+    }
+    markdown_core_edit *edit = parser->stream->edit;
+    size_t at;
+    if (edit->opener_count && S_opener_find(edit, element, start, &at)) {
+        edit->openers[at] = edit->openers[--edit->opener_count];
+    }
+}
+
+const markdown_core_unclosed *markdown_core_parser_openers(const markdown_core_parser *parser, size_t *count) {
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    *count = edit ? edit->opener_count : 0;
+    return edit ? edit->openers : NULL;
+}
+
 /* The log in order of start, and with it the furthest end of the log's
  * entries that start no later (`furthest`), and the back in order of start
  * too, its last first: the first start of a reading that spans a point is
@@ -4909,6 +5009,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->tails);
         markdown_core_free(stream->edit->furthest);
         markdown_core_free(stream->edit->room);
+        markdown_core_free(stream->edit->openers);
         markdown_core_array_free(&stream->edit->uses.front);
         S_uses_release_back(&stream->edit->uses);
         markdown_core_strbuf_free(&stream->edit->use_labels);
@@ -6637,6 +6738,22 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_
     markdown_core_parser_reach(parser, (size_t)lookahead->saved.line_start, end);
 }
 
+/* The reading of an opener in the document's root whose element has stop
+ * lines notes its opener when it found none, and what it read when it
+ * found one (AN OPENER READ TO THE END). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_opener(markdown_core_parser *parser,
+                                                               const markdown_core_block_lookahead *lookahead) {
+    const size_t start = (size_t)lookahead->saved.line_start;
+    if (!lookahead->closed) {
+        markdown_core_parser_reach_open(parser, lookahead->opener, start);
+        return;
+    }
+    markdown_core_parser_reach_shut(parser, lookahead->opener, start);
+    if (lookahead->line > lookahead->saved.line_number + 2) {
+        S_reach_lookahead(parser, lookahead);
+    }
+}
+
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead) {
     markdown_core_parser *parser = lookahead->parser;
     int i;
@@ -6654,8 +6771,11 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     /* A reading of the document past the line after its own (THE REACH):
      * one that read no further decides nothing past the block that starts
      * there, which an edit reads from before. */
-    if (markdown_core_parser_reaches(parser) && lookahead->line > lookahead->saved.line_number + 2 &&
-        lookahead->saved.block_root == parser->root) {
+    if (lookahead->opener && lookahead->opener->stops && lookahead->depth == 1 &&
+        lookahead->saved.block_root == parser->root && markdown_core_parser_reaches(parser)) {
+        S_reach_opener(parser, lookahead);
+    } else if (markdown_core_parser_reaches(parser) && lookahead->line > lookahead->saved.line_number + 2 &&
+               lookahead->saved.block_root == parser->root) {
         S_reach_lookahead(parser, lookahead);
     }
     parser->at = lookahead->saved;
@@ -7392,12 +7512,19 @@ static void S_mark_unlend(markdown_core_parser *parser, size_t m) {
 /* A REJECT: the call at `index` of the mark at `m` is decided, and what the
  * commit read stays. The mark goes with its last call that waits, its
  * storage kept at the end of the marks. */
-static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t index, size_t end) {
+static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t index, size_t end, bool last) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
     const int line = mark->calls[index].line;
     const markdown_core_parser_input *input = &parser->input;
-    markdown_core_parser_reach(parser, line ? input->lines.front.values[line - input->first_line].start : 0, end);
+    const size_t start = line ? input->lines.front.values[line - input->first_line].start : 0;
+    /* A decision as the text ends that noted its opener read to the end
+     * (AN OPENER READ TO THE END). */
+    size_t at;
+    if (!last || !stream->edit || !stream->edit->opener_count ||
+        !S_opener_find(stream->edit, mark->calls[index].owner->element, start, &at)) {
+        markdown_core_parser_reach(parser, start, end);
+    }
     mark->calls[index].decided = true;
     mark->live--;
     if (index == mark->first) {
@@ -7484,7 +7611,7 @@ static bool S_feed(markdown_core_parser *parser, int through, const unsigned cha
                 return true;
             case MARKDOWN_CORE_CANDIDATE_REJECT:
                 gone = mark->live == 1;
-                S_candidate_drop(parser, m, k, (size_t)(limit - parser->input.source));
+                S_candidate_drop(parser, m, k, (size_t)(limit - parser->input.source), false);
                 if (!gone) {
                     k = S_call_next(mark, k);
                 }
@@ -7514,7 +7641,7 @@ static bool S_candidates_end(markdown_core_parser *parser) {
         }
         size_t end;
         markdown_core_parser_input_text(parser, &end);
-        S_candidate_drop(parser, 0, first, end);
+        S_candidate_drop(parser, 0, first, end, true);
     }
     return false;
 }

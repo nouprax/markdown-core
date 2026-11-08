@@ -574,7 +574,12 @@ int markdown_core_properties_fence(const unsigned char *data) {
     return markdown_core_is_line_end(data[dashes]) ? dashes : -1;
 }
 
-bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser, size_t *fence) {
+bool markdown_core_properties_stops(const unsigned char *line, size_t length) {
+    return length >= 3 && line[0] == '-' && line[1] == '-' && line[2] == '-';
+}
+
+bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
+                                     const markdown_core_element *element, size_t *fence) {
     size_t length;
     const unsigned char *source = markdown_core_parser_input_text(parser, &length);
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
@@ -611,8 +616,14 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     }
     work->line_work += fence_work;
     /* The envelope's reading decides the document's start from every line
-     * up to its fence, or to the text's end (blocks.c, THE REACH). */
-    markdown_core_parser_reach(parser, 0, closed ? close + 3 : length);
+     * up to its fence (blocks.c, THE REACH), or, when it found none, from
+     * where its first fence would be (AN OPENER READ TO THE END). */
+    if (closed) {
+        markdown_core_parser_reach_shut(parser, element, 0);
+        markdown_core_parser_reach(parser, 0, close + 3);
+    } else {
+        markdown_core_parser_reach_open(parser, element, 0);
+    }
     *fence = close;
     return closed;
 }

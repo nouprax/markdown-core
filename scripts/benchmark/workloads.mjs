@@ -1219,6 +1219,44 @@ export function hardScripts() {
                 .insert(5 + bytes(opener) + 5, closer)
                 .remove(5, 5 + bytes(opener))
         );
+    /* An opener its text leaves open, a `%%` comment or the document's
+     * envelope, read every line after it and found no stop line: an edit far
+     * after it reads only near the edit, one that writes a stop line after it
+     * -- at the root, in a list item, or under a quote, which is no stop line
+     * of the root's -- reads from before it, and so does one that writes its
+     * line. */
+    for (const [kind, lead, opener, closer] of [
+        ["comment", "lead\n\n", "%%\n", "%%\n"],
+        ["properties", "", "---\n", "---\n"]
+    ]) {
+        const paragraphs = Array.from({ length: 40 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);
+        const head = lead + opener + paragraphs.slice(0, 20).join("");
+        const at = bytes(head);
+        const before = at - bytes(paragraphs[19]);
+        const after = at + bytes(paragraphs[20]) + bytes(paragraphs[21]);
+        const text = head + paragraphs.slice(20).join("") + "> quote\n\n- item\n\n  more\n";
+        const item = bytes(text) - bytes("  more\n");
+        const quote = bytes(text) - bytes("> quote\n\n- item\n\n  more\n");
+        add(`unclosed-${kind}`, text, (s) =>
+            s
+                .insert(at + 1, "x")
+                .within(before, after)
+                .remove(at + 1, at + 2)
+                .within(before, after)
+                .toggle(at, `${closer}\n`)
+                .toggle(at, `  ${closer}`)
+                .toggle(item, `${closer}`)
+                .toggle(quote, `> ${closer}`)
+                .toggle(bytes(lead) + 1, "x")
+                .toggle(bytes(lead) + bytes(opener), "x")
+                .remove(bytes(lead), bytes(lead) + bytes(opener))
+                .insert(bytes(lead), opener)
+        );
+    }
+    /* The same in a quote, whose opener's reading the quote's end stops. */
+    add("unclosed-comment-in-quote", "> %%\n> one\n>\n> two\n>\n> three\n\nafter\n", (s) =>
+        s.toggle(16, "x").toggle(19, "> %%\n").toggle(29, "> %%\n").toggle(2, "x")
+    );
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));

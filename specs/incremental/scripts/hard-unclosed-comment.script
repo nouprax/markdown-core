@@ -1,0 +1,21 @@
+markdown-core incremental script 2
+script hard-unclosed-comment hard
+flush
+edit 133 133 78
+expect within 125 146
+edit 133 134 -
+expect within 125 146
+edit 132 132 25250a0a
+edit 132 136 -
+edit 132 132 202025250a
+edit 132 137 -
+edit 289 289 25250a
+edit 289 292 -
+edit 272 272 3e2025250a
+edit 272 277 -
+edit 7 7 78
+edit 7 8 -
+edit 9 9 78
+edit 9 10 -
+edit 6 9 -
+edit 6 6 25250a

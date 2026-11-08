@@ -45,6 +45,25 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
     return markdown_core_is_blank_to_line_end(data, i + 2, len);
 }
 
+/* THE STOP LINES (element.h, `stops`): a line whose content is the fence,
+ * at any indentation, which takes in every line that closes a reading from
+ * an opener in the document's root. */
+static bool comment_stops(const unsigned char *line, size_t length) {
+    size_t i = 0;
+    while (i < length && (line[i] == ' ' || line[i] == '\t')) {
+        i++;
+    }
+    if (i + 2 > length || line[i] != '%' || line[i + 1] != '%') {
+        return false;
+    }
+    for (i += 2; i < length; i++) {
+        if (line[i] != ' ' && line[i] != '\t' && line[i] != '\r' && line[i] != '\n') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static int probe_comment_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                markdown_core_chunk *input, int first, int indent, markdown_core_block_reader *reader) {
     (void)self;
@@ -100,6 +119,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
     }
     markdown_core_block_reader reader = {&lines, read_block_line};
     const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
+    markdown_core_parser_lookahead_opener(&lines.lookahead, self->element, closed);
     markdown_core_parser_lookahead_end(&lines.lookahead);
     *undecided = !closed && lines.undecided;
     return closed && !parser->error;
@@ -272,6 +292,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .try_opening_block = open_block,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
+    .stops = comment_stops,
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_block_gate = {.bytes = "%"},
     .probe_block = probe_comment_block,

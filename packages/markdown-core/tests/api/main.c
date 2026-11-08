@@ -10251,6 +10251,43 @@ static void session_locates_table_rows(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* An opener the text leaves open notes no reach (blocks.c, AN OPENER READ
+ * TO THE END), and the text before a cursor may end in a stop line of it
+ * that the whole line is not: `%%` and a tab before `x`, or `---` before
+ * `-`. At every place of each text, the session's context is the document
+ * query's. */
+static void session_locates_unclosed_openers(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "%%\n\na\n\nb\n\nc\n\n%%\tx\n",
+        "---\n\na\n\nb\n\nc\n\n----\n",
+        "lead\n\n%%\n\na\n\n- b\n\n  %% x\n\n> %%\n",
+    };
+    bool same = true;
+    markdown_core_position at = {1, 1};
+    size_t which = 0;
+    for (size_t i = 0; same && i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[which = i];
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                         &session) == MARKDOWN_CORE_OK &&
+               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+        at = (markdown_core_position){1, 1};
+        for (const char *c = source; same && *c; c++) {
+            const markdown_core_status located = markdown_core_session_locate(session, at);
+            same = located == MARKDOWN_CORE_OK && session_as_queried(session, at);
+            if (*c == '\n') {
+                at = (markdown_core_position){at.line + 1, 1};
+            } else {
+                at.column++;
+            }
+        }
+        markdown_core_session_close(session);
+    }
+    OK(runner, same, "a locate after an unclosed opener is the document query, text %zu at %d:%d", which, at.line,
+       at.column);
+}
+
 /* A long list, and a long one nested in one of its items, find the rest
  * point of a line by the widths of their items and fold the items kept
  * from the marks of the chunks before (session.c, THE NESTS): a locate at
@@ -12025,6 +12062,7 @@ int main(void) {
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
     session_locates_table_rows(runner);
+    session_locates_unclosed_openers(runner);
     session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);

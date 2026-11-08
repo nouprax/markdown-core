@@ -68,6 +68,12 @@ document documents/hard-open-html.md
 script documents/hard-open-html.md scripts/hard-open-html.script
 document documents/hard-open-directive.md
 script documents/hard-open-directive.md scripts/hard-open-directive.script
+document documents/hard-unclosed-comment.md
+script documents/hard-unclosed-comment.md scripts/hard-unclosed-comment.script
+document documents/hard-unclosed-properties.md
+script documents/hard-unclosed-properties.md scripts/hard-unclosed-properties.script
+document documents/hard-unclosed-comment-in-quote.md
+script documents/hard-unclosed-comment-in-quote.md scripts/hard-unclosed-comment-in-quote.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

@@ -1,0 +1,21 @@
+markdown-core incremental script 2
+script hard-unclosed-properties hard
+flush
+edit 128 128 78
+expect within 120 141
+edit 128 129 -
+expect within 120 141
+edit 127 127 2d2d2d0a0a
+edit 127 132 -
+edit 127 127 20202d2d2d0a
+edit 127 133 -
+edit 284 284 2d2d2d0a
+edit 284 288 -
+edit 267 267 3e202d2d2d0a
+edit 267 273 -
+edit 1 1 78
+edit 1 2 -
+edit 4 4 78
+edit 4 5 -
+edit 0 4 -
+edit 0 0 2d2d2d0a
