@@ -3189,6 +3189,12 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
             ok =
                 markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept);
             deepest->child_count = kept;
+            /* None kept: the reading settles its new children into an array
+             * of its own (blocks.c, S_settle_scaffold). */
+            if (!kept) {
+                markdown_core_node_pool_bytes_free(parser->pool, deepest->children);
+                deepest->children = NULL;
+            }
         }
     }
     /* The old children are recorded as the reading passes them: those it
