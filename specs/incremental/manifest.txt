@@ -72,8 +72,6 @@ document documents/hard-unclosed-comment.md
 script documents/hard-unclosed-comment.md scripts/hard-unclosed-comment.script
 document documents/hard-unclosed-properties.md
 script documents/hard-unclosed-properties.md scripts/hard-unclosed-properties.script
-document documents/hard-literal-quoted-item-prefix-byte.md
-script documents/hard-literal-quoted-item-prefix-byte.md scripts/hard-literal-quoted-item-prefix-byte.script
 document documents/hard-unclosed-comment-in-quote.md
 script documents/hard-unclosed-comment-in-quote.md scripts/hard-unclosed-comment-in-quote.script
 document documents/hard-literal-pre.md
@@ -118,6 +116,8 @@ document documents/hard-literal-quoted-item-pre.md
 script documents/hard-literal-quoted-item-pre.md scripts/hard-literal-quoted-item-pre.script
 document documents/hard-literal-quoted-item-indented.md
 script documents/hard-literal-quoted-item-indented.md scripts/hard-literal-quoted-item-indented.script
+document documents/hard-literal-quoted-item-prefix-byte.md
+script documents/hard-literal-quoted-item-prefix-byte.md scripts/hard-literal-quoted-item-prefix-byte.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

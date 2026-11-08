@@ -1355,6 +1355,15 @@ export function hardScripts() {
             );
         }
     }
+    /* A code line in a quoted list item whose own bytes are a `>`, which a
+     * rest point after it must not read as a blank line of the quote's: the
+     * list stays tight when the line after it changes. */
+    add(
+        "literal-quoted-item-prefix-byte",
+        "lead\n\n> -     first\n>       one\n>       >\n>       two\n>       three\n\nafter\n",
+        (s) =>
+            s.edit(42, 53, ">   x").edit(42, 47, ">       two").remove(32, 42).insert(32, ">       >\n").toggle(50, " ")
+    );
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
