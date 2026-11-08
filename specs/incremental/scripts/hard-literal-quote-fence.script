@@ -1,0 +1,24 @@
+markdown-core incremental script 2
+script hard-literal-quote-fence hard
+flush
+edit 79 79 78
+edit 79 80 -
+edit 78 78 6060600a3e20
+edit 78 84 -
+edit 76 76 780a
+edit 76 78 -
+edit 78 78 2320680a3e20
+edit 78 84 -
+edit 78 78 0a3e20
+edit 78 81 -
+edit 78 78 0a0a
+edit 78 80 -
+edit 75 76 -
+edit 75 75 0a
+edit 160 160 78
+edit 160 161 -
+edit 159 159 6060600a3e20
+edit 159 165 -
+edit 177 177 78
+edit 177 178 -
+edit 78 91 790a3e207a

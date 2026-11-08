@@ -579,6 +579,36 @@ static markdown_core_place nest_window(const session_widths *widths, const markd
     return place;
 }
 
+/* Whether the edit that begins on line `edited` rests at that line inside
+ * `block`, the child `held` of the chain's block `level` - 1 or of the root,
+ * whose source is `window`, as `rest` then says: a block of literal lines
+ * that holds the line past its first (blocks.c, THE LEAP), which no reading
+ * from before the line read past, but the root's child's own close, as
+ * `rest` notes it, from where that child starts. */
+static bool session_literal(const markdown_core_session *session, markdown_core_node *block, uint32_t held,
+                            markdown_core_place window, size_t level, size_t edited, session_rest_point *rest) {
+    const markdown_core_parser *parser = session->committed;
+    if (level == SESSION_DEPTH || !(markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
+        markdown_core_parser_line_of(parser, window.start) >= edited ||
+        markdown_core_parser_line_of(parser, window.end - 1) < edited) {
+        return false;
+    }
+    const size_t start = session_line_start(session, edited);
+    size_t reached;
+    if (markdown_core_parser_spanned(parser, start, &reached) &&
+        (reached < rest->close ||
+         markdown_core_parser_spanned_inside(parser, start, rest->close, rest->close, rest->ends, &reached))) {
+        return false;
+    }
+    rest->chain[level] = block;
+    rest->starts[level] = rest->priors[level] = window.start;
+    rest->path[level] = held;
+    rest->path[level + 1] = 0;
+    rest->depth = level + 1;
+    rest->line = edited;
+    return true;
+}
+
 /* The rest point inside `block`, the chain's block `level`, whose source is
  * `window`, for the edit that begins on line `edited`: the start of a child
  * of the block on a later line of it than its first, the deepest there is,
@@ -629,8 +659,11 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
         return false;
     }
     const markdown_core_place holder = nest_window(widths, block, window.start, held);
-    const bool below = holder.end > start &&
-                       session_rest_in(session, block->children[held], holder, level + 1, edited, opens + 1, rest);
+    /* Or inside the child, a block of literal lines (THE LEAP). */
+    const bool below =
+        holder.end > start &&
+        (session_rest_in(session, block->children[held], holder, level + 1, edited, opens + 1, rest) ||
+         session_literal(session, block->children[held], (uint32_t)held, holder, level + 1, edited, rest));
     /* A rest point looked for below may have made a nest, which moves the
      * nests: the block's is found again. */
     widths = nest_of(edits, block);
@@ -707,35 +740,6 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     return false;
 }
 
-/* Whether the edit that begins on line `edited` rests at that line inside
- * `block`, the root's child `held`, whose source is `window`, as `rest`
- * then says: a block of literal lines that holds the line past its first
- * (blocks.c, THE LEAP), which no reading from before the line read past,
- * but the block's own close, as `rest` notes it. */
-static bool session_literal(const markdown_core_session *session, markdown_core_node *block, uint32_t held,
-                            markdown_core_place window, size_t edited, session_rest_point *rest) {
-    const markdown_core_parser *parser = session->committed;
-    if (!(markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
-        markdown_core_parser_line_of(parser, window.start) >= edited ||
-        markdown_core_parser_line_of(parser, window.end - 1) < edited) {
-        return false;
-    }
-    const size_t start = session_line_start(session, edited);
-    size_t reached;
-    if (markdown_core_parser_spanned(parser, start, &reached) &&
-        (reached < window.start ||
-         markdown_core_parser_spanned_inside(parser, start, window.start, rest->close, rest->ends, &reached))) {
-        return false;
-    }
-    rest->chain[0] = block;
-    rest->starts[0] = rest->priors[0] = window.start;
-    rest->path[0] = held;
-    rest->path[1] = 0;
-    rest->depth = 1;
-    rest->line = edited;
-    return true;
-}
-
 /* The rest point in the root before the line that starts at `start`, as
  * session_rest finds it: before the root's child `*child`, at the start of
  * input line `*line`. */
@@ -808,7 +812,7 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     rest->ends[1] = (held + 1 < root->child_count ? widths_start(widths, root, held + 1) : session->text.count) + 1;
     rest->ends[2] = session_line_start(session, markdown_core_parser_line_of(session->committed, window.end - 1)) + 1;
     if (!inside) {
-        if (session_literal(session, root->children[held], held, window, edited, rest)) {
+        if (session_literal(session, root->children[held], held, window, 0, edited, rest)) {
             *child = held + 1;
             *line = rest->line;
         }
@@ -845,12 +849,15 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
 }
 
 /* The fold marks of the `depth` blocks of the chain of `rest`, which
- * session_rest_in found nests for, or NULL for one it did not. */
+ * session_rest_in found nests for, or NULL for one it did not, as a block
+ * of literal lines the chain ends in (session_literal). The nests are
+ * found, never made: a nest made for a later block would move the nests
+ * whose marks the earlier ones point into. */
 static void session_chain_folds(session_edits *edits, const session_rest_point *rest, size_t depth,
                                 markdown_core_folds **folds) {
     for (size_t level = 0; level < depth; level++) {
-        session_nest *nest = nest_find(edits, rest->chain[level]);
-        folds[level] = nest ? &nest->folds : NULL;
+        const size_t *slot = nest_slot(edits, rest->chain[level]);
+        folds[level] = slot && *slot ? &edits->nests[*slot - 1].folds : NULL;
     }
 }
 

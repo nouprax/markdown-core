@@ -1,0 +1,24 @@
+markdown-core incremental script 2
+script hard-literal-item-pre hard
+flush
+edit 79 79 78
+edit 79 80 -
+edit 78 78 3c2f7072653e0a2020
+edit 78 87 -
+edit 76 76 780a
+edit 76 78 -
+edit 78 78 2320680a2020
+edit 78 84 -
+edit 78 78 0a2020
+edit 78 81 -
+edit 78 78 0a0a
+edit 78 80 -
+edit 75 76 -
+edit 75 75 0a
+edit 159 159 78
+edit 159 160 -
+edit 158 158 3c2f7072653e0a2020
+edit 158 167 -
+edit 179 179 78
+edit 179 180 -
+edit 78 91 790a20207a

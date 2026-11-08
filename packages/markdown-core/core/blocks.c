@@ -3508,6 +3508,17 @@ size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const
     if (before > start) {
         return markdown_core_parser_abuts(parser, chain[depth - 1]) ? depth : SIZE_MAX;
     }
+    /* A line a block of literal lines took is blank only when its own bytes
+     * are, past the prefixes the chain's containers took: a literal byte a
+     * container's prefix may be, as a `>` in code, is the block's. */
+    if (markdown_core_parser_block_kind(parser, chain[depth - 1])->flags & MARKDOWN_CORE_KIND_LINES) {
+        for (size_t at = start + S_lines_at(&parser->input.lines, line - 1).own;
+             at < end && text[at] != '\n' && text[at] != '\r'; at++) {
+            if (text[at] != ' ' && text[at] != '\t') {
+                return depth;
+            }
+        }
+    }
     bool raw = true;
     for (size_t at = start; at < end && text[at] != '\n' && text[at] != '\r'; at++) {
         const unsigned char c = text[at];
@@ -3715,6 +3726,19 @@ static size_t S_line_ends(const unsigned char *bytes, size_t size, size_t from, 
     return at;
 }
 
+/* Whether the line from `start` to `end` of `text` holds a byte other than
+ * spaces, tabs and container prefix bytes, which sets the flags a line sets
+ * of any block (element.h, `speculative_flags`) as no line before it
+ * matters. */
+static bool S_line_full(const markdown_core_parser *parser, const unsigned char *text, size_t start, size_t end) {
+    for (size_t at = start; at < end && text[at] != '\n' && text[at] != '\r'; at++) {
+        if (!parser->dialect->container_prefix[text[at]]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* THE LEAP. A block of literal lines reads each of its lines as its opener
  * left it: what it is -- a fence's character and length, an HTML block's
  * type -- it set as it opened, and a line it reads decides nothing about
@@ -3746,6 +3770,12 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     }
     markdown_core_leap *leap = edit->leap;
     leap->at = SIZE_MAX;
+    leap->blanks = false;
+    for (size_t level = 0; level + 1 < edit->depth; level++) {
+        const markdown_core_element_instance *structure =
+            markdown_core_parser_block_kind(parser, edit->chain[level])->structure;
+        leap->blanks = leap->blanks || (structure && structure->element->speculative_flags);
+    }
     markdown_core_strbuf *content = &block->content;
     const size_t size = (size_t)content->size;
     leap->cr = size && memchr(content->ptr, '\r', size);
@@ -3835,10 +3865,18 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         const markdown_core_node *deepest = stream->edit->chain[depth - 1];
         /* At the first child of a block whose children abut, no block of
          * the chain was open on the line before (session_rest_in). */
-        blank = !path[depth]
-                    ? depth
-                    : markdown_core_parser_rest_blank(parser, (const unsigned char *)source, stream->edit->chain, depth,
-                                                      line, deepest->children[path[depth] - 1]->place.end);
+        /* In a block of literal lines, the line before is one it took, which
+         * reads blank as its bytes say (THE LEAP). */
+        if (markdown_core_parser_block_kind(parser, deepest)->flags & MARKDOWN_CORE_KIND_LINES) {
+            blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, stream->edit->chain, depth,
+                                                    line, 0);
+            blank = blank == SIZE_MAX ? depth : blank;
+        } else {
+            blank = !path[depth]
+                        ? depth
+                        : markdown_core_parser_rest_blank(parser, (const unsigned char *)source, stream->edit->chain,
+                                                          depth, line, deepest->children[path[depth] - 1]->place.end);
+        }
         assert(blank != SIZE_MAX);
     }
     S_settled_release(parser, &stream->settled);
@@ -4397,9 +4435,9 @@ static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index
 }
 
 /* THE LEAP, over the old lines from the back's `k` from the focus, which
- * starts at `old` of the old text, to the back's `last`, the last whose
- * content the block holds, which the reading reads next. */
-static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block, size_t k, size_t old) {
+ * starts at `old` of the old text, to the back's `land`, which the reading
+ * reads next. */
+static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block, size_t k, size_t old, size_t land) {
     markdown_core_edit *edit = parser->stream->edit;
     const markdown_core_leap *leap = edit->leap;
     markdown_core_parser_input *input = &parser->input;
@@ -4408,12 +4446,12 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
     const unsigned char *aside = leap->aside.ptr;
     const size_t size = (size_t)leap->aside.size;
     const size_t from = S_line_ends(aside, size, 0, k, leap->cr);
-    const size_t to = from == SIZE_MAX ? SIZE_MAX : S_line_ends(aside, size, from, leap->last - k, leap->cr);
+    const size_t to = from == SIZE_MAX ? SIZE_MAX : S_line_ends(aside, size, from, land - k, leap->cr);
     assert(to != SIZE_MAX);
     if (to == SIZE_MAX) {
         return;
     }
-    const size_t resume = (size_t)((int64_t)S_lines_back_start(lines, leap->last) + delta);
+    const size_t resume = (size_t)((int64_t)S_lines_back_start(lines, land) + delta);
     markdown_core_strbuf_put_ahead(&block->content, aside + from, (bufsize_t)(to - from));
     if (block->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -4430,7 +4468,7 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    edit->line += leap->last;
+    edit->line += land;
     input->scanned = resume;
     const markdown_core_input_line *before = &lines->front.values[lines->front.count - 1];
     parser->at.line_number = (int)lines->front.count + input->first_line - 1;
@@ -4442,22 +4480,39 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
 /* THE LEAP, at the start of the line at `start` of the new text, where the
  * line loop's limit stopped: from an old line the block reads open, or
  * tried again at the next old line, or no more once the block is not the
- * one open there. The old child the reading tries next is the limit then. */
+ * one open there. The old child the reading tries next is the limit then.
+ * Under a block that keeps flags a line sets (`blanks`), the line the
+ * reading read last and the old line before the one it reads next both
+ * hold more than prefixes, so each sets them as the other would: the
+ * reading leaps from the next old line when the first does not, and to an
+ * earlier one when the second does not. */
 static void S_leap(markdown_core_parser *parser, size_t start) {
     const markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_leap *leap = edit->leap;
-    markdown_core_line_zipper *lines = &parser->input.lines;
+    markdown_core_parser_input *input = &parser->input;
+    markdown_core_line_zipper *lines = &input->lines;
     markdown_core_node *block = edit->chain[edit->depth - 1];
     leap->at = SIZE_MAX;
     if (parser->at.current == block && !parser->at.pending && !stream->mark_count && !stream->requested &&
         !stream->held) {
         const size_t old = (size_t)((int64_t)start - edit->delta);
         const size_t k = S_lines_back_from(lines, old);
-        if (k < leap->last && S_lines_back_start(lines, k) != old) {
-            leap->at = (size_t)((int64_t)S_lines_back_start(lines, k) + edit->delta);
-        } else if (k < leap->last) {
-            S_leap_over(parser, block, k, old);
+        const bool here = k < leap->last && S_lines_back_start(lines, k) == old;
+        const markdown_core_input_line *read = &lines->front.values[lines->front.count - 1];
+        if (here && (!leap->blanks || S_line_full(parser, input->source, read->start, read->end))) {
+            size_t land = leap->last;
+            while (leap->blanks && land > k &&
+                   !S_line_full(parser, input->source,
+                                (size_t)((int64_t)S_lines_back_start(lines, land - 1) + edit->delta),
+                                (size_t)((int64_t)S_lines_back_start(lines, land) + edit->delta))) {
+                land--;
+            }
+            if (land > k) {
+                S_leap_over(parser, block, k, old, land);
+            }
+        } else if (k + here < leap->last) {
+            leap->at = (size_t)((int64_t)S_lines_back_start(lines, k + here) + edit->delta);
         }
     }
     edit->point = leap->at < leap->next ? leap->at : leap->next;
@@ -5655,6 +5710,15 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
         last->place.end = (uint32_t)before;
         blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, chain, depth, line, before);
         assert(blank != SIZE_MAX);
+    } else if (depth && (markdown_core_parser_block_kind(parser, deepest)->flags & MARKDOWN_CORE_KIND_LINES)) {
+        /* As the reopen reads it (THE LEAP). */
+        markdown_core_node *chain[64];
+        assert(depth <= sizeof(chain) / sizeof(*chain));
+        for (size_t level = 0; level < depth; level++) {
+            chain[level] = levels[level + 1].node;
+        }
+        blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, chain, depth, line, 0);
+        blank = blank == SIZE_MAX ? depth : blank;
     }
     /* What the flush left of the reading, which the look puts back. */
     const markdown_core_parser_input was = *input;
