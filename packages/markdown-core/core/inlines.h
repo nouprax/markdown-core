@@ -18,6 +18,10 @@ bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
  * (parser.h, markdown_core_inline_settle). */
 bool markdown_core_parse_inlines_settle(markdown_core_parser *parser, markdown_core_node *parent,
                                         markdown_core_inline_settle *settle);
+/* The same, stopping at the first of `stops` it meets, when not NULL
+ * (markdown_core_seam_stops). */
+bool markdown_core_parse_inlines_seam(markdown_core_parser *parser, markdown_core_node *parent,
+                                      markdown_core_inline_settle *settle, markdown_core_seam_stops *stops);
 
 /* Shared field ownership and inline parsing. Parsing returns whether ordinary
  * raw whitespace occurred, including in nested fields; OOM stays on parser. */

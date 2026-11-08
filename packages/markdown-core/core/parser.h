@@ -699,7 +699,21 @@ typedef struct {
      * byte, and the content offset that place starts at. */
     bufsize_t offset;
     uint32_t index, uses, line, source, place, read;
+    /* How far before it the child before it ends in the content. */
+    uint32_t lead;
 } markdown_core_seam;
+
+/* THE SEAMS a paragraph's parse may meet (blocks.c): the old seams past
+ * the edit, `count` of them, the nearest last, each measured back from the
+ * content's `end`; `met` once the parse stopped at the nearest, which no
+ * anchor or note the parse made since the roster held `anchors` came
+ * before. */
+typedef struct markdown_core_seam_stops {
+    const markdown_core_seam *items;
+    size_t count, anchors;
+    bufsize_t end;
+    bool met;
+} markdown_core_seam_stops;
 
 typedef struct markdown_core_leap {
     markdown_core_strbuf aside;
@@ -714,6 +728,23 @@ typedef struct markdown_core_leap {
     uint32_t held;
     size_t taken, anchors;
     markdown_core_inline_settle settle;
+    /* THE OLD TAIL OF A PARAGRAPH (blocks.c): the seams past the edit, as
+     * stops measured back from where the paragraph's content, children,
+     * uses, lines, source and places ended (`ends`), the nearest last; the
+     * paragraph's old children past the seam, still in its storage, from
+     * `seam.index` up to `count`, while `kept`; the uses past its seam's
+     * the front still holds, `rest`; where the leap landed, `land` bytes
+     * before the old content's end, and where the new content had come to
+     * then, `landed`, while `lands`; once the parse met a stop, the child
+     * the old tail starts at, `tail`, and where the reading's children end
+     * among the paragraph's, `spliced`, which the publish walks to. */
+    markdown_core_seam *backs;
+    size_t back_count, back_room;
+    markdown_core_seam ends;
+    uint32_t count, tail, spliced;
+    size_t rest, land, landed, uses;
+    bool kept, lands;
+    markdown_core_seam_stops stops;
 } markdown_core_leap;
 
 typedef struct markdown_core_edit {

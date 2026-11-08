@@ -1242,6 +1242,34 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_report(markdown_core_p
     }
 }
 
+/* Whether the run, at a token start it lists, meets the nearest of its
+ * stops (markdown_core_seam_stops): the start is the stop's, past a child
+ * that is not a Text and ends where the old one before the stop did, and
+ * the run made no anchor or note, which the stops' paragraph would keep
+ * no seams for. The stops before the start go. */
+static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    markdown_core_seam_stops *stops = inline_state->stops;
+    const bufsize_t pos = inline_state->pos;
+    while (stops->count && stops->end - stops->items[stops->count - 1].offset < pos) {
+        stops->count--;
+    }
+    if (!stops->count || stops->end - stops->items[stops->count - 1].offset != pos) {
+        return false;
+    }
+    if (inline_state->settle->note_count ||
+        parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records != stops->anchors) {
+        stops->count = 0;
+        return false;
+    }
+    const markdown_core_node *last = markdown_core_scaffold_of(inline_state->owner)->last;
+    if (!last || last->kind == MARKDOWN_CORE_NODE_TEXT ||
+        (bufsize_t)last->place.end + (bufsize_t)stops->items[stops->count - 1].lead != pos) {
+        return false;
+    }
+    stops->met = true;
+    return true;
+}
+
 /* The tokens of a run that lists settle starts: each token's start is where
  * its end reads begin, and a start with no end read before it at which no
  * element holds anything open is listed. */
@@ -1254,6 +1282,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settling(markdown_core_p
         }
         inline_state->token = inline_state->pos;
         if (inline_state->undecided == INT32_MAX && S_holds_none_open(parser, inline_state)) {
+            if (inline_state->stops && S_seam_meets(parser, inline_state)) {
+                break;
+            }
             S_settle_start(inline_state);
         }
         if (inline_state->error || !markdown_core_inline_parse_inline(parser, inline_state)) {
@@ -1324,8 +1355,14 @@ bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
 
 bool markdown_core_parse_inlines_settle(markdown_core_parser *parser, markdown_core_node *parent,
                                         markdown_core_inline_settle *settle) {
+    return markdown_core_parse_inlines_seam(parser, parent, settle, NULL);
+}
+
+bool markdown_core_parse_inlines_seam(markdown_core_parser *parser, markdown_core_node *parent,
+                                      markdown_core_inline_settle *settle, markdown_core_seam_stops *stops) {
     markdown_core_inline_state inline_state;
     markdown_core_inline_start_inlines(parser, parent, true, &inline_state);
+    inline_state.stops = stops;
     settle->count = 0;
     settle->note_count = 0;
     settle->misses = 0;
