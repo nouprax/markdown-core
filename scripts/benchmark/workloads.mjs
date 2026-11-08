@@ -1364,6 +1364,40 @@ export function hardScripts() {
         (s) =>
             s.edit(42, 53, ">   x").edit(42, 47, ">       two").remove(32, 42).insert(32, ">       >\n").toggle(50, " ")
     );
+    /* A paragraph rests at its later lines and leaps past the edit to its
+     * last line (huge paragraphs, H1): typing at the start of its 2nd, 3rd,
+     * 4th and 6th lines and inside them, at the root, in a quote, in a list
+     * item and lazily in a quote, toggles inline openers and closers and
+     * every block a line start may open, and a line made blank and back. */
+    for (const [where, first, prefix] of [
+        ["", "", ""],
+        ["-in-quote", "> ", "> "],
+        ["-in-item", "- ", "  "],
+        ["-lazy", "> ", ""]
+    ]) {
+        const lines = [
+            "alpha *one",
+            "two* beta [link",
+            "text](/u) gamma `code",
+            "span` delta",
+            "line five",
+            "line six",
+            "line seven",
+            "line eight"
+        ].map((line, i) => `${i ? prefix : first}${line}\n`);
+        const lead = "before\n\n";
+        const text = lead + lines.join("") + "\nafter\n";
+        const start = (i) => bytes(lead) + bytes(lines.slice(0, i).join("")) + bytes(i ? prefix : first);
+        const marks = ["x", "*", "[", "`", "]", "\n", "\n\n", "==\n", "---\n", "| a |\n", "| - |\n", ": d\n"];
+        marks.push("> q\n", "- i\n", "    c\n", "[r]: /v\n", "<div>\n", "```\n", "\\");
+        add(`paragraph-leap${where}`, text, (s) => {
+            for (const line of [1, 2, 3, 5]) {
+                for (const mark of marks) s.toggle(start(line), mark);
+                s.toggle(start(line) + 3, "x");
+            }
+            return s.edit(start(4), start(5), "\n").edit(start(4), start(4) + 1, "line five\n");
+        });
+    }
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
