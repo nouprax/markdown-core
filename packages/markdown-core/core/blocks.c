@@ -2062,7 +2062,7 @@ static void S_settled_release(markdown_core_parser *parser, markdown_core_settle
  * publish placed them (markdown_core_publish_keep_left). */
 static void S_settled_leave(markdown_core_parser *parser, markdown_core_settled *settled,
                             const markdown_core_node *node) {
-    if (!markdown_core_publish_keep_left(parser, node, settled->nodes.values, (uint32_t)settled->nodes.count)) {
+    if (!markdown_core_publish_keep_left(parser, node, settled->nodes.values, (uint32_t)settled->nodes.count, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     S_settled_clear(settled);
@@ -2351,11 +2351,186 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     }
 }
 
+static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count);
+static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, bufsize_t start);
+
+/* The paragraph `node`, which an edit's reading reopened at a seam, lets go
+ * of the children it kept and of the uses taken back with them: it reads
+ * its content whole (THE SEAMS). */
+static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_leap *leap = edit->leap;
+    if (node->child_count) {
+        if (!markdown_core_publish_keep_left(parser, node, node->children, node->child_count, 0)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        markdown_core_node_pool_bytes_free(parser->pool, node->children);
+        node->children = NULL;
+        node->child_count = 0;
+    }
+    if (leap->seam.uses) {
+        S_uses_erase(edit, leap->taken, leap->seam.uses);
+    }
+    leap->seam = (markdown_core_seam){0};
+    leap->seam_count = 0;
+}
+
+void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_edit *edit = parser->stream->edit;
+    if (!edit || !edit->leap || !edit->leap->armed || edit->leap->node != node) {
+        return;
+    }
+    S_seam_undo(parser, node);
+    edit->leap->armed = false;
+    edit->leap->node = NULL;
+    parser->stream->settled.address = NULL;
+}
+
+/* The completion of the paragraph `node` an edit's reading reopened (THE
+ * SEAMS): its content parsed from the seam, the children before it kept,
+ * listing where the next seams may be; or whole, the seam let go, when the
+ * paragraph is no longer as the seam found it -- its content no longer
+ * reaches past the seam -- or when a candidate waits, which may put the
+ * reading back. */
+static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_leap *leap = stream->edit->leap;
+    const bufsize_t size = S_content_bytes(node);
+    const bool lists = node->id == leap->id &&
+                       (markdown_core_parser_kind(parser, node)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) &&
+                       !markdown_core_parser_undecided(parser);
+    if (!lists || node->child_count != leap->seam.index || (leap->seam.index && leap->seam.offset >= size)) {
+        S_seam_undo(parser, node);
+    }
+    if (parser->error) {
+        return;
+    }
+    if (!lists) {
+        leap->armed = false;
+        leap->node = NULL;
+        stream->settled.address = NULL;
+        markdown_core_parse_inlines(parser, node, true);
+        return;
+    }
+    leap->held = node->child_count;
+    leap->anchors = parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records;
+    leap->active = true;
+    leap->settle.from = leap->seam.offset;
+    markdown_core_parse_inlines_settle(parser, node, &leap->settle);
+}
+
+/* The paragraph `node` whose content the reading parsed from a seam is
+ * complete (THE SEAMS): the seams past it are those of the starts its
+ * parse listed that lie at a line's start, before the earliest undecided
+ * one, and past a child that is not a Text, each with how many of the
+ * paragraph's uses the lookups before it made. False when storage could
+ * not be had. */
+static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_stream *stream = parser->stream;
+    markdown_core_leap *leap = stream->edit ? stream->edit->leap : NULL;
+    if (!leap || !leap->active || leap->node != node) {
+        return true;
+    }
+    stream->settled.address = NULL;
+    leap->active = leap->armed = false;
+    const markdown_core_inline_settle *settle = &leap->settle;
+    if (parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records != leap->anchors || settle->note_count) {
+        leap->seam_count = 0;
+        return true;
+    }
+    const markdown_core_places *places = node->source.places;
+    if (!places) {
+        leap->seam_count = 0;
+        return true;
+    }
+    uint32_t place = leap->seam.place, read = leap->seam.read;
+    const markdown_core_chunk content = markdown_core_node_text(node);
+    const unsigned char *text = content.data;
+    bufsize_t from = leap->seam.offset;
+    const bool cr = from < content.len && memchr(text + from, '\r', (size_t)(content.len - from));
+    uint32_t line = leap->seam.line, at = leap->held;
+    for (size_t k = 0; k < settle->count && settle->starts[k].start <= settle->undecided; k++) {
+        const markdown_core_settle_start *start = &settle->starts[k];
+        /* The lines that end before the start: a line ends with a line
+         * feed, a carriage return and a line feed, or a carriage return. */
+        if (!cr) {
+            for (const unsigned char *end;
+                 from < start->start && (end = memchr(text + from, '\n', (size_t)(start->start - from)));) {
+                from = (bufsize_t)(end - text) + 1;
+                line++;
+            }
+        } else {
+            for (; from < start->start; from++) {
+                line +=
+                    text[from] == '\n' || (text[from] == '\r' && (from + 1 == content.len || text[from + 1] != '\n'));
+            }
+        }
+        from = start->start;
+        /* The parse lists where it began, the seam it began at. */
+        if (start->start <= leap->seam.offset || (text[start->start - 1] != '\n' && text[start->start - 1] != '\r')) {
+            continue;
+        }
+        const uint32_t hit = S_child_at(node, at, start->start);
+        if (hit == node->child_count || !hit || node->children[hit - 1]->kind == MARKDOWN_CORE_NODE_TEXT) {
+            continue;
+        }
+        at = hit;
+        /* Where the child before ends in the text: past the source of its
+         * last byte, as the place that reads it reads it (ast.c,
+         * inline_runs). */
+        const uint32_t past = (uint32_t)node->children[hit - 1]->place.end;
+        while (place + 1 < places->count && read + places->items[place].length <= past - 1) {
+            read += places->items[place].length;
+            place++;
+        }
+        const markdown_core_source_place *by = &places->items[place];
+        const uint32_t end = by->end - by->start == by->length ? by->start + (past - read) : by->end;
+        markdown_core_seam *seams =
+            markdown_core_reserve(leap->seams, &leap->seam_room, leap->seam_count + 1, sizeof(*seams));
+        if (!seams) {
+            leap->seam_count = 0;
+            return false;
+        }
+        leap->seams = seams;
+        seams[leap->seam_count++] = (markdown_core_seam){
+            start->start, hit, leap->seam.uses + start->misses, line, end - node->place.start, place, read};
+    }
+    /* The children a later reading may keep own the bytes they view of the
+     * content, whose buffer the reading cuts and grows (THE LEAP), and so
+     * does every node below them. */
+    const uint32_t kept = leap->seam_count ? leap->seams[leap->seam_count - 1].index : 0;
+    bool owned = true;
+    for (uint32_t i = leap->held; i < kept; i++) {
+        markdown_core_node *stack = node->children[i];
+        while (stack) {
+            markdown_core_node *below = stack;
+            stack = markdown_core_scaffold_of(below)->next;
+            markdown_core_scaffold_of(below)->next = NULL;
+            if (!owned || !(owned = markdown_core_node_own_viewed(below))) {
+                continue;
+            }
+            markdown_core_visit_inline_subtrees(below, S_settled_push, &stack);
+            for (uint32_t k = 0; k < below->child_count; k++) {
+                S_settled_push(&below->children[k], &stack);
+            }
+        }
+    }
+    if (!owned) {
+        leap->seam_count = 0;
+    }
+    return owned;
+}
+
 /* The inline content of the paragraph `node` read with the settled nodes,
  * or read to settle (THE SETTLE POINT). */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_parser *parser, markdown_core_node *node,
                                                                 bool settles) {
     markdown_core_settled *settled = &parser->stream->settled;
+    const markdown_core_edit *edit = parser->stream->edit;
+    if (!settles && edit && edit->leap && edit->leap->armed && edit->leap->node == node) {
+        S_seam_parse(parser, node);
+        return;
+    }
     const bufsize_t size = S_content_bytes(node);
     const bool same =
         settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind;
@@ -2500,6 +2675,11 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node **S_settle_after(m
     if (node->children == settled->nodes.values) {
         return markdown_core_array_reserve_past(&settled->nodes, node->child_count, total) ? settled->nodes.values
                                                                                            : NULL;
+    }
+    /* Storage with room past the held nodes keeps them where they are, as a
+     * paragraph reopened at a seam holds its old children's (THE SEAMS). */
+    if (markdown_core_bytes_size(node->children) >= (size_t)total * sizeof(*node->children)) {
+        return node->children;
     }
     markdown_core_node **items =
         markdown_core_node_pool_bytes(parser->pool, (size_t)markdown_core_node_array_capacity(total) * sizeof(*items));
@@ -2670,7 +2850,9 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                                                       : S_settle_scaffold(parser, node))) {
                         break;
                     }
-                    if (parsed && node == parser->stream->settled.root && !S_settle_end(parser, node)) {
+                    if (parsed && (node == parser->stream->settled.root || node == parser->stream->settled.address) &&
+                        !(node == parser->stream->settled.root ? S_settle_end(parser, node)
+                                                               : S_seam_end(parser, node))) {
                         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                         break;
                     }
@@ -3117,19 +3299,46 @@ static void S_uses_drop(markdown_core_edit *edit, size_t count) {
     uses->back_count -= count;
 }
 
+/* The `count` uses of the front from `at` go, and their labels' bytes are
+ * dead, or their notes leave the index. */
+static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count) {
+    markdown_core_use_zipper *uses = &edit->uses;
+    for (size_t i = at; i < at + count; i++) {
+        const markdown_core_use *use = &uses->front.values[i];
+        if (use->size == MARKDOWN_CORE_USE_NOTED) {
+            S_use_unnote(edit, use->label);
+        } else {
+            edit->use_live -= use->size;
+        }
+    }
+    S_uses_front_erase(uses, at, count, edit);
+    edit->uses_from = edit->uses_from >= at + count ? edit->uses_from - count : at;
+}
+
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label) {
     /* A committed root's commit noted its uses, which its completion
      * anew repeats (S_complete_misses). */
-    if (parser->stream->edit->anew) {
+    markdown_core_edit *edit = parser->stream->edit;
+    if (edit->anew) {
         return true;
     }
-    return S_use(parser->stream->edit, parser->completing->place.start, kind, label->data, label->len);
+    /* The seams count the paragraph's uses before them (THE SEAMS). */
+    if (edit->leap && edit->leap->active && parser->completing == edit->leap->node) {
+        edit->leap->settle.misses++;
+    }
+    return S_use(edit, parser->completing->place.start, kind, label->data, label->len);
 }
 
+/* Uses in order of where their roots start, and a root's in the order it
+ * made them, which their labels' bytes are in before the index notes them:
+ * the seams count a paragraph's (THE SEAMS). */
 static int S_use_order(const void *a, const void *b) {
-    const uint32_t left = ((const markdown_core_use *)a)->start, other = ((const markdown_core_use *)b)->start;
-    return (left > other) - (left < other);
+    const markdown_core_use *left = a, *other = b;
+    if (left->start != other->start) {
+        return (left->start > other->start) - (left->start < other->start);
+    }
+    return (left->label > other->label) - (left->label < other->label);
 }
 
 /* The labels the uses hold made again, once more of their bytes are dead
@@ -3177,16 +3386,6 @@ static bool S_uses_settle(markdown_core_edit *edit) {
 static bool S_uses_flush(markdown_core_parser *parser) {
     markdown_core_edit *edit = parser->stream->edit;
     markdown_core_use_zipper *uses = &edit->uses;
-    /* The index, once made, takes what the reading noted; when it cannot,
-     * the next lookup of it takes them. */
-    if (edit->indexed && edit->uses_from < uses->front.count) {
-        markdown_core_ahead_unsettle(&uses->front.ahead, edit->uses_from);
-        markdown_core_strbuf name = MARKDOWN_CORE_BUF_INIT();
-        for (size_t i = edit->uses_from; edit->indexed && i < uses->front.count; i++) {
-            edit->indexed = S_use_note(edit, &uses->front.values[i], false, &name);
-        }
-        markdown_core_strbuf_free(&name);
-    }
     /* A reading notes its roots' uses mostly in order. */
     size_t sorted = edit->uses_from + (uses->front.count > edit->uses_from);
     while (sorted < uses->front.count && uses->front.values[sorted - 1].start <= uses->front.values[sorted].start) {
@@ -3199,11 +3398,30 @@ static bool S_uses_flush(markdown_core_parser *parser) {
     }
     /* A root the reading completed again may start before its rest point,
      * as a container it reopened does: its uses go among those before. */
+    size_t from = edit->uses_from;
     if (edit->uses_from && edit->uses_from < uses->front.count &&
         uses->front.values[edit->uses_from - 1].start > uses->front.values[edit->uses_from].start) {
         const size_t first = S_uses_front_from(uses, uses->front.values[edit->uses_from].start);
+        from = first;
         markdown_core_ahead_unsettle(&uses->front.ahead, first);
         qsort(uses->front.values + first, uses->front.count - first, sizeof(*uses->front.values), S_use_order);
+        /* Noted uses are in no order of their own among a root's: a
+         * paragraph's seams count them no more (THE SEAMS). */
+        if (edit->leap) {
+            edit->leap->seam_count = 0;
+        }
+    }
+    /* The index, once made, takes what the reading noted; when it cannot,
+     * the next lookup of it takes them. */
+    if (edit->indexed && edit->uses_from < uses->front.count) {
+        markdown_core_ahead_unsettle(&uses->front.ahead, from);
+        markdown_core_strbuf name = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = from; edit->indexed && i < uses->front.count; i++) {
+            if (uses->front.values[i].size != MARKDOWN_CORE_USE_NOTED) {
+                edit->indexed = S_use_note(edit, &uses->front.values[i], false, &name);
+            }
+        }
+        markdown_core_strbuf_free(&name);
     }
     edit->uses_from = uses->front.count;
     return S_uses_settle(edit);
@@ -3318,11 +3536,25 @@ static bool S_back_spans(const markdown_core_reach_zipper *reach, size_t old) {
 static void S_release_tail(markdown_core_parser *parser);
 static void S_tail_out(markdown_core_parser *parser, const markdown_core_node *root, uint32_t end);
 
+/* The uses of the root that starts at `own` past its first `kept`, which
+ * the front holds last, go to the back (THE SEAMS). */
+static void S_uses_keep(markdown_core_edit *edit, size_t own, size_t kept) {
+    markdown_core_use_zipper *uses = &edit->uses;
+    const size_t first = S_uses_front_from(uses, own) + kept, back = uses->back_count;
+    assert(first <= uses->front.count);
+    for (size_t i = uses->front.count; i-- > first;) {
+        uses->back[uses->back_count++] = S_use_flip(uses->front.values[i], uses->end);
+    }
+    markdown_core_array_truncate(&uses->front, first);
+    S_uses_follow(edit, uses->front.count, back);
+}
+
 /* The old tail, from the root's child `child` and input line `line`, the
- * rest point `start`, kept aside before the reopen lets it go. False when
- * storage could not be had. */
+ * rest point `start`, kept aside before the reopen lets it go, and the uses
+ * from `own` on but the first `kept` there. False when storage could not be
+ * had. */
 static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *root, uint32_t child, size_t line,
-                        uint32_t prior, size_t start, size_t own, size_t to, int64_t delta) {
+                        uint32_t prior, size_t start, size_t own, size_t kept, size_t to, int64_t delta) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_parser_input *input = &parser->input;
@@ -3339,7 +3571,7 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
         edit->children = children;
     }
     if (!S_lines_ready(&input->lines, start, input->size) || !S_reach_ready(&stream->reach, start, input->size) ||
-        !S_uses_ready(&edit->uses, own, input->size)) {
+        !S_uses_ready(&edit->uses, own, input->size) || (kept && !S_uses_ready(&edit->uses, own + 1, input->size))) {
         return false;
     }
     S_release_tail(parser);
@@ -3353,8 +3585,11 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
     (void)S_reach_move(&stream->reach, start, input->size, edit);
     S_openers_aside(edit, start);
     const size_t front = edit->uses.front.count, back = edit->uses.back_count;
-    (void)S_uses_move(&edit->uses, own, input->size, edit);
+    (void)S_uses_move(&edit->uses, own + (kept != 0), input->size, edit);
     S_uses_follow(edit, front, back);
+    if (kept) {
+        S_uses_keep(edit, own, kept);
+    }
     edit->uses_from = edit->uses.front.count;
     assert(input->lines.front.count == line || start == input->scanned);
     edit->line = line;
@@ -3793,13 +4028,103 @@ static bool S_leap_lines(markdown_core_parser *parser, markdown_core_node *block
 
 /* THE LEAP of a paragraph, whose content's first `cut` bytes are its first
  * lines', from the front's `first` to the rest point's `line`: their marks
- * as the reading made them, and its inline nodes go, as the reading reads
- * its inline content again. False when storage could not be had. */
+ * as the reading made them, and its inline nodes past the seam it keeps
+ * those before go, as the reading reads its inline content again from
+ * there (THE SEAMS). False when storage could not be had. */
 static bool S_leap_prose(markdown_core_parser *parser, markdown_core_node *block, size_t first, size_t line,
                          size_t cut) {
-    assert(!block->child_count);
+    assert(block->child_count == parser->stream->edit->keeps[parser->stream->edit->depth - 1]);
     block->content_map = (markdown_core_content_map){0, 0, 0};
     return S_leap_lines(parser, block, block->content.ptr, cut, 0, first, line - first, parser->stream->edit->leap->cr);
+}
+
+/* The edit's leap, made at the first that needs it. NULL when storage could
+ * not be had. */
+static markdown_core_leap *S_leap_need(markdown_core_edit *edit) {
+    if (!edit->leap) {
+        edit->leap = markdown_core_alloc(1, sizeof(*edit->leap));
+        if (edit->leap) {
+            markdown_core_strbuf_init_zeroed(&edit->leap->aside);
+        }
+    }
+    return edit->leap;
+}
+
+/* THE SEAMS of a paragraph's inline content (docs/plans/huge-paragraphs.md).
+ * A paragraph an edit rests in reads its inline content again (THE LEAP),
+ * but not before a SEAM: the start of a line of its content where its
+ * parse read nothing it had not decided, held nothing open and followed a
+ * node no new text joins -- a settle start (THE SETTLE POINT) at a line's
+ * start, before every undecided one, past a child that is not a Text. What
+ * the content made before a seam reads only bytes before it: no reading of
+ * a token there reached past the line ending before it, which an edit of a
+ * later line keeps, and each lookup it made is a use of the paragraph's,
+ * which the edit's altered labels read again (THE DEFINITIONS AN EDIT
+ * ALTERED, session.c). So the reading keeps the children before the seam,
+ * as a block of the chain keeps those before the rest point, and parses the
+ * content from the seam on.
+ *
+ * The seams are found as the reading parses the content, and kept for the
+ * next edit of the same paragraph (markdown_core_leap): each reading parses
+ * from a seam, which keeps those before it, and adds those it finds past
+ * it. A seam lies two lines or more before the rest point's line, as a line
+ * the reading reads may take the line before it from the paragraph (a
+ * table's delimiter row takes its head). A paragraph whose content holds an
+ * explicit anchor or an inline note, which the roster and the committed
+ * tables list where the paragraph starts or where the note does, has none:
+ * it reads whole. Every reopen but one of the same paragraph lets the seams
+ * go.
+ *
+ * The children before the seam are the paragraph's FINAL prefix (ast.c, THE
+ * CHAIN'S RECORDS), and the old ones after it the records' (THE RECORDS),
+ * measured from where the prefix ends: the start of the seam's line. The
+ * paragraph's uses all start where it does, in the order its parse made
+ * them: the first `uses` of them are the prefix's, which stay in the front,
+ * and the others go to the back (S_uses_keep). The reopen, at input line
+ * `line`, picks the seam, before the uses move. False when storage could
+ * not be had. */
+static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
+    markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_leap *leap = S_leap_need(edit);
+    if (!leap) {
+        return false;
+    }
+    const markdown_core_node *leaf = edit->chain[edit->depth - 1];
+    leap->seam = (markdown_core_seam){0};
+    if (leap->node != leaf || leap->id != leaf->id) {
+        leap->seam_count = 0;
+        leap->node = leaf;
+        leap->id = leaf->id;
+    }
+    const size_t own = edit->places[edit->depth - 1].start;
+    const size_t first = markdown_core_parser_line_of(parser, own);
+    const size_t before = line - first;
+    /* The seams two lines or more before the rest point's, found by halves. */
+    size_t low = 0, high = leap->seam_count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if ((size_t)leap->seams[middle].line + 2 <= before) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    leap->seam_count = low;
+    if (!low) {
+        return true;
+    }
+    const markdown_core_seam seam = leap->seams[low - 1];
+    const markdown_core_use_zipper *uses = &edit->uses;
+    /* The paragraph is as the seams found it, and so are its uses, which
+     * start where it does. */
+    if (seam.index >= leaf->child_count || (bufsize_t)leaf->children[seam.index]->place.start != seam.offset ||
+        S_uses_from(uses, own + 1) - S_uses_from(uses, own) < seam.uses) {
+        leap->seam_count = 0;
+        return true;
+    }
+    leap->seam = seam;
+    edit->keeps[edit->depth - 1] = seam.index;
+    return true;
 }
 
 /* THE LEAP. A block of literal lines reads each of its lines as its opener
@@ -3824,14 +4149,10 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     markdown_core_edit *edit = parser->stream->edit;
     markdown_core_parser_input *input = &parser->input;
     markdown_core_node *block = edit->chain[edit->depth - 1];
-    if (!edit->leap) {
-        edit->leap = markdown_core_alloc(1, sizeof(*edit->leap));
-        if (!edit->leap) {
-            return false;
-        }
-        markdown_core_strbuf_init_zeroed(&edit->leap->aside);
+    markdown_core_leap *leap = S_leap_need(edit);
+    if (!leap) {
+        return false;
     }
-    markdown_core_leap *leap = edit->leap;
     leap->at = SIZE_MAX;
     leap->blanks = false;
     for (size_t level = 0; level + 1 < edit->depth; level++) {
@@ -3916,6 +4237,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     if (stream->edit->leap) {
         stream->edit->leap->at = SIZE_MAX;
         stream->edit->leap->prose = false;
+        stream->edit->leap->armed = false;
     }
     if (depth && !S_chain_keep(parser, stream->edit, root, path, places, depth)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -3925,11 +4247,18 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     /* A paragraph the rest point is in reads its inline content again whole
      * (THE LEAP): what that content made, its lookups, anchors, headings
      * and definitions, goes from where the paragraph starts. */
-    const markdown_core_node *leaf = depth ? stream->edit->chain[depth - 1] : NULL;
-    const size_t own = leaf && (markdown_core_parser_block_kind(parser, leaf)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH)
-                           ? (size_t)places[depth - 1].start
-                           : start;
-    if (!S_edit_keep(parser, root, child, line, prior, start, own, past > to ? past : to, delta) ||
+    markdown_core_node *leaf = depth ? stream->edit->chain[depth - 1] : NULL;
+    const bool prose = leaf && (markdown_core_parser_block_kind(parser, leaf)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH);
+    const size_t own = prose ? (size_t)places[depth - 1].start : start;
+    /* The seams are one paragraph's, which only its own reopen keeps (THE
+     * SEAMS). */
+    if (!prose && stream->edit->leap) {
+        stream->edit->leap->seam_count = 0;
+        stream->edit->leap->node = NULL;
+    }
+    if ((prose && !S_seam_pick(parser, line)) ||
+        !S_edit_keep(parser, root, child, line, prior, start, own, prose ? stream->edit->leap->seam.uses : 0,
+                     past > to ? past : to, delta) ||
         !document->element->reopen_document(document, parser, root, child, (uint32_t)own) ||
         !markdown_core_roster_reopen(&parser->roster, (uint32_t)own, input->lines.end)) {
         S_tail_leave(parser, root);
@@ -3958,6 +4287,13 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         assert(blank != SIZE_MAX);
     }
     S_settled_release(parser, &stream->settled);
+    /* The paragraph's completion parses its content from the seam (THE
+     * SEAMS), as the stream's settled paragraph's does from its point. */
+    if (prose) {
+        stream->settled.address = leaf;
+        stream->edit->leap->armed = true;
+        stream->edit->leap->taken = S_uses_front_from(&stream->edit->uses, own);
+    }
     for (size_t i = 0; i < stream->miss_root_count; i++) {
         if (stream->miss_roots[i].position.places) {
             markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
@@ -5337,6 +5673,9 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->openers);
         if (stream->edit->leap) {
             markdown_core_strbuf_free(&stream->edit->leap->aside);
+            markdown_core_free(stream->edit->leap->seams);
+            markdown_core_free(stream->edit->leap->settle.starts);
+            markdown_core_free(stream->edit->leap->settle.notes);
             markdown_core_free(stream->edit->leap);
         }
         markdown_core_array_free(&stream->edit->uses.front);
@@ -9237,6 +9576,16 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         edit->point = SIZE_MAX;
         if (edit->leap) {
             edit->leap->at = SIZE_MAX;
+            /* A paragraph reopened at a seam that its reading did not
+             * complete as one keeps no seams (THE SEAMS). */
+            if (edit->leap->armed || edit->leap->active) {
+                edit->leap->armed = edit->leap->active = false;
+                edit->leap->seam_count = 0;
+                edit->leap->node = NULL;
+                if (!parser->stream->settled.root && parser->stream->settled.address) {
+                    parser->stream->settled.address = NULL;
+                }
+            }
         }
     }
     S_release_walk(parser);

@@ -1563,7 +1563,7 @@ void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_cor
 }
 
 bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
-                                     markdown_core_node *const *nodes, uint32_t count) {
+                                     markdown_core_node *const *nodes, uint32_t count, uint32_t source) {
     markdown_core_tail_records *records = &parser->stream->records;
     uint32_t owner = 0;
     for (size_t i = 0; i < records->count && !owner; i++) {
@@ -1574,9 +1574,11 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
     }
     /* The records go before those of the content's other old nodes, in
      * source order, each node's source measured as the publish measured it:
-     * the first from where the paragraph's begins, each other from where the
-     * one before ends. */
-    uint32_t i = 0, first = 0, last = 0, source = root->place.start;
+     * the first from where the paragraph's begins, or from where the
+     * children it keeps end (blocks.c, THE SEAMS), each other from where
+     * the one before ends. */
+    uint32_t i = 0, first = 0, last = 0;
+    source += root->place.start;
     bool kept = true;
     for (; owner && i < count && nodes[i]->id; i++) {
         const uint32_t at = record_take(records);
@@ -3061,7 +3063,11 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
             if (final && final - 1 >= at && final - 1 < at + relation.count) {
                 markdown_core_node *child = block->children[final - 1];
                 child->flags |= MARKDOWN_CORE_NODE__FINAL;
-                child->place.end = edit->places[level].prior;
+                /* An inline node a leaf keeps is placed in its content,
+                 * before the seam (blocks.c, THE SEAMS). */
+                if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(child->kind)) {
+                    child->place.end = edit->places[level].prior;
+                }
             } else if (relation.count && at + relation.count < final) {
                 /* A relation the kept children hold whole is a FINAL prefix
                  * of its own. */
@@ -3181,13 +3187,14 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
         ok = reopen_chain(records, edit, &last);
         /* A deepest block that lets go of children and holds none for the
          * reading to take back reads them again: a leaf's inline content
-         * (blocks.c, THE LEAP). They are its content's old nodes, which the
-         * next publish matches its new ones against. */
+         * (blocks.c, THE LEAP), past the seam it keeps those before (THE
+         * SEAMS). They are its content's old nodes, which the next publish
+         * matches its new ones against. */
         markdown_core_node *deepest = edit->chain[edit->depth - 1];
         const uint32_t kept = edit->keeps[edit->depth - 1];
         if (ok && !edit->holds[edit->depth - 1] && deepest->child_count > kept) {
-            ok =
-                markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept);
+            ok = markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept,
+                                                 kept ? edit->leap->seam.source : 0);
             deepest->child_count = kept;
             /* None kept: the reading settles its new children into an array
              * of its own (blocks.c, S_settle_scaffold). */

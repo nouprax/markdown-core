@@ -1398,6 +1398,53 @@ export function hardScripts() {
             return s.edit(start(4), start(5), "\n").edit(start(4), start(4) + 1, "line five\n");
         });
     }
+    /* A paragraph's inline content parsed again from a seam, the start of a
+     * line two or more before the edited one (huge paragraphs, H2): typing
+     * on its later lines, one edit after another, keeps the children before
+     * the seam; every block a line start may open, a setext underline and a
+     * table's delimiter row among them, reads it whole again; a blank line
+     * and a definition typed after it declare a label a line before the seam
+     * names; and a paragraph that holds an inline note or an anchor has no
+     * seams. */
+    for (const [where, extra, eol] of [
+        ["", "", "\n"],
+        ["-crlf", "", "\r\n"],
+        ["-cr", "", "\r"],
+        ["-noted", " and^[a note]", "\n"],
+        ["-anchored", " and [span]{#mark}", "\n"]
+    ]) {
+        const lines = [
+            "alpha [r] one",
+            "two *em* three",
+            `four [s][r] five${extra}`,
+            "six `code` seven",
+            "eight [r] nine",
+            "ten <http://x.y> eleven",
+            "twelve _it_ thirteen",
+            "fourteen [r]",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen"
+        ].map((line) => `${line}${eol}`);
+        const lead = "before\n\n";
+        const text = lead + lines.join("") + "\n[r]: /one\n\nafter [s]\n";
+        const start = (i) => bytes(lead) + bytes(lines.slice(0, i).join(""));
+        const marks = ["x", "*", "[", "`", "]", "\n", "\n\n", "==\n", "---\n", "| - |\n", "- i\n", "> q\n"];
+        marks.push("\n\n[s]: /two\n\n", "\\", "  \n");
+        add(`paragraph-seams${where}`, text, (s) => {
+            /* Each mark after an edit inside the line, which finds the seams
+             * again when the mark before read the paragraph whole. */
+            for (const line of [5, 8, 10, 11]) {
+                for (const mark of marks) s.toggle(start(line) + 3, "y").toggle(start(line), mark);
+            }
+            /* Typing at the end of the last line, and back. */
+            const end = start(12) - bytes(eol);
+            for (const [i, c] of [..."abc *d"].entries()) s.insert(end + i, c);
+            for (let i = 5; i >= 0; i--) s.remove(end + i, end + i + 1);
+            return s.edit(start(9), start(10), "nine [s]\n").edit(start(2), start(2) + 3, "TWO");
+        });
+    }
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
