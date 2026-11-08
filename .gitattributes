@@ -24,3 +24,7 @@
 packages/markdown-core/tests/fixtures/** text eol=lf
 packages/markdown-core/tests/fixtures/regression.txt -text
 packages/markdown-core/tests/canonical-ast/** text eol=lf
+
+# Line endings the incremental set tests, kept as written.
+specs/incremental/documents/hard-literal-pre-cr.md -text
+specs/incremental/documents/hard-literal-pre-crlf.md -text

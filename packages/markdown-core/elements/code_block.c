@@ -326,6 +326,16 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     (void)self;
     return !node->as.code->fenced;
 }
+/* A fenced block an edit reopens at a later line (blocks.c, THE LEAP) has
+ * met no closing fence yet. */
+static void reopen_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                        markdown_core_node *node, const markdown_core_node *next, bool blank) {
+    (void)self;
+    (void)parser;
+    (void)next;
+    (void)blank;
+    node->as.code->fence_closed = false;
+}
 /* THE PARTS OF A CODE BLOCK (parts.h): a fenced block's info string, the
  * rest of its fence line less the attribute tail and the spaces around it,
  * as S_fence_info reads it, and the tail; and its literal. */
@@ -369,5 +379,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .close_block = close_code,
     .complete_node = complete_code,
     .blank_line = blank_line,
+    .reopen_block = reopen_code,
     .peers = CODE_PEERS,
 };

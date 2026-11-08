@@ -1257,6 +1257,56 @@ export function hardScripts() {
     add("unclosed-comment-in-quote", "> %%\n> one\n>\n> two\n>\n> three\n\nafter\n", (s) =>
         s.toggle(16, "x").toggle(19, "> %%\n").toggle(29, "> %%\n").toggle(2, "x")
     );
+    /* THE LEAP (blocks.c): an edit of a later line of a block of literal
+     * lines reads from that line and, past the edit, leaps to the block's
+     * last line while the block is open -- HTML blocks of the types a blank
+     * line does and does not end, fences open and closed, indented code,
+     * line endings of every kind, tabs the indentation splits and NUL --
+     * and one that closes the block early, opens a block in it, or joins
+     * and splits its lines reads the lines after it again. */
+    for (const [kind, lead, opener, ending, closer, after, indent] of [
+        ["pre", "lead\n\n", "<pre>\n", "\n", "</pre>", "", ""],
+        ["pre-closed", "", "<pre a>\n", "\n", "</pre>", "</pre>\n\nafter\n", ""],
+        ["pre-crlf", "lead\r\n\r\n", "<pre>\r\n", "\r\n", "</pre>", "", ""],
+        ["pre-cr", "lead\r\r", "<pre>\r", "\r", "</pre>", "", ""],
+        ["html-comment", "lead\n\n", "<!--\n", "\n", "-->", "", ""],
+        ["div", "lead\n\n", "<div>\n", "\n", "\n", "\nafter\n", ""],
+        ["fence", "lead\n\n", "```\n", "\n", "```", "```\n\nafter\n", ""],
+        ["fence-open", "", "~~~~ js\n", "\n", "~~~~", "", ""],
+        ["fence-offset", "lead\n\n", "  ```\n", "\n", "```", "  ```\nafter\n", "   "],
+        ["fence-tab", "lead\n\n", "  ```\n", "\n", "```", "  ```\nafter\n", "\t"],
+        ["indented", "lead\n\n", "    first\n", "\n", "x", "\n\nafter\n", "    "],
+        ["indented-tab", "lead\n\n", "\tfirst\n", "\n", "x", "\n\nafter\n", "  \t"]
+    ]) {
+        const lines = Array.from(
+            { length: 24 },
+            (_, i) => `${indent}${i === 9 && kind !== "div" ? "" : `${word(i * 2 + 1)} ${word(i * 2 + 2)}`}${ending}`
+        );
+        const head = lead + opener + lines.slice(0, 12).join("");
+        const text = head + lines.slice(12).join("") + after;
+        const at = bytes(head) + bytes(indent);
+        const last = bytes(head) + bytes(lines.slice(12, 23).join("")) + bytes(indent);
+        const first = bytes(lead) + bytes(opener) + bytes(indent);
+        add(`literal-${kind}`, text, (s) =>
+            s
+                .toggle(at + 1, "x")
+                .toggle(at, `${closer}${ending}`)
+                .toggle(at - bytes(indent), `${closer}${ending}`)
+                .toggle(at - bytes(indent), "# h\n")
+                .toggle(at, ending)
+                .toggle(at, "\u0000")
+                .remove(at - bytes(ending) - bytes(indent), at - bytes(indent))
+                .insert(at - bytes(ending) - bytes(indent), ending)
+                .toggle(last + 1, "x")
+                .toggle(last, `${closer}${ending}`)
+                .toggle(first, "x")
+                .toggle(first + 1, `${ending}${ending}`)
+                .toggle(bytes(lead) + 1, "x")
+                .toggle(bytes(text) - 1, "x")
+                .toggle(bytes(text), "x")
+                .edit(at, at + bytes(lines[12]) + bytes(lines[13]), `y${ending}${indent}z`)
+        );
+    }
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
