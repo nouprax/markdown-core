@@ -849,12 +849,15 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
 }
 
 /* The fold marks of the `depth` blocks of the chain of `rest`, which
- * session_rest_in found nests for, or NULL for one it did not. */
+ * session_rest_in found nests for, or NULL for one it did not, as a block
+ * of literal lines the chain ends in (session_literal). The nests are
+ * found, never made: a nest made for a later block would move the nests
+ * whose marks the earlier ones point into. */
 static void session_chain_folds(session_edits *edits, const session_rest_point *rest, size_t depth,
                                 markdown_core_folds **folds) {
     for (size_t level = 0; level < depth; level++) {
-        session_nest *nest = nest_find(edits, rest->chain[level]);
-        folds[level] = nest ? &nest->folds : NULL;
+        const size_t *slot = nest_slot(edits, rest->chain[level]);
+        folds[level] = slot && *slot ? &edits->nests[*slot - 1].folds : NULL;
     }
 }
 
