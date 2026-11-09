@@ -215,41 +215,41 @@ void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builde
     builder->element_capacity = 0;
 }
 
-/* Whether `element` implements `hook`. The PROBE family carries a second
+/* Whether an element whose opening is `opens` implements `hook`. The PROBE family carries a second
  * static condition: `markdown_core_parser_has_block_start` only ever asked a
  * probe that also interrupts a paragraph, and that is a descriptor property,
  * so it belongs in the projection rather than in the loop. */
-static bool S_element_implements(const markdown_core_element *element, markdown_core_block_hook hook) {
+static bool S_opens_implement(const markdown_core_open_ops *opens, markdown_core_block_hook hook) {
     switch (hook) {
     case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-        return S_opens_of(element)->scan != NULL;
+        return opens->scan != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
-        return S_opens_of(element)->interrupt != NULL;
+        return opens->interrupt != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
-        return S_opens_of(element)->open != NULL;
+        return opens->open != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
-        return S_opens_of(element)->last != NULL;
+        return opens->last != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
-        return S_opens_of(element)->probe != NULL && S_opens_of(element)->interrupts;
+        return opens->probe != NULL && opens->interrupts;
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;
     }
     return false;
 }
 
-/* The gate `element` declares for `hook`, or an ungated one. A family gains a
- * gate by adding a descriptor field and a case here; the dispatcher never
+/* The gate the opening `opens` declares for `hook`, or an ungated one. A
+ * family gains a gate by adding a field to the opening and a case here; the dispatcher never
  * learns an element's name. */
-static markdown_core_block_gate S_element_gate(const markdown_core_element *element, markdown_core_block_hook hook) {
+static markdown_core_block_gate S_opens_gate(const markdown_core_open_ops *opens, markdown_core_block_hook hook) {
     markdown_core_block_gate ungated = {NULL};
 
     switch (hook) {
     case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-        return S_opens_of(element)->scan_needs;
+        return opens->scan_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
-        return S_opens_of(element)->interrupt_needs;
+        return opens->interrupt_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
-        return S_opens_of(element)->open_needs;
+        return opens->open_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
     case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
@@ -258,18 +258,18 @@ static markdown_core_block_gate S_element_gate(const markdown_core_element *elem
     return ungated;
 }
 
-static bool S_element_implements_inline(const markdown_core_element *element, markdown_core_inline_hook hook) {
+static bool S_inlines_implement(const markdown_core_inline_ops *inlines, markdown_core_inline_hook hook) {
     switch (hook) {
     case MARKDOWN_CORE_INLINE_HOOK_INIT:
-        return S_inlines_of(element)->init != NULL;
+        return inlines->init != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_FINISH:
-        return S_inlines_of(element)->finish != NULL;
+        return inlines->finish != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_DISPOSE:
-        return S_inlines_of(element)->dispose != NULL;
+        return inlines->dispose != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPEN:
-        return S_inlines_of(element)->holds != NULL;
+        return inlines->holds != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_REPORT:
-        return S_inlines_of(element)->report != NULL;
+        return inlines->report != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }
@@ -619,8 +619,9 @@ static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_
          * that they fit (MARKDOWN_CORE_ELEMENT_LIMIT). */
         assert(owners <= MARKDOWN_CORE_ELEMENT_LIMIT);
         for (size_t i = 0; i < owners; i++) {
-            const markdown_core_element *element = dialect->block_hooks[hook][i]->element;
-            markdown_core_block_gate gate = S_element_gate(element, (markdown_core_block_hook)hook);
+            /* An owner of the family implements the opening. */
+            const markdown_core_open_ops *opens = dialect->block_hooks[hook][i]->element->opens;
+            markdown_core_block_gate gate = S_opens_gate(opens, (markdown_core_block_hook)hook);
             if (!gate.bytes) {
                 for (size_t key = 0; key <= MARKDOWN_CORE_BLOCK_GATE_KEY_NONE; key++) {
                     uint8_t *list = table + key * stride;
@@ -634,7 +635,7 @@ static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_
                     }
                 }
             }
-            if (S_opens_of(element)->indent >= CODE_INDENT) {
+            if (opens->indent >= CODE_INDENT) {
                 uint8_t *list = table + MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED * stride;
                 list[1 + list[0]++] = (uint8_t)i;
             }
@@ -653,17 +654,19 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
 
     memset(sizes, 0, sizeof(*sizes));
     for (size_t i = 0; i < count; i++) {
+        const markdown_core_open_ops *opens = S_opens_of(elements[i]);
+        const markdown_core_inline_ops *inlines = S_inlines_of(elements[i]);
         for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-            if (S_element_implements(elements[i], (markdown_core_block_hook)hook)) {
+            if (S_opens_implement(opens, (markdown_core_block_hook)hook)) {
                 sizes->block_totals[hook]++;
                 sizes->pointers++;
-                if (S_element_gate(elements[i], (markdown_core_block_hook)hook).bytes) {
+                if (S_opens_gate(opens, (markdown_core_block_hook)hook).bytes) {
                     sizes->gated[hook] = true;
                 }
             }
         }
         for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
-            if (S_element_implements_inline(elements[i], (markdown_core_inline_hook)hook)) {
+            if (S_inlines_implement(inlines, (markdown_core_inline_hook)hook)) {
                 sizes->inline_totals[hook]++;
                 sizes->pointers++;
             }
@@ -742,7 +745,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         dialect->block_hooks[hook] = entries + at;
         dialect->block_hook_counts[hook] = sizes->block_totals[hook];
         for (size_t i = 0; i < count; i++) {
-            if (S_element_implements(instances[i].element, (markdown_core_block_hook)hook)) {
+            if (S_opens_implement(S_opens_of(instances[i].element), (markdown_core_block_hook)hook)) {
                 entries[at++] = &instances[i];
             }
         }
@@ -751,7 +754,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         dialect->inline_hooks[hook] = entries + at;
         dialect->inline_hook_counts[hook] = sizes->inline_totals[hook];
         for (size_t i = 0; i < count; i++) {
-            if (S_element_implements_inline(instances[i].element, (markdown_core_inline_hook)hook)) {
+            if (S_inlines_implement(S_inlines_of(instances[i].element), (markdown_core_inline_hook)hook)) {
                 entries[at++] = &instances[i];
             }
         }
