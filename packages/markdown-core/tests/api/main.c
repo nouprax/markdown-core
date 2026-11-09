@@ -1188,9 +1188,13 @@ static int attachment_can_contain(const markdown_core_element *element, markdown
     return child_kind == MARKDOWN_CORE_NODE_TEXT && policy->accepts;
 }
 
+static const markdown_core_contain_ops ATTACHMENT_POLICY_CONTAIN = {
+    .allows = attachment_can_contain,
+};
+
 static const markdown_core_element ATTACHMENT_POLICY = {
     .name = "attachment-policy",
-    .can_contain_func = attachment_can_contain,
+    .contain = &ATTACHMENT_POLICY_CONTAIN,
 };
 
 /* A containment policy decides an append once, before the parent's children
@@ -4010,11 +4014,15 @@ static markdown_core_node *conversion_match_inline(const markdown_core_element_i
     return NULL;
 }
 
+static const markdown_core_contain_ops CONVERSION_POLICY_CONTAIN = {
+    .allows = conversion_can_contain,
+};
+
 static const markdown_core_element CONVERSION_POLICY = {
     .name = "conversion-policy",
-    .can_contain_func = conversion_can_contain,
     .match_inline = conversion_match_inline,
     .dispatch = "!",
+    .contain = &CONVERSION_POLICY_CONTAIN,
 };
 
 /* The root's policy is set as the instance begins, by a document owner that
@@ -8360,7 +8368,14 @@ static int reject_table(const markdown_core_element *element, markdown_core_node
     }
     return markdown_core_node_can_contain_builtin(node, kind);
 }
-static const markdown_core_element LEAD_POLICY = {.name = "lead-policy", .can_contain_func = reject_table};
+static const markdown_core_contain_ops LEAD_POLICY_CONTAIN = {
+    .allows = reject_table,
+};
+
+static const markdown_core_element LEAD_POLICY = {
+    .name = "lead-policy",
+    .contain = &LEAD_POLICY_CONTAIN,
+};
 static void begin_lead_policy(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     parser->root->element = &LEAD_POLICY;

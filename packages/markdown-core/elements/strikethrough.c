@@ -19,6 +19,10 @@ static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_S
 /* `~` is the ONE byte in this repository that is genuinely
  * flanking-transparent, and it must stay so: it is inherited from cmark-gfm,
  * it behaves identically there, and upstream parity breaks without it. */
+static const markdown_core_contain_ops STRIKETHROUGH_CONTAIN = {
+    .kinds = containment_kinds,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
     .name = "strikethrough",
     .delimiter_rule = MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
@@ -27,9 +31,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},
-    .containment_kinds = containment_kinds,
     .match_inline = match,
     .terminates_text = "~",
     .dispatch = "~",
     .flanking_transparent = "~",
+    .contain = &STRIKETHROUGH_CONTAIN,
 };

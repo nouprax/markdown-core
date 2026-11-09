@@ -913,7 +913,7 @@ append:
     if (new_inl != NULL) {
         /* Fixed inline owners admit every token their grammar constructs. Only
          * a dynamic policy needs a decision here; it may change during a hook. */
-        if (parent->element && parent->element->can_contain_func &&
+        if (markdown_core_node_allows(parent) &&
             !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)new_inl->kind)) {
             /* A token constructor has consumed input. Refusing its result is
              * a failed parse, but the detached token is still ours to release. */

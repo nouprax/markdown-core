@@ -773,12 +773,14 @@ static const markdown_core_opaque_ops DIRECTIVE_OPAQUE = {
     .visit = visit_owned_subtrees,
 };
 
+static const markdown_core_contain_ops DIRECTIVE_CONTAIN = {
+    .kinds = containment_kinds,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .edit = &DIRECTIVE_EDIT,
     .interrupts_paragraph = true,
-
     .pending_close = true,
-
     .name = "directive",
     .match_inline = match,
     .last_block_matches = directive_block_matches,
@@ -789,12 +791,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
      * does not start with one cannot open a directive. */
     .open_block_gate = {.bytes = ":"},
     .probe_block = probe_directive_block,
-    .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
     .terminates_text = ":",
     .dispatch = ":",
     .opaque = &DIRECTIVE_OPAQUE,
+    .contain = &DIRECTIVE_CONTAIN,
 };
 
 /* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what

@@ -194,6 +194,19 @@ typedef struct markdown_core_fold_ops {
     unsigned flags;
 } markdown_core_fold_ops;
 
+/* THE CONTAINMENT: what a node of the element's may hold as a child, which
+ * the node tree asks of a node by its element (node.c,
+ * markdown_core_node_can_contain_type). Class methods: a node knows its
+ * element and not a parse. */
+typedef struct markdown_core_contain_ops {
+    /* A retained built-in payload may only parent these kinds after
+     * conversion. NULL uses the core kind domain. */
+    const markdown_core_node_type *kinds;
+    /* The element's own decision for any child, in place of the core's
+     * rule (a dynamic policy); NULL for the core's rule. */
+    markdown_core_can_contain_func allows;
+} markdown_core_contain_ops;
+
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
 
@@ -540,10 +553,9 @@ struct markdown_core_element {
     const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
     const char *flanking_transparent; /* scan_delimiter looks through it; ASCII */
     const char *name;
-    /* A retained built-in payload may only parent these kinds after conversion.
-     * NULL uses the core kind domain. Dynamic policy remains a separate decision. */
-    const markdown_core_node_type *containment_kinds;
-    markdown_core_can_contain_func can_contain_func;
+    /* What the element's nodes may hold as children (markdown_core_contain_ops),
+     * or NULL for the core's rule of their kinds. */
+    const markdown_core_contain_ops *contain;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
     /* What completion's walk asks of the element (markdown_core_finish_ops),
@@ -568,6 +580,16 @@ struct markdown_core_element {
      * Sealing resolves them, in this order, into the instance's `peers`. */
     const markdown_core_element *const *peers;
 };
+
+/* The element's containment kinds and its own decision for a node of its,
+ * or NULL (markdown_core_contain_ops). */
+static inline const markdown_core_node_type *markdown_core_node_contain_kinds(const markdown_core_node *node) {
+    return node->element && node->element->contain ? node->element->contain->kinds : NULL;
+}
+
+static inline markdown_core_can_contain_func markdown_core_node_allows(const markdown_core_node *node) {
+    return node->element && node->element->contain ? node->element->contain->allows : NULL;
+}
 
 /* Defined here rather than in node.c because the ANSWER IS NO for almost every
  * node, and the question was costing a cross-translation-unit call to find that

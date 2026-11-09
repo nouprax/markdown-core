@@ -267,7 +267,7 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
              * (and exactly one policy decision) rather than asking early and
              * asking again in the token dispatcher. Fixed owners need no such
              * deferred transaction: this opaque production is already complete. */
-            if (!(parent->element && parent->element->can_contain_func) &&
+            if (!markdown_core_node_allows(parent) &&
                 markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA)) {
                 markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, parent, rule,
                                                                 start, from, close, close + len);
@@ -674,9 +674,12 @@ static const markdown_core_opaque_ops FORMULA_OPAQUE = {
     .adopt = formula_opaque_adopt,
 };
 
+static const markdown_core_contain_ops FORMULA_CONTAIN = {
+    .kinds = containment_kinds,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
-
     .name = "formula",
     .match_inline = match,
     .last_block_matches = formula_block_matches,
@@ -686,12 +689,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
     .close_block = close_formula_block,
-    .containment_kinds = containment_kinds,
     .accepts_lines_func = accepts_lines,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",
     .opaque = &FORMULA_OPAQUE,
+    .contain = &FORMULA_CONTAIN,
 };
 
 /* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or

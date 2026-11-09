@@ -656,18 +656,21 @@ static const markdown_core_opaque_ops TABLE_OPAQUE = {
     .adopt = opaque_adopt,
 };
 
+static const markdown_core_contain_ops TABLE_CONTAIN = {
+    .kinds = containment_kinds,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .edit = &TABLE_EDIT,
     /* A delimiter row makes the paragraph line before it the head. */
     .claims = " \t|:-",
-
     .name = "table",
     .last_block_matches = matches,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_table_block,
-    .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .opaque = &TABLE_OPAQUE,
+    .contain = &TABLE_CONTAIN,
 };
 
 /* A pipe row's part: the cells written past its table's width, which the
