@@ -1583,7 +1583,14 @@ void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_cor
 bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
                                      markdown_core_node *const *nodes, uint32_t count, uint32_t source) {
     markdown_core_tail_records *records = &parser->stream->records;
-    uint32_t owner = 0;
+    /* The owner's record: the chain's deepest block's is the one the reopen
+     * gave it (reopen_chain), and any other is found among them all. */
+    const markdown_core_edit *edit = parser->stream->edit;
+    uint32_t owner = edit && edit->depth && edit->chain[edit->depth - 1] == root ? edit->owners[edit->depth - 1] : 0;
+    if (owner && (owner > records->count || records->items[owner - 1].id != root->id ||
+                  records->items[owner - 1].kind != root->kind || records->items[owner - 1].node)) {
+        owner = 0;
+    }
     for (size_t i = 0; i < records->count && !owner; i++) {
         const markdown_core_tail_record *record = &records->items[i];
         if (record->id == root->id && record->kind == root->kind && !record->node) {
