@@ -116,13 +116,16 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
                     markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
 }
 
+static const markdown_core_inline_ops EMBEDDED_INLINES = {
+    .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+    .match = match,
+    .terminates = "!",
+    .dispatch = "!",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
     .peers = EMBEDDED_PEERS,
-    .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .state_size = sizeof(markdown_core_embedded_work),
-
     .name = "embedded",
-    .match_inline = match,
-    .terminates_text = "!",
-    .dispatch = "!",
+    .inlines = &EMBEDDED_INLINES,
 };

@@ -48,7 +48,8 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
 /* THE STOP LINES (element.h, `stops`): a line whose content is the fence,
  * at any indentation, which takes in every line that closes a reading from
  * an opener in the document's root. */
-static bool comment_stops(const unsigned char *line, size_t length) {
+static bool comment_stops(const markdown_core_element_instance *self, const unsigned char *line, size_t length) {
+    (void)self;
     size_t i = 0;
     while (i < length && (line[i] == ' ' || line[i] == '\t')) {
         i++;
@@ -119,7 +120,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
     }
     markdown_core_block_reader reader = {&lines, read_block_line};
     const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
-    markdown_core_parser_lookahead_opener(&lines.lookahead, self->element, closed);
+    markdown_core_parser_lookahead_opener(&lines.lookahead, self, closed);
     markdown_core_parser_lookahead_end(&lines.lookahead);
     *undecided = !closed && lines.undecided;
     return closed && !parser->error;
@@ -283,26 +284,44 @@ static const markdown_core_edit_ops COMMENT_EDIT = {
     .stops = comment_stops,
 };
 
+static const markdown_core_content_ops COMMENT_CONTENT = {
+    .holds_lines = comment_accepts_lines,
+};
+
+static const markdown_core_inline_ops COMMENT_INLINES = {
+    .match = match,
+    .terminates = "%",
+    .dispatch = "%",
+};
+
+static const markdown_core_candidate_ops COMMENT_CANDIDATE = {
+    .feed = feed_candidate,
+    .decide = decide_candidate,
+};
+
+static const markdown_core_open_ops COMMENT_OPENS = {
+    .interrupts = true,
+    .indent = 3,
+    .open = open_block,
+    /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
+    .open_needs = {.bytes = "%"},
+    .probe = probe_comment_block,
+};
+
+static const markdown_core_line_ops COMMENT_LINES = {
+    .close = close_comment,
+    .matches = block_matches,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
-    .interrupts_paragraph = true,
-
-    .close_block = close_comment,
-
     .name = "comment",
-    .match_inline = match,
-    .last_block_matches = block_matches,
-    .maximum_block_indent = 3,
-    .try_opening_block = open_block,
-    .feed_candidate = feed_candidate,
-    .decide_candidate = decide_candidate,
     .edit = &COMMENT_EDIT,
-    /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
-    .open_block_gate = {.bytes = "%"},
-    .probe_block = probe_comment_block,
-    .accepts_lines_func = comment_accepts_lines,
-    .terminates_text = "%",
-    .dispatch = "%",
+    .content = &COMMENT_CONTENT,
+    .inlines = &COMMENT_INLINES,
+    .candidate = &COMMENT_CANDIDATE,
+    .opens = &COMMENT_OPENS,
+    .lines = &COMMENT_LINES,
 };
 
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,

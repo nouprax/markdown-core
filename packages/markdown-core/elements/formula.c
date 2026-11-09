@@ -267,7 +267,7 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
              * (and exactly one policy decision) rather than asking early and
              * asking again in the token dispatcher. Fixed owners need no such
              * deferred transaction: this opaque production is already complete. */
-            if (!(parent->element && parent->element->can_contain_func) &&
+            if (!markdown_core_node_allows(parent) &&
                 markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA)) {
                 markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, parent, rule,
                                                                 start, from, close, close + len);
@@ -667,27 +667,50 @@ static bool close_formula_block(const markdown_core_element_instance *self, mark
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
-    .interrupts_paragraph = true,
+static const markdown_core_opaque_ops FORMULA_OPAQUE = {
+    .alloc = formula_opaque_alloc,
+    .free = formula_opaque_free,
+    .view = formula_opaque_view,
+    .adopt = formula_opaque_adopt,
+};
 
-    .name = "formula",
-    .match_inline = match,
-    .last_block_matches = formula_block_matches,
-    .maximum_block_indent = 3,
-    .try_opening_block = try_opening_formula_block,
-    /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
-    .open_block_gate = {.bytes = "$\\"},
-    .probe_block = probe_formula_block,
-    .close_block = close_formula_block,
-    .containment_kinds = containment_kinds,
-    .accepts_lines_func = accepts_lines,
-    .opaque_alloc_func = formula_opaque_alloc,
-    .opaque_free_func = formula_opaque_free,
-    .opaque_view_func = formula_opaque_view,
-    .opaque_adopt_func = formula_opaque_adopt,
-    .insert_inline_from_delim = insert_formula,
-    .terminates_text = "$",
+static const markdown_core_contain_ops FORMULA_CONTAIN = {
+    .kinds = containment_kinds,
+};
+
+static const markdown_core_content_ops FORMULA_CONTENT = {
+    .holds_lines = accepts_lines,
+};
+
+static const markdown_core_inline_ops FORMULA_INLINES = {
+    .match = match,
+    .insert = insert_formula,
+    .terminates = "$",
     .dispatch = "$\\",
+};
+
+static const markdown_core_open_ops FORMULA_OPENS = {
+    .interrupts = true,
+    .indent = 3,
+    .open = try_opening_formula_block,
+    /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
+    .open_needs = {.bytes = "$\\"},
+    .probe = probe_formula_block,
+};
+
+static const markdown_core_line_ops FORMULA_LINES = {
+    .matches = formula_block_matches,
+    .close = close_formula_block,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
+    .name = "formula",
+    .opaque = &FORMULA_OPAQUE,
+    .contain = &FORMULA_CONTAIN,
+    .content = &FORMULA_CONTENT,
+    .inlines = &FORMULA_INLINES,
+    .opens = &FORMULA_OPENS,
+    .lines = &FORMULA_LINES,
 };
 
 /* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or

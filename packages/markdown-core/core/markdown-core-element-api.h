@@ -11,6 +11,7 @@ extern "C" {
 
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
+typedef struct markdown_core_line_ops markdown_core_line_ops;
 
 /* Where a depth-first walk stands on a node: every node yields one ENTER and
  * one EXIT, with its children's events between them, and DONE follows the
@@ -188,7 +189,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
 #define MARKDOWN_CORE_BLOCK_PENDING_CLOSE 3
 /* The line continues the container, which takes it whole: no block opens on
  * it and no block takes it as text. The parser hands it to the container's
- * element (its `take_line`) once the containers above have kept it, so a
+ * element (its lines' `take`) once the containers above have kept it, so a
  * pending closer above still takes the line, and the container then ends on
  * the line before. The blocks open inside the container end on the line
  * before it. */
@@ -209,7 +210,7 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element_instan
  *  A block start may look at the lines after its own before it opens (see
  *  markdown_core_parser_lookahead_begin in the core), and it then asks every
  *  open container whether each later line carries its prefix. That question
- *  must leave no trace: 'last_block_matches' consumes the line, closes the
+ *  must leave no trace: the lines' `matches` consumes the line, closes the
  *  container on its fence and records state on the node, so it cannot be
  *  asked speculatively. An element that opens block CONTAINERS provides this
  *  hook as the same test with none of those effects: 1 when 'input' continues
@@ -239,7 +240,7 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
  * affix, table caption or directive label -- and its EXIT, stepping over the
  * blocks below it, each queued on its own as it settles. An element takes
  * part in that walk through one step, asked at the events of the kinds it
- * declared (`finish_exit_kinds`, `finish_scope_kinds`). A queued block is the
+ * declared (`exits`, `scopes`). A queued block is the
  * root of its walk: a step at its EXIT may rewrite it in place -- its kind,
  * its literal, its record -- and read its block structure, which is final,
  * and never frees or replaces it.
@@ -272,12 +273,12 @@ typedef enum {
 /** Observe one event of the finish stage at 'node'.
  *
  * 'event' is `MARKDOWN_CORE_EVENT_EXIT` for a node of a kind the step declared
- * in `finish_exit_kinds` (asked once the node's subtree is complete), and
+ * in `exits` (asked once the node's subtree is complete), and
  * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of an
- * inline kind it declared in `finish_scope_kinds` (the kinds whose extent it
+ * inline kind it declared in `scopes` (the kinds whose extent it
  * tracks). It is asked at no other event, and at the EXIT of a kind it is
  * asked at only once the parse has produced a kind of those it declared in
- * `finish_acts_on_kinds`, the kinds it acts on: the gate is read at the
+ * `acts`, the kinds it acts on: the gate is read at the
  * event, because completion parses each block's inline content as it reaches
  * the block and a kind's first node may be made after completion began. The
  * ENTER and EXIT of a scope kind are delivered whenever the extent is walked,
@@ -342,8 +343,8 @@ typedef void (*markdown_core_opaque_adopt_func)(const markdown_core_element *ele
  *                       transaction ends. The element's `dispose_parser`
  *                       releases whatever the record owns.
  *   `run_state_size` -- one record per inline-content run, zeroed before the
- *                       run's `init_inline` hooks and released after its
- *                       `dispose_inline` hooks, which release whatever the
+ *                       run's inline `init` hooks and released after its
+ *                       `dispose` hooks, which release whatever the
  *                       record owns. A run started without a parser (a
  *                       reference definition's cursor) has none.
  *
@@ -365,6 +366,10 @@ typedef void (*markdown_core_opaque_adopt_func)(const markdown_core_element *ele
  */
 struct markdown_core_element_instance {
     const markdown_core_element *element;
+    /* The element's `lines` (element.h), never NULL: an element whose
+     * blocks take no line after their first has the empty table, since
+     * every open block is asked of every line it sees. */
+    const markdown_core_line_ops *lines;
     /* The parse record, or NULL when the element declares none. */
     void *state;
     /* Where the element's record lies in a run's block of records, and

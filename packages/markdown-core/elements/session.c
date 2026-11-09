@@ -597,7 +597,7 @@ static bool session_literal(const markdown_core_session *session, markdown_core_
     /* A paragraph only of the document, whose lines' own bytes are all its
      * content's (blocks.c, S_leap_lines). Its first line is read with the
      * next, which a call of the paragraph's opener reads ahead (element.h,
-     * try_opening_paragraph): it rests from its third line on. */
+     * the opening's `last`): it rests from its third line on. */
     if (level == SESSION_DEPTH || (!lines && (!rest->prose || level)) || !markdown_core_parser_leaps(parser, block) ||
         markdown_core_parser_line_of(parser, window.start) + (lines ? 0 : 1) >= edited ||
         markdown_core_parser_line_of(parser, window.end - 1) < edited) {
@@ -1065,12 +1065,12 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
 }
 
 /* Whether a line of the `length` bytes at `lines` is a stop line of
- * `element` (element.h, `stops`). */
-static bool session_stop_in(const markdown_core_element *element, const uint8_t *lines, size_t length) {
+ * `self`'s element (element.h, `stops`). */
+static bool session_stop_in(const markdown_core_element_instance *self, const uint8_t *lines, size_t length) {
     size_t from = 0;
     for (size_t i = 0; i <= length; i++) {
         if (i == length || lines[i] == '\n' || lines[i] == '\r') {
-            if (element->edit->stops(lines + from, i - from)) {
+            if (self->element->edit->stops(self, lines + from, i - from)) {
                 return true;
             }
             from = i + 1;
@@ -1126,7 +1126,7 @@ static bool session_stops(const markdown_core_session *session, size_t line, siz
     for (size_t i = 0; i < count; i++) {
         const markdown_core_unclosed *opener = &openers[i];
         if (!opener->aside && opener->start < rest && (!found || opener->start < *start) &&
-            session_stop_in(opener->element, lines, size)) {
+            session_stop_in(opener->owner, lines, size)) {
             *start = opener->start;
             found = true;
         }

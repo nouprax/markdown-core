@@ -37,13 +37,16 @@ typedef enum {
     /* A footnote definition: a block container that stays in the tree where it
      * was written; an inline note is owned by its citation. */
     MARKDOWN_CORE_NODE_FOOTNOTE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
-    /* Its payload comes from the table element's opaque_alloc_func. */
+    /* Its payload comes from the table element's `alloc`
+     * (markdown_core_opaque_ops). */
     MARKDOWN_CORE_NODE_TABLE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000b,
     MARKDOWN_CORE_NODE_TABLE_ROW = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000c,
     MARKDOWN_CORE_NODE_TABLE_CELL = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000d,
-    /* Its payload comes from the formula element's opaque_alloc_func. */
+    /* Its payload comes from the formula element's `alloc`
+     * (markdown_core_opaque_ops). */
     MARKDOWN_CORE_NODE_FORMULA_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000e,
-    /* Its payload comes from the directive element's opaque_alloc_func. */
+    /* Its payload comes from the directive element's `alloc`
+     * (markdown_core_opaque_ops). */
     MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000f,
     /* A block comment: an HTML block that opened with <!-- and whose end line
      * held only whitespace after the first -->. One public kind, Comment,
@@ -81,9 +84,11 @@ typedef enum {
      * reads the items as its citations. */
     MARKDOWN_CORE_NODE_CITE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
     MARKDOWN_CORE_NODE_STRIKETHROUGH = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b,
-    /* Its payload comes from the formula element's opaque_alloc_func. */
+    /* Its payload comes from the formula element's `alloc`
+     * (markdown_core_opaque_ops). */
     MARKDOWN_CORE_NODE_FORMULA = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000c,
-    /* Its payload comes from the directive element's opaque_alloc_func. */
+    /* Its payload comes from the directive element's `alloc`
+     * (markdown_core_opaque_ops). */
     MARKDOWN_CORE_NODE_DIRECTIVE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000d,
     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000e,
     /* An inline HTML comment token: <!-- ... -->, <!--> or <!--->. */

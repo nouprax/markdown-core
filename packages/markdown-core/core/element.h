@@ -25,7 +25,7 @@ typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instan
  * exposes their owning slots only to parser phases; it does not change a
  * node's public children or make a field a parent/child edge. Destruction
  * transfers these roots to the shared iterative walk and clears their slots
- * before opaque_free_func releases the element payload. That callback must
+ * before the element's `free` (markdown_core_opaque_ops) releases its payload. That callback must
  * not recursively destroy node-valued fields. The slots are in the element
  * payload (`node->opaque`), and kind conversion preserves the payload and
  * these roots. */
@@ -41,7 +41,7 @@ typedef enum {
     MARKDOWN_CORE_INLINE_FALLBACK
 } markdown_core_inline_precedence;
 
-/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; `feed_candidate`):
+/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; the candidate's `feed`):
  * its content after the prefixes of the candidate's holder, NULL when the
  * lines read so far end after the blank lines; its first non-space byte and
  * its indentation there; the blank lines before it; and whether the text has
@@ -54,7 +54,7 @@ typedef struct {
 } markdown_core_candidate_line;
 
 /* What a line tells a candidate (blocks.c, THE CANDIDATES;
- * `feed_candidate`), and what its decision is (`decide_candidate`). */
+ * the candidate's `feed`), and what its decision is (the candidate's `decide`). */
 typedef enum {
     MARKDOWN_CORE_CANDIDATE_CONTINUES,
     MARKDOWN_CORE_CANDIDATE_ENDS,
@@ -112,7 +112,7 @@ static inline const markdown_core_element *markdown_core_structure_for_kind(mark
  * A gate speaks about a line that is NOT indented code. Four columns of
  * indentation are a block start of their own, decided by no byte, so the scan
  * and interrupt families ask an indented line only of the owners whose
- * `maximum_block_indent` reaches it, whatever their gate says, and ask a
+ * the opening's `indent` reaches it, whatever their gate says, and ask a
  * non-indented line only of the owners whose gate admits its first byte. The
  * two descriptor facts compose; neither is a branch on the input. */
 typedef struct markdown_core_block_gate {
@@ -125,6 +125,428 @@ typedef struct markdown_core_block_gate {
  * attachment API refuses the element that would break that, leaving the
  * dialect as it was, rather than the projection wrapping a byte. */
 #define MARKDOWN_CORE_ELEMENT_LIMIT 255
+
+/* THE ELEMENT'S PAYLOAD: what the node walks ask of an element whose nodes
+ * hold a payload of its own (`node->opaque`, node.c): `alloc` makes it and
+ * `free` releases it; `view` and `adopt` make and settle a node's view of
+ * another's (markdown_core_node_view), `view` requiring `adopt`; `visit`
+ * names the node-valued fields the payload holds (owned subtrees above).
+ * They are class methods: a node knows its element and not the parse that
+ * made it, so each takes the element, not an instance. Each may be NULL,
+ * for no payload work there. */
+typedef struct markdown_core_opaque_ops {
+    markdown_core_opaque_alloc_func alloc;
+    markdown_core_opaque_free_func free;
+    markdown_core_opaque_view_func view;
+    markdown_core_opaque_adopt_func adopt;
+    markdown_core_visit_owned_subtrees_func visit;
+} markdown_core_opaque_ops;
+
+/* THE DOCUMENT'S LIFECYCLE: what the parse asks of the one element of a
+ * dialect that owns the document, at each of its steps: `init` as the
+ * parse opens and `dispose` as it goes, `read` before the first line,
+ * `prepare` before completion, `finish` and `publish` at a flush,
+ * `candidate` for a candidate completed again, and an edit's `reopen` and
+ * `splice`. Every one is required: registration refuses an owner that
+ * leaves out one. */
+typedef struct markdown_core_document_ops {
+    void (*init)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*dispose)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* Reads what the document's input opens with, before its first line, in
+     * the input's text (markdown_core_parser_input_text, parser.h). In a
+     * commit more text may follow, a call whose reading read the end asks to
+     * be a candidate (blocks.c, THE CANDIDATES): it stops in the root at line
+     * 0, and its candidate is fed the lines from line 1. */
+    size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*prepare)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*finish)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* The last step of the parse: the tree is final, and the owner publishes
+     * it (ids, extents, definition tables). */
+    void (*publish)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A candidate the finalize completed again for an inline root a
+     * snapshot published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
+     * against that root, whose holder starts where the offset says
+     * (markdown_core_publish_candidate). A failure fails the parse. */
+    void (*candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                      markdown_core_node *, uint32_t);
+    /* An edit reopens the flushed document `root` (blocks.c, THE REOPEN):
+     * its children from `child` on go, and every state the document keeps
+     * of them -- what its publish matches against, its definitions -- stays
+     * only for what starts before `start`. False when storage could not be
+     * had. */
+    bool (*reopen)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, uint32_t,
+                   uint32_t);
+    /* The edit's reading takes the old children the reopen let go back
+     * (blocks.c, THE SPLICE), from the one at `child` among them on, whose
+     * line starts at `point` of the new text: the root holds them again, and
+     * every state the document kept of what they hold -- their definitions,
+     * their headings, measured from the text's end -- is back. False when
+     * storage could not be had, with the children still the records'. */
+    bool (*splice)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, uint32_t,
+                   uint32_t);
+} markdown_core_document_ops;
+
+/* THE COMPLETION'S HOOKS: what completion's walk asks of an element --
+ * `complete` of each node of its kinds, `reparse` of one completed again,
+ * and its finish `step` at the events its kind lists name. Each may be NULL
+ * (NULL lists: the step is asked nowhere). */
+typedef struct markdown_core_finish_ops {
+    /* The element's completion of a node, which completion's walk asks at the
+     * ENTER of every node of a kind the element is the structure of, after
+     * the node's inline content is parsed and before its explicit anchor is
+     * reserved; `depth` is the word depth of the node's ancestors. Text turns
+     * an escaped space inside a word into NBSP; a fenced code block whose
+     * info string names a formula becomes a FormulaBlock. The hook may give
+     * a node that holds no inline content and owns no fields another kind
+     * that holds and owns none either. A failure fails the parse
+     * (markdown_core_parser_fail), and the walk ends at its next check. */
+    void (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int depth);
+    /* A kind whose inline content is parsed before completion's walk
+     * (`deferred`, by the document's preparation) parses one node's
+     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
+     * asks it once the node's inline content is released, and the walk then
+     * completes the node as it completed it the first time. */
+    void (*reparse)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* The element's kinds parse their inline content before completion's
+     * walk, by the document's preparation, and not as the walk enters them. */
+    bool deferred;
+    /* The element's finish step (the API header states the contract), asked
+     * from inside completion's walk at the EXIT of every node whose kind is
+     * in `exits` and at the ENTER and EXIT of every node whose
+     * kind is in `scopes`. It costs the document nothing at any
+     * other event: the engine projects the steps by (event, kind) once per
+     * parse, so a step asked at Text is not so much as looked at when a
+     * Paragraph exits, nor when a Text opens. */
+    markdown_core_finish_step_func step;
+    /* The node kinds the element's finish step ACTS ON, terminated by
+     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE: the
+     * set is intersected with the kinds the parse has produced so far, read
+     * at each event the step is asked at, and a step that cannot find
+     * anything is skipped there. A step whose trigger kind is CREATED by an
+     * earlier hook must therefore name that creator kind too.
+     *
+     * The kinds a step acts on are not always the kinds it is asked at, so a
+     * step says where it is asked separately, below, and the gate stays what
+     * makes a document with nothing for the step pay nothing at each event.
+     *
+     * The kinds are declared as KINDS rather than as a precomputed bit set so
+     * that each one keeps its namespace: block and inline values collide once
+     * masked, and a Formula written where a block kind belongs has to be
+     * detectable rather than silently becoming some unrelated block's bit.
+     * The engine projects them per parse. */
+    const markdown_core_node_type *acts;
+    /* WHERE A FINISH STEP IS ASKED, two lists terminated the same way; NULL
+     * declares nothing.
+     *
+     * `exits`: the step receives the EXIT of these kinds, the
+     * point where the node's subtree is complete and the node may be
+     * rewritten. It names the kind of the node the step is handed -- LIST
+     * for a list's layout, TEXT for autolink's scan.
+     *
+     * `scopes`: the inline kinds whose EXTENT the step tracks. It
+     * receives their ENTER and their EXIT and nothing else about them: it acts
+     * on nothing there, it learns that the nodes to come are inside one, and
+     * it keeps that in its per-root state word. Autolink declares LINK -- an
+     * address inside a Link is already a link's text.
+     *
+     * The two are disjoint: a kind in both would be one event asked twice,
+     * and registration refuses the descriptor. It also refuses a step that
+     * names no kind in either list, which would never be asked, a block kind
+     * as a scope kind, whose extent completion never walks (the blocks below
+     * a block complete before it), and a kind the dispatch table cannot index
+     * (an ordinal at or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of
+     * neither class). */
+    const markdown_core_node_type *exits;
+    const markdown_core_node_type *scopes;
+} markdown_core_finish_ops;
+
+/* THE FOLD: what a block of the element's takes from each child as the
+ * child settles into it, so that what it reads as it closes or completes
+ * needs no walk of its children. Registration requires `child` and `kinds`
+ * together. */
+typedef struct markdown_core_fold_ops {
+    /* THE FOLD HOOK (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
+     * asked of a block of a kind in `kinds` as a child settles into it
+     * (blocks.c, A BLOCK SETTLES), after the child's blank-line answer is
+     * folded into a block whose answer is its children's: the block's flags
+     * `flags` with what they take from a child whose flags are `child`, so
+     * that what the block reads as it closes or completes is there without a
+     * walk of its children. It writes nothing of the block but the values
+     * the block publishes from the flags it returns: a commit writes the
+     * result as the block's flags, and a snapshot that ends the open blocks
+     * below its stop folds each into the block below without writing their
+     * flags (blocks.c, THE LENDING). */
+    markdown_core_node_internal_flags (*child)(const markdown_core_element_instance *, markdown_core_node *,
+                                               markdown_core_node_internal_flags, markdown_core_node_internal_flags);
+    /* The block kinds the fold hook is asked at, kinds whose structure is
+     * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
+     * fold hook declares at least one, and one without declares NULL. */
+    const markdown_core_node_type *kinds;
+    /* The element's flags the fold hook writes, which a splice below a
+     * reopened block folds again from all of its children (blocks.c, THE
+     * NESTED SPLICE). */
+    unsigned flags;
+} markdown_core_fold_ops;
+
+/* THE CONTAINMENT: what a node of the element's may hold as a child, which
+ * the node tree asks of a node by its element (node.c,
+ * markdown_core_node_can_contain_type). Class methods: a node knows its
+ * element and not a parse. */
+typedef struct markdown_core_contain_ops {
+    /* A retained built-in payload may only parent these kinds after
+     * conversion. NULL uses the core kind domain. */
+    const markdown_core_node_type *kinds;
+    /* The element's own decision for any child, in place of the core's
+     * rule (a dynamic policy); NULL for the core's rule. */
+    markdown_core_can_contain_func allows;
+} markdown_core_contain_ops;
+
+/* THE CONTENT: what a block of the element's holds -- blocks, prose or
+ * literal lines (`mode`), whether its content is inline content
+ * (`inlines`), and the per-node answers when its kind alone does not say
+ * (`holds_inlines`, `holds_lines`, class methods). The dialect projects it
+ * into each kind's record (dialect.h, the kind flags) as it is sealed. */
+typedef struct markdown_core_content_ops {
+    markdown_core_content_mode mode;
+    bool inlines;
+    /* The element's blocks are paragraphs, the prose blocks the engine's
+     * paragraph rules apply to (IS_PARAGRAPH, dialect.h). */
+    bool paragraph;
+    markdown_core_contains_inlines_func holds_inlines;
+    markdown_core_accepts_lines_func holds_lines;
+} markdown_core_content_ops;
+
+/* THE INLINE PARSE: what the inline engine asks of an element -- its
+ * tokens (`match` at its `dispatch` bytes, `insert` for a delimiter pair of
+ * its `rule`, `text` for the text between them), its run's record (`init`,
+ * `finish`, `dispose`, `holds`, `report`), and, of the block whose inline
+ * content runs (its structure), `enter` and `claim`. Each may be NULL; the
+ * dialect projects who answers what by byte and by hook as it is sealed. */
+typedef struct markdown_core_inline_ops {
+    /* Negative/zero/positive precedence separates protected tokens, ordinary
+     * alternatives, and literal fallbacks without a second dispatch algorithm.
+     * A byte's owners are asked in ascending precedence -- any value, not only
+     * the named ones -- and equal precedences in descriptor order. */
+    markdown_core_inline_precedence precedence;
+    markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *,
+                                markdown_core_inline_state *, bufsize_t);
+    void (*init)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*enter)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
+                  markdown_core_node *);
+    bool (*claim)(const markdown_core_element_instance *, markdown_core_inline_state *, markdown_core_node *);
+    void (*finish)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*dispose)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Whether the run's record holds something open at the token start the
+     * run reads next -- a bracket, a token whose owner is still to come --
+     * which a token after it may close or take. A settle point is a start at
+     * which no element holds anything open (inlines.h,
+     * markdown_core_inline_settle). */
+    bool (*holds)(const markdown_core_element_instance *, const markdown_core_inline_state *);
+    /* Lists to the run's context sink what the run's record holds open as
+     * its last token ends -- the brackets no closer met -- in the parse of
+     * the text before a cursor (sink.h). Asked only of a run that has a
+     * sink, before the run finishes. */
+    void (*report)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Parsed delimiter semantics are declared by their element. Pairing,
+     * run classification and node construction stay in the shared engine. */
+    markdown_core_delimiter_rule rule;
+    unsigned char character;
+    delimiter_rule_spec delimiter;
+    /* Optional non-consuming token predicate. Text scanning consults the
+     * dialect's byte-indexed projection of it; a byte another element also
+     * terminates text at keeps none, and always reaches ordinary element
+     * dispatch. */
+    bool (*starts)(const markdown_core_element_instance *, markdown_core_inline_state *, bufsize_t);
+    markdown_core_match_inline_func match;
+    markdown_core_inline_from_delim_func insert;
+    /* THREE byte sets, not one list.
+     *
+     * `special_inline_chars` was a single `llist` read by five consumers that
+     * each meant something different by it: two byte tables were folded out of
+     * it, `try_elements` used it for cursor dispatch,
+     * `get_element_for_special_char` used it for delimiter-tag OWNERSHIP,
+     * `bracket_takes_close_bracket` used it for `]` arbitration, and
+     * `handle_backslash` used it to disable a core optimisation. One list
+     * cannot say three different things, and D1 and D2 are what happens when it
+     * tries: `set_emphasis` folded every byte an element named into
+     * `skip_chars`, which killed CommonMark flanking merely by attaching the
+     * element, and `'}'` sat in the list dispatching to nothing.
+     *
+     * Each set is a NUL-terminated byte list; NUL itself is never a member
+     * because source normalization replaces it before inlines run. A NULL set
+     * is empty. */
+    const char *terminates;  /* ends a text run: inline_state_find_special_char */
+    const char *dispatch;    /* offered to `match`, and owns a delimiter tag */
+    const char *transparent; /* scan_delimiter looks through it; ASCII */
+} markdown_core_inline_ops;
+
+/* THE CANDIDATE: what the engine asks of an element whose calls ask for
+ * candidates (blocks.c, THE CANDIDATES) as the lines after a call come. */
+typedef struct markdown_core_candidate_ops {
+    /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
+     * (markdown_core_parser_request_candidate) is fed each later line its
+     * candidate's holder carries (markdown_core_candidate_line). It answers
+     * that the line continues the construct, and then in `*ends` whether
+     * the call could claim the lines through it were the text to end after
+     * it; that the construct ended before it; or that the unfinished line
+     * does not tell yet. It keeps what it read in the candidate's record
+     * (`size`), which it writes only for a line it answers
+     * goes on. `decide` decides as the call would read now
+     * (markdown_core_parser_candidate_start): ACCEPT when it would claim
+     * lines, REJECT when it would not, and WAIT when more text may follow
+     * and the decision read where the text ends. */
+    markdown_core_candidate_step (*feed)(const markdown_core_element_instance *, markdown_core_parser *, void *,
+                                         const markdown_core_candidate_line *, bool *);
+    markdown_core_candidate_decision (*decide)(const markdown_core_element_instance *, markdown_core_parser *,
+                                               const void *);
+    /* The bytes of the record each of its candidates keeps, which its
+     * call's request gives and `feed` writes; zero declares none. */
+    size_t size;
+} markdown_core_candidate_ops;
+
+/* THE OPENING: how a block of the element's opens on a line the open
+ * containers left -- found by `scan` (a block start) or `open`, `last` just
+ * before an ordinary paragraph, `interrupt` over a paragraph, `text` for the
+ * text block every dialect has -- each entered only when the line holds
+ * what its gate `*_needs` says. Each may be NULL; the dialect projects the
+ * gates and owners by byte as it is sealed. */
+typedef struct markdown_core_open_ops {
+    /* A block start: whether the line opens a block, with what it opens in
+     * `start`, without opening it. */
+    bool (*scan)(const markdown_core_element_instance *, markdown_core_parser *,
+                 struct markdown_core_block_start_context *, struct markdown_core_block_start *);
+    /* What `scan` needs on a non-indented line before it is worth entering;
+     * an indented line reaches it through `indent`. */
+    markdown_core_block_gate scan_needs;
+    markdown_core_open_block_func open;
+    /* What `open` needs on the line before it is worth entering. */
+    markdown_core_block_gate open_needs;
+    /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
+    markdown_core_open_block_func last;
+    markdown_core_node *(*interrupt)(const markdown_core_element_instance *, markdown_core_parser *,
+                                     markdown_core_node *, markdown_core_chunk *, bool);
+    /* What `interrupt` needs on a non-indented line. */
+    markdown_core_block_gate interrupt_needs;
+    /* Its `probe` asks over a paragraph too: a block of it interrupts one. */
+    bool interrupts;
+    /* Non-consuming recognition before this element's block-opening slot.
+     * Shares the producer's grammar; may report allocation failure, but never
+     * opens a node or claims source. */
+    markdown_core_probe_block_func probe;
+    /* The most indentation a line opening a block of it may have. */
+    int indent;
+    /* Opens the text block (a paragraph) on a line nothing else opens on:
+     * the dialect's last owner of it is asked. */
+    markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                                markdown_core_chunk *);
+    /* The bytes a line may hold and still make the paragraph line before it
+     * a block of the element's, as a table's delimiter row makes its head:
+     * while a streamed paragraph's last line holds only such bytes, the line
+     * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
+     * Projected into the dialect's `claims`. NULL for none. */
+    const char *claims;
+    /* `scan`'s furthest byte read on a line a session holds unfinished, and
+     * in `*opens` whether a block opens there (markdown_core_line_ops,
+     * `reach`, HOW FAR A STEP READS). */
+    bufsize_t (*reach)(const markdown_core_element_instance *, markdown_core_parser *,
+                       const struct markdown_core_block_start_context *, bool *);
+} markdown_core_open_ops;
+
+/* THE LINES: how an open block of the element's takes each line after its
+ * first -- its container `prefix` and its `matches`, a lookahead's
+ * `continues`, a blank line (`blank*`), a lazy line (`lazy*`), a line it
+ * takes whole (`take`), its end condition (`ends`) -- and how it closes
+ * (`close`). Each may be NULL; the dialect projects the prefixes and the
+ * blank answers into the kind records as it is sealed. */
+struct markdown_core_line_ops {
+    /* Whether the line continues the block (the typedef says how), asked
+     * of the deepest open block that has it. */
+    markdown_core_match_block_func matches;
+    /* The speculative form of `matches` a block-start lookahead asks
+     * (see the typedef); required of an element whose blocks contain blocks. */
+    markdown_core_continues_block_func continues;
+    /* The container's prefix match on a line, which strips its marker. */
+    bool (*prefix)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                   markdown_core_chunk *, const markdown_core_node *, bool *);
+    /* HOW FAR A STEP READS (docs/plans/2026-09-29-incremental-parsing.md,
+     * 5.1), asked of a line a session holds unfinished before the step runs,
+     * with the cursor and the first non-space byte found: the furthest byte
+     * of the line the answer reads -- `prefix`'s for `node`, and
+     * the opening's `scan`'s with the open it names, which says in `*opens`
+     * whether a block opens there. A block start answers only for a
+     * container it opens; one that would claim the line for a block that
+     * takes text answers the line's end. A step whose bytes are all in the
+     * line decides from bytes alone and commits; an element without the
+     * question leaves its steps to the snapshot (blocks.c, THE LINE A
+     * SESSION HOLDS). */
+    bufsize_t (*reach)(const markdown_core_element_instance *, markdown_core_parser *, const markdown_core_node *,
+                       const markdown_core_chunk *);
+    /* The bytes `prefix` can strip from a line besides
+     * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
+     * indentation only; it strips at most one of them from a line. A
+     * block-start question asked of a LATER line from raw source (the
+     * definition gate) reaches that line's first stripped byte by walking
+     * over indentation and these, one for each container above the block
+     * asking, so a byte left out here does not
+     * make the parser slower, it makes it WRONG: the construct inside this
+     * container is silently never recognised. Projected with the hooks into
+     * the dialect's `container_prefix`. A declared byte that is also the marker
+     * byte of the grammar asking (':' or '~' for a definition) cannot be told
+     * from that marker in raw source, so the key hands such a line to the
+     * lookahead rather than walking over it. */
+    const char *prefix_bytes;
+    /* Whether the block takes a blank line; NULL takes it. */
+    bool (*blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* Whether a blank line it took leaves its last line blank (BLANK_ASK,
+     * dialect.h); NULL decides by whether it takes lines. */
+    bool (*blank_last)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* What a blank line means inside it (BLANK_OPAQUE, BLANK_RUNS and
+     * BLANK_PROPAGATES, dialect.h). */
+    bool blank_opaque;
+    bool blank_runs;
+    bool blank_spreads;
+    /* The end condition, tested on a line the block took as content: true
+     * closes it there. */
+    bool (*ends)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                 markdown_core_chunk *);
+    /* Reads a line its block took whole (MARKDOWN_CORE_BLOCK_TAKEN), from
+     * the parser's cursor, which the block's matcher left where the blocks
+     * above it end. Required of an element whose matcher returns that. */
+    void (*take)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                 markdown_core_chunk *);
+    /* THE CLOSE HOOK, asked of a block as it closes inside the block that
+     * holds it, which it settles into later. It reads the block -- its
+     * content, its children and its open state -- and makes the node the
+     * block settles as from them, never writing them: what it makes of the
+     * content is a view of it, a literal or the cuts of its text. What the
+     * block yields to its holder is settled into the holder before it (a
+     * paragraph's References) or written on the holder (a block identifier
+     * on a list item's first line). False when the block yields no node of
+     * its own: a paragraph whose text was all reference definitions. */
+    bool (*close)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                  markdown_core_node *);
+    /* Its `matches` may answer MARKDOWN_CORE_BLOCK_PENDING_CLOSE: a
+     * closer whose ownership the blocks inside decide. */
+    bool pending;
+    /* A lazy line -- one that did not match every open container's prefix
+     * and opened no block -- is offered to the current block. `lazy`
+     * says whether it takes the line; `lazy_open` returns the block the line is
+     * added to, from its first non-space byte: the block itself when the line
+     * continues it, or a block it opens, which starts where a block the line
+     * opened would. NULL means the line was consumed or the parse failed, and
+     * leaves the parser's current block where the hook put it. A block that
+     * accepts the line takes it as a paragraph takes a lazy line: the starts
+     * that refuse a lazy line (`block_start_context`) open no block on it, so
+     * the line is lazy exactly when it would be after a paragraph's line. */
+    markdown_core_node *(*lazy_open)(const markdown_core_element_instance *, markdown_core_parser *,
+                                     markdown_core_node *, markdown_core_chunk *);
+    bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* The flags of the block that its container's prefix match sets line by
+     * line, which a lookahead puts back. A line that holds a byte other
+     * than spaces, tabs and container prefix bytes sets them as no line
+     * before it matters, which THE LEAP (blocks.c) relies on. */
+    unsigned speculative;
+};
 
 /* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element
  * (blocks.c, THE REOPEN and THE SPLICE), and what a session's reading notes
@@ -187,339 +609,79 @@ typedef struct markdown_core_edit_ops {
      * line after its opener is one, whatever the lines are: it notes its
      * opener (markdown_core_parser_reach_open), and not what it read. NULL
      * for an element whose readings note what they read. */
-    bool (*stops)(const unsigned char *line, size_t length);
+    bool (*stops)(const markdown_core_element_instance *, const unsigned char *line, size_t length);
 } markdown_core_edit_ops;
 
 struct markdown_core_element {
-    /* Negative/zero/positive precedence separates protected tokens, ordinary
-     * alternatives, and literal fallbacks without a second dispatch algorithm.
-     * A byte's owners are asked in ascending precedence -- any value, not only
-     * the named ones -- and equal precedences in descriptor order. */
-    markdown_core_inline_precedence inline_precedence;
-    markdown_core_node *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
-                                      markdown_core_inline_state *, bufsize_t);
-    void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
-                         markdown_core_node *);
-    bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
-                              markdown_core_node *);
-    void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    /* Whether the run's record holds something open at the token start the
-     * run reads next -- a bracket, a token whose owner is still to come --
-     * which a token after it may close or take. A settle point is a start at
-     * which no element holds anything open (inlines.h,
-     * markdown_core_inline_settle). */
-    bool (*holds_open)(const markdown_core_element_instance *, const markdown_core_inline_state *);
-    /* Lists to the run's context sink what the run's record holds open as
-     * its last token ends -- the brackets no closer met -- in the parse of
-     * the text before a cursor (sink.h). Asked only of a run that has a
-     * sink, before the run finishes. */
-    void (*report_open)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    /* The element's completion of a node, which completion's walk asks at the
-     * ENTER of every node of a kind the element is the structure of, after
-     * the node's inline content is parsed and before its explicit anchor is
-     * reserved; `depth` is the word depth of the node's ancestors. Text turns
-     * an escaped space inside a word into NBSP; a fenced code block whose
-     * info string names a formula becomes a FormulaBlock. The hook may give
-     * a node that holds no inline content and owns no fields another kind
-     * that holds and owns none either. A failure fails the parse
-     * (markdown_core_parser_fail), and the walk ends at its next check. */
-    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                          int depth);
-    /* A kind whose inline content is parsed before completion's walk
-     * (`deferred_inlines`, by the document's preparation) parses one node's
-     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
-     * asks it once the node's inline content is released, and the walk then
-     * completes the node as it completed it the first time. */
-    void (*reparse_inlines)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    /* A lazy line -- one that did not match every open container's prefix
-     * and opened no block -- is offered to the current block. `accepts_lazy`
-     * says whether it takes the line; `open_lazy` returns the block the line is
-     * added to, from its first non-space byte: the block itself when the line
-     * continues it, or a block it opens, which starts where a block the line
-     * opened would. NULL means the line was consumed or the parse failed, and
-     * leaves the parser's current block where the hook put it. A block that
-     * accepts the line takes it as a paragraph takes a lazy line: the starts
-     * that refuse a lazy line (`block_start_context`) open no block on it, so
-     * the line is lazy exactly when it would be after a paragraph's line. */
-    markdown_core_node *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_chunk *);
-    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    /* The flags of the block that its container's prefix match sets line by
-     * line, which a lookahead puts back. A line that holds a byte other
-     * than spaces, tabs and container prefix bytes sets them as no line
-     * before it matters, which THE LEAP (blocks.c) relies on. */
-    unsigned speculative_flags;
-    markdown_core_content_mode content_mode;
-    bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
-    /* What an edit's reading asks of the element (markdown_core_edit_ops),
-     * or NULL when it asks nothing. */
-    const markdown_core_edit_ops *edit;
-    int maximum_block_indent;
-    void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* Reads what the document's input opens with, before its first line, in
-     * the input's text (markdown_core_parser_input_text, parser.h). In a
-     * commit more text may follow, a call whose reading read the end asks to
-     * be a candidate (blocks.c, THE CANDIDATES): it stops in the root at line
-     * 0, and its candidate is fed the lines from line 1. */
-    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* The last step of the parse: the tree is final, and the owner publishes
-     * it (ids, extents, definition tables). */
-    void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A candidate the finalize completed again for an inline root a
-     * snapshot published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
-     * against that root, whose holder starts where the offset says
-     * (markdown_core_publish_candidate). A failure fails the parse. */
-    void (*publish_candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                              markdown_core_node *, uint32_t);
-    /* An edit reopens the flushed document `root` (blocks.c, THE REOPEN):
-     * its children from `child` on go, and every state the document keeps
-     * of them -- what its publish matches against, its definitions -- stays
-     * only for what starts before `start`. False when storage could not be
-     * had. */
-    bool (*reopen_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                            uint32_t, uint32_t);
-    /* The edit's reading takes the old children the reopen let go back
-     * (blocks.c, THE SPLICE), from the one at `child` among them on, whose
-     * line starts at `point` of the new text: the root holds them again, and
-     * every state the document kept of what they hold -- their definitions,
-     * their headings, measured from the text's end -- is back. False when
-     * storage could not be had, with the children still the records'. */
-    bool (*splice_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                            uint32_t, uint32_t);
-    markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                           markdown_core_node *, markdown_core_chunk *);
-    markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                  markdown_core_node *, markdown_core_chunk *, bool);
-    bool interrupts_paragraph;
-
-    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                               markdown_core_chunk *, const markdown_core_node *, bool *);
-    /* HOW FAR A STEP READS (docs/plans/2026-09-29-incremental-parsing.md,
-     * 5.1), asked of a line a session holds unfinished before the step runs,
-     * with the cursor and the first non-space byte found: the furthest byte
-     * of the line the answer reads -- `continue_container`'s for `node`, and
-     * `scan_block_start`'s with the open it names, which says in `*opens`
-     * whether a block opens there. A block start answers only for a
-     * container it opens; one that would claim the line for a block that
-     * takes text answers the line's end. A step whose bytes are all in the
-     * line decides from bytes alone and commits; an element without the
-     * question leaves its steps to the snapshot (blocks.c, THE LINE A
-     * SESSION HOLDS). */
-    bufsize_t (*continue_reach)(const markdown_core_element_instance *, markdown_core_parser *,
-                                const markdown_core_node *, const markdown_core_chunk *);
-    bufsize_t (*start_reach)(const markdown_core_element_instance *, markdown_core_parser *,
-                             const struct markdown_core_block_start_context *, bool *);
-    /* The bytes `continue_container` can strip from a line besides
-     * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
-     * indentation only; it strips at most one of them from a line. A
-     * block-start question asked of a LATER line from raw source (the
-     * definition gate) reaches that line's first stripped byte by walking
-     * over indentation and these, one for each container above the block
-     * asking, so a byte left out here does not
-     * make the parser slower, it makes it WRONG: the construct inside this
-     * container is silently never recognised. Projected with the hooks into
-     * the dialect's `container_prefix`. A declared byte that is also the marker
-     * byte of the grammar asking (':' or '~' for a definition) cannot be told
-     * from that marker in raw source, so the key hands such a line to the
-     * lookahead rather than walking over it. */
-    const char *container_prefix_bytes;
-    /* The bytes a line may hold and still make the paragraph line before it
-     * a block of the element's, as a table's delimiter row makes its head:
-     * while a streamed paragraph's last line holds only such bytes, the line
-     * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
-     * Projected into the dialect's `claims`. NULL for none. */
-    const char *claims;
-    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                       markdown_core_chunk *);
-    /* Reads a line its block took whole (MARKDOWN_CORE_BLOCK_TAKEN), from
-     * the parser's cursor, which the block's matcher left where the blocks
-     * above it end. Required of an element whose matcher returns that. */
-    void (*take_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                      markdown_core_chunk *);
-    /* THE CLOSE HOOK, asked of a block as it closes inside the block that
-     * holds it, which it settles into later. It reads the block -- its
-     * content, its children and its open state -- and makes the node the
-     * block settles as from them, never writing them: what it makes of the
-     * content is a view of it, a literal or the cuts of its text. What the
-     * block yields to its holder is settled into the holder before it (a
-     * paragraph's References) or written on the holder (a block identifier
-     * on a list item's first line). False when the block yields no node of
-     * its own: a paragraph whose text was all reference definitions. */
-    bool (*close_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                        markdown_core_node *);
-    /* THE FOLD HOOK (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
-     * asked of a block of a kind in `fold_kinds` as a child settles into it
-     * (blocks.c, A BLOCK SETTLES), after the child's blank-line answer is
-     * folded into a block whose answer is its children's: the block's flags
-     * `flags` with what they take from a child whose flags are `child`, so
-     * that what the block reads as it closes or completes is there without a
-     * walk of its children. It writes nothing of the block but the values
-     * the block publishes from the flags it returns: a commit writes the
-     * result as the block's flags, and a snapshot that ends the open blocks
-     * below its stop folds each into the block below without writing their
-     * flags (blocks.c, THE LENDING). */
-    markdown_core_node_internal_flags (*fold_child)(const markdown_core_element_instance *, markdown_core_node *,
-                                                    markdown_core_node_internal_flags,
-                                                    markdown_core_node_internal_flags);
-    /* The block kinds the fold hook is asked at, kinds whose structure is
-     * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
-     * fold hook declares at least one, and one without declares NULL. */
-    const markdown_core_node_type *fold_kinds;
-    /* The element's flags the fold hook writes, which a splice below a
-     * reopened block folds again from all of its children (blocks.c, THE
-     * NESTED SPLICE). */
-    unsigned folds;
-    bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
-                             struct markdown_core_block_start_context *, struct markdown_core_block_start *);
-    /* What `scan_block_start` needs on a non-indented line before it is worth
-     * entering; an indented line reaches it through `maximum_block_indent`. */
-    markdown_core_block_gate scan_block_gate;
-    /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
-    markdown_core_open_block_func try_opening_paragraph;
-    markdown_core_match_block_func last_block_matches;
-    /* The speculative form of `last_block_matches` a block-start lookahead asks
-     * (see the typedef); required of an element whose blocks contain blocks. */
-    markdown_core_continues_block_func continues_block;
-    markdown_core_open_block_func try_opening_block;
-    /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
-     * (markdown_core_parser_request_candidate) is fed each later line its
-     * candidate's holder carries (markdown_core_candidate_line). It answers
-     * that the line continues the construct, and then in `*ends` whether
-     * the call could claim the lines through it were the text to end after
-     * it; that the construct ended before it; or that the unfinished line
-     * does not tell yet. It keeps what it read in the candidate's record
-     * (`candidate_state_size`), which it writes only for a line it answers
-     * goes on. `decide_candidate` decides as the call would read now
-     * (markdown_core_parser_candidate_start): ACCEPT when it would claim
-     * lines, REJECT when it would not, and WAIT when more text may follow
-     * and the decision read where the text ends. */
-    markdown_core_candidate_step (*feed_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                   void *, const markdown_core_candidate_line *, bool *);
-    markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                         const void *);
-    /* What `try_opening_block` needs on the line before it is worth entering. */
-    markdown_core_block_gate open_block_gate;
-    /* What `try_interrupting_block` needs on a non-indented line. */
-    markdown_core_block_gate interrupt_block_gate;
-    /* Non-consuming recognition before this element's block-opening slot.
-     * Shares the producer's grammar; may report allocation failure, but never
-     * opens a node or claims source. */
-    markdown_core_probe_block_func probe_block;
-    /* Parsed delimiter semantics are declared by their element. Pairing,
-     * run classification and node construction stay in the shared engine. */
-    markdown_core_delimiter_rule delimiter_rule;
-    unsigned char delimiter_character;
-    delimiter_rule_spec delimiter;
-    /* Optional non-consuming token predicate. Text scanning consults the
-     * dialect's byte-indexed projection of it; a byte another element also
-     * terminates text at keeps none, and always reaches ordinary element
-     * dispatch. */
-    bool (*is_inline_start)(const markdown_core_element_instance *, markdown_core_inline_state *, bufsize_t);
-    markdown_core_match_inline_func match_inline;
-    markdown_core_inline_from_delim_func insert_inline_from_delim;
-    /* THREE byte sets, not one list.
-     *
-     * `special_inline_chars` was a single `llist` read by five consumers that
-     * each meant something different by it: two byte tables were folded out of
-     * it, `try_elements` used it for cursor dispatch,
-     * `get_element_for_special_char` used it for delimiter-tag OWNERSHIP,
-     * `bracket_takes_close_bracket` used it for `]` arbitration, and
-     * `handle_backslash` used it to disable a core optimisation. One list
-     * cannot say three different things, and D1 and D2 are what happens when it
-     * tries: `set_emphasis` folded every byte an element named into
-     * `skip_chars`, which killed CommonMark flanking merely by attaching the
-     * element, and `'}'` sat in the list dispatching to nothing.
-     *
-     * Each set is a NUL-terminated byte list; NUL itself is never a member
-     * because source normalization replaces it before inlines run. A NULL set
-     * is empty. */
-    const char *terminates_text;      /* ends a text run: inline_state_find_special_char */
-    const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
-    const char *flanking_transparent; /* scan_delimiter looks through it; ASCII */
+    /* WHO THE ELEMENT IS AND WHAT IT STORES. */
     const char *name;
-    /* A retained built-in payload may only parent these kinds after conversion.
-     * NULL uses the core kind domain. Dynamic policy remains a separate decision. */
-    const markdown_core_node_type *containment_kinds;
-    markdown_core_can_contain_func can_contain_func;
-    markdown_core_contains_inlines_func contains_inlines_func;
-    markdown_core_accepts_lines_func accepts_lines_func;
-    /* The element's finish step (the API header states the contract), asked
-     * from inside completion's walk at the EXIT of every node whose kind is
-     * in `finish_exit_kinds` and at the ENTER and EXIT of every node whose
-     * kind is in `finish_scope_kinds`. It costs the document nothing at any
-     * other event: the engine projects the steps by (event, kind) once per
-     * parse, so a step asked at Text is not so much as looked at when a
-     * Paragraph exits, nor when a Text opens. */
-    markdown_core_finish_step_func finish_step;
-    /* The node kinds the element's finish step ACTS ON, terminated by
-     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE: the
-     * set is intersected with the kinds the parse has produced so far, read
-     * at each event the step is asked at, and a step that cannot find
-     * anything is skipped there. A step whose trigger kind is CREATED by an
-     * earlier hook must therefore name that creator kind too.
-     *
-     * The kinds a step acts on are not always the kinds it is asked at, so a
-     * step says where it is asked separately, below, and the gate stays what
-     * makes a document with nothing for the step pay nothing at each event.
-     *
-     * The kinds are declared as KINDS rather than as a precomputed bit set so
-     * that each one keeps its namespace: block and inline values collide once
-     * masked, and a Formula written where a block kind belongs has to be
-     * detectable rather than silently becoming some unrelated block's bit.
-     * The engine projects them per parse. */
-    const markdown_core_node_type *finish_acts_on_kinds;
-    /* WHERE A FINISH STEP IS ASKED, two lists terminated the same way; NULL
-     * declares nothing.
-     *
-     * `finish_exit_kinds`: the step receives the EXIT of these kinds, the
-     * point where the node's subtree is complete and the node may be
-     * rewritten. It names the kind of the node the step is handed -- LIST
-     * for a list's layout, TEXT for autolink's scan.
-     *
-     * `finish_scope_kinds`: the inline kinds whose EXTENT the step tracks. It
-     * receives their ENTER and their EXIT and nothing else about them: it acts
-     * on nothing there, it learns that the nodes to come are inside one, and
-     * it keeps that in its per-root state word. Autolink declares LINK -- an
-     * address inside a Link is already a link's text.
-     *
-     * The two are disjoint: a kind in both would be one event asked twice,
-     * and registration refuses the descriptor. It also refuses a step that
-     * names no kind in either list, which would never be asked, a block kind
-     * as a scope kind, whose extent completion never walks (the blocks below
-     * a block complete before it), and a kind the dispatch table cannot index
-     * (an ordinal at or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of
-     * neither class). */
-    const markdown_core_node_type *finish_exit_kinds;
-    const markdown_core_node_type *finish_scope_kinds;
-    markdown_core_opaque_alloc_func opaque_alloc_func;
-    markdown_core_opaque_free_func opaque_free_func;
-    markdown_core_opaque_view_func opaque_view_func;
-    markdown_core_opaque_adopt_func opaque_adopt_func;
-    markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
+    /* The elements whose state this element's code reads, NULL-terminated
+     * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
+     * Sealing resolves them, in this order, into the instance's `peers`. */
+    const markdown_core_element *const *peers;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
-     * IT"), and of the record each of its candidates keeps (THE CANDIDATES
-     * above), which its call's request gives and its feed writes; zero
-     * declares none. `kept_size` is how many bytes at the front of the
+     * IT"); zero declares none (a candidate's record is the candidate's,
+     * markdown_core_candidate_ops). `kept_size` is how many bytes at the front of the
      * parse record are WHAT A MARK KEEPS (blocks.c, THE MARK): what the
      * element's record says of the reading so far, which a reading put back
      * to a mark -- a snapshot's end, an accept -- finds as the mark found
      * it; the rest of the record says nothing a reading put back takes
      * back. */
-    size_t state_size, run_state_size, candidate_state_size, kept_size;
-    /* The elements whose state this element's code reads, NULL-terminated
-     * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
-     * Sealing resolves them, in this order, into the instance's `peers`. */
-    const markdown_core_element *const *peers;
+    size_t state_size, run_state_size, kept_size;
+    /* Frees what the parse record holds as its parser is freed, or NULL
+     * when it holds nothing of its own. */
+    void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
+
+    /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
+     * that asks it, in the order a line meets them. A NULL table says the
+     * element takes no part in that algorithm; a NULL entry in a table says
+     * the default its comment gives. */
+    /* How a block of the element's opens (markdown_core_open_ops), or NULL
+     * when none does. */
+    const markdown_core_open_ops *opens;
+    /* What a candidate of the element's is asked as later lines come
+     * (markdown_core_candidate_ops), or NULL when its calls ask for none. */
+    const markdown_core_candidate_ops *candidate;
+    /* How an open block of the element's takes its lines and closes
+     * (markdown_core_line_ops), or NULL; the instance holds the empty
+     * table then. */
+    const markdown_core_line_ops *lines;
+    /* What a block of the element's holds (markdown_core_content_ops), or
+     * NULL for a container of blocks. */
+    const markdown_core_content_ops *content;
+    /* What the element's nodes may hold as children (markdown_core_contain_ops),
+     * or NULL for the core's rule of their kinds. */
+    const markdown_core_contain_ops *contain;
+    /* What a block of the element's takes from its children as they settle
+     * (markdown_core_fold_ops), or NULL. */
+    const markdown_core_fold_ops *fold;
+    /* What the inline parse asks of the element (markdown_core_inline_ops),
+     * or NULL when it takes no part in it. */
+    const markdown_core_inline_ops *inlines;
+    /* What completion's walk asks of the element (markdown_core_finish_ops),
+     * or NULL. */
+    const markdown_core_finish_ops *finish;
+    /* The document's lifecycle (markdown_core_document_ops), for the one
+     * element of a dialect that owns it, or NULL. */
+    const markdown_core_document_ops *document;
+    /* The element's payload on its nodes (markdown_core_opaque_ops), or
+     * NULL when its nodes hold none. */
+    const markdown_core_opaque_ops *opaque;
+    /* What an edit's reading asks of the element (markdown_core_edit_ops),
+     * or NULL when it asks nothing. */
+    const markdown_core_edit_ops *edit;
 };
+
+/* The element's containment kinds and its own decision for a node of its,
+ * or NULL (markdown_core_contain_ops). */
+static inline const markdown_core_node_type *markdown_core_node_contain_kinds(const markdown_core_node *node) {
+    return node->element && node->element->contain ? node->element->contain->kinds : NULL;
+}
+
+static inline markdown_core_can_contain_func markdown_core_node_allows(const markdown_core_node *node) {
+    return node->element && node->element->contain ? node->element->contain->allows : NULL;
+}
 
 /* Defined here rather than in node.c because the ANSWER IS NO for almost every
  * node, and the question was costing a cross-translation-unit call to find that
@@ -538,7 +700,7 @@ struct markdown_core_element {
  * read by the visitor below and projected into completion's per-kind
  * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the walk asks it
  * once per parse per kind rather than three compares per node. An element
- * that owns subtrees through `visit_owned_subtrees_func` is found through
+ * that owns subtrees through its `visit` (markdown_core_opaque_ops) is found through
  * the node's `element`, which the walk tests beside the flag. */
 static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
     return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
@@ -567,8 +729,8 @@ static inline int markdown_core_visit_kind_fields(markdown_core_node *node, mark
 static inline int markdown_core_visit_element_subtrees(markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context) {
     const markdown_core_element *element = node->element;
-    return !element || !element->visit_owned_subtrees_func ||
-           element->visit_owned_subtrees_func(element, node, visitor, context);
+    return !element || !element->opaque || !element->opaque->visit ||
+           element->opaque->visit(element, node, visitor, context);
 }
 
 /* Every subtree `node` owns: its kind's, then its element's. Completion, which

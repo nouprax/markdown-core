@@ -505,7 +505,7 @@ typedef struct markdown_core_stream {
      * accepted, which claims in the snapshot's reading anew; the line through
      * which the feed has fed every call; and the request the line being read
      * made of its opener's call; and room for one record a candidate keeps
-     * (element.h, `candidate_state_size`), the dialect's largest: the one
+     * (markdown_core_candidate_ops, `size`), the dialect's largest: the one
      * the request gives, which its call's mark copies, and the copy of a
      * call's that a snapshot feeds (blocks.c, A SNAPSHOT SEES A CANDIDATE
      * END); after it, the room of what the mark of the snapshot under way
@@ -661,11 +661,11 @@ typedef struct markdown_core_chain_place {
     uint32_t start, prior;
 } markdown_core_chain_place;
 
-/* AN OPENER READ TO THE END (blocks.c): `element`'s, on the line that
+/* AN OPENER READ TO THE END (blocks.c): `owner`'s, on the line that
  * starts at `start`; `aside` while an edit's reading reads the text again
  * from before it (THE SPLICE). */
 typedef struct markdown_core_unclosed {
-    const struct markdown_core_element *element;
+    const struct markdown_core_element_instance *owner;
     uint32_t start;
     bool aside;
 } markdown_core_unclosed;
@@ -678,7 +678,7 @@ typedef struct markdown_core_unclosed {
  * the back's line `last` from the focus, the last of the block's whose
  * content it reads again. `next` is where the old child the reading tries
  * next starts its line (THE SPLICE). `blanks` when a block of the chain
- * above it keeps flags that a line sets (element.h, `speculative_flags`).
+ * above it keeps flags that a line sets (element.h, the lines' `speculative`).
  * `prose` when the block was a paragraph as the reading reopened it, whose
  * inline content it reads again whatever it becomes.
  *
@@ -1478,7 +1478,7 @@ static inline bool markdown_core_parser_end_read(const markdown_core_parser *par
 
 /* THE TEXT OF THE ACTIVE INPUT read so far, through `*length`: a reading of
  * it to its end asks markdown_core_parser_input_ends there. The document's
- * prefix reads it (element.h, `read_document_prefix`). */
+ * prefix reads it (element.h, markdown_core_document_ops, `read`). */
 static inline const unsigned char *markdown_core_parser_input_text(const markdown_core_parser *parser, size_t *length) {
     *length = parser->input.size;
     return parser->input.source;
@@ -1578,20 +1578,21 @@ typedef struct {
     bool incomplete;
     bool waits;
     bool waited;
-    /* The element whose opener the reading is, when the element has stop
+    /* The instance whose opener the reading is, when its element has stop
      * lines (element.h, `stops`), and whether the reading found one: set
      * by markdown_core_parser_lookahead_opener before the end. */
     bool closed;
-    const struct markdown_core_element *opener;
+    const struct markdown_core_element_instance *opener;
 } markdown_core_block_lookahead;
 
-/* The reading is one of `element`'s opener, which `closed` says whether it
+/* The reading is one of `owner`'s opener, which `closed` says whether it
  * found a stop line for (element.h, `stops`): one in the document's root
  * that found none notes its opener as it ends, and not what it read
  * (blocks.c, AN OPENER READ TO THE END). */
 static inline void markdown_core_parser_lookahead_opener(markdown_core_block_lookahead *lookahead,
-                                                         const struct markdown_core_element *element, bool closed) {
-    lookahead->opener = element;
+                                                         const struct markdown_core_element_instance *owner,
+                                                         bool closed) {
+    lookahead->opener = owner;
     lookahead->closed = closed;
 }
 
@@ -1751,11 +1752,11 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * text read so far ends, in a commit more text may follow, asks to be a
  * candidate in `container`, and declines: an opener's, the text step's, a
  * blank line's acceptance, or the document's prefix, which is called before
- * line 1 (element.h, `read_document_prefix`). `child` is the kind of block
+ * line 1 (element.h, markdown_core_document_ops, `read`). `child` is the kind of block
  * it would open, whose lines its candidate is fed, `state` the record it
- * keeps of the grammar, the owner's `candidate_state_size` bytes, which the
+ * keeps of the grammar, the owner's candidate `size` bytes, which the
  * request copies, and `ends` whether it could claim were the text to end after
- * the call's line (element.h, `feed_candidate`). The commit ends at the
+ * the call's line (markdown_core_candidate_ops, `feed`). The commit ends at the
  * call, completes, marks its state there unless an earlier call of the line
  * did, and reads on from the call. A call asks first whether it MEETS its
  * candidate, as the owner, in `container`, and asks for its candidate right
@@ -1780,7 +1781,7 @@ static inline bool markdown_core_parser_candidate_meets(markdown_core_parser *pa
     const size_t ask = parser->at.asks++;
     return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container, ask);
 }
-/* The decision of the candidate being decided (element.h, `decide_candidate`)
+/* The decision of the candidate being decided (markdown_core_candidate_ops, `decide`)
  * reads its line as its call did: `start` puts the parser's line state at
  * the call on a line, and gives the line through its line ending and the
  * container the call was asked in; `end` puts the line state back. False,
@@ -2003,15 +2004,15 @@ static inline void markdown_core_parser_reach(markdown_core_parser *parser, size
         markdown_core_parser_note_reach(parser, start, end);
     }
 }
-/* AN OPENER READ TO THE END (blocks.c): the reading of `element`'s opener
+/* AN OPENER READ TO THE END (blocks.c): the reading of `owner`'s opener
  * on the line that starts at `start`, in the document's root, read to the
  * text's end and found no stop line (element.h, `stops`); and, for
  * `reach_shut`, it found one, and what it read is in the reach. A parse
  * that takes no edits pays the test and nothing more, and so does a
  * snapshot. The parse fails when storage could not be had. */
-void markdown_core_parser_reach_open(markdown_core_parser *parser, const struct markdown_core_element *element,
+void markdown_core_parser_reach_open(markdown_core_parser *parser, const struct markdown_core_element_instance *owner,
                                      size_t start);
-void markdown_core_parser_reach_shut(markdown_core_parser *parser, const struct markdown_core_element *element,
+void markdown_core_parser_reach_shut(markdown_core_parser *parser, const struct markdown_core_element_instance *owner,
                                      size_t start);
 /* The openers of the flushed document read to the end, `*count` of them,
  * in no order. */

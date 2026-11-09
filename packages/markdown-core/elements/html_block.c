@@ -92,15 +92,26 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     return true;
 }
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
-    .blank_line = blank_line,
+static const markdown_core_content_ops HTML_BLOCK_CONTENT = {
+    .mode = MARKDOWN_CORE_CONTENT_LITERAL,
+};
 
+static const markdown_core_open_ops HTML_BLOCK_OPENS = {
+    .indent = 3,
+    .scan = scan_html,
+    .scan_needs = {.bytes = "<"},
+};
+
+static const markdown_core_line_ops HTML_BLOCK_LINES = {
+    .blank_last = blank_line,
+    .matches = continue_html,
+    .close = close_html,
+    .ends = ends_html,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .name = "html_block",
-    .maximum_block_indent = 3,
-    .scan_block_start = scan_html,
-    .scan_block_gate = {.bytes = "<"},
-    .last_block_matches = continue_html,
-    .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
-    .close_block = close_html,
-    .ends_block = ends_html,
+    .content = &HTML_BLOCK_CONTENT,
+    .opens = &HTML_BLOCK_OPENS,
+    .lines = &HTML_BLOCK_LINES,
 };

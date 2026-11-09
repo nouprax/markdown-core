@@ -1365,21 +1365,23 @@ void markdown_core_reference_parts(markdown_core_parts *parts) {
     markdown_core_attribute_scratch_free(&scratch);
 }
 
+static const markdown_core_inline_ops LINK_INLINES = {
+    .init = init_inline,
+    .holds = holds_open,
+    .report = report_open,
+    .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+    .dispose = dispose_inline,
+    .match = match_bracket,
+    .terminates = "[]",
+    .dispatch = "[]",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
-    .init_inline = init_inline,
-    .holds_open = holds_open,
-    .report_open = report_open,
     .state_size = sizeof(markdown_core_bracket_work),
     .run_state_size = sizeof(markdown_core_bracket_scope),
-
-    .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-    .dispose_inline = dispose_inline,
-
     .name = "link",
-    .match_inline = match_bracket,
-    .terminates_text = "[]",
-    .dispatch = "[]",
+    .inlines = &LINK_INLINES,
 };
 
 int markdown_core_inline_state_in_bracket(const markdown_core_element_instance *link,

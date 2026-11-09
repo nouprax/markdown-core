@@ -6,6 +6,10 @@ import path from "node:path";
  * exactly one position. Neither condition depends on a fixed feature count.
  * Unsupported declaration shapes fail closed instead of disappearing from an
  * audit's inventory.
+ *
+ * A descriptor names the interface tables it implements (`.inlines =
+ * &NAME_INLINES`, element.h); each is read from the same source into
+ * `tables`, by field, and a named table the source does not define fails.
  */
 export function parseElementInventory(sources) {
     const descriptors = new Map();
@@ -19,7 +23,16 @@ export function parseElementInventory(sources) {
         }
         for (const [, symbol, body] of definitions) {
             if (descriptors.has(symbol)) throw new Error(`${symbol}: duplicate descriptor definition`);
-            descriptors.set(symbol, { symbol, file, source, body });
+            const tables = {};
+            for (const [, field, name] of body.matchAll(/\.(\w+)\s*=\s*&\s*(\w+)/g)) {
+                const table = new RegExp(
+                    `\\bconst\\s+markdown_core_\\w+_ops\\s+${name}\\s*=\\s*\\{([\\s\\S]*?)^\\};`,
+                    "m"
+                ).exec(source);
+                if (table === null) throw new Error(`${symbol}: could not read its ${field} table ${name}`);
+                tables[field] = table[1];
+            }
+            descriptors.set(symbol, { symbol, file, source, body, tables });
         }
     }
 
@@ -49,13 +62,15 @@ export function parseElementInventory(sources) {
     // select a non-default rule, as the two tilde elements do.
     const rules = new Map();
     const characters = new Map();
-    for (const { symbol, body } of ordered) {
-        const rule = /\.delimiter_rule\s*=\s*(MARKDOWN_CORE_DELIM_RULE_\w+)/.exec(body)?.[1];
-        const character = /\.delimiter_character\s*=\s*'([^'\\])'/.exec(body)?.[1];
-        if (/\.delimiter_rule\s*=/.test(body) && !rule) {
+    for (const { symbol, tables } of ordered) {
+        const inlines = tables.inlines ?? "";
+        const opens = tables.opens ?? "";
+        const rule = /\.rule\s*=\s*(MARKDOWN_CORE_DELIM_RULE_\w+)/.exec(inlines)?.[1];
+        const character = /\.character\s*=\s*'([^'\\])'/.exec(inlines)?.[1];
+        if (/\.rule\s*=/.test(inlines) && !rule) {
             throw new Error(`${symbol}: unreadable delimiter rule`);
         }
-        if (/\.delimiter_character\s*=/.test(body) && !character) {
+        if (/\.character\s*=/.test(inlines) && !character) {
             throw new Error(`${symbol}: default delimiter character must be one printable literal byte`);
         }
         if (character && !rule) throw new Error(`${symbol}: delimiter character has no rule`);
@@ -65,8 +80,8 @@ export function parseElementInventory(sources) {
             }
             if (rules.has(rule)) throw new Error(`${symbol}: duplicate delimiter rule ${rule}`);
             rules.set(rule, symbol);
-            const minimum = Number(/\.minimum_width\s*=\s*(\d+)/.exec(body)?.[1]);
-            const maximum = Number(/\.maximum_width\s*=\s*(\d+)/.exec(body)?.[1]);
+            const minimum = Number(/\.minimum_width\s*=\s*(\d+)/.exec(inlines)?.[1]);
+            const maximum = Number(/\.maximum_width\s*=\s*(\d+)/.exec(inlines)?.[1]);
             if (!(minimum > 0 && maximum >= minimum)) {
                 throw new Error(`${symbol}: invalid parsed delimiter widths`);
             }
@@ -75,7 +90,7 @@ export function parseElementInventory(sources) {
             if (characters.has(character)) throw new Error(`${symbol}: duplicate default delimiter character`);
             characters.set(character, symbol);
         }
-        if (/\.scan_block_start\s*=/.test(body) && !/\.maximum_block_indent\s*=\s*(?:\d+|INT_MAX)\b/.test(body)) {
+        if (/\.scan\s*=/.test(opens) && !/\.indent\s*=\s*(?:\d+|INT_MAX)\b/.test(opens)) {
             throw new Error(`${symbol}: block scanner requires an explicit indentation bound`);
         }
     }

@@ -421,8 +421,8 @@ struct markdown_core_node {
     markdown_core_node_source source;
 
     const markdown_core_element *element;
-    /* Element-owned data, allocated by opaque_alloc_func and released by
-     * opaque_free_func. It survives kind changes independently of `as`. */
+    /* Element-owned data, allocated by its element's `alloc` and released by
+     * its `free` (markdown_core_opaque_ops). It survives kind changes independently of `as`. */
     void *opaque;
 
     /* Owns a record too large for the slot, whether installed at

@@ -178,11 +178,15 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     return node;
 }
 
+static const markdown_core_inline_ops CROSS_LINK_INLINES = {
+    .match = match,
+    .dispatch = "[!",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
     .name = "cross_link",
     .state_size = sizeof(markdown_core_cross_link_work),
-    .match_inline = match,
-    .dispatch = "[!",
+    .inlines = &CROSS_LINK_INLINES,
 };
 
 /* THE PARTS OF A CROSS LINK OR A CROSS EMBED (parts.h), as `match` reads

@@ -372,17 +372,33 @@ static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
     .reopen_block = reopen_code,
 };
 
+static const markdown_core_finish_ops CODE_BLOCK_FINISH = {
+    .complete = complete_code,
+};
+
+static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
+    .mode = MARKDOWN_CORE_CONTENT_LITERAL,
+};
+
+static const markdown_core_open_ops CODE_BLOCK_OPENS = {
+    .indent = INT_MAX,
+    .scan = scan_code,
+    /* A fence; an indented block is reached through the indent bound. */
+    .scan_needs = {.bytes = "`~"},
+};
+
+static const markdown_core_line_ops CODE_BLOCK_LINES = {
+    .matches = continue_code,
+    .close = close_code,
+    .blank_last = blank_line,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
-    .maximum_block_indent = INT_MAX,
-    .scan_block_start = scan_code,
-    /* A fence; an indented block is reached through the indent bound. */
-    .scan_block_gate = {.bytes = "`~"},
-    .last_block_matches = continue_code,
-    .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
-    .close_block = close_code,
-    .complete_node = complete_code,
-    .blank_line = blank_line,
     .peers = CODE_PEERS,
+    .finish = &CODE_BLOCK_FINISH,
+    .content = &CODE_BLOCK_CONTENT,
+    .opens = &CODE_BLOCK_OPENS,
+    .lines = &CODE_BLOCK_LINES,
 };

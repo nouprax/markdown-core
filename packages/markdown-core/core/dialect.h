@@ -91,7 +91,7 @@ typedef enum {
  * per key to a terminated list of steps in descriptor order, NULL for a key
  * nothing declared, built once when the dialect is sealed, beside the block
  * and inline-content families, and gated at the event on the kinds the parse
- * has produced (element.h, `finish_acts_on_kinds`). One load decides the
+ * has produced (element.h, markdown_core_finish_ops, `acts`). One load decides the
  * common case.
  *
  * Kinds are indexed by class then ordinal, so a block and an inline kind that
@@ -160,22 +160,23 @@ typedef struct markdown_core_finish_step_entry {
  * line engine and completion alike. A fact a hook answers per node is a
  * flag saying the element declares the hook, which is then asked:
  *
- * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
+ * - INLINES / INLINES_ASK: the content's `inlines` / `holds_inlines` -- the
  *   kind may hold inline content (PARSES, either one), which the walk parses
- *   at its ENTER; DEFERRED, `deferred_inlines`, it was parsed before the walk
+ *   at its ENTER; DEFERRED, the element's `deferred`, it was parsed before the walk
  *   (a heading's, by the document's preparation);
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
- *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
- *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
- * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
- *   (`propagates_child_blank`): what a blank line means inside it;
- * - FOLDS: the kind is one of `fold_kinds`, and `fold_child` is asked as a
+ *   `mode` / `holds_lines` (markdown_core_content_ops); PROSE, a PROSE
+ *   `mode`, it takes a text line as prose; IS_PARAGRAPH, the content's
+ *   `paragraph`;
+ * - BLANK_OPAQUE, BLANK_ASK (the lines' `blank_last`), BLANK_RUNS and BLANK_PROPAGATES
+ *   (the lines' `blank_spreads`): what a blank line means inside it;
+ * - FOLDS: the kind is one of its fold's `kinds`, and its `child` is asked as a
  *   child settles into a block of it;
  * - FIELDS: the kind can own a field root through its own record
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
  *
- * `complete` is the structure's `complete_node`, NULL when it declares
+ * `complete` is the structure's `complete`, NULL when it declares
  * none, which the walk calls at every ENTER. The out-of-table index answers
  * nothing. */
 enum {
@@ -261,8 +262,8 @@ struct markdown_core_dialect_builder {
  *
  * `document_structure` owns the document lifecycle -- the last registered
  * element that declares it, as `text_structure` is the last that declares
- * `parse_text`, `text_block_structure` the last that declares
- * `open_text_block` and each delimiter rule belongs to the last element that
+ * an inline `text`, `text_block_structure` the last that declares
+ * an opening's `text` and each delimiter rule belongs to the last element that
  * declares it. The core dialect has one of each; a setup that registers
  * another replaces the earlier one for its instance. */
 /* The class of a byte that ends a run of inline text, in the dialect's
@@ -292,7 +293,7 @@ typedef struct markdown_core_dialect {
      * replaces. */
     const uint8_t *block_gate_lists[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     /* Every byte a container continuation may strip ahead of a line's own
-     * first byte: indentation, and each element's `container_prefix_bytes`.
+     * first byte: indentation, and each element's lines' `prefix_bytes`.
      * A question asked of a later line from raw source walks these to land on
      * the byte the stripped line would show first (see
      * definition_next_lines_admit). */
@@ -325,7 +326,7 @@ typedef struct markdown_core_dialect {
     /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
      * of records, and of the largest record a candidate keeps (element.h,
-     * `candidate_state_size`). The instances whose parse records keep part
+     * markdown_core_candidate_ops, `size`). The instances whose parse records keep part
      * with a mark (element.h, `kept_size`), in element order, and the bytes
      * a mark keeps of them all, each part at its instance's `kept_offset`. */
     const markdown_core_element_instance *const *instance_table;

@@ -22,13 +22,14 @@ typedef struct {
  * the bytes it takes. `fence` answers how far the line `data`, through its
  * line ending, is a fence: 3 for "---", the dashes it begins with for a
  * line whose bytes could still become one, and -1 for any other line. An
- * envelope its text leaves open notes its opener for `element` (blocks.c,
+ * envelope its text leaves open notes its opener for `owner` (blocks.c,
  * AN OPENER READ TO THE END). */
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                     const struct markdown_core_element *element, size_t *fence);
+                                     const markdown_core_element_instance *owner, size_t *fence);
 /* THE STOP LINES of the envelope's opener (element.h, `stops`): a line that
  * begins with "---", which takes in every fence. */
-bool markdown_core_properties_stops(const unsigned char *line, size_t length);
+bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
+                                    size_t length);
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t fence);
 int markdown_core_properties_fence(const unsigned char *data);
 

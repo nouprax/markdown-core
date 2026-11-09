@@ -145,7 +145,7 @@ static markdown_core_heading_parse *parsed_heading(markdown_core_heading_state *
     return heading_at(state, low);
 }
 
-/* A heading parsed again (element.h, `reparse_inlines`), a candidate of a
+/* A heading parsed again (element.h, markdown_core_finish_ops, `reparse`), a candidate of a
  * heading a streaming commit settled: the attributes its last line ends with
  * are its inline content's and go with it, and the label its text declares,
  * whatever a lookup answers, stays declared. The anchor the headings
@@ -1924,24 +1924,43 @@ static int continue_heading(const markdown_core_element_instance *self, markdown
     return 0;
 }
 
+static const markdown_core_finish_ops HEADING_FINISH = {
+    .reparse = reparse_inlines,
+    .deferred = true,
+};
+
+static const markdown_core_content_ops HEADING_CONTENT = {
+    .mode = MARKDOWN_CORE_CONTENT_PROSE,
+    .inlines = true,
+};
+
+static const markdown_core_inline_ops HEADING_INLINES = {
+    .enter = markdown_core_heading_begin_inlines,
+    .claim = markdown_core_heading_claim_tail,
+};
+
+static const markdown_core_open_ops HEADING_OPENS = {
+    .indent = 3,
+    .scan = scan_heading,
+    /* ATX `#`; a setext underline of `=` or `-`. */
+    .scan_needs = {.bytes = "#=-"},
+};
+
+static const markdown_core_line_ops HEADING_LINES = {
+    .matches = continue_heading,
+    .close = close_heading,
+    .blank_opaque = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
-    .begin_inline = markdown_core_heading_begin_inlines,
-    .claim_inline_tail = markdown_core_heading_claim_tail,
-    .reparse_inlines = reparse_inlines,
-
     .name = "heading",
-    .maximum_block_indent = 3,
-    .scan_block_start = scan_heading,
-    /* ATX `#`; a setext underline of `=` or `-`. */
-    .scan_block_gate = {.bytes = "#=-"},
-    .last_block_matches = continue_heading,
-    .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
-    .inline_content = true,
-    .deferred_inlines = true,
-    .close_block = close_heading,
-    .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
     .kept_size = offsetof(markdown_core_heading_state, headings),
     .run_state_size = sizeof(markdown_core_heading_run),
+    .finish = &HEADING_FINISH,
+    .content = &HEADING_CONTENT,
+    .inlines = &HEADING_INLINES,
+    .opens = &HEADING_OPENS,
+    .lines = &HEADING_LINES,
 };

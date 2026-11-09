@@ -984,19 +984,22 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     run->braces = (citation_brace_index){0};
 }
 
+static const markdown_core_inline_ops CITATION_INLINES = {
+    .finish = finish_inline,
+    .dispose = dispose_inline,
+    .holds = holds_open,
+    .match = match,
+    .starts = is_inline_start,
+    .terminates = "@-;",
+    .dispatch = "@-;",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .peers = CITATION_PEERS,
-    .finish_inline = finish_inline,
-    .dispose_inline = dispose_inline,
-    .holds_open = holds_open,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),
-
     .name = "citation",
-    .match_inline = match,
-    .is_inline_start = is_inline_start,
-    .terminates_text = "@-;",
-    .dispatch = "@-;",
+    .inlines = &CITATION_INLINES,
 };
 
 void markdown_core_citation_open_bracket(const markdown_core_element_instance *self,

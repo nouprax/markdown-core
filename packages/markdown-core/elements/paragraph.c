@@ -73,20 +73,39 @@ static void begin_inline(const markdown_core_element_instance *self, markdown_co
     }
 }
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .begin_inline = begin_inline,
-    .state_size = sizeof(markdown_core_block_identifier_work),
-    .accepts_lazy = accepts_lazy,
-    .open_lazy = open_lazy,
-
-    .name = "paragraph",
-    .last_block_matches = continue_paragraph,
-    .continue_reach = continue_reach,
-    .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
-    .inline_content = true,
+static const markdown_core_content_ops PARAGRAPH_CONTENT = {
+    .mode = MARKDOWN_CORE_CONTENT_PROSE,
+    .inlines = true,
     .paragraph = true,
-    .close_block = close_paragraph,
-    .open_text_block = open_text,
-    .feed_candidate = markdown_core_block_feed_identifier_line,
-    .decide_candidate = markdown_core_block_decide_identifier_line,
+};
+
+static const markdown_core_inline_ops PARAGRAPH_INLINES = {
+    .enter = begin_inline,
+};
+
+static const markdown_core_candidate_ops PARAGRAPH_CANDIDATE = {
+    .feed = markdown_core_block_feed_identifier_line,
+    .decide = markdown_core_block_decide_identifier_line,
+};
+
+static const markdown_core_open_ops PARAGRAPH_OPENS = {
+    .text = open_text,
+};
+
+static const markdown_core_line_ops PARAGRAPH_LINES = {
+    .lazy = accepts_lazy,
+    .lazy_open = open_lazy,
+    .matches = continue_paragraph,
+    .reach = continue_reach,
+    .close = close_paragraph,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
+    .state_size = sizeof(markdown_core_block_identifier_work),
+    .name = "paragraph",
+    .content = &PARAGRAPH_CONTENT,
+    .inlines = &PARAGRAPH_INLINES,
+    .candidate = &PARAGRAPH_CANDIDATE,
+    .opens = &PARAGRAPH_OPENS,
+    .lines = &PARAGRAPH_LINES,
 };

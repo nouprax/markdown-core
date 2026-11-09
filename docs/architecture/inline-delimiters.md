@@ -132,7 +132,7 @@ whitespace; nested markup keeps its authored scope. The finish stage
 traverses all owned inline roots using one explicit stack, and walks each root
 exactly once: a container's inline content is parsed at the container's ENTER
 (the walk then continues into the children that parse produced), a node's
-completion (the element's `complete_node`, the document's anchor
+completion (the element's `complete` (markdown_core_finish_ops), the document's anchor
 reservation) runs at each node's ENTER, and text consolidation and every inline
 finish step (autolink's email scan) run at the events of that one walk.
 Completion takes the blocks in the order they closed, each its own root, and

@@ -765,32 +765,54 @@ static const markdown_core_edit_ops DIRECTIVE_EDIT = {
     .reopens = true,
 };
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
-    .edit = &DIRECTIVE_EDIT,
-    .interrupts_paragraph = true,
+static const markdown_core_opaque_ops DIRECTIVE_OPAQUE = {
+    .alloc = directive_opaque_alloc,
+    .free = directive_opaque_free,
+    .view = directive_opaque_view,
+    .adopt = directive_opaque_adopt,
+    .visit = visit_owned_subtrees,
+};
 
-    .pending_close = true,
+static const markdown_core_contain_ops DIRECTIVE_CONTAIN = {
+    .kinds = containment_kinds,
+};
 
-    .name = "directive",
-    .match_inline = match,
-    .last_block_matches = directive_block_matches,
-    .continues_block = directive_block_continues,
-    .maximum_block_indent = 3,
-    .try_opening_block = open_directive_block,
+static const markdown_core_content_ops DIRECTIVE_CONTENT = {
+    .holds_inlines = contains_inlines,
+    .holds_lines = accepts_lines,
+};
+
+static const markdown_core_inline_ops DIRECTIVE_INLINES = {
+    .match = match,
+    .terminates = ":",
+    .dispatch = ":",
+};
+
+static const markdown_core_open_ops DIRECTIVE_OPENS = {
+    .interrupts = true,
+    .indent = 3,
+    .open = open_directive_block,
     /* `scan_directive_block` needs at least two leading colons, so a line that
      * does not start with one cannot open a directive. */
-    .open_block_gate = {.bytes = ":"},
-    .probe_block = probe_directive_block,
-    .containment_kinds = containment_kinds,
-    .contains_inlines_func = contains_inlines,
-    .accepts_lines_func = accepts_lines,
-    .opaque_alloc_func = directive_opaque_alloc,
-    .opaque_free_func = directive_opaque_free,
-    .opaque_view_func = directive_opaque_view,
-    .opaque_adopt_func = directive_opaque_adopt,
-    .visit_owned_subtrees_func = visit_owned_subtrees,
-    .terminates_text = ":",
-    .dispatch = ":",
+    .open_needs = {.bytes = ":"},
+    .probe = probe_directive_block,
+};
+
+static const markdown_core_line_ops DIRECTIVE_LINES = {
+    .pending = true,
+    .matches = directive_block_matches,
+    .continues = directive_block_continues,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .edit = &DIRECTIVE_EDIT,
+    .name = "directive",
+    .opaque = &DIRECTIVE_OPAQUE,
+    .contain = &DIRECTIVE_CONTAIN,
+    .content = &DIRECTIVE_CONTENT,
+    .inlines = &DIRECTIVE_INLINES,
+    .opens = &DIRECTIVE_OPENS,
+    .lines = &DIRECTIVE_LINES,
 };
 
 /* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what

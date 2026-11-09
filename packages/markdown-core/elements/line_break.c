@@ -39,11 +39,14 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     return character == '\r' || character == '\n' ? handle_newline(inline_state) : NULL;
 }
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_LINE_BREAK = {
-    .inline_precedence = MARKDOWN_CORE_INLINE_TOKEN,
-
-    .name = "line_break",
-    .match_inline = match,
-    .terminates_text = "\r\n",
+static const markdown_core_inline_ops LINE_BREAK_INLINES = {
+    .precedence = MARKDOWN_CORE_INLINE_TOKEN,
+    .match = match,
+    .terminates = "\r\n",
     .dispatch = "\r\n",
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_LINE_BREAK = {
+    .name = "line_break",
+    .inlines = &LINE_BREAK_INLINES,
 };

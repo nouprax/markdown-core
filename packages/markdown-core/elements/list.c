@@ -345,24 +345,35 @@ static const markdown_core_edit_ops LIST_EDIT = {
     .abuts = LIST_KINDS,
 };
 
+static const markdown_core_fold_ops LIST_FOLD = {
+    .child = fold_child,
+    .flags = MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED,
+    .kinds = LIST_KINDS,
+};
+
+static const markdown_core_open_ops LIST_OPENS = {
+    .indent = 3,
+    .scan = markdown_core_list_scan,
+    /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
+    .scan_needs = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
+};
+
+static const markdown_core_line_ops LIST_LINES = {
+    .blank_last = blank_line,
+    .speculative = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
+    .prefix = continue_container,
+    .blank_spreads = true,
+    .reach = markdown_core_block_indent_reach,
+    .blank_runs = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
-    .fold_child = fold_child,
-    .folds = MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED,
-    .fold_kinds = LIST_KINDS,
-    .blank_line = blank_line,
-    .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
-
     .name = "list",
-    .continue_container = continue_container,
-    .propagates_child_blank = true,
-    .continue_reach = markdown_core_block_indent_reach,
-    .blank_runs = true,
-    .maximum_block_indent = 3,
-    .scan_block_start = markdown_core_list_scan,
-    /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
-    .scan_block_gate = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
+    .fold = &LIST_FOLD,
+    .opens = &LIST_OPENS,
+    .lines = &LIST_LINES,
 };
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,
