@@ -31,6 +31,7 @@ set(HEADERS
     ahead.h
     array.h
     zipper.h
+    seam.h
     sink.h)
 set(LIBRARY_SOURCES
     alloc.c

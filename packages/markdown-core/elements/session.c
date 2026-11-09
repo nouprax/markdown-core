@@ -1070,7 +1070,7 @@ static bool session_stop_in(const markdown_core_element *element, const uint8_t 
     size_t from = 0;
     for (size_t i = 0; i <= length; i++) {
         if (i == length || lines[i] == '\n' || lines[i] == '\r') {
-            if (element->stops(lines + from, i - from)) {
+            if (element->edit->stops(lines + from, i - from)) {
                 return true;
             }
             from = i + 1;

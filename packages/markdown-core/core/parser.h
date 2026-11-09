@@ -747,22 +747,27 @@ typedef struct markdown_core_leap {
     markdown_core_seam_stops stops;
 } markdown_core_leap;
 
+/* THE OLD TAIL IN PLACE (blocks.c, seam.h): a holder's old tail, `held`
+ * children, stays in the holder's own storage from its child `start` on --
+ * the first the reading writes -- and the reading writes its children over
+ * it from there: the first `saved` of the old ones, each moved out as the
+ * reading took its place, are in the edit's room for them from its entry
+ * `base` on, and the rest still where they were. */
+typedef struct markdown_core_seam_tail {
+    uint32_t start, held, saved, base;
+} markdown_core_seam_tail;
+
 typedef struct markdown_core_edit {
-    /* THE OLD TAIL IN PLACE (blocks.c): the old tail, `held` children, stays
-     * in the root's own storage, from its child `rest` on, and the reading
-     * writes its children over it from there: the first `saved` of the old
-     * ones, each moved out as the reading took its place, are in
-     * `children`, which has room for all of them, and the rest still where
-     * they were (markdown_core_edit_old). */
+    /* The root's old tail (THE OLD TAIL IN PLACE), its `start` the root's
+     * child the reading began at, and its room `children`, which has room
+     * for all of it (markdown_core_edit_old). */
+    markdown_core_seam_tail root;
     struct markdown_core_node **children;
     size_t children_capacity;
-    uint32_t held, saved;
     /* Where the child before the old tail ends, and where the child before
      * `next` does, in the old text: the old children are measured from
      * there by their extents, as nothing moves their places (THE SPLICE). */
     uint32_t count, next, tail, prior, before;
-    /* The root's child the reading began at. */
-    uint32_t rest;
     /* THE NESTED REOPEN (blocks.c): the `depth` blocks below the root the
      * reading reopened, the root's child first, each the last child of the
      * one before; `path` holds where each is among its holder's children,
@@ -775,18 +780,17 @@ typedef struct markdown_core_edit {
      * ended in the old text (`ends`), its flags there (`states`), its
      * record in the publish's (`owners`, ast.c), where the children the
      * reading took back begin among its own (`tails`), UINT32_MAX when it
-     * took none, how many children it keeps (`keeps`), and the fold marks
+     * took none, its old tail (`levels`), whose `start` is how many
+     * children it keeps, and the fold marks
      * of its children (`folds`), or NULL. `shift` is what the lead of the
      * first it took back moves by. `closed` is where the old close of the
      * root's child ended, and `reach_from` the first entry of the log its
      * reading noted.
      *
      * THE OLD NESTED TAIL IN PLACE (blocks.c): each block of the chain
-     * holds the `holds` old children past those it keeps in its own storage,
-     * as the root holds its old tail (THE OLD TAIL IN PLACE), and the reading
-     * writes the block's new children over them: the first `saves` moved out
-     * to `nested`, from its entry `bases`, as the reading took their
-     * places. `nested` has room for all of them, `nest_count`, numbered in
+     * holds its old tail in its own storage as the root does (THE OLD TAIL
+     * IN PLACE), its room `nested`, which has room for all of them,
+     * `nest_count`, numbered in
      * the order of the text, the deepest block's first. The reading tries
      * them in that order: the next is the old child `nest_index` of the
      * block `nest_level`, the one before it ended at `nest_prior` in the old
@@ -795,7 +799,8 @@ typedef struct markdown_core_edit {
      * `level` its block. The first `nest_recorded` have records (ast.c,
      * record_nest); those past them up to the first taken back the parse
      * lets go when it fails. */
-    uint32_t *ends, *states, *owners, *tails, *keeps, *holds, *saves, *bases;
+    uint32_t *ends, *states, *owners, *tails;
+    markdown_core_seam_tail *levels;
     struct markdown_core_folds **folds;
     struct markdown_core_node **nested;
     size_t nested_capacity, taken, level, reach_from, nest_level;
@@ -859,15 +864,15 @@ typedef struct markdown_core_edit {
  * PLACE). */
 static inline struct markdown_core_node *markdown_core_edit_old(const markdown_core_edit *edit,
                                                                 const struct markdown_core_node *root, uint32_t index) {
-    return index < edit->saved ? edit->children[index] : root->children[edit->rest + index];
+    return index < edit->root.saved ? edit->children[index] : root->children[edit->root.start + index];
 }
 
 /* The old child `index` past those it keeps of the chain's block `level`
  * (THE OLD NESTED TAIL IN PLACE). */
 static inline struct markdown_core_node *markdown_core_edit_nested(const markdown_core_edit *edit, size_t level,
                                                                    uint32_t index) {
-    return index < edit->saves[level] ? edit->nested[edit->bases[level] + index]
-                                      : edit->chain[level]->children[edit->keeps[level] + index];
+    return index < edit->levels[level].saved ? edit->nested[edit->levels[level].base + index]
+                                             : edit->chain[level]->children[edit->levels[level].start + index];
 }
 
 struct markdown_core_parser {

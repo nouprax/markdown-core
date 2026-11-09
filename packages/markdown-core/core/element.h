@@ -126,10 +126,11 @@ typedef struct markdown_core_block_gate {
  * dialect as it was, rather than the projection wrapping a byte. */
 #define MARKDOWN_CORE_ELEMENT_LIMIT 255
 
-/* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element,
- * and only an edit's (blocks.c, THE REOPEN and THE SPLICE). The dialect
- * folds `trailed_kinds` and `awaits` into kind flags as it is built,
- * so no streaming reading looks here. */
+/* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element
+ * (blocks.c, THE REOPEN and THE SPLICE), and what a session's reading notes
+ * for the edits to come (`stops`). The dialect folds `trailed_kinds` and
+ * `awaits` into kind flags as it is built, so no reading of a stream that is
+ * not a session's looks here. */
 typedef struct markdown_core_edit_ops {
     /* The block kinds of the element a later line may write once the block
      * closed -- a block identifier its anchor -- so an
@@ -178,6 +179,15 @@ typedef struct markdown_core_edit_ops {
      * (blocks.c, THE REACH), a reopen does not rest at the child after one
      * (THE NESTED REOPEN), terminated by MARKDOWN_CORE_NODE_NONE, or NULL. */
     const markdown_core_node_type *awaits;
+    /* THE STOP LINES (blocks.c, AN OPENER READ TO THE END): a test of one
+     * line of the text as written, without its line ending, true for every
+     * line the element's reading from an opener in the document's root
+     * could stop at -- its closer -- and for others as it likes. A reading
+     * that read to the text's end and found none decides the same while no
+     * line after its opener is one, whatever the lines are: it notes its
+     * opener (markdown_core_parser_reach_open), and not what it read. NULL
+     * for an element whose readings note what they read. */
+    bool (*stops)(const unsigned char *line, size_t length);
 } markdown_core_edit_ops;
 
 struct markdown_core_element {
@@ -395,15 +405,6 @@ struct markdown_core_element {
                                                    void *, const markdown_core_candidate_line *, bool *);
     markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
                                                          const void *);
-    /* THE STOP LINES (blocks.c, AN OPENER READ TO THE END): a test of one
-     * line of the text as written, without its line ending, true for every
-     * line the element's reading from an opener in the document's root
-     * could stop at -- its closer -- and for others as it likes. A reading
-     * that read to the text's end and found none decides the same while no
-     * line after its opener is one, whatever the lines are: it notes its
-     * opener (markdown_core_parser_reach_open), and not what it read. NULL
-     * for an element whose readings note what they read. */
-    bool (*stops)(const unsigned char *line, size_t length);
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
     /* What `try_interrupting_block` needs on a non-indented line. */
