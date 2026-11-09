@@ -148,7 +148,7 @@ static void *S_bytes_take(markdown_core_node_pool *pool, size_t bytes) {
  * packages/markdown-core/node-types.json. */
 /* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
 /* A type without a record is absent and reads as 0: no inline record, and
- * `as.data` left NULL. An element-owned payload comes from its element's `alloc` (markdown_core_opaque_ops). */
+ * `as.data` left NULL. An element-owned payload comes from its opaque `alloc`. */
 static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DOCUMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_document_value),
     [MARKDOWN_CORE_NODE_CALLOUT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_callout),

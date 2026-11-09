@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Every byte an element registers as a special inline character must be a
- * byte its own `match_inline` dispatches on.
+ * byte its own inline `match` dispatches on.
  *
  * A registered byte ends the text run in front of it, and the parser then asks
  * the owning element what to do with it. If the element's `match` cannot
@@ -29,10 +29,10 @@
  * SINCE 3.2 AN ELEMENT DECLARES THREE SETS, and two laws relate them, both
  * checked below:
  *
- *   terminates_text      ⊆ dispatch    — a byte that ends a text run and is
- *                                        dispatched to nobody is D2 exactly
- *   flanking_transparent ⊆ dispatch    — a byte an element makes invisible to
- *                                        `scan_delims` without owning it is D1
+ *   terminates  ⊆ dispatch    — a byte that ends a text run and is
+ *                               dispatched to nobody is D2 exactly
+ *   transparent ⊆ dispatch    — a byte an element makes invisible to
+ *                               `scan_delims` without owning it is D1
  *
  * AND THE AUDIT MUST SEE SOMETHING. The declaration used to be a run of
  * generic linked-list append calls; when 3.2 replaced them with one
@@ -52,7 +52,7 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const elementsDir = path.join(root, "packages/markdown-core/elements");
 
 const FIELD = (name) => new RegExp(`\\.${name}\\s*=\\s*("(?:\\\\.|[^"])*")`);
-const HOOK = /\.match_inline\s*=\s*(\w+)/;
+const HOOK = /\.match\s*=\s*(\w+)/;
 
 /** The bytes a C string literal denotes, with the escapes this repository uses. */
 function bytesOf(literal) {
@@ -94,12 +94,12 @@ const ESCAPES = { "\\\\": 0x5c, "\\'": 0x27, "\\n": 0x0a, "\\r": 0x0d, "\\t": 0x
 const byteOf = (literal) => (literal in ESCAPES ? ESCAPES[literal] : literal.charCodeAt(0));
 const spell = (byte) => (byte < 0x20 ? `0x${byte.toString(16).padStart(2, "0")}` : `'${String.fromCharCode(byte)}'`);
 
-/** The body of the element's `match_inline` hook, found through the descriptor. */
-function matchBody(source, descriptor, file) {
-    const hook = HOOK.exec(descriptor);
+/** The body of the element's inline `match` hook, found through its inline table. */
+function matchBody(source, inlines, file) {
+    const hook = HOOK.exec(inlines);
     if (hook === null) return null;
     const start = source.search(new RegExp(`^static markdown_core_node \\*${hook[1]}\\(`, "m"));
-    if (start < 0) throw new Error(`${file}: match_inline hook \`${hook[1]}\` is named but not defined here.`);
+    if (start < 0) throw new Error(`${file}: inline match hook \`${hook[1]}\` is named but not defined here.`);
     const end = source.indexOf("\n}\n", start);
     return source.slice(start, end < 0 ? source.length : end);
 }
@@ -107,27 +107,30 @@ function matchBody(source, descriptor, file) {
 const failures = [];
 const report = [];
 const { descriptors } = readElementInventory(elementsDir);
-for (const { file: entry, source, body: descriptor } of descriptors) {
+let hooks = 0;
+for (const { file: entry, source, tables } of descriptors) {
+    const inlines = tables.inlines ?? "";
     const setOf = (name) => {
-        const match = FIELD(name).exec(descriptor);
+        const match = FIELD(name).exec(inlines);
         return match === null ? [] : bytesOf(match[1]);
     };
-    const terminates = setOf("terminates_text");
+    const terminates = setOf("terminates");
     const dispatch = setOf("dispatch");
-    const transparent = setOf("flanking_transparent");
-    const delimiterCharacter = /\.delimiter_character\s*=\s*'([^'\\])'/.exec(descriptor)?.[1];
+    const transparent = setOf("transparent");
+    const delimiterCharacter = /\.character\s*=\s*'([^'\\])'/.exec(inlines)?.[1];
     if (delimiterCharacter && !terminates.includes(delimiterCharacter.charCodeAt(0))) {
         failures.push(`${entry}: its default delimiter byte must terminate text and reach dispatch.`);
     }
 
-    const body = matchBody(source, descriptor, entry);
+    const body = matchBody(source, inlines, entry);
     if (body === null) {
         if (dispatch.length > 0) {
-            failures.push(`${entry}: declares ${String(dispatch.length)} dispatch bytes and has no match_inline.`);
+            failures.push(`${entry}: declares ${String(dispatch.length)} dispatch bytes and has no inline match.`);
         }
         report.push(`  ${entry}: no inline hook`);
         continue;
     }
+    hooks += 1;
     const dispatched = new Set([...body.matchAll(DISPATCH)].map((match) => byteOf(match[1])));
 
     for (const byte of [...terminates, ...dispatch, ...transparent]) {
@@ -141,7 +144,7 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
     for (const byte of dispatch) {
         if (!dispatched.has(byte)) {
             failures.push(
-                `${entry}: declares ${spell(byte)} in its dispatch set, and its match_inline never dispatches on it.`
+                `${entry}: declares ${spell(byte)} in its dispatch set, and its inline match never dispatches on it.`
             );
         }
     }
@@ -170,10 +173,13 @@ for (const { file: entry, source, body: descriptor } of descriptors) {
     );
 }
 
+// AND THE AUDIT MUST SEE SOMETHING (above): an inventory that found no
+// inline match read the declarations wrong.
+if (hooks === 0) failures.push("no element's inline match was found: the audit read nothing.");
 if (failures.length > 0) {
     process.stderr.write(`element special characters FAILED:\n${failures.map((f) => `  ${f}`).join("\n")}\n`);
     process.stderr.write(
-        "\nA registered byte splits the text run in front of it whether or not match_inline\n" +
+        "\nA registered byte splits the text run in front of it whether or not its inline match\n" +
             "claims it, and consolidation hides the split from every output gate. Either dispatch\n" +
             "the byte or do not register it.\n"
     );

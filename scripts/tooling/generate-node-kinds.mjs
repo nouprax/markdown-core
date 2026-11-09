@@ -306,7 +306,7 @@ function nodeTables({ block, inline }) {
     const typeString = (type) => `"${type.name.toLowerCase()}"`;
     return (
         "/* A type without a record is absent and reads as 0: no inline record, and\n" +
-        " * `as.data` left NULL. An element-owned payload comes from `opaque_alloc_func`. */\n" +
+        " * `as.data` left NULL. An element-owned payload comes from its opaque `alloc`. */\n" +
         classTable("static const size_t S_block_payload_size", block, record) +
         "\n" +
         classTable("static const size_t S_inline_payload_size", inline, record) +

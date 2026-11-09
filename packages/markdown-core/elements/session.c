@@ -1126,7 +1126,7 @@ static bool session_stops(const markdown_core_session *session, size_t line, siz
     for (size_t i = 0; i < count; i++) {
         const markdown_core_unclosed *opener = &openers[i];
         if (!opener->aside && opener->start < rest && (!found || opener->start < *start) &&
-            session_stop_in(markdown_core_parser_instance(session->committed, opener->element), lines, size)) {
+            session_stop_in(opener->owner, lines, size)) {
             *start = opener->start;
             found = true;
         }

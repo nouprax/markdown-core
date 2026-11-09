@@ -3687,11 +3687,11 @@ static bool S_uses_flush(markdown_core_parser *parser) {
  * reading puts aside those it reads again from before (S_openers_aside);
  * its splice keeps those of the old tail it took back, moved by the edit,
  * and those it read again go, as their reading noted them anew. */
-static bool S_opener_find(const markdown_core_edit *edit, const markdown_core_element *element, size_t start,
+static bool S_opener_find(const markdown_core_edit *edit, const markdown_core_element_instance *owner, size_t start,
                           size_t *at) {
     for (size_t i = 0; i < edit->opener_count; i++) {
         const markdown_core_unclosed *opener = &edit->openers[i];
-        if (!opener->aside && opener->element == element && opener->start == start) {
+        if (!opener->aside && opener->owner == owner && opener->start == start) {
             *at = i;
             return true;
         }
@@ -5444,14 +5444,15 @@ void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start,
     }
 }
 
-void markdown_core_parser_reach_open(markdown_core_parser *parser, const markdown_core_element *element, size_t start) {
+void markdown_core_parser_reach_open(markdown_core_parser *parser, const markdown_core_element_instance *owner,
+                                     size_t start) {
     if (!markdown_core_parser_reaches(parser)) {
         return;
     }
-    assert(element->edit && element->edit->stops);
+    assert(owner->element->edit && owner->element->edit->stops);
     markdown_core_edit *edit = parser->stream->edit;
     size_t at;
-    if (S_opener_find(edit, element, start, &at)) {
+    if (S_opener_find(edit, owner, start, &at)) {
         return;
     }
     markdown_core_unclosed *openers =
@@ -5461,16 +5462,17 @@ void markdown_core_parser_reach_open(markdown_core_parser *parser, const markdow
         return;
     }
     edit->openers = openers;
-    openers[edit->opener_count++] = (markdown_core_unclosed){element, (uint32_t)start, false};
+    openers[edit->opener_count++] = (markdown_core_unclosed){owner, (uint32_t)start, false};
 }
 
-void markdown_core_parser_reach_shut(markdown_core_parser *parser, const markdown_core_element *element, size_t start) {
+void markdown_core_parser_reach_shut(markdown_core_parser *parser, const markdown_core_element_instance *owner,
+                                     size_t start) {
     if (!markdown_core_parser_reaches(parser)) {
         return;
     }
     markdown_core_edit *edit = parser->stream->edit;
     size_t at;
-    if (edit->opener_count && S_opener_find(edit, element, start, &at)) {
+    if (edit->opener_count && S_opener_find(edit, owner, start, &at)) {
         edit->openers[at] = edit->openers[--edit->opener_count];
     }
 }
@@ -7713,8 +7715,9 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     /* A reading of the document past the line after its own (THE REACH):
      * one that read no further decides nothing past the block that starts
      * there, which an edit reads from before. */
-    if (markdown_core_parser_reaches(parser) && lookahead->opener && lookahead->opener->edit &&
-        lookahead->opener->edit->stops && lookahead->depth == 1 && lookahead->saved.block_root == parser->root) {
+    if (markdown_core_parser_reaches(parser) && lookahead->opener && lookahead->opener->element->edit &&
+        lookahead->opener->element->edit->stops && lookahead->depth == 1 &&
+        lookahead->saved.block_root == parser->root) {
         S_reach_opener(parser, lookahead);
     } else if (markdown_core_parser_reaches(parser) && lookahead->line > lookahead->saved.line_number + 2 &&
                lookahead->saved.block_root == parser->root) {
@@ -8466,7 +8469,7 @@ static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t inde
      * (AN OPENER READ TO THE END). */
     size_t at;
     if (!last || !stream->edit || !stream->edit->opener_count ||
-        !S_opener_find(stream->edit, mark->calls[index].owner->element, start, &at)) {
+        !S_opener_find(stream->edit, mark->calls[index].owner, start, &at)) {
         markdown_core_parser_reach(parser, start, end);
     }
     mark->calls[index].decided = true;

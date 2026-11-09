@@ -67,7 +67,7 @@
             "kind": "Table",
             "record": null,
             "structure": "TABLE",
-            "note": "Its payload comes from the table element's opaque_alloc_func."
+            "note": "Its payload comes from the table element's `alloc` (markdown_core_opaque_ops)."
         },
         {
             "name": "TABLE_ROW",
@@ -86,14 +86,14 @@
             "kind": "FormulaBlock",
             "record": null,
             "structure": "FORMULA",
-            "note": "Its payload comes from the formula element's opaque_alloc_func."
+            "note": "Its payload comes from the formula element's `alloc` (markdown_core_opaque_ops)."
         },
         {
             "name": "DIRECTIVE_BLOCK",
             "kind": "DirectiveBlock",
             "record": null,
             "structure": "DIRECTIVE",
-            "note": "Its payload comes from the directive element's opaque_alloc_func."
+            "note": "Its payload comes from the directive element's `alloc` (markdown_core_opaque_ops)."
         },
         {
             "name": "COMMENT_BLOCK",
@@ -216,14 +216,14 @@
             "kind": "Formula",
             "record": null,
             "structure": "FORMULA",
-            "note": "Its payload comes from the formula element's opaque_alloc_func."
+            "note": "Its payload comes from the formula element's `alloc` (markdown_core_opaque_ops)."
         },
         {
             "name": "DIRECTIVE",
             "kind": "Directive",
             "record": null,
             "structure": "DIRECTIVE",
-            "note": "Its payload comes from the directive element's opaque_alloc_func."
+            "note": "Its payload comes from the directive element's `alloc` (markdown_core_opaque_ops)."
         },
         {
             "name": "DIRECTIVE_LABEL",

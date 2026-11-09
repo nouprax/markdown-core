@@ -3,7 +3,16 @@ import test from "node:test";
 import { parseElementInventory } from "../element-inventory.mjs";
 
 const symbol = (name) => `MARKDOWN_CORE_ELEMENT_${name}`;
-const definition = (name) => `const markdown_core_element ${symbol(name)} = {\n    .dispatch = "[!",\n};\n`;
+// A descriptor and the inline table it names; `fields` go into the table
+// `table`, the inline one unless another is named.
+const definition = (name, fields = "", table = "inlines") =>
+    `static const markdown_core_inline_ops ${name}_INLINES = {\n    ${table === "inlines" ? fields : ""}.dispatch = "[!",\n};\n` +
+    (table === "inlines"
+        ? ""
+        : `static const markdown_core_${table.replace(/s$/, "")}_ops ${name}_${table.toUpperCase()} = {\n    ${fields}\n};\n`) +
+    `const markdown_core_element ${symbol(name)} = {\n    .inlines = &${name}_INLINES,\n` +
+    (table === "inlines" ? "" : `    .${table} = &${name}_${table.toUpperCase()},\n`) +
+    "};\n";
 const table = (names) =>
     `static const markdown_core_element *const CORE_ELEMENTS[] = {\n${names
         .map((name) => `    &${symbol(name)}`)
@@ -23,7 +32,7 @@ test("inventory follows descriptor identity and attach order at any feature coun
             inventory.ordered.map((entry) => entry.symbol),
             order.map(symbol)
         );
-        assert.ok(inventory.descriptors.every((entry) => entry.body.includes('.dispatch = "[!"')));
+        assert.ok(inventory.descriptors.every((entry) => entry.tables.inlines.includes('.dispatch = "[!"')));
     }
 });
 
@@ -48,6 +57,9 @@ test("missing and malformed inventories fail closed", () => {
     const malformed = sources(["FIRST"]);
     malformed[1].source = `const markdown_core_element ${symbol("FIRST")} = other;\n`;
     assert.throws(() => parseElementInventory(malformed), /could not read every/);
+    const untabled = sources(["FIRST"]);
+    untabled[1].source = untabled[1].source.replace(/^static const markdown_core_inline_ops[\s\S]*?^\};\n/m, "");
+    assert.throws(() => parseElementInventory(untabled), /could not read its inlines table FIRST_INLINES/);
     const unreadable = sources(["FIRST"]);
     unreadable[0].source = unreadable[0].source.replace(`&${symbol("FIRST")}`, "other");
     assert.throws(() => parseElementInventory(unreadable), /unreadable CORE_ELEMENTS/);
@@ -63,11 +75,11 @@ test("identity mismatches fail even when descriptor counts agree", () => {
 test("delimiter projections cannot silently overwrite another element", () => {
     const input = sources(["FIRST", "SECOND"]);
     const rule = (name, character) =>
-        `.delimiter_rule = MARKDOWN_CORE_DELIM_RULE_${name},\n` +
-        `.delimiter_character = '${character}',\n` +
+        `.rule = MARKDOWN_CORE_DELIM_RULE_${name},\n` +
+        `.character = '${character}',\n` +
         ".delimiter = {.minimum_width = 2, .maximum_width = 2},\n";
     const set = (index, fields) => {
-        input[index].source = definition(index === 1 ? "FIRST" : "SECOND").replace(".dispatch", `${fields}.dispatch`);
+        input[index].source = definition(index === 1 ? "FIRST" : "SECOND", fields);
     };
     set(1, rule("MARK", "="));
     set(2, rule("INSERTION", "+"));
@@ -87,12 +99,14 @@ test("delimiter projections cannot silently overwrite another element", () => {
 test("block scanners declare their indentation bound", () => {
     const input = sources(["FIRST"]);
     const set = (fields) => {
-        input[1].source = definition("FIRST").replace(".dispatch", `${fields}.dispatch`);
+        input[1].source = definition("FIRST", fields, "opens");
     };
-    set(".scan_block_start = scan,\n");
+    set(".scan = scan,\n");
     assert.throws(() => parseElementInventory(input), /explicit indentation bound/);
-    set(".scan_block_start = scan,\n.maximum_block_indent = 3,\n");
+    set(".scan = scan,\n.scan_needs = {0},\n");
+    assert.throws(() => parseElementInventory(input), /explicit indentation bound/);
+    set(".scan = scan,\n.indent = 3,\n");
     assert.doesNotThrow(() => parseElementInventory(input));
-    set(".scan_block_start = scan,\n.maximum_block_indent = INT_MAX,\n");
+    set(".scan = scan,\n.indent = INT_MAX,\n");
     assert.doesNotThrow(() => parseElementInventory(input));
 });

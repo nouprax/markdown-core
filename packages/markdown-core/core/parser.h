@@ -661,11 +661,11 @@ typedef struct markdown_core_chain_place {
     uint32_t start, prior;
 } markdown_core_chain_place;
 
-/* AN OPENER READ TO THE END (blocks.c): `element`'s, on the line that
+/* AN OPENER READ TO THE END (blocks.c): `owner`'s, on the line that
  * starts at `start`; `aside` while an edit's reading reads the text again
  * from before it (THE SPLICE). */
 typedef struct markdown_core_unclosed {
-    const struct markdown_core_element *element;
+    const struct markdown_core_element_instance *owner;
     uint32_t start;
     bool aside;
 } markdown_core_unclosed;
@@ -1578,20 +1578,21 @@ typedef struct {
     bool incomplete;
     bool waits;
     bool waited;
-    /* The element whose opener the reading is, when the element has stop
+    /* The instance whose opener the reading is, when its element has stop
      * lines (element.h, `stops`), and whether the reading found one: set
      * by markdown_core_parser_lookahead_opener before the end. */
     bool closed;
-    const struct markdown_core_element *opener;
+    const struct markdown_core_element_instance *opener;
 } markdown_core_block_lookahead;
 
-/* The reading is one of `element`'s opener, which `closed` says whether it
+/* The reading is one of `owner`'s opener, which `closed` says whether it
  * found a stop line for (element.h, `stops`): one in the document's root
  * that found none notes its opener as it ends, and not what it read
  * (blocks.c, AN OPENER READ TO THE END). */
 static inline void markdown_core_parser_lookahead_opener(markdown_core_block_lookahead *lookahead,
-                                                         const struct markdown_core_element *element, bool closed) {
-    lookahead->opener = element;
+                                                         const struct markdown_core_element_instance *owner,
+                                                         bool closed) {
+    lookahead->opener = owner;
     lookahead->closed = closed;
 }
 
@@ -2003,15 +2004,15 @@ static inline void markdown_core_parser_reach(markdown_core_parser *parser, size
         markdown_core_parser_note_reach(parser, start, end);
     }
 }
-/* AN OPENER READ TO THE END (blocks.c): the reading of `element`'s opener
+/* AN OPENER READ TO THE END (blocks.c): the reading of `owner`'s opener
  * on the line that starts at `start`, in the document's root, read to the
  * text's end and found no stop line (element.h, `stops`); and, for
  * `reach_shut`, it found one, and what it read is in the reach. A parse
  * that takes no edits pays the test and nothing more, and so does a
  * snapshot. The parse fails when storage could not be had. */
-void markdown_core_parser_reach_open(markdown_core_parser *parser, const struct markdown_core_element *element,
+void markdown_core_parser_reach_open(markdown_core_parser *parser, const struct markdown_core_element_instance *owner,
                                      size_t start);
-void markdown_core_parser_reach_shut(markdown_core_parser *parser, const struct markdown_core_element *element,
+void markdown_core_parser_reach_shut(markdown_core_parser *parser, const struct markdown_core_element_instance *owner,
                                      size_t start);
 /* The openers of the flushed document read to the end, `*count` of them,
  * in no order. */

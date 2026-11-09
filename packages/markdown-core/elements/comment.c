@@ -120,7 +120,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
     }
     markdown_core_block_reader reader = {&lines, read_block_line};
     const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
-    markdown_core_parser_lookahead_opener(&lines.lookahead, self->element, closed);
+    markdown_core_parser_lookahead_opener(&lines.lookahead, self, closed);
     markdown_core_parser_lookahead_end(&lines.lookahead);
     *undecided = !closed && lines.undecided;
     return closed && !parser->error;
