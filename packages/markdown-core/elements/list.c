@@ -337,7 +337,16 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
              markdown_core_parser_starts_on_line(parser, node, parser->at.line_number));
 }
 
+static const markdown_core_edit_ops LIST_EDIT = {
+    /* A block identifier line after it names it (block_identifier.c). */
+    .trailed_kinds = LIST_KINDS,
+    .reopens = true,
+    .reopen_block = reopen_block,
+    .abuts = LIST_KINDS,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
+    .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
     .fold_child = fold_child,
     .folds = MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED,
@@ -348,11 +357,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .name = "list",
     .continue_container = continue_container,
     .propagates_child_blank = true,
-    /* A block identifier line after it names it (block_identifier.c). */
-    .trailed_kinds = LIST_KINDS,
-    .reopens = true,
-    .reopen_block = reopen_block,
-    .abuts = LIST_KINDS,
     .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
     .maximum_block_indent = 3,

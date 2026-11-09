@@ -761,11 +761,15 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+static const markdown_core_edit_ops DIRECTIVE_EDIT = {
+    .reopens = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .edit = &DIRECTIVE_EDIT,
     .interrupts_paragraph = true,
 
     .pending_close = true,
-    .reopens = true,
 
     .name = "directive",
     .match_inline = match,

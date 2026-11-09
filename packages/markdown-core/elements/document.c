@@ -137,6 +137,10 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
                                                                                        : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
+static const markdown_core_edit_ops DOCUMENT_EDIT = {
+    .stops = markdown_core_properties_stops,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .peers = DOCUMENT_PEERS,
     .state_size = sizeof(markdown_core_properties_work),
@@ -146,7 +150,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .read_document_prefix = read_document_prefix,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
-    .stops = markdown_core_properties_stops,
+    .edit = &DOCUMENT_EDIT,
     .candidate_state_size = sizeof(bool),
     .prepare_document = prepare_document,
     .finish_document = finish_document,

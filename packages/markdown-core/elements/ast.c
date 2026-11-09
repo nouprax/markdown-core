@@ -3059,7 +3059,7 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
     for (size_t level = 0; level < edit->depth; level++) {
         block = edit->chain[level];
         const bool deeper = level + 1 < edit->depth;
-        const uint32_t final = deeper ? edit->keeps[level] - 1 : edit->keeps[level];
+        const uint32_t final = deeper ? edit->levels[level].start - 1 : edit->levels[level].start;
         edit->owners[level] = owner;
         edit->ends[level] = window.end;
         uint32_t next = 0;
@@ -3141,9 +3141,9 @@ static bool record_nest(markdown_core_parser *parser) {
         const uint32_t field = children_field(block);
         uint32_t last = level + 1 < edit->depth ? edit->owners[level + 1] : 0;
         uint32_t before = level + 1 < edit->depth ? edit->ends[level + 1] : edit->places[level].prior;
-        for (uint32_t i = 0; i < edit->holds[level] && edit->nest_recorded < end; i++) {
-            assert(edit->saves[level] > i);
-            markdown_core_node *old = edit->nested[edit->bases[level] + i];
+        for (uint32_t i = 0; i < edit->levels[level].held && edit->nest_recorded < end; i++) {
+            assert(edit->levels[level].saved > i);
+            markdown_core_node *old = edit->nested[edit->levels[level].base + i];
             const uint32_t start = (uint32_t)((int64_t)before + old->extent.lead);
             before = start + old->extent.span;
             if (!reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, before}, field,
@@ -3209,12 +3209,12 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
          * SEAMS). They are its content's old nodes, which the next publish
          * matches its new ones against. */
         markdown_core_node *deepest = edit->chain[edit->depth - 1];
-        const uint32_t kept = edit->keeps[edit->depth - 1];
+        const uint32_t kept = edit->levels[edit->depth - 1].start;
         /* A paragraph that keeps its old tail aside lets go of what it
          * reads again once its parse knows (blocks.c, THE OLD TAIL OF A
          * PARAGRAPH). */
         const bool aside = edit->leap && edit->leap->kept;
-        if (ok && !aside && !edit->holds[edit->depth - 1] && deepest->child_count > kept) {
+        if (ok && !aside && !edit->levels[edit->depth - 1].held && deepest->child_count > kept) {
             ok = markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept,
                                                  kept ? edit->leap->seam.source : 0);
             deepest->child_count = kept;
@@ -3247,10 +3247,10 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
      * PLACE). */
     for (size_t level = 0; level < edit->depth; level++) {
         if (level + 1 < edit->depth || !edit->leap || !edit->leap->kept) {
-            edit->chain[level]->child_count = edit->keeps[level];
+            edit->chain[level]->child_count = edit->levels[level].start;
         }
     }
-    edit->nest_count = edit->depth ? edit->bases[0] + edit->holds[0] : 0;
+    edit->nest_count = edit->depth ? edit->levels[0].base + edit->levels[0].held : 0;
     edit->nest_recorded = 0;
     if (metadata) {
         value->metadata = NULL;

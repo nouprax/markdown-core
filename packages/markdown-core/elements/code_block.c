@@ -368,7 +368,12 @@ void markdown_core_code_block_parts(markdown_core_parts *parts) {
     markdown_core_parts_lines(parts, at, code->literal.data, code->literal.len);
 }
 
+static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
+    .reopen_block = reopen_code,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
+    .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
     .maximum_block_indent = INT_MAX,
     .scan_block_start = scan_code,
@@ -379,6 +384,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .close_block = close_code,
     .complete_node = complete_code,
     .blank_line = blank_line,
-    .reopen_block = reopen_code,
     .peers = CODE_PEERS,
 };

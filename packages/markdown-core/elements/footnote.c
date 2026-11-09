@@ -123,11 +123,15 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_footnote_continue(parser, node, input);
 }
+static const markdown_core_edit_ops FOOTNOTE_EDIT = {
+    .reopens = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",
     .continue_container = continue_container,
-    .reopens = true,
     .continue_reach = markdown_core_block_indent_reach,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,

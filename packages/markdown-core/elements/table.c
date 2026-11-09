@@ -636,12 +636,10 @@ static bool resumes(const markdown_core_element_instance *self, const markdown_c
 
 static const markdown_core_node_type TABLE_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
+static const markdown_core_edit_ops TABLE_EDIT = {
     /* A block identifier on the line after it writes it
      * (block_identifier.c). */
     .trailed_kinds = TABLE_KINDS,
-    /* A delimiter row makes the paragraph line before it the head. */
-    .claims = " \t|:-",
     /* An edit reads again from a row, the rows before it kept: each is one
      * line, and none takes the next. */
     .reopens = true,
@@ -649,6 +647,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .resumes = resumes,
     .abuts = TABLE_KINDS,
     .headed = true,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
+    .edit = &TABLE_EDIT,
+    /* A delimiter row makes the paragraph line before it the head. */
+    .claims = " \t|:-",
 
     .name = "table",
     .last_block_matches = matches,

@@ -279,6 +279,10 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
                           markdown_core_node *);
 
+static const markdown_core_edit_ops COMMENT_EDIT = {
+    .stops = comment_stops,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
     .interrupts_paragraph = true,
@@ -292,7 +296,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .try_opening_block = open_block,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
-    .stops = comment_stops,
+    .edit = &COMMENT_EDIT,
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_block_gate = {.bytes = "%"},
     .probe_block = probe_comment_block,
