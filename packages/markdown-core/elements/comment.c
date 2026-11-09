@@ -298,21 +298,25 @@ static const markdown_core_candidate_ops COMMENT_CANDIDATE = {
     .decide = decide_candidate,
 };
 
+static const markdown_core_open_ops COMMENT_OPENS = {
+    .interrupts = true,
+    .indent = 3,
+    .open = open_block,
+    /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
+    .open_needs = {.bytes = "%"},
+    .probe = probe_comment_block,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
-    .interrupts_paragraph = true,
     .close_block = close_comment,
     .name = "comment",
     .last_block_matches = block_matches,
-    .maximum_block_indent = 3,
-    .try_opening_block = open_block,
     .edit = &COMMENT_EDIT,
-    /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
-    .open_block_gate = {.bytes = "%"},
-    .probe_block = probe_comment_block,
     .content = &COMMENT_CONTENT,
     .inlines = &COMMENT_INLINES,
     .candidate = &COMMENT_CANDIDATE,
+    .opens = &COMMENT_OPENS,
 };
 
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,

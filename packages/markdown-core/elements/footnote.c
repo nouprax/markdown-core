@@ -133,16 +133,20 @@ static const markdown_core_inline_ops FOOTNOTE_INLINES = {
     .dispatch = "^",
 };
 
+static const markdown_core_open_ops FOOTNOTE_OPENS = {
+    .indent = 3,
+    .scan = markdown_core_footnote_scan,
+    .scan_needs = {.bytes = "["},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",
     .continue_container = continue_container,
     .continue_reach = markdown_core_block_indent_reach,
-    .maximum_block_indent = 3,
-    .scan_block_start = markdown_core_footnote_scan,
-    .scan_block_gate = {.bytes = "["},
     .inlines = &FOOTNOTE_INLINES,
+    .opens = &FOOTNOTE_OPENS,
 };
 
 bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,

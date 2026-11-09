@@ -263,7 +263,7 @@ struct markdown_core_dialect_builder {
  * `document_structure` owns the document lifecycle -- the last registered
  * element that declares it, as `text_structure` is the last that declares
  * an inline `text`, `text_block_structure` the last that declares
- * `open_text_block` and each delimiter rule belongs to the last element that
+ * an opening's `text` and each delimiter rule belongs to the last element that
  * declares it. The core dialect has one of each; a setup that registers
  * another replaces the earlier one for its instance. */
 /* The class of a byte that ends a run of inline text, in the dialect's

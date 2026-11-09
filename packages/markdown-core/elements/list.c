@@ -351,6 +351,13 @@ static const markdown_core_fold_ops LIST_FOLD = {
     .kinds = LIST_KINDS,
 };
 
+static const markdown_core_open_ops LIST_OPENS = {
+    .indent = 3,
+    .scan = markdown_core_list_scan,
+    /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
+    .scan_needs = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
@@ -361,11 +368,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .propagates_child_blank = true,
     .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
-    .maximum_block_indent = 3,
-    .scan_block_start = markdown_core_list_scan,
-    /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
-    .scan_block_gate = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
     .fold = &LIST_FOLD,
+    .opens = &LIST_OPENS,
 };
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,

@@ -1939,13 +1939,16 @@ static const markdown_core_inline_ops HEADING_INLINES = {
     .claim = markdown_core_heading_claim_tail,
 };
 
+static const markdown_core_open_ops HEADING_OPENS = {
+    .indent = 3,
+    .scan = scan_heading,
+    /* ATX `#`; a setext underline of `=` or `-`. */
+    .scan_needs = {.bytes = "#=-"},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
     .name = "heading",
-    .maximum_block_indent = 3,
-    .scan_block_start = scan_heading,
-    /* ATX `#`; a setext underline of `=` or `-`. */
-    .scan_block_gate = {.bytes = "#=-"},
     .last_block_matches = continue_heading,
     .close_block = close_heading,
     .blank_opaque = true,
@@ -1955,4 +1958,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .finish = &HEADING_FINISH,
     .content = &HEADING_CONTENT,
     .inlines = &HEADING_INLINES,
+    .opens = &HEADING_OPENS,
 };

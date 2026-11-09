@@ -8682,8 +8682,8 @@ static bool scan_element_start(markdown_core_parser *parser, block_start_context
         /* The indent bound stays a runtime test rather than part of the
          * projection: `context->indent` is a property of the line, not of the
          * element set, so it cannot be folded into a table built once. */
-        if (context->indent <= owner->element->maximum_block_indent &&
-            owner->element->scan_block_start(owner, parser, context, start)) {
+        if (context->indent <= owner->element->opens->indent &&
+            owner->element->opens->scan(owner, parser, context, start)) {
             start->owner = owner;
             return true;
         }
@@ -8718,7 +8718,7 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
     size_t probe_count = dialect->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PROBE];
     for (size_t element_index = 0; element_index < probe_count; element_index++) {
         const markdown_core_element_instance *probe = probes[element_index];
-        if (probe->element->probe_block(probe, parser, input, first, indent, reader)) {
+        if (probe->element->opens->probe(probe, parser, input, first, indent, reader)) {
             return true;
         }
         if (parser->error) {
@@ -8746,14 +8746,14 @@ static bool S_start_decided(markdown_core_parser *parser, const block_start_cont
     bufsize_t reach = (bufsize_t)context->first;
     for (size_t i = 0; i < count; i++) {
         const markdown_core_element_instance *owner = owners[candidates ? candidates[i] : i];
-        if (context->indent > owner->element->maximum_block_indent) {
+        if (context->indent > owner->element->opens->indent) {
             continue;
         }
-        if (!owner->element->start_reach) {
+        if (!owner->element->opens->reach) {
             return false;
         }
         bool opens = false;
-        const bufsize_t read = owner->element->start_reach(owner, parser, context, &opens);
+        const bufsize_t read = owner->element->opens->reach(owner, parser, context, &opens);
         reach = read > reach ? read : reach;
         if (opens) {
             return reach < context->input->len - 1;
@@ -8837,8 +8837,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
         for (size_t element_index = 0; element_index < interrupter_count; element_index++) {
             const markdown_core_element_instance *owner =
                 interrupters[interrupter_candidates ? interrupter_candidates[element_index] : element_index];
-            markdown_core_node *opened =
-                owner->element->try_interrupting_block(owner, parser, *container, input, maybe_lazy);
+            markdown_core_node *opened = owner->element->opens->interrupt(owner, parser, *container, input, maybe_lazy);
             if (parser->error) {
                 return;
             }
@@ -8868,9 +8867,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                 const markdown_core_element_instance *opener =
                     openers[opener_candidates ? opener_candidates[element_index] : element_index];
 
-                new_container = opener->element->try_opening_block(
-                    opener, parser->at.indent > opener->element->maximum_block_indent, parser, *container, input->data,
-                    input->len);
+                new_container = opener->element->opens->open(opener, parser->at.indent > opener->element->opens->indent,
+                                                             parser, *container, input->data, input->len);
                 if (parser->error) {
                     return;
                 }
@@ -8894,9 +8892,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                     size_t last_chance_count = dialect->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
                     for (size_t element_index = 0; element_index < last_chance_count; element_index++) {
                         const markdown_core_element_instance *opener = last_chance[element_index];
-                        new_container = opener->element->try_opening_paragraph(
-                            opener, parser->at.indent > opener->element->maximum_block_indent, parser, *container,
-                            input->data, input->len);
+                        new_container =
+                            opener->element->opens->last(opener, parser->at.indent > opener->element->opens->indent,
+                                                         parser, *container, input->data, input->len);
                         if (parser->error) {
                             return;
                         }
@@ -9007,7 +9005,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
             markdown_core_block_add_line(container, input, parser);
         } else {
             const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
-            container = text_block->element->open_text_block(text_block, parser, container, input);
+            container = text_block->element->opens->text(text_block, parser, container, input);
             if (!container) {
                 return false;
             }

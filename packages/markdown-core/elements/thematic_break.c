@@ -57,10 +57,14 @@ static bool scan_thematic(const markdown_core_element_instance *self, markdown_c
     start->open = open_thematic;
     return true;
 }
+static const markdown_core_open_ops THEMATIC_BREAK_OPENS = {
+    .indent = 3,
+    .scan = scan_thematic,
+    .scan_needs = {.bytes = "*-_"},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_THEMATIC_BREAK = {
     .name = "thematic_break",
-    .maximum_block_indent = 3,
-    .scan_block_start = scan_thematic,
-    .scan_block_gate = {.bytes = "*-_"},
     .blank_opaque = true,
+    .opens = &THEMATIC_BREAK_OPENS,
 };

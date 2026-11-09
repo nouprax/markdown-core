@@ -390,6 +390,13 @@ static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
     .size = sizeof(definition_candidate),
 };
 
+static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
+    .indent = 3,
+    .scan = markdown_core_definition_list_scan,
+    .scan_needs = {.bytes = ":~"},
+    .last = try_paragraph,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
@@ -398,9 +405,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .name = "definition_list",
     .continue_container = continue_container,
     .continue_reach = markdown_core_block_indent_reach,
-    .maximum_block_indent = 3,
-    .scan_block_start = markdown_core_definition_list_scan,
-    .scan_block_gate = {.bytes = ":~"},
-    .try_opening_paragraph = try_paragraph,
     .candidate = &DEFINITION_LIST_CANDIDATE,
+    .opens = &DEFINITION_LIST_OPENS,
 };

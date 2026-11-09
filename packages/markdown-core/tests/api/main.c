@@ -1631,8 +1631,7 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node *candidate = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_strbuf_puts(&candidate->content, "text\n");
     unsigned char line[] = ":::note\n";
-    OK(runner,
-       MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(&table, 0, &parser, candidate, line, sizeof(line) - 1) == NULL,
+    OK(runner, MARKDOWN_CORE_ELEMENT_TABLE.opens->open(&table, 0, &parser, candidate, line, sizeof(line) - 1) == NULL,
        "a non-table line yields no block, independently of attach order");
     markdown_core_node_free(candidate);
 
@@ -2061,13 +2060,14 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
     static const markdown_core_node_type containers[] = {MARKDOWN_CORE_NODE_DOCUMENT, MARKDOWN_CORE_NODE_DEFINITION};
     for (size_t i = 0; i < element_count; i++) {
         const markdown_core_element_instance *instance = &instances[i];
-        const markdown_core_element *element = instance->element;
+        static const markdown_core_open_ops none = {0};
+        const markdown_core_open_ops *opens = instance->element->opens ? instance->element->opens : &none;
         const struct {
             const char *family;
             const char *bytes;
-        } gates[] = {{"open", element->try_opening_block ? element->open_block_gate.bytes : NULL},
-                     {"scan", element->scan_block_start ? element->scan_block_gate.bytes : NULL},
-                     {"interrupt", element->try_interrupting_block ? element->interrupt_block_gate.bytes : NULL}};
+        } gates[] = {{"open", opens->open ? opens->open_needs.bytes : NULL},
+                     {"scan", opens->scan ? opens->scan_needs.bytes : NULL},
+                     {"interrupt", opens->interrupt ? opens->interrupt_needs.bytes : NULL}};
         for (size_t g = 0; g < sizeof(gates) / sizeof(*gates); g++) {
             if (!gates[g].bytes) {
                 continue;
@@ -2094,7 +2094,7 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                             continue;
                         }
                         if (gates[g].family[0] == 'o') {
-                            claimed = element->try_opening_block(instance, 0, &probe, parent, line, input.len) != NULL;
+                            claimed = opens->open(instance, 0, &probe, parent, line, input.len) != NULL;
                         } else if (gates[g].family[0] == 's') {
                             block_start_context context = {.container = parent,
                                                            .input = &input,
@@ -2106,15 +2106,15 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                                                            .all_matched = true,
                                                            .depth = 1};
                             block_start start = {0};
-                            claimed = element->scan_block_start(instance, &probe, &context, &start);
+                            claimed = opens->scan(instance, &probe, &context, &start);
                         } else {
-                            claimed = element->try_interrupting_block(instance, &probe, parent, &input, false) != NULL;
+                            claimed = opens->interrupt(instance, &probe, parent, &input, false) != NULL;
                         }
                         if (claimed) {
                             sweep->violations++;
                             if (sweep->first_bad_byte < 0) {
                                 sweep->first_bad_byte = byte;
-                                sweep->first_bad_element = element->name;
+                                sweep->first_bad_element = instance->element->name;
                             }
                         }
                         markdown_core_node_free(parent);
@@ -5729,7 +5729,7 @@ static void probe_directive_openers(const markdown_core_element_instance *self, 
         markdown_core_chunk input = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0};
         size_t work = parser->attribute_scratch.work;
         text_allocation_calls = 0;
-        int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.probe_block(directive, parser, &input, 0, 0, NULL);
+        int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.opens->probe(directive, parser, &input, 0, 0, NULL);
         INT_EQ(runner, matched, i == 1 || i == 3, "directive probe validates the complete opener");
         OK(runner, text_allocation_calls <= (i == 2 || i == 3 ? 0 : 1),
            "directive probes allocate no semantic attributes");
@@ -5773,8 +5773,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_strbuf_sets(&paragraph->content, "| a | b |\n");
         unsigned char delimiter[] = "| --- |\n";
         text_allocation_calls = 0;
-        markdown_core_node *table = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
-            &table_instance, 0, &parser, paragraph, delimiter, sizeof(delimiter) - 1);
+        markdown_core_node *table = MARKDOWN_CORE_ELEMENT_TABLE.opens->open(&table_instance, 0, &parser, paragraph,
+                                                                            delimiter, sizeof(delimiter) - 1);
         OK(runner, table == NULL && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
            "a mismatched header remains a paragraph");
         INT_EQ(runner, text_allocation_calls, 0, "mismatched pipe header allocates no row or cell geometry");
@@ -7538,8 +7538,13 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
 
 static bool observe_reference_definition_lifetime(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
-    static const markdown_core_element observer = {.name = "reference-definition-lifetime",
-                                                   .try_opening_block = observe_definition_before_anchor};
+    static const markdown_core_open_ops observer_opens = {
+        .open = observe_definition_before_anchor,
+    };
+    static const markdown_core_element observer = {
+        .name = "reference-definition-lifetime",
+        .opens = &observer_opens,
+    };
     return markdown_core_dialect_builder_attach(builder, &observer);
 }
 
@@ -7684,7 +7689,13 @@ static void reference_definition_lifetime(test_batch_runner *runner) {
 }
 
 static void block_identifier_ownership(test_batch_runner *runner) {
-    static const markdown_core_element seed = {.name = "preexisting-anchor", .try_opening_block = seed_anchor};
+    static const markdown_core_open_ops seed_opens = {
+        .open = seed_anchor,
+    };
+    static const markdown_core_element seed = {
+        .name = "preexisting-anchor",
+        .opens = &seed_opens,
+    };
     const markdown_core_element *probes[] = {&seed};
     const char *sources[] = {"text #candidate#\n\n", "- text #candidate#\n\n"};
     for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {

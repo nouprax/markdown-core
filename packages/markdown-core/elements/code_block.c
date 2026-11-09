@@ -380,17 +380,21 @@ static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
+static const markdown_core_open_ops CODE_BLOCK_OPENS = {
+    .indent = INT_MAX,
+    .scan = scan_code,
+    /* A fence; an indented block is reached through the indent bound. */
+    .scan_needs = {.bytes = "`~"},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
-    .maximum_block_indent = INT_MAX,
-    .scan_block_start = scan_code,
-    /* A fence; an indented block is reached through the indent bound. */
-    .scan_block_gate = {.bytes = "`~"},
     .last_block_matches = continue_code,
     .close_block = close_code,
     .blank_line = blank_line,
     .peers = CODE_PEERS,
     .finish = &CODE_BLOCK_FINISH,
     .content = &CODE_BLOCK_CONTENT,
+    .opens = &CODE_BLOCK_OPENS,
 };

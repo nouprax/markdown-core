@@ -112,7 +112,7 @@ static inline const markdown_core_element *markdown_core_structure_for_kind(mark
  * A gate speaks about a line that is NOT indented code. Four columns of
  * indentation are a block start of their own, decided by no byte, so the scan
  * and interrupt families ask an indented line only of the owners whose
- * `maximum_block_indent` reaches it, whatever their gate says, and ask a
+ * the opening's `indent` reaches it, whatever their gate says, and ask a
  * non-indented line only of the owners whose gate admits its first byte. The
  * two descriptor facts compose; neither is a branch on the input. */
 typedef struct markdown_core_block_gate {
@@ -404,6 +404,54 @@ typedef struct markdown_core_candidate_ops {
     size_t size;
 } markdown_core_candidate_ops;
 
+/* THE OPENING: how a block of the element's opens on a line the open
+ * containers left -- found by `scan` (a block start) or `open`, `last` just
+ * before an ordinary paragraph, `interrupt` over a paragraph, `text` for the
+ * text block every dialect has -- each entered only when the line holds
+ * what its gate `*_needs` says. Each may be NULL; the dialect projects the
+ * gates and owners by byte as it is sealed. */
+typedef struct markdown_core_open_ops {
+    /* A block start: whether the line opens a block, with what it opens in
+     * `start`, without opening it. */
+    bool (*scan)(const markdown_core_element_instance *, markdown_core_parser *,
+                 struct markdown_core_block_start_context *, struct markdown_core_block_start *);
+    /* What `scan` needs on a non-indented line before it is worth entering;
+     * an indented line reaches it through `indent`. */
+    markdown_core_block_gate scan_needs;
+    markdown_core_open_block_func open;
+    /* What `open` needs on the line before it is worth entering. */
+    markdown_core_block_gate open_needs;
+    /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
+    markdown_core_open_block_func last;
+    markdown_core_node *(*interrupt)(const markdown_core_element_instance *, markdown_core_parser *,
+                                     markdown_core_node *, markdown_core_chunk *, bool);
+    /* What `interrupt` needs on a non-indented line. */
+    markdown_core_block_gate interrupt_needs;
+    /* Its `probe` asks over a paragraph too: a block of it interrupts one. */
+    bool interrupts;
+    /* Non-consuming recognition before this element's block-opening slot.
+     * Shares the producer's grammar; may report allocation failure, but never
+     * opens a node or claims source. */
+    markdown_core_probe_block_func probe;
+    /* The most indentation a line opening a block of it may have. */
+    int indent;
+    /* Opens the text block (a paragraph) on a line nothing else opens on:
+     * the dialect's last owner of it is asked. */
+    markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                                markdown_core_chunk *);
+    /* The bytes a line may hold and still make the paragraph line before it
+     * a block of the element's, as a table's delimiter row makes its head:
+     * while a streamed paragraph's last line holds only such bytes, the line
+     * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
+     * Projected into the dialect's `claims`. NULL for none. */
+    const char *claims;
+    /* `scan`'s furthest byte read on a line a session holds unfinished, and
+     * in `*opens` whether a block opens there (markdown_core_line_ops,
+     * `reach`, HOW FAR A STEP READS). */
+    bufsize_t (*reach)(const markdown_core_element_instance *, markdown_core_parser *,
+                       const struct markdown_core_block_start_context *, bool *);
+} markdown_core_open_ops;
+
 /* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element
  * (blocks.c, THE REOPEN and THE SPLICE), and what a session's reading notes
  * for the edits to come (`stops`). The dialect folds `trailed_kinds` and
@@ -469,6 +517,9 @@ typedef struct markdown_core_edit_ops {
 } markdown_core_edit_ops;
 
 struct markdown_core_element {
+    /* How a block of the element's opens (markdown_core_open_ops), or NULL
+     * when none does. */
+    const markdown_core_open_ops *opens;
     /* What the inline parse asks of the element (markdown_core_inline_ops),
      * or NULL when it takes no part in it. */
     const markdown_core_inline_ops *inlines;
@@ -497,16 +548,10 @@ struct markdown_core_element {
     /* What an edit's reading asks of the element (markdown_core_edit_ops),
      * or NULL when it asks nothing. */
     const markdown_core_edit_ops *edit;
-    int maximum_block_indent;
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The document's lifecycle (markdown_core_document_ops), for the one
      * element of a dialect that owns it, or NULL. */
     const markdown_core_document_ops *document;
-    markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                           markdown_core_node *, markdown_core_chunk *);
-    markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                  markdown_core_node *, markdown_core_chunk *, bool);
-    bool interrupts_paragraph;
 
     bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                                markdown_core_chunk *, const markdown_core_node *, bool *);
@@ -514,7 +559,7 @@ struct markdown_core_element {
      * 5.1), asked of a line a session holds unfinished before the step runs,
      * with the cursor and the first non-space byte found: the furthest byte
      * of the line the answer reads -- `continue_container`'s for `node`, and
-     * `scan_block_start`'s with the open it names, which says in `*opens`
+     * the opening's `scan`'s with the open it names, which says in `*opens`
      * whether a block opens there. A block start answers only for a
      * container it opens; one that would claim the line for a block that
      * takes text answers the line's end. A step whose bytes are all in the
@@ -523,8 +568,6 @@ struct markdown_core_element {
      * SESSION HOLDS). */
     bufsize_t (*continue_reach)(const markdown_core_element_instance *, markdown_core_parser *,
                                 const markdown_core_node *, const markdown_core_chunk *);
-    bufsize_t (*start_reach)(const markdown_core_element_instance *, markdown_core_parser *,
-                             const struct markdown_core_block_start_context *, bool *);
     /* The bytes `continue_container` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only; it strips at most one of them from a line. A
@@ -539,12 +582,6 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
-    /* The bytes a line may hold and still make the paragraph line before it
-     * a block of the element's, as a table's delimiter row makes its head:
-     * while a streamed paragraph's last line holds only such bytes, the line
-     * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
-     * Projected into the dialect's `claims`. NULL for none. */
-    const char *claims;
     bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
@@ -568,29 +605,13 @@ struct markdown_core_element {
     /* What a block of the element's takes from its children as they settle
      * (markdown_core_fold_ops), or NULL. */
     const markdown_core_fold_ops *fold;
-    bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
-                             struct markdown_core_block_start_context *, struct markdown_core_block_start *);
-    /* What `scan_block_start` needs on a non-indented line before it is worth
-     * entering; an indented line reaches it through `maximum_block_indent`. */
-    markdown_core_block_gate scan_block_gate;
-    /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
-    markdown_core_open_block_func try_opening_paragraph;
     markdown_core_match_block_func last_block_matches;
     /* The speculative form of `last_block_matches` a block-start lookahead asks
      * (see the typedef); required of an element whose blocks contain blocks. */
     markdown_core_continues_block_func continues_block;
-    markdown_core_open_block_func try_opening_block;
     /* What a candidate of the element's is asked as later lines come
      * (markdown_core_candidate_ops), or NULL when its calls ask for none. */
     const markdown_core_candidate_ops *candidate;
-    /* What `try_opening_block` needs on the line before it is worth entering. */
-    markdown_core_block_gate open_block_gate;
-    /* What `try_interrupting_block` needs on a non-indented line. */
-    markdown_core_block_gate interrupt_block_gate;
-    /* Non-consuming recognition before this element's block-opening slot.
-     * Shares the producer's grammar; may report allocation failure, but never
-     * opens a node or claims source. */
-    markdown_core_probe_block_func probe_block;
     const char *name;
     /* What the element's nodes may hold as children (markdown_core_contain_ops),
      * or NULL for the core's rule of their kinds. */

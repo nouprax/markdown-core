@@ -74,6 +74,13 @@ static inline const markdown_core_inline_ops *S_inlines_of(const markdown_core_e
     return element->inlines ? element->inlines : &S_NO_INLINES;
 }
 
+/* The opening of an element none of whose blocks opens on a line. */
+static const markdown_core_open_ops S_NO_OPENS = {0};
+
+static inline const markdown_core_open_ops *S_opens_of(const markdown_core_element *element) {
+    return element->opens ? element->opens : &S_NO_OPENS;
+}
+
 static bool S_element_refused(const markdown_core_element *element) {
     const markdown_core_finish_ops *finish = S_finish_of(element);
     if (element->kept_size > element->state_size) {
@@ -207,15 +214,15 @@ void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builde
 static bool S_element_implements(const markdown_core_element *element, markdown_core_block_hook hook) {
     switch (hook) {
     case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-        return element->scan_block_start != NULL;
+        return S_opens_of(element)->scan != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
-        return element->try_interrupting_block != NULL;
+        return S_opens_of(element)->interrupt != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
-        return element->try_opening_block != NULL;
+        return S_opens_of(element)->open != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
-        return element->try_opening_paragraph != NULL;
+        return S_opens_of(element)->last != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
-        return element->probe_block != NULL && element->interrupts_paragraph;
+        return S_opens_of(element)->probe != NULL && S_opens_of(element)->interrupts;
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;
     }
@@ -230,11 +237,11 @@ static markdown_core_block_gate S_element_gate(const markdown_core_element *elem
 
     switch (hook) {
     case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-        return element->scan_block_gate;
+        return S_opens_of(element)->scan_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
-        return element->interrupt_block_gate;
+        return S_opens_of(element)->interrupt_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
-        return element->open_block_gate;
+        return S_opens_of(element)->open_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
     case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
@@ -274,7 +281,7 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         if (S_inlines_of(element)->text) {
             dialect->text_structure = instance;
         }
-        if (element->open_text_block) {
+        if (S_opens_of(element)->text) {
             dialect->text_block_structure = instance;
         }
         if (S_inlines_of(element)->rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
@@ -617,7 +624,7 @@ static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_
                     }
                 }
             }
-            if (element->maximum_block_indent >= CODE_INDENT) {
+            if (S_opens_of(element)->indent >= CODE_INDENT) {
                 uint8_t *list = table + MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED * stride;
                 list[1 + list[0]++] = (uint8_t)i;
             }
@@ -714,7 +721,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
             dialect->container_prefix[*c] = true;
         }
-        const char *claims = instances[i].element->claims;
+        const char *claims = S_opens_of(instances[i].element)->claims;
         for (const unsigned char *c = (const unsigned char *)claims; claims && *c; c++) {
             dialect->claims[*c] = true;
         }

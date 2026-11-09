@@ -96,14 +96,18 @@ static const markdown_core_content_ops HTML_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
+static const markdown_core_open_ops HTML_BLOCK_OPENS = {
+    .indent = 3,
+    .scan = scan_html,
+    .scan_needs = {.bytes = "<"},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .blank_line = blank_line,
     .name = "html_block",
-    .maximum_block_indent = 3,
-    .scan_block_start = scan_html,
-    .scan_block_gate = {.bytes = "<"},
     .last_block_matches = continue_html,
     .close_block = close_html,
     .ends_block = ends_html,
     .content = &HTML_BLOCK_CONTENT,
+    .opens = &HTML_BLOCK_OPENS,
 };

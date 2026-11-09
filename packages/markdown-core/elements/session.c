@@ -597,7 +597,7 @@ static bool session_literal(const markdown_core_session *session, markdown_core_
     /* A paragraph only of the document, whose lines' own bytes are all its
      * content's (blocks.c, S_leap_lines). Its first line is read with the
      * next, which a call of the paragraph's opener reads ahead (element.h,
-     * try_opening_paragraph): it rests from its third line on. */
+     * the opening's `last`): it rests from its third line on. */
     if (level == SESSION_DEPTH || (!lines && (!rest->prose || level)) || !markdown_core_parser_leaps(parser, block) ||
         markdown_core_parser_line_of(parser, window.start) + (lines ? 0 : 1) >= edited ||
         markdown_core_parser_line_of(parser, window.end - 1) < edited) {

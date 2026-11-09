@@ -233,7 +233,7 @@ static markdown_core_node *open_lazy(const markdown_core_element_instance *self,
                                      markdown_core_node *node, markdown_core_chunk *input) {
     (void)self;
     const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
-    return text_block->element->open_text_block(text_block, parser, node, input);
+    return text_block->element->opens->text(text_block, parser, node, input);
 }
 
 static const markdown_core_node_type CALLOUT_TRAILED[] = {MARKDOWN_CORE_NODE_CALLOUT, MARKDOWN_CORE_NODE_NONE};
@@ -244,21 +244,24 @@ static const markdown_core_edit_ops CALLOUT_EDIT = {
     .trailed_kinds = CALLOUT_TRAILED,
 };
 
+static const markdown_core_open_ops CALLOUT_OPENS = {
+    .indent = 3,
+    .scan = markdown_core_callout_scan,
+    .reach = start_reach,
+    .scan_needs = {.bytes = ">"},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
-
     .name = "callout",
     .continue_container = continue_container,
     .continue_reach = continue_reach,
     .container_prefix_bytes = ">",
     .blank_opaque = true,
-    .maximum_block_indent = 3,
-    .scan_block_start = markdown_core_callout_scan,
-    .start_reach = start_reach,
-    .scan_block_gate = {.bytes = ">"},
+    .opens = &CALLOUT_OPENS,
 };
 
 /* A callout's parts: its variant, inside `[!` and `]` on its first line, and

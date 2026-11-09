@@ -88,6 +88,10 @@ static const markdown_core_candidate_ops PARAGRAPH_CANDIDATE = {
     .decide = markdown_core_block_decide_identifier_line,
 };
 
+static const markdown_core_open_ops PARAGRAPH_OPENS = {
+    .text = open_text,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
@@ -96,8 +100,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .last_block_matches = continue_paragraph,
     .continue_reach = continue_reach,
     .close_block = close_paragraph,
-    .open_text_block = open_text,
     .content = &PARAGRAPH_CONTENT,
     .inlines = &PARAGRAPH_INLINES,
     .candidate = &PARAGRAPH_CANDIDATE,
+    .opens = &PARAGRAPH_OPENS,
 };
