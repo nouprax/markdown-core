@@ -1174,7 +1174,11 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
         markdown_core_attribute_parser_free(&inline_state->attributes);
     }
 }
+static const markdown_core_inline_ops ATTRIBUTES_INLINES = {
+    .dispose = dispose_inline,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES = {
     .name = "attributes",
-    .dispose_inline = dispose_inline,
+    .inlines = &ATTRIBUTES_INLINES,
 };

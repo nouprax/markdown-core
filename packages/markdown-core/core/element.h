@@ -316,6 +316,70 @@ typedef struct markdown_core_content_ops {
     markdown_core_accepts_lines_func holds_lines;
 } markdown_core_content_ops;
 
+/* THE INLINE PARSE: what the inline engine asks of an element -- its
+ * tokens (`match` at its `dispatch` bytes, `insert` for a delimiter pair of
+ * its `rule`, `text` for the text between them), its run's record (`init`,
+ * `finish`, `dispose`, `holds`, `report`), and, of the block whose inline
+ * content runs (its structure), `enter` and `claim`. Each may be NULL; the
+ * dialect projects who answers what by byte and by hook as it is sealed. */
+typedef struct markdown_core_inline_ops {
+    /* Negative/zero/positive precedence separates protected tokens, ordinary
+     * alternatives, and literal fallbacks without a second dispatch algorithm.
+     * A byte's owners are asked in ascending precedence -- any value, not only
+     * the named ones -- and equal precedences in descriptor order. */
+    markdown_core_inline_precedence precedence;
+    markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *,
+                                markdown_core_inline_state *, bufsize_t);
+    void (*init)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*enter)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
+                  markdown_core_node *);
+    bool (*claim)(const markdown_core_element_instance *, markdown_core_inline_state *, markdown_core_node *);
+    void (*finish)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*dispose)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Whether the run's record holds something open at the token start the
+     * run reads next -- a bracket, a token whose owner is still to come --
+     * which a token after it may close or take. A settle point is a start at
+     * which no element holds anything open (inlines.h,
+     * markdown_core_inline_settle). */
+    bool (*holds)(const markdown_core_element_instance *, const markdown_core_inline_state *);
+    /* Lists to the run's context sink what the run's record holds open as
+     * its last token ends -- the brackets no closer met -- in the parse of
+     * the text before a cursor (sink.h). Asked only of a run that has a
+     * sink, before the run finishes. */
+    void (*report)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Parsed delimiter semantics are declared by their element. Pairing,
+     * run classification and node construction stay in the shared engine. */
+    markdown_core_delimiter_rule rule;
+    unsigned char character;
+    delimiter_rule_spec delimiter;
+    /* Optional non-consuming token predicate. Text scanning consults the
+     * dialect's byte-indexed projection of it; a byte another element also
+     * terminates text at keeps none, and always reaches ordinary element
+     * dispatch. */
+    bool (*starts)(const markdown_core_element_instance *, markdown_core_inline_state *, bufsize_t);
+    markdown_core_match_inline_func match;
+    markdown_core_inline_from_delim_func insert;
+    /* THREE byte sets, not one list.
+     *
+     * `special_inline_chars` was a single `llist` read by five consumers that
+     * each meant something different by it: two byte tables were folded out of
+     * it, `try_elements` used it for cursor dispatch,
+     * `get_element_for_special_char` used it for delimiter-tag OWNERSHIP,
+     * `bracket_takes_close_bracket` used it for `]` arbitration, and
+     * `handle_backslash` used it to disable a core optimisation. One list
+     * cannot say three different things, and D1 and D2 are what happens when it
+     * tries: `set_emphasis` folded every byte an element named into
+     * `skip_chars`, which killed CommonMark flanking merely by attaching the
+     * element, and `'}'` sat in the list dispatching to nothing.
+     *
+     * Each set is a NUL-terminated byte list; NUL itself is never a member
+     * because source normalization replaces it before inlines run. A NULL set
+     * is empty. */
+    const char *terminates;  /* ends a text run: inline_state_find_special_char */
+    const char *dispatch;    /* offered to `match`, and owns a delimiter tag */
+    const char *transparent; /* scan_delimiter looks through it; ASCII */
+} markdown_core_inline_ops;
+
 /* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element
  * (blocks.c, THE REOPEN and THE SPLICE), and what a session's reading notes
  * for the edits to come (`stops`). The dialect folds `trailed_kinds` and
@@ -381,31 +445,9 @@ typedef struct markdown_core_edit_ops {
 } markdown_core_edit_ops;
 
 struct markdown_core_element {
-    /* Negative/zero/positive precedence separates protected tokens, ordinary
-     * alternatives, and literal fallbacks without a second dispatch algorithm.
-     * A byte's owners are asked in ascending precedence -- any value, not only
-     * the named ones -- and equal precedences in descriptor order. */
-    markdown_core_inline_precedence inline_precedence;
-    markdown_core_node *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
-                                      markdown_core_inline_state *, bufsize_t);
-    void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
-                         markdown_core_node *);
-    bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
-                              markdown_core_node *);
-    void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    /* Whether the run's record holds something open at the token start the
-     * run reads next -- a bracket, a token whose owner is still to come --
-     * which a token after it may close or take. A settle point is a start at
-     * which no element holds anything open (inlines.h,
-     * markdown_core_inline_settle). */
-    bool (*holds_open)(const markdown_core_element_instance *, const markdown_core_inline_state *);
-    /* Lists to the run's context sink what the run's record holds open as
-     * its last token ends -- the brackets no closer met -- in the parse of
-     * the text before a cursor (sink.h). Asked only of a run that has a
-     * sink, before the run finishes. */
-    void (*report_open)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* What the inline parse asks of the element (markdown_core_inline_ops),
+     * or NULL when it takes no part in it. */
+    const markdown_core_inline_ops *inlines;
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is
@@ -538,37 +580,6 @@ struct markdown_core_element {
      * Shares the producer's grammar; may report allocation failure, but never
      * opens a node or claims source. */
     markdown_core_probe_block_func probe_block;
-    /* Parsed delimiter semantics are declared by their element. Pairing,
-     * run classification and node construction stay in the shared engine. */
-    markdown_core_delimiter_rule delimiter_rule;
-    unsigned char delimiter_character;
-    delimiter_rule_spec delimiter;
-    /* Optional non-consuming token predicate. Text scanning consults the
-     * dialect's byte-indexed projection of it; a byte another element also
-     * terminates text at keeps none, and always reaches ordinary element
-     * dispatch. */
-    bool (*is_inline_start)(const markdown_core_element_instance *, markdown_core_inline_state *, bufsize_t);
-    markdown_core_match_inline_func match_inline;
-    markdown_core_inline_from_delim_func insert_inline_from_delim;
-    /* THREE byte sets, not one list.
-     *
-     * `special_inline_chars` was a single `llist` read by five consumers that
-     * each meant something different by it: two byte tables were folded out of
-     * it, `try_elements` used it for cursor dispatch,
-     * `get_element_for_special_char` used it for delimiter-tag OWNERSHIP,
-     * `bracket_takes_close_bracket` used it for `]` arbitration, and
-     * `handle_backslash` used it to disable a core optimisation. One list
-     * cannot say three different things, and D1 and D2 are what happens when it
-     * tries: `set_emphasis` folded every byte an element named into
-     * `skip_chars`, which killed CommonMark flanking merely by attaching the
-     * element, and `'}'` sat in the list dispatching to nothing.
-     *
-     * Each set is a NUL-terminated byte list; NUL itself is never a member
-     * because source normalization replaces it before inlines run. A NULL set
-     * is empty. */
-    const char *terminates_text;      /* ends a text run: inline_state_find_special_char */
-    const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
-    const char *flanking_transparent; /* scan_delimiter looks through it; ASCII */
     const char *name;
     /* What the element's nodes may hold as children (markdown_core_contain_ops),
      * or NULL for the core's rule of their kinds. */

@@ -171,7 +171,7 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
         size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_INIT];
         for (size_t i = 0; i < count; i++) {
             parser->inline_hook_work++;
-            owners[i]->element->init_inline(owners[i], inline_state);
+            owners[i]->element->inlines->init(owners[i], inline_state);
         }
     }
 }
@@ -250,7 +250,7 @@ static const delimiter_rule_spec *delimiter_spec(markdown_core_inline_state *inl
                                                  markdown_core_delimiter_rule rule) {
     const markdown_core_element_instance *owner = inline_state->dialect->delimiter_owners[rule];
     static const delimiter_rule_spec empty = {0};
-    return owner ? &owner->element->delimiter : &empty;
+    return owner ? &owner->element->inlines->delimiter : &empty;
 }
 
 /* Classify without moving the parser cursor or allocating an AST node.
@@ -643,9 +643,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_delimiters
                     }
                     markdown_core_node_type kind = used == 2 ? spec->double_kind : spec->single_kind;
                     closer = S_insert_delimited_inline(inline_state, opener, closer, used, kind);
-                } else if (owner && owner->element->insert_inline_from_delim) {
+                } else if (owner && owner->element->inlines->insert) {
                     delimiter *next = closer->next;
-                    owner->element->insert_inline_from_delim(owner, parser, inline_state, opener, closer);
+                    owner->element->inlines->insert(owner, parser, inline_state, opener, closer);
                     markdown_core_inline_remove_delimiter(inline_state, opener);
                     markdown_core_inline_remove_delimiter(inline_state, closer);
                     closer = next;
@@ -816,7 +816,7 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
         }
         unsigned char c = data[n];
         const markdown_core_element_instance *start_owner = dialect->inline_start_owners[c];
-        if (start_owner && !start_owner->element->is_inline_start(start_owner, inline_state, n)) {
+        if (start_owner && !start_owner->element->inlines->starts(start_owner, inline_state, n)) {
             n++;
         } else if (delimiter_rule_for_byte(inline_state, c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
             const delimiter_run *run = scan_delimiter(inline_state, n, delimiter_rule_for_byte(inline_state, c));
@@ -849,7 +849,7 @@ static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_c
         dialect->inline_dispatch + dialect->inline_dispatch_offsets[c + 1];
 
     for (; owner < end; owner++) {
-        res = (*owner)->element->match_inline(*owner, parser, parent, c, inline_state);
+        res = (*owner)->element->inlines->match(*owner, parser, parent, c, inline_state);
 
         if (res || inline_state->pos != start || parser->error || inline_state->error) {
             break;
@@ -890,15 +890,15 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         goto append;
     }
     const markdown_core_element_instance *structure = inline_state->owner_structure;
-    if (structure && structure->element->claim_inline_tail &&
-        structure->element->claim_inline_tail(structure, inline_state, parent)) {
+    if (structure && structure->element->inlines && structure->element->inlines->claim &&
+        structure->element->inlines->claim(structure, inline_state, parent)) {
         return 0;
     }
     new_inl = try_elements(parser, parent, c, inline_state);
     if (inline_state->pos == token_start && !new_inl && !parser->error && !inline_state->error) {
         endpos = inline_state_find_special_char(inline_state);
         const markdown_core_element_instance *text = parser->dialect->text_structure;
-        new_inl = text->element->parse_text(text, parser, inline_state, endpos);
+        new_inl = text->element->inlines->text(text, parser, inline_state, endpos);
     }
 append:
     endpos = inline_state->pos;
@@ -1113,8 +1113,9 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     }
 
     const markdown_core_element_instance *structure = inline_state->owner_structure;
-    if (structure && structure->element->begin_inline && S_inline_run_began(inline_state)) {
-        structure->element->begin_inline(structure, parser, inline_state, parent);
+    if (structure && structure->element->inlines && structure->element->inlines->enter &&
+        S_inline_run_began(inline_state)) {
+        structure->element->inlines->enter(structure, parser, inline_state, parent);
     }
 }
 
@@ -1126,7 +1127,7 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
         size_t dispose_count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_DISPOSE];
         for (size_t i = 0; i < dispose_count; i++) {
             parser->inline_hook_work++;
-            owners[i]->element->dispose_inline(owners[i], inline_state);
+            owners[i]->element->inlines->dispose(owners[i], inline_state);
         }
     }
     if (inline_state->run_state) {
@@ -1150,7 +1151,7 @@ static bool S_holds_none_open(markdown_core_parser *parser, const markdown_core_
     const markdown_core_element_instance *const *owners = parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_OPEN];
     size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_OPEN];
     for (size_t i = 0; i < count; i++) {
-        if (owners[i]->element->holds_open(owners[i], inline_state)) {
+        if (owners[i]->element->inlines->holds(owners[i], inline_state)) {
             return false;
         }
     }
@@ -1238,7 +1239,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_report(markdown_core_p
         parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_REPORT];
     size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_REPORT];
     for (size_t i = 0; i < count; i++) {
-        owners[i]->element->report_open(owners[i], inline_state);
+        owners[i]->element->inlines->report(owners[i], inline_state);
     }
 }
 
@@ -1309,7 +1310,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_finish_run(markdow
         size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         for (size_t i = 0; i < count; i++) {
             parser->inline_hook_work++;
-            owners[i]->element->finish_inline(owners[i], inline_state);
+            owners[i]->element->inlines->finish(owners[i], inline_state);
         }
         if (settle) {
             S_process_delimiters(parser, inline_state, 0, NULL, true);
@@ -1555,9 +1556,9 @@ int markdown_core_delimiter_can_close(const delimiter *delim) { return delim->ca
 
 markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
                                                          markdown_core_inline_state *inline_state) {
-    const delimiter_run *run = scan_delimiter(inline_state, inline_state->pos, self->element->delimiter_rule);
+    const delimiter_run *run = scan_delimiter(inline_state, inline_state->pos, self->element->inlines->rule);
     if (!delimiter_needs_stack(inline_state, run)) {
-        if (!self->element->delimiter.exact_run) {
+        if (!self->element->inlines->delimiter.exact_run) {
             return NULL;
         }
         inline_state->pos = run->end;

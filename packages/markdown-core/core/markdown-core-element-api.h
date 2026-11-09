@@ -342,8 +342,8 @@ typedef void (*markdown_core_opaque_adopt_func)(const markdown_core_element *ele
  *                       transaction ends. The element's `dispose_parser`
  *                       releases whatever the record owns.
  *   `run_state_size` -- one record per inline-content run, zeroed before the
- *                       run's `init_inline` hooks and released after its
- *                       `dispose_inline` hooks, which release whatever the
+ *                       run's inline `init` hooks and released after its
+ *                       `dispose` hooks, which release whatever the
  *                       record owns. A run started without a parser (a
  *                       reference definition's cursor) has none.
  *

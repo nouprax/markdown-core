@@ -100,9 +100,13 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
                                  markdown_core_inline_state *inline_state) {
     return character == '<' ? handle_pointy_brace(inline_state) : NULL;
 }
+static const markdown_core_inline_ops HTML_INLINES = {
+    .match = match,
+    .terminates = "<",
+    .dispatch = "<",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
     .name = "html",
-    .match_inline = match,
-    .terminates_text = "<",
-    .dispatch = "<",
+    .inlines = &HTML_INLINES,
 };

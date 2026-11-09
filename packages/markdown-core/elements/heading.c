@@ -1934,10 +1934,13 @@ static const markdown_core_content_ops HEADING_CONTENT = {
     .inlines = true,
 };
 
+static const markdown_core_inline_ops HEADING_INLINES = {
+    .enter = markdown_core_heading_begin_inlines,
+    .claim = markdown_core_heading_claim_tail,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
-    .begin_inline = markdown_core_heading_begin_inlines,
-    .claim_inline_tail = markdown_core_heading_claim_tail,
     .name = "heading",
     .maximum_block_indent = 3,
     .scan_block_start = scan_heading,
@@ -1951,4 +1954,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .run_state_size = sizeof(markdown_core_heading_run),
     .finish = &HEADING_FINISH,
     .content = &HEADING_CONTENT,
+    .inlines = &HEADING_INLINES,
 };

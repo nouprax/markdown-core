@@ -227,13 +227,16 @@ void markdown_core_code_parts(markdown_core_parts *parts) {
     }
 }
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
-    .inline_precedence = MARKDOWN_CORE_INLINE_TOKEN,
-    .dispose_inline = dispose_inline,
-    .run_state_size = sizeof(code_backticks),
-
-    .name = "code",
-    .match_inline = match,
-    .terminates_text = "`",
+static const markdown_core_inline_ops CODE_INLINES = {
+    .precedence = MARKDOWN_CORE_INLINE_TOKEN,
+    .dispose = dispose_inline,
+    .match = match,
+    .terminates = "`",
     .dispatch = "`",
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
+    .run_state_size = sizeof(code_backticks),
+    .name = "code",
+    .inlines = &CODE_INLINES,
 };

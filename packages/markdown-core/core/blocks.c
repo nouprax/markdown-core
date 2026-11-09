@@ -3081,7 +3081,8 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                 frame->script_depth = 0;
                 parser->completing = node;
             } else {
-                if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
+                if (node->element && node->element->inlines &&
+                    node->element->inlines->delimiter.body == DELIMITER_WORD_BODY) {
                     frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
                 }
                 if (event == MARKDOWN_CORE_EVENT_EXIT) {

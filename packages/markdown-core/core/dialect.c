@@ -67,6 +67,13 @@ static inline const markdown_core_content_ops *S_content_of(const markdown_core_
     return element->content ? element->content : &S_NO_CONTENT;
 }
 
+/* The inline parse of an element that takes no part in it. */
+static const markdown_core_inline_ops S_NO_INLINES = {0};
+
+static inline const markdown_core_inline_ops *S_inlines_of(const markdown_core_element *element) {
+    return element->inlines ? element->inlines : &S_NO_INLINES;
+}
+
 static bool S_element_refused(const markdown_core_element *element) {
     const markdown_core_finish_ops *finish = S_finish_of(element);
     if (element->kept_size > element->state_size) {
@@ -123,7 +130,7 @@ static bool S_element_refused(const markdown_core_element *element) {
         return true;
     }
     /* A flanking-transparent byte outside ASCII. */
-    for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
+    for (const unsigned char *c = (const unsigned char *)S_inlines_of(element)->transparent; c && *c; c++) {
         if (*c >= 0x80) {
             return true;
         }
@@ -239,15 +246,15 @@ static markdown_core_block_gate S_element_gate(const markdown_core_element *elem
 static bool S_element_implements_inline(const markdown_core_element *element, markdown_core_inline_hook hook) {
     switch (hook) {
     case MARKDOWN_CORE_INLINE_HOOK_INIT:
-        return element->init_inline != NULL;
+        return S_inlines_of(element)->init != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_FINISH:
-        return element->finish_inline != NULL;
+        return S_inlines_of(element)->finish != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_DISPOSE:
-        return element->dispose_inline != NULL;
+        return S_inlines_of(element)->dispose != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPEN:
-        return element->holds_open != NULL;
+        return S_inlines_of(element)->holds != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_REPORT:
-        return element->report_open != NULL;
+        return S_inlines_of(element)->report != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }
@@ -264,16 +271,16 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         if (S_owns_document_lifecycle(element)) {
             dialect->document_structure = instance;
         }
-        if (element->parse_text) {
+        if (S_inlines_of(element)->text) {
             dialect->text_structure = instance;
         }
         if (element->open_text_block) {
             dialect->text_block_structure = instance;
         }
-        if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
-            dialect->delimiter_owners[element->delimiter_rule] = instance;
-            if (element->delimiter_character) {
-                dialect->delimiter_chars[element->delimiter_character] = element->delimiter_rule;
+        if (S_inlines_of(element)->rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
+            dialect->delimiter_owners[S_inlines_of(element)->rule] = instance;
+            if (S_inlines_of(element)->character) {
+                dialect->delimiter_chars[S_inlines_of(element)->character] = S_inlines_of(element)->rule;
             }
         }
     }
@@ -333,8 +340,8 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
 }
 
 /* THE INLINE BYTE TABLES. A byte ends a text run when an inline owner says
- * so (`terminates_text`), is looked through by flanking when one declares it
- * (`flanking_transparent`), and is offered to the owners that list it in
+ * so (`terminates`), is looked through by flanking when one declares it
+ * (`transparent`), and is offered to the owners that list it in
  * `dispatch`. These are properties of the registered elements alone, so they
  * are derived once, when the dialect is sealed -- never per inline pass.
  * They used to be installed around the inline pass and cleared after it, the
@@ -356,8 +363,8 @@ static bool S_declared_earlier(const unsigned char *bytes, const unsigned char *
 static size_t S_count_inline_dispatch(const markdown_core_element *const *elements, size_t count, size_t *offsets) {
     for (size_t i = 0; i < count; i++) {
         const markdown_core_element *element = elements[i];
-        const unsigned char *bytes = (const unsigned char *)element->dispatch;
-        for (const unsigned char *c = bytes; element->match_inline && c && *c; c++) {
+        const unsigned char *bytes = (const unsigned char *)S_inlines_of(element)->dispatch;
+        for (const unsigned char *c = bytes; S_inlines_of(element)->match && c && *c; c++) {
             if (!S_declared_earlier(bytes, c)) {
                 offsets[*c + 1]++;
             }
@@ -373,18 +380,18 @@ static void S_project_inline_bytes(markdown_core_dialect *dialect) {
     for (size_t i = 0; i < dialect->element_count; i++) {
         const markdown_core_element_instance *instance = &dialect->instances[i];
         const markdown_core_element *element = instance->element;
-        if (!element->match_inline && !element->insert_inline_from_delim) {
+        if (!S_inlines_of(element)->match && !S_inlines_of(element)->insert) {
             continue;
         }
         /* A byte keeps a start predicate only while one element terminates
          * text at it: another owner's tokens are not that predicate's to
          * rule out, so a shared byte is unconditional. */
-        for (const unsigned char *c = (const unsigned char *)element->terminates_text; c && *c; c++) {
+        for (const unsigned char *c = (const unsigned char *)S_inlines_of(element)->terminates; c && *c; c++) {
             dialect->inline_start_owners[*c] =
-                !dialect->special_chars[*c] && element->is_inline_start ? instance : NULL;
+                !dialect->special_chars[*c] && S_inlines_of(element)->starts ? instance : NULL;
             dialect->special_chars[*c] = MARKDOWN_CORE_TEXT_END;
         }
-        for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
+        for (const unsigned char *c = (const unsigned char *)S_inlines_of(element)->transparent; c && *c; c++) {
             dialect->skip_chars[*c] = 1;
         }
     }
@@ -403,11 +410,12 @@ static void S_project_inline_dispatch(markdown_core_dialect *dialect, const mark
     assert(dialect->element_count <= MARKDOWN_CORE_ELEMENT_LIMIT);
     for (size_t i = 0; i < dialect->element_count; i++) {
         const markdown_core_element_instance *instance = &dialect->instances[i];
-        if (!instance->element->match_inline) {
+        if (!S_inlines_of(instance->element)->match) {
             continue;
         }
         size_t at = count++;
-        while (at > 0 && owners[at - 1]->element->inline_precedence > instance->element->inline_precedence) {
+        while (at > 0 &&
+               S_inlines_of(owners[at - 1]->element)->precedence > S_inlines_of(instance->element)->precedence) {
             owners[at] = owners[at - 1];
             at--;
         }
@@ -417,7 +425,7 @@ static void S_project_inline_dispatch(markdown_core_dialect *dialect, const mark
     memcpy(next, dialect->inline_dispatch_offsets, sizeof(next));
     dialect->inline_dispatch = entries;
     for (size_t i = 0; i < count; i++) {
-        const unsigned char *bytes = (const unsigned char *)owners[i]->element->dispatch;
+        const unsigned char *bytes = (const unsigned char *)S_inlines_of(owners[i]->element)->dispatch;
         for (const unsigned char *c = bytes; c && *c; c++) {
             if (!S_declared_earlier(bytes, c)) {
                 entries[next[*c]++] = owners[i];

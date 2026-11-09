@@ -876,13 +876,17 @@ static const markdown_core_finish_ops AUTOLINK_FINISH = {
     .scopes = AUTOLINK_SCOPE_KINDS,
 };
 
+static const markdown_core_inline_ops AUTOLINK_INLINES = {
+    .match = match,
+    .terminates = "<:w",
+    .dispatch = "<:w",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .peers = AUTOLINK_PEERS,
     .name = "autolink",
     .state_size = sizeof(markdown_core_autolink_work),
     .run_state_size = sizeof(autolink_run),
-    .match_inline = match,
-    .terminates_text = "<:w",
-    .dispatch = "<:w",
     .finish = &AUTOLINK_FINISH,
+    .inlines = &AUTOLINK_INLINES,
 };

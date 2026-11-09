@@ -261,13 +261,17 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
                                              markdown_core_chunk_dup(&inline_state->input, start + 1, end - start - 1));
 }
 
+static const markdown_core_inline_ops TOPIC_INLINES = {
+    .match = match,
+    .starts = is_inline_start,
+    .terminates = "#",
+    .dispatch = "#",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
     .name = "topic",
     .run_state_size = sizeof(topic_run),
-    .match_inline = match,
-    .is_inline_start = is_inline_start,
-    .terminates_text = "#",
-    .dispatch = "#",
+    .inlines = &TOPIC_INLINES,
 };
 
 /* THE PARTS OF A TOPIC (parts.h): its name, after its `#`. */

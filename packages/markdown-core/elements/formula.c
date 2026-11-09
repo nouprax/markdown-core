@@ -682,10 +682,16 @@ static const markdown_core_content_ops FORMULA_CONTENT = {
     .holds_lines = accepts_lines,
 };
 
+static const markdown_core_inline_ops FORMULA_INLINES = {
+    .match = match,
+    .insert = insert_formula,
+    .terminates = "$",
+    .dispatch = "$\\",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
     .name = "formula",
-    .match_inline = match,
     .last_block_matches = formula_block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_formula_block,
@@ -693,12 +699,10 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
     .close_block = close_formula_block,
-    .insert_inline_from_delim = insert_formula,
-    .terminates_text = "$",
-    .dispatch = "$\\",
     .opaque = &FORMULA_OPAQUE,
     .contain = &FORMULA_CONTAIN,
     .content = &FORMULA_CONTENT,
+    .inlines = &FORMULA_INLINES,
 };
 
 /* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or

@@ -127,6 +127,12 @@ static const markdown_core_edit_ops FOOTNOTE_EDIT = {
     .reopens = true,
 };
 
+static const markdown_core_inline_ops FOOTNOTE_INLINES = {
+    .match = match,
+    .terminates = "^",
+    .dispatch = "^",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
@@ -136,10 +142,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
     .scan_block_gate = {.bytes = "["},
-
-    .match_inline = match,
-    .terminates_text = "^",
-    .dispatch = "^",
+    .inlines = &FOOTNOTE_INLINES,
 };
 
 bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,

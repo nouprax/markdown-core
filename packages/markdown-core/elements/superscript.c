@@ -8,16 +8,20 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     return markdown_core_inline_match_delimiter(self, inline_state);
 }
-const markdown_core_element MARKDOWN_CORE_ELEMENT_SUPERSCRIPT = {
-    .name = "superscript",
-    .delimiter_rule = MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT,
-    .delimiter_character = '^',
+static const markdown_core_inline_ops SUPERSCRIPT_INLINES = {
+    .rule = MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT,
+    .character = '^',
     .delimiter = {.minimum_width = 1,
                   .maximum_width = 1,
                   .run_limit = 1,
                   .body = DELIMITER_WORD_BODY,
                   .single_kind = MARKDOWN_CORE_NODE_SUPERSCRIPT},
-    .match_inline = match,
-    .terminates_text = "^",
+    .match = match,
+    .terminates = "^",
     .dispatch = "^",
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_SUPERSCRIPT = {
+    .name = "superscript",
+    .inlines = &SUPERSCRIPT_INLINES,
 };

@@ -1710,10 +1710,26 @@ static markdown_core_node *stray_unnamed_match(const markdown_core_element_insta
     return stray_delimiter_push(parser, inline_state, character, (markdown_core_delimiter_rule)200);
 }
 
+static const markdown_core_inline_ops STRAY_UNOWNED_INLINES = {
+    .match = stray_unowned_match,
+    .terminates = "@",
+    .dispatch = "@",
+};
+
 static const markdown_core_element STRAY_UNOWNED = {
-    .name = "stray-unowned", .match_inline = stray_unowned_match, .terminates_text = "@", .dispatch = "@"};
+    .name = "stray-unowned",
+    .inlines = &STRAY_UNOWNED_INLINES,
+};
+static const markdown_core_inline_ops STRAY_UNNAMED_INLINES = {
+    .match = stray_unnamed_match,
+    .terminates = "@",
+    .dispatch = "@",
+};
+
 static const markdown_core_element STRAY_UNNAMED = {
-    .name = "stray-unnamed", .match_inline = stray_unnamed_match, .terminates_text = "@", .dispatch = "@"};
+    .name = "stray-unnamed",
+    .inlines = &STRAY_UNNAMED_INLINES,
+};
 
 static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_element *element, const char *what) {
     const char *input = "a @ b @ c\n";
@@ -1752,17 +1768,43 @@ static bool attach_dispatch_observers(markdown_core_dialect_builder *builder, vo
     (void)context;
     /* Attach the fallback first, repeat a set member, and include a disjoint
      * scanner. These are grammar/ordering contracts, independent of the index. */
-    static const markdown_core_element fallback = {.name = "fallback-observer",
-                                                   .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-                                                   .match_inline = observe_dispatch,
-                                                   .terminates_text = "!",
-                                                   .dispatch = "!"};
+    static const markdown_core_inline_ops fallback_inlines = {
+        .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+        .match = observe_dispatch,
+        .terminates = "!",
+        .dispatch = "!",
+    };
+    static const markdown_core_element fallback = {
+        .name = "fallback-observer",
+        .inlines = &fallback_inlines,
+    };
+    static const markdown_core_inline_ops decline_inlines = {
+        .match = observe_dispatch,
+        .terminates = "!",
+        .dispatch = "!!",
+    };
     static const markdown_core_element decline = {
-        .name = "decline-observer", .match_inline = observe_dispatch, .terminates_text = "!", .dispatch = "!!"};
+        .name = "decline-observer",
+        .inlines = &decline_inlines,
+    };
+    static const markdown_core_inline_ops consume_inlines = {
+        .match = observe_dispatch,
+        .terminates = "!",
+        .dispatch = "!",
+    };
     static const markdown_core_element consume = {
-        .name = "consume-observer", .match_inline = observe_dispatch, .terminates_text = "!", .dispatch = "!"};
+        .name = "consume-observer",
+        .inlines = &consume_inlines,
+    };
+    static const markdown_core_inline_ops disjoint_inlines = {
+        .match = observe_dispatch,
+        .terminates = "?",
+        .dispatch = "?",
+    };
     static const markdown_core_element disjoint = {
-        .name = "unrelated-observer", .match_inline = observe_dispatch, .terminates_text = "?", .dispatch = "?"};
+        .name = "unrelated-observer",
+        .inlines = &disjoint_inlines,
+    };
     return markdown_core_dialect_builder_attach(builder, &fallback) &&
            markdown_core_dialect_builder_attach(builder, &decline) &&
            markdown_core_dialect_builder_attach(builder, &consume) &&
@@ -1774,33 +1816,65 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
     /* Precedences past both ends of the named range, a tie at one of them
      * attached apart, and the named values, all attached out of order. Every
      * owner declines without consuming, so each is asked exactly once. */
-    static const markdown_core_element late = {.name = "y-late-observer",
-                                               .inline_precedence = (markdown_core_inline_precedence)2,
-                                               .match_inline = observe_dispatch,
-                                               .terminates_text = "%",
-                                               .dispatch = "%"};
-    static const markdown_core_element fallback = {.name = "fallback-observer",
-                                                   .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-                                                   .match_inline = observe_dispatch,
-                                                   .terminates_text = "%",
-                                                   .dispatch = "%"};
-    static const markdown_core_element later = {.name = "z-late-observer",
-                                                .inline_precedence = (markdown_core_inline_precedence)2,
-                                                .match_inline = observe_dispatch,
-                                                .terminates_text = "%",
-                                                .dispatch = "%%"};
+    static const markdown_core_inline_ops late_inlines = {
+        .precedence = (markdown_core_inline_precedence)2,
+        .match = observe_dispatch,
+        .terminates = "%",
+        .dispatch = "%",
+    };
+    static const markdown_core_element late = {
+        .name = "y-late-observer",
+        .inlines = &late_inlines,
+    };
+    static const markdown_core_inline_ops fallback_inlines = {
+        .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+        .match = observe_dispatch,
+        .terminates = "%",
+        .dispatch = "%",
+    };
+    static const markdown_core_element fallback = {
+        .name = "fallback-observer",
+        .inlines = &fallback_inlines,
+    };
+    static const markdown_core_inline_ops later_inlines = {
+        .precedence = (markdown_core_inline_precedence)2,
+        .match = observe_dispatch,
+        .terminates = "%",
+        .dispatch = "%%",
+    };
+    static const markdown_core_element later = {
+        .name = "z-late-observer",
+        .inlines = &later_inlines,
+    };
+    static const markdown_core_inline_ops ordinary_inlines = {
+        .match = observe_dispatch,
+        .terminates = "%",
+        .dispatch = "%",
+    };
     static const markdown_core_element ordinary = {
-        .name = "default-observer", .match_inline = observe_dispatch, .terminates_text = "%", .dispatch = "%"};
-    static const markdown_core_element token = {.name = "token-observer",
-                                                .inline_precedence = MARKDOWN_CORE_INLINE_TOKEN,
-                                                .match_inline = observe_dispatch,
-                                                .terminates_text = "%",
-                                                .dispatch = "%"};
-    static const markdown_core_element early = {.name = "early-observer",
-                                                .inline_precedence = (markdown_core_inline_precedence)-2,
-                                                .match_inline = observe_dispatch,
-                                                .terminates_text = "%",
-                                                .dispatch = "%"};
+        .name = "default-observer",
+        .inlines = &ordinary_inlines,
+    };
+    static const markdown_core_inline_ops token_inlines = {
+        .precedence = MARKDOWN_CORE_INLINE_TOKEN,
+        .match = observe_dispatch,
+        .terminates = "%",
+        .dispatch = "%",
+    };
+    static const markdown_core_element token = {
+        .name = "token-observer",
+        .inlines = &token_inlines,
+    };
+    static const markdown_core_inline_ops early_inlines = {
+        .precedence = (markdown_core_inline_precedence)-2,
+        .match = observe_dispatch,
+        .terminates = "%",
+        .dispatch = "%",
+    };
+    static const markdown_core_element early = {
+        .name = "early-observer",
+        .inlines = &early_inlines,
+    };
     return markdown_core_dialect_builder_attach(builder, &late) &&
            markdown_core_dialect_builder_attach(builder, &fallback) &&
            markdown_core_dialect_builder_attach(builder, &later) &&
@@ -4018,11 +4092,15 @@ static const markdown_core_contain_ops CONVERSION_POLICY_CONTAIN = {
     .allows = conversion_can_contain,
 };
 
+static const markdown_core_inline_ops CONVERSION_POLICY_INLINES = {
+    .match = conversion_match_inline,
+    .dispatch = "!",
+};
+
 static const markdown_core_element CONVERSION_POLICY = {
     .name = "conversion-policy",
-    .match_inline = conversion_match_inline,
-    .dispatch = "!",
     .contain = &CONVERSION_POLICY_CONTAIN,
+    .inlines = &CONVERSION_POLICY_INLINES,
 };
 
 /* The root's policy is set as the instance begins, by a document owner that
@@ -6941,7 +7019,13 @@ static void probe_placements(const markdown_core_element_instance *self, markdow
 }
 
 static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *runner) {
-    static const markdown_core_element probe = {.name = "probe-placements", .finish_inline = probe_placements};
+    static const markdown_core_inline_ops probe_inlines = {
+        .finish = probe_placements,
+    };
+    static const markdown_core_element probe = {
+        .name = "probe-placements",
+        .inlines = &probe_inlines,
+    };
     const markdown_core_element *elements[] = {&probe};
     static const char source[] = "ab\ncd\n> ef\n> gh\n\n- ij\n  kl\n";
     placement_disagreements = placements_checked = 0;
@@ -7922,10 +8006,26 @@ static markdown_core_node *mark_percent_b(const markdown_core_element_instance *
     ((instance_marks *)parser->context)->marked_b++;
     return NULL;
 }
+static const markdown_core_inline_ops PERCENT_MARKER_A_INLINES = {
+    .match = mark_percent_a,
+    .terminates = "%",
+    .dispatch = "%",
+};
+
 static const markdown_core_element PERCENT_MARKER_A = {
-    .name = "percent-a-marker", .match_inline = mark_percent_a, .terminates_text = "%", .dispatch = "%"};
+    .name = "percent-a-marker",
+    .inlines = &PERCENT_MARKER_A_INLINES,
+};
+static const markdown_core_inline_ops PERCENT_MARKER_B_INLINES = {
+    .match = mark_percent_b,
+    .terminates = "%",
+    .dispatch = "%",
+};
+
 static const markdown_core_element PERCENT_MARKER_B = {
-    .name = "percent-b-marker", .match_inline = mark_percent_b, .terminates_text = "%", .dispatch = "%"};
+    .name = "percent-b-marker",
+    .inlines = &PERCENT_MARKER_B_INLINES,
+};
 
 static bool register_inner_instance(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
@@ -8348,7 +8448,14 @@ static void observe_token_error(const markdown_core_element_instance *self, mark
         observed_token_error = state->error;
     }
 }
-static const markdown_core_element ERROR_OBSERVER = {.name = "error-observer", .dispose_inline = observe_token_error};
+static const markdown_core_inline_ops ERROR_OBSERVER_INLINES = {
+    .dispose = observe_token_error,
+};
+
+static const markdown_core_element ERROR_OBSERVER = {
+    .name = "error-observer",
+    .inlines = &ERROR_OBSERVER_INLINES,
+};
 static bool configure_error_observer(markdown_core_dialect_builder *builder, void *context) {
     return configure_conversion_policy(builder, context) &&
            markdown_core_dialect_builder_attach(builder, &ERROR_OBSERVER);
@@ -9936,11 +10043,17 @@ static bool attach_transparent(markdown_core_dialect_builder *builder, void *con
  * refused. */
 static void a_flanking_transparent_byte_is_ascii(test_batch_runner *runner) {
     static const char source[] = "a ~~b~~ c\n";
+    static const markdown_core_inline_ops inlines[] = {
+        {.match = match_nothing, .transparent = "\x7F"},
+        {.match = match_nothing, .transparent = "\x80"},
+        {.match = match_nothing, .transparent = "\xBF"},
+        {.match = match_nothing, .transparent = "~\xFF"},
+    };
     static const markdown_core_element elements[] = {
-        {.name = "transparent-7f", .match_inline = match_nothing, .flanking_transparent = "\x7F"},
-        {.name = "transparent-80", .match_inline = match_nothing, .flanking_transparent = "\x80"},
-        {.name = "transparent-bf", .match_inline = match_nothing, .flanking_transparent = "\xBF"},
-        {.name = "transparent-ff", .match_inline = match_nothing, .flanking_transparent = "~\xFF"},
+        {.name = "transparent-7f", .inlines = &inlines[0]},
+        {.name = "transparent-80", .inlines = &inlines[1]},
+        {.name = "transparent-bf", .inlines = &inlines[2]},
+        {.name = "transparent-ff", .inlines = &inlines[3]},
     };
     for (size_t i = 0; i < sizeof(elements) / sizeof(elements[0]); i++) {
         const bool ascii = i == 0;

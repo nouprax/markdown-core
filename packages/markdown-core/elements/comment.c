@@ -287,12 +287,17 @@ static const markdown_core_content_ops COMMENT_CONTENT = {
     .holds_lines = comment_accepts_lines,
 };
 
+static const markdown_core_inline_ops COMMENT_INLINES = {
+    .match = match,
+    .terminates = "%",
+    .dispatch = "%",
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
     .interrupts_paragraph = true,
     .close_block = close_comment,
     .name = "comment",
-    .match_inline = match,
     .last_block_matches = block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = open_block,
@@ -302,9 +307,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_block_gate = {.bytes = "%"},
     .probe_block = probe_comment_block,
-    .terminates_text = "%",
-    .dispatch = "%",
     .content = &COMMENT_CONTENT,
+    .inlines = &COMMENT_INLINES,
 };
 
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
