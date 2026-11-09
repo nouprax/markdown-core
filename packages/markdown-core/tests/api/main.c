@@ -5762,8 +5762,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_table value = {0};
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE, .opaque = &value};
         text_allocation_calls = 0;
-        int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(&table_instance, &parser, (unsigned char *)rows[i],
-                                                                     (int)strlen(rows[i]), &table);
+        int matched = MARKDOWN_CORE_ELEMENT_TABLE.lines->matches(&table_instance, &parser, (unsigned char *)rows[i],
+                                                                 (int)strlen(rows[i]), &table);
         INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
         INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
     }
@@ -7918,7 +7918,7 @@ static void record_container_prefix(const markdown_core_element_instance *self, 
     }
     expected[' '] = expected['\t'] = true;
     for (size_t i = 0; i < dialect->element_count; i++) {
-        const char *bytes = dialect->instances[i].element->container_prefix_bytes;
+        const char *bytes = dialect->instances[i].lines->prefix_bytes;
         if (!bytes) {
             continue;
         }
@@ -7962,8 +7962,22 @@ static void container_prefix_is_projected_from_the_elements(test_batch_runner *r
  * line to the transaction rather than walk over the marker and refuse the
  * definition: a key that walked it would make a definition nested in that
  * container silently parse as prose. */
-static const markdown_core_element COLON_PREFIX_CONTAINER = {.name = "colon-prefix", .container_prefix_bytes = ":"};
-static const markdown_core_element TILDE_PREFIX_CONTAINER = {.name = "tilde-prefix", .container_prefix_bytes = "~"};
+static const markdown_core_line_ops COLON_PREFIX_CONTAINER_LINES = {
+    .prefix_bytes = ":",
+};
+
+static const markdown_core_element COLON_PREFIX_CONTAINER = {
+    .name = "colon-prefix",
+    .lines = &COLON_PREFIX_CONTAINER_LINES,
+};
+static const markdown_core_line_ops TILDE_PREFIX_CONTAINER_LINES = {
+    .prefix_bytes = "~",
+};
+
+static const markdown_core_element TILDE_PREFIX_CONTAINER = {
+    .name = "tilde-prefix",
+    .lines = &TILDE_PREFIX_CONTAINER_LINES,
+};
 static bool attach_marker_prefix_containers(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
     return markdown_core_dialect_builder_attach(builder, &COLON_PREFIX_CONTAINER) &&

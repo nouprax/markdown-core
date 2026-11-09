@@ -168,8 +168,8 @@ typedef struct markdown_core_finish_step_entry {
  *   `mode` / `holds_lines` (markdown_core_content_ops); PROSE, a PROSE
  *   `mode`, it takes a text line as prose; IS_PARAGRAPH, the content's
  *   `paragraph`;
- * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
- *   (`propagates_child_blank`): what a blank line means inside it;
+ * - BLANK_OPAQUE, BLANK_ASK (the lines' `blank_last`), BLANK_RUNS and BLANK_PROPAGATES
+ *   (the lines' `blank_spreads`): what a blank line means inside it;
  * - FOLDS: the kind is one of its fold's `kinds`, and its `child` is asked as a
  *   child settles into a block of it;
  * - FIELDS: the kind can own a field root through its own record
@@ -293,7 +293,7 @@ typedef struct markdown_core_dialect {
      * replaces. */
     const uint8_t *block_gate_lists[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     /* Every byte a container continuation may strip ahead of a line's own
-     * first byte: indentation, and each element's `container_prefix_bytes`.
+     * first byte: indentation, and each element's lines' `prefix_bytes`.
      * A question asked of a later line from raw source walks these to land on
      * the byte the stripped line would show first (see
      * definition_next_lines_admit). */

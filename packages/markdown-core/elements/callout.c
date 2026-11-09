@@ -251,17 +251,21 @@ static const markdown_core_open_ops CALLOUT_OPENS = {
     .scan_needs = {.bytes = ">"},
 };
 
+static const markdown_core_line_ops CALLOUT_LINES = {
+    .lazy = accepts_lazy,
+    .lazy_open = open_lazy,
+    .prefix = continue_container,
+    .reach = continue_reach,
+    .prefix_bytes = ">",
+    .blank_opaque = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
-    .accepts_lazy = accepts_lazy,
-    .open_lazy = open_lazy,
     .name = "callout",
-    .continue_container = continue_container,
-    .continue_reach = continue_reach,
-    .container_prefix_bytes = ">",
-    .blank_opaque = true,
     .opens = &CALLOUT_OPENS,
+    .lines = &CALLOUT_LINES,
 };
 
 /* A callout's parts: its variant, inside `[!` and `]` on its first line, and

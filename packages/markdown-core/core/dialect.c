@@ -81,6 +81,14 @@ static inline const markdown_core_open_ops *S_opens_of(const markdown_core_eleme
     return element->opens ? element->opens : &S_NO_OPENS;
 }
 
+/* The lines of an element whose blocks take none after their first: the
+ * object every instance's `lines` points at when its element has none. */
+static const markdown_core_line_ops S_NO_LINES = {0};
+
+static inline const markdown_core_line_ops *S_lines_of(const markdown_core_element *element) {
+    return element->lines ? element->lines : &S_NO_LINES;
+}
+
 static bool S_element_refused(const markdown_core_element *element) {
     const markdown_core_finish_ops *finish = S_finish_of(element);
     if (element->kept_size > element->state_size) {
@@ -310,6 +318,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         record.structure = structure ? markdown_core_dialect_instance(dialect, structure) : NULL;
         if (record.structure) {
             const markdown_core_content_ops *content = S_content_of(structure);
+            const markdown_core_line_ops *lines = S_lines_of(structure);
             record.flags = (uint16_t)((content->inlines ? MARKDOWN_CORE_KIND_INLINES : 0) |
                                       (content->holds_inlines ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
                                       (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
@@ -317,10 +326,10 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                                       (content->holds_lines ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
                                       (content->mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
                                       (content->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
-                                      (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
-                                      (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
-                                      (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
-                                      (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
+                                      (lines->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
+                                      (lines->blank_last ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
+                                      (lines->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
+                                      (lines->blank_spreads ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = S_finish_of(structure)->complete;
         }
         if (markdown_core_kind_owns_fields(kind)) {
@@ -555,6 +564,7 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         const markdown_core_element *element = elements[i];
         markdown_core_element_instance *instance = &instances[i];
         instance->element = element;
+        instance->lines = S_lines_of(element);
         instance->state = element->state_size ? state + state_at : NULL;
         instance->run_offset = dialect->run_state_size;
         instance->kept_offset = dialect->kept_size;
@@ -717,7 +727,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
      * container element declares for its own. */
     dialect->container_prefix[' '] = dialect->container_prefix['\t'] = true;
     for (size_t i = 0; i < count; i++) {
-        const char *bytes = instances[i].element->container_prefix_bytes;
+        const char *bytes = instances[i].lines->prefix_bytes;
         for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
             dialect->container_prefix[*c] = true;
         }

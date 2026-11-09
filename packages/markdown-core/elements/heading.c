@@ -1946,12 +1946,15 @@ static const markdown_core_open_ops HEADING_OPENS = {
     .scan_needs = {.bytes = "#=-"},
 };
 
+static const markdown_core_line_ops HEADING_LINES = {
+    .matches = continue_heading,
+    .close = close_heading,
+    .blank_opaque = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
     .name = "heading",
-    .last_block_matches = continue_heading,
-    .close_block = close_heading,
-    .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
     .kept_size = offsetof(markdown_core_heading_state, headings),
     .run_state_size = sizeof(markdown_core_heading_run),
@@ -1959,4 +1962,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .content = &HEADING_CONTENT,
     .inlines = &HEADING_INLINES,
     .opens = &HEADING_OPENS,
+    .lines = &HEADING_LINES,
 };

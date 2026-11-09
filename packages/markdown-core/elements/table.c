@@ -671,14 +671,18 @@ static const markdown_core_open_ops TABLE_OPENS = {
     .open = try_opening_table_block,
 };
 
+static const markdown_core_line_ops TABLE_LINES = {
+    .matches = matches,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .edit = &TABLE_EDIT,
     .name = "table",
-    .last_block_matches = matches,
     .opaque = &TABLE_OPAQUE,
     .contain = &TABLE_CONTAIN,
     .content = &TABLE_CONTENT,
     .opens = &TABLE_OPENS,
+    .lines = &TABLE_LINES,
 };
 
 /* A pipe row's part: the cells written past its table's width, which the

@@ -307,16 +307,20 @@ static const markdown_core_open_ops COMMENT_OPENS = {
     .probe = probe_comment_block,
 };
 
+static const markdown_core_line_ops COMMENT_LINES = {
+    .close = close_comment,
+    .matches = block_matches,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
-    .close_block = close_comment,
     .name = "comment",
-    .last_block_matches = block_matches,
     .edit = &COMMENT_EDIT,
     .content = &COMMENT_CONTENT,
     .inlines = &COMMENT_INLINES,
     .candidate = &COMMENT_CANDIDATE,
     .opens = &COMMENT_OPENS,
+    .lines = &COMMENT_LINES,
 };
 
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,

@@ -92,16 +92,20 @@ static const markdown_core_open_ops PARAGRAPH_OPENS = {
     .text = open_text,
 };
 
+static const markdown_core_line_ops PARAGRAPH_LINES = {
+    .lazy = accepts_lazy,
+    .lazy_open = open_lazy,
+    .matches = continue_paragraph,
+    .reach = continue_reach,
+    .close = close_paragraph,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .state_size = sizeof(markdown_core_block_identifier_work),
-    .accepts_lazy = accepts_lazy,
-    .open_lazy = open_lazy,
     .name = "paragraph",
-    .last_block_matches = continue_paragraph,
-    .continue_reach = continue_reach,
-    .close_block = close_paragraph,
     .content = &PARAGRAPH_CONTENT,
     .inlines = &PARAGRAPH_INLINES,
     .candidate = &PARAGRAPH_CANDIDATE,
     .opens = &PARAGRAPH_OPENS,
+    .lines = &PARAGRAPH_LINES,
 };

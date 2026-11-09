@@ -11,6 +11,7 @@ extern "C" {
 
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
+typedef struct markdown_core_line_ops markdown_core_line_ops;
 
 /* Where a depth-first walk stands on a node: every node yields one ENTER and
  * one EXIT, with its children's events between them, and DONE follows the
@@ -188,7 +189,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
 #define MARKDOWN_CORE_BLOCK_PENDING_CLOSE 3
 /* The line continues the container, which takes it whole: no block opens on
  * it and no block takes it as text. The parser hands it to the container's
- * element (its `take_line`) once the containers above have kept it, so a
+ * element (its lines' `take`) once the containers above have kept it, so a
  * pending closer above still takes the line, and the container then ends on
  * the line before. The blocks open inside the container end on the line
  * before it. */
@@ -209,7 +210,7 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element_instan
  *  A block start may look at the lines after its own before it opens (see
  *  markdown_core_parser_lookahead_begin in the core), and it then asks every
  *  open container whether each later line carries its prefix. That question
- *  must leave no trace: 'last_block_matches' consumes the line, closes the
+ *  must leave no trace: the lines' `matches` consumes the line, closes the
  *  container on its fence and records state on the node, so it cannot be
  *  asked speculatively. An element that opens block CONTAINERS provides this
  *  hook as the same test with none of those effects: 1 when 'input' continues
@@ -365,6 +366,10 @@ typedef void (*markdown_core_opaque_adopt_func)(const markdown_core_element *ele
  */
 struct markdown_core_element_instance {
     const markdown_core_element *element;
+    /* The element's `lines` (element.h), never NULL: an element whose
+     * blocks take no line after their first has the empty table, since
+     * every open block is asked of every line it sees. */
+    const markdown_core_line_ops *lines;
     /* The parse record, or NULL when the element declares none. */
     void *state;
     /* Where the element's record lies in a run's block of records, and

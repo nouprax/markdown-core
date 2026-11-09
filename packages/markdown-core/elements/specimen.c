@@ -138,13 +138,17 @@ static const markdown_core_open_ops SPECIMEN_OPENS = {
     .scan_needs = {.bytes = "("},
 };
 
+static const markdown_core_line_ops SPECIMEN_LINES = {
+    .prefix = continue_container,
+    .reach = markdown_core_block_indent_reach,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .edit = &SPECIMEN_EDIT,
     .name = "specimen",
     .state_size = sizeof(markdown_core_specimen_state),
-    .continue_container = continue_container,
-    .continue_reach = markdown_core_block_indent_reach,
     .opens = &SPECIMEN_OPENS,
+    .lines = &SPECIMEN_LINES,
 };
 
 /* A specimen's parts: its start number, a field of no slot kind, and its

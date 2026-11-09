@@ -102,12 +102,16 @@ static const markdown_core_open_ops HTML_BLOCK_OPENS = {
     .scan_needs = {.bytes = "<"},
 };
 
+static const markdown_core_line_ops HTML_BLOCK_LINES = {
+    .blank_last = blank_line,
+    .matches = continue_html,
+    .close = close_html,
+    .ends = ends_html,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
-    .blank_line = blank_line,
     .name = "html_block",
-    .last_block_matches = continue_html,
-    .close_block = close_html,
-    .ends_block = ends_html,
     .content = &HTML_BLOCK_CONTENT,
     .opens = &HTML_BLOCK_OPENS,
+    .lines = &HTML_BLOCK_LINES,
 };

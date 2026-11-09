@@ -387,14 +387,18 @@ static const markdown_core_open_ops CODE_BLOCK_OPENS = {
     .scan_needs = {.bytes = "`~"},
 };
 
+static const markdown_core_line_ops CODE_BLOCK_LINES = {
+    .matches = continue_code,
+    .close = close_code,
+    .blank_last = blank_line,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
-    .last_block_matches = continue_code,
-    .close_block = close_code,
-    .blank_line = blank_line,
     .peers = CODE_PEERS,
     .finish = &CODE_BLOCK_FINISH,
     .content = &CODE_BLOCK_CONTENT,
     .opens = &CODE_BLOCK_OPENS,
+    .lines = &CODE_BLOCK_LINES,
 };

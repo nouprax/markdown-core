@@ -63,8 +63,12 @@ static const markdown_core_open_ops THEMATIC_BREAK_OPENS = {
     .scan_needs = {.bytes = "*-_"},
 };
 
+static const markdown_core_line_ops THEMATIC_BREAK_LINES = {
+    .blank_opaque = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_THEMATIC_BREAK = {
     .name = "thematic_break",
-    .blank_opaque = true,
     .opens = &THEMATIC_BREAK_OPENS,
+    .lines = &THEMATIC_BREAK_LINES,
 };

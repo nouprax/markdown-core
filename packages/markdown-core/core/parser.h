@@ -678,7 +678,7 @@ typedef struct markdown_core_unclosed {
  * the back's line `last` from the focus, the last of the block's whose
  * content it reads again. `next` is where the old child the reading tries
  * next starts its line (THE SPLICE). `blanks` when a block of the chain
- * above it keeps flags that a line sets (element.h, `speculative_flags`).
+ * above it keeps flags that a line sets (element.h, the lines' `speculative`).
  * `prose` when the block was a paragraph as the reading reopened it, whose
  * inline content it reads again whatever it becomes.
  *

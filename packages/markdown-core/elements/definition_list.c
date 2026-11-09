@@ -87,7 +87,7 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * The transaction accepts only when the next line -- one blank line skipped
  * at most -- begins, once its container prefix is stripped, with a marker.
  * A container continuation strips nothing but indentation and the bytes its
- * element declares (`container_prefix_bytes`, projected to one table in
+ * element declares (its lines' `prefix_bytes`, projected to one table in
  * the dialect's `container_prefix`: quote markers, today), so when a marker is
  * there the raw bytes before it are all in that table: walking over them
  * lands on the byte the stripped line would show first, and a raw line made
@@ -397,14 +397,18 @@ static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
     .last = try_paragraph,
 };
 
+static const markdown_core_line_ops DEFINITION_LIST_LINES = {
+    .close = close_block,
+    .blank = accepts_blank,
+    .prefix = continue_container,
+    .reach = markdown_core_block_indent_reach,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
-    .close_block = close_block,
-    .accepts_blank = accepts_blank,
     .name = "definition_list",
-    .continue_container = continue_container,
-    .continue_reach = markdown_core_block_indent_reach,
     .candidate = &DEFINITION_LIST_CANDIDATE,
     .opens = &DEFINITION_LIST_OPENS,
+    .lines = &DEFINITION_LIST_LINES,
 };
