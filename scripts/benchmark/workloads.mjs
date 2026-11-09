@@ -1445,6 +1445,62 @@ export function hardScripts() {
             return s.edit(start(9), start(10), "nine [s]\n").edit(start(2), start(2) + 3, "TWO");
         });
     }
+    /* THE OLD TAIL OF A PARAGRAPH (blocks.c): an edit in a paragraph's middle
+     * reads its content from a seam before the edit to a seam past it, and
+     * keeps the old children from there. A mark that opens what a closer
+     * past that seam takes -- emphasis, a code span, a link -- reads to the
+     * end; typing in the middle meets the old tail at each key; and edits
+     * past the old tail and before it then find the seams the tail kept. */
+    for (const [where, eol] of [
+        ["", "\n"],
+        ["-crlf", "\r\n"]
+    ]) {
+        const lines = [
+            "alpha [r] one",
+            "two three",
+            "four five",
+            "six seven",
+            "eight nine",
+            "ten eleven",
+            "twelve* thirteen",
+            "fourteen ` fifteen",
+            "sixteen](/u) _it_",
+            "seventeen [r]",
+            "eighteen",
+            "nineteen"
+        ].map((line) => `${line}${eol}`);
+        const lead = "before\n\n";
+        const text = lead + lines.join("") + "\n[r]: /one\n\nafter\n";
+        const start = (i) => bytes(lead) + bytes(lines.slice(0, i).join(""));
+        add(`paragraph-tails${where}`, text, (s) => {
+            s.toggle(start(3) + 3, "y");
+            for (const mark of ["*", "`", "[", "_", "x", "<", "\\", "[r]", "*a*"]) s.toggle(start(3) + 3, mark);
+            for (const [i, c] of [..."ab *c ["].entries()) s.insert(start(3) + 4 + i, c);
+            for (let i = 6; i >= 0; i--) s.remove(start(3) + 4 + i, start(3) + 5 + i);
+            s.toggle(start(10) + 2, "y")
+                .toggle(start(5) + 1, "z")
+                .toggle(start(1) + 1, "w");
+            return s.edit(start(4), start(4) + 5, "EIGHT").edit(start(9), start(9) + 9, "SEVENTEEN");
+        });
+    }
+    /* The places of a paragraph's content past the old tail: an indented
+     * line starts a place, so the place where the child before a met seam
+     * ends starts before the edit and grows with it, and those past it move
+     * as the content's end does. The first edit finds the seams; each after
+     * leaves the content longer, before seams the next one begins at. */
+    {
+        const lines = Array.from({ length: 20 }, (_, i) => `${i % 10 ? "" : "   "}word ${i} *e${i}*\n`);
+        const start = (i) => bytes("before\n\n") + bytes(lines.slice(0, i).join(""));
+        add("paragraph-places", "before\n\n" + lines.join("") + "\nafter\n", (s) =>
+            s
+                .insert(start(19) + 5, "z")
+                .insert(start(3) + 5, "abc")
+                .insert(start(14) + 8, "de")
+                .insert(start(19) + 9, "f")
+                .insert(start(16) + 10, "g")
+                .insert(start(8) + 4, "h")
+        );
+    }
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));

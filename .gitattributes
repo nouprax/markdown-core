@@ -30,3 +30,4 @@ specs/incremental/documents/hard-literal-pre-cr.md -text
 specs/incremental/documents/hard-literal-pre-crlf.md -text
 specs/incremental/documents/hard-paragraph-seams-cr.md -text
 specs/incremental/documents/hard-paragraph-seams-crlf.md -text
+specs/incremental/documents/hard-paragraph-tails-crlf.md -text

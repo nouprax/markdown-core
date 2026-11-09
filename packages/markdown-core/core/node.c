@@ -901,10 +901,10 @@ static bool S_chunk_own_viewed(markdown_core_chunk *chunk) {
     return chunk->alloc || !chunk->len || markdown_core_chunk_to_cstr(chunk);
 }
 
-/* The inline kinds whose records view the content they were read from:
- * every other inline record owns its bytes, its labels in the pool's
- * storage, its resource in the pool's slabs, an element's payload its
- * own. */
+/* The inline kinds whose records view the content they were read from,
+ * and a link's resource, whose destination may: every other inline record
+ * owns its bytes, its labels in the pool's storage, an element's payload
+ * its own. */
 bool markdown_core_node_own_viewed(markdown_core_node *node) {
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_TEXT:
@@ -922,6 +922,13 @@ bool markdown_core_node_own_viewed(markdown_core_node *node) {
     }
     case MARKDOWN_CORE_NODE_CITATION:
         return S_chunk_own_viewed(&node->as.citation->value);
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_EMBEDDED: {
+        /* An extended autolink's destination views its text. */
+        markdown_core_resource *resource = node->as.link->resource;
+        return !resource || (S_chunk_own_viewed(&resource->url) &&
+                             (!resource->title.has_value || S_chunk_own_viewed(&resource->title.value)));
+    }
     default:
         return true;
     }

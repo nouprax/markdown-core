@@ -100,6 +100,8 @@ struct markdown_core_inline_state {
     /* The token starts a settle point may be (markdown_core_inline_settle),
      * or NULL when the run's caller asks for none. */
     markdown_core_inline_settle *settle;
+    /* The old seams the run stops at, or NULL (markdown_core_seam_stops). */
+    markdown_core_seam_stops *stops;
     /* The sink the run reports what it leaves open to, or NULL: set only in
      * the parse of the text before a cursor, for a run whose content reaches
      * the text's end (sink.h). */

@@ -1265,6 +1265,24 @@ static inline void publish_pair_first(publish_match_frame *frame, const markdown
  * of a root whose places the walk does not hold. */
 static inline void publish_pass_final(const markdown_core_parser *parser, const markdown_core_node *holder,
                                       publish_relation *hand, const content_places *places) {
+    /* The paragraph an edit's reading parsed from a seam: its children up
+     * to the seam are its FINAL prefix, measured to where the seam says
+     * the last of them ends, as their places may be those of the text
+     * before an edit before them; and those the parse made end where its
+     * old tail begins, which stays as it was (blocks.c, THE OLD TAIL OF A
+     * PARAGRAPH). */
+    const markdown_core_leap *leap = parser->stream && parser->stream->edit ? parser->stream->edit->leap : NULL;
+    if (leap && holder == leap->node && (leap->seam.index || leap->spliced) && holder->children == hand->item) {
+        if (leap->spliced) {
+            hand->end = hand->item + leap->spliced;
+        }
+        if (leap->seam.index) {
+            hand->item += leap->seam.index;
+            hand->anchor = leap->seam.offset - leap->seam.lead;
+            hand->source = holder->place.start + leap->seam.source;
+        }
+        return;
+    }
     markdown_core_node **last = hand->end;
     while (last != hand->item && !(last[-1]->flags & MARKDOWN_CORE_NODE__FINAL)) {
         last--;
@@ -3192,7 +3210,11 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
          * matches its new ones against. */
         markdown_core_node *deepest = edit->chain[edit->depth - 1];
         const uint32_t kept = edit->keeps[edit->depth - 1];
-        if (ok && !edit->holds[edit->depth - 1] && deepest->child_count > kept) {
+        /* A paragraph that keeps its old tail aside lets go of what it
+         * reads again once its parse knows (blocks.c, THE OLD TAIL OF A
+         * PARAGRAPH). */
+        const bool aside = edit->leap && edit->leap->kept;
+        if (ok && !aside && !edit->holds[edit->depth - 1] && deepest->child_count > kept) {
             ok = markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept,
                                                  kept ? edit->leap->seam.source : 0);
             deepest->child_count = kept;
@@ -3224,7 +3246,9 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
      * storage, the edit's from now on (blocks.c, THE OLD NESTED TAIL IN
      * PLACE). */
     for (size_t level = 0; level < edit->depth; level++) {
-        edit->chain[level]->child_count = edit->keeps[level];
+        if (level + 1 < edit->depth || !edit->leap || !edit->leap->kept) {
+            edit->chain[level]->child_count = edit->keeps[level];
+        }
     }
     edit->nest_count = edit->depth ? edit->bases[0] + edit->holds[0] : 0;
     edit->nest_recorded = 0;
