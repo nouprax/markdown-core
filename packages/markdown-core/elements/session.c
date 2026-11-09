@@ -1065,12 +1065,12 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
 }
 
 /* Whether a line of the `length` bytes at `lines` is a stop line of
- * `element` (element.h, `stops`). */
-static bool session_stop_in(const markdown_core_element *element, const uint8_t *lines, size_t length) {
+ * `self`'s element (element.h, `stops`). */
+static bool session_stop_in(const markdown_core_element_instance *self, const uint8_t *lines, size_t length) {
     size_t from = 0;
     for (size_t i = 0; i <= length; i++) {
         if (i == length || lines[i] == '\n' || lines[i] == '\r') {
-            if (element->edit->stops(lines + from, i - from)) {
+            if (self->element->edit->stops(self, lines + from, i - from)) {
                 return true;
             }
             from = i + 1;
@@ -1126,7 +1126,7 @@ static bool session_stops(const markdown_core_session *session, size_t line, siz
     for (size_t i = 0; i < count; i++) {
         const markdown_core_unclosed *opener = &openers[i];
         if (!opener->aside && opener->start < rest && (!found || opener->start < *start) &&
-            session_stop_in(opener->element, lines, size)) {
+            session_stop_in(markdown_core_parser_instance(session->committed, opener->element), lines, size)) {
             *start = opener->start;
             found = true;
         }

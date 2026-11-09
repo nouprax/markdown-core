@@ -609,45 +609,16 @@ typedef struct markdown_core_edit_ops {
      * line after its opener is one, whatever the lines are: it notes its
      * opener (markdown_core_parser_reach_open), and not what it read. NULL
      * for an element whose readings note what they read. */
-    bool (*stops)(const unsigned char *line, size_t length);
+    bool (*stops)(const markdown_core_element_instance *, const unsigned char *line, size_t length);
 } markdown_core_edit_ops;
 
 struct markdown_core_element {
-    /* How an open block of the element's takes its lines and closes (markdown_core_line_ops), or NULL. */
-    const markdown_core_line_ops *lines;
-    /* How a block of the element's opens (markdown_core_open_ops), or NULL
-     * when none does. */
-    const markdown_core_open_ops *opens;
-    /* What the inline parse asks of the element (markdown_core_inline_ops),
-     * or NULL when it takes no part in it. */
-    const markdown_core_inline_ops *inlines;
-    /* What a block of the element's holds (markdown_core_content_ops), or
-     * NULL for a container of blocks. */
-    const markdown_core_content_ops *content;
-    /* What an edit's reading asks of the element (markdown_core_edit_ops),
-     * or NULL when it asks nothing. */
-    const markdown_core_edit_ops *edit;
-    void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* The document's lifecycle (markdown_core_document_ops), for the one
-     * element of a dialect that owns it, or NULL. */
-    const markdown_core_document_ops *document;
-
-    /* What a block of the element's takes from its children as they settle
-     * (markdown_core_fold_ops), or NULL. */
-    const markdown_core_fold_ops *fold;
-    /* What a candidate of the element's is asked as later lines come
-     * (markdown_core_candidate_ops), or NULL when its calls ask for none. */
-    const markdown_core_candidate_ops *candidate;
+    /* WHO THE ELEMENT IS AND WHAT IT STORES. */
     const char *name;
-    /* What the element's nodes may hold as children (markdown_core_contain_ops),
-     * or NULL for the core's rule of their kinds. */
-    const markdown_core_contain_ops *contain;
-    /* What completion's walk asks of the element (markdown_core_finish_ops),
-     * or NULL. */
-    const markdown_core_finish_ops *finish;
-    /* The element's payload on its nodes (markdown_core_opaque_ops), or
-     * NULL when its nodes hold none. */
-    const markdown_core_opaque_ops *opaque;
+    /* The elements whose state this element's code reads, NULL-terminated
+     * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
+     * Sealing resolves them, in this order, into the instance's `peers`. */
+    const markdown_core_element *const *peers;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
      * IT"); zero declares none (a candidate's record is the candidate's,
@@ -658,10 +629,48 @@ struct markdown_core_element {
      * it; the rest of the record says nothing a reading put back takes
      * back. */
     size_t state_size, run_state_size, kept_size;
-    /* The elements whose state this element's code reads, NULL-terminated
-     * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
-     * Sealing resolves them, in this order, into the instance's `peers`. */
-    const markdown_core_element *const *peers;
+    /* Frees what the parse record holds as its parser is freed, or NULL
+     * when it holds nothing of its own. */
+    void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
+
+    /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
+     * that asks it, in the order a line meets them. A NULL table says the
+     * element takes no part in that algorithm; a NULL entry in a table says
+     * the default its comment gives. */
+    /* How a block of the element's opens (markdown_core_open_ops), or NULL
+     * when none does. */
+    const markdown_core_open_ops *opens;
+    /* What a candidate of the element's is asked as later lines come
+     * (markdown_core_candidate_ops), or NULL when its calls ask for none. */
+    const markdown_core_candidate_ops *candidate;
+    /* How an open block of the element's takes its lines and closes
+     * (markdown_core_line_ops), or NULL; the instance holds the empty
+     * table then. */
+    const markdown_core_line_ops *lines;
+    /* What a block of the element's holds (markdown_core_content_ops), or
+     * NULL for a container of blocks. */
+    const markdown_core_content_ops *content;
+    /* What the element's nodes may hold as children (markdown_core_contain_ops),
+     * or NULL for the core's rule of their kinds. */
+    const markdown_core_contain_ops *contain;
+    /* What a block of the element's takes from its children as they settle
+     * (markdown_core_fold_ops), or NULL. */
+    const markdown_core_fold_ops *fold;
+    /* What the inline parse asks of the element (markdown_core_inline_ops),
+     * or NULL when it takes no part in it. */
+    const markdown_core_inline_ops *inlines;
+    /* What completion's walk asks of the element (markdown_core_finish_ops),
+     * or NULL. */
+    const markdown_core_finish_ops *finish;
+    /* The document's lifecycle (markdown_core_document_ops), for the one
+     * element of a dialect that owns it, or NULL. */
+    const markdown_core_document_ops *document;
+    /* The element's payload on its nodes (markdown_core_opaque_ops), or
+     * NULL when its nodes hold none. */
+    const markdown_core_opaque_ops *opaque;
+    /* What an edit's reading asks of the element (markdown_core_edit_ops),
+     * or NULL when it asks nothing. */
+    const markdown_core_edit_ops *edit;
 };
 
 /* The element's containment kinds and its own decision for a node of its,

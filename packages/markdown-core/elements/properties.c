@@ -574,7 +574,9 @@ int markdown_core_properties_fence(const unsigned char *data) {
     return markdown_core_is_line_end(data[dashes]) ? dashes : -1;
 }
 
-bool markdown_core_properties_stops(const unsigned char *line, size_t length) {
+bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
+                                    size_t length) {
+    (void)self;
     return length >= 3 && line[0] == '-' && line[1] == '-' && line[2] == '-';
 }
 

@@ -28,7 +28,8 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
                                      const struct markdown_core_element *element, size_t *fence);
 /* THE STOP LINES of the envelope's opener (element.h, `stops`): a line that
  * begins with "---", which takes in every fence. */
-bool markdown_core_properties_stops(const unsigned char *line, size_t length);
+bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
+                                    size_t length);
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t fence);
 int markdown_core_properties_fence(const unsigned char *data);
 

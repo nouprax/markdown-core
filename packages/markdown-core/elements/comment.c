@@ -48,7 +48,8 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
 /* THE STOP LINES (element.h, `stops`): a line whose content is the fence,
  * at any indentation, which takes in every line that closes a reading from
  * an opener in the document's root. */
-static bool comment_stops(const unsigned char *line, size_t length) {
+static bool comment_stops(const markdown_core_element_instance *self, const unsigned char *line, size_t length) {
+    (void)self;
     size_t i = 0;
     while (i < length && (line[i] == ' ' || line[i] == '\t')) {
         i++;
