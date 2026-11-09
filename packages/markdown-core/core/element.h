@@ -48,6 +48,50 @@ typedef struct markdown_core_opaque_ops {
     markdown_core_visit_owned_subtrees_func visit;
 } markdown_core_opaque_ops;
 
+/* THE DOCUMENT'S LIFECYCLE: what the parse asks of the one element of a
+ * dialect that owns the document, at each of its steps: `init` as the
+ * parse opens and `dispose` as it goes, `read` before the first line,
+ * `prepare` before completion, `finish` and `publish` at a flush,
+ * `candidate` for a candidate completed again, and an edit's `reopen` and
+ * `splice`. Every one is required: registration refuses an owner that
+ * leaves out one. */
+typedef struct markdown_core_document_ops {
+    void (*init)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*dispose)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* Reads what the document's input opens with, before its first line, in
+     * the input's text (markdown_core_parser_input_text, parser.h). In a
+     * commit more text may follow, a call whose reading read the end asks to
+     * be a candidate (blocks.c, THE CANDIDATES): it stops in the root at line
+     * 0, and its candidate is fed the lines from line 1. */
+    size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*prepare)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*finish)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* The last step of the parse: the tree is final, and the owner publishes
+     * it (ids, extents, definition tables). */
+    void (*publish)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A candidate the finalize completed again for an inline root a
+     * snapshot published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
+     * against that root, whose holder starts where the offset says
+     * (markdown_core_publish_candidate). A failure fails the parse. */
+    void (*candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                      markdown_core_node *, uint32_t);
+    /* An edit reopens the flushed document `root` (blocks.c, THE REOPEN):
+     * its children from `child` on go, and every state the document keeps
+     * of them -- what its publish matches against, its definitions -- stays
+     * only for what starts before `start`. False when storage could not be
+     * had. */
+    bool (*reopen)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, uint32_t,
+                   uint32_t);
+    /* The edit's reading takes the old children the reopen let go back
+     * (blocks.c, THE SPLICE), from the one at `child` among them on, whose
+     * line starts at `point` of the new text: the root holds them again, and
+     * every state the document kept of what they hold -- their definitions,
+     * their headings, measured from the text's end -- is back. False when
+     * storage could not be had, with the children still the records'. */
+    bool (*splice)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, uint32_t,
+                   uint32_t);
+} markdown_core_document_ops;
+
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
 
@@ -273,41 +317,10 @@ struct markdown_core_element {
      * or NULL when it asks nothing. */
     const markdown_core_edit_ops *edit;
     int maximum_block_indent;
-    void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* Reads what the document's input opens with, before its first line, in
-     * the input's text (markdown_core_parser_input_text, parser.h). In a
-     * commit more text may follow, a call whose reading read the end asks to
-     * be a candidate (blocks.c, THE CANDIDATES): it stops in the root at line
-     * 0, and its candidate is fed the lines from line 1. */
-    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* The last step of the parse: the tree is final, and the owner publishes
-     * it (ids, extents, definition tables). */
-    void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A candidate the finalize completed again for an inline root a
-     * snapshot published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
-     * against that root, whose holder starts where the offset says
-     * (markdown_core_publish_candidate). A failure fails the parse. */
-    void (*publish_candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                              markdown_core_node *, uint32_t);
-    /* An edit reopens the flushed document `root` (blocks.c, THE REOPEN):
-     * its children from `child` on go, and every state the document keeps
-     * of them -- what its publish matches against, its definitions -- stays
-     * only for what starts before `start`. False when storage could not be
-     * had. */
-    bool (*reopen_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                            uint32_t, uint32_t);
-    /* The edit's reading takes the old children the reopen let go back
-     * (blocks.c, THE SPLICE), from the one at `child` among them on, whose
-     * line starts at `point` of the new text: the root holds them again, and
-     * every state the document kept of what they hold -- their definitions,
-     * their headings, measured from the text's end -- is back. False when
-     * storage could not be had, with the children still the records'. */
-    bool (*splice_document)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                            uint32_t, uint32_t);
+    /* The document's lifecycle (markdown_core_document_ops), for the one
+     * element of a dialect that owns it, or NULL. */
+    const markdown_core_document_ops *document;
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,

@@ -1478,7 +1478,7 @@ static inline bool markdown_core_parser_end_read(const markdown_core_parser *par
 
 /* THE TEXT OF THE ACTIVE INPUT read so far, through `*length`: a reading of
  * it to its end asks markdown_core_parser_input_ends there. The document's
- * prefix reads it (element.h, `read_document_prefix`). */
+ * prefix reads it (element.h, markdown_core_document_ops, `read`). */
 static inline const unsigned char *markdown_core_parser_input_text(const markdown_core_parser *parser, size_t *length) {
     *length = parser->input.size;
     return parser->input.source;
@@ -1751,7 +1751,7 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * text read so far ends, in a commit more text may follow, asks to be a
  * candidate in `container`, and declines: an opener's, the text step's, a
  * blank line's acceptance, or the document's prefix, which is called before
- * line 1 (element.h, `read_document_prefix`). `child` is the kind of block
+ * line 1 (element.h, markdown_core_document_ops, `read`). `child` is the kind of block
  * it would open, whose lines its candidate is fed, `state` the record it
  * keeps of the grammar, the owner's `candidate_state_size` bytes, which the
  * request copies, and `ends` whether it could claim were the text to end after

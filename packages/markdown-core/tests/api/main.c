@@ -728,31 +728,41 @@ static bool attach_probes(markdown_core_dialect_builder *builder, void *context)
     return true;
 }
 
+/* A document-lifecycle owner a test registers: a copy of the core document
+ * element and of its lifecycle, one hook of which the test replaces. */
+typedef struct {
+    markdown_core_element element;
+    markdown_core_document_ops document;
+} document_owner;
+
+/* `owner` becomes a copy of the core document element, so it keeps every
+ * document hook and the size of the document's record, its lifecycle the
+ * copy in `owner->document`, named `name`. */
+static void copy_owner(document_owner *owner, const char *name) {
+    owner->element = MARKDOWN_CORE_ELEMENT_DOCUMENT;
+    owner->document = *MARKDOWN_CORE_ELEMENT_DOCUMENT.document;
+    owner->element.name = name;
+    owner->element.document = &owner->document;
+}
+
 /* A test reaches its live instance the way registration allows: by registering
- * a document-lifecycle owner. `owner` becomes a copy of the core document
- * element, so it keeps every document hook and the size of the document's
- * record, with `init_document` replaced; that hook begins the core lifecycle
- * on its own instance before doing anything else. */
-static bool
-attach_document_owner(markdown_core_dialect_builder *builder, markdown_core_element *owner, const char *name,
-                      void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *)) {
-    *owner = MARKDOWN_CORE_ELEMENT_DOCUMENT;
-    owner->name = name;
-    owner->init_document = init_document;
-    return markdown_core_dialect_builder_attach(builder, owner);
+ * a document-lifecycle owner whose `init` is replaced; that hook begins the
+ * core lifecycle on its own instance before doing anything else. */
+static bool attach_document_owner(markdown_core_dialect_builder *builder, document_owner *owner, const char *name,
+                                  void (*init)(const markdown_core_element_instance *, markdown_core_parser *)) {
+    copy_owner(owner, name);
+    owner->document.init = init;
+    return markdown_core_dialect_builder_attach(builder, &owner->element);
 }
 
 /* A test reads the finished parse the same way: as the document-lifecycle
- * owner, whose `finish_document` -- given here -- runs the core one on its
- * own instance before it reads anything. `owner` becomes a copy of the core
- * document element; its other hooks are the core's. */
-static bool
-attach_document_finisher(markdown_core_dialect_builder *builder, markdown_core_element *owner, const char *name,
-                         void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *)) {
-    *owner = MARKDOWN_CORE_ELEMENT_DOCUMENT;
-    owner->name = name;
-    owner->finish_document = finish_document;
-    return markdown_core_dialect_builder_attach(builder, owner);
+ * owner, whose `finish` -- given here -- runs the core one on its own
+ * instance before it reads anything; its other hooks are the core's. */
+static bool attach_document_finisher(markdown_core_dialect_builder *builder, document_owner *owner, const char *name,
+                                     void (*finish)(const markdown_core_element_instance *, markdown_core_parser *)) {
+    copy_owner(owner, name);
+    owner->document.finish = finish;
+    return markdown_core_dialect_builder_attach(builder, &owner->element);
 }
 
 static markdown_core_node *parse_with_probes(const char *source, size_t length,
@@ -1938,7 +1948,7 @@ typedef struct {
  * audit-element-attach-order holds the line. The probe parser each hook is
  * asked with reads that same sealed dialect. */
 static void sweep_block_gates(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     gate_sweep *sweep = parser->context;
     const markdown_core_element_instance *instances = parser->dialect->instances;
     size_t element_count = parser->dialect->element_count;
@@ -2018,7 +2028,7 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
 }
 
 static bool begin_with_block_gate_sweep(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element document;
+    static document_owner document;
     (void)context;
     return attach_document_owner(builder, &document, "block-gate-sweeper", sweep_block_gates);
 }
@@ -3582,7 +3592,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
 /* Run from the instance's own beginning -- a document owner's lifecycle --
  * because what it measures is the fresh parser's storage. */
 static void inspect_lazy_block_content(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     test_batch_runner *runner = parser->context;
     OK(runner, parser->root->content.ptr == markdown_core_strbuf__initbuf,
        "the document has no allocated content buffer");
@@ -3654,7 +3664,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
 }
 
 static bool begin_with_lazy_block_inspection(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element document;
+    static document_owner document;
     (void)context;
     return attach_document_owner(builder, &document, "lazy-block-inspector", inspect_lazy_block_content);
 }
@@ -3991,13 +4001,13 @@ static const markdown_core_element CONVERSION_POLICY = {
 /* The root's policy is set as the instance begins, by a document owner that
  * begins the core document's lifecycle first. */
 static void begin_conversion_policy(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     parser->root->element = &CONVERSION_POLICY;
     conversion_current_policy = parser->context;
 }
 
 static bool configure_conversion_policy(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element document;
+    static document_owner document;
     (void)context;
     return attach_document_owner(builder, &document, "conversion-policy-document", begin_conversion_policy) &&
            markdown_core_dialect_builder_attach(builder, &CONVERSION_POLICY);
@@ -4464,11 +4474,11 @@ static void table_values(test_batch_runner *runner) {
  * source map, rather than copying every unconsumed suffix for each link. */
 static int observed_source_marks;
 static void observe_source_marks(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.finish_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->finish(self, parser);
     observed_source_marks = (int)parser->line_marks.count;
 }
 static bool attach_source_mark_observer(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element observer;
+    static document_owner observer;
     (void)context;
     return attach_document_finisher(builder, &observer, "source-mark-observer", observe_source_marks);
 }
@@ -4769,11 +4779,11 @@ static void peers_resolve_at_seal(test_batch_runner *runner) {
 static size_t properties_decoded_bytes;
 /* The owner's own instance read the Properties, so its record holds the work. */
 static void observe_properties(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.finish_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->finish(self, parser);
     properties_decoded_bytes = ((const markdown_core_properties_work *)self->state)->decoded_bytes;
 }
 static bool attach_properties_observer(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element observer;
+    static document_owner observer;
     (void)context;
     return attach_document_finisher(builder, &observer, "properties-observer", observe_properties);
 }
@@ -5081,11 +5091,11 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
 static void record_inline_work(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.finish_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->finish(self, parser);
     record_work(self, parser);
 }
 static bool attach_work_recorder(markdown_core_dialect_builder *builder) {
-    static markdown_core_element recorder;
+    static document_owner recorder;
     return attach_document_finisher(builder, &recorder, "work-recorder", record_inline_work);
 }
 static bool measure_inline_work(markdown_core_dialect_builder *builder, void *context) {
@@ -5603,7 +5613,7 @@ static void footnote_removal(test_batch_runner *runner) {
 /* Attribute recognition work is totalled in the parse's attribute workspace,
  * so the probes run against a real parser, as the directive's instance. */
 static void probe_directive_openers(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     test_batch_runner *runner = parser->context;
     const markdown_core_element_instance *directive =
         markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_DIRECTIVE);
@@ -5625,7 +5635,7 @@ static void probe_directive_openers(const markdown_core_element_instance *self, 
 }
 
 static bool begin_with_directive_probes(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element document;
+    static document_owner document;
     (void)context;
     return attach_document_owner(builder, &document, "directive-prober", probe_directive_openers);
 }
@@ -7899,7 +7909,7 @@ static void begin_outer_instance(const markdown_core_element_instance *self, mar
     static const char inner_source[] = "inner % text\n";
     instance_marks *outer = parser->context;
     const markdown_core_dialect *dialect = parser->dialect;
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     outer->registered_before = dialect->element_count;
     outer->last_before = dialect->instances[dialect->element_count - 1].element;
     markdown_core_node *inner = markdown_core_parse_document_with_setup(inner_source, sizeof(inner_source) - 1,
@@ -7911,7 +7921,7 @@ static void begin_outer_instance(const markdown_core_element_instance *self, mar
 }
 
 static bool register_outer_instance(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element document;
+    static document_owner document;
     markdown_core_dialect_builder_elements(builder, &((instance_marks *)context)->core);
     return attach_document_owner(builder, &document, "outer-instance", begin_outer_instance) &&
            markdown_core_dialect_builder_attach(builder, &PERCENT_MARKER_A);
@@ -8333,12 +8343,12 @@ static int reject_table(const markdown_core_element *element, markdown_core_node
 }
 static const markdown_core_element LEAD_POLICY = {.name = "lead-policy", .can_contain_func = reject_table};
 static void begin_lead_policy(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->init(self, parser);
     parser->root->element = &LEAD_POLICY;
     lead_policy_current = parser->context;
 }
 static bool configure_lead_policy(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element document;
+    static document_owner document;
     (void)context;
     return attach_document_owner(builder, &document, "lead-policy-document", begin_lead_policy);
 }
@@ -9780,7 +9790,8 @@ static void begin_nothing(const markdown_core_element_instance *self, markdown_c
 /* An element that declares the document lifecycle is asked for all of it: the
  * engine calls every hook on the owner without asking. */
 static bool attach_partial_document(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element partial = {.name = "partial-document", .init_document = begin_nothing};
+    static const markdown_core_document_ops lifecycle = {.init = begin_nothing};
+    static const markdown_core_element partial = {.name = "partial-document", .document = &lifecycle};
     attach_probe *probe = context;
     markdown_core_dialect_builder_elements(builder, &probe->before);
     probe->attached = markdown_core_dialect_builder_attach(builder, &partial);

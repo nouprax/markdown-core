@@ -141,21 +141,25 @@ static const markdown_core_edit_ops DOCUMENT_EDIT = {
     .stops = markdown_core_properties_stops,
 };
 
+static const markdown_core_document_ops DOCUMENT_OPS = {
+    .init = init_document,
+    .dispose = dispose_document,
+    .read = read_document_prefix,
+    .prepare = prepare_document,
+    .finish = finish_document,
+    .reopen = reopen_document,
+    .splice = splice_document,
+    .publish = publish_document,
+    .candidate = publish_candidate,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .peers = DOCUMENT_PEERS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",
-    .init_document = init_document,
-    .dispose_document = dispose_document,
-    .read_document_prefix = read_document_prefix,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
     .edit = &DOCUMENT_EDIT,
     .candidate_state_size = sizeof(bool),
-    .prepare_document = prepare_document,
-    .finish_document = finish_document,
-    .reopen_document = reopen_document,
-    .splice_document = splice_document,
-    .publish_document = publish_document,
-    .publish_candidate = publish_candidate,
+    .document = &DOCUMENT_OPS,
 };
