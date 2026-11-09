@@ -1185,7 +1185,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node_intern
                                                     S_closed_ends_blank(child));
     }
     if (kind->flags & MARKDOWN_CORE_KIND_FOLDS) {
-        flags = kind->structure->element->fold_child(kind->structure, parent, flags, child);
+        flags = kind->structure->element->fold->child(kind->structure, parent, flags, child);
     }
     return flags;
 }
@@ -4130,13 +4130,14 @@ static bool S_chain_keep(const markdown_core_parser *parser, markdown_core_edit 
 
 /* The bits of a block's flags its children fold into it (S_fold). */
 static inline markdown_core_node_internal_flags S_folded_bits(const markdown_core_kind_record *kind) {
-    return (
-        markdown_core_node_internal_flags)(((kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES)
-                                                ? MARKDOWN_CORE_NODE__ENDS_BLANK | MARKDOWN_CORE_NODE__BLANK_SPACED |
-                                                      MARKDOWN_CORE_NODE__BLANK_FOLDED
-                                                : 0) |
-                                           ((kind->flags & MARKDOWN_CORE_KIND_FOLDS) ? kind->structure->element->folds
-                                                                                     : 0));
+    return (markdown_core_node_internal_flags)(((kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES)
+                                                    ? MARKDOWN_CORE_NODE__ENDS_BLANK |
+                                                          MARKDOWN_CORE_NODE__BLANK_SPACED |
+                                                          MARKDOWN_CORE_NODE__BLANK_FOLDED
+                                                    : 0) |
+                                               ((kind->flags & MARKDOWN_CORE_KIND_FOLDS)
+                                                    ? kind->structure->element->fold->flags
+                                                    : 0));
 }
 
 /* The chain's block `node`, at `level`, open as the reading needs it at the

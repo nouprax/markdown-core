@@ -169,7 +169,7 @@ typedef struct markdown_core_finish_step_entry {
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
  *   (`propagates_child_blank`): what a blank line means inside it;
- * - FOLDS: the kind is one of `fold_kinds`, and `fold_child` is asked as a
+ * - FOLDS: the kind is one of its fold's `kinds`, and its `child` is asked as a
  *   child settles into a block of it;
  * - FIELDS: the kind can own a field root through its own record
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns

@@ -166,6 +166,34 @@ typedef struct markdown_core_finish_ops {
     const markdown_core_node_type *scopes;
 } markdown_core_finish_ops;
 
+/* THE FOLD: what a block of the element's takes from each child as the
+ * child settles into it, so that what it reads as it closes or completes
+ * needs no walk of its children. Registration requires `child` and `kinds`
+ * together. */
+typedef struct markdown_core_fold_ops {
+    /* THE FOLD HOOK (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
+     * asked of a block of a kind in `kinds` as a child settles into it
+     * (blocks.c, A BLOCK SETTLES), after the child's blank-line answer is
+     * folded into a block whose answer is its children's: the block's flags
+     * `flags` with what they take from a child whose flags are `child`, so
+     * that what the block reads as it closes or completes is there without a
+     * walk of its children. It writes nothing of the block but the values
+     * the block publishes from the flags it returns: a commit writes the
+     * result as the block's flags, and a snapshot that ends the open blocks
+     * below its stop folds each into the block below without writing their
+     * flags (blocks.c, THE LENDING). */
+    markdown_core_node_internal_flags (*child)(const markdown_core_element_instance *, markdown_core_node *,
+                                               markdown_core_node_internal_flags, markdown_core_node_internal_flags);
+    /* The block kinds the fold hook is asked at, kinds whose structure is
+     * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
+     * fold hook declares at least one, and one without declares NULL. */
+    const markdown_core_node_type *kinds;
+    /* The element's flags the fold hook writes, which a splice below a
+     * reopened block folds again from all of its children (blocks.c, THE
+     * NESTED SPLICE). */
+    unsigned flags;
+} markdown_core_fold_ops;
+
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
 
@@ -441,28 +469,9 @@ struct markdown_core_element {
      * its own: a paragraph whose text was all reference definitions. */
     bool (*close_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                         markdown_core_node *);
-    /* THE FOLD HOOK (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
-     * asked of a block of a kind in `fold_kinds` as a child settles into it
-     * (blocks.c, A BLOCK SETTLES), after the child's blank-line answer is
-     * folded into a block whose answer is its children's: the block's flags
-     * `flags` with what they take from a child whose flags are `child`, so
-     * that what the block reads as it closes or completes is there without a
-     * walk of its children. It writes nothing of the block but the values
-     * the block publishes from the flags it returns: a commit writes the
-     * result as the block's flags, and a snapshot that ends the open blocks
-     * below its stop folds each into the block below without writing their
-     * flags (blocks.c, THE LENDING). */
-    markdown_core_node_internal_flags (*fold_child)(const markdown_core_element_instance *, markdown_core_node *,
-                                                    markdown_core_node_internal_flags,
-                                                    markdown_core_node_internal_flags);
-    /* The block kinds the fold hook is asked at, kinds whose structure is
-     * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
-     * fold hook declares at least one, and one without declares NULL. */
-    const markdown_core_node_type *fold_kinds;
-    /* The element's flags the fold hook writes, which a splice below a
-     * reopened block folds again from all of its children (blocks.c, THE
-     * NESTED SPLICE). */
-    unsigned folds;
+    /* What a block of the element's takes from its children as they settle
+     * (markdown_core_fold_ops), or NULL. */
+    const markdown_core_fold_ops *fold;
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
     /* What `scan_block_start` needs on a non-indented line before it is worth

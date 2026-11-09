@@ -345,15 +345,17 @@ static const markdown_core_edit_ops LIST_EDIT = {
     .abuts = LIST_KINDS,
 };
 
+static const markdown_core_fold_ops LIST_FOLD = {
+    .child = fold_child,
+    .flags = MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED,
+    .kinds = LIST_KINDS,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
-    .fold_child = fold_child,
-    .folds = MARKDOWN_CORE_NODE__LIST_LOOSE | MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED,
-    .fold_kinds = LIST_KINDS,
     .blank_line = blank_line,
     .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
-
     .name = "list",
     .continue_container = continue_container,
     .propagates_child_blank = true,
@@ -363,6 +365,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .scan_block_start = markdown_core_list_scan,
     /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
     .scan_block_gate = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
+    .fold = &LIST_FOLD,
 };
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,
