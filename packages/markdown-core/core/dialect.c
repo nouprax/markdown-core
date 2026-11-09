@@ -554,8 +554,9 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         state_at += markdown_core_state_align(element->state_size);
         dialect->kept_size += markdown_core_state_align(element->kept_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
-        if (dialect->candidate_state_size < markdown_core_state_align(element->candidate_state_size)) {
-            dialect->candidate_state_size = markdown_core_state_align(element->candidate_state_size);
+        const size_t candidate = element->candidate ? markdown_core_state_align(element->candidate->size) : 0;
+        if (dialect->candidate_state_size < candidate) {
+            dialect->candidate_state_size = candidate;
         }
         size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {

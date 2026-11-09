@@ -293,6 +293,11 @@ static const markdown_core_inline_ops COMMENT_INLINES = {
     .dispatch = "%",
 };
 
+static const markdown_core_candidate_ops COMMENT_CANDIDATE = {
+    .feed = feed_candidate,
+    .decide = decide_candidate,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
     .interrupts_paragraph = true,
@@ -301,14 +306,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .last_block_matches = block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = open_block,
-    .feed_candidate = feed_candidate,
-    .decide_candidate = decide_candidate,
     .edit = &COMMENT_EDIT,
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_block_gate = {.bytes = "%"},
     .probe_block = probe_comment_block,
     .content = &COMMENT_CONTENT,
     .inlines = &COMMENT_INLINES,
+    .candidate = &COMMENT_CANDIDATE,
 };
 
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,

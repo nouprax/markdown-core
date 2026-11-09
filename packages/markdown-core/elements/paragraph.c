@@ -83,6 +83,11 @@ static const markdown_core_inline_ops PARAGRAPH_INLINES = {
     .enter = begin_inline,
 };
 
+static const markdown_core_candidate_ops PARAGRAPH_CANDIDATE = {
+    .feed = markdown_core_block_feed_identifier_line,
+    .decide = markdown_core_block_decide_identifier_line,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
@@ -92,8 +97,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .continue_reach = continue_reach,
     .close_block = close_paragraph,
     .open_text_block = open_text,
-    .feed_candidate = markdown_core_block_feed_identifier_line,
-    .decide_candidate = markdown_core_block_decide_identifier_line,
     .content = &PARAGRAPH_CONTENT,
     .inlines = &PARAGRAPH_INLINES,
+    .candidate = &PARAGRAPH_CANDIDATE,
 };

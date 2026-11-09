@@ -153,13 +153,17 @@ static const markdown_core_document_ops DOCUMENT_OPS = {
     .candidate = publish_candidate,
 };
 
+static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
+    .feed = feed_candidate,
+    .decide = decide_candidate,
+    .size = sizeof(bool),
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .peers = DOCUMENT_PEERS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",
-    .feed_candidate = feed_candidate,
-    .decide_candidate = decide_candidate,
     .edit = &DOCUMENT_EDIT,
-    .candidate_state_size = sizeof(bool),
     .document = &DOCUMENT_OPS,
+    .candidate = &DOCUMENT_CANDIDATE,
 };

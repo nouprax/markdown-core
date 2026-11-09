@@ -7771,8 +7771,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_line_take(markdown
  * call, which declines: one parse of the text the commit has, which ends
  * before the construct does, reads it so. Every later line the commit reads
  * is the candidate's to see first: each one its holder's prefixes carry is
- * FED to its owner (element.h, `feed_candidate`), until one ends the
- * construct, and the owner DECIDES (`decide_candidate`). An ACCEPT puts the
+ * FED to its owner (markdown_core_candidate_ops, `feed`), until one ends the
+ * construct, and the owner DECIDES (the candidate's `decide`). An ACCEPT puts the
  * commit back at the call, where the call reads the lines anew and claims
  * them. A REJECT keeps what the commit read. A decision that read where the
  * text ends WAITS for more text, which it reads once each commit.
@@ -7845,7 +7845,7 @@ struct markdown_core_candidate {
  * the calls, the first that waits and how many wait; and in `states`, bytes
  * the mark owns, what the elements' parse records keep (`state.kept`, the
  * dialect's `kept_size` bytes) and after it the record each call keeps
- * (element.h, `candidate_state_size`), the call's at its index in room for
+ * (markdown_core_candidate_ops, `size`), the call's at its index in room for
  * the dialect's largest; `state_capacity` counts bytes. */
 struct markdown_core_candidate_mark {
     S_snapshot_mark state;
@@ -7887,8 +7887,10 @@ void markdown_core_parser_request_candidate(markdown_core_parser *parser, const 
     stream->request_child = child;
     assert(parser->at.asks);
     stream->request_ask = parser->at.asks - 1;
-    if (owner->element->candidate_state_size) {
-        memcpy(stream->candidate_room, state, owner->element->candidate_state_size);
+    /* An element whose calls ask for candidates answers them. */
+    assert(owner->element->candidate);
+    if (owner->element->candidate->size) {
+        memcpy(stream->candidate_room, state, owner->element->candidate->size);
     }
     stream->request_ends = ends;
 }
@@ -8246,7 +8248,7 @@ static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parse
         bool ends = candidate->ends;
         if (markdown_core_parser_lookahead_next(&lookahead, &content, &line.first, &line.indent, &line.blanks)) {
             line.unfinished = waits && lookahead.incomplete;
-            step = owner->element->feed_candidate(owner, parser, state, &line, &ends);
+            step = owner->element->candidate->feed(owner, parser, state, &line, &ends);
             if (step != MARKDOWN_CORE_CANDIDATE_CONTINUES) {
                 break;
             }
@@ -8258,7 +8260,7 @@ static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parse
             step = MARKDOWN_CORE_CANDIDATE_ENDS;
         } else if (line.blanks) {
             line = (markdown_core_candidate_line){.blanks = line.blanks};
-            step = owner->element->feed_candidate(owner, parser, state, &line, &ends);
+            step = owner->element->candidate->feed(owner, parser, state, &line, &ends);
             if (step == MARKDOWN_CORE_CANDIDATE_CONTINUES) {
                 candidate->ends = ends;
                 if (lookahead.waited) {
@@ -8286,7 +8288,7 @@ static markdown_core_candidate_decision S_candidate_decide(markdown_core_parser 
     stream->deciding = candidate;
     stream->decision_mark = &stream->marks[m];
     markdown_core_candidate_decision decision =
-        owner->element->decide_candidate(owner, parser, S_call_state(parser, &stream->marks[m], index));
+        owner->element->candidate->decide(owner, parser, S_call_state(parser, &stream->marks[m], index));
     stream->deciding = NULL;
     stream->decision_mark = NULL;
     if (markdown_core_parser_end_read(parser)) {

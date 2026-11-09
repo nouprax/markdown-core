@@ -384,13 +384,17 @@ static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
     .awaits = DEFINITION_LIST_KINDS,
 };
 
+static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
+    .feed = feed_candidate,
+    .decide = decide_candidate,
+    .size = sizeof(definition_candidate),
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
     .close_block = close_block,
-
     .accepts_blank = accepts_blank,
-
     .name = "definition_list",
     .continue_container = continue_container,
     .continue_reach = markdown_core_block_indent_reach,
@@ -398,7 +402,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .scan_block_start = markdown_core_definition_list_scan,
     .scan_block_gate = {.bytes = ":~"},
     .try_opening_paragraph = try_paragraph,
-    .feed_candidate = feed_candidate,
-    .decide_candidate = decide_candidate,
-    .candidate_state_size = sizeof(definition_candidate),
+    .candidate = &DEFINITION_LIST_CANDIDATE,
 };

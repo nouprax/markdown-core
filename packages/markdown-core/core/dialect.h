@@ -326,7 +326,7 @@ typedef struct markdown_core_dialect {
     /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
      * of records, and of the largest record a candidate keeps (element.h,
-     * `candidate_state_size`). The instances whose parse records keep part
+     * markdown_core_candidate_ops, `size`). The instances whose parse records keep part
      * with a mark (element.h, `kept_size`), in element order, and the bytes
      * a mark keeps of them all, each part at its instance's `kept_offset`. */
     const markdown_core_element_instance *const *instance_table;

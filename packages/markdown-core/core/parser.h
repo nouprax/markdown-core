@@ -505,7 +505,7 @@ typedef struct markdown_core_stream {
      * accepted, which claims in the snapshot's reading anew; the line through
      * which the feed has fed every call; and the request the line being read
      * made of its opener's call; and room for one record a candidate keeps
-     * (element.h, `candidate_state_size`), the dialect's largest: the one
+     * (markdown_core_candidate_ops, `size`), the dialect's largest: the one
      * the request gives, which its call's mark copies, and the copy of a
      * call's that a snapshot feeds (blocks.c, A SNAPSHOT SEES A CANDIDATE
      * END); after it, the room of what the mark of the snapshot under way
@@ -1753,9 +1753,9 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * blank line's acceptance, or the document's prefix, which is called before
  * line 1 (element.h, markdown_core_document_ops, `read`). `child` is the kind of block
  * it would open, whose lines its candidate is fed, `state` the record it
- * keeps of the grammar, the owner's `candidate_state_size` bytes, which the
+ * keeps of the grammar, the owner's candidate `size` bytes, which the
  * request copies, and `ends` whether it could claim were the text to end after
- * the call's line (element.h, `feed_candidate`). The commit ends at the
+ * the call's line (markdown_core_candidate_ops, `feed`). The commit ends at the
  * call, completes, marks its state there unless an earlier call of the line
  * did, and reads on from the call. A call asks first whether it MEETS its
  * candidate, as the owner, in `container`, and asks for its candidate right
@@ -1780,7 +1780,7 @@ static inline bool markdown_core_parser_candidate_meets(markdown_core_parser *pa
     const size_t ask = parser->at.asks++;
     return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container, ask);
 }
-/* The decision of the candidate being decided (element.h, `decide_candidate`)
+/* The decision of the candidate being decided (markdown_core_candidate_ops, `decide`)
  * reads its line as its call did: `start` puts the parser's line state at
  * the call on a line, and gives the line through its line ending and the
  * container the call was asked in; `end` puts the line state back. False,

@@ -41,7 +41,7 @@ typedef enum {
     MARKDOWN_CORE_INLINE_FALLBACK
 } markdown_core_inline_precedence;
 
-/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; `feed_candidate`):
+/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; the candidate's `feed`):
  * its content after the prefixes of the candidate's holder, NULL when the
  * lines read so far end after the blank lines; its first non-space byte and
  * its indentation there; the blank lines before it; and whether the text has
@@ -54,7 +54,7 @@ typedef struct {
 } markdown_core_candidate_line;
 
 /* What a line tells a candidate (blocks.c, THE CANDIDATES;
- * `feed_candidate`), and what its decision is (`decide_candidate`). */
+ * the candidate's `feed`), and what its decision is (the candidate's `decide`). */
 typedef enum {
     MARKDOWN_CORE_CANDIDATE_CONTINUES,
     MARKDOWN_CORE_CANDIDATE_ENDS,
@@ -380,6 +380,30 @@ typedef struct markdown_core_inline_ops {
     const char *transparent; /* scan_delimiter looks through it; ASCII */
 } markdown_core_inline_ops;
 
+/* THE CANDIDATE: what the engine asks of an element whose calls ask for
+ * candidates (blocks.c, THE CANDIDATES) as the lines after a call come. */
+typedef struct markdown_core_candidate_ops {
+    /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
+     * (markdown_core_parser_request_candidate) is fed each later line its
+     * candidate's holder carries (markdown_core_candidate_line). It answers
+     * that the line continues the construct, and then in `*ends` whether
+     * the call could claim the lines through it were the text to end after
+     * it; that the construct ended before it; or that the unfinished line
+     * does not tell yet. It keeps what it read in the candidate's record
+     * (`size`), which it writes only for a line it answers
+     * goes on. `decide` decides as the call would read now
+     * (markdown_core_parser_candidate_start): ACCEPT when it would claim
+     * lines, REJECT when it would not, and WAIT when more text may follow
+     * and the decision read where the text ends. */
+    markdown_core_candidate_step (*feed)(const markdown_core_element_instance *, markdown_core_parser *, void *,
+                                         const markdown_core_candidate_line *, bool *);
+    markdown_core_candidate_decision (*decide)(const markdown_core_element_instance *, markdown_core_parser *,
+                                               const void *);
+    /* The bytes of the record each of its candidates keeps, which its
+     * call's request gives and `feed` writes; zero declares none. */
+    size_t size;
+} markdown_core_candidate_ops;
+
 /* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element
  * (blocks.c, THE REOPEN and THE SPLICE), and what a session's reading notes
  * for the edits to come (`stops`). The dialect folds `trailed_kinds` and
@@ -556,22 +580,9 @@ struct markdown_core_element {
      * (see the typedef); required of an element whose blocks contain blocks. */
     markdown_core_continues_block_func continues_block;
     markdown_core_open_block_func try_opening_block;
-    /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
-     * (markdown_core_parser_request_candidate) is fed each later line its
-     * candidate's holder carries (markdown_core_candidate_line). It answers
-     * that the line continues the construct, and then in `*ends` whether
-     * the call could claim the lines through it were the text to end after
-     * it; that the construct ended before it; or that the unfinished line
-     * does not tell yet. It keeps what it read in the candidate's record
-     * (`candidate_state_size`), which it writes only for a line it answers
-     * goes on. `decide_candidate` decides as the call would read now
-     * (markdown_core_parser_candidate_start): ACCEPT when it would claim
-     * lines, REJECT when it would not, and WAIT when more text may follow
-     * and the decision read where the text ends. */
-    markdown_core_candidate_step (*feed_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                   void *, const markdown_core_candidate_line *, bool *);
-    markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                         const void *);
+    /* What a candidate of the element's is asked as later lines come
+     * (markdown_core_candidate_ops), or NULL when its calls ask for none. */
+    const markdown_core_candidate_ops *candidate;
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
     /* What `try_interrupting_block` needs on a non-indented line. */
@@ -592,15 +603,14 @@ struct markdown_core_element {
     const markdown_core_opaque_ops *opaque;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
-     * IT"), and of the record each of its candidates keeps (THE CANDIDATES
-     * above), which its call's request gives and its feed writes; zero
-     * declares none. `kept_size` is how many bytes at the front of the
+     * IT"); zero declares none (a candidate's record is the candidate's,
+     * markdown_core_candidate_ops). `kept_size` is how many bytes at the front of the
      * parse record are WHAT A MARK KEEPS (blocks.c, THE MARK): what the
      * element's record says of the reading so far, which a reading put back
      * to a mark -- a snapshot's end, an accept -- finds as the mark found
      * it; the rest of the record says nothing a reading put back takes
      * back. */
-    size_t state_size, run_state_size, candidate_state_size, kept_size;
+    size_t state_size, run_state_size, kept_size;
     /* The elements whose state this element's code reads, NULL-terminated
      * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
      * Sealing resolves them, in this order, into the instance's `peers`. */
