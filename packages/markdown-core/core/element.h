@@ -92,6 +92,80 @@ typedef struct markdown_core_document_ops {
                    uint32_t);
 } markdown_core_document_ops;
 
+/* THE COMPLETION'S HOOKS: what completion's walk asks of an element --
+ * `complete` of each node of its kinds, `reparse` of one completed again,
+ * and its finish `step` at the events its kind lists name. Each may be NULL
+ * (NULL lists: the step is asked nowhere). */
+typedef struct markdown_core_finish_ops {
+    /* The element's completion of a node, which completion's walk asks at the
+     * ENTER of every node of a kind the element is the structure of, after
+     * the node's inline content is parsed and before its explicit anchor is
+     * reserved; `depth` is the word depth of the node's ancestors. Text turns
+     * an escaped space inside a word into NBSP; a fenced code block whose
+     * info string names a formula becomes a FormulaBlock. The hook may give
+     * a node that holds no inline content and owns no fields another kind
+     * that holds and owns none either. A failure fails the parse
+     * (markdown_core_parser_fail), and the walk ends at its next check. */
+    void (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int depth);
+    /* A kind whose inline content is parsed before completion's walk
+     * (`deferred`, by the document's preparation) parses one node's
+     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
+     * asks it once the node's inline content is released, and the walk then
+     * completes the node as it completed it the first time. */
+    void (*reparse)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* The element's kinds parse their inline content before completion's
+     * walk, by the document's preparation, and not as the walk enters them. */
+    bool deferred;
+    /* The element's finish step (the API header states the contract), asked
+     * from inside completion's walk at the EXIT of every node whose kind is
+     * in `exits` and at the ENTER and EXIT of every node whose
+     * kind is in `scopes`. It costs the document nothing at any
+     * other event: the engine projects the steps by (event, kind) once per
+     * parse, so a step asked at Text is not so much as looked at when a
+     * Paragraph exits, nor when a Text opens. */
+    markdown_core_finish_step_func step;
+    /* The node kinds the element's finish step ACTS ON, terminated by
+     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE: the
+     * set is intersected with the kinds the parse has produced so far, read
+     * at each event the step is asked at, and a step that cannot find
+     * anything is skipped there. A step whose trigger kind is CREATED by an
+     * earlier hook must therefore name that creator kind too.
+     *
+     * The kinds a step acts on are not always the kinds it is asked at, so a
+     * step says where it is asked separately, below, and the gate stays what
+     * makes a document with nothing for the step pay nothing at each event.
+     *
+     * The kinds are declared as KINDS rather than as a precomputed bit set so
+     * that each one keeps its namespace: block and inline values collide once
+     * masked, and a Formula written where a block kind belongs has to be
+     * detectable rather than silently becoming some unrelated block's bit.
+     * The engine projects them per parse. */
+    const markdown_core_node_type *acts;
+    /* WHERE A FINISH STEP IS ASKED, two lists terminated the same way; NULL
+     * declares nothing.
+     *
+     * `exits`: the step receives the EXIT of these kinds, the
+     * point where the node's subtree is complete and the node may be
+     * rewritten. It names the kind of the node the step is handed -- LIST
+     * for a list's layout, TEXT for autolink's scan.
+     *
+     * `scopes`: the inline kinds whose EXTENT the step tracks. It
+     * receives their ENTER and their EXIT and nothing else about them: it acts
+     * on nothing there, it learns that the nodes to come are inside one, and
+     * it keeps that in its per-root state word. Autolink declares LINK -- an
+     * address inside a Link is already a link's text.
+     *
+     * The two are disjoint: a kind in both would be one event asked twice,
+     * and registration refuses the descriptor. It also refuses a step that
+     * names no kind in either list, which would never be asked, a block kind
+     * as a scope kind, whose extent completion never walks (the blocks below
+     * a block complete before it), and a kind the dispatch table cannot index
+     * (an ordinal at or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of
+     * neither class). */
+    const markdown_core_node_type *exits;
+    const markdown_core_node_type *scopes;
+} markdown_core_finish_ops;
+
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
 
@@ -276,23 +350,6 @@ struct markdown_core_element {
      * the text before a cursor (sink.h). Asked only of a run that has a
      * sink, before the run finishes. */
     void (*report_open)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    /* The element's completion of a node, which completion's walk asks at the
-     * ENTER of every node of a kind the element is the structure of, after
-     * the node's inline content is parsed and before its explicit anchor is
-     * reserved; `depth` is the word depth of the node's ancestors. Text turns
-     * an escaped space inside a word into NBSP; a fenced code block whose
-     * info string names a formula becomes a FormulaBlock. The hook may give
-     * a node that holds no inline content and owns no fields another kind
-     * that holds and owns none either. A failure fails the parse
-     * (markdown_core_parser_fail), and the walk ends at its next check. */
-    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                          int depth);
-    /* A kind whose inline content is parsed before completion's walk
-     * (`deferred_inlines`, by the document's preparation) parses one node's
-     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
-     * asks it once the node's inline content is released, and the walk then
-     * completes the node as it completed it the first time. */
-    void (*reparse_inlines)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is
@@ -312,7 +369,7 @@ struct markdown_core_element {
      * before it matters, which THE LEAP (blocks.c) relies on. */
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
-    bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
+    bool inline_content, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
     /* What an edit's reading asks of the element (markdown_core_edit_ops),
      * or NULL when it asks nothing. */
     const markdown_core_edit_ops *edit;
@@ -480,54 +537,9 @@ struct markdown_core_element {
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
-    /* The element's finish step (the API header states the contract), asked
-     * from inside completion's walk at the EXIT of every node whose kind is
-     * in `finish_exit_kinds` and at the ENTER and EXIT of every node whose
-     * kind is in `finish_scope_kinds`. It costs the document nothing at any
-     * other event: the engine projects the steps by (event, kind) once per
-     * parse, so a step asked at Text is not so much as looked at when a
-     * Paragraph exits, nor when a Text opens. */
-    markdown_core_finish_step_func finish_step;
-    /* The node kinds the element's finish step ACTS ON, terminated by
-     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE: the
-     * set is intersected with the kinds the parse has produced so far, read
-     * at each event the step is asked at, and a step that cannot find
-     * anything is skipped there. A step whose trigger kind is CREATED by an
-     * earlier hook must therefore name that creator kind too.
-     *
-     * The kinds a step acts on are not always the kinds it is asked at, so a
-     * step says where it is asked separately, below, and the gate stays what
-     * makes a document with nothing for the step pay nothing at each event.
-     *
-     * The kinds are declared as KINDS rather than as a precomputed bit set so
-     * that each one keeps its namespace: block and inline values collide once
-     * masked, and a Formula written where a block kind belongs has to be
-     * detectable rather than silently becoming some unrelated block's bit.
-     * The engine projects them per parse. */
-    const markdown_core_node_type *finish_acts_on_kinds;
-    /* WHERE A FINISH STEP IS ASKED, two lists terminated the same way; NULL
-     * declares nothing.
-     *
-     * `finish_exit_kinds`: the step receives the EXIT of these kinds, the
-     * point where the node's subtree is complete and the node may be
-     * rewritten. It names the kind of the node the step is handed -- LIST
-     * for a list's layout, TEXT for autolink's scan.
-     *
-     * `finish_scope_kinds`: the inline kinds whose EXTENT the step tracks. It
-     * receives their ENTER and their EXIT and nothing else about them: it acts
-     * on nothing there, it learns that the nodes to come are inside one, and
-     * it keeps that in its per-root state word. Autolink declares LINK -- an
-     * address inside a Link is already a link's text.
-     *
-     * The two are disjoint: a kind in both would be one event asked twice,
-     * and registration refuses the descriptor. It also refuses a step that
-     * names no kind in either list, which would never be asked, a block kind
-     * as a scope kind, whose extent completion never walks (the blocks below
-     * a block complete before it), and a kind the dispatch table cannot index
-     * (an ordinal at or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of
-     * neither class). */
-    const markdown_core_node_type *finish_exit_kinds;
-    const markdown_core_node_type *finish_scope_kinds;
+    /* What completion's walk asks of the element (markdown_core_finish_ops),
+     * or NULL. */
+    const markdown_core_finish_ops *finish;
     /* The element's payload on its nodes (markdown_core_opaque_ops), or
      * NULL when its nodes hold none. */
     const markdown_core_opaque_ops *opaque;

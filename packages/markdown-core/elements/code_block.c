@@ -372,6 +372,10 @@ static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
     .reopen_block = reopen_code,
 };
 
+static const markdown_core_finish_ops CODE_BLOCK_FINISH = {
+    .complete = complete_code,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
@@ -382,7 +386,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .last_block_matches = continue_code,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
     .close_block = close_code,
-    .complete_node = complete_code,
     .blank_line = blank_line,
     .peers = CODE_PEERS,
+    .finish = &CODE_BLOCK_FINISH,
 };

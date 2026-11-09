@@ -1863,14 +1863,24 @@ static const markdown_core_node_type STEP_AT_PARAGRAPH[] = {MARKDOWN_CORE_NODE_P
 static bool attach_step_observers(markdown_core_dialect_builder *builder, void *context) {
     /* Both steps are asked at a Paragraph's EXIT; one acts on a kind this
      * document cannot contain, the other on the Text every paragraph holds. */
-    static const markdown_core_element absent = {.name = "step-absent-observer",
-                                                 .finish_step = count_step_absent,
-                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS,
-                                                 .finish_exit_kinds = STEP_AT_PARAGRAPH};
-    static const markdown_core_element present = {.name = "step-present-observer",
-                                                  .finish_step = count_step_present,
-                                                  .finish_acts_on_kinds = OBSERVER_PRESENT_KINDS,
-                                                  .finish_exit_kinds = STEP_AT_PARAGRAPH};
+    static const markdown_core_finish_ops absent_finish = {
+        .step = count_step_absent,
+        .acts = OBSERVER_ABSENT_KINDS,
+        .exits = STEP_AT_PARAGRAPH,
+    };
+    static const markdown_core_element absent = {
+        .name = "step-absent-observer",
+        .finish = &absent_finish,
+    };
+    static const markdown_core_finish_ops present_finish = {
+        .step = count_step_present,
+        .acts = OBSERVER_PRESENT_KINDS,
+        .exits = STEP_AT_PARAGRAPH,
+    };
+    static const markdown_core_element present = {
+        .name = "step-present-observer",
+        .finish = &present_finish,
+    };
     (void)context;
     return markdown_core_dialect_builder_attach(builder, &absent) &&
            markdown_core_dialect_builder_attach(builder, &present);
@@ -1901,14 +1911,24 @@ static const markdown_core_node_type OBSERVER_LATE_KINDS[] = {MARKDOWN_CORE_NODE
 static const markdown_core_node_type SCOPE_AT_LINK[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
 static bool attach_late_step_observers(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element late = {.name = "step-late-observer",
-                                               .finish_step = count_step_absent,
-                                               .finish_acts_on_kinds = OBSERVER_LATE_KINDS,
-                                               .finish_exit_kinds = STEP_AT_PARAGRAPH};
-    static const markdown_core_element scoped = {.name = "step-scoped-observer",
-                                                 .finish_step = count_step_present,
-                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS,
-                                                 .finish_scope_kinds = SCOPE_AT_LINK};
+    static const markdown_core_finish_ops late_finish = {
+        .step = count_step_absent,
+        .acts = OBSERVER_LATE_KINDS,
+        .exits = STEP_AT_PARAGRAPH,
+    };
+    static const markdown_core_element late = {
+        .name = "step-late-observer",
+        .finish = &late_finish,
+    };
+    static const markdown_core_finish_ops scoped_finish = {
+        .step = count_step_present,
+        .acts = OBSERVER_ABSENT_KINDS,
+        .scopes = SCOPE_AT_LINK,
+    };
+    static const markdown_core_element scoped = {
+        .name = "step-scoped-observer",
+        .finish = &scoped_finish,
+    };
     (void)context;
     return markdown_core_dialect_builder_attach(builder, &late) &&
            markdown_core_dialect_builder_attach(builder, &scoped);
@@ -2045,17 +2065,16 @@ static bool sweep_finish_kind_sets(markdown_core_dialect_builder *builder, void 
     const markdown_core_element *const *elements = markdown_core_dialect_builder_elements(builder, &element_count);
 
     for (size_t i = 0; i < element_count; i++) {
-        const markdown_core_element *element = elements[i];
+        const markdown_core_finish_ops *finish = elements[i]->finish;
+        if (!finish || (!finish->acts && !finish->exits && !finish->scopes)) {
+            continue;
+        }
         /* All of a step's lists -- the kinds it acts on, the kinds it is
          * asked at and the kinds whose extent it tracks -- are declarations
          * of kinds and obey the law. */
-        const markdown_core_node_type *lists[] = {element->finish_acts_on_kinds, element->finish_exit_kinds,
-                                                  element->finish_scope_kinds};
-        if (!element->finish_acts_on_kinds && !element->finish_exit_kinds && !element->finish_scope_kinds) {
-            continue;
-        }
+        const markdown_core_node_type *lists[] = {finish->acts, finish->exits, finish->scopes};
         sweep->declared++;
-        if (!element->finish_step) {
+        if (!finish->step) {
             sweep->without_hook++;
         }
         for (size_t list = 0; list < sizeof(lists) / sizeof(*lists); list++) {
@@ -5691,7 +5710,7 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         text_allocation_calls = 0;
         /* The step as completion asks it: at the Text's EXIT, outside a
          * Link, with a fresh per-root state word. */
-        markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_AUTOLINK.finish_step(
+        markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_AUTOLINK.finish->step(
             &autolink_instance, &parser, text, paragraph, MARKDOWN_CORE_EVENT_EXIT, &state);
         INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "a failed email scan leaves the Text in place");
         OK(runner, text->as.literal->data == original, "a failed email scan retains the original owned buffer");
@@ -9735,8 +9754,14 @@ typedef struct {
 static const markdown_core_node_type STEP_AT_TEXT[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 
 static bool attach_block_scope_step(markdown_core_dialect_builder *builder, void *context) {
+    static const markdown_core_finish_ops block_scope_finish = {
+        .step = no_op_finish_step,
+        .scopes = STEP_AT_PARAGRAPH,
+    };
     static const markdown_core_element block_scope = {
-        .name = "step-scoped-at-paragraph", .finish_step = no_op_finish_step, .finish_scope_kinds = STEP_AT_PARAGRAPH};
+        .name = "step-scoped-at-paragraph",
+        .finish = &block_scope_finish,
+    };
     attach_probe *probe = context;
     markdown_core_dialect_builder_elements(builder, &probe->before);
     probe->attached = markdown_core_dialect_builder_attach(builder, &block_scope);
@@ -9745,10 +9770,15 @@ static bool attach_block_scope_step(markdown_core_dialect_builder *builder, void
 }
 
 static bool attach_overlapping_step(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element overlapping = {.name = "step-exit-and-scope",
-                                                      .finish_step = no_op_finish_step,
-                                                      .finish_exit_kinds = STEP_AT_TEXT,
-                                                      .finish_scope_kinds = STEP_AT_TEXT};
+    static const markdown_core_finish_ops overlapping_finish = {
+        .step = no_op_finish_step,
+        .exits = STEP_AT_TEXT,
+        .scopes = STEP_AT_TEXT,
+    };
+    static const markdown_core_element overlapping = {
+        .name = "step-exit-and-scope",
+        .finish = &overlapping_finish,
+    };
     attach_probe *probe = context;
     markdown_core_dialect_builder_elements(builder, &probe->before);
     probe->attached = markdown_core_dialect_builder_attach(builder, &overlapping);
@@ -9757,7 +9787,13 @@ static bool attach_overlapping_step(markdown_core_dialect_builder *builder, void
 }
 
 static bool attach_kindless_step(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element kindless = {.name = "step-at-no-kind", .finish_step = no_op_finish_step};
+    static const markdown_core_finish_ops kindless_finish = {
+        .step = no_op_finish_step,
+    };
+    static const markdown_core_element kindless = {
+        .name = "step-at-no-kind",
+        .finish = &kindless_finish,
+    };
     attach_probe *probe = context;
     markdown_core_dialect_builder_elements(builder, &probe->before);
     probe->attached = markdown_core_dialect_builder_attach(builder, &kindless);
@@ -9772,9 +9808,14 @@ static const markdown_core_node_type STEP_AT_OUT_OF_TABLE_KIND[] = {
     MARKDOWN_CORE_NODE_NONE};
 
 static bool attach_out_of_table_step(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element outside = {.name = "step-outside-the-table",
-                                                  .finish_step = no_op_finish_step,
-                                                  .finish_exit_kinds = STEP_AT_OUT_OF_TABLE_KIND};
+    static const markdown_core_finish_ops outside_finish = {
+        .step = no_op_finish_step,
+        .exits = STEP_AT_OUT_OF_TABLE_KIND,
+    };
+    static const markdown_core_element outside = {
+        .name = "step-outside-the-table",
+        .finish = &outside_finish,
+    };
     attach_probe *probe = context;
     markdown_core_dialect_builder_elements(builder, &probe->before);
     probe->attached = markdown_core_dialect_builder_attach(builder, &outside);

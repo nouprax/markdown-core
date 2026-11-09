@@ -52,17 +52,26 @@ static bool S_owns_document_lifecycle(const markdown_core_element *element) {
            document->publish && document->candidate && document->reopen && document->splice;
 }
 
+/* The completion's hooks of an element that declares none (the Null Object
+ * the projections read in their place). */
+static const markdown_core_finish_ops S_NO_FINISH = {0};
+
+static inline const markdown_core_finish_ops *S_finish_of(const markdown_core_element *element) {
+    return element->finish ? element->finish : &S_NO_FINISH;
+}
+
 static bool S_element_refused(const markdown_core_element *element) {
+    const markdown_core_finish_ops *finish = S_finish_of(element);
     if (element->kept_size > element->state_size) {
         return true;
     }
     /* Kinds to ask a finish step at, without a finish step. */
-    if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
+    if ((finish->exits || finish->scopes) && !finish->step) {
         return true;
     }
     /* A finish step at a kind outside the kind table, or asked at no kind. */
-    if (element->finish_step) {
-        const markdown_core_node_type *lists[] = {element->finish_exit_kinds, element->finish_scope_kinds};
+    if (finish->step) {
+        const markdown_core_node_type *lists[] = {finish->exits, finish->scopes};
         bool asked = false;
         for (size_t list = 0; list < 2; list++) {
             for (const markdown_core_node_type *kind = lists[list]; kind && *kind; kind++) {
@@ -78,14 +87,14 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* A block kind as a finish scope kind, whose extent completion never
      * walks. */
-    for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
+    for (const markdown_core_node_type *scope = finish->scopes; scope && *scope; scope++) {
         if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(*scope)) {
             return true;
         }
     }
     /* A kind as both a finish exit kind and a finish scope kind. */
-    for (const markdown_core_node_type *exit = element->finish_exit_kinds; exit && *exit; exit++) {
-        for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
+    for (const markdown_core_node_type *exit = finish->exits; exit && *exit; exit++) {
+        for (const markdown_core_node_type *scope = finish->scopes; scope && *scope; scope++) {
             if (*exit == *scope) {
                 return true;
             }
@@ -281,7 +290,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             record.flags =
                 (uint16_t)((structure->inline_content ? MARKDOWN_CORE_KIND_INLINES : 0) |
                            (structure->contains_inlines_func ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
-                           (structure->deferred_inlines ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
+                           (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
                            (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
                            (structure->accepts_lines_func ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
                            (structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
@@ -290,7 +299,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                            (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
                            (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
                            (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
-            record.complete = structure->complete_node;
+            record.complete = S_finish_of(structure)->complete;
         }
         if (markdown_core_kind_owns_fields(kind)) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
@@ -416,15 +425,16 @@ static void S_project_inline_dispatch(markdown_core_dialect *dialect, const mark
  * indexes and none is the out-of-table key. Returns how many keys the element
  * added. */
 static size_t S_count_finish_keys(const markdown_core_element *element, size_t *counts) {
+    const markdown_core_finish_ops *finish = S_finish_of(element);
     size_t keys = 0;
-    if (!element->finish_step) {
+    if (!finish->step) {
         return 0;
     }
-    for (const markdown_core_node_type *kind = element->finish_exit_kinds; kind && *kind; kind++) {
+    for (const markdown_core_node_type *kind = finish->exits; kind && *kind; kind++) {
         counts[markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind)]++;
         keys++;
     }
-    for (const markdown_core_node_type *kind = element->finish_scope_kinds; kind && *kind; kind++) {
+    for (const markdown_core_node_type *kind = finish->scopes; kind && *kind; kind++) {
         counts[markdown_core_finish_key(MARKDOWN_CORE_EVENT_ENTER, *kind)]++;
         counts[markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind)]++;
         keys += 2;
@@ -465,25 +475,25 @@ static void S_project_finish_steps(markdown_core_dialect *dialect, const size_t 
     }
     for (size_t i = 0; i < dialect->element_count; i++) {
         const markdown_core_element_instance *instance = &dialect->instances[i];
-        const markdown_core_element *element = instance->element;
+        const markdown_core_finish_ops *finish = S_finish_of(instance->element);
         size_t slot = dialect->finish_step_slots;
         bool projected = false;
-        if (!element->finish_step) {
+        if (!finish->step) {
             continue;
         }
         markdown_core_node_kind_set acts_on = {0, 0};
-        for (const markdown_core_node_type *kind = element->finish_acts_on_kinds; kind && *kind; kind++) {
+        for (const markdown_core_node_type *kind = finish->acts; kind && *kind; kind++) {
             markdown_core_node_kind_set_add(&acts_on, *kind);
         }
-        for (const markdown_core_node_type *kind = element->finish_exit_kinds; kind && *kind; kind++) {
+        for (const markdown_core_node_type *kind = finish->exits; kind && *kind; kind++) {
             markdown_core_node_kind_set asked = {0, 0};
             markdown_core_node_kind_set_add(&asked, *kind);
-            bool gated = element->finish_acts_on_kinds && !markdown_core_node_kind_set_intersects(&acts_on, &asked);
+            bool gated = finish->acts && !markdown_core_node_kind_set_intersects(&acts_on, &asked);
             S_append_finish_step(dialect, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), instance,
                                  slot, acts_on, gated);
             projected = true;
         }
-        for (const markdown_core_node_type *kind = element->finish_scope_kinds; kind && *kind; kind++) {
+        for (const markdown_core_node_type *kind = finish->scopes; kind && *kind; kind++) {
             S_append_finish_step(dialect, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_ENTER, *kind), instance,
                                  slot, acts_on, false);
             S_append_finish_step(dialect, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), instance,

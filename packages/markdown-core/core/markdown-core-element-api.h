@@ -239,7 +239,7 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
  * affix, table caption or directive label -- and its EXIT, stepping over the
  * blocks below it, each queued on its own as it settles. An element takes
  * part in that walk through one step, asked at the events of the kinds it
- * declared (`finish_exit_kinds`, `finish_scope_kinds`). A queued block is the
+ * declared (`exits`, `scopes`). A queued block is the
  * root of its walk: a step at its EXIT may rewrite it in place -- its kind,
  * its literal, its record -- and read its block structure, which is final,
  * and never frees or replaces it.
@@ -272,12 +272,12 @@ typedef enum {
 /** Observe one event of the finish stage at 'node'.
  *
  * 'event' is `MARKDOWN_CORE_EVENT_EXIT` for a node of a kind the step declared
- * in `finish_exit_kinds` (asked once the node's subtree is complete), and
+ * in `exits` (asked once the node's subtree is complete), and
  * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of an
- * inline kind it declared in `finish_scope_kinds` (the kinds whose extent it
+ * inline kind it declared in `scopes` (the kinds whose extent it
  * tracks). It is asked at no other event, and at the EXIT of a kind it is
  * asked at only once the parse has produced a kind of those it declared in
- * `finish_acts_on_kinds`, the kinds it acts on: the gate is read at the
+ * `acts`, the kinds it acts on: the gate is read at the
  * event, because completion parses each block's inline content as it reaches
  * the block and a kind's first node may be made after completion began. The
  * ENTER and EXIT of a scope kind are delivered whenever the extent is walked,

@@ -91,7 +91,7 @@ typedef enum {
  * per key to a terminated list of steps in descriptor order, NULL for a key
  * nothing declared, built once when the dialect is sealed, beside the block
  * and inline-content families, and gated at the event on the kinds the parse
- * has produced (element.h, `finish_acts_on_kinds`). One load decides the
+ * has produced (element.h, markdown_core_finish_ops, `acts`). One load decides the
  * common case.
  *
  * Kinds are indexed by class then ordinal, so a block and an inline kind that
@@ -162,7 +162,7 @@ typedef struct markdown_core_finish_step_entry {
  *
  * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
  *   kind may hold inline content (PARSES, either one), which the walk parses
- *   at its ENTER; DEFERRED, `deferred_inlines`, it was parsed before the walk
+ *   at its ENTER; DEFERRED, the element's `deferred`, it was parsed before the walk
  *   (a heading's, by the document's preparation);
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
  *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
@@ -175,7 +175,7 @@ typedef struct markdown_core_finish_step_entry {
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
  *
- * `complete` is the structure's `complete_node`, NULL when it declares
+ * `complete` is the structure's `complete`, NULL when it declares
  * none, which the walk calls at every ENTER. The out-of-table index answers
  * nothing. */
 enum {

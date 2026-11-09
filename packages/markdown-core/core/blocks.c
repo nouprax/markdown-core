@@ -1736,7 +1736,7 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
 }
 
 /* A NODE'S COMPLETION IS THE COMPLETION WALK'S ENTER. A node is completed
- * once, the first time completion reaches it: the element's `complete_node`
+ * once, the first time completion reaches it: the element's `complete` (markdown_core_finish_ops)
  * (text.c turns an escaped space into NBSP inside a word; code_block.c makes
  * a fence that names a formula a FormulaBlock) reads the node, its links and
  * its ancestors' word depth, so the ENTER of the walk is where it belongs.
@@ -1950,7 +1950,7 @@ static markdown_core_finish_result run_finish_steps(markdown_core_parser *parser
             continue;
         }
         result =
-            entry->instance->element->finish_step(entry->instance, parser, node, parent, event, &states[entry->slot]);
+            entry->instance->element->finish->step(entry->instance, parser, node, parent, event, &states[entry->slot]);
         if (result != MARKDOWN_CORE_FINISH_CONTINUE) {
             /* A node is consumed only at its EXIT: at ENTER the lookahead
              * names its first child, and a step that freed it here would
@@ -2939,7 +2939,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node **S_settle_after(m
  * owned_tree_frame; the content of a kind the record marks PARSES, not
  * DEFERRED, that the structure says holds inlines) and points the frame's
  * walk into that content; it runs the steps projected for the ENTER,
- * completes the node (the element's `complete_node` the record carries),
+ * completes the node (the element's `complete` (markdown_core_finish_ops) the record carries),
  * reserves its explicit anchor and pushes the field roots of an inline node,
  * which are walked before anything below the node. Returns 1 when it pushed
  * a field root, 0 when it pushed none, and -1 with parser->error set. */
@@ -9417,7 +9417,7 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, markdow
     record->position.places = NULL;
     if (kind->flags & MARKDOWN_CORE_KIND_DEFERRED) {
         parser->completing = candidate;
-        kind->structure->element->reparse_inlines(kind->structure, parser, candidate);
+        kind->structure->element->finish->reparse(kind->structure, parser, candidate);
     }
     S_complete_later(parser, candidate, record->holder);
     return candidate;

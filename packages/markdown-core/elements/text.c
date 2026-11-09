@@ -230,15 +230,18 @@ static void complete_node(const markdown_core_element_instance *self, markdown_c
     }
 }
 
+static const markdown_core_finish_ops TEXT_FINISH = {
+    .complete = complete_node,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
     .peers = TEXT_PEERS,
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .state_size = sizeof(markdown_core_text_work),
     .parse_text = markdown_core_text_parse,
-    .complete_node = complete_node,
-
     .name = "text",
     .match_inline = match,
     .terminates_text = "\\&",
     .dispatch = "\\&",
+    .finish = &TEXT_FINISH,
 };

@@ -866,19 +866,23 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
 static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type AUTOLINK_SCOPE_KINDS[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
+static const markdown_core_finish_ops AUTOLINK_FINISH = {
+    .step = finish_step,
+    /* The step rewrites a Text -- the kind it acts on and the kind it is asked
+     * at are the same -- and reads a Link's ENTER and EXIT to know when a
+     * Text is inside one. */
+    .acts = AUTOLINK_FINISH_KINDS,
+    .exits = AUTOLINK_FINISH_KINDS,
+    .scopes = AUTOLINK_SCOPE_KINDS,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .peers = AUTOLINK_PEERS,
     .name = "autolink",
     .state_size = sizeof(markdown_core_autolink_work),
     .run_state_size = sizeof(autolink_run),
     .match_inline = match,
-    .finish_step = finish_step,
-    /* The step rewrites a Text -- the kind it acts on and the kind it is asked
-     * at are the same -- and reads a Link's ENTER and EXIT to know when a
-     * Text is inside one. */
-    .finish_acts_on_kinds = AUTOLINK_FINISH_KINDS,
-    .finish_exit_kinds = AUTOLINK_FINISH_KINDS,
-    .finish_scope_kinds = AUTOLINK_SCOPE_KINDS,
     .terminates_text = "<:w",
     .dispatch = "<:w",
+    .finish = &AUTOLINK_FINISH,
 };
