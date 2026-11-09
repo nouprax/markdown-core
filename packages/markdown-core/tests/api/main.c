@@ -3881,11 +3881,15 @@ static void owned_field_free(const markdown_core_element *element, markdown_core
     node->opaque = NULL;
 }
 
+static const markdown_core_opaque_ops OWNED_FIELD_PROBE_OPAQUE = {
+    .alloc = owned_field_alloc,
+    .free = owned_field_free,
+    .visit = owned_field_visit,
+};
+
 static const markdown_core_element OWNED_FIELD_PROBE = {
     .name = "owned-field-lifetime-probe",
-    .opaque_alloc_func = owned_field_alloc,
-    .opaque_free_func = owned_field_free,
-    .visit_owned_subtrees_func = owned_field_visit,
+    .opaque = &OWNED_FIELD_PROBE_OPAQUE,
 };
 
 static void element_owned_field_lifecycle(test_batch_runner *runner) {

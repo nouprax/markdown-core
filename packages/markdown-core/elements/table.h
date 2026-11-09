@@ -13,7 +13,7 @@ typedef struct {
     markdown_core_table_column *columns;
     uint32_t head_count;
     /* The columns and runs are those of the table this one is a view of
-     * (opaque_view_func), which it reads and does not free. */
+     * (its `view`, markdown_core_opaque_ops), which it reads and does not free. */
     bool views_columns;
     /* The cells the rows so far invented, past each one's last written
      * cell, to the head's width; each content row holds the count before it

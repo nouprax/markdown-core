@@ -147,7 +147,7 @@ static void *S_bytes_take(markdown_core_node_pool *pool, size_t bytes) {
  * packages/markdown-core/node-types.json. */
 /* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
 /* A type without a record is absent and reads as 0: no inline record, and
- * `as.data` left NULL. An element-owned payload comes from `opaque_alloc_func`. */
+ * `as.data` left NULL. An element-owned payload comes from its element's `alloc` (markdown_core_opaque_ops). */
 static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DOCUMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_document_value),
     [MARKDOWN_CORE_NODE_CALLOUT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_callout),
@@ -285,8 +285,8 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
     node->element = element;
     S_init_node_as(type, &node->as);
 
-    if (node->element && node->element->opaque_alloc_func) {
-        node->element->opaque_alloc_func(node->element, node);
+    if (node->element && node->element->opaque && node->element->opaque->alloc) {
+        node->element->opaque->alloc(node->element, node);
     }
 
     return node;
@@ -424,7 +424,7 @@ static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
 
 /* THE NODE-VALUED FIELDS OF A NODE'S RECORD, each slot visited whether or
  * not it holds a node. An element's own are visited by its
- * `visit_owned_subtrees_func`; `S_visit_fields` visits both. */
+ * `visit` (markdown_core_opaque_ops); `S_visit_fields` visits both. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_record_fields(
     markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     switch (node->kind) {
@@ -446,8 +446,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdo
                                                                           markdown_core_owned_subtree_visitor visitor,
                                                                           void *context) {
     return S_visit_record_fields(node, visitor, context) &&
-           (!node->element || !node->element->visit_owned_subtrees_func ||
-            node->element->visit_owned_subtrees_func(node->element, node, visitor, context));
+           (!node->element || !node->element->opaque || !node->element->opaque->visit ||
+            node->element->opaque->visit(node->element, node, visitor, context));
 }
 
 /* A CANDIDATE LETS GO of the content buffer it borrows
@@ -485,8 +485,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
          * scaffold links until `e` leaves it. */
         S_visit_fields(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
         stack = markdown_core_scaffold_next(e);
-        if (e->opaque && e->element && e->element->opaque_free_func) {
-            e->element->opaque_free_func(e->element, e);
+        if (e->opaque && e->element && e->element->opaque && e->element->opaque->free) {
+            e->element->opaque->free(e->element, e);
         }
         free_node_as(pool, e);
 
@@ -553,7 +553,7 @@ void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b) {
  * attribute value's block and anchor, the element payload's own marks: it
  * holds the part and owns none of it, so releasing the view frees none of
  * it, and it writes a part of its own only where it lets the viewed one go
- * (markdown_core_chunk_view, markdown_core_attributes_view, opaque_view_func).
+ * (markdown_core_chunk_view, markdown_core_attributes_view, the element's `view`).
  * It copies what its kind owns with no mark: the labels a record holds in the
  * pool's storage, each at most a label's length, and its places, which its
  * completion replaces. A candidate copies what it viewed. Once a part cannot
@@ -701,7 +701,7 @@ static markdown_core_node *S_copy_slot(markdown_core_node_pool *pool, const mark
 static void S_view_owned(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
     markdown_core_attributes_view(&copy->attributes);
     if (copy->opaque) {
-        if (state->failed || !copy->element->opaque_view_func(copy->element, copy, node)) {
+        if (state->failed || !copy->element->opaque->view(copy->element, copy, node)) {
             copy->opaque = NULL;
             state->failed = true;
         }
@@ -736,9 +736,9 @@ void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core
     markdown_core_strbuf_init_zeroed(&view->content);
     S_field_pair pair = {pool, view->as.data, node->as.data};
     S_visit_record_fields(view, S_let_go_field, &pair);
-    if (view->element && view->element->visit_owned_subtrees_func) {
+    if (view->element && view->element->opaque && view->element->opaque->visit) {
         pair = (S_field_pair){pool, view->opaque, node->opaque};
-        view->element->visit_owned_subtrees_func(view->element, view, S_let_go_field, &pair);
+        view->element->opaque->visit(view->element, view, S_let_go_field, &pair);
     }
 }
 
@@ -763,10 +763,10 @@ void markdown_core_node_view_taken(markdown_core_node *view, const markdown_core
                                    markdown_core_owned_subtree_visitor take, void *context) {
     S_field_taker taker = {take, context, view->as.data, view->kind == node->kind ? node->as.data : NULL};
     S_visit_record_fields(view, S_take_field, &taker);
-    if (view->element && view->element->visit_owned_subtrees_func) {
+    if (view->element && view->element->opaque && view->element->opaque->visit) {
         taker.storage = view->opaque;
         taker.original = view->element == node->element ? node->opaque : NULL;
-        view->element->visit_owned_subtrees_func(view->element, view, S_take_field, &taker);
+        view->element->opaque->visit(view->element, view, S_take_field, &taker);
     }
 }
 
@@ -820,16 +820,16 @@ void markdown_core_node_view_adopt(markdown_core_node_pool *pool, markdown_core_
     }
     const bool element = view->element == node->element && view->opaque && node->opaque;
     if (element) {
-        view->element->opaque_adopt_func(view->element, view, node);
+        view->element->opaque->adopt(view->element, view, node);
     }
     node->children = NULL;
     node->child_count = 0;
     markdown_core_strbuf_init_zeroed(&node->content);
     S_field_pair pair = {pool, node->as.data, kind ? view->as.data : NULL};
     S_visit_record_fields(node, S_let_go_field, &pair);
-    if (node->element && node->element->visit_owned_subtrees_func) {
+    if (node->element && node->element->opaque && node->element->opaque->visit) {
         pair = (S_field_pair){pool, node->opaque, element ? view->opaque : NULL};
-        node->element->visit_owned_subtrees_func(node->element, node, S_let_go_field, &pair);
+        node->element->opaque->visit(node->element, node, S_let_go_field, &pair);
     }
 }
 

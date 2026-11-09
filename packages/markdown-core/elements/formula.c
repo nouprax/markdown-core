@@ -667,6 +667,13 @@ static bool close_formula_block(const markdown_core_element_instance *self, mark
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
 
+static const markdown_core_opaque_ops FORMULA_OPAQUE = {
+    .alloc = formula_opaque_alloc,
+    .free = formula_opaque_free,
+    .view = formula_opaque_view,
+    .adopt = formula_opaque_adopt,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
 
@@ -681,13 +688,10 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .close_block = close_formula_block,
     .containment_kinds = containment_kinds,
     .accepts_lines_func = accepts_lines,
-    .opaque_alloc_func = formula_opaque_alloc,
-    .opaque_free_func = formula_opaque_free,
-    .opaque_view_func = formula_opaque_view,
-    .opaque_adopt_func = formula_opaque_adopt,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",
+    .opaque = &FORMULA_OPAQUE,
 };
 
 /* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or

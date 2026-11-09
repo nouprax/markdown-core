@@ -25,12 +25,28 @@ typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instan
  * exposes their owning slots only to parser phases; it does not change a
  * node's public children or make a field a parent/child edge. Destruction
  * transfers these roots to the shared iterative walk and clears their slots
- * before opaque_free_func releases the element payload. That callback must
+ * before the element's `free` (markdown_core_opaque_ops) releases its payload. That callback must
  * not recursively destroy node-valued fields. The slots are in the element
  * payload (`node->opaque`), and kind conversion preserves the payload and
  * these roots. */
 typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_element *element, markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context);
+
+/* THE ELEMENT'S PAYLOAD: what the node walks ask of an element whose nodes
+ * hold a payload of its own (`node->opaque`, node.c): `alloc` makes it and
+ * `free` releases it; `view` and `adopt` make and settle a node's view of
+ * another's (markdown_core_node_view), `view` requiring `adopt`; `visit`
+ * names the node-valued fields the payload holds (owned subtrees above).
+ * They are class methods: a node knows its element and not the parse that
+ * made it, so each takes the element, not an instance. Each may be NULL,
+ * for no payload work there. */
+typedef struct markdown_core_opaque_ops {
+    markdown_core_opaque_alloc_func alloc;
+    markdown_core_opaque_free_func free;
+    markdown_core_opaque_view_func view;
+    markdown_core_opaque_adopt_func adopt;
+    markdown_core_visit_owned_subtrees_func visit;
+} markdown_core_opaque_ops;
 
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
@@ -499,11 +515,9 @@ struct markdown_core_element {
      * neither class). */
     const markdown_core_node_type *finish_exit_kinds;
     const markdown_core_node_type *finish_scope_kinds;
-    markdown_core_opaque_alloc_func opaque_alloc_func;
-    markdown_core_opaque_free_func opaque_free_func;
-    markdown_core_opaque_view_func opaque_view_func;
-    markdown_core_opaque_adopt_func opaque_adopt_func;
-    markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
+    /* The element's payload on its nodes (markdown_core_opaque_ops), or
+     * NULL when its nodes hold none. */
+    const markdown_core_opaque_ops *opaque;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
      * IT"), and of the record each of its candidates keeps (THE CANDIDATES
@@ -538,7 +552,7 @@ struct markdown_core_element {
  * read by the visitor below and projected into completion's per-kind
  * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the walk asks it
  * once per parse per kind rather than three compares per node. An element
- * that owns subtrees through `visit_owned_subtrees_func` is found through
+ * that owns subtrees through its `visit` (markdown_core_opaque_ops) is found through
  * the node's `element`, which the walk tests beside the flag. */
 static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
     return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
@@ -567,8 +581,8 @@ static inline int markdown_core_visit_kind_fields(markdown_core_node *node, mark
 static inline int markdown_core_visit_element_subtrees(markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context) {
     const markdown_core_element *element = node->element;
-    return !element || !element->visit_owned_subtrees_func ||
-           element->visit_owned_subtrees_func(element, node, visitor, context);
+    return !element || !element->opaque || !element->opaque->visit ||
+           element->opaque->visit(element, node, visitor, context);
 }
 
 /* Every subtree `node` owns: its kind's, then its element's. Completion, which

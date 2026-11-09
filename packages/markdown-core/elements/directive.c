@@ -765,6 +765,14 @@ static const markdown_core_edit_ops DIRECTIVE_EDIT = {
     .reopens = true,
 };
 
+static const markdown_core_opaque_ops DIRECTIVE_OPAQUE = {
+    .alloc = directive_opaque_alloc,
+    .free = directive_opaque_free,
+    .view = directive_opaque_view,
+    .adopt = directive_opaque_adopt,
+    .visit = visit_owned_subtrees,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .edit = &DIRECTIVE_EDIT,
     .interrupts_paragraph = true,
@@ -784,13 +792,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
-    .opaque_alloc_func = directive_opaque_alloc,
-    .opaque_free_func = directive_opaque_free,
-    .opaque_view_func = directive_opaque_view,
-    .opaque_adopt_func = directive_opaque_adopt,
-    .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",
+    .opaque = &DIRECTIVE_OPAQUE,
 };
 
 /* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what

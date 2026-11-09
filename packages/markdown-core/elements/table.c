@@ -649,6 +649,13 @@ static const markdown_core_edit_ops TABLE_EDIT = {
     .headed = true,
 };
 
+static const markdown_core_opaque_ops TABLE_OPAQUE = {
+    .alloc = opaque_alloc,
+    .free = opaque_free,
+    .view = opaque_view,
+    .adopt = opaque_adopt,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .edit = &TABLE_EDIT,
     /* A delimiter row makes the paragraph line before it the head. */
@@ -660,10 +667,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .try_opening_block = try_opening_table_block,
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
-    .opaque_alloc_func = opaque_alloc,
-    .opaque_free_func = opaque_free,
-    .opaque_view_func = opaque_view,
-    .opaque_adopt_func = opaque_adopt,
+    .opaque = &TABLE_OPAQUE,
 };
 
 /* A pipe row's part: the cells written past its table's width, which the
