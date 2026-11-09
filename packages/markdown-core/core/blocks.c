@@ -1855,8 +1855,12 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
             // An empty one has no last byte to end at, and the empties in
             // this tree carry a zeroed position rather than an honest one,
             // so taking their end put `1:1..1:0` on a run of four real
-            // characters.
-            if (tmp->as.literal->len > 0) {
+            // characters. But for the spaces before a line ending, which a
+            // run's scope covers though its literal does not hold them
+            // (text.c): an operand that held only those ends past the run,
+            // and the run ends where it does, as one run read whole would,
+            // whatever split the run into operands.
+            if (tmp->as.literal->len > 0 || (tmp->place.start >= cur->place.end && tmp->place.end > cur->place.end)) {
                 cur->place.end = tmp->place.end;
             }
             next = markdown_core_scaffold_next(tmp);
