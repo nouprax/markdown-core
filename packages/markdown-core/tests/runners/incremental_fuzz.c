@@ -104,7 +104,11 @@ static void check_steps(run *state, const uint8_t *data, size_t size, bool edits
             step->end = end < start ? start : end;
         }
         step->length = read_bytes(&input, head % 32, &step->text);
-        if (editing && (!named(&text, step->start) || !named(&text, step->end))) {
+        /* A start between the CR and the LF of a CRLF stands before the CR
+         * as a cursor names it (incremental_oracles.c, cursor_edit). */
+        const bool split = step->start && step->start < text.length && text.bytes[step->start - 1] == '\r' &&
+                           text.bytes[step->start] == '\n';
+        if (editing && (!named(&text, step->start - split) || !named(&text, step->end))) {
             continue;
         }
         const bool kept = editing ? ih_text_replace(&text, step->start, step->end, step->text, step->length)
