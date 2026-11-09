@@ -238,19 +238,23 @@ static markdown_core_node *open_lazy(const markdown_core_element_instance *self,
 
 static const markdown_core_node_type CALLOUT_TRAILED[] = {MARKDOWN_CORE_NODE_CALLOUT, MARKDOWN_CORE_NODE_NONE};
 
+static const markdown_core_edit_ops CALLOUT_EDIT = {
+    .reopens = true,
+    /* A block identifier line after it names it (block_identifier.c). */
+    .trailed_kinds = CALLOUT_TRAILED,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
+    .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
 
     .name = "callout",
     .continue_container = continue_container,
-    .reopens = true,
     .continue_reach = continue_reach,
     .container_prefix_bytes = ">",
     .blank_opaque = true,
-    /* A block identifier line after it names it (block_identifier.c). */
-    .trailed_kinds = CALLOUT_TRAILED,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
     .start_reach = start_reach,

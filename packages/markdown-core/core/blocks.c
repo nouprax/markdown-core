@@ -4012,7 +4012,8 @@ bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdo
 
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const markdown_core_node *block) {
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    for (const markdown_core_node_type *kind = structure ? structure->element->abuts : NULL; kind && *kind; kind++) {
+    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
+    for (const markdown_core_node_type *kind = ops ? ops->abuts : NULL; kind && *kind; kind++) {
         if (*kind == (markdown_core_node_type)block->kind) {
             return true;
         }
@@ -4166,8 +4167,8 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
                                               MARKDOWN_CORE_NODE__BLANK_FOLDED | MARKDOWN_CORE_NODE__LAST_LINE_BLANK |
                                               MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION));
     const markdown_core_element_instance *structure = kind->structure;
-    if (structure && structure->element->reopen_block) {
-        structure->element->reopen_block(structure, parser, node, next, blank);
+    if (structure && structure->element->edit && structure->element->edit->reopen_block) {
+        structure->element->edit->reopen_block(structure, parser, node, next, blank);
     }
     if (kind->flags & (MARKDOWN_CORE_KIND_LINES | MARKDOWN_CORE_KIND_IS_PARAGRAPH)) {
         /* Its content's marks were the flush's, which the reading let go
@@ -5002,7 +5003,8 @@ static bool S_resumes_in(markdown_core_parser *parser, size_t start, size_t inde
     /* What the block's element counted of its children before reads as the
      * old reading's did, last, as the block counts the old ones in. */
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    return !structure->element->resumes || structure->element->resumes(structure, parser, block, back);
+    const markdown_core_edit_ops *ops = structure->element->edit;
+    return !ops || !ops->resumes || ops->resumes(structure, parser, block, back);
 }
 
 /* THE FOLD PASSES (parser.h, markdown_core_fold_pass): what the chunk

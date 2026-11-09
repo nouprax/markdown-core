@@ -378,12 +378,16 @@ static bool close_block(const markdown_core_element_instance *self, markdown_cor
 static const markdown_core_node_type DEFINITION_LIST_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION_LIST,
                                                                 MARKDOWN_CORE_NODE_NONE};
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
-    .state_size = sizeof(markdown_core_definition_list_work),
-    .close_block = close_block,
+static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
     .reopens = true,
     /* A term after blank lines joins the list before it. */
     .awaits = DEFINITION_LIST_KINDS,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
+    .edit = &DEFINITION_LIST_EDIT,
+    .state_size = sizeof(markdown_core_definition_list_work),
+    .close_block = close_block,
 
     .accepts_blank = accepts_blank,
 

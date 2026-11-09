@@ -306,11 +306,11 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         for (const markdown_core_node_type *kind = dialect->instances[i].element->fold_kinds; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
         }
-        for (const markdown_core_node_type *kind = dialect->instances[i].element->trailed_kinds; kind && *kind;
-             kind++) {
+        const markdown_core_edit_ops *edit = dialect->instances[i].element->edit;
+        for (const markdown_core_node_type *kind = edit ? edit->trailed_kinds : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_TRAILED;
         }
-        for (const markdown_core_node_type *kind = dialect->instances[i].element->awaits; kind && *kind; kind++) {
+        for (const markdown_core_node_type *kind = edit ? edit->awaits : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
         }
     }

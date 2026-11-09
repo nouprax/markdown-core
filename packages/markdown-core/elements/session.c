@@ -497,7 +497,7 @@ static bool session_inside(const markdown_core_session *session, const markdown_
                            markdown_core_place window, size_t edited) {
     const markdown_core_parser *parser = session->committed;
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    return structure && structure->element->reopens && block->child_count &&
+    return structure && structure->element->edit && structure->element->edit->reopens && block->child_count &&
            markdown_core_parser_line_of(parser, window.start) < edited &&
            markdown_core_parser_line_of(parser, window.end - 1) >= edited;
 }
@@ -640,8 +640,8 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     const markdown_core_parser *parser = session->committed;
     const size_t opens = markdown_core_parser_line_of(parser, window.start);
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    if (level == SESSION_DEPTH || !structure || !structure->element->reopens || !block->child_count ||
-        opens >= edited) {
+    if (level == SESSION_DEPTH || !structure || !structure->element->edit || !structure->element->edit->reopens ||
+        !block->child_count || opens >= edited) {
         return false;
     }
     session_edits *edits = session->edits;
@@ -693,7 +693,8 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     /* The first child of a block whose children abut starts the block's
      * own first line: the block, reopened with none, reads it as a later
      * child's (blocks.c, markdown_core_parser_abuts). */
-    const bool first = markdown_core_parser_abuts(parser, block) && !structure->element->headed && opens >= above &&
+    const bool first = markdown_core_parser_abuts(parser, block) && !structure->element->edit->headed &&
+                       opens >= above &&
                        markdown_core_parser_line_of(parser, widths_start_at(widths, block, window.start, 0)) == opens;
     while (child || first) {
         const size_t line = markdown_core_parser_line_of(parser, widths_start_at(widths, block, window.start, child));

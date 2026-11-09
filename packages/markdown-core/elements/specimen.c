@@ -128,11 +128,15 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_specimen_continue(parser, node, input);
 }
+static const markdown_core_edit_ops SPECIMEN_EDIT = {
+    .reopens = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
+    .edit = &SPECIMEN_EDIT,
     .name = "specimen",
     .state_size = sizeof(markdown_core_specimen_state),
     .continue_container = continue_container,
-    .reopens = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
     .continue_reach = markdown_core_block_indent_reach,
