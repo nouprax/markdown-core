@@ -777,6 +777,11 @@ static const markdown_core_contain_ops DIRECTIVE_CONTAIN = {
     .kinds = containment_kinds,
 };
 
+static const markdown_core_content_ops DIRECTIVE_CONTENT = {
+    .holds_inlines = contains_inlines,
+    .holds_lines = accepts_lines,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .edit = &DIRECTIVE_EDIT,
     .interrupts_paragraph = true,
@@ -791,12 +796,11 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
      * does not start with one cannot open a directive. */
     .open_block_gate = {.bytes = ":"},
     .probe_block = probe_directive_block,
-    .contains_inlines_func = contains_inlines,
-    .accepts_lines_func = accepts_lines,
     .terminates_text = ":",
     .dispatch = ":",
     .opaque = &DIRECTIVE_OPAQUE,
     .contain = &DIRECTIVE_CONTAIN,
+    .content = &DIRECTIVE_CONTENT,
 };
 
 /* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what

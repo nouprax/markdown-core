@@ -60,6 +60,13 @@ static inline const markdown_core_finish_ops *S_finish_of(const markdown_core_el
     return element->finish ? element->finish : &S_NO_FINISH;
 }
 
+/* The content of an element that declares none: a container of blocks. */
+static const markdown_core_content_ops S_NO_CONTENT = {0};
+
+static inline const markdown_core_content_ops *S_content_of(const markdown_core_element *element) {
+    return element->content ? element->content : &S_NO_CONTENT;
+}
+
 static bool S_element_refused(const markdown_core_element *element) {
     const markdown_core_finish_ops *finish = S_finish_of(element);
     if (element->kept_size > element->state_size) {
@@ -288,18 +295,18 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         const markdown_core_element *structure = markdown_core_structure_for_kind(kind);
         record.structure = structure ? markdown_core_dialect_instance(dialect, structure) : NULL;
         if (record.structure) {
-            record.flags =
-                (uint16_t)((structure->inline_content ? MARKDOWN_CORE_KIND_INLINES : 0) |
-                           (structure->contains_inlines_func ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
-                           (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
-                           (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
-                           (structure->accepts_lines_func ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
-                           (structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
-                           (structure->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
-                           (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
-                           (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
-                           (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
-                           (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
+            const markdown_core_content_ops *content = S_content_of(structure);
+            record.flags = (uint16_t)((content->inlines ? MARKDOWN_CORE_KIND_INLINES : 0) |
+                                      (content->holds_inlines ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
+                                      (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
+                                      (content->mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
+                                      (content->holds_lines ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
+                                      (content->mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
+                                      (content->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
+                                      (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
+                                      (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
+                                      (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
+                                      (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = S_finish_of(structure)->complete;
         }
         if (markdown_core_kind_owns_fields(kind)) {

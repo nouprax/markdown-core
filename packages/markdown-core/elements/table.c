@@ -660,6 +660,10 @@ static const markdown_core_contain_ops TABLE_CONTAIN = {
     .kinds = containment_kinds,
 };
 
+static const markdown_core_content_ops TABLE_CONTENT = {
+    .holds_inlines = contains_inlines,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .edit = &TABLE_EDIT,
     /* A delimiter row makes the paragraph line before it the head. */
@@ -668,9 +672,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .last_block_matches = matches,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_table_block,
-    .contains_inlines_func = contains_inlines,
     .opaque = &TABLE_OPAQUE,
     .contain = &TABLE_CONTAIN,
+    .content = &TABLE_CONTENT,
 };
 
 /* A pipe row's part: the cells written past its table's width, which the

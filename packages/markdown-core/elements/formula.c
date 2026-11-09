@@ -678,6 +678,10 @@ static const markdown_core_contain_ops FORMULA_CONTAIN = {
     .kinds = containment_kinds,
 };
 
+static const markdown_core_content_ops FORMULA_CONTENT = {
+    .holds_lines = accepts_lines,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
     .name = "formula",
@@ -689,12 +693,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
     .close_block = close_formula_block,
-    .accepts_lines_func = accepts_lines,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",
     .opaque = &FORMULA_OPAQUE,
     .contain = &FORMULA_CONTAIN,
+    .content = &FORMULA_CONTENT,
 };
 
 /* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or

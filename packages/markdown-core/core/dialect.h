@@ -160,13 +160,14 @@ typedef struct markdown_core_finish_step_entry {
  * line engine and completion alike. A fact a hook answers per node is a
  * flag saying the element declares the hook, which is then asked:
  *
- * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
+ * - INLINES / INLINES_ASK: the content's `inlines` / `holds_inlines` -- the
  *   kind may hold inline content (PARSES, either one), which the walk parses
  *   at its ENTER; DEFERRED, the element's `deferred`, it was parsed before the walk
  *   (a heading's, by the document's preparation);
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
- *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
- *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
+ *   `mode` / `holds_lines` (markdown_core_content_ops); PROSE, a PROSE
+ *   `mode`, it takes a text line as prose; IS_PARAGRAPH, the content's
+ *   `paragraph`;
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
  *   (`propagates_child_blank`): what a blank line means inside it;
  * - FOLDS: the kind is one of its fold's `kinds`, and its `child` is asked as a

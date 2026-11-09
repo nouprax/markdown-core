@@ -1929,6 +1929,11 @@ static const markdown_core_finish_ops HEADING_FINISH = {
     .deferred = true,
 };
 
+static const markdown_core_content_ops HEADING_CONTENT = {
+    .mode = MARKDOWN_CORE_CONTENT_PROSE,
+    .inlines = true,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
     .begin_inline = markdown_core_heading_begin_inlines,
@@ -1939,12 +1944,11 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     /* ATX `#`; a setext underline of `=` or `-`. */
     .scan_block_gate = {.bytes = "#=-"},
     .last_block_matches = continue_heading,
-    .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
-    .inline_content = true,
     .close_block = close_heading,
     .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
     .kept_size = offsetof(markdown_core_heading_state, headings),
     .run_state_size = sizeof(markdown_core_heading_run),
     .finish = &HEADING_FINISH,
+    .content = &HEADING_CONTENT,
 };

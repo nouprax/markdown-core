@@ -351,7 +351,7 @@ void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, m
 static bool S_kind_accepts_lines(const markdown_core_kind_record *kind, markdown_core_node *node) {
     return (kind->flags & MARKDOWN_CORE_KIND_LINES) ||
            ((kind->flags & MARKDOWN_CORE_KIND_LINES_ASK) &&
-            kind->structure->element->accepts_lines_func(kind->structure->element, node));
+            kind->structure->element->content->holds_lines(kind->structure->element, node));
 }
 /* Whether a node of `kind` takes a text line: as its content, or as prose. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_kind_takes_text(const markdown_core_kind_record *kind,
@@ -361,7 +361,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_kind_takes_text(co
 static bool S_kind_contains_inlines(const markdown_core_kind_record *kind, markdown_core_node *node) {
     return (kind->flags & MARKDOWN_CORE_KIND_INLINES) ||
            ((kind->flags & MARKDOWN_CORE_KIND_INLINES_ASK) &&
-            kind->structure->element->contains_inlines_func(kind->structure->element, node));
+            kind->structure->element->content->holds_inlines(kind->structure->element, node));
 }
 
 /* Whether the line may be LAZY: it did not match the prefix of the current

@@ -283,12 +283,14 @@ static const markdown_core_edit_ops COMMENT_EDIT = {
     .stops = comment_stops,
 };
 
+static const markdown_core_content_ops COMMENT_CONTENT = {
+    .holds_lines = comment_accepts_lines,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
     .interrupts_paragraph = true,
-
     .close_block = close_comment,
-
     .name = "comment",
     .match_inline = match,
     .last_block_matches = block_matches,
@@ -300,9 +302,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_block_gate = {.bytes = "%"},
     .probe_block = probe_comment_block,
-    .accepts_lines_func = comment_accepts_lines,
     .terminates_text = "%",
     .dispatch = "%",
+    .content = &COMMENT_CONTENT,
 };
 
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,

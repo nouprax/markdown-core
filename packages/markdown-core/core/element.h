@@ -32,6 +32,100 @@ typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instan
 typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_element *element, markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context);
 
+struct markdown_core_block_start_context;
+struct markdown_core_block_start;
+
+typedef enum {
+    MARKDOWN_CORE_INLINE_TOKEN = -1,
+    MARKDOWN_CORE_INLINE_DEFAULT,
+    MARKDOWN_CORE_INLINE_FALLBACK
+} markdown_core_inline_precedence;
+
+/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; `feed_candidate`):
+ * its content after the prefixes of the candidate's holder, NULL when the
+ * lines read so far end after the blank lines; its first non-space byte and
+ * its indentation there; the blank lines before it; and whether the text has
+ * not finished it, whose bytes past the prefixes are read only as far as
+ * they decide. */
+typedef struct {
+    const markdown_core_chunk *content;
+    int first, indent, blanks;
+    bool unfinished;
+} markdown_core_candidate_line;
+
+/* What a line tells a candidate (blocks.c, THE CANDIDATES;
+ * `feed_candidate`), and what its decision is (`decide_candidate`). */
+typedef enum {
+    MARKDOWN_CORE_CANDIDATE_CONTINUES,
+    MARKDOWN_CORE_CANDIDATE_ENDS,
+    MARKDOWN_CORE_CANDIDATE_WAITS
+} markdown_core_candidate_step;
+
+typedef enum {
+    MARKDOWN_CORE_CANDIDATE_REJECT,
+    MARKDOWN_CORE_CANDIDATE_ACCEPT,
+    MARKDOWN_CORE_CANDIDATE_WAIT
+} markdown_core_candidate_decision;
+
+typedef enum {
+    MARKDOWN_CORE_CONTENT_CONTAINER,
+    MARKDOWN_CORE_CONTENT_PROSE,
+    MARKDOWN_CORE_CONTENT_LITERAL
+} markdown_core_content_mode;
+/* Which element defines the structure of a node KIND -- distinct from
+ * `node->element`, which is the element that created that node INSTANCE.
+ *
+ * This is the definition, a pure function of the kind. Sealing reads it once
+ * per kind to project the dialect's kind record (dialect.h,
+ * markdown_core_kind_record), and everything the engine asks of a node's kind
+ * while parsing it asks that record: the structure's instance and the facts
+ * of its descriptor, in one load. It is NOT cached on the node: a cached copy
+ * is a second answer to "which element defines this kind" that has to be
+ * rewritten at every kind change and can be wrong in between. */
+extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
+extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
+
+static inline const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
+    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
+        return NULL;
+    }
+    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? markdown_core_inline_structure[index]
+                                                  : markdown_core_block_structure[index];
+}
+
+/* What the block dispatcher may know about a hook's grammar without entering
+ * it: the COMPLETE set of first non-space bytes that can lead the hook to claim
+ * a line. NULL means ungated -- the hook is asked about every line, which is
+ * what every hook did before gates existed, so an element that declares nothing
+ * keeps exactly its old behaviour.
+ *
+ * A byte wrongly left out of a declared set does not make the parser slower, it
+ * makes it WRONG: the construct is silently never recognised. So the set
+ * belongs to the element that owns the grammar, and api_test checks it against
+ * that grammar rather than against a fixture.
+ *
+ * A gate is a statement about ONE LINE. A grammar decided by a later line --
+ * a Pandoc simple table, whose prose header is only a table because the NEXT
+ * line is dashes -- cannot be expressed here and must not be gated.
+ *
+ * A gate speaks about a line that is NOT indented code. Four columns of
+ * indentation are a block start of their own, decided by no byte, so the scan
+ * and interrupt families ask an indented line only of the owners whose
+ * `maximum_block_indent` reaches it, whatever their gate says, and ask a
+ * non-indented line only of the owners whose gate admits its first byte. The
+ * two descriptor facts compose; neither is a branch on the input. */
+typedef struct markdown_core_block_gate {
+    const char *bytes;
+} markdown_core_block_gate;
+
+/* How many elements one dialect holds at most. The block-start projection
+ * lists a family's owners by byte -- a count and then owner indices -- so a
+ * family may have at most 255 owners and an owner index at most 254; the
+ * attachment API refuses the element that would break that, leaving the
+ * dialect as it was, rather than the projection wrapping a byte. */
+#define MARKDOWN_CORE_ELEMENT_LIMIT 255
+
 /* THE ELEMENT'S PAYLOAD: what the node walks ask of an element whose nodes
  * hold a payload of its own (`node->opaque`, node.c): `alloc` makes it and
  * `free` releases it; `view` and `adopt` make and settle a node's view of
@@ -207,99 +301,20 @@ typedef struct markdown_core_contain_ops {
     markdown_core_can_contain_func allows;
 } markdown_core_contain_ops;
 
-struct markdown_core_block_start_context;
-struct markdown_core_block_start;
-
-typedef enum {
-    MARKDOWN_CORE_INLINE_TOKEN = -1,
-    MARKDOWN_CORE_INLINE_DEFAULT,
-    MARKDOWN_CORE_INLINE_FALLBACK
-} markdown_core_inline_precedence;
-
-/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; `feed_candidate`):
- * its content after the prefixes of the candidate's holder, NULL when the
- * lines read so far end after the blank lines; its first non-space byte and
- * its indentation there; the blank lines before it; and whether the text has
- * not finished it, whose bytes past the prefixes are read only as far as
- * they decide. */
-typedef struct {
-    const markdown_core_chunk *content;
-    int first, indent, blanks;
-    bool unfinished;
-} markdown_core_candidate_line;
-
-/* What a line tells a candidate (blocks.c, THE CANDIDATES;
- * `feed_candidate`), and what its decision is (`decide_candidate`). */
-typedef enum {
-    MARKDOWN_CORE_CANDIDATE_CONTINUES,
-    MARKDOWN_CORE_CANDIDATE_ENDS,
-    MARKDOWN_CORE_CANDIDATE_WAITS
-} markdown_core_candidate_step;
-
-typedef enum {
-    MARKDOWN_CORE_CANDIDATE_REJECT,
-    MARKDOWN_CORE_CANDIDATE_ACCEPT,
-    MARKDOWN_CORE_CANDIDATE_WAIT
-} markdown_core_candidate_decision;
-
-typedef enum {
-    MARKDOWN_CORE_CONTENT_CONTAINER,
-    MARKDOWN_CORE_CONTENT_PROSE,
-    MARKDOWN_CORE_CONTENT_LITERAL
-} markdown_core_content_mode;
-/* Which element defines the structure of a node KIND -- distinct from
- * `node->element`, which is the element that created that node INSTANCE.
- *
- * This is the definition, a pure function of the kind. Sealing reads it once
- * per kind to project the dialect's kind record (dialect.h,
- * markdown_core_kind_record), and everything the engine asks of a node's kind
- * while parsing it asks that record: the structure's instance and the facts
- * of its descriptor, in one load. It is NOT cached on the node: a cached copy
- * is a second answer to "which element defines this kind" that has to be
- * rewritten at every kind change and can be wrong in between. */
-extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
-extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
-
-static inline const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
-    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return NULL;
-    }
-    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? markdown_core_inline_structure[index]
-                                                  : markdown_core_block_structure[index];
-}
-
-/* What the block dispatcher may know about a hook's grammar without entering
- * it: the COMPLETE set of first non-space bytes that can lead the hook to claim
- * a line. NULL means ungated -- the hook is asked about every line, which is
- * what every hook did before gates existed, so an element that declares nothing
- * keeps exactly its old behaviour.
- *
- * A byte wrongly left out of a declared set does not make the parser slower, it
- * makes it WRONG: the construct is silently never recognised. So the set
- * belongs to the element that owns the grammar, and api_test checks it against
- * that grammar rather than against a fixture.
- *
- * A gate is a statement about ONE LINE. A grammar decided by a later line --
- * a Pandoc simple table, whose prose header is only a table because the NEXT
- * line is dashes -- cannot be expressed here and must not be gated.
- *
- * A gate speaks about a line that is NOT indented code. Four columns of
- * indentation are a block start of their own, decided by no byte, so the scan
- * and interrupt families ask an indented line only of the owners whose
- * `maximum_block_indent` reaches it, whatever their gate says, and ask a
- * non-indented line only of the owners whose gate admits its first byte. The
- * two descriptor facts compose; neither is a branch on the input. */
-typedef struct markdown_core_block_gate {
-    const char *bytes;
-} markdown_core_block_gate;
-
-/* How many elements one dialect holds at most. The block-start projection
- * lists a family's owners by byte -- a count and then owner indices -- so a
- * family may have at most 255 owners and an owner index at most 254; the
- * attachment API refuses the element that would break that, leaving the
- * dialect as it was, rather than the projection wrapping a byte. */
-#define MARKDOWN_CORE_ELEMENT_LIMIT 255
+/* THE CONTENT: what a block of the element's holds -- blocks, prose or
+ * literal lines (`mode`), whether its content is inline content
+ * (`inlines`), and the per-node answers when its kind alone does not say
+ * (`holds_inlines`, `holds_lines`, class methods). The dialect projects it
+ * into each kind's record (dialect.h, the kind flags) as it is sealed. */
+typedef struct markdown_core_content_ops {
+    markdown_core_content_mode mode;
+    bool inlines;
+    /* The element's blocks are paragraphs, the prose blocks the engine's
+     * paragraph rules apply to (IS_PARAGRAPH, dialect.h). */
+    bool paragraph;
+    markdown_core_contains_inlines_func holds_inlines;
+    markdown_core_accepts_lines_func holds_lines;
+} markdown_core_content_ops;
 
 /* THE ELEMENT'S EDIT OPERATIONS: what an edit's reading asks of an element
  * (blocks.c, THE REOPEN and THE SPLICE), and what a session's reading notes
@@ -409,8 +424,10 @@ struct markdown_core_element {
      * than spaces, tabs and container prefix bytes sets them as no line
      * before it matters, which THE LEAP (blocks.c) relies on. */
     unsigned speculative_flags;
-    markdown_core_content_mode content_mode;
-    bool inline_content, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
+    /* What a block of the element's holds (markdown_core_content_ops), or
+     * NULL for a container of blocks. */
+    const markdown_core_content_ops *content;
+    bool blank_opaque, blank_runs, propagates_child_blank, pending_close;
     /* What an edit's reading asks of the element (markdown_core_edit_ops),
      * or NULL when it asks nothing. */
     const markdown_core_edit_ops *edit;
@@ -556,8 +573,6 @@ struct markdown_core_element {
     /* What the element's nodes may hold as children (markdown_core_contain_ops),
      * or NULL for the core's rule of their kinds. */
     const markdown_core_contain_ops *contain;
-    markdown_core_contains_inlines_func contains_inlines_func;
-    markdown_core_accepts_lines_func accepts_lines_func;
     /* What completion's walk asks of the element (markdown_core_finish_ops),
      * or NULL. */
     const markdown_core_finish_ops *finish;
