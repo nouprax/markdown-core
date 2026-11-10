@@ -368,8 +368,28 @@ void markdown_core_code_block_parts(markdown_core_parts *parts) {
     markdown_core_parts_lines(parts, at, code->literal.data, code->literal.len);
 }
 
+/* A fenced block an edit's reading closes as it did (blocks.c, THE SPLICE
+ * IN A BLOCK) met its closing fence as it did: the fence closed it when the
+ * end condition did. */
+static void spliced_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node) {
+    (void)self;
+    (void)parser;
+    node->as.code->fence_closed =
+        node->as.code->fenced && (node->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
+}
+
+/* A fence of the root at no indent strips nothing from its lines, and its
+ * content starts past the fence. */
+static size_t verbatim_code(const markdown_core_element_instance *self, const markdown_core_node *node) {
+    (void)self;
+    return node->as.code->fenced && node->as.code->fence_offset == 0 ? node->as.code->fence_length : SIZE_MAX;
+}
+
 static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
     .reopen_block = reopen_code,
+    .spliced = spliced_code,
+    .verbatim = verbatim_code,
 };
 
 static const markdown_core_finish_ops CODE_BLOCK_FINISH = {
