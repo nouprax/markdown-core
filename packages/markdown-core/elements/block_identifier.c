@@ -115,11 +115,8 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
         markdown_core_parser_starts_on_line(parser, parent, line)) {
         owner = parent;
     }
-    bufsize_t at = (bufsize_t)(candidate.identifier.data - text.data) + paragraph->content_map.offset;
-    int indent =
-        paragraph->content_map.count
-            ? parser->line_marks.values[markdown_core_block_content_mark_at(parser, &paragraph->content_map, at)].indent
-            : 0;
+    const int indent = markdown_core_parser_content_indent(parser, &paragraph->content_map,
+                                                           (bufsize_t)(candidate.identifier.data - text.data));
     if (candidate.own_line && ((indent >= CODE_INDENT) || (!candidate.content_end && owner == paragraph))) {
         return;
     }

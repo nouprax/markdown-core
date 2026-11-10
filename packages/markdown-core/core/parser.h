@@ -397,6 +397,8 @@ typedef struct markdown_core_inline_settle {
 typedef struct {
     markdown_core_roster_kind kind;
     bufsize_t label_start, label_size;
+    /* Where it is in the paragraph's content. */
+    uint32_t at;
     bool found;
 } markdown_core_settled_miss;
 
@@ -671,8 +673,9 @@ typedef struct markdown_core_unclosed {
 } markdown_core_unclosed;
 
 /* THE LEAP (blocks.c): an edit whose rest point is a later line of a block
- * of literal lines keeps the block's old content from that line on in
- * `aside` (`cr` when it holds a carriage return), and the reading leaps
+ * of literal lines keeps the block's old content from that line on in the
+ * back of `aside` (`cr` when it holds a carriage return; THE BACK OF A
+ * PARAGRAPH), and the reading leaps
  * over the old lines past the edit while the block stays open, from the
  * line that starts at `at` of the new text, SIZE_MAX when it does not, to
  * the back's line `last` from the focus, the last of the block's whose
@@ -716,7 +719,7 @@ typedef struct markdown_core_seam_stops {
 } markdown_core_seam_stops;
 
 typedef struct markdown_core_leap {
-    markdown_core_strbuf aside;
+    markdown_core_split *aside;
     size_t at, next, last;
     bool cr, blanks, prose;
     bool armed, active;
@@ -752,15 +755,22 @@ typedef struct markdown_core_leap {
      * copy, `places` NULL for none. The marks of the old content from the
      * rest point's line on, which starts at content offset `cut` of the old
      * content, wait in `marks`, `mark_count` of them, for the leap to take
-     * those of the lines it lands over back. `final` is the last of the
-     * marks as the reading left it, which the reopen finds them by. */
+     * those of the lines it lands over back: the last `mark_count` of the
+     * `mark_room` at `marks`, each moved by `shift` (its content offset,
+     * line and source). `final` is the last of the marks as the reading
+     * left it, which the reopen finds them by. A paragraph that took the
+     * rest of the text back (THE SPLICE IN A PARAGRAPH) keeps the marks of
+     * its content's back there, `apart`, past the `apart_count` its map
+     * holds from `apart_first` (THE BACK OF A PARAGRAPH). */
     markdown_core_line_mark final;
     uint32_t marked;
     int base;
     markdown_core_places *places;
     markdown_core_line_mark *marks;
     size_t mark_count, mark_room;
-    bufsize_t cut;
+    markdown_core_line_mark shift;
+    bufsize_t cut, apart_first, apart_count;
+    bool apart;
 } markdown_core_leap;
 
 /* THE OLD TAIL IN PLACE (blocks.c, seam.h): a holder's old tail, `held`
@@ -867,6 +877,16 @@ typedef struct markdown_core_edit {
     markdown_core_key_index names;
     markdown_core_use_note *notes;
     size_t note_count, note_room;
+    /* WHERE A USE IS (blocks.c, S_use_place): the place of the content's
+     * places `use_places` of the root `use_root` the last use was in, and
+     * the content offset it starts at. */
+    const struct markdown_core_node *use_root;
+    const struct markdown_core_places *use_places;
+    uint32_t use_place, use_read;
+    /* How many uses of the back nearest the focus the splice keeps: those
+     * of the old tail of a paragraph whose parse met a seam of the back
+     * (THE OLD TAIL OF A PARAGRAPH). */
+    size_t uses_held;
     /* The old tail's children no record holds yet, nor the root, the
      * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
      * them go when it fails before its publish. */
@@ -1006,6 +1026,10 @@ struct markdown_core_parser {
      * hand: a block that closes while none does closes where the input's
      * last line ended. */
     bool reading;
+    /* Whether a paragraph's marks were ever kept apart in an edit's leap
+     * (blocks.c, THE BACK OF A PARAGRAPH): only then may a placement read
+     * a mark from the back. */
+    bool apart;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
@@ -1823,23 +1847,26 @@ bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t dept
  * specimen label as its bytes (roster.h). At a finalize every declaration
  * answers; at a snapshot only one whose key some definition declares before
  * the block starts, which is before its inline roots start, and a lookup that
- * finds none is recorded for the finalize. `*failed` is set when storage
+ * finds none is recorded for the finalize. `at` is where the lookup is in
+ * the content of the block being completed (its inline root's offset,
+ * markdown_core_inline_state_root_offset), which a parse that takes edits
+ * keeps with its use (blocks.c, THE USES). `*failed` is set when storage
  * could not be had, and the answer is then NULL. A snapshot's lookup goes on
  * from what the roster answered in markdown_core_parser_find_at_snapshot. */
 const markdown_core_roster_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
                                                                          markdown_core_roster_kind kind,
-                                                                         const markdown_core_chunk *label,
+                                                                         const markdown_core_chunk *label, uint32_t at,
                                                                          const markdown_core_roster_record *record,
                                                                          bool *failed);
 /* A lookup a finalize's completion made, of `kind` and `label` as written,
- * noted as a use of the root being completed. False when storage could not
- * be had. */
+ * at `at` of the content, noted as a use of the root being completed. False
+ * when storage could not be had. */
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
-                                   const markdown_core_chunk *label);
+                                   const markdown_core_chunk *label, uint32_t at);
 static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
                                                                                       markdown_core_roster_kind kind,
                                                                                       const markdown_core_chunk *label,
-                                                                                      bool *failed) {
+                                                                                      uint32_t at, bool *failed) {
     const markdown_core_roster_record *record =
         kind == MARKDOWN_CORE_ROSTER_SPECIMEN
             ? markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed)
@@ -1850,10 +1877,10 @@ static inline const markdown_core_roster_record *markdown_core_parser_find_defin
         return record;
     }
     if (parser->snapshot && !*failed) {
-        return markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed);
+        return markdown_core_parser_find_at_snapshot(parser, kind, label, at, record, failed);
     }
     if (!*failed && parser->stream && parser->stream->edit && parser->completing &&
-        !markdown_core_parser_note_use(parser, kind, label)) {
+        !markdown_core_parser_note_use(parser, kind, label, at)) {
         *failed = true;
         return NULL;
     }
