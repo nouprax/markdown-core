@@ -1014,6 +1014,10 @@ struct markdown_core_parser {
      * hand: a block that closes while none does closes where the input's
      * last line ended. */
     bool reading;
+    /* Whether a paragraph's marks were ever kept apart in an edit's leap
+     * (blocks.c, THE BACK OF A PARAGRAPH): only then may a placement read
+     * a mark from the back. */
+    bool apart;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of

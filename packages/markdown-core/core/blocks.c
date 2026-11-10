@@ -982,6 +982,28 @@ static bool S_back_mark_of(const markdown_core_parser *parser, const markdown_co
     return true;
 }
 
+/* The place of content offset `offset` of `map`, with its map's offset, as
+ * S_content_place answers it, when the back of a paragraph reads it. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_back_place(const markdown_core_parser *parser,
+                                                             const markdown_core_content_map *map, bufsize_t offset,
+                                                             bool end, int *line, bufsize_t *source) {
+    markdown_core_line_mark mark;
+    if (!S_back_mark_of(parser, map, offset, &mark)) {
+        return false;
+    }
+    *line = mark.line;
+    *source = mark.source + (offset - mark.content_offset) * mark.source_step + (end ? mark.source_width : 0);
+    return true;
+}
+
+/* The indent of content offset `offset` of `map`, with its map's offset,
+ * when the back of a paragraph reads it, or -1. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) int S_back_indent(const markdown_core_parser *parser,
+                                                             const markdown_core_content_map *map, bufsize_t offset) {
+    markdown_core_line_mark mark;
+    return S_back_mark_of(parser, map, offset, &mark) ? mark.indent : -1;
+}
+
 /* Requirement 10: for any block with a content buffer and any byte offset
  * within it, name the source line and column of that byte.
  *
@@ -998,10 +1020,12 @@ static int S_content_place(markdown_core_parser *parser, const markdown_core_con
     }
 
     content_offset += map->offset;
-    markdown_core_line_mark back;
-    mark = S_back_mark_of(parser, map, content_offset, &back)
-               ? &back
-               : &parser->line_marks.values[markdown_core_block_content_mark_at(parser, map, content_offset)];
+    /* Only a parse whose leap kept marks apart has a back to read (THE
+     * BACK OF A PARAGRAPH): the others ask nothing more. */
+    if (parser->apart && S_back_place(parser, map, content_offset, end, line, source)) {
+        return 1;
+    }
+    mark = &parser->line_marks.values[markdown_core_block_content_mark_at(parser, map, content_offset)];
     *line = mark->line;
     *source =
         mark->source + (content_offset - mark->content_offset) * mark->source_step + (end ? mark->source_width : 0);
@@ -1023,11 +1047,10 @@ int markdown_core_parser_content_indent(markdown_core_parser *parser, const mark
     if (!map->count) {
         return 0;
     }
-    markdown_core_line_mark back;
-    return S_back_mark_of(parser, map, offset + map->offset, &back)
-               ? back.indent
-               : parser->line_marks.values[markdown_core_block_content_mark_at(parser, map, offset + map->offset)]
-                     .indent;
+    const int back = parser->apart ? S_back_indent(parser, map, offset + map->offset) : -1;
+    return back >= 0 ? back
+                     : parser->line_marks.values[markdown_core_block_content_mark_at(parser, map, offset + map->offset)]
+                           .indent;
 }
 
 /* Appends to `places` a place of length 0 over `start` to `end`, joined to a
@@ -5600,6 +5623,7 @@ static void S_leap_apart(markdown_core_parser *parser, markdown_core_node *block
     leap->shift.source = (bufsize_t)((int64_t)leap->shift.source + parser->stream->edit->delta);
     leap->mark_count -= first;
     leap->apart = true;
+    parser->apart = true;
     leap->apart_first = block->content_map.first;
     leap->apart_count = block->content_map.count;
 }
