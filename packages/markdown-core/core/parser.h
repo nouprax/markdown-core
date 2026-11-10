@@ -745,6 +745,22 @@ typedef struct markdown_core_leap {
     size_t rest, land, landed, uses;
     bool kept, lands;
     markdown_core_seam_stops stops;
+    /* THE PREFIX OF A PARAGRAPH (blocks.c): the content marks the last
+     * reading of `node` read its content with, `marked` of them, which
+     * stand right after the identity run until the next reopen or look,
+     * their lines counted from `base`; and the places that read made, a
+     * copy, `places` NULL for none. The marks of the old content from the
+     * rest point's line on, which starts at content offset `cut` of the old
+     * content, wait in `marks`, `mark_count` of them, for the leap to take
+     * those of the lines it lands over back. `final` is the last of the
+     * marks as the reading left it, which the reopen finds them by. */
+    markdown_core_line_mark final;
+    uint32_t marked;
+    int base;
+    markdown_core_places *places;
+    markdown_core_line_mark *marks;
+    size_t mark_count, mark_room;
+    bufsize_t cut;
 } markdown_core_leap;
 
 /* THE OLD TAIL IN PLACE (blocks.c, seam.h): a holder's old tail, `held`
