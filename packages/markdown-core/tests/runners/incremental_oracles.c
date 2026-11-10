@@ -754,9 +754,8 @@ static void check_identity(run *state, const char *where, size_t step, history *
                     *at = scan + 1;
                     break;
                 }
-                if (old->relation > node->relation ||
-                    (old->relation == node->relation && anchored && anchor >= node->range.end &&
-                     anchor > node->range.start)) {
+                if (old->relation > node->relation || (old->relation == node->relation && anchored &&
+                                                       anchor >= node->range.end && anchor > node->range.start)) {
                     break;
                 }
             }
@@ -771,8 +770,8 @@ static void check_identity(run *state, const char *where, size_t step, history *
         /* An empty source holds no byte the subject could match on, so it
          * may continue the empty old sibling at its position or take a new
          * id. */
-        if (match != SIZE_MAX && index && node->range.start >= node->range.end &&
-            node->id != before->nodes[match].id && ids->state[node->id] == 0) {
+        if (match != SIZE_MAX && index && node->range.start >= node->range.end && node->id != before->nodes[match].id &&
+            ids->state[node->id] == 0) {
             match = SIZE_MAX;
         }
         continues[index] = match;
