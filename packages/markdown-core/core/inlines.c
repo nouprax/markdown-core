@@ -1471,6 +1471,22 @@ void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inlin
 
 int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state) { return inline_state->pos; }
 
+uint32_t markdown_core_inline_state_root_offset(markdown_core_inline_state *inline_state, int offset) {
+    const markdown_core_content_map *map = inline_state->owner ? &inline_state->owner->content_map : NULL;
+    if (!map || !inline_state->owner_parser || map->first == MARKDOWN_CORE_IDENTITY_MARK || map->count <= 0) {
+        return offset > 0 ? (uint32_t)offset : 0;
+    }
+    int line;
+    bufsize_t at = 0;
+    if (offset < inline_state->input.len) {
+        markdown_core_parser_content_place(inline_state->owner_parser, map, offset > 0 ? offset : 0, &line, &at);
+    } else if (inline_state->input.len > 0) {
+        markdown_core_parser_content_end_place(inline_state->owner_parser, map, inline_state->input.len - 1, &line,
+                                               &at);
+    }
+    return (uint32_t)at;
+}
+
 // Moving the cursor over a consumed span must move the line counter with it.
 //
 // This used to be an assignment and nothing else, so an element that consumed

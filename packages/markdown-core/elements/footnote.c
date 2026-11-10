@@ -37,7 +37,8 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
         markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
     bool failed = false;
     const markdown_core_roster_record *record = markdown_core_parser_find_definition(
-        inline_state->owner_parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &label, &failed);
+        inline_state->owner_parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &label,
+        markdown_core_inline_state_root_offset(inline_state, label_start), &failed);
     if (failed) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }

@@ -877,8 +877,9 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
         bool failed = false;
-        record = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_ROSTER_REFERENCE,
-                                                      &raw_label, &failed);
+        record = markdown_core_parser_find_definition(
+            inline_state->owner_parser, MARKDOWN_CORE_ROSTER_REFERENCE, &raw_label,
+            markdown_core_inline_state_root_offset(inline_state, opener->position), &failed);
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }

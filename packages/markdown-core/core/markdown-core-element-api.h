@@ -665,6 +665,14 @@ void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inlin
 /** Get the current inline parsing offset */
 int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state);
 
+/** The offset in the content of the inline root being parsed of byte
+ * `offset` of the chunk the given inline state reads: the same offset in the
+ * root's own run, and in a field's the root's offset its map names. A
+ * definition lookup names where it is with it
+ * (markdown_core_parser_find_definition).
+ */
+uint32_t markdown_core_inline_state_root_offset(markdown_core_inline_state *inline_state, int offset);
+
 /** Set the offset in bytes in the chunk being processed by the given inline state.
  */
 void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_state, int offset);
