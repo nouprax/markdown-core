@@ -7884,33 +7884,41 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
     char c;
     int chars_to_tab;
     int chars_to_advance;
+    /* Complete a virtual column only at the scalar's end. Byte-counted
+     * advances may split a scalar; column-counted advances always consume it
+     * completely, and take an ASCII byte as a scalar of its own: a byte past
+     * it a continuation byte that is no part of it, which a malformed text
+     * may hold in a line's indentation. */
+    if (!columns) {
+        while (count > 0 && parser->at.offset < input->len && (c = peek_at(input, parser->at.offset))) {
+            parser->at.partially_consumed_tab = false;
+            if (c == '\t') {
+                parser->at.column += TAB_STOP - (parser->at.column % TAB_STOP);
+                parser->at.offset += 1;
+            } else {
+                parser->at.offset += 1;
+                parser->at.column +=
+                    parser->at.offset == input->len || (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
+            }
+            count -= 1;
+        }
+        return;
+    }
     while (count > 0 && parser->at.offset < input->len && (c = peek_at(input, parser->at.offset))) {
         if (c == '\t') {
             chars_to_tab = TAB_STOP - (parser->at.column % TAB_STOP);
-            if (columns) {
-                parser->at.partially_consumed_tab = chars_to_tab > count;
-                chars_to_advance = MIN(count, chars_to_tab);
-                parser->at.column += chars_to_advance;
-                parser->at.offset += (parser->at.partially_consumed_tab ? 0 : 1);
-                count -= chars_to_advance;
-            } else {
-                parser->at.partially_consumed_tab = false;
-                parser->at.column += chars_to_tab;
-                parser->at.offset += 1;
-                count -= 1;
-            }
+            parser->at.partially_consumed_tab = chars_to_tab > count;
+            chars_to_advance = MIN(count, chars_to_tab);
+            parser->at.column += chars_to_advance;
+            parser->at.offset += (parser->at.partially_consumed_tab ? 0 : 1);
+            count -= chars_to_advance;
         } else {
             parser->at.partially_consumed_tab = false;
             parser->at.offset += 1;
-            /* Complete a virtual column only at the scalar's end: an ASCII
-             * byte is one, and a byte past it a continuation byte that is
-             * no part of it, which a malformed text may hold. Byte-counted
-             * advances may split a scalar; column-counted advances always
-             * consume it completely. */
-            bool scalar_end = (unsigned char)c < 0x80 || parser->at.offset == input->len ||
-                              (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
+            const bool scalar_end = (unsigned char)c < 0x80 || parser->at.offset == input->len ||
+                                    (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
             parser->at.column += scalar_end;
-            count -= columns ? scalar_end : 1;
+            count -= scalar_end;
         }
     }
 }
