@@ -7816,10 +7816,13 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
         } else {
             parser->at.partially_consumed_tab = false;
             parser->at.offset += 1;
-            /* Valid UTF-8 is a caller precondition. Complete a virtual column
-             * only at the scalar's end. Byte-counted advances may split a
-             * scalar; column-counted advances always consume it completely. */
-            bool scalar_end = parser->at.offset == input->len || (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
+            /* Complete a virtual column only at the scalar's end: an ASCII
+             * byte is one, and a byte past it a continuation byte that is
+             * no part of it, which a malformed text may hold. Byte-counted
+             * advances may split a scalar; column-counted advances always
+             * consume it completely. */
+            bool scalar_end = (unsigned char)c < 0x80 || parser->at.offset == input->len ||
+                              (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
             parser->at.column += scalar_end;
             count -= columns ? scalar_end : 1;
         }

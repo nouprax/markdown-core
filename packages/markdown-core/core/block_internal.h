@@ -51,10 +51,13 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
                                         bool columns);
 /* Where a column-counted advance that takes the byte before `at` stops
  * reading (markdown_core_block_advance_offset): it takes the continuation
- * bytes after that byte as its scalar's, so it reads to the first byte from
- * `at` on that is not one, which the line's end is at the latest (element.h,
- * HOW FAR A STEP READS). */
+ * bytes after that byte as its scalar's, unless the byte is ASCII, a scalar
+ * of its own, so it reads to the first byte from `at` on that is not one,
+ * which the line's end is at the latest (element.h, HOW FAR A STEP READS). */
 static inline bufsize_t markdown_core_block_scalar_end(const markdown_core_chunk *input, bufsize_t at) {
+    if (!at || input->data[at - 1] < 0x80) {
+        return at;
+    }
     while ((input->data[at] & 0xC0) == 0x80) {
         at++;
     }
