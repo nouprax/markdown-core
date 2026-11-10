@@ -610,6 +610,17 @@ typedef struct markdown_core_edit_ops {
      * opener (markdown_core_parser_reach_open), and not what it read. NULL
      * for an element whose readings note what they read. */
     bool (*stops)(const markdown_core_element_instance *, const unsigned char *line, size_t length);
+    /* A block of literal lines an edit's reading closes as its old reading
+     * did, at an old line of its own (blocks.c, THE SPLICE IN A BLOCK): it
+     * takes its old flags back, and the element its own state at that
+     * close, which `reopen_block` gave up. NULL when it keeps none. */
+    void (*spliced)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* When the content of `node`, a block of literal lines and a child of
+     * the root, holds its lines as the text holds them, whole past the
+     * first's opening bytes: how many those are, and the leap finds a line
+     * in the content from where the line starts (blocks.c, THE LEAP).
+     * SIZE_MAX when it does not; NULL when it never does. */
+    size_t (*verbatim)(const markdown_core_element_instance *, const markdown_core_node *node);
 } markdown_core_edit_ops;
 
 struct markdown_core_element {

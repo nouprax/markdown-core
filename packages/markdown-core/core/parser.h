@@ -149,6 +149,10 @@ typedef struct markdown_core_parser_input {
      * and for the document once its scan finds NUL, which the block parser
      * reads as the three bytes of U+FFFD. */
     bool mapped;
+    /* Whether the scan found a line that ends with `\r`, which a block of
+     * literal lines writes as `\n` (blocks.c, THE LEAP): once it does, for
+     * the rest of the document's life. */
+    bool returns;
     int first_line;
     /* The input's epoch: a number the parser gives each input as it installs
      * it, and the document's text each time it grows (blocks.c,
@@ -722,6 +726,12 @@ typedef struct markdown_core_leap {
     markdown_core_split *aside;
     size_t at, next, last;
     bool cr, blanks, prose;
+    /* A block of literal lines whose content holds its lines whole: its
+     * old content past the cut starts where the old text's `origin` does;
+     * when `lent`, nothing holds it aside, as the new text holds its bytes
+     * past the edit where the edit moved them, `after` of them. */
+    bool verbatim, lent;
+    size_t origin, after;
     bool armed, active;
     const struct markdown_core_node *node;
     uint64_t id;

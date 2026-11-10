@@ -683,7 +683,11 @@ static int run_fuzz(size_t count, char **files, int file_count) {
                 seed ^= seed << 17;
                 input[4 + length + at] = (uint8_t)(seed >> 24);
             }
+            const size_t failures = state.failures;
             check_script_bytes(&state, input, 4 + length + script);
+            if (state.failures != failures) {
+                fprintf(stderr, "  in fuzz script %zu of %s\n", (size_t)file * count + index, files[file]);
+            }
         }
         free(input);
         free(document);

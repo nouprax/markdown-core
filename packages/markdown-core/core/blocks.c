@@ -4880,6 +4880,22 @@ static bool S_leap_aside(markdown_core_leap *leap, markdown_core_strbuf *content
     return true;
 }
 
+/* THE LEAP'S OLD CONTENT: the old content of the block the edit's reading
+ * leaps in, from its cut on, and its size: what waits aside, or, when the
+ * content held its lines as the text does (`lent`), the new text's bytes,
+ * where the edit moved them. Only the bytes past the edit are the old
+ * content's there, and the leap reads none before. */
+static const unsigned char *S_leap_old(const markdown_core_parser *parser, size_t *size) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    const markdown_core_leap *leap = edit->leap;
+    if (leap->lent) {
+        *size = leap->after;
+        return parser->input.source + (size_t)((int64_t)leap->origin + edit->delta);
+    }
+    *size = leap->aside->size;
+    return markdown_core_split_back(leap->aside);
+}
+
 /* THE LEAP. A block of literal lines reads each of its lines as its opener
  * left it: what it is -- a fence's character and length, an HTML block's
  * type -- it set as it opened, and a line it reads decides nothing about
@@ -4895,9 +4911,12 @@ static bool S_leap_aside(markdown_core_leap *leap, markdown_core_strbuf *content
  * there to the last whose content the block holds reads as it did: their
  * content comes back from aside, their records from the back, and the
  * reading goes on at that last line, which it reads, as the block may end
- * on it or after it (S_leap); a paragraph of the root stops there instead,
- * and takes the rest of the text back (THE SPLICE IN A PARAGRAPH). The
- * reopen, at input line `line`, makes it
+ * on it or after it (S_leap); a child of the root stops there instead,
+ * and takes the rest of the text back (THE SPLICE IN A PARAGRAPH, THE
+ * SPLICE IN A BLOCK). A block whose content holds its lines as the text
+ * does finds the cut from where the line starts, and when nothing it wrote
+ * differs, leaves no old content aside: the new text holds it past the
+ * edit (THE LEAP'S OLD CONTENT). The reopen, at input line `line`, makes it
  * ready; the edit moved the old text past the edit by `delta`. False when
  * storage could not be had. */
 static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delta) {
@@ -4918,10 +4937,40 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     markdown_core_strbuf *content = &block->content;
     const size_t size = (size_t)content->size;
     const size_t first = S_lines_front_from(&input->lines, (size_t)block->place.start + 1) - 1;
-    const bool prose = markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    const bool prose = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
+    const markdown_core_edit_ops *ops = kind->structure ? kind->structure->element->edit : NULL;
     leap->prose = prose;
+    /* The block's last line, as the back's from the focus, and the last
+     * that gave its content a line. */
+    markdown_core_line_zipper *zipper = &input->lines;
+    const size_t back = S_lines_back_from(zipper, edit->ends[edit->depth - 1]);
+    const bool shut =
+        (edit->states[edit->depth - 1] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) && !kind->structure->lines->ends;
+    /* A block whose content holds its lines as the text does, whole past
+     * its opening bytes (element.h, `verbatim`), holds them byte for byte
+     * in a text the parse never found a NUL in (`mapped`), which it writes
+     * as three bytes, nor a line ending with `\r` (`returns`), which it
+     * writes as `\n`: as many bytes as the text from there to where its
+     * last line ends, and one more when that line ends the text without a
+     * line ending, which the content's last line has. */
+    const size_t opening = !prose && edit->depth == 1 && back > (size_t)shut && ops && ops->verbatim
+                               ? ops->verbatim(kind->structure, block)
+                               : SIZE_MAX;
+    const size_t start = S_lines_start(zipper, first);
+    const size_t end = back - shut < zipper->back_count ? S_lines_back_start(zipper, back - shut) : zipper->end;
+    leap->verbatim = opening != SIZE_MAX && !input->mapped && !input->returns && !content->split &&
+                     (end - start == size + opening || end - start + 1 == size + opening);
+    leap->lent = leap->verbatim && end - start == size + opening;
     size_t cut = prose ? S_leap_held(parser, block, line) : SIZE_MAX;
-    if (cut == SIZE_MAX) {
+    if (leap->verbatim) {
+        /* A line starts in the content where it starts in the text, past
+         * the block's first line's opening bytes. */
+        leap->origin = S_lines_start(zipper, line);
+        cut = leap->origin - start - opening;
+        assert(cut == S_line_ends(content->ptr, size, 0, line - first, true));
+        leap->cr = true;
+    } else if (cut == SIZE_MAX) {
         /* The lines are found in the content's bytes, which it holds whole
          * for that (THE BACK OF A PARAGRAPH). */
         markdown_core_strbuf_split_join(content);
@@ -4940,15 +4989,19 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
          * whatever the text holds: the leap finds its own from the marks. */
         leap->cr = true;
     }
-    if (!S_leap_aside(leap, content, cut)) {
+    if (leap->lent) {
+        /* The content's bytes past the cut are the text's (THE LEAP'S OLD
+         * CONTENT). */
+        leap->after = size - cut;
+        if (markdown_core_strbuf_owns(content)) {
+            markdown_core_strbuf_unsettle(content, (bufsize_t)cut);
+            content->size = (bufsize_t)cut;
+            content->ptr[cut] = '\0';
+        }
+    } else if (!S_leap_aside(leap, content, cut)) {
         return false;
     }
     assert(cut == S_line_ends(content->ptr, cut, 0, line - first, true));
-    /* The block's last line, as the back's from the focus, and the last
-     * that gave its content a line. */
-    const size_t back = S_lines_back_from(&input->lines, edit->ends[edit->depth - 1]);
-    const markdown_core_line_ops *lines = markdown_core_parser_block_kind(parser, block)->structure->lines;
-    const bool shut = (edit->states[edit->depth - 1] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) && !lines->ends;
     if (back <= (size_t)shut) {
         return true;
     }
@@ -4956,9 +5009,9 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     /* The first old line past the edit; a paragraph's next, as the line a
      * paragraph's line is read with may be one before it, which a table's
      * delimiter row or a definition reads (THE LEAP). */
-    const size_t past = S_lines_back_from(&input->lines, edit->to) + prose;
+    const size_t past = S_lines_back_from(zipper, edit->to) + prose;
     if (past < leap->last) {
-        leap->at = (size_t)((int64_t)S_lines_back_start(&input->lines, past) + delta);
+        leap->at = (size_t)((int64_t)S_lines_back_start(zipper, past) + delta);
     }
     return true;
 }
@@ -4997,7 +5050,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit->taken = SIZE_MAX;
     if (stream->edit->leap) {
         stream->edit->leap->at = SIZE_MAX;
-        stream->edit->leap->prose = false;
+        stream->edit->leap->prose = stream->edit->leap->verbatim = stream->edit->leap->lent = false;
         stream->edit->leap->armed = false;
     }
     if (depth && !S_chain_keep(parser, stream->edit, root, path, places, depth)) {
@@ -5684,8 +5737,8 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
     markdown_core_parser_input *input = &parser->input;
     markdown_core_line_zipper *lines = &input->lines;
     const int64_t delta = edit->delta;
-    const unsigned char *aside = markdown_core_split_back(leap->aside);
-    const size_t size = leap->aside->size;
+    size_t size;
+    const unsigned char *aside = S_leap_old(parser, &size);
     const bool prose = markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
     /* The lines' old marks, when the reopen kept them, say where they are
      * in the old content (THE PREFIX OF A PARAGRAPH). */
@@ -5697,6 +5750,12 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
         from = (size_t)(S_back_mark(leap, first).content_offset - leap->cut);
         to = (size_t)(S_back_mark(leap, past).content_offset - leap->cut);
         assert(from == S_line_ends(aside, size, 0, k, true) && to == S_line_ends(aside, size, from, land - k, true));
+    } else if (leap->verbatim) {
+        from = old - leap->origin;
+        to = S_lines_back_start(lines, land) - leap->origin;
+        assert(old >= edit->to && to <= size);
+        assert(leap->lent ||
+               (from == S_line_ends(aside, size, 0, k, true) && to == S_line_ends(aside, size, from, land - k, true)));
     } else {
         from = S_line_ends(aside, size, 0, k, leap->cr);
         to = from == SIZE_MAX ? SIZE_MAX : S_line_ends(aside, size, from, land - k, leap->cr);
@@ -5756,13 +5815,20 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
  * their old marks, which the reopen kept from `first` on (THE PREFIX OF A
  * PARAGRAPH), and closes as it did, at its old end moved by the edit,
  * with its old flags; then the root takes its old tail back (THE SPLICE),
- * and the lines from there on stay in the back. Whether it may. */
+ * and the lines from there on stay in the back.
+ *
+ * THE SPLICE IN A BLOCK: a block of literal lines of the root, which reads
+ * each line as its opener left it (THE LEAP), does the same at `first` of
+ * its old content: its lines from there on read as they did, it closes on
+ * the end condition its old reading met, as its old flags say, and its
+ * element takes back what it kept of that close (element.h, `spliced`).
+ * Whether it may. */
 static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core_node *block, size_t old, size_t start,
                          size_t first) {
     const markdown_core_stream *stream = parser->stream;
     const markdown_core_edit *edit = stream->edit;
     const markdown_core_leap *leap = edit->leap;
-    if (edit->depth != 1 || !leap->prose || first == SIZE_MAX || block == stream->boundary ||
+    if (edit->depth != 1 || (leap->prose && first == SIZE_MAX) || block == stream->boundary ||
         S_back_spans(&stream->reach, old)) {
         return false;
     }
@@ -5818,26 +5884,31 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     markdown_core_edit *edit = parser->stream->edit;
     markdown_core_leap *leap = edit->leap;
     const int64_t delta = edit->delta;
-    const size_t size = leap->aside->size;
-    const size_t from = (size_t)(S_back_mark(leap, first).content_offset - leap->cut);
+    size_t size;
+    const unsigned char *aside = S_leap_old(parser, &size);
+    const size_t from = leap->prose ? (size_t)(S_back_mark(leap, first).content_offset - leap->cut) : first;
     /* The old content from the line on, which the paragraph's parse may
      * meet a seam of (THE OLD TAIL OF A PARAGRAPH), and where it comes to. */
     leap->lands = true;
     leap->land = size - from;
     leap->landed = (size_t)block->content.size;
-    if (!S_leap_back(parser, block, from)) {
-        markdown_core_strbuf_put_ahead(&block->content, markdown_core_split_back(leap->aside) + from,
-                                       (bufsize_t)(size - from));
+    if (!leap->prose || !S_leap_back(parser, block, from)) {
+        markdown_core_strbuf_put_ahead(&block->content, aside + from, (bufsize_t)(size - from));
     }
     if (block->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    S_leap_apart(parser, block, first, index);
+    if (leap->prose) {
+        S_leap_apart(parser, block, first, index);
+    }
     /* It closes as it did: its close reads its first bytes and its last
-     * line's, which are the old text's. */
+     * line's, which are the old text's, and a block of literal lines the
+     * end condition its old reading met, as its old flags say (THE SPLICE
+     * IN A BLOCK). */
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
     markdown_core_node *parent = markdown_core_scaffold_parent(block);
+    block->flags |= edit->states[0] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
     S_settle_pending_as(parser, block, kind);
     S_shut(parser, block);
     if (block == parser->room_holder) {
@@ -5853,6 +5924,10 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
                                                        ~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED |
                                                          MARKDOWN_CORE_NODE__FINAL));
     block->place.end = (uint32_t)((int64_t)edit->ends[0] + delta);
+    const markdown_core_element_instance *structure = kind->structure;
+    if (structure && structure->element->edit && structure->element->edit->spliced) {
+        structure->element->edit->spliced(structure, parser, block);
+    }
     parser->at.current = parent;
     parser->at.pending = block;
     /* The paragraph's parse lists again what it lists, past the line too:
@@ -5904,8 +5979,16 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
                 land--;
             }
             if (land == leap->last && land > k) {
-                const size_t first = leap->prose ? S_leap_mark(leap, old) : SIZE_MAX;
-                if (S_leap_meets(parser, block, old, start, first)) {
+                /* Where the line is: a paragraph's mark, or a block of
+                 * literal lines' offset in the old content aside. */
+                const size_t first = leap->prose      ? S_leap_mark(leap, old)
+                                     : leap->verbatim ? old - leap->origin
+                                                      : S_line_ends(markdown_core_split_back(leap->aside),
+                                                                    leap->aside->size, 0, k, leap->cr);
+                assert(!leap->verbatim || leap->lent ||
+                       first == S_line_ends(markdown_core_split_back(leap->aside), leap->aside->size, 0, k, true));
+                assert(!leap->lent || old >= edit->to);
+                if (first != SIZE_MAX && S_leap_meets(parser, block, old, start, first)) {
                     (void)S_leap_splice(parser, block, first, start, index);
                     return true;
                 }
@@ -7270,6 +7353,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
                                           .fact_count = input->fact_count,
                                           .fact_capacity = input->fact_capacity,
                                           .mapped = was.mapped,
+                                          .returns = was.returns,
                                           .first_line = was.first_line,
                                           .epoch = ++parser->epochs,
                                           .last_line = input->last_line,
@@ -7404,6 +7488,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_scan_line(markdown
     }
     entry->end = (uint32_t)(cursor - source);
     if (cursor < end && *cursor == '\r') {
+        parser->input.returns = true;
         cursor++;
     }
     if (cursor < end && *cursor == '\n') {
@@ -7650,6 +7735,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
         markdown_core_array_truncate(&parser->input.lines.front, 0);
         parser->input.fact_count = 0;
         parser->input.mapped = !at_root;
+        parser->input.returns = false;
         parser->input.first_line = parser->at.line_number + 1;
         if (at_root) {
             parser->at.line_start = 0;
@@ -7798,30 +7884,41 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
     char c;
     int chars_to_tab;
     int chars_to_advance;
+    /* Complete a virtual column only at the scalar's end. Byte-counted
+     * advances may split a scalar; column-counted advances always consume it
+     * completely, and take an ASCII byte as a scalar of its own: a byte past
+     * it a continuation byte that is no part of it, which a malformed text
+     * may hold in a line's indentation. */
+    if (!columns) {
+        while (count > 0 && parser->at.offset < input->len && (c = peek_at(input, parser->at.offset))) {
+            parser->at.partially_consumed_tab = false;
+            if (c == '\t') {
+                parser->at.column += TAB_STOP - (parser->at.column % TAB_STOP);
+                parser->at.offset += 1;
+            } else {
+                parser->at.offset += 1;
+                parser->at.column +=
+                    parser->at.offset == input->len || (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
+            }
+            count -= 1;
+        }
+        return;
+    }
     while (count > 0 && parser->at.offset < input->len && (c = peek_at(input, parser->at.offset))) {
         if (c == '\t') {
             chars_to_tab = TAB_STOP - (parser->at.column % TAB_STOP);
-            if (columns) {
-                parser->at.partially_consumed_tab = chars_to_tab > count;
-                chars_to_advance = MIN(count, chars_to_tab);
-                parser->at.column += chars_to_advance;
-                parser->at.offset += (parser->at.partially_consumed_tab ? 0 : 1);
-                count -= chars_to_advance;
-            } else {
-                parser->at.partially_consumed_tab = false;
-                parser->at.column += chars_to_tab;
-                parser->at.offset += 1;
-                count -= 1;
-            }
+            parser->at.partially_consumed_tab = chars_to_tab > count;
+            chars_to_advance = MIN(count, chars_to_tab);
+            parser->at.column += chars_to_advance;
+            parser->at.offset += (parser->at.partially_consumed_tab ? 0 : 1);
+            count -= chars_to_advance;
         } else {
             parser->at.partially_consumed_tab = false;
             parser->at.offset += 1;
-            /* Valid UTF-8 is a caller precondition. Complete a virtual column
-             * only at the scalar's end. Byte-counted advances may split a
-             * scalar; column-counted advances always consume it completely. */
-            bool scalar_end = parser->at.offset == input->len || (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
+            const bool scalar_end = (unsigned char)c < 0x80 || parser->at.offset == input->len ||
+                                    (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
             parser->at.column += scalar_end;
-            count -= columns ? scalar_end : 1;
+            count -= scalar_end;
         }
     }
 }

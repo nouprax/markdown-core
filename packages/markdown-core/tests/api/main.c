@@ -927,6 +927,17 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, fenced && !closed, "an unclosed fence reports open");
     markdown_core_node_free(unclosed_doc);
 
+    /* A continuation byte after a space is a scalar of its own, which the
+     * columns of the indentation do not take: the literal keeps it. */
+    static const char stray_markdown[] = "    \xa3"
+                                         "b";
+    markdown_core_node *stray_doc = markdown_core_parse_document(stray_markdown, sizeof(stray_markdown) - 1);
+    LITERAL_EQ(runner, child_at(stray_doc, 0),
+               "\xa3"
+               "b\n",
+               "indented code keeps a stray continuation byte");
+    markdown_core_node_free(stray_doc);
+
     markdown_core_node *html = child_at(doc, 5);
     LITERAL_EQ(runner, html, "<div>html</div>\n", "html block literal");
 
