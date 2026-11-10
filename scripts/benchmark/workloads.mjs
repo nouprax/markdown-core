@@ -1501,6 +1501,31 @@ export function hardScripts() {
                 .insert(start(8) + 4, "h")
         );
     }
+    /* THE SPLICE IN A PARAGRAPH (blocks.c, huge paragraphs H4): the reading
+     * stops at the second old line past the edit and takes the rest of the
+     * text back from there, the paragraph's later lines with it; what the
+     * paragraph's parse lists past that line, as an inline note the tables
+     * list where it is, it lists again. Typing on an early line, deleting
+     * what it typed, and a line typed after the note. */
+    for (const [where, eol] of [
+        ["", "\n"],
+        ["-crlf", "\r\n"]
+    ]) {
+        const lines = Array.from(
+            { length: 14 },
+            (_, i) => `line ${i} *e${i}*${i === 10 ? " and^[a note]" : ""}${i === 12 ? " [r]" : ""}${eol}`
+        );
+        const lead = "before\n\n";
+        const start = (i) => bytes(lead) + bytes(lines.slice(0, i).join(""));
+        add(`paragraph-splice${where}`, lead + lines.join("") + `${eol}[r]: /one${eol}`, (s) =>
+            s
+                .insert(start(4) + 2, "x")
+                .insert(start(4) + 3, "y")
+                .remove(start(4) + 2, start(4) + 4)
+                .insert(start(6), "z ")
+                .insert(start(12) + 1, "w")
+        );
+    }
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
