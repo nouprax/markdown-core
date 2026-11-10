@@ -753,15 +753,22 @@ typedef struct markdown_core_leap {
      * copy, `places` NULL for none. The marks of the old content from the
      * rest point's line on, which starts at content offset `cut` of the old
      * content, wait in `marks`, `mark_count` of them, for the leap to take
-     * those of the lines it lands over back. `final` is the last of the
-     * marks as the reading left it, which the reopen finds them by. */
+     * those of the lines it lands over back: the last `mark_count` of the
+     * `mark_room` at `marks`, each moved by `shift` (its content offset,
+     * line and source). `final` is the last of the marks as the reading
+     * left it, which the reopen finds them by. A paragraph that took the
+     * rest of the text back (THE SPLICE IN A PARAGRAPH) keeps the marks of
+     * its content's back there, `apart`, past the `apart_count` its map
+     * holds from `apart_first` (THE BACK OF A PARAGRAPH). */
     markdown_core_line_mark final;
     uint32_t marked;
     int base;
     markdown_core_places *places;
     markdown_core_line_mark *marks;
     size_t mark_count, mark_room;
-    bufsize_t cut;
+    markdown_core_line_mark shift;
+    bufsize_t cut, apart_first, apart_count;
+    bool apart;
 } markdown_core_leap;
 
 /* THE OLD TAIL IN PLACE (blocks.c, seam.h): a holder's old tail, `held`

@@ -513,6 +513,11 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
  * byte. Uses the same run lookup as content_place, which returns its start. */
 int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
                                            bufsize_t offset, int *line, bufsize_t *end);
+/** The indentation of the line a content byte was read from, after its
+ * container prefixes (the run's `indent`): 0 for a map with no runs. Uses
+ * the same run lookup as content_place. */
+int markdown_core_parser_content_indent(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                        bufsize_t offset);
 
 /** Return the absolute index of the first nonspace column coming after 'offset'
  * in the line currently being processed, counting tabs as multiple
