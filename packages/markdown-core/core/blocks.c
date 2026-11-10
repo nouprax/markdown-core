@@ -2363,6 +2363,20 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     }
 }
 
+/* The content of `node` whole, its parts joined when it keeps them apart
+ * (THE BACK OF A PARAGRAPH). False, with the parse failed, when storage
+ * could not be had. */
+static bool S_content_whole(markdown_core_parser *parser, markdown_core_node *node) {
+    if (node->content.split) {
+        markdown_core_strbuf_split_join(&node->content);
+        if (node->content.oom) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return false;
+        }
+    }
+    return true;
+}
+
 static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count);
 static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32_t past, bufsize_t start);
 
@@ -2527,6 +2541,12 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
     }
     if (!lists || node->child_count != leap->seam.index || (leap->seam.index && leap->seam.offset >= size)) {
         S_seam_undo(parser, node);
+    }
+    /* A parse from before the back reads the content whole (THE BACK OF A
+     * PARAGRAPH). */
+    if (node->content.split &&
+        (size_t)leap->seam.offset < (size_t)node->content.size - markdown_core_strbuf_split_of(&node->content)->size) {
+        (void)S_content_whole(parser, node);
     }
     if (parser->error) {
         return;
@@ -2810,6 +2830,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_pa
         S_seam_parse(parser, node);
         return;
     }
+    if (!S_content_whole(parser, node)) {
+        return;
+    }
     const bufsize_t size = S_content_bytes(node);
     const bool same =
         settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind;
@@ -2848,7 +2871,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdow
     const bool settles = S_settles(parser, node);
     if (settles || parser->stream->settled.address == node) {
         S_parse_settled(parser, node, settles);
-    } else {
+    } else if (S_content_whole(parser, node)) {
         markdown_core_parse_inlines(parser, node, true);
     }
 }
@@ -4440,9 +4463,6 @@ static size_t S_leap_held(markdown_core_parser *parser, markdown_core_node *bloc
 static markdown_core_leap *S_leap_need(markdown_core_edit *edit) {
     if (!edit->leap) {
         edit->leap = markdown_core_alloc(1, sizeof(*edit->leap));
-        if (edit->leap) {
-            markdown_core_strbuf_init_zeroed(&edit->leap->aside);
-        }
     }
     return edit->leap;
 }
@@ -4567,6 +4587,50 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
     return true;
 }
 
+/* THE BACK OF A PARAGRAPH (docs/plans/huge-paragraphs.md, H4): the old
+ * content of a block an edit's reading leaps in from `cut` on waits aside,
+ * in a split's back (buffer.h, markdown_core_split), and its `content`
+ * holds the rest, the front. A paragraph whose reading took the old text's
+ * rest back (THE SPLICE IN A PARAGRAPH) keeps its content in those two
+ * parts until the next edit's reading leaps in it, which moves only the
+ * bytes between the gap and its own cut from one part to the other; any
+ * other reading of its content joins the parts first. The split's room
+ * holds the content whole. False when storage could not be had. */
+static bool S_leap_aside(markdown_core_leap *leap, markdown_core_strbuf *content, size_t cut) {
+    if (content->split) {
+        markdown_core_split *split = markdown_core_strbuf_split_take(content);
+        const size_t front = (size_t)content->size;
+        if (cut >= front) {
+            markdown_core_strbuf_put_ahead(content, markdown_core_split_back(split), (bufsize_t)(cut - front));
+            split->size -= cut - front;
+        } else {
+            memcpy(markdown_core_split_back(split) - (front - cut), content->ptr + cut, front - cut);
+            split->size += front - cut;
+            markdown_core_strbuf_truncate(content, (bufsize_t)cut);
+        }
+        markdown_core_split_free(leap->aside);
+        leap->aside = split;
+        return !content->oom;
+    }
+    const size_t size = (size_t)content->size;
+    if (!leap->aside || leap->aside->room < size) {
+        markdown_core_split *split = markdown_core_split_new(size + size / 2);
+        if (!split) {
+            return false;
+        }
+        markdown_core_split_free(leap->aside);
+        leap->aside = split;
+    }
+    leap->aside->size = size - cut;
+    memcpy(markdown_core_split_back(leap->aside), content->ptr + cut, size - cut);
+    if (markdown_core_strbuf_owns(content)) {
+        markdown_core_strbuf_unsettle(content, (bufsize_t)cut);
+        content->size = (bufsize_t)cut;
+        content->ptr[cut] = '\0';
+    }
+    return true;
+}
+
 /* THE LEAP. A block of literal lines reads each of its lines as its opener
  * left it: what it is -- a fence's character and length, an HTML block's
  * type -- it set as it opened, and a line it reads decides nothing about
@@ -4609,6 +4673,12 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     leap->prose = prose;
     size_t cut = prose ? S_leap_held(parser, block, line) : SIZE_MAX;
     if (cut == SIZE_MAX) {
+        /* The lines are found in the content's bytes, which it holds whole
+         * for that (THE BACK OF A PARAGRAPH). */
+        markdown_core_strbuf_split_join(content);
+        if (content->oom) {
+            return false;
+        }
         leap->cr = size && memchr(content->ptr, '\r', size);
         cut = S_line_ends(content->ptr, size, 0, line - first, leap->cr);
         assert(cut != SIZE_MAX);
@@ -4617,21 +4687,14 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
             return false;
         }
     } else {
-        assert(cut == S_line_ends(content->ptr, size, 0, line - first, true));
         /* Line ends found with a carriage return in mind are found right
          * whatever the text holds: the leap finds its own from the marks. */
         leap->cr = true;
     }
-    markdown_core_strbuf_clear(&leap->aside);
-    markdown_core_strbuf_put(&leap->aside, content->ptr + cut, (bufsize_t)(size - cut));
-    if (leap->aside.oom) {
+    if (!S_leap_aside(leap, content, cut)) {
         return false;
     }
-    if (markdown_core_strbuf_owns(content)) {
-        markdown_core_strbuf_unsettle(content, (bufsize_t)cut);
-        content->size = (bufsize_t)cut;
-        content->ptr[cut] = '\0';
-    }
+    assert(cut == S_line_ends(content->ptr, cut, 0, line - first, true));
     /* The block's last line, as the back's from the focus, and the last
      * that gave its content a line. */
     const size_t back = S_lines_back_from(&input->lines, edit->ends[edit->depth - 1]);
@@ -5322,8 +5385,8 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
     markdown_core_parser_input *input = &parser->input;
     markdown_core_line_zipper *lines = &input->lines;
     const int64_t delta = edit->delta;
-    const unsigned char *aside = leap->aside.ptr;
-    const size_t size = (size_t)leap->aside.size;
+    const unsigned char *aside = markdown_core_split_back(leap->aside);
+    const size_t size = leap->aside->size;
     const bool prose = markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
     /* The lines' old marks, when the reopen kept them, say where they are
      * in the old content (THE PREFIX OF A PARAGRAPH). */
@@ -5412,6 +5475,42 @@ static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core
     return true;
 }
 
+/* THE BACK OF A PARAGRAPH, at the splice in the paragraph `block`: its
+ * content stays in two parts, the old content from `from` of the leap's
+ * aside on its back, past what the reading made, when its parse reads from
+ * a seam: the gap moves to the start of the line before the seam's, so the
+ * parse reads the bytes it reads in the back, and the content's view reads
+ * them where they are (buffer.h, markdown_core_split). Whether it does. */
+static bool S_leap_back(markdown_core_parser *parser, markdown_core_node *block, size_t from) {
+    markdown_core_leap *leap = parser->stream->edit->leap;
+    markdown_core_strbuf *content = &block->content;
+    const size_t seam = (size_t)leap->seam.offset, front = (size_t)content->size;
+    if (!seam || seam > front || content->oom || !markdown_core_strbuf_owns(content)) {
+        return false;
+    }
+    size_t gap = seam - 1;
+    gap -= gap && content->ptr[gap] == '\n' && content->ptr[gap - 1] == '\r';
+    while (gap && content->ptr[gap - 1] != '\n' && content->ptr[gap - 1] != '\r') {
+        gap--;
+    }
+    markdown_core_split *split = leap->aside;
+    const size_t whole = front + split->size - from;
+    if (split->room < whole) {
+        markdown_core_split *grown = markdown_core_split_grow(split, whole + whole / 2);
+        if (!grown) {
+            return false;
+        }
+        split = leap->aside = grown;
+    }
+    split->size -= from;
+    memcpy(markdown_core_split_back(split) - (front - gap), content->ptr + gap, front - gap);
+    split->size += front - gap;
+    markdown_core_strbuf_truncate(content, (bufsize_t)gap);
+    markdown_core_strbuf_split_view(content, split);
+    leap->aside = NULL;
+    return true;
+}
+
 /* The same, the splice made: the line at `start` of the new text, line
  * `index` of the input. False, with the parse failed, when storage could
  * not be had. */
@@ -5420,14 +5519,17 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     markdown_core_edit *edit = parser->stream->edit;
     markdown_core_leap *leap = edit->leap;
     const int64_t delta = edit->delta;
-    const size_t size = (size_t)leap->aside.size;
+    const size_t size = leap->aside->size;
     const size_t from = (size_t)(leap->marks[first].content_offset - leap->cut);
     /* The old content from the line on, which the paragraph's parse may
      * meet a seam of (THE OLD TAIL OF A PARAGRAPH), and where it comes to. */
     leap->lands = true;
     leap->land = size - from;
     leap->landed = (size_t)block->content.size;
-    markdown_core_strbuf_put_ahead(&block->content, leap->aside.ptr + from, (bufsize_t)(size - from));
+    if (!S_leap_back(parser, block, from)) {
+        markdown_core_strbuf_put_ahead(&block->content, markdown_core_split_back(leap->aside) + from,
+                                       (bufsize_t)(size - from));
+    }
     if (block->content.oom || !S_leap_marks(parser, block, first, leap->mark_count, index)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -6242,7 +6344,7 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_free(stream->edit->room);
         markdown_core_free(stream->edit->openers);
         if (stream->edit->leap) {
-            markdown_core_strbuf_free(&stream->edit->leap->aside);
+            markdown_core_split_free(stream->edit->leap->aside);
             markdown_core_free(stream->edit->leap->seams);
             markdown_core_free(stream->edit->leap->backs);
             markdown_core_free(stream->edit->leap->places);

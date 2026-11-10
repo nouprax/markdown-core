@@ -26,6 +26,7 @@ void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size
     buf->size = 0;
     buf->oom = 0;
     buf->ahead = 0;
+    buf->split = 0;
     /* The cast drops const and nothing writes through it: `asize` is 0 exactly
      * while `ptr` is this sentinel, and every write path either grows first or
      * is guarded by `asize > 0`. */
@@ -75,6 +76,7 @@ static void S_release_ahead(markdown_core_strbuf *buf) {
 }
 
 void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size) {
+    assert(!buf->split);
     /* A non-positive target is a caller error, and it must poison rather than
      * assert: the assert compiles out under NDEBUG, and the `target_size <
      * buf->asize` test below then answers a negative target with "nothing to
@@ -135,13 +137,88 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
         return;
     }
 
-    if (buf->ahead && markdown_core_strbuf_owns(buf)) {
+    if (buf->split) {
+        markdown_core_split_free(markdown_core_strbuf_split_of(buf));
+        buf->split = 0;
+    } else if (buf->ahead && markdown_core_strbuf_owns(buf)) {
         S_release_ahead(buf);
     } else if (markdown_core_strbuf_owns(buf)) {
         markdown_core_free(buf->ptr);
     }
 
     markdown_core_strbuf_init(buf, 0);
+}
+
+markdown_core_split *markdown_core_split_new(size_t room) {
+    markdown_core_split *split = markdown_core_realloc(NULL, sizeof(*split) + room + 1);
+    if (split) {
+        markdown_core_strbuf_init(&split->front, 0);
+        split->room = room;
+        split->size = 0;
+        split->bytes[room] = '\0';
+    }
+    return split;
+}
+
+markdown_core_split *markdown_core_split_grow(markdown_core_split *split, size_t room) {
+    assert(room >= split->size);
+    markdown_core_split *grown = markdown_core_realloc(NULL, sizeof(*grown) + room + 1);
+    if (!grown) {
+        return NULL;
+    }
+    grown->front = split->front;
+    grown->room = room;
+    grown->size = split->size;
+    memcpy(grown->bytes + room - split->size, markdown_core_split_back(split), split->size);
+    grown->bytes[room] = '\0';
+    markdown_core_free(split);
+    return grown;
+}
+
+void markdown_core_split_free(markdown_core_split *split) {
+    if (split) {
+        markdown_core_strbuf_free(&split->front);
+        markdown_core_free(split);
+    }
+}
+
+void markdown_core_strbuf_split_view(markdown_core_strbuf *buf, markdown_core_split *split) {
+    assert(!buf->split && !buf->oom);
+    const size_t size = (size_t)buf->size + split->size;
+    assert(size <= split->room);
+    split->front = *buf;
+    unsigned char *view = split->bytes + split->room - size;
+    if (buf->size) {
+        view[0] = buf->ptr[0];
+    }
+#ifndef NDEBUG
+    /* No reader reads the front's bytes past its first: the bytes before
+     * the back say so, should one. */
+    const size_t near = buf->size > 65 ? 64 : buf->size ? (size_t)buf->size - 1 : 0;
+    memset(markdown_core_split_back(split) - near, 0xFF, near);
+#endif
+    buf->ptr = view;
+    buf->asize = (bufsize_t)(split->room - size);
+    buf->size = (bufsize_t)size;
+    buf->ahead = 0;
+    buf->split = 1;
+}
+
+markdown_core_split *markdown_core_strbuf_split_take(markdown_core_strbuf *buf) {
+    assert(buf->split);
+    markdown_core_split *split = markdown_core_strbuf_split_of(buf);
+    *buf = split->front;
+    markdown_core_strbuf_init(&split->front, 0);
+    return split;
+}
+
+void markdown_core_strbuf_split_join(markdown_core_strbuf *buf) {
+    if (!buf->split) {
+        return;
+    }
+    markdown_core_split *split = markdown_core_strbuf_split_take(buf);
+    markdown_core_strbuf_put_ahead(buf, markdown_core_split_back(split), (bufsize_t)split->size);
+    markdown_core_split_free(split);
 }
 
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {

@@ -38,6 +38,10 @@ typedef struct {
      * how it moves in a header before `ptr`
      * (MARKDOWN_CORE_STRBUF_HEADER), and `asize` is its room. */
     unsigned ahead : 1;
+    /* Whether the buffer views a content kept in two parts
+     * (markdown_core_split): `ptr` lies `asize` bytes into the split's
+     * room. */
+    unsigned split : 1;
 } markdown_core_strbuf;
 
 /* The header before the bytes of a buffer that grows ahead: how it moves. */
@@ -49,7 +53,7 @@ static MARKDOWN_CORE_INLINE markdown_core_ahead *markdown_core_strbuf_header(con
 
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
-#define MARKDOWN_CORE_BUF_INIT() {(unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0, 0}
+#define MARKDOWN_CORE_BUF_INIT() {(unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0, 0, 0}
 
 /**
  * Initialize a markdown_core_strbuf structure.
@@ -179,6 +183,54 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_take_storage(markdown_core
     from->asize = from->size = 0;
     from->oom = from->ahead = 0;
 }
+
+/* A CONTENT IN TWO PARTS (blocks.c, THE BACK OF A PARAGRAPH): its first
+ * bytes in `front`, and the rest, the BACK, the last `size` bytes of the
+ * split's `room`, which a NUL follows. The back grows and shrinks at its
+ * start, where the front ends, so a content changed near there moves only
+ * the bytes between the change and the gap. A buffer may VIEW the content
+ * whole (markdown_core_strbuf_split_view): its `ptr` reads the back's bytes
+ * at their offsets in the content, the first of them the front's first,
+ * and none of the front's others, which only the split holds. The view
+ * owns the split, and its free frees it. */
+typedef struct markdown_core_split {
+    markdown_core_strbuf front;
+    size_t room, size;
+    unsigned char bytes[];
+} markdown_core_split;
+
+/* A split whose back may hold `room` bytes, empty, or NULL when storage could
+ * not be had. */
+markdown_core_split *markdown_core_split_new(size_t room);
+
+/* The split with room for `room` bytes, its back moved to the room's end:
+ * NULL, with `split` as it was, when storage could not be had. */
+markdown_core_split *markdown_core_split_grow(markdown_core_split *split, size_t room);
+
+void markdown_core_split_free(markdown_core_split *split);
+
+/* The back's first byte. */
+static MARKDOWN_CORE_INLINE unsigned char *markdown_core_split_back(const markdown_core_split *split) {
+    return (unsigned char *)split->bytes + split->room - split->size;
+}
+
+/* The split the view `buf` views. */
+static MARKDOWN_CORE_INLINE markdown_core_split *markdown_core_strbuf_split_of(const markdown_core_strbuf *buf) {
+    return (markdown_core_split *)(void *)(buf->ptr - buf->asize - offsetof(markdown_core_split, bytes));
+}
+
+/* `buf`, which holds a content's front, views the content whole, its back
+ * the split's, which then holds the front's storage and is the view's: the
+ * room holds the content whole. */
+void markdown_core_strbuf_split_view(markdown_core_strbuf *buf, markdown_core_split *split);
+
+/* The view `buf` holds the content's front again, as a buffer of its own,
+ * and the split its back, the caller's. */
+markdown_core_split *markdown_core_strbuf_split_take(markdown_core_strbuf *buf);
+
+/* The view `buf` holds its content whole, as a buffer of its own, and the
+ * split goes: the buffer is poisoned when storage could not be had. */
+void markdown_core_strbuf_split_join(markdown_core_strbuf *buf);
 
 static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
     unsigned char byte = (unsigned char)(c & 0xFF);

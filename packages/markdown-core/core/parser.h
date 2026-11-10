@@ -671,8 +671,9 @@ typedef struct markdown_core_unclosed {
 } markdown_core_unclosed;
 
 /* THE LEAP (blocks.c): an edit whose rest point is a later line of a block
- * of literal lines keeps the block's old content from that line on in
- * `aside` (`cr` when it holds a carriage return), and the reading leaps
+ * of literal lines keeps the block's old content from that line on in the
+ * back of `aside` (`cr` when it holds a carriage return; THE BACK OF A
+ * PARAGRAPH), and the reading leaps
  * over the old lines past the edit while the block stays open, from the
  * line that starts at `at` of the new text, SIZE_MAX when it does not, to
  * the back's line `last` from the focus, the last of the block's whose
@@ -716,7 +717,7 @@ typedef struct markdown_core_seam_stops {
 } markdown_core_seam_stops;
 
 typedef struct markdown_core_leap {
-    markdown_core_strbuf aside;
+    markdown_core_split *aside;
     size_t at, next, last;
     bool cr, blanks, prose;
     bool armed, active;
