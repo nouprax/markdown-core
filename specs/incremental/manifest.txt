@@ -142,6 +142,10 @@ document documents/hard-paragraph-tails-crlf.md
 script documents/hard-paragraph-tails-crlf.md scripts/hard-paragraph-tails-crlf.script
 document documents/hard-paragraph-places.md
 script documents/hard-paragraph-places.md scripts/hard-paragraph-places.script
+document documents/hard-paragraph-splice.md
+script documents/hard-paragraph-splice.md scripts/hard-paragraph-splice.script
+document documents/hard-paragraph-splice-crlf.md
+script documents/hard-paragraph-splice-crlf.md scripts/hard-paragraph-splice-crlf.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

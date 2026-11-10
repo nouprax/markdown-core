@@ -4582,7 +4582,9 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
  * there to the last whose content the block holds reads as it did: their
  * content comes back from aside, their records from the back, and the
  * reading goes on at that last line, which it reads, as the block may end
- * on it or after it (S_leap). The reopen, at input line `line`, makes it
+ * on it or after it (S_leap); a paragraph of the root stops there instead,
+ * and takes the rest of the text back (THE SPLICE IN A PARAGRAPH). The
+ * reopen, at input line `line`, makes it
  * ready; the edit moved the old text past the edit by `delta`. False when
  * storage could not be had. */
 static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delta) {
@@ -4913,8 +4915,10 @@ static bool S_tail_mend(markdown_core_parser *parser, markdown_core_node *root, 
  * starts at `start` in the new text, line `index` of the input: the block
  * pending settles, as the line would settle it, and the reading stands
  * where the old one stood at its flush, moved by the edit (THE SPLICE).
- * False, with the parse failed, when storage could not be had. */
-static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
+ * What the document lists of the old text before `point`, `start` or past
+ * it, its reading listed again. False, with the parse failed, when storage
+ * could not be had. */
+static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, size_t point) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_node *root = parser->root;
@@ -4956,7 +4960,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index) {
         return false;
     }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (!document->element->document->splice(document, parser, root, first, (uint32_t)start)) {
+    if (!document->element->document->splice(document, parser, root, first, (uint32_t)point)) {
         /* The children taken back are the tail's again, which the failed
          * parse lets go with those no record took. */
         memcpy(edit->children + first, root->children + tail, (edit->root.held - first) * sizeof(*edit->children));
@@ -5246,7 +5250,7 @@ static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index
         parser->at.current = level ? edit->chain[level - 1] : parser->root;
         parser->at.pending = block;
     }
-    if (!S_splice(parser, start, index)) {
+    if (!S_splice(parser, start, index, start)) {
         return false;
     }
     /* The close of the root's child, as its old reading noted it. */
@@ -5377,16 +5381,102 @@ static void S_leap_over(markdown_core_parser *parser, markdown_core_node *block,
     parser->at.lookahead_cursor = input->source + resume;
 }
 
-/* THE LEAP, at the start of the line at `start` of the new text, where the
- * line loop's limit stopped: from an old line the block reads open, or
- * tried again at the next old line, or no more once the block is not the
- * one open there. The old child the reading tries next is the limit then.
- * Under a block that keeps flags a line sets (`blanks`), the line the
- * reading read last and the old line before the one it reads next both
- * hold more than prefixes, so each sets them as the other would: the
- * reading leaps from the next old line when the first does not, and to an
- * earlier one when the second does not. */
-static void S_leap(markdown_core_parser *parser, size_t start) {
+/* THE SPLICE IN A PARAGRAPH (docs/plans/huge-paragraphs.md, H4): the
+ * paragraph `block`, a child of the root, which the reading reads open at
+ * the start of the old line the back's `k` from the focus, at `old` of the
+ * old text, where the old reading read it open too, stands as the old
+ * reading stood there -- the line before is the old text's, which the
+ * paragraph's next line may read with, and no reading, the old one's or its
+ * own, reads past the line's start -- so every line from there on reads as
+ * the old reading read it: the paragraph's to its last, the line that
+ * closes it, and the rest of the text. The reading stops there: the
+ * paragraph takes the old content of its lines from there on back, and
+ * their old marks, which the reopen kept from `first` on (THE PREFIX OF A
+ * PARAGRAPH), and closes as it did, at its old end moved by the edit,
+ * with its old flags; then the root takes its old tail back (THE SPLICE),
+ * and the lines from there on stay in the back. Whether it may. */
+static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core_node *block, size_t old, size_t start,
+                         size_t first) {
+    const markdown_core_stream *stream = parser->stream;
+    const markdown_core_edit *edit = stream->edit;
+    const markdown_core_leap *leap = edit->leap;
+    if (edit->depth != 1 || !leap->prose || first == SIZE_MAX || block == stream->boundary ||
+        S_back_spans(&stream->reach, old)) {
+        return false;
+    }
+    for (size_t i = edit->reach_from; i < stream->reach.front.count; i++) {
+        if (stream->reach.front.values[i].start < start && stream->reach.front.values[i].end > start) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The same, the splice made: the line at `start` of the new text, line
+ * `index` of the input. False, with the parse failed, when storage could
+ * not be had. */
+static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *block, size_t first, size_t start,
+                          size_t index) {
+    markdown_core_edit *edit = parser->stream->edit;
+    markdown_core_leap *leap = edit->leap;
+    const int64_t delta = edit->delta;
+    const size_t size = (size_t)leap->aside.size;
+    const size_t from = (size_t)(leap->marks[first].content_offset - leap->cut);
+    /* The old content from the line on, which the paragraph's parse may
+     * meet a seam of (THE OLD TAIL OF A PARAGRAPH), and where it comes to. */
+    leap->lands = true;
+    leap->land = size - from;
+    leap->landed = (size_t)block->content.size;
+    markdown_core_strbuf_put_ahead(&block->content, leap->aside.ptr + from, (bufsize_t)(size - from));
+    if (block->content.oom || !S_leap_marks(parser, block, first, leap->mark_count, index)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    /* It closes as it did: its close reads its first bytes and its last
+     * line's, which are the old text's. */
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    markdown_core_node *parent = markdown_core_scaffold_parent(block);
+    S_settle_pending_as(parser, block, kind);
+    S_shut(parser, block);
+    if (block == parser->room_holder) {
+        S_room_up(parser);
+    }
+    const bool kept = S_close(parser, block, kind, parent);
+    assert(kept);
+    if (!kept || parser->error) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    block->flags = (markdown_core_node_internal_flags)(edit->states[0] &
+                                                       ~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED |
+                                                         MARKDOWN_CORE_NODE__FINAL));
+    block->place.end = (uint32_t)((int64_t)edit->ends[0] + delta);
+    parser->at.current = parent;
+    parser->at.pending = block;
+    /* The paragraph's parse lists again what it lists, past the line too:
+     * its inline notes, where they are. */
+    if (!S_splice(parser, start, index, block->place.end)) {
+        return false;
+    }
+    /* The close of the root's child, as its old reading noted it. */
+    if (edit->closed) {
+        markdown_core_parser_note_reach(parser, block->place.start, (size_t)((int64_t)edit->closed + delta));
+    }
+    return !parser->error;
+}
+
+/* THE LEAP, at the start of the line at `start` of the new text, line
+ * `index` of the input, where the line loop's limit stopped: from an old
+ * line the block reads open, or tried again at the next old line, or no
+ * more once the block is not the one open there. The old child the reading
+ * tries next is the limit then. Under a block that keeps flags a line sets
+ * (`blanks`), the line the reading read last and the old line before the
+ * one it reads next both hold more than prefixes, so each sets them as the
+ * other would: the reading leaps from the next old line when the first
+ * does not, and to an earlier one when the second does not. True when the
+ * reading took the rest of the text back there (THE SPLICE IN A
+ * PARAGRAPH) or failed. */
+static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
     const markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_leap *leap = edit->leap;
@@ -5411,6 +5501,13 @@ static void S_leap(markdown_core_parser *parser, size_t start) {
                                 (size_t)((int64_t)S_lines_back_start(lines, land) + edit->delta))) {
                 land--;
             }
+            if (land == leap->last && land > k) {
+                const size_t first = leap->prose ? S_leap_mark(leap, old) : SIZE_MAX;
+                if (S_leap_meets(parser, block, old, start, first)) {
+                    (void)S_leap_splice(parser, block, first, start, index);
+                    return true;
+                }
+            }
             if (land > k) {
                 S_leap_over(parser, block, k, old, land);
             }
@@ -5419,6 +5516,7 @@ static void S_leap(markdown_core_parser *parser, size_t start) {
         }
     }
     edit->point = leap->at < leap->next ? leap->at : leap->next;
+    return parser->error != MARKDOWN_CORE_PARSE_OK;
 }
 
 /* At the start of the line at `start`, line `index` of the input, which the
@@ -5429,8 +5527,7 @@ static void S_leap(markdown_core_parser *parser, size_t start) {
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *parser, size_t start, size_t index) {
     markdown_core_edit *edit = parser->stream->edit;
     if (edit->leap && edit->leap->at != SIZE_MAX && edit->point == edit->leap->at) {
-        S_leap(parser, start);
-        return parser->error != MARKDOWN_CORE_PARSE_OK;
+        return S_leap(parser, start, index);
     }
     while (edit->point < start) {
         S_edit_pass(edit, parser->root, &parser->input.lines);
@@ -5442,7 +5539,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
         if (edit->nest_on) {
             S_splice_in(parser, start, index);
         } else {
-            S_splice(parser, start, index);
+            S_splice(parser, start, index, start);
         }
         return true;
     }
