@@ -98,7 +98,11 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
     size_t capacity = 0;
     bufsize_t top = -1;
     unsigned html_flags = 0;
-    for (bufsize_t at = 0; at < inline_state->input.len;) {
+    /* The index reads the run from where it starts: a run from a seam
+     * reads none of the content before it, which its view may not hold
+     * (blocks.c, THE BACK OF A PARAGRAPH), and no citation it reads starts
+     * there. */
+    for (bufsize_t at = inline_state->settle ? inline_state->settle->from : 0; at < inline_state->input.len;) {
         bufsize_t opaque_end = at;
         unsigned char c = inline_state->input.data[at];
         bool escaped = (c == '`' || c == '<') && source_escaped(self, inline_state, at, 0);
