@@ -270,13 +270,21 @@ computes the expected id itself for every node of every step:
 
 - The new document continues the old document.
 - An old node's anchor is the first byte of its source that the step kept,
-  at its image. A node with no source bytes, or whose bytes the edit
-  replaced, has no anchor.
+  at its image. A node whose bytes the edit replaced has no anchor. A node
+  with no source bytes anchors at its position, which stays when it lies
+  before the edit or at the start of the bytes it replaced, moves when it
+  lies past them, and has no image between them. Such a node arises where
+  a malformed UTF-8 byte is read as part of a line's indentation.
 - Within the relation of a matched owner, a new node of the same kind whose
   source range contains an old sibling's anchor continues the earliest such
   sibling. A node's source range runs from the start of its first scope to
   the end of its last.
-- A new node that continues an old node has the old node's id.
+- A new node with no source bytes continues an old one of its kind with
+  none whose anchor lies at its position.
+- A new node that continues an old node has the old node's id, except that
+  one with no source bytes may instead have an id the lineage has never
+  seen: it holds no byte to match on, so a subject may keep the old node or
+  read a new one.
 - Every other new node has an id the lineage has never seen. An old node
   that nothing continues is retired.
 

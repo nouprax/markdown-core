@@ -652,19 +652,29 @@ static size_t view_at(const view *taken, const char *kind, size_t at) {
 /* Where an old node's anchor lies in the new text (4.4): its first byte that
  * survived the step, at the image of that byte. A byte before an edit keeps
  * its offset, a byte after it moves by the edit's change in length, and an
- * append or a flush moves no byte. False for a node with no source or
- * none of whose bytes survived. */
+ * append or a flush moves no byte. A node whose source is empty anchors at
+ * its position. False for a node none of whose bytes survived. */
 static bool anchor_of(const view_node *old, const ih_step *entry, int64_t *at) {
     int64_t start, end;
-    if (old->range.start >= old->range.end) {
-        return false;
-    }
     if (!entry || entry->kind != IH_EDIT) {
         *at = old->range.start;
         return true;
     }
     start = (int64_t)entry->start;
     end = (int64_t)entry->end;
+    if (old->range.start >= old->range.end) {
+        /* An empty source anchors at its position: one before the edit, or
+         * at the start of the bytes it replaced, stays; one past them moves;
+         * one between them has no image. */
+        if (old->range.start < start || (old->range.start == start && start < end)) {
+            *at = old->range.start;
+        } else if (old->range.start >= end) {
+            *at = old->range.start - end + start + (int64_t)entry->length;
+        } else {
+            return false;
+        }
+        return true;
+    }
     if (old->range.start < start) {
         *at = old->range.start;
     } else if (old->range.start >= end || old->range.end > end) {
@@ -673,6 +683,15 @@ static bool anchor_of(const view_node *old, const ih_step *entry, int64_t *at) {
         return false;
     }
     return true;
+}
+
+/* Whether new `node` holds an anchor: inside its source range, or at the
+ * position of an empty source when both sources are empty. */
+static bool holds(const view_node *node, const view_node *old, int64_t anchor) {
+    if (node->range.start >= node->range.end) {
+        return old->range.start >= old->range.end && anchor == node->range.start;
+    }
+    return anchor >= node->range.start && anchor < node->range.end;
 }
 
 /* 4.2 to 4.5 for one step from `before` to `after`, then the lineage takes
@@ -708,8 +727,8 @@ static void check_identity(run *state, const char *where, size_t step, history *
      * owner, a node continues the earliest old sibling of its kind whose
      * anchor it holds. An old node's anchor is the first byte of its source,
      * which an append leaves at its offset and an edit moves to its image
-     * (anchor_of); a node with no source, or whose bytes the edit removed,
-     * has none. One cursor per new owner walks the matched old owner's items, which
+     * (anchor_of); an empty source anchors at its position, and a node
+     * whose bytes the edit removed has none. One cursor per new owner walks the matched old owner's items, which
      * are in relation and source order, and stands at the earliest not yet
      * passed: a node that continues one passes it and every old sibling
      * before it, and the ones after it its source holds remain for the next
@@ -729,14 +748,14 @@ static void check_identity(run *state, const char *where, size_t step, history *
             for (scan = *at; scan < owner->item_count; scan++) {
                 const view_node *old = &before->nodes[before->items[owner->items + scan]];
                 const bool anchored = anchor_of(old, entry, &anchor);
-                if (old->relation > node->relation ||
-                    (old->relation == node->relation && anchored && anchor >= node->range.end)) {
-                    break;
-                }
-                if (old->relation == node->relation && anchored && anchor >= node->range.start &&
+                if (old->relation == node->relation && anchored && holds(node, old, anchor) &&
                     old->kind == node->kind) {
                     match = before->items[owner->items + scan];
                     *at = scan + 1;
+                    break;
+                }
+                if (old->relation > node->relation || (old->relation == node->relation && anchored &&
+                                                       anchor >= node->range.end && anchor > node->range.start)) {
                     break;
                 }
             }
@@ -747,6 +766,13 @@ static void check_identity(run *state, const char *where, size_t step, history *
                 }
                 ++*at;
             }
+        }
+        /* An empty source holds no byte the subject could match on, so it
+         * may continue the empty old sibling at its position or take a new
+         * id. */
+        if (match != SIZE_MAX && index && node->range.start >= node->range.end && node->id != before->nodes[match].id &&
+            ids->state[node->id] == 0) {
+            match = SIZE_MAX;
         }
         continues[index] = match;
         if (match != SIZE_MAX ? node->id != before->nodes[match].id : ids->state[node->id] != 0) {

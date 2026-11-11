@@ -7884,11 +7884,10 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
     char c;
     int chars_to_tab;
     int chars_to_advance;
-    /* Complete a virtual column only at the scalar's end. Byte-counted
-     * advances may split a scalar; column-counted advances always consume it
-     * completely, and take an ASCII byte as a scalar of its own: a byte past
-     * it a continuation byte that is no part of it, which a malformed text
-     * may hold in a line's indentation. */
+    /* Complete a virtual column only at the scalar's end, the byte before
+     * one that is no continuation byte: the text is taken as valid UTF-8.
+     * Byte-counted advances may split a scalar; column-counted advances
+     * always consume it completely. */
     if (!columns) {
         while (count > 0 && parser->at.offset < input->len && (c = peek_at(input, parser->at.offset))) {
             parser->at.partially_consumed_tab = false;
@@ -7915,8 +7914,8 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
         } else {
             parser->at.partially_consumed_tab = false;
             parser->at.offset += 1;
-            const bool scalar_end = (unsigned char)c < 0x80 || parser->at.offset == input->len ||
-                                    (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
+            const bool scalar_end =
+                parser->at.offset == input->len || (peek_at(input, parser->at.offset) & 0xC0) != 0x80;
             parser->at.column += scalar_end;
             count -= scalar_end;
         }
