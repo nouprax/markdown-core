@@ -153,6 +153,10 @@ typedef struct markdown_core_parser_input {
      * literal lines writes as `\n` (blocks.c, THE LEAP): once it does, for
      * the rest of the document's life. */
     bool returns;
+    /* Whether a block's content took the spaces of a tab its line's
+     * prefix had partly read, which its source does not hold: once it does,
+     * for the rest of the document's life. */
+    bool tabs;
     int first_line;
     /* The input's epoch: a number the parser gives each input as it installs
      * it, and the document's text each time it grows (blocks.c,
@@ -732,6 +736,18 @@ typedef struct markdown_core_leap {
      * past the edit where the edit moved them, `after` of them. */
     bool verbatim, lent;
     size_t origin, after;
+    /* THE RUNS OF A SPLICE (blocks.c): the input line the block's reading
+     * began at, `top`; the first of the block's runs that does not end
+     * before it, `low`, where it starts, `low_start`, and the bytes of own
+     * source the runs before it hold, `low_own`; and the pin the last
+     * splice in a block left there, read by the next edit's reading, which
+     * finds those runs from it: the edit's `round`, the block, its runs and
+     * their count, the run, where it starts from the block's start, and the
+     * bytes before it. */
+    size_t top, low_start, low_own, round, pin_round, pin_start, pin_own;
+    uint32_t low, pin_index, pin_count;
+    const struct markdown_core_node *pin_node;
+    const struct markdown_core_runs *pin_list;
     bool armed, active;
     const struct markdown_core_node *node;
     uint64_t id;

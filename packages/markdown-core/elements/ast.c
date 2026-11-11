@@ -1013,6 +1013,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
     return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
 }
 
+/* The same of a node of many runs: a block of literal lines the edit's
+ * splice wrote the runs of in place (blocks.c, THE RUNS OF A SPLICE), whose
+ * runs run from its start to its end, from where its first starts, as long
+ * as its extent; any other from its runs. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_place
+    wide_window(const publish_walk *walk, const markdown_core_node *node, uint32_t anchor) {
+    const markdown_core_parser *parser = walk->stack.parser;
+    const markdown_core_leap *leap = parser->stream && parser->stream->edit ? parser->stream->edit->leap : NULL;
+    if (!leap || leap->pin_node != node || leap->pin_round != leap->round || leap->pin_list != node->source.runs) {
+        return runs_window(node, anchor);
+    }
+    const uint32_t start = (uint32_t)((int64_t)anchor + node->source.runs->items[0].lead);
+    const markdown_core_place window = {start, start + node->extent.span};
+    assert(window.start == runs_window(node, anchor).start && window.end == runs_window(node, anchor).end);
+    return window;
+}
+
 /* publish_node of a node the walk in place enters (THE WALK IN PLACE). A
  * closed node a publish placed (PUBLISHED) stands as that publish left it,
  * its extent and runs and all below it: it is closed in the committed tree,
@@ -1031,7 +1048,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node_in_plac
     if (node->flags & MARKDOWN_CORE_NODE__PUBLISHED) {
         if (!(node->flags & MARKDOWN_CORE_NODE__OPEN)) {
             placed->place = node->place;
-            placed->source = runs_window(node, hand->source);
+            placed->source =
+                node->source.runs->count > 16 ? wide_window(walk, node, hand->source) : runs_window(node, hand->source);
             placed->root = false;
             return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
         }
