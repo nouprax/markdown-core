@@ -2352,6 +2352,29 @@ static void lazy_literal_failure_writes_nothing(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* An empty source anchors at its position (4.4): an indented code block
+ * whose one line holds only a stray continuation byte has none of it, and
+ * the fence an edit opens over its position continues it. */
+static void void_source_continues(test_batch_runner *runner) {
+    static const char text[] = "```\t`\n```\n```\n    \xa7\n`";
+    markdown_core_session *session;
+    const markdown_core_document *document;
+    EXPECT_OK(
+        markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session));
+    EXPECT_OK(markdown_core_session_flush(session, &document));
+    markdown_core_nodes children = markdown_core_node_children(markdown_core_document_root(document));
+    const markdown_core_extent empty =
+        children.count == 4 ? markdown_core_node_extent(children.items[2]) : (markdown_core_extent){0, 1};
+    const uint64_t id = children.count == 4 ? markdown_core_node_id(children.items[2]) : 0;
+    OK(runner, empty.span == 0, "the stray byte's code block has an empty source");
+    const markdown_core_position at = {1, 4}, end = {1, 6};
+    EXPECT_OK(markdown_core_session_edit(session, at, end, NULL, 0, &document));
+    children = markdown_core_node_children(markdown_core_document_root(document));
+    OK(runner, children.count == 2 && markdown_core_node_id(children.items[1]) == id,
+       "the fence over the empty source's position continues it");
+    markdown_core_session_close(session);
+}
+
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -12290,6 +12313,7 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     lazy_literal_failure_writes_nothing(runner);
+    void_source_continues(runner);
     stray_delimiter(runner);
     finish_step_skips_absent_kinds(runner);
     finish_step_gate_opens_when_its_kind_is_made(runner);

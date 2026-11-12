@@ -544,7 +544,7 @@ markdown_core_place markdown_core_node_window(const markdown_core_node *node, ui
  * unhooked, its relations. A node of its kind whose source holds an old node's
  * anchor -- the first byte of its source, which an append leaves at its
  * offset -- continues the earliest such old node not yet passed in the old
- * relation paired with its own. A node with no source has no anchor. Both
+ * relation paired with its own. An empty source anchors at its position. Both
  * relations are in source order, so one cursor into the old relation moves
  * forward with the new one, past each old node matched and those before it
  * (publish_match). A node that continues an old node takes its id, and its
@@ -709,17 +709,31 @@ typedef enum { DECIDED, UNDECIDED, HOLDER, BOUND } publish_decided;
  * node's anchor is the first byte of its source the edit kept, at its
  * place in the new text -- a byte before the edit where it was, one after it
  * moved, and the first byte after the edit when the edit replaced the
- * node's first bytes and not all of them. A node the edit replaced whole,
- * and one with no source, has none. Every other publish follows no edit,
+ * node's first bytes and not all of them. A node the edit replaced whole has
+ * none, and an empty source anchors at its position (publish_void_anchor). Every other publish follows no edit,
  * the zero one, which keeps every byte where it was. */
 typedef struct {
     uint32_t from, to;
     int64_t delta;
 } publish_edit;
 
+/* An empty source anchors at its position: one before the edit, or at the
+ * start of the bytes it replaced, stays; one past them moves; one between
+ * them has none. */
+static bool publish_void_anchor(const publish_edit *edit, uint32_t at, uint32_t *anchor) {
+    if (!edit || at < edit->from || (at == edit->from && edit->from < edit->to)) {
+        *anchor = at;
+    } else if (at >= edit->to) {
+        *anchor = (uint32_t)((int64_t)at + edit->delta);
+    } else {
+        return false;
+    }
+    return true;
+}
+
 static inline bool publish_anchor(const publish_edit *edit, markdown_core_place window, uint32_t *anchor) {
     if (window.start >= window.end) {
-        return false;
+        return publish_void_anchor(edit, window.start, anchor);
     }
     if (!edit || window.start < edit->from) {
         *anchor = window.start;

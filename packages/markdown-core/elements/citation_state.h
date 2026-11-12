@@ -1,5 +1,6 @@
 #ifndef MARKDOWN_CORE_CITATION_STATE_H
 #define MARKDOWN_CORE_CITATION_STATE_H
+#include "code.h"
 #include "delimiter.h"
 #include "inline_internal.h"
 
@@ -27,9 +28,13 @@ typedef struct {
     bool valid, content, cut;
 } citation_brace;
 
+/* The index's code spans read ahead of the run's own, from backtick runs the
+ * run may not take as openers, so they keep a backtick index of their own
+ * (code.h). */
 typedef struct {
     citation_brace *entries;
     size_t count, cursor;
+    markdown_core_backticks ticks;
     bool ready;
 } citation_brace_index;
 
