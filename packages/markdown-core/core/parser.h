@@ -153,10 +153,6 @@ typedef struct markdown_core_parser_input {
      * literal lines writes as `\n` (blocks.c, THE LEAP): once it does, for
      * the rest of the document's life. */
     bool returns;
-    /* Whether a block's content took the spaces of a tab its line's
-     * prefix had partly read, which its source does not hold: once it does,
-     * for the rest of the document's life. */
-    bool tabs;
     int first_line;
     /* The input's epoch: a number the parser gives each input as it installs
      * it, and the document's text each time it grows (blocks.c,
@@ -729,13 +725,7 @@ typedef struct markdown_core_seam_stops {
 typedef struct markdown_core_leap {
     markdown_core_split *aside;
     size_t at, next, last;
-    bool cr, blanks, prose;
-    /* A block of literal lines whose content holds its lines whole: its
-     * old content past the cut starts where the old text's `origin` does;
-     * when `lent`, nothing holds it aside, as the new text holds its bytes
-     * past the edit where the edit moved them, `after` of them. */
-    bool verbatim, lent;
-    size_t origin, after;
+    bool blanks, prose;
     /* THE RUNS OF A SPLICE (blocks.c): the input line the block's reading
      * began at, `top`; the first of the block's runs that does not end
      * before it, `low`, where it starts, `low_start`, and the bytes of own
