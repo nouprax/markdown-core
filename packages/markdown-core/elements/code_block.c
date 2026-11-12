@@ -14,17 +14,19 @@ enum { CODE_FORMULA };
 static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA, NULL};
 
 /* The end of an indented code block's literal: past the line ending of its
- * last line that is not blank. Every line it read ends with one, and its
- * first line is not blank. */
+ * last line that is not blank, or its start when every line is: a first
+ * line that opened on the continuation bytes of a scalar holds none of
+ * them (UTF-8 is assumed well formed, never checked), and a look reads
+ * only the lines up to the cursor. */
 static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
-    bufsize_t i = content->size - 1;
-    while (markdown_core_is_whitespace(content->ptr[i])) {
+    bufsize_t i = content->size;
+    while (i > 0 && markdown_core_is_whitespace(content->ptr[i - 1])) {
         i--;
     }
-    while (content->ptr[i] != '\n') {
+    while (i > 0 && i < content->size && content->ptr[i - 1] != '\n') {
         i++;
     }
-    return i + 1;
+    return i;
 }
 
 static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
