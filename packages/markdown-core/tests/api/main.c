@@ -2318,6 +2318,41 @@ static void strbuf_growth_preserves_termination(test_batch_runner *runner) {
     }
 }
 
+/* A literal an edit leaves pending (node.h, A LITERAL, LAZY) joins on its
+ * first read; a read whose join is refused storage writes none of its
+ * answers, and the next read joins it. */
+static void lazy_literal_failure_writes_nothing(test_batch_runner *runner) {
+    static char text[400 * 9 + 16];
+    size_t size = (size_t)sprintf(text, "```\n");
+    for (int i = 0; i < 400; i++) {
+        size += (size_t)sprintf(text + size, "line %03d\n", i);
+    }
+    markdown_core_session *session;
+    const markdown_core_document *document;
+    EXPECT_OK(markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session));
+    EXPECT_OK(markdown_core_session_flush(session, &document));
+    const markdown_core_position at = {200, 8}, end = {200, 9};
+    EXPECT_OK(markdown_core_session_edit(session, at, end, (const uint8_t *)"x", 1, &document));
+    const markdown_core_node *code = markdown_core_node_children(markdown_core_document_root(document)).items[0];
+    const markdown_core_string kept = {(const uint8_t *)"kept", 4};
+    const markdown_core_optional_string none = {true, kept};
+    markdown_core_optional_string info = none, language = none;
+    markdown_core_string literal = kept;
+    bool fenced = false, closed = false;
+    strbuf_refuse_next = 1;
+    INT_EQ(runner,
+           markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed),
+           MARKDOWN_CORE_ALLOCATION_FAILED, "a refused join of a pending literal fails the read");
+    OK(runner,
+       literal.data == kept.data && info.value.data == kept.data && language.value.data == kept.data && !fenced &&
+           !closed,
+       "a failed read writes none of its answers");
+    EXPECT_OK(markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed));
+    OK(runner, literal.length == 400 * 9 && !memcmp(literal.data + 198 * 9, "line 19x\n", 9),
+       "the next read joins the literal as the edited text has it");
+    markdown_core_session_close(session);
+}
+
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -12255,6 +12290,7 @@ int main(void) {
     standalone_formula_as_owned_root(runner);
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
+    lazy_literal_failure_writes_nothing(runner);
     stray_delimiter(runner);
     finish_step_skips_absent_kinds(runner);
     finish_step_gate_opens_when_its_kind_is_made(runner);

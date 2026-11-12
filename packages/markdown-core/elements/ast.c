@@ -4216,13 +4216,29 @@ markdown_core_status markdown_core_node_code_block_properties(const markdown_cor
                                                               markdown_core_string *literal, bool *fenced,
                                                               bool *closed) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_CODE_BLOCK));
-    return code_block_properties(node, info, language, literal, fenced, closed) ? MARKDOWN_CORE_OK
-                                                                                : MARKDOWN_CORE_ALLOCATION_FAILED;
+    /* Its answers are written only when the literal could be read. */
+    markdown_core_optional_string read_info, read_language;
+    markdown_core_string read_literal;
+    bool read_fenced, read_closed;
+    if (!code_block_properties(node, &read_info, &read_language, &read_literal, &read_fenced, &read_closed)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    *info = read_info;
+    *language = read_language;
+    *literal = read_literal;
+    *fenced = read_fenced;
+    *closed = read_closed;
+    return MARKDOWN_CORE_OK;
 }
 
 markdown_core_status markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal) {
     REQUIRE_KIND(node, LITERAL_KINDS);
-    return literal_of(node, literal) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+    markdown_core_string read;
+    if (!literal_of(node, &read)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    *literal = read;
+    return MARKDOWN_CORE_OK;
 }
 
 markdown_core_status markdown_core_topic_name(const markdown_core_node *topic, markdown_core_string *name) {
