@@ -21,25 +21,32 @@ static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARK
 static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
     const bufsize_t size = content->size;
     bufsize_t i = size;
+    /* One pass back over the trailing blank bytes: the last line ending it
+     * passes is the first one past the last byte that is not blank. */
+    bufsize_t end = size;
     /* A content in two parts (THE BACK OF A PARAGRAPH, blocks.c) reads its
      * bytes through the parts. */
     if (content->split) {
-        while (i > 0 && markdown_core_is_whitespace(markdown_core_strbuf_at(content, i - 1))) {
+        while (i > 0) {
+            const unsigned char c = markdown_core_strbuf_at(content, i - 1);
+            if (!markdown_core_is_whitespace(c)) {
+                return end;
+            }
+            end = c == '\n' ? i : end;
             i--;
         }
-        while (i > 0 && i < size && markdown_core_strbuf_at(content, i - 1) != '\n') {
-            i++;
-        }
-        return i;
+        return 0;
     }
     const unsigned char *bytes = content->ptr;
-    while (i > 0 && markdown_core_is_whitespace(bytes[i - 1])) {
+    while (i > 0) {
+        const unsigned char c = bytes[i - 1];
+        if (!markdown_core_is_whitespace(c)) {
+            return end;
+        }
+        end = c == '\n' ? i : end;
         i--;
     }
-    while (i > 0 && i < size && bytes[i - 1] != '\n') {
-        i++;
-    }
-    return i;
+    return 0;
 }
 
 static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
