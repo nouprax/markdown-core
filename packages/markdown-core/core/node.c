@@ -5,6 +5,7 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
+#include "claim.h"
 #include "element.h"
 
 /* These kinds are owned roots/fields, never ordinary child edges, even under
@@ -596,6 +597,14 @@ static bool S_label_own(S_copy_state *state, markdown_core_chunk *label) {
  * of no kind made whole as it settles -- a Reference -- or held only by the
  * document, which holds its metadata committed once its prefix is read, and
  * of no kind whose record owns an inline's storage. */
+/* A literal block's literal viewed: a pending one (markdown_core_literal_set)
+ * stays pending, joined of the content the view reads, its own when it is. */
+static void S_literal_view(markdown_core_chunk *literal) {
+    if (literal->data) {
+        markdown_core_chunk_view(literal);
+    }
+}
+
 static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
     switch (copy->kind) {
     case MARKDOWN_CORE_NODE_CALLOUT:
@@ -606,13 +615,13 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         break;
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
         markdown_core_chunk_view(&copy->as.code->info.value);
-        markdown_core_chunk_view(&copy->as.code->literal);
+        S_literal_view(&copy->as.code->literal);
         break;
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
         markdown_core_chunk_view(copy->as.literal);
         break;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        markdown_core_chunk_view(&copy->as.html_block->literal);
+        S_literal_view(&copy->as.html_block->literal);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         /* Its lookup tables are made as it is published, which no block the
@@ -1072,4 +1081,52 @@ bool markdown_core_node_array_push_full(markdown_core_node_pool *pool, markdown_
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,
                                             const markdown_core_node_kind_set *b) {
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
+}
+
+void markdown_core_literal_set(markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start, bufsize_t end) {
+    markdown_core_chunk_free(literal);
+    const markdown_core_strbuf *content = &node->content;
+    *literal = content->split ? (markdown_core_chunk){NULL, end - start, 1}
+                              : (markdown_core_chunk){content->ptr + start, end - start, 0};
+}
+
+void markdown_core_literal_halves(const markdown_core_node *node, const markdown_core_chunk *literal, bufsize_t start,
+                                  const unsigned char **front, bufsize_t *front_size, const unsigned char **back,
+                                  bufsize_t *back_size) {
+    const unsigned char *data = markdown_core_claim_read((void *const *)&literal->data);
+    if (data || !literal->len) {
+        *front = data;
+        *front_size = literal->len;
+        *back = NULL;
+        *back_size = 0;
+        return;
+    }
+    markdown_core_strbuf_span(&node->content, start, start + literal->len, front, front_size, back, back_size);
+}
+
+bool markdown_core_literal_read(const markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start,
+                                const unsigned char **data) {
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_literal_halves(node, literal, start, &front, &front_size, &back, &back_size);
+    if (!back_size) {
+        *data = front;
+        return true;
+    }
+    unsigned char *joined = markdown_core_alloc((size_t)literal->len + 1, 1);
+    if (!joined) {
+        *data = NULL;
+        return false;
+    }
+    if (front_size) {
+        memcpy(joined, front, (size_t)front_size);
+    }
+    memcpy(joined + front_size, back, (size_t)back_size);
+    joined[literal->len] = '\0';
+    unsigned char *stands = markdown_core_claim((void **)&literal->data, joined);
+    if (stands != joined) {
+        markdown_core_free(joined);
+    }
+    *data = stands;
+    return true;
 }

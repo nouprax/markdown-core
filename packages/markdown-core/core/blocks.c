@@ -5882,23 +5882,35 @@ static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core
            ops->resumes(structure, parser, holder, markdown_core_edit_nested(edit, level, 0));
 }
 
-/* THE BACK OF A PARAGRAPH, at the splice in the paragraph `block`: its
- * content stays in two parts, the old content from `from` of the leap's
- * aside on its back, past what the reading made, when its parse reads from
- * a seam: the gap moves to the start of the line before the seam's, so the
- * parse reads the bytes it reads in the back, and the content's view reads
- * them where they are (buffer.h, markdown_core_split). Whether it does. */
+/* THE BACK OF A PARAGRAPH, at the splice in the block `block`: its content
+ * stays in two parts, the old content from `from` of the leap's aside on
+ * its back, past what the reading made: a block of literal lines' always,
+ * the gap where the reading stopped, and a paragraph's when its parse reads
+ * from a seam: the gap moves to the start of the line before the seam's, so
+ * the parse reads the bytes it reads in the back, and the content's view
+ * reads them where they are (buffer.h, markdown_core_split). Whether it
+ * does. */
 static bool S_leap_back(markdown_core_parser *parser, markdown_core_node *block, size_t from) {
     markdown_core_leap *leap = parser->stream->edit->leap;
     markdown_core_strbuf *content = &block->content;
-    const size_t seam = (size_t)leap->seam.offset, front = (size_t)content->size;
-    if (!seam || seam > front || content->oom || !markdown_core_strbuf_owns(content)) {
+    const size_t front = (size_t)content->size;
+    if (content->oom || !markdown_core_strbuf_owns(content)) {
         return false;
     }
-    size_t gap = seam - 1;
-    gap -= gap && content->ptr[gap] == '\n' && content->ptr[gap - 1] == '\r';
-    while (gap && content->ptr[gap - 1] != '\n' && content->ptr[gap - 1] != '\r') {
-        gap--;
+    /* A block of literal lines reads no more of its content: the gap is
+     * where its reading stopped, and its literal pending (node.h, A
+     * LITERAL, LAZY). */
+    size_t gap = front;
+    if (leap->prose) {
+        const size_t seam = (size_t)leap->seam.offset;
+        if (!seam || seam > front) {
+            return false;
+        }
+        gap = seam - 1;
+        gap -= gap && content->ptr[gap] == '\n' && content->ptr[gap - 1] == '\r';
+        while (gap && content->ptr[gap - 1] != '\n' && content->ptr[gap - 1] != '\r') {
+            gap--;
+        }
     }
     markdown_core_split *split = leap->aside;
     const size_t whole = front + split->size - from;
@@ -6078,7 +6090,7 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     leap->lands = true;
     leap->land = size - from;
     leap->landed = (size_t)block->content.size;
-    if (!leap->prose || !S_leap_back(parser, block, from)) {
+    if (!S_leap_back(parser, block, from)) {
         markdown_core_strbuf_put_ahead(&block->content, aside + from, (bufsize_t)(size - from));
     }
     if (block->content.oom) {
@@ -7499,13 +7511,21 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
             literal = true;
             whole = deepest->content;
             size_t head = 0;
-            while (head < (size_t)whole.size && whole.ptr[head] != '\n' && whole.ptr[head] != '\r') {
+            const size_t size = (size_t)whole.size;
+            while (head < size && markdown_core_strbuf_at(&whole, (bufsize_t)head) != '\n' &&
+                   markdown_core_strbuf_at(&whole, (bufsize_t)head) != '\r') {
                 head++;
             }
-            head += head < (size_t)whole.size;
-            head += head && whole.ptr[head - 1] == '\r' && head < (size_t)whole.size && whole.ptr[head] == '\n';
+            head += head < size;
+            head += head && markdown_core_strbuf_at(&whole, (bufsize_t)(head - 1)) == '\r' && head < size &&
+                    markdown_core_strbuf_at(&whole, (bufsize_t)head) == '\n';
+            /* Its content may be in two parts (THE BACK OF A PARAGRAPH). */
+            const unsigned char *front, *back;
+            bufsize_t front_size, back_size;
+            markdown_core_strbuf_span(&whole, 0, (bufsize_t)head, &front, &front_size, &back, &back_size);
             deepest->content = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
-            markdown_core_strbuf_put(&deepest->content, whole.ptr, (bufsize_t)head);
+            markdown_core_strbuf_put(&deepest->content, front, front_size);
+            markdown_core_strbuf_put(&deepest->content, back, back_size);
             if (deepest->content.oom) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }

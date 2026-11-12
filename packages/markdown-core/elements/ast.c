@@ -4012,13 +4012,23 @@ static void list_properties(const markdown_core_node *node, markdown_core_list_f
     *tight = node->as.list->tight;
 }
 
-static void code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
+/* A literal block's literal, joined when it is pending (node.h, A LITERAL,
+ * LAZY): false, with it empty, when storage could not be had. */
+static bool literal_string(const markdown_core_node *node, markdown_core_chunk *chunk, bufsize_t start,
+                           markdown_core_string *literal) {
+    const unsigned char *data;
+    const bool read = markdown_core_literal_read(node, chunk, start, &data);
+    *literal = read ? (markdown_core_string){data, (size_t)chunk->len} : (markdown_core_string){NULL, 0};
+    return read;
+}
+
+static bool code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,
                                   markdown_core_optional_string *language, markdown_core_string *literal, bool *fenced,
                                   bool *closed) {
     size_t start = 0;
     size_t end;
     *info = optional_chunk_string(node->as.code->info);
-    *literal = chunk_string(node->as.code->literal);
+    const bool read = literal_string(node, &node->as.code->literal, node->as.code->literal_start, literal);
     /* `if (info->length == 0) info->data = NULL;` STOOD HERE, and it is the
      * fold requirement 14 names: the parse had already decided whether a fence
      * wrote an info string, and this line decided it again from a length. */
@@ -4039,10 +4049,15 @@ static void code_block_properties(const markdown_core_node *node, markdown_core_
     }
     *fenced = node->as.code->fenced != 0;
     *closed = !*fenced || node->as.code->fence_closed != 0;
+    return read;
 }
 
-static markdown_core_string literal_of(const markdown_core_node *node) {
-    return chunk_string(node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK ? node->as.html_block->literal : *node->as.literal);
+static bool literal_of(const markdown_core_node *node, markdown_core_string *literal) {
+    if (node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+        return literal_string(node, &node->as.html_block->literal, 0, literal);
+    }
+    *literal = chunk_string(*node->as.literal);
+    return true;
 }
 
 static void formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
@@ -4201,14 +4216,13 @@ markdown_core_status markdown_core_node_code_block_properties(const markdown_cor
                                                               markdown_core_string *literal, bool *fenced,
                                                               bool *closed) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_CODE_BLOCK));
-    code_block_properties(node, info, language, literal, fenced, closed);
-    return MARKDOWN_CORE_OK;
+    return code_block_properties(node, info, language, literal, fenced, closed) ? MARKDOWN_CORE_OK
+                                                                                : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 
 markdown_core_status markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal) {
     REQUIRE_KIND(node, LITERAL_KINDS);
-    *literal = literal_of(node);
-    return MARKDOWN_CORE_OK;
+    return literal_of(node, literal) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 
 markdown_core_status markdown_core_topic_name(const markdown_core_node *topic, markdown_core_string *name) {
@@ -5047,7 +5061,9 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_optional_string(buffer, optional_chunk_string(node->as.list->task_marker));
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
-        code_block_properties(node, &oa, &ob, &c, &x, &y);
+        if (!code_block_properties(node, &oa, &ob, &c, &x, &y)) {
+            buffer->failed = true;
+        }
         buffer_cstr(buffer, " info=");
         buffer_optional_string(buffer, oa);
         buffer_cstr(buffer, " language=");
@@ -5064,8 +5080,11 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
     case MARKDOWN_CORE_KIND_CODE:
+        if (!literal_of(node, &c)) {
+            buffer->failed = true;
+        }
         buffer_cstr(buffer, " literal=");
-        buffer_json_string(buffer, literal_of(node));
+        buffer_json_string(buffer, c);
         break;
     case MARKDOWN_CORE_KIND_FORMULA:
         /* The only kind whose mode is a fact about the SOURCE: `$x$` is

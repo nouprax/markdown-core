@@ -631,12 +631,22 @@ void markdown_core_formula_promote_fence(const markdown_core_element_instance *f
         !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         return;
     }
+    /* The formula views its content whole. */
+    markdown_core_code *code = node->as.code;
+    if (node->content.split) {
+        markdown_core_strbuf_split_join(&node->content);
+        if (node->content.oom) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        markdown_core_literal_set(node, &code->literal, code->literal_start, code->literal_start + code->literal.len);
+    }
     node_formula *payload = markdown_core_alloc(1, sizeof(node_formula));
     if (!payload) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    payload->literal = S_trimmed(node->as.code->literal);
+    payload->literal = S_trimmed(code->literal);
     payload->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     if (markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
         MARKDOWN_CORE_NODE_SET_KIND_OK) {

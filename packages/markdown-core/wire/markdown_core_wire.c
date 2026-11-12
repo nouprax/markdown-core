@@ -542,7 +542,10 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced, closed;
-        markdown_core_node_code_block_properties(node, &first, &second, &literal, &fenced, &closed);
+        if (markdown_core_node_code_block_properties(node, &first, &second, &literal, &fenced, &closed) !=
+            MARKDOWN_CORE_OK) {
+            buffer->failed = true;
+        }
         put_optional_string(buffer, first);
         put_optional_string(buffer, second);
         put_string(buffer, literal);
@@ -555,7 +558,9 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_CODE:
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
-        markdown_core_node_literal(node, &literal);
+        if (markdown_core_node_literal(node, &literal) != MARKDOWN_CORE_OK) {
+            buffer->failed = true;
+        }
         put_string(buffer, literal);
         break;
     case MARKDOWN_CORE_KIND_TOPIC:

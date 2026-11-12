@@ -857,6 +857,23 @@ void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_n
  * while the node stays (blocks.c, THE SETTLE POINT). False, with what was
  * not copied still viewed, when storage could not be had. */
 bool markdown_core_node_own_viewed(markdown_core_node *node);
+/* A LITERAL, LAZY: a literal block's literal is the bytes of its content
+ * from `start` to `end`. While the content is whole the literal views them;
+ * while it is in two parts (blocks.c, THE BACK OF A PARAGRAPH) it is
+ * PENDING, no bytes and their count, `alloc` set, and the first read joins
+ * them into storage the literal owns, so no edit copies a literal no one
+ * reads. The literal's old storage goes. */
+void markdown_core_literal_set(markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start, bufsize_t end);
+/* The literal `literal` of `node`, which starts at `start` of its content,
+ * its bytes `*data`, joined if it was pending: readers of a document may
+ * read one at the same time, and the first join stands (claim.h). False
+ * when storage could not be had. */
+bool markdown_core_literal_read(const markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start,
+                                const unsigned char **data);
+/* Its bytes in at most two parts, `front` then `back`, joined by none. */
+void markdown_core_literal_halves(const markdown_core_node *node, const markdown_core_chunk *literal, bufsize_t start,
+                                  const unsigned char **front, bufsize_t *front_size, const unsigned char **back,
+                                  bufsize_t *back_size);
 /* `markdown_core_node_free` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */

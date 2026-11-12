@@ -20,10 +20,10 @@ static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARK
  * only the lines up to the cursor. */
 static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
     bufsize_t i = content->size;
-    while (i > 0 && markdown_core_is_whitespace(content->ptr[i - 1])) {
+    while (i > 0 && markdown_core_is_whitespace(markdown_core_strbuf_at(content, i - 1))) {
         i--;
     }
-    while (i > 0 && i < content->size && content->ptr[i - 1] != '\n') {
+    while (i > 0 && i < content->size && markdown_core_strbuf_at(content, i - 1) != '\n') {
         i++;
     }
     return i;
@@ -83,7 +83,7 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     const markdown_core_strbuf *content = &b->content;
     const bufsize_t start = b->as.code->literal_start;
     const bufsize_t end = b->as.code->fenced ? content->size : S_indented_literal_end(content);
-    b->as.code->literal = (markdown_core_chunk){content->ptr + start, end - start, 0};
+    markdown_core_literal_set(b, &b->as.code->literal, start, end);
     return true;
 }
 /* A fence whose info string names a formula becomes a FormulaBlock as
@@ -367,7 +367,13 @@ void markdown_core_code_block_parts(markdown_core_parts *parts) {
         markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_INFO, at, end);
         at = eol + (eol < n && s[eol] == '\r' && eol + 1 < n && s[eol + 1] == '\n') + (eol < n);
     }
-    markdown_core_parts_lines(parts, at, code->literal.data, code->literal.len);
+    /* Its literal in at most two parts, which part at a line's start. */
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_literal_halves(parts->node, &code->literal, code->literal_start, &front, &front_size, &back,
+                                 &back_size);
+    at = markdown_core_parts_lines(parts, at, front, front_size);
+    markdown_core_parts_lines(parts, at, back, back_size);
 }
 
 /* A fenced block an edit's reading closes as it did (blocks.c, THE SPLICE

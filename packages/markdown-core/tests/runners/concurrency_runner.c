@@ -16,6 +16,12 @@
 //                delimiter stack, reference map, or special-character
 //                table, and no parse may leave state behind for the next.
 //
+//   literal      An edit inside a long code block leaves its literal for the
+//                first read to join (node.h, A LITERAL, LAZY); a barrier
+//                releases every thread into that first read of one
+//                document, and each must read the same bytes, the block's
+//                lines as the edited text has them.
+//
 //   lifecycle    Repeated parse/free cycles interleaved with failure paths
 //                must not affect a later parser instance — the last parse
 //                must still attach every element and dump identically to
@@ -363,6 +369,116 @@ static int case_stress(void) {
     return run_threads_and_verify(STRESS_ITERATIONS);
 }
 
+#define LITERAL_LINES 400
+#define LITERAL_ROUNDS 50
+
+typedef struct reader {
+    barrier *start;
+    const markdown_core_node *node;
+    int code;
+    markdown_core_string value;
+    markdown_core_status status;
+} reader;
+
+static THREAD_RETURN reader_main(void *argument) {
+    reader *self = (reader *)argument;
+    barrier_wait(self->start);
+    if (self->code) {
+        markdown_core_optional_string info, language;
+        bool fenced, closed;
+        self->status =
+            markdown_core_node_code_block_properties(self->node, &info, &language, &self->value, &fenced, &closed);
+    } else {
+        self->status = markdown_core_node_literal(self->node, &self->value);
+    }
+    return THREAD_RESULT;
+}
+
+static int case_literal(void) {
+    /* A fenced block and an HTML block, each of LITERAL_LINES lines of 8
+     * bytes, `line NNN` and `<i>NNN</i>`... */
+    static char text[2 * LITERAL_LINES * 16 + 64];
+    size_t size = 0;
+    size += (size_t)sprintf(text + size, "```\n");
+    for (int i = 0; i < LITERAL_LINES; i++) {
+        size += (size_t)sprintf(text + size, "line %03d\n", i);
+    }
+    size += (size_t)sprintf(text + size, "```\n\n<div>\n");
+    for (int i = 0; i < LITERAL_LINES; i++) {
+        size += (size_t)sprintf(text + size, "<i>%03d</i>\n", i);
+    }
+    size += (size_t)sprintf(text + size, "</div>\n");
+    markdown_core_session *session;
+    const markdown_core_document *document;
+    if (markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) !=
+            MARKDOWN_CORE_OK ||
+        markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "concurrency: literal session failed\n");
+        return 1;
+    }
+    int failed = 0;
+    for (int round = 0; round < LITERAL_ROUNDS && !failed; round++) {
+        /* One digit of a line in the middle of each block, which the edit's
+         * reading leaps in. */
+        const char digit = (char)('0' + round % 10);
+        const int32_t code_line = 2 + LITERAL_LINES / 2 + round % 7;
+        const int32_t html_line = LITERAL_LINES + 5 + LITERAL_LINES / 2 + round % 7;
+        const markdown_core_position code_at = {code_line, 8}, code_end = {code_line, 9};
+        const markdown_core_position html_at = {html_line, 6}, html_end = {html_line, 7};
+        if (markdown_core_session_edit(session, code_at, code_end, (const uint8_t *)&digit, 1, &document) !=
+                MARKDOWN_CORE_OK ||
+            markdown_core_session_edit(session, html_at, html_end, (const uint8_t *)&digit, 1, &document) !=
+                MARKDOWN_CORE_OK) {
+            fprintf(stderr, "concurrency: literal edit failed\n");
+            failed = 1;
+            break;
+        }
+        const markdown_core_nodes blocks = markdown_core_node_children(markdown_core_document_root(document));
+        if (blocks.count != 2) {
+            fprintf(stderr, "concurrency: literal blocks %zu\n", blocks.count);
+            failed = 1;
+            break;
+        }
+        for (int code = 1; code >= 0 && !failed; code--) {
+            /* What the block's lines hold now, from the session's text. */
+            const markdown_core_node *node = blocks.items[code ? 0 : 1];
+            const size_t from = code ? 4 : 4 + 9 * LITERAL_LINES + 5;
+            const size_t length = code ? 9 * LITERAL_LINES : 6 + 11 * LITERAL_LINES + 7;
+            uint8_t *bytes = malloc(markdown_core_session_text_size(session));
+            if (!bytes) {
+                failed = 1;
+                break;
+            }
+            markdown_core_session_text(session, bytes);
+            barrier start;
+            barrier_init(&start, THREAD_COUNT);
+            reader readers[THREAD_COUNT];
+            thread_handle threads[THREAD_COUNT];
+            for (int i = 0; i < THREAD_COUNT; i++) {
+                readers[i] = (reader){&start, node, code, {NULL, 0}, MARKDOWN_CORE_OK};
+                if (thread_spawn(&threads[i], reader_main, &readers[i])) {
+                    fprintf(stderr, "concurrency: literal spawn failed\n");
+                    exit(1);
+                }
+            }
+            for (int i = 0; i < THREAD_COUNT; i++) {
+                thread_join(threads[i]);
+            }
+            for (int i = 0; i < THREAD_COUNT && !failed; i++) {
+                if (readers[i].status != MARKDOWN_CORE_OK || readers[i].value.length != length ||
+                    readers[i].value.data != readers[0].value.data ||
+                    memcmp(readers[i].value.data, bytes + from, length) != 0) {
+                    fprintf(stderr, "concurrency: literal round %d block %d reader %d differs\n", round, code, i);
+                    failed = 1;
+                }
+            }
+            free(bytes);
+        }
+    }
+    markdown_core_session_close(session);
+    return failed;
+}
+
 static int case_lifecycle(void) {
     uint8_t *first = NULL;
     size_t first_length = 0;
@@ -418,6 +534,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "stress") == 0) {
         return case_stress();
+    }
+    if (strcmp(case_name, "literal") == 0) {
+        return case_literal();
     }
     if (strcmp(case_name, "lifecycle") == 0) {
         return case_lifecycle();
