@@ -1083,13 +1083,6 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
 }
 
-void markdown_core_literal_set(markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start, bufsize_t end) {
-    markdown_core_chunk_free(literal);
-    const markdown_core_strbuf *content = &node->content;
-    *literal = content->split ? (markdown_core_chunk){NULL, end - start, 1}
-                              : (markdown_core_chunk){content->ptr + start, end - start, 0};
-}
-
 void markdown_core_literal_halves(const markdown_core_node *node, const markdown_core_chunk *literal, bufsize_t start,
                                   const unsigned char **front, bufsize_t *front_size, const unsigned char **back,
                                   bufsize_t *back_size) {

@@ -863,7 +863,15 @@ bool markdown_core_node_own_viewed(markdown_core_node *node);
  * PENDING, no bytes and their count, `alloc` set, and the first read joins
  * them into storage the literal owns, so no edit copies a literal no one
  * reads. The literal's old storage goes. */
-void markdown_core_literal_set(markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start, bufsize_t end);
+static MARKDOWN_CORE_INLINE void markdown_core_literal_set(markdown_core_node *node, markdown_core_chunk *literal,
+                                                           bufsize_t start, bufsize_t end) {
+    if (literal->alloc) {
+        markdown_core_chunk_free(literal);
+    }
+    const markdown_core_strbuf *content = &node->content;
+    *literal = content->split ? (markdown_core_chunk){NULL, end - start, 1}
+                              : (markdown_core_chunk){content->ptr + start, end - start, 0};
+}
 /* The literal `literal` of `node`, which starts at `start` of its content,
  * its bytes `*data`, joined if it was pending: readers of a document may
  * read one at the same time, and the first join stands (claim.h). False

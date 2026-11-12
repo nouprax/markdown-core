@@ -19,11 +19,24 @@ static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARK
  * them (UTF-8 is assumed well formed, never checked), and a look reads
  * only the lines up to the cursor. */
 static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
-    bufsize_t i = content->size;
-    while (i > 0 && markdown_core_is_whitespace(markdown_core_strbuf_at(content, i - 1))) {
+    const bufsize_t size = content->size;
+    bufsize_t i = size;
+    /* A content in two parts (THE BACK OF A PARAGRAPH, blocks.c) reads its
+     * bytes through the parts. */
+    if (content->split) {
+        while (i > 0 && markdown_core_is_whitespace(markdown_core_strbuf_at(content, i - 1))) {
+            i--;
+        }
+        while (i > 0 && i < size && markdown_core_strbuf_at(content, i - 1) != '\n') {
+            i++;
+        }
+        return i;
+    }
+    const unsigned char *bytes = content->ptr;
+    while (i > 0 && markdown_core_is_whitespace(bytes[i - 1])) {
         i--;
     }
-    while (i > 0 && i < content->size && markdown_core_strbuf_at(content, i - 1) != '\n') {
+    while (i > 0 && i < size && bytes[i - 1] != '\n') {
         i++;
     }
     return i;

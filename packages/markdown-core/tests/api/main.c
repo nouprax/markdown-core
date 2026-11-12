@@ -2340,8 +2340,7 @@ static void lazy_literal_failure_writes_nothing(test_batch_runner *runner) {
     markdown_core_string literal = kept;
     bool fenced = false, closed = false;
     strbuf_refuse_next = 1;
-    INT_EQ(runner,
-           markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed),
+    INT_EQ(runner, markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed),
            MARKDOWN_CORE_ALLOCATION_FAILED, "a refused join of a pending literal fails the read");
     OK(runner,
        literal.data == kept.data && info.value.data == kept.data && language.value.data == kept.data && !fenced &&
