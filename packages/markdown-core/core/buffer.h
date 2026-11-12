@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_BUFFER_H
 #define MARKDOWN_CORE_BUFFER_H
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -105,8 +106,6 @@ void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdo
 static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown_core_strbuf *buf) {
     return (char *)buf->ptr;
 }
-
-#define markdown_core_strbuf_at(buf, n) ((buf)->ptr[n])
 
 void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
 
@@ -231,6 +230,31 @@ markdown_core_split *markdown_core_strbuf_split_take(markdown_core_strbuf *buf);
 /* The view `buf` holds its content whole, as a buffer of its own, and the
  * split goes: the buffer is poisoned when storage could not be had. */
 void markdown_core_strbuf_split_join(markdown_core_strbuf *buf);
+
+/* The byte at `at` of `buf`, which may be split. */
+static MARKDOWN_CORE_INLINE unsigned char markdown_core_strbuf_at(const markdown_core_strbuf *buf, bufsize_t at) {
+    const markdown_core_split *split = buf->split ? markdown_core_strbuf_split_of(buf) : NULL;
+    return split && at < split->front.size ? split->front.ptr[at] : buf->ptr[at];
+}
+
+/* The bytes of `buf` from `start` to `end`, in order: those its front holds
+ * at `*front`, `*front_size` of them, then those its back holds at `*back`,
+ * `*back_size` of them; a buffer that is not split holds them all in the
+ * first. */
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_span(const markdown_core_strbuf *buf, bufsize_t start,
+                                                           bufsize_t end, const unsigned char **front,
+                                                           bufsize_t *front_size, const unsigned char **back,
+                                                           bufsize_t *back_size) {
+    assert(start <= end && end <= buf->size);
+    const bufsize_t seam = buf->split ? markdown_core_strbuf_split_of(buf)->front.size : end;
+    const bufsize_t cut = start > seam ? start : end < seam ? end : seam;
+    *front_size = cut - start;
+    *front = !*front_size ? NULL
+             : buf->split ? markdown_core_strbuf_split_of(buf)->front.ptr + start
+                          : buf->ptr + start;
+    *back = buf->ptr + cut;
+    *back_size = end - cut;
+}
 
 static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
     unsigned char byte = (unsigned char)(c & 0xFF);

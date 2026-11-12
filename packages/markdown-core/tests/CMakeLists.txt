@@ -282,6 +282,8 @@ set_tests_properties(regression_cli_refuses_switches PROPERTIES PASS_REGULAR_EXP
 # parsing over the input matrix.
 markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runner --case first_parse)
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
+# The first reads of a literal an edit left to join, from many threads at once.
+markdown_core_add_test(facade_concurrent_literal facade 240 concurrency_runner --case literal)
 
 # Repeated instance construction/destruction and facade failures must not affect
 # any later parse.

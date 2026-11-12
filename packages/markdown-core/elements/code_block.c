@@ -14,17 +14,39 @@ enum { CODE_FORMULA };
 static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA, NULL};
 
 /* The end of an indented code block's literal: past the line ending of its
- * last line that is not blank. Every line it read ends with one, and its
- * first line is not blank. */
+ * last line that is not blank, or its start when every line is: a first
+ * line that opened on the continuation bytes of a scalar holds none of
+ * them (UTF-8 is assumed well formed, never checked), and a look reads
+ * only the lines up to the cursor. */
 static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
-    bufsize_t i = content->size - 1;
-    while (markdown_core_is_whitespace(content->ptr[i])) {
+    const bufsize_t size = content->size;
+    bufsize_t i = size;
+    /* One pass back over the trailing blank bytes: the last line ending it
+     * passes is the first one past the last byte that is not blank. */
+    bufsize_t end = size;
+    /* A content in two parts (THE BACK OF A PARAGRAPH, blocks.c) reads its
+     * bytes through the parts. */
+    if (content->split) {
+        while (i > 0) {
+            const unsigned char c = markdown_core_strbuf_at(content, i - 1);
+            if (!markdown_core_is_whitespace(c)) {
+                return end;
+            }
+            end = c == '\n' ? i : end;
+            i--;
+        }
+        return 0;
+    }
+    const unsigned char *bytes = content->ptr;
+    while (i > 0) {
+        const unsigned char c = bytes[i - 1];
+        if (!markdown_core_is_whitespace(c)) {
+            return end;
+        }
+        end = c == '\n' ? i : end;
         i--;
     }
-    while (content->ptr[i] != '\n') {
-        i++;
-    }
-    return i + 1;
+    return 0;
 }
 
 static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
@@ -81,7 +103,7 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     const markdown_core_strbuf *content = &b->content;
     const bufsize_t start = b->as.code->literal_start;
     const bufsize_t end = b->as.code->fenced ? content->size : S_indented_literal_end(content);
-    b->as.code->literal = (markdown_core_chunk){content->ptr + start, end - start, 0};
+    markdown_core_literal_set(b, &b->as.code->literal, start, end);
     return true;
 }
 /* A fence whose info string names a formula becomes a FormulaBlock as
@@ -365,7 +387,13 @@ void markdown_core_code_block_parts(markdown_core_parts *parts) {
         markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_INFO, at, end);
         at = eol + (eol < n && s[eol] == '\r' && eol + 1 < n && s[eol + 1] == '\n') + (eol < n);
     }
-    markdown_core_parts_lines(parts, at, code->literal.data, code->literal.len);
+    /* Its literal in at most two parts, which part at a line's start. */
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_literal_halves(parts->node, &code->literal, code->literal_start, &front, &front_size, &back,
+                                 &back_size);
+    at = markdown_core_parts_lines(parts, at, front, front_size);
+    markdown_core_parts_lines(parts, at, back, back_size);
 }
 
 /* A fenced block an edit's reading closes as it did (blocks.c, THE SPLICE
@@ -379,17 +407,9 @@ static void spliced_code(const markdown_core_element_instance *self, markdown_co
         node->as.code->fenced && (node->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
 }
 
-/* A fence of the root at no indent strips nothing from its lines, and its
- * content starts past the fence. */
-static size_t verbatim_code(const markdown_core_element_instance *self, const markdown_core_node *node) {
-    (void)self;
-    return node->as.code->fenced && node->as.code->fence_offset == 0 ? node->as.code->fence_length : SIZE_MAX;
-}
-
 static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
     .reopen_block = reopen_code,
     .spliced = spliced_code,
-    .verbatim = verbatim_code,
 };
 
 static const markdown_core_finish_ops CODE_BLOCK_FINISH = {
