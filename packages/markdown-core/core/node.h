@@ -868,9 +868,11 @@ static MARKDOWN_CORE_INLINE void markdown_core_literal_set(markdown_core_node *n
     if (literal->alloc) {
         markdown_core_chunk_free(literal);
     }
+    /* No compound literal: C++ includes this header. */
     const markdown_core_strbuf *content = &node->content;
-    *literal = content->split ? (markdown_core_chunk){NULL, end - start, 1}
-                              : (markdown_core_chunk){content->ptr + start, end - start, 0};
+    literal->data = content->split ? NULL : content->ptr + start;
+    literal->len = end - start;
+    literal->alloc = content->split ? 1 : 0;
 }
 /* The literal `literal` of `node`, which starts at `start` of its content,
  * its bytes `*data`, joined if it was pending: readers of a document may
