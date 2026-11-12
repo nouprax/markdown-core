@@ -545,6 +545,7 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         if (markdown_core_node_code_block_properties(node, &first, &second, &literal, &fenced, &closed) !=
             MARKDOWN_CORE_OK) {
             buffer->failed = true;
+            return;
         }
         put_optional_string(buffer, first);
         put_optional_string(buffer, second);
@@ -560,6 +561,7 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_COMMENT:
         if (markdown_core_node_literal(node, &literal) != MARKDOWN_CORE_OK) {
             buffer->failed = true;
+            return;
         }
         put_string(buffer, literal);
         break;
