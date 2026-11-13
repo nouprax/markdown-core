@@ -180,7 +180,10 @@ static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_front(ma
  * made of it: an anchor or a heading of common length costs nothing more.
  * Two different stems share a key only when both lanes of their measures
  * agree: by chance about (n / 2^61)^2 of the time for n bytes, or when a
- * document is made to, as the bases are fixed. */
+ * document is made to, as the bases are fixed. No computed name holds the
+ * mark, which a heading's projection drops as it drops every control; an
+ * authored one that starts with it is known by its key whatever its length
+ * (markdown_core_name_keyed), so that no name's bytes are another's key. */
 enum {
     MARKDOWN_CORE_NAME_WHOLE = 1024,
     MARKDOWN_CORE_NAME_SUMS = 1 + 16 * MARKDOWN_CORE_MEASURE_LANES,
@@ -236,10 +239,17 @@ static MARKDOWN_CORE_INLINE void markdown_core_name_mark(markdown_core_strbuf *n
     name->ptr[name->size] = '\0';
 }
 
-/* The base `name` holds, its key: a long one by its measure. */
+/* Whether the name of `size` bytes at `bytes` whose stem is `stem` bytes is
+ * known by its key: a long one, and one that starts with the mark. */
+static MARKDOWN_CORE_INLINE bool markdown_core_name_keyed(const unsigned char *bytes, size_t size, size_t stem) {
+    return stem > MARKDOWN_CORE_NAME_WHOLE || (size && bytes[0] == (unsigned char)MARKDOWN_CORE_NAME_MARK);
+}
+
+/* The base `name` holds, its key: a long one by its measure, and one that
+ * starts with the mark. */
 static MARKDOWN_CORE_INLINE void markdown_core_name_key(markdown_core_strbuf *name) {
     const size_t stem = markdown_core_name_stem(name->ptr, (size_t)name->size, 0);
-    if (stem <= MARKDOWN_CORE_NAME_WHOLE) {
+    if (!markdown_core_name_keyed(name->ptr, (size_t)name->size, stem)) {
         return;
     }
     markdown_core_measure measure = {0, {0, 0}, {1, 1}, {1, 1}};

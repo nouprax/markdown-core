@@ -10781,6 +10781,34 @@ static void session_edits_long_headings(test_batch_runner *runner) {
  * heading whose computed base it is takes the next suffix, before the
  * authored one and after it, and an edit that writes the authored anchor or
  * lets it go reads as a parse does. */
+/* An authored anchor whose bytes are a long name's key reserves no name a
+ * heading computes: it is known by a key of its own. */
+static void heading_marked_authored_anchor(test_batch_runner *runner) {
+    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
+    for (int i = 0; i < 1100; i++) {
+        markdown_core_strbuf_putc(&key, 'a');
+    }
+    markdown_core_name_key(&key);
+    char text[2048];
+    char stem[1101];
+    memset(stem, 'a', 1100);
+    stem[1100] = '\0';
+    const int size = snprintf(text, sizeof(text), "# %s\n\n# x {id=\"&#1;%.*s\"}\n", stem, (int)key.size - 1,
+                              (const char *)key.ptr + 1);
+    markdown_core_strbuf_free(&key);
+    markdown_core_document *document = NULL;
+    const bool ok = markdown_core_document_parse((const uint8_t *)text, (size_t)size, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
+    const markdown_core_optional_string first =
+        root ? anchor_of(facade_child(root, 0)) : (markdown_core_optional_string){0};
+    const markdown_core_optional_string second =
+        root ? anchor_of(facade_child(root, 1)) : (markdown_core_optional_string){0};
+    OK(runner, first.has_value && first.value.length == 1100, "a key-shaped authored anchor takes no long name");
+    OK(runner, second.has_value && second.value.length == MARKDOWN_CORE_NAME_KEY && second.value.data[0] == 1,
+       "the authored anchor shows its own bytes");
+    markdown_core_document_free(document);
+}
+
 /* A long computed anchor is made at its first read, which reports a
  * refused allocation rather than showing no anchor, and reads again after. */
 static void heading_long_anchor_refused(test_batch_runner *runner) {
@@ -12538,6 +12566,7 @@ int main(void) {
     session_edits_long_headings(runner);
     heading_long_authored_anchor(runner);
     heading_long_anchor_refused(runner);
+    heading_marked_authored_anchor(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
