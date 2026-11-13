@@ -10708,6 +10708,24 @@ static void session_edits_replaced_label(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* An edit that leaps into a paragraph under a definition and parses its
+ * inline content whole lists the inline notes of the paragraph's old tail
+ * again: the old ones go, to the paragraph's end (blocks.c, THE LEAP). */
+static void session_edits_nested_notes(test_batch_runner *runner) {
+    static const char source[] = "a\n~\n  $m$ |a|\n  word word\n[^n]\nq -\n  [^[n]\nafter\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    const markdown_core_position line = {5, 1}, next = {6, 1};
+    const bool edited =
+        markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) == MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_edit(session, line, next, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
+    OK(runner, edited && session_as_parsed(session),
+       "taking a line out of a definition's paragraph reads its inline note as a parse does");
+    markdown_core_session_close(session);
+}
+
 /* What a session holds after an edit lets most of its text go: the edit
  * reads all of what is left into storage of its own, which holds no more
  * than twice what a session that reads that text afresh holds, and the
@@ -12403,6 +12421,7 @@ int main(void) {
     session_edits_literal_blocks(runner);
     session_edits_name_headings(runner);
     session_edits_storage(runner);
+    session_edits_nested_notes(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);

@@ -810,6 +810,9 @@ typedef struct {
      * where it moves a byte: NULL for the zero edit. */
     publish_edit edit;
     const publish_edit *moved;
+    /* The paragraph whose parse read its content in a pane, which gives the
+     * nodes it made their runs (blocks.c, THE PANE): NULL for none. */
+    const markdown_core_node *pane;
 } publish_walk;
 
 /* Where a node published from `hand` lies: its range, in the content of the
@@ -1084,6 +1087,19 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_place
     return window;
 }
 
+/* The paragraph whose parse read its content in a pane keeps its runs, as
+ * the splice wrote them, and the walk holds the pane's places, which read
+ * the content of the nodes the parse made (blocks.c, THE PANE). False when
+ * the table could not grow. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_pane(publish_walk *walk, publish_placed *placed) {
+    const markdown_core_parser *parser = walk->stack.parser;
+    if (!content_places_read(&walk->places, parser->stream->edit->leap->pane)) {
+        return false;
+    }
+    placed->root = true;
+    return true;
+}
+
 /* publish_node of a node the walk in place enters (THE WALK IN PLACE). A
  * closed node a publish placed (PUBLISHED) stands as that publish left it,
  * its extent and runs and all below it: it is closed in the committed tree,
@@ -1105,6 +1121,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node_in_plac
             placed->source =
                 node->source.runs->count > 16 ? wide_window(walk, node, hand->source) : runs_window(node, hand->source);
             placed->root = false;
+            if (node == walk->pane && !publish_pane(walk, placed)) {
+                return false;
+            }
             return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
         }
         markdown_core_node_pool_bytes_free(walk->pool, node->source.runs);
@@ -2984,6 +3003,10 @@ static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
     walk->kept_count = 0;
     walk->places = (content_places){parser->content_places, 0, parser->content_place_capacity};
     walk->pool = parser->pool;
+    walk->pane =
+        parser->stream && parser->stream->edit && parser->stream->edit->leap && parser->stream->edit->leap->paned
+            ? parser->stream->edit->leap->node
+            : NULL;
     walk->decided = DECIDED;
     walk->keeps = true;
     const markdown_core_stream *stream = parser->stream;
@@ -3284,13 +3307,14 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
             if (bodies && cursor.step > 1) {
                 /* The body the chain goes on into is no node of the
                  * records: its nodes are the definition's, in the bodies'
-                 * relation, below the definition's record. */
-                if (deeper && cursor.index - 1 == final) {
+                 * relation, below the definition's record. The bodies are
+                 * the last relations, and none needs a step of its own. */
+                if (deeper) {
                     const uint32_t start = edit->places[level + 1].start;
                     next_window = (markdown_core_place){start, start + block->children[final]->extent.span};
                     next = owner;
                 }
-                continue;
+                break;
             }
             if (relation.holder != block) {
                 for (size_t i = 0; i < relation.count; i++) {
@@ -3388,11 +3412,11 @@ static bool record_nest(markdown_core_parser *parser) {
     for (size_t level = edit->depth; level-- > 0 && edit->nest_recorded < end;) {
         const markdown_core_node *block = edit->chain[level];
         const bool body = level && holds_bodies(edit->chain[level - 1]);
-        const uint32_t field = body ? 1 : children_field(block);
+        const bool bodies = holds_bodies(block);
+        const uint32_t field = body || bodies ? 1 : children_field(block);
         uint32_t last = carried ? carried : level + 1 < edit->depth ? edit->owners[level + 1] : 0;
         carried = 0;
         uint32_t before = level + 1 < edit->depth ? edit->ends[level + 1] : edit->places[level].prior;
-        const bool bodies = holds_bodies(block);
         for (uint32_t i = 0; i < edit->levels[level].held && edit->nest_recorded < end; i++) {
             assert(edit->levels[level].saved > i);
             markdown_core_node *old = edit->nested[edit->levels[level].base + i];
