@@ -101,6 +101,31 @@ static MARKDOWN_CORE_INLINE void markdown_core_measure_add(markdown_core_measure
     measure->size += (uint32_t)size;
 }
 
+/* The sums alone of `size` bytes, in `*measure`, which measures none:
+ * Horner's rule in both lanes at once, each step's sum not brought below the
+ * prime until the last. As each base is below 2^59, a sum below 2^63 times
+ * it folds back to below 2^62 plus a byte. */
+static MARKDOWN_CORE_INLINE void markdown_core_measure_sums(markdown_core_measure *measure, const unsigned char *bytes,
+                                                            size_t size) {
+    uint64_t first = 0, second = 0;
+    const uint64_t one = markdown_core_measure_base[0], two = markdown_core_measure_base[1];
+    for (size_t i = size; i-- > 0;) {
+#if defined(__SIZEOF_INT128__)
+        __extension__ typedef unsigned __int128 markdown_core_measure_wide;
+        const markdown_core_measure_wide x = (markdown_core_measure_wide)first * one,
+                                         y = (markdown_core_measure_wide)second * two;
+        first = ((uint64_t)x & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(x >> 61) + bytes[i] + 1;
+        second = ((uint64_t)y & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(y >> 61) + bytes[i] + 1;
+#else
+        first = markdown_core_measure_mod(markdown_core_measure_times(first, one) + bytes[i] + 1);
+        second = markdown_core_measure_mod(markdown_core_measure_times(second, two) + bytes[i] + 1);
+#endif
+    }
+    measure->sum[0] = markdown_core_measure_mod(first);
+    measure->sum[1] = markdown_core_measure_mod(second);
+    measure->size = (uint32_t)size;
+}
+
 /* The bytes `a` measures, then those `b` measures. */
 static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_join(markdown_core_measure a,
                                                                              markdown_core_measure b) {
@@ -218,7 +243,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_name_key(markdown_core_strbuf *na
         return;
     }
     markdown_core_measure measure = {0, {0, 0}, {1, 1}, {1, 1}};
-    markdown_core_measure_add(&measure, name->ptr, stem);
+    markdown_core_measure_sums(&measure, name->ptr, stem);
     markdown_core_name_mark(name, measure, (bufsize_t)stem, name->size - (bufsize_t)stem);
 }
 

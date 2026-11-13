@@ -79,25 +79,42 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
 
 static uint64_t heading_start_key(const void *entry) { return ((const markdown_core_heading_parse *)entry)->start; }
 
+/* Whether a line ends in the `size` bytes at `bytes`: read a window at a
+ * time, so that the first line end stops the reading and no byte is read
+ * past the window that holds it. */
+static bool heading_line_end(const unsigned char *bytes, bufsize_t size) {
+    for (bufsize_t at = 0; at < size; at += 256) {
+        const size_t window = (size_t)(size - at < 256 ? size - at : 256);
+        if (memchr(bytes + at, '\n', window) || memchr(bytes + at, '\r', window)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* Whether the heading `node` declares nothing its text may name: the bytes
  * of its content before its last line, which alone may end with its
- * attributes, are more than a label may hold. Its inline content parses as
- * a paragraph's does, from its seams when an edit's reading leaps in it
- * (blocks.c, THE SEAMS). */
+ * attributes, are more than a label may hold. That is, a line ends past
+ * the bytes a label may hold and before the line endings that end the
+ * content. Its inline content parses as a paragraph's does, from its seams
+ * when an edit's reading leaps in it (blocks.c, THE SEAMS). */
 static bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
     (void)self;
     const markdown_core_strbuf *content = &node->content;
-    bufsize_t at = content->size;
-    if (at <= MAX_LINK_LABEL_LENGTH + 1) {
+    bufsize_t end = content->size;
+    if (end <= MAX_LINK_LABEL_LENGTH + 1) {
         return false;
     }
-    while (at > 0 && markdown_core_is_line_end(markdown_core_strbuf_at(content, at - 1))) {
-        at--;
+    while (end > MAX_LINK_LABEL_LENGTH + 1 && markdown_core_is_line_end(markdown_core_strbuf_at(content, end - 1))) {
+        end--;
     }
-    while (at > 0 && !markdown_core_is_line_end(markdown_core_strbuf_at(content, at - 1))) {
-        at--;
+    if (end <= MAX_LINK_LABEL_LENGTH + 1) {
+        return false;
     }
-    return at > MAX_LINK_LABEL_LENGTH + 1;
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_strbuf_span(content, MAX_LINK_LABEL_LENGTH + 1, end, &front, &front_size, &back, &back_size);
+    return heading_line_end(front, front_size) || heading_line_end(back, back_size);
 }
 
 /* The heading's inline content parsed whole, as its preparation and finish
