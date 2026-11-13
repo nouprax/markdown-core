@@ -10833,6 +10833,37 @@ static void heading_long_anchor_refused(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
+/* A heading that parses from its seams and stops, as an edit shortens it,
+ * keeps the ids of the inline nodes the edit leaves. */
+static void heading_seams_end_keeps_ids(test_batch_runner *runner) {
+    char text[1400];
+    size_t size = 0;
+    for (int i = 0; i < 120; i++) {
+        memcpy(text + size, "word word\n", 10);
+        size += 10;
+    }
+    memcpy(text + size, "===\n\nend\n", 9);
+    size += 9;
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool ok = markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                  MARKDOWN_CORE_OK &&
+              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_position at = {76, 1}, past = {76, 2};
+    ok = ok && markdown_core_session_edit(session, at, past, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
+    const markdown_core_node *end = heading ? last_child_of(heading) : NULL;
+    const uint64_t last = end ? markdown_core_node_id(end) : 0;
+    const markdown_core_position from = {26, 1}, to = {56, 1};
+    ok = ok && last &&
+         markdown_core_session_edit(session, from, to, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
+    heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
+    end = heading ? last_child_of(heading) : NULL;
+    OK(runner, end && markdown_core_node_id(end) == last,
+       "a heading that stops parsing from its seams keeps the ids of the nodes an edit leaves");
+    markdown_core_session_close(session);
+}
+
 static void heading_long_authored_anchor(test_batch_runner *runner) {
     char stem[1101];
     memset(stem, 'a', 1100);
@@ -12565,6 +12596,7 @@ int main(void) {
     session_edits_nested_notes(runner);
     session_edits_long_headings(runner);
     heading_long_authored_anchor(runner);
+    heading_seams_end_keeps_ids(runner);
     heading_long_anchor_refused(runner);
     heading_marked_authored_anchor(runner);
     session_edits_refresh_storage(runner);

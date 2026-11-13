@@ -1754,14 +1754,21 @@ static uint64_t root_id(const markdown_core_parser *parser, const markdown_core_
     return edit && edit->revert.node == root ? edit->revert.id : root->id;
 }
 
+/* The kind the publish named `root` as, as root_id names its id. */
+static uint16_t root_kind(const markdown_core_parser *parser, const markdown_core_node *root) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    return edit && edit->revert.node == root ? edit->revert.kind : root->kind;
+}
+
 void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_core_node *root,
                                 markdown_core_node *const *nodes, uint32_t count) {
     markdown_core_tail_records *records = &parser->stream->records;
     uint32_t at = 0;
     const uint64_t id = root_id(parser, root);
+    const uint16_t kind = root_kind(parser, root);
     for (size_t i = 0; i < records->count && !at; i++) {
         const markdown_core_tail_record *record = &records->items[i];
-        if (id && record->id == id && record->kind == root->kind && !record->node) {
+        if (id && record->id == id && record->kind == kind && !record->node) {
             at = record->held;
         }
     }
@@ -1790,14 +1797,15 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
      * gave it (reopen_chain), and any other is found among them all. */
     const markdown_core_edit *edit = parser->stream->edit;
     const uint64_t id = root_id(parser, root);
+    const uint16_t kind = root_kind(parser, root);
     uint32_t owner = edit && edit->depth && edit->chain[edit->depth - 1] == root ? edit->owners[edit->depth - 1] : 0;
     if (owner && (owner > records->count || records->items[owner - 1].id != id ||
-                  records->items[owner - 1].kind != root->kind || records->items[owner - 1].node)) {
+                  records->items[owner - 1].kind != kind || records->items[owner - 1].node)) {
         owner = 0;
     }
     for (size_t i = 0; i < records->count && !owner; i++) {
         const markdown_core_tail_record *record = &records->items[i];
-        if (record->id == id && record->kind == root->kind && !record->node) {
+        if (record->id == id && record->kind == kind && !record->node) {
             owner = (uint32_t)i + 1;
         }
     }
