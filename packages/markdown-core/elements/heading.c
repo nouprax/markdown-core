@@ -673,8 +673,11 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
             project_anchor_literal(state, base, node->as.literal->data, node->as.literal->len);
             break;
         case MARKDOWN_CORE_NODE_FORMULA: {
-            const markdown_core_chunk literal = markdown_core_elements_formula_literal(node);
-            project_anchor_literal(state, base, literal.data, literal.len);
+            const unsigned char *front, *back;
+            bufsize_t front_size, back_size;
+            markdown_core_elements_formula_halves(node, &front, &front_size, &back, &back_size);
+            project_anchor_literal(state, base, front, front_size);
+            project_anchor_literal(state, base, back, back_size);
             break;
         }
         case MARKDOWN_CORE_NODE_SOFT_BREAK:

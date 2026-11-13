@@ -4279,10 +4279,62 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     markdown_core_publish_compact_committed(parser->stream->committed);
 }
 
+/* The kind `block` became as it closed read its lines as one of literal
+ * lines (element.h, THE FORMER KIND): that kind; NONE otherwise. */
+static markdown_core_node_type S_former(const markdown_core_parser *parser, const markdown_core_node *block) {
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
+    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
+    const markdown_core_node_type former =
+        ops && ops->former ? ops->former(structure, block) : MARKDOWN_CORE_NODE_NONE;
+    return former != MARKDOWN_CORE_NODE_NONE &&
+                   (markdown_core_dialect_kind(parser->dialect, former)->flags & MARKDOWN_CORE_KIND_LINES)
+               ? former
+               : MARKDOWN_CORE_NODE_NONE;
+}
+
 /* Whether `block` is a leaf a rest point may be in (THE LEAP). */
 static inline bool S_leaf(const markdown_core_parser *parser, const markdown_core_node *block) {
-    return markdown_core_parser_block_kind(parser, block)->flags &
-           (MARKDOWN_CORE_KIND_LINES | MARKDOWN_CORE_KIND_IS_PARAGRAPH);
+    return (markdown_core_parser_block_kind(parser, block)->flags &
+            (MARKDOWN_CORE_KIND_LINES | MARKDOWN_CORE_KIND_IS_PARAGRAPH)) ||
+           S_former(parser, block) != MARKDOWN_CORE_NODE_NONE;
+}
+
+bool markdown_core_parser_reads_lines(const markdown_core_parser *parser, const markdown_core_node *block) {
+    return (markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
+           S_former(parser, block) != MARKDOWN_CORE_NODE_NONE;
+}
+
+/* `block`, of a kind that read its lines as another's (THE FORMER KIND),
+ * in `parent`, a block of that kind again, as a reading reopens it at a
+ * later line of its own (THE LEAP), which `*revert` notes, the node the
+ * publish named, whose id it keeps while it reads; a block of literal lines
+ * as it is, which `*revert` notes as none. False, with the parse failed,
+ * when storage could not be had. */
+static bool S_revert(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node *parent,
+                     markdown_core_revert *revert) {
+    *revert = (markdown_core_revert){NULL, block->id, block->kind};
+    if (S_former(parser, block) == MARKDOWN_CORE_NODE_NONE) {
+        return true;
+    }
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
+    if (!structure->element->edit->revert(structure, parser, block, parent)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    assert(markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES);
+    block->id = revert->id;
+    revert->node = block;
+    return true;
+}
+
+/* The block `revert` notes, once completion is done: it continues the node
+ * the publish named when its close or completion made it of that node's
+ * kind again, and is a node of its own otherwise (THE FORMER KIND). */
+static void S_revert_end(markdown_core_revert *revert) {
+    if (revert->node) {
+        revert->node->id = revert->node->kind == revert->kind ? revert->id : 0;
+        revert->node = NULL;
+    }
 }
 
 /* A block of literal lines leaps, and so does a paragraph whose text is all
@@ -4291,7 +4343,7 @@ static inline bool S_leaf(const markdown_core_parser *parser, const markdown_cor
  * not. */
 bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdown_core_node *block) {
     const unsigned flags = markdown_core_parser_block_kind(parser, block)->flags;
-    if (flags & MARKDOWN_CORE_KIND_LINES) {
+    if (markdown_core_parser_reads_lines(parser, block)) {
         return true;
     }
     /* Its lines' bytes are its content's, which a text with NUL, read as
@@ -5083,6 +5135,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     const size_t start = line < S_lines_count(&input->lines) ? S_lines_start(&input->lines, line) : input->scanned;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     stream->edit->depth = 0;
+    stream->edit->revert.node = NULL;
     stream->edit->nest_count = stream->edit->nest_recorded = 0;
     stream->edit->nest_on = false;
     stream->edit->taken = SIZE_MAX;
@@ -5125,6 +5178,16 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
+    }
+    /* A deepest block that read literal lines as another kind reads on as
+     * that kind (THE FORMER KIND), once the publish's records hold it as
+     * the node it was. */
+    if (depth) {
+        if (!S_revert(parser, stream->edit->chain[depth - 1], depth > 1 ? stream->edit->chain[depth - 2] : root,
+                      &stream->edit->revert)) {
+            S_tail_leave(parser, root);
+            return false;
+        }
     }
     /* The rest point's line before, as the deepest block's child before
      * the rest point, which the reopen placed, ends (THE NESTED REOPEN). */
@@ -7423,7 +7486,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
         last->place.end = (uint32_t)before;
         blank = markdown_core_parser_rest_blank(parser, (const unsigned char *)source, chain, depth, line, before);
         assert(blank != SIZE_MAX);
-    } else if (depth && (markdown_core_parser_block_kind(parser, deepest)->flags & MARKDOWN_CORE_KIND_LINES)) {
+    } else if (depth && markdown_core_parser_reads_lines(parser, deepest)) {
         /* As the reopen reads it (THE LEAP). */
         markdown_core_node *chain[64];
         assert(depth <= sizeof(chain) / sizeof(*chain));
@@ -7493,6 +7556,9 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
     for (markdown_core_node *open = deepest; lent && open; open = markdown_core_scaffold_parent(open)) {
         lent = S_lend(parser, open);
     }
+    /* Its view reads on as the kind it read its lines as (THE FORMER KIND). */
+    markdown_core_revert revert = {NULL, 0, 0};
+    lent = lent && (!depth || S_revert(parser, deepest, levels[depth - 1].node, &revert));
     if (lent) {
         /* The chain's views stand open as the reopen leaves its blocks. */
         for (size_t level = 1; level <= depth; level++) {
@@ -7540,6 +7606,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
             S_complete_settled(parser);
         }
     }
+    S_revert_end(&revert);
     if (literal) {
         markdown_core_strbuf_free(&deepest->content);
         deepest->content = whole;
@@ -10765,10 +10832,13 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
 /* The blocks of the chain an edit's reading reopened leave the completion
  * queue, which they joined as they settled again: their completion is done
  * (THE NESTED REOPEN). A paragraph the rest point is in stays: its inline
- * content is read again whole (THE LEAP). */
+ * content is read again whole (THE LEAP); and so does a block the reopen
+ * gave the kind it read its lines as, whose completion may make it its own
+ * kind again (THE FORMER KIND). */
 static void S_unqueue_chain(markdown_core_parser *parser) {
     const markdown_core_edit *edit = parser->stream->edit;
-    const size_t depth = edit->depth && edit->leap && edit->leap->prose ? edit->depth - 1 : edit->depth;
+    const size_t depth =
+        edit->depth && ((edit->leap && edit->leap->prose) || edit->revert.node) ? edit->depth - 1 : edit->depth;
     markdown_core_node *last = NULL;
     for (markdown_core_node *node = parser->completion_first; node;) {
         markdown_core_node *next = markdown_core_scaffold_next(node);
@@ -10812,6 +10882,9 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
     if (!parser->error) {
         S_complete_settled(parser);
+    }
+    if (!parser->error && parser->stream->edit) {
+        S_revert_end(&parser->stream->edit->revert);
     }
     if (!parser->error && !parser->snapshot && parser->stream->miss_count) {
         S_complete_misses(parser);

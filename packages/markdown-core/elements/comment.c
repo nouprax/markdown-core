@@ -280,8 +280,40 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
                           markdown_core_node *);
 
+/* An HTML block of type 2 that its own end condition closed and that
+ * holds one comment became a CommentBlock as it closed
+ * (markdown_core_block_convert_comment_block): it read its lines as an
+ * HTML block (element.h, THE FORMER KIND). A `%%` block read them as
+ * itself. */
+enum { MARKDOWN_CORE_NODE__COMMENT_HTML = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
+
+static markdown_core_node_type comment_former(const markdown_core_element_instance *self,
+                                              const markdown_core_node *node) {
+    (void)self;
+    return node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK && (node->flags & MARKDOWN_CORE_NODE__COMMENT_HTML)
+               ? MARKDOWN_CORE_NODE_HTML_BLOCK
+               : MARKDOWN_CORE_NODE_NONE;
+}
+
+/* The HTML block it was, of type 2, which its opening set, and which its
+ * close makes a CommentBlock again when it still holds one comment. */
+static bool comment_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node, markdown_core_node *parent) {
+    (void)self;
+    const markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_HTML_BLOCK);
+    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        return false;
+    }
+    node->as.html_block->block_type = 2;
+    return true;
+}
+
 static const markdown_core_edit_ops COMMENT_EDIT = {
     .stops = comment_stops,
+    .former = comment_former,
+    .revert = comment_revert,
 };
 
 static const markdown_core_content_ops COMMENT_CONTENT = {
@@ -324,24 +356,47 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .lines = &COMMENT_LINES,
 };
 
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
-                                               markdown_core_node *parent) {
-    const unsigned char *data = b->content.ptr;
-    bufsize_t len = b->content.size;
+/* Where the body of an HTML comment block's content starts: past the
+ * indent and the `<!--` (markdown_core_block_convert_comment_block). */
+static bufsize_t S_comment_open(const markdown_core_strbuf *content) {
     bufsize_t open = 0;
-    bufsize_t close;
-    bufsize_t body_start;
-    bufsize_t body_len;
-    bufsize_t rest;
-
-    while (open < len && markdown_core_is_space_or_tab(data[open])) {
+    while (open < content->size && markdown_core_is_space_or_tab(markdown_core_strbuf_at(content, open))) {
         open++;
     }
-    if (len - open < 4 || memcmp(data + open, "<!--", 4) != 0) {
+    return open;
+}
+
+bufsize_t markdown_core_comment_block_start(const markdown_core_node *node) {
+    return S_comment_open(&node->content) + 4;
+}
+
+/* The content reads through its parts when it is in two (buffer.h,
+ * markdown_core_split), and only its first line and its last: the block's
+ * end condition closed it at the first line that holds a `-->`, so its
+ * first `-->` is on its last line, or on its first when it has one. */
+void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
+                                               markdown_core_node *parent) {
+    const markdown_core_strbuf *content = &b->content;
+    const bufsize_t len = content->size;
+    const bufsize_t open = S_comment_open(content);
+    bufsize_t close;
+    bufsize_t rest;
+
+    if (len - open < 4 || markdown_core_strbuf_at(content, open) != '<' ||
+        markdown_core_strbuf_at(content, open + 1) != '!' || markdown_core_strbuf_at(content, open + 2) != '-' ||
+        markdown_core_strbuf_at(content, open + 3) != '-') {
         return;
     }
-    for (close = open + 2; close + 3 <= len; close++) {
-        if (data[close] == '-' && data[close + 1] == '-' && data[close + 2] == '>') {
+    /* The start of the last line, past the line ending that ends it. */
+    bufsize_t last = len;
+    last -= last && markdown_core_strbuf_at(content, last - 1) == '\n';
+    last -= last && markdown_core_strbuf_at(content, last - 1) == '\r';
+    while (last && !markdown_core_is_line_end(markdown_core_strbuf_at(content, last - 1))) {
+        last--;
+    }
+    for (close = last > open + 2 ? last : open + 2; close + 3 <= len; close++) {
+        if (markdown_core_strbuf_at(content, close) == '-' && markdown_core_strbuf_at(content, close + 1) == '-' &&
+            markdown_core_strbuf_at(content, close + 2) == '>') {
             break;
         }
     }
@@ -349,21 +404,21 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
         return;
     }
     rest = close + 3;
-    while (rest < len && markdown_core_is_space_or_tab(data[rest])) {
+    while (rest < len && markdown_core_is_space_or_tab(markdown_core_strbuf_at(content, rest))) {
         rest++;
     }
-    if (rest < len && data[rest] == '\r') {
+    if (rest < len && markdown_core_strbuf_at(content, rest) == '\r') {
         rest++;
     }
-    if (rest < len && data[rest] == '\n') {
+    if (rest < len && markdown_core_strbuf_at(content, rest) == '\n') {
         rest++;
     }
     if (rest != len) {
         return;
     }
 
-    body_start = open + 4;
-    body_len = close > body_start ? close - body_start : 0;
+    const bufsize_t body_start = open + 4;
+    const bufsize_t body_end = close > body_start ? close : body_start;
     markdown_core_node_set_kind_result result =
         markdown_core_parser_set_node_kind(parser, b, parent, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
@@ -372,8 +427,10 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
         }
         return;
     }
-    /* The comment's literal is the view of the body between its delimiters. */
-    *b->as.literal = (markdown_core_chunk){b->content.ptr + body_start, body_len, 0};
+    b->flags |= MARKDOWN_CORE_NODE__COMMENT_HTML;
+    /* The comment's literal is the body between its delimiters, lazy as a
+     * literal block's (node.h, A LITERAL, LAZY). */
+    markdown_core_literal_set(b, b->as.literal, body_start, body_end);
 }
 
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
@@ -441,6 +498,11 @@ void markdown_core_comment_parts(markdown_core_parts *parts) {
             from++;
         }
     }
-    const markdown_core_chunk *literal = parts->node->as.literal;
-    markdown_core_parts_find(parts, from, literal->data, literal->len);
+    /* Its literal in at most two parts, which part at a line's start. */
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_literal_halves(parts->node, parts->node->as.literal, markdown_core_comment_block_start(parts->node),
+                                 &front, &front_size, &back, &back_size);
+    from = markdown_core_parts_find(parts, from, front, front_size);
+    markdown_core_parts_find(parts, from, back, back_size);
 }

@@ -7,6 +7,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
+#include "comment.h"
 #include "directive.h"
 #include "formula.h"
 #include "markdown-core-elements.h"
@@ -4070,16 +4071,25 @@ static bool literal_of(const markdown_core_node *node, markdown_core_string *lit
     if (node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return literal_string(node, &node->as.html_block->literal, 0, literal);
     }
+    if (node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
+        return literal_string(node, node->as.literal, markdown_core_comment_block_start(node), literal);
+    }
     *literal = chunk_string(*node->as.literal);
     return true;
 }
 
-static void formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
+/* False, with the literal empty, when a pending literal could not be
+ * joined. */
+static bool formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                markdown_core_string *literal) {
     *mode = markdown_core_elements_get_formula_mode((markdown_core_node *)node) == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED
                 ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
                 : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    *literal = chunk_string(markdown_core_elements_formula_literal(node));
+    const unsigned char *data;
+    bufsize_t size;
+    const bool read = markdown_core_elements_formula_read(node, &data, &size);
+    *literal = read ? (markdown_core_string){data, (size_t)size} : (markdown_core_string){NULL, 0};
+    return read;
 }
 
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }
@@ -4265,7 +4275,14 @@ markdown_core_status markdown_core_node_formula_properties(const markdown_core_n
                                                            markdown_core_placement *mode,
                                                            markdown_core_string *literal) {
     REQUIRE_KIND(node, FORMULA_KINDS);
-    formula_properties(node, mode, literal);
+    /* Its answers are written only when the literal could be read. */
+    markdown_core_placement read_mode;
+    markdown_core_string read_literal;
+    if (!formula_properties(node, &read_mode, &read_literal)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    *mode = read_mode;
+    *literal = read_literal;
     return MARKDOWN_CORE_OK;
 }
 
@@ -5121,14 +5138,18 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
          * embedded and `$$x$$` is standalone inside the same paragraph.  The
          * other five carried a mode that their kind already implied, and Q29
          * deleted all five at 15A.4. */
-        formula_properties(node, &mode, &a);
+        if (!formula_properties(node, &mode, &a)) {
+            buffer->failed = true;
+        }
         buffer_cstr(buffer, " mode=");
         buffer_cstr(buffer, mode_name(mode));
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-        formula_properties(node, &mode, &a);
+        if (!formula_properties(node, &mode, &a)) {
+            buffer->failed = true;
+        }
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;

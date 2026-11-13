@@ -799,6 +799,16 @@ typedef struct markdown_core_seam_tail {
     uint32_t start, held, saved, base;
 } markdown_core_seam_tail;
 
+/* A block a reading gave the kind it read its lines as (blocks.c, THE
+ * FORMER KIND): the block, NULL for none, and its kind and id before, as
+ * the node the publish named, which it continues once its close or
+ * completion makes it of that kind again. */
+typedef struct markdown_core_revert {
+    struct markdown_core_node *node;
+    uint64_t id;
+    uint16_t kind;
+} markdown_core_revert;
+
 typedef struct markdown_core_edit {
     /* The root's old tail (THE OLD TAIL IN PLACE), its `start` the root's
      * child the reading began at, and its room `children`, which has room
@@ -850,6 +860,9 @@ typedef struct markdown_core_edit {
     uint32_t closed, opener_count;
     int64_t shift;
     bool nest_on;
+    /* The chain's deepest block when the reopen gave it the kind it read
+     * its lines as (blocks.c, THE FORMER KIND), NULL otherwise. */
+    markdown_core_revert revert;
     /* Whether the parse is an edit's reading. */
     bool reading;
     /* Of THE USES' INDEX below, kept here where the record has room. */
@@ -1996,6 +2009,10 @@ void markdown_core_parser_compact(markdown_core_parser *parser);
 /* Whether an edit of a later line of `block`, a leaf, may rest at that line
  * and leap past its old lines (blocks.c, THE LEAP). */
 bool markdown_core_parser_leaps(const markdown_core_parser *parser, const struct markdown_core_node *block);
+/* Whether `block` reads literal lines: a block of a kind of them, or one
+ * that read them as such a kind before it closed as its own (element.h,
+ * THE FORMER KIND), which an edit's reading reopens as that kind. */
+bool markdown_core_parser_reads_lines(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* Whether the children of `block` abut (element.h, `abuts`). */
 bool markdown_core_parser_abuts(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* How the line before the rest point line `line` reads to the `depth`

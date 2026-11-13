@@ -618,7 +618,7 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         S_literal_view(&copy->as.code->literal);
         break;
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        markdown_core_chunk_view(copy->as.literal);
+        S_literal_view(copy->as.literal);
         break;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
         S_literal_view(&copy->as.html_block->literal);

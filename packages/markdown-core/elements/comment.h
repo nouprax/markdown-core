@@ -20,6 +20,10 @@ typedef struct {
  * becomes a CommentBlock in place. */
 void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
                                                markdown_core_node *parent);
+/* Where a CommentBlock's literal starts in its content: of one an HTML
+ * block became, past its `<!--`. Read only of a pending literal (node.h,
+ * A LITERAL, LAZY), which only those are. */
+bufsize_t markdown_core_comment_block_start(const markdown_core_node *node);
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
                                                       markdown_core_chunk literal);
 bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, unsigned *flags,

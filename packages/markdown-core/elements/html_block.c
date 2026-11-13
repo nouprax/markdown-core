@@ -36,14 +36,6 @@ static bool close_html(const markdown_core_element_instance *self, markdown_core
     (void)self;
     const bool comment =
         b->as.html_block->block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
-    /* A comment reads its content whole. */
-    if (comment && b->content.split) {
-        markdown_core_strbuf_split_join(&b->content);
-        if (b->content.oom) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return true;
-        }
-    }
     markdown_core_literal_set(b, &b->as.html_block->literal, 0, b->content.size);
     if (comment) {
         markdown_core_block_convert_comment_block(parser, b, parent);

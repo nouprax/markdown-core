@@ -16,7 +16,8 @@
 //                delimiter stack, reference map, or special-character
 //                table, and no parse may leave state behind for the next.
 //
-//   literal      An edit inside a long code block leaves its literal for the
+//   literal      An edit inside a long code block, an HTML block, an HTML
+//                comment and a formula fence leaves each literal for the
 //                first read to join (node.h, A LITERAL, LAZY); a barrier
 //                releases every thread into that first read of one
 //                document, and each must read the same bytes, the block's
@@ -372,10 +373,14 @@ static int case_stress(void) {
 #define LITERAL_LINES 400
 #define LITERAL_ROUNDS 50
 
+/* How a block's literal is read: as a code block's, a formula's or a
+ * literal's. */
+typedef enum { READ_CODE, READ_FORMULA, READ_LITERAL } read_way;
+
 typedef struct reader {
     barrier *start;
     const markdown_core_node *node;
-    int code;
+    read_way way;
     markdown_core_string value;
     markdown_core_status status;
 } reader;
@@ -383,31 +388,66 @@ typedef struct reader {
 static THREAD_RETURN reader_main(void *argument) {
     reader *self = (reader *)argument;
     barrier_wait(self->start);
-    if (self->code) {
+    if (self->way == READ_CODE) {
         markdown_core_optional_string info, language;
         bool fenced, closed;
         self->status =
             markdown_core_node_code_block_properties(self->node, &info, &language, &self->value, &fenced, &closed);
+    } else if (self->way == READ_FORMULA) {
+        markdown_core_placement mode;
+        self->status = markdown_core_node_formula_properties(self->node, &mode, &self->value);
     } else {
         self->status = markdown_core_node_literal(self->node, &self->value);
     }
     return THREAD_RESULT;
 }
 
+/* One block of the literal case: its opening and closing lines, the format
+ * of its LITERAL_LINES lines, how its literal is read, and where it lies. */
+typedef struct {
+    const char *open, *line, *close;
+    read_way way;
+    /* Where its literal starts and how long it is, the line its middle
+     * line is on and the column of that line's last digit. */
+    size_t from, length;
+    int32_t middle, column;
+} literal_block;
+
 static int case_literal(void) {
-    /* A fenced block and an HTML block, each of LITERAL_LINES lines of 8
-     * bytes, `line NNN` and `<i>NNN</i>`... */
-    static char text[2 * LITERAL_LINES * 16 + 64];
+    /* A fenced block, an HTML block, an HTML comment and a formula fence,
+     * each of LITERAL_LINES lines of `NNN` and the bytes around it. */
+    literal_block blocks[] = {
+        {"```\n", "line %03d\n", "```\n", READ_CODE, 0, 0, 0, 8},
+        {"<div>\n", "<i>%03d</i>\n", "</div>\n", READ_LITERAL, 0, 0, 0, 6},
+        {"<!--\n", "c %03d\n", "-->\n", READ_LITERAL, 0, 0, 0, 5},
+        {"```formula\n", "x_%03d\n", "```\n", READ_FORMULA, 0, 0, 0, 5},
+    };
+    enum { BLOCKS = sizeof(blocks) / sizeof(blocks[0]) };
+    static char text[BLOCKS * (LITERAL_LINES * 16 + 32)];
     size_t size = 0;
-    size += (size_t)sprintf(text + size, "```\n");
-    for (int i = 0; i < LITERAL_LINES; i++) {
-        size += (size_t)sprintf(text + size, "line %03d\n", i);
+    int32_t line = 1;
+    for (int block = 0; block < BLOCKS; block++) {
+        literal_block *made = &blocks[block];
+        size += (size_t)sprintf(text + size, "%s", made->open);
+        line++;
+        /* An HTML block's literal holds its lines all, a comment's its
+         * body, a fence's and a formula's what is between its fences, the
+         * formula's without the line ending its last line. */
+        made->from = made->way == READ_LITERAL && block == 1 ? size - strlen(made->open) : size;
+        made->from = block == 2 ? size - 1 : made->from;
+        made->middle = line + LITERAL_LINES / 2;
+        for (int i = 0; i < LITERAL_LINES; i++) {
+            size += (size_t)sprintf(text + size, made->line, i);
+        }
+        line += LITERAL_LINES;
+        const size_t lines = size;
+        size += (size_t)sprintf(text + size, "%s\n", made->close);
+        line += 2;
+        made->length = block == 1   ? size - 1 - made->from
+                       : block == 2 ? lines - made->from
+                       : block == 3 ? lines - 1 - made->from
+                                    : lines - made->from;
     }
-    size += (size_t)sprintf(text + size, "```\n\n<div>\n");
-    for (int i = 0; i < LITERAL_LINES; i++) {
-        size += (size_t)sprintf(text + size, "<i>%03d</i>\n", i);
-    }
-    size += (size_t)sprintf(text + size, "</div>\n");
     markdown_core_session *session;
     const markdown_core_document *document;
     if (markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) !=
@@ -421,29 +461,25 @@ static int case_literal(void) {
         /* One digit of a line in the middle of each block, which the edit's
          * reading leaps in. */
         const char digit = (char)('0' + round % 10);
-        const int32_t code_line = 2 + LITERAL_LINES / 2 + round % 7;
-        const int32_t html_line = LITERAL_LINES + 5 + LITERAL_LINES / 2 + round % 7;
-        const markdown_core_position code_at = {code_line, 8}, code_end = {code_line, 9};
-        const markdown_core_position html_at = {html_line, 6}, html_end = {html_line, 7};
-        if (markdown_core_session_edit(session, code_at, code_end, (const uint8_t *)&digit, 1, &document) !=
-                MARKDOWN_CORE_OK ||
-            markdown_core_session_edit(session, html_at, html_end, (const uint8_t *)&digit, 1, &document) !=
+        for (int block = 0; block < BLOCKS && !failed; block++) {
+            const int32_t at_line = blocks[block].middle + round % 7;
+            const markdown_core_position at = {at_line, blocks[block].column},
+                                         end = {at_line, blocks[block].column + 1};
+            if (markdown_core_session_edit(session, at, end, (const uint8_t *)&digit, 1, &document) !=
                 MARKDOWN_CORE_OK) {
-            fprintf(stderr, "concurrency: literal edit failed\n");
+                fprintf(stderr, "concurrency: literal edit failed\n");
+                failed = 1;
+            }
+        }
+        const markdown_core_nodes children = markdown_core_node_children(markdown_core_document_root(document));
+        if (failed || children.count != BLOCKS) {
+            fprintf(stderr, "concurrency: literal blocks %zu\n", children.count);
             failed = 1;
             break;
         }
-        const markdown_core_nodes blocks = markdown_core_node_children(markdown_core_document_root(document));
-        if (blocks.count != 2) {
-            fprintf(stderr, "concurrency: literal blocks %zu\n", blocks.count);
-            failed = 1;
-            break;
-        }
-        for (int code = 1; code >= 0 && !failed; code--) {
+        for (int block = 0; block < BLOCKS && !failed; block++) {
             /* What the block's lines hold now, from the session's text. */
-            const markdown_core_node *node = blocks.items[code ? 0 : 1];
-            const size_t from = code ? 4 : 4 + 9 * LITERAL_LINES + 5;
-            const size_t length = code ? 9 * LITERAL_LINES : 6 + 11 * LITERAL_LINES + 7;
+            const literal_block *made = &blocks[block];
             uint8_t *bytes = malloc(markdown_core_session_text_size(session));
             if (!bytes) {
                 failed = 1;
@@ -455,7 +491,7 @@ static int case_literal(void) {
             reader readers[THREAD_COUNT];
             thread_handle threads[THREAD_COUNT];
             for (int i = 0; i < THREAD_COUNT; i++) {
-                readers[i] = (reader){&start, node, code, {NULL, 0}, MARKDOWN_CORE_OK};
+                readers[i] = (reader){&start, children.items[block], made->way, {NULL, 0}, MARKDOWN_CORE_OK};
                 if (thread_spawn(&threads[i], reader_main, &readers[i])) {
                     fprintf(stderr, "concurrency: literal spawn failed\n");
                     exit(1);
@@ -465,10 +501,11 @@ static int case_literal(void) {
                 thread_join(threads[i]);
             }
             for (int i = 0; i < THREAD_COUNT && !failed; i++) {
-                if (readers[i].status != MARKDOWN_CORE_OK || readers[i].value.length != length ||
+                if (readers[i].status != MARKDOWN_CORE_OK || readers[i].value.length != made->length ||
                     readers[i].value.data != readers[0].value.data ||
-                    memcmp(readers[i].value.data, bytes + from, length) != 0) {
-                    fprintf(stderr, "concurrency: literal round %d block %d reader %d differs\n", round, code, i);
+                    memcmp(readers[i].value.data, bytes + made->from, made->length) != 0) {
+                    fprintf(stderr, "concurrency: literal round %d block %d reader %d differs (%zu vs %zu)\n", round,
+                            block, i, readers[i].value.length, made->length);
                     failed = 1;
                 }
             }
