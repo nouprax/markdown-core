@@ -1539,9 +1539,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void publish_relation_beg
  * 5.9). A node that continues none passes the old nodes whose anchors lie
  * before its source, which no later node, starting no earlier, holds. */
 /* The same within the old relation the frame pairs with now. */
-static const markdown_core_node *publish_match_in(const publish_edit *edit, publish_match_frame *owner,
-                                                  const markdown_core_node *node, markdown_core_place source,
-                                                  uint32_t *old_start, bool *ran) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const markdown_core_node *publish_match_in(
+    const publish_edit *edit, publish_match_frame *owner, const markdown_core_node *node, markdown_core_place source,
+    uint32_t *old_start, bool *ran) {
     uint32_t from = owner->old_source;
     *ran = false;
     for (markdown_core_node **slot = owner->old_item;; slot++) {
@@ -1594,21 +1594,17 @@ static bool old_relation_more(publish_match_frame *frame) {
     return true;
 }
 
-static const markdown_core_node *publish_match(const publish_edit *edit, publish_match_frame *owner,
-                                               const markdown_core_node *node, markdown_core_place source,
-                                               uint32_t *old_start) {
-    /* A relation that goes on in the old relations after it pairs with
-     * those too: once its old nodes are passed, and before, when none of
-     * them is continued and the node may hold an anchor past them, which
-     * passes those then. */
-    bool ran;
-    for (;;) {
+/* The same past the old relation in hand, `ran` when its old nodes ran
+ * out before the node's source (publish_match). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) const markdown_core_node *publish_match_more(const publish_edit *edit,
+                                                                                        publish_match_frame *owner,
+                                                                                        const markdown_core_node *node,
+                                                                                        markdown_core_place source,
+                                                                                        uint32_t *old_start, bool ran) {
+    while (owner->old_item == owner->old_end && old_relation_more(owner)) {
         const markdown_core_node *old = publish_match_in(edit, owner, node, source, old_start, &ran);
         if (old) {
             return old;
-        }
-        if (owner->old_item != owner->old_end || !old_relation_more(owner)) {
-            break;
         }
     }
     publish_match_frame ahead = *owner;
@@ -1620,6 +1616,21 @@ static const markdown_core_node *publish_match(const publish_edit *edit, publish
         }
     }
     return NULL;
+}
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const markdown_core_node *publish_match(
+    const publish_edit *edit, publish_match_frame *owner, const markdown_core_node *node, markdown_core_place source,
+    uint32_t *old_start) {
+    /* A relation that goes on in the old relations after it pairs with
+     * those too: once its old nodes are passed, and before, when none of
+     * them is continued and the node may hold an anchor past them, which
+     * passes those then. */
+    bool ran;
+    const markdown_core_node *old = publish_match_in(edit, owner, node, source, old_start, &ran);
+    if (old || !owner->old_relation.continues || (!ran && owner->old_item != owner->old_end)) {
+        return old;
+    }
+    return publish_match_more(edit, owner, node, source, old_start, ran);
 }
 
 /* The same among the records the last publish kept of `owner` (THE
