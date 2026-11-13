@@ -1354,120 +1354,125 @@ static void cursors_down(stem_cursor *heap, size_t count, size_t at) {
     }
 }
 
-/* The stem joins the queue of a pass marked `mark` unless the pass saw it
- * or it holds no heading. False when storage could not be had. */
-static bool stem_enqueue(markdown_core_heading_names *names, uint32_t **queue, size_t *count, size_t *room, uint32_t id,
-                         uint32_t mark) {
-    markdown_core_heading_stem *stem = stem_of(names, id);
-    if (stem->seen == mark || !stem_present(stem)) {
+/* A pass over the groups of the stems an edit touched (heading_rename):
+ * the heap of its stems' cursors, least place first, and the mark of the
+ * stems it holds. */
+typedef struct {
+    markdown_core_heading_state *state;
+    stem_cursor *heap;
+    size_t count, room;
+    uint32_t mark;
+} stem_heap;
+
+/* The cursor at the heap's `at` sifted up. */
+static void cursors_up(stem_cursor *heap, size_t at) {
+    while (at) {
+        const size_t parent = (at - 1) / 2;
+        if (heap[parent].place <= heap[at].place) {
+            return;
+        }
+        const stem_cursor swap = heap[at];
+        heap[at] = heap[parent];
+        heap[parent] = swap;
+        at = parent;
+    }
+}
+
+/* The stem `id` joins the pass from its first heading at or past `place`,
+ * trying the suffix past its last heading before that took one, unless the
+ * pass holds it or it holds no heading. False when storage could not be
+ * had. */
+static bool stem_join(stem_heap *pass, uint32_t id, size_t place) {
+    markdown_core_heading_state *state = pass->state;
+    markdown_core_heading_stem *stem = stem_of(state->names, id);
+    if (!stem->key || stem->seen == pass->mark) {
         return true;
     }
-    uint32_t *wider = markdown_core_reserve(*queue, room, *count + 1, sizeof(**queue));
+    stem->seen = pass->mark;
+    const size_t first = stem_before(state, stem, place);
+    if (first == stem_zipper_count(&stem->starts)) {
+        return true;
+    }
+    stem->suffix = 1;
+    for (size_t k = first; k > 0; k--) {
+        size_t at;
+        const markdown_core_heading_parse *heading = stem_member(state, stem, k - 1, &at);
+        if (heading->name_size != heading->base_size) {
+            stem->suffix = held_suffix(heading) + 1;
+            break;
+        }
+    }
+    stem_cursor *wider = markdown_core_reserve(pass->heap, &pass->room, pass->count + 1, sizeof(*wider));
     if (!wider) {
         return false;
     }
-    *queue = wider;
-    stem->seen = mark;
-    (*queue)[(*count)++] = id;
+    pass->heap = wider;
+    pass->heap[pass->count] = (stem_cursor){stem_place_of(state, stem, first), id, first};
+    cursors_up(pass->heap, pass->count++);
     return true;
 }
 
-/* The groups of the stems an edit touched, each a stem with its present
- * parent and children and theirs in turn, named again (THE NAMES AN EDIT
+/* The stem a name of `size` bytes is the base of, joining the pass from
+ * `place`, as the name was taken or let go there. */
+static inline bool name_join(stem_heap *pass, const unsigned char *name, bufsize_t size, size_t place) {
+    const uint32_t id = stem_find(pass->state->names, name, size);
+    return !id || stem_join(pass, id, place);
+}
+
+/* The parent of the stem `id` joins the pass from `place`. */
+static inline bool parent_join(stem_heap *pass, uint32_t id, size_t place) {
+    const markdown_core_heading_stem *stem = stem_of(pass->state->names, id);
+    const bufsize_t size = stem_parent(stem->key, stem->size);
+    return !size || name_join(pass, stem->key, size, place);
+}
+
+/* The groups of the stems an edit touched named again (THE NAMES AN EDIT
  * MOVES): their headings in order, each taking the first name of its
  * sequence that no anchor standing reserves and no heading before it
  * holds, past the suffixes its base's earlier headings tried. The pass
- * starts at the first heading of the groups the reading made, where the
- * rest point is, as those before it keep their names, unless an anchor the
- * edit made or let go names a stem of them, which moves the names of any:
- * then it starts at their first. It ends once every heading the reading
- * made is named and the headings named, with those the edit let go, took
- * the names they took before, stem by stem: the old headings after them
- * then take theirs again. A heading whose name stays keeps its bytes. */
+ * starts at the first heading of the stems the reading touched and of
+ * their parents, where the rest point is, as those before it keep their
+ * names, unless an anchor the edit made or let go names a stem of them,
+ * which moves the names of any: then it starts at their first. A stem
+ * joins it where a heading of the pass takes or lets go a name the stem is
+ * the base of, or the parent's where one of its headings takes or lets go
+ * its base: only a name binds two stems, so a group joins as its names
+ * move, and an edit beside one of many stems of one parent names few of
+ * them. It ends once every heading the reading made is named and the
+ * headings named, with those the edit let go, took the names they took
+ * before, stem by stem: the old headings after them then take theirs
+ * again. A heading whose name stays keeps its bytes. */
 static void heading_rename(name_pass *pass) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_heading_state *state = pass->state;
     markdown_core_heading_names *names = state->names;
-    const uint32_t mark = ++names->pass;
-    uint32_t *queue = names->touched_count ? markdown_core_alloc(names->touched_count, sizeof(*queue)) : NULL;
-    size_t count = 0, room = names->touched_count;
-    if (names->touched_count && !queue) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    for (size_t i = 0; i < names->touched_count; i++) {
-        const uint32_t id = names->touched[i];
-        markdown_core_heading_stem *stem = stem_of(names, id);
-        if (stem->key && stem->seen != mark) {
-            stem->seen = mark;
-            queue[count++] = id;
-        }
-    }
-    /* The group of each: a stem's present parent and children, and theirs. */
+    stem_heap heap = {.state = state, .mark = ++names->pass};
     bool whole = false;
-    for (size_t i = 0; i < count && !parser->error; i++) {
-        const markdown_core_heading_stem *stem = stem_of(names, queue[i]);
-        whole = whole || stem->anchored == mark;
-        const bufsize_t size = stem_parent(stem->key, stem->size);
-        const uint32_t parent = size ? stem_find(names, stem->key, size) : 0;
-        bool ok = !parent || stem_enqueue(names, &queue, &count, &room, parent, mark);
-        for (uint32_t next = stem->first; ok && next; next = stem_of(names, next)->next) {
-            ok = stem_enqueue(names, &queue, &count, &room, next, mark);
-        }
-        if (!ok) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
+    for (size_t i = 0; i < names->touched_count; i++) {
+        whole = whole || stem_of(names, names->touched[i])->anchored == heap.mark;
     }
     const size_t from = whole ? 0 : names->rest;
-    stem_cursor *heap = count ? markdown_core_alloc(count, sizeof(*heap)) : NULL;
     name_moves moves = {.scratch = MARKDOWN_CORE_BUF_INIT()};
-    if (parser->error || (count && (!heap || !markdown_core_key_index_init(&moves.index, 8)))) {
-        markdown_core_free(heap);
-        markdown_core_free(queue);
-        if (!parser->error) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-        return;
+    bool ok = markdown_core_key_index_init(&moves.index, 8);
+    for (size_t i = 0; ok && i < names->touched_count; i++) {
+        ok = stem_join(&heap, names->touched[i], from) && parent_join(&heap, names->touched[i], from);
     }
-    /* Each stem from its first heading at or past where the pass starts,
-     * trying the suffix past its last heading before that took one: the
-     * first, when it takes its base, is the only one that does not. */
-    size_t cursors = 0;
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_heading_stem *stem = stem_of(names, queue[i]);
-        const size_t first = stem_before(state, stem, from);
-        stem->suffix = 1;
-        for (size_t k = first; k > 0; k--) {
-            size_t at;
-            const markdown_core_heading_parse *heading = stem_member(state, stem, k - 1, &at);
-            if (heading->name_size != heading->base_size) {
-                stem->suffix = held_suffix(heading) + 1;
-                break;
-            }
-        }
-        if (first < stem_zipper_count(&stem->starts)) {
-            heap[cursors++] = (stem_cursor){stem_place_of(state, stem, first), queue[i], first};
-        }
-    }
-    markdown_core_free(queue);
-    for (size_t i = cursors; i-- > 0;) {
-        cursors_down(heap, cursors, i);
-    }
-    /* The names the edit let go, of the stems of these groups. */
-    bool ok = true;
+    /* The names the edit let go, of the stems of the pass, and the stems
+     * they are the bases of. */
     for (bufsize_t at = 0; ok && at < names->lost.size;) {
         uint32_t id, size;
         memcpy(&id, names->lost.ptr + at, sizeof(id));
         memcpy(&size, names->lost.ptr + at + sizeof(id), sizeof(size));
         at += (bufsize_t)(sizeof(id) + sizeof(size));
-        if (stem_of(names, id)->seen == mark) {
-            ok = name_move(&moves, id, names->lost.ptr + at, (bufsize_t)size, -1);
+        if (stem_of(names, id)->seen == heap.mark) {
+            ok = name_move(&moves, id, names->lost.ptr + at, (bufsize_t)size, -1) &&
+                 name_join(&heap, names->lost.ptr + at, (bufsize_t)size, from);
         }
         at += (bufsize_t)size;
     }
     markdown_core_strbuf *name = &pass->name;
-    while (ok && cursors && !parser->error) {
-        const stem_cursor cursor = heap[0];
+    while (ok && heap.count && !parser->error) {
+        const stem_cursor cursor = heap.heap[0];
         markdown_core_heading_stem *stem = stem_of(names, cursor.stem);
         size_t at;
         markdown_core_heading_parse *heading = stem_member(state, stem, cursor.next, &at);
@@ -1498,25 +1503,36 @@ static void heading_rename(name_pass *pass) {
         const bool same =
             !made && heading->name_size == name->size && memcmp(heading->name, name->ptr, (size_t)name->size) == 0;
         if (!same) {
-            ok = (made || name_move(&moves, cursor.stem, heading->name, heading->name_size, -1)) &&
-                 name_move(&moves, cursor.stem, name->ptr, name->size, 1);
+            /* The stems the old name and the new are the bases of join, and
+             * the parent when the heading takes or lets go its base. */
+            const bool based = made || heading->name_size == base;
+            ok =
+                (made ||
+                 (name_move(&moves, cursor.stem, heading->name, heading->name_size, -1) &&
+                  (heading->name_size == base || name_join(&heap, heading->name, heading->name_size, cursor.place)))) &&
+                name_move(&moves, cursor.stem, name->ptr, name->size, 1) &&
+                (name->size == base || name_join(&heap, name->ptr, name->size, cursor.place)) &&
+                (based == (name->size == base) || parent_join(&heap, cursor.stem, cursor.place));
         }
         if (!ok || !hand_name(pass, heading, base)) {
             ok = false;
             break;
         }
+        /* A stem that joined starts past the heading, which stays on top. */
+        assert(heap.heap[0].stem == cursor.stem && heap.heap[0].next == cursor.next);
         if (cursor.next + 1 < stem_zipper_count(&stem->starts)) {
-            heap[0] = (stem_cursor){stem_place_of(state, stem, cursor.next + 1), cursor.stem, cursor.next + 1};
+            heap.heap[0].place = stem_place_of(state, stem, cursor.next + 1);
+            heap.heap[0].next = cursor.next + 1;
         } else {
-            heap[0] = heap[--cursors];
+            heap.heap[0] = heap.heap[--heap.count];
         }
-        cursors_down(heap, cursors, 0);
+        cursors_down(heap.heap, heap.count, 0);
     }
     if (!ok && !parser->error) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     name_moves_free(&moves);
-    markdown_core_free(heap);
+    markdown_core_free(heap.heap);
 }
 
 /* An edit's headings named (THE NAMES AN EDIT MOVES): each the reading

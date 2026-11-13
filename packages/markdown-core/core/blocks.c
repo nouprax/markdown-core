@@ -2516,6 +2516,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_content_whole(mark
 
 static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count);
 static void S_uses_drop(markdown_core_edit *edit, size_t count);
+static void S_pane_owe(markdown_core_parser *parser, markdown_core_node *node);
 static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32_t past, bufsize_t start);
 
 /* The paragraph `node`, which an edit's reading reopened at a seam, lets go
@@ -2552,6 +2553,7 @@ void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_nod
         return;
     }
     S_seam_undo(parser, node);
+    S_pane_owe(parser, node);
     edit->leap->armed = false;
     edit->leap->node = NULL;
     parser->stream->settled.address = NULL;
@@ -2605,6 +2607,197 @@ static bool S_seam_stops(markdown_core_parser *parser, markdown_core_node *node)
 static inline void S_leap_unread(markdown_core_leap *leap) {
     if (leap->places) {
         leap->places->count = 0;
+    }
+}
+
+static uint32_t S_runs_find(const markdown_core_leap *leap, const markdown_core_node *block,
+                            const markdown_core_runs *runs, size_t head, size_t *start, size_t *own, bool now);
+static bool S_runs_lines(markdown_core_parser *parser, markdown_core_node *block);
+
+/* THE PANE. A paragraph in a block that holds blocks reads each line's own
+ * source past its holders' markers, so its content's places hold a place
+ * per line, and so would every read of it, every edit, however far from
+ * the edit the line is. The splice in such a paragraph wrote its runs, the
+ * own source of its lines, in place (THE RUNS OF A SPLICE), and it keeps
+ * them, rather than the places of length 0 they make (S_runs_lines), while
+ * its parse from a seam reads its content (THE SEAMS): the parse places its
+ * nodes in the content, and what reads where in the text a byte of it was
+ * read from -- a lookup's use (S_use_place), the seams the parse lists, and
+ * the publish of the nodes it made -- reads the places of a pane of the
+ * content only, from the start of the line the child before the seam ends
+ * on, made as the read would make them (S_read_content) from the marks the
+ * content's map held, its front's and its back's (THE BACK OF A
+ * PARAGRAPH), and its runs, up to where they are read. One place before the
+ * pane's stands for the content before it, which nothing reads. The
+ * paragraph keeps its runs, as the splice wrote them, and its next reopen
+ * finds its front's marks where the read left them (THE PREFIX OF A
+ * PARAGRAPH). Any other read of the paragraph's content first takes the
+ * places of its lines back (S_pane_owe). */
+static inline size_t S_pane_marks(const markdown_core_leap *leap) {
+    return (size_t)leap->map.count + (leap->apart ? leap->mark_count : 0);
+}
+
+static inline markdown_core_line_mark S_pane_mark(const markdown_core_parser *parser, const markdown_core_leap *leap,
+                                                  size_t index) {
+    return index < (size_t)leap->map.count ? parser->line_marks.values[leap->map.first + (bufsize_t)index]
+                                           : S_back_mark(leap, index - (size_t)leap->map.count);
+}
+
+/* Room in the pane for `more` places. False when storage could not be had. */
+static bool S_pane_room(markdown_core_leap *leap, size_t more) {
+    const size_t need = (leap->pane ? (size_t)leap->pane->count : 0) + more;
+    if (leap->pane && leap->pane_room >= need) {
+        return true;
+    }
+    const size_t room = 2 * need + 16;
+    markdown_core_places *pane = markdown_core_realloc(leap->pane, sizeof(*pane) + room * sizeof(*pane->items));
+    if (!pane) {
+        return false;
+    }
+    if (!leap->pane) {
+        pane->count = 0;
+    }
+    leap->pane = pane;
+    leap->pane_room = room;
+    return true;
+}
+
+/* The own source of the pane's runs that end before `start`, and of the
+ * run it lies in up to it, as the read adds it before a place. */
+static bool S_pane_own(markdown_core_leap *leap, const markdown_core_runs *runs, uint32_t start) {
+    while (leap->pane_run < runs->count && leap->pane_start + runs->items[leap->pane_run].span <= start) {
+        if (!S_pane_room(leap, 1)) {
+            return false;
+        }
+        const uint32_t from = (uint32_t)leap->pane_start, end = from + runs->items[leap->pane_run].span;
+        S_places_add_own(leap->pane, leap->pane_at > from ? leap->pane_at : from, end);
+        leap->pane_run++;
+        if (leap->pane_run < runs->count) {
+            leap->pane_start = (size_t)((int64_t)end + runs->items[leap->pane_run].lead);
+        }
+    }
+    if (leap->pane_run < runs->count && leap->pane_start <= start) {
+        const uint32_t from = (uint32_t)leap->pane_start;
+        S_places_add_own(leap->pane, leap->pane_at > from ? leap->pane_at : from, start);
+    }
+    return true;
+}
+
+/* The pane read on to content offset `to` of the paragraph `node`, or to
+ * its end and past its last run's end when `to` is the content's size. False,
+ * with the parse failed, when storage could not be had. */
+static bool S_pane_read(markdown_core_parser *parser, const markdown_core_node *node, uint32_t to) {
+    markdown_core_leap *leap = parser->stream->edit->leap;
+    const markdown_core_runs *runs = node->source.runs;
+    const size_t total = S_pane_marks(leap);
+    to = to < leap->pane_size ? to : leap->pane_size;
+    while (leap->pane_to < to) {
+        if (!S_pane_room(leap, 2)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return false;
+        }
+        const markdown_core_line_mark mark = S_pane_mark(parser, leap, leap->pane_mark);
+        const uint32_t from = leap->pane_to;
+        uint32_t next = leap->pane_size;
+        if (leap->pane_mark + 1 < total) {
+            const uint32_t after = (uint32_t)S_pane_mark(parser, leap, leap->pane_mark + 1).content_offset;
+            next = after < next ? after : next;
+        }
+        const uint32_t start = (uint32_t)(mark.source + ((bufsize_t)from - mark.content_offset) * mark.source_step);
+        const uint32_t stop =
+            start + (uint32_t)(((bufsize_t)next - (bufsize_t)from - 1) * mark.source_step + mark.source_width);
+        const uint32_t size = next - from;
+        leap->pane_to = next;
+        leap->pane_mark++;
+        markdown_core_places *places = leap->pane;
+        markdown_core_source_place *previous =
+            places->count > 1 && places->items[places->count - 1].length ? &places->items[places->count - 1] : NULL;
+        const bool continues = previous && previous->end == start && stop - start == size &&
+                               previous->end - previous->start == previous->length;
+        if (continues || (previous && start < previous->end)) {
+            previous->end = stop > previous->end ? stop : previous->end;
+            previous->length += size;
+            leap->pane_at = previous->end;
+            continue;
+        }
+        if (!S_pane_own(leap, runs, start)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return false;
+        }
+        places = leap->pane;
+        places->items[places->count++] = (markdown_core_source_place){start, stop, size};
+        leap->pane_at = stop;
+    }
+    if (to == leap->pane_size && !leap->pane_end) {
+        leap->pane_end = true;
+        if (!S_pane_own(leap, runs, UINT32_MAX)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return false;
+        }
+        leap->pane->content = leap->pane_size;
+    }
+    return true;
+}
+
+/* The paragraph `node`, whose parse reads `size` bytes of its content from
+ * the seam, reads it in a pane (THE PANE), when it keeps its runs and its
+ * map reads its content with the marks the leap keeps: the pane from the
+ * start of the line its content offset `from` is on. Whether it does. */
+static bool S_pane_open(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size, bufsize_t from) {
+    markdown_core_leap *leap = parser->stream->edit->leap;
+    const markdown_core_content_map map = node->content_map;
+    if (!leap->owed || leap->node != node || !(node->flags & MARKDOWN_CORE_NODE__PUBLISHED) || !node->source.runs ||
+        map.first != MARKDOWN_CORE_IDENTITY_MARK + 1 || map.offset || map.count <= 0 ||
+        (size_t)(map.first + map.count) != parser->line_marks.count ||
+        (leap->apart && (map.first != leap->apart_first || map.count != leap->apart_count)) || size <= 0 ||
+        !S_pane_room(leap, 1)) {
+        return false;
+    }
+    leap->map = map;
+    /* The last mark that starts at or before `from`, by halves. */
+    size_t low = 0, high = S_pane_marks(leap);
+    while (high - low > 1) {
+        const size_t middle = low + (high - low) / 2;
+        if (S_pane_mark(parser, leap, middle).content_offset <= from) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    const markdown_core_line_mark first = S_pane_mark(parser, leap, low);
+    size_t own;
+    leap->pane_run = S_runs_find(leap, node, node->source.runs, (size_t)first.source, &leap->pane_start, &own, true);
+    leap->pane_mark = low;
+    leap->pane_from = leap->pane_to = (uint32_t)first.content_offset;
+    leap->pane_size = (uint32_t)size;
+    leap->pane_at = (uint32_t)first.source;
+    leap->pane_end = false;
+    leap->pane->count = 1;
+    leap->pane->content = (uint32_t)size;
+    leap->pane->items[0] =
+        (markdown_core_source_place){(uint32_t)first.source, (uint32_t)first.source, leap->pane_from};
+    leap->paned = true;
+    /* The read's marks: those of the front stand for the next reopen (THE
+     * PREFIX OF A PARAGRAPH); the back keeps its own. */
+    leap->marked = (uint32_t)map.count;
+    leap->final = parser->line_marks.values[map.first + map.count - 1];
+    leap->base = parser->input.first_line;
+    node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
+    parser->stream->edit->use_root = NULL;
+    return true;
+}
+
+/* The paragraph `node`, which keeps the runs the splice wrote (THE PANE),
+ * reads its content in the own source of its lines from now on: it takes
+ * their places back. */
+static void S_pane_owe(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_leap *leap = parser->stream->edit ? parser->stream->edit->leap : NULL;
+    if (!leap || !leap->owed || leap->node != node) {
+        return;
+    }
+    leap->owed = false;
+    if (!S_runs_lines(parser, node)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 
@@ -2670,6 +2863,17 @@ static void S_seam_back(const markdown_core_parser *parser, const markdown_core_
 static void S_seam_read(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size) {
     markdown_core_leap *leap = parser->stream->edit->leap;
     if (node->content_map.first == MARKDOWN_CORE_IDENTITY_MARK) {
+        return;
+    }
+    /* A paragraph that keeps its runs reads in a pane from the line the
+     * child before the seam ends on (THE PANE). */
+    const bufsize_t ends = leap->seam.index ? leap->seam.offset - (bufsize_t)leap->seam.lead : 0;
+    if (S_pane_open(parser, node, size, ends > 0 ? ends - 1 : 0)) {
+        S_leap_unread(leap);
+        return;
+    }
+    S_pane_owe(parser, node);
+    if (parser->error) {
         return;
     }
     /* A read without the back's places reads its marks (THE BACK OF A
@@ -2747,10 +2951,13 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
         return;
     }
     if (!lists) {
+        S_pane_owe(parser, node);
         leap->armed = false;
         leap->node = NULL;
         stream->settled.address = NULL;
-        markdown_core_parse_inlines(parser, node, true);
+        if (!parser->error) {
+            markdown_core_parse_inlines(parser, node, true);
+        }
         return;
     }
     const bool stops = leap->kept && S_seam_stops(parser, node);
@@ -2842,6 +3049,11 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     const bool met = leap->stops.met;
     const uint32_t made = node->child_count;
     const markdown_core_seam stop = met ? leap->stops.items[leap->stops.count - 1] : (markdown_core_seam){0};
+    /* A paragraph that reads in a pane reads it on to where the children the
+     * parse made end, or to its end, as the publish reads them (THE PANE). */
+    if (leap->paned && !S_pane_read(parser, node, met ? (uint32_t)(leap->stops.end - stop.offset) : leap->pane_size)) {
+        return false;
+    }
     if (met) {
         node->child_count += leap->count;
         leap->spliced = made;
@@ -2858,28 +3070,35 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
         leap->seam_count = leap->back_count = 0;
         return true;
     }
-    const markdown_core_places *places = node->source.places;
+    const markdown_core_places *places = leap->paned ? leap->pane : node->source.places;
     if (!places || !places->count) {
         leap->seam_count = leap->back_count = 0;
         return true;
     }
-    /* The next reading of the paragraph reads on from these places (THE
-     * PREFIX OF A PARAGRAPH). */
-    const size_t bytes = sizeof(*places) + places->count * sizeof(*places->items);
-    markdown_core_places *copy = markdown_core_realloc(leap->places, bytes);
-    if (!copy) {
-        leap->seam_count = leap->back_count = 0;
-        return false;
-    }
-    memcpy(copy, places, bytes);
-    leap->places = copy;
     uint32_t place = leap->seam.place, read = leap->seam.read;
+    if (leap->paned) {
+        /* The pane's places are read from its first, and the next reading
+         * reads them again (THE PANE). */
+        S_leap_unread(leap);
+        place = read = 0;
+    } else {
+        /* The next reading of the paragraph reads on from these places
+         * (THE PREFIX OF A PARAGRAPH). */
+        const size_t bytes = sizeof(*places) + places->count * sizeof(*places->items);
+        markdown_core_places *copy = markdown_core_realloc(leap->places, bytes);
+        if (!copy) {
+            leap->seam_count = leap->back_count = 0;
+            return false;
+        }
+        memcpy(copy, places, bytes);
+        leap->places = copy;
+    }
     /* Where the place of the seam the parse began at starts in the content:
      * the place starts where its source does, as it copies it. A seam the
      * back held measures it from the paragraph's ends, which a place that
      * reads across an edit's splice does not keep, so it is found again;
      * past a place that does not copy its source, the seams go. */
-    if (leap->seam.index) {
+    if (leap->seam.index && !leap->paned) {
         const markdown_core_source_place *by = place < places->count ? &places->items[place] : NULL;
         const uint32_t past = (uint32_t)(leap->seam.offset - leap->seam.lead);
         const uint32_t source = (uint32_t)node->place.start + leap->seam.source;
@@ -3000,7 +3219,10 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_pa
         S_seam_parse(parser, node);
         return;
     }
-    if (!S_content_whole(parser, node)) {
+    if (edit) {
+        S_pane_owe(parser, node);
+    }
+    if (parser->error || !S_content_whole(parser, node)) {
         return;
     }
     const bufsize_t size = S_content_bytes(node);
@@ -3042,6 +3264,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdow
     if (settles || parser->stream->settled.address == node) {
         S_parse_settled(parser, node, settles);
     } else if (S_content_whole(parser, node)) {
+        /* A paragraph that keeps its runs takes its lines' places back
+         * (THE PANE). */
+        if (parser->apart) {
+            S_pane_owe(parser, node);
+        }
         markdown_core_parse_inlines(parser, node, true);
     }
 }
@@ -3645,6 +3872,14 @@ MARKDOWN_CORE_ZIPPER_OPS(S_uses, markdown_core_use_zipper, markdown_core_use, S_
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at) {
     markdown_core_edit *edit = parser->stream->edit;
     const markdown_core_places *places = root->source.places;
+    /* A paragraph that reads in a pane reads the lookup's place there (THE
+     * PANE). */
+    if (edit->leap && edit->leap->paned && edit->leap->node == root) {
+        if (!S_pane_read(parser, root, at + 1)) {
+            return root->place.start;
+        }
+        places = edit->leap->pane;
+    }
     if (!places || !places->count) {
         return root->place.start;
     }
@@ -5036,14 +5271,14 @@ static bool S_leap_aside(markdown_core_leap *leap, markdown_core_strbuf *content
 /* The first of the runs `runs` of the block `block` that does not end
  * before `head`, where it starts, `*start`, and the bytes of own source the
  * runs before it hold, `*own`: found from the pin the last splice in the
- * block left, when the edit before this one's left it and nothing wrote the
- * runs since, which only a publish read, or from the first (THE RUNS OF A
- * SPLICE). */
+ * block left, when the edit before this one's left it, or this one's when
+ * `now`, and nothing wrote the runs since, which only a publish read, or
+ * from the first (THE RUNS OF A SPLICE). */
 static uint32_t S_runs_find(const markdown_core_leap *leap, const markdown_core_node *block,
-                            const markdown_core_runs *runs, size_t head, size_t *start, size_t *own) {
+                            const markdown_core_runs *runs, size_t head, size_t *start, size_t *own, bool now) {
     uint32_t i = 0;
     size_t at = block->place.start, before = 0;
-    if (leap->pin_round + 1 == leap->round && leap->pin_node == block && leap->pin_list == runs &&
+    if (leap->pin_round + (now ? 0 : 1) == leap->round && leap->pin_node == block && leap->pin_list == runs &&
         leap->pin_count == runs->count && leap->pin_index < runs->count) {
         i = leap->pin_index;
         at += leap->pin_start;
@@ -5200,6 +5435,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->leap->prose = false;
         stream->edit->leap->round++;
         stream->edit->leap->armed = false;
+        stream->edit->leap->owed = stream->edit->leap->paned = false;
     }
     if (depth && !S_chain_keep(parser, stream->edit, root, path, places, depth)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -5770,9 +6006,10 @@ static bool S_nest_mend(markdown_core_parser *parser, size_t level, uint32_t fir
  * of the input, and all that follows it (THE NESTED SPLICE): the block
  * takes its own back after the reading's children, and each block above
  * it all of its own, which no reading wrote over. Each folds them as they
- * would fold one after another (S_fold_old). False, with the parse failed,
- * when storage could not be had. */
-static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index) {
+ * would fold one after another (S_fold_old). What the document lists of the
+ * old text before `point`, `start` or past it, its reading listed again.
+ * False, with the parse failed, when storage could not be had. */
+static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index, size_t point) {
     markdown_core_edit *edit = parser->stream->edit;
     const int64_t delta = edit->delta;
     const size_t taken = edit->nest_level;
@@ -5811,7 +6048,7 @@ static bool S_splice_in(markdown_core_parser *parser, size_t start, size_t index
         parser->at.current = level ? edit->chain[level - 1] : parser->root;
         parser->at.pending = block;
     }
-    if (!S_splice(parser, start, index, start)) {
+    if (!S_splice(parser, start, index, point)) {
         return false;
     }
     /* The close of the root's child, as its old reading noted it. */
@@ -6100,7 +6337,7 @@ static bool S_leap_runs(markdown_core_parser *parser, markdown_core_node *block,
      * reading began at to the first that starts past `old`. No run outside
      * it touches what it holds. */
     size_t low_start, low_own;
-    const uint32_t low = S_runs_find(leap, block, runs, head, &low_start, &low_own);
+    const uint32_t low = S_runs_find(leap, block, runs, head, &low_start, &low_own, false);
     uint32_t past = count;
     size_t at = low_start, past_start = 0;
     for (uint32_t i = low; i < count; i++) {
@@ -6340,11 +6577,16 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     if (structure && structure->element->edit && structure->element->edit->spliced) {
         structure->element->edit->spliced(structure, parser, block);
     }
+    /* A paragraph keeps the runs, which its parse reads its content's own
+     * source from (THE PANE); a block of another kind its paragraph's line
+     * made reads its lines' places. */
+    const bool paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
     if (nested && (!S_leap_runs(parser, block, runs, (size_t)((int64_t)start - delta), index) ||
-                   (leap->prose && !S_runs_lines(parser, block)))) {
+                   (leap->prose && !paragraph && !S_runs_lines(parser, block)))) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
+    leap->owed = nested && leap->prose && paragraph;
     parser->at.current = parent;
     parser->at.pending = block;
     /* A paragraph that meets no seam of its old tail parses its content on
@@ -6359,7 +6601,9 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
         edit->nest_level = leaf - 1;
         edit->nest_index = 0;
         edit->nest_prior = edit->ends[leaf];
-        return S_splice_in(parser, start, index);
+        /* The leaf's parse lists again what it lists, to its end: its
+         * inline notes, where they are. */
+        return S_splice_in(parser, start, index, (size_t)((int64_t)edit->ends[leaf] + delta));
     }
     /* The paragraph's parse lists again what it lists, past the line too:
      * its inline notes, where they are. */
@@ -6447,7 +6691,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
     }
     if (edit->nest_on ? S_resumes_in(parser, start, index) : S_resumes(parser, start)) {
         if (edit->nest_on) {
-            S_splice_in(parser, start, index);
+            S_splice_in(parser, start, index, start);
         } else {
             S_splice(parser, start, index, start);
         }
@@ -7168,6 +7412,7 @@ static void S_release_stream(markdown_core_parser *parser) {
             markdown_core_free(stream->edit->leap->seams);
             markdown_core_free(stream->edit->leap->backs);
             markdown_core_free(stream->edit->leap->places);
+            markdown_core_free(stream->edit->leap->pane);
             markdown_core_free(stream->edit->leap->marks);
             markdown_core_free(stream->edit->leap->settle.starts);
             markdown_core_free(stream->edit->leap->settle.notes);

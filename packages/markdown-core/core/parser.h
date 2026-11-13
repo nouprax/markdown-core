@@ -794,6 +794,21 @@ typedef struct markdown_core_leap {
     markdown_core_line_mark shift;
     bufsize_t cut, apart_first, apart_count;
     bool apart;
+    /* THE PANE (blocks.c): a paragraph in a block that holds blocks, whose
+     * runs the splice wrote (THE RUNS OF A SPLICE), keeps them, `owed` its
+     * line places while it does; and its parse from a seam reads its content
+     * with places only of a pane of it, `pane`, while `paned`: from content
+     * offset `pane_from`, after one place that stands for the content
+     * before, up to `pane_to`, of the `pane_size` bytes the parse reads,
+     * the content marks `map` held before the read, from the mark
+     * `pane_mark` of them on, the last place ending at `pane_at`, its own
+     * source from the run `pane_run`, which starts at `pane_start`, on;
+     * `pane_end` once it holds the content's end and the runs after it. */
+    bool owed, paned, pane_end;
+    markdown_core_content_map map;
+    markdown_core_places *pane;
+    size_t pane_room, pane_mark, pane_start;
+    uint32_t pane_from, pane_to, pane_size, pane_at, pane_run;
 } markdown_core_leap;
 
 /* THE OLD TAIL IN PLACE (blocks.c, seam.h): a holder's old tail, `held`
