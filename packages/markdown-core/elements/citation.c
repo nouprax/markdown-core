@@ -114,8 +114,7 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
             }
             bufsize_t saved = inline_state->pos;
             inline_state->pos = run;
-            opaque_end =
-                markdown_core_inline_scan_to_closing_backticks(self->peers[CITATION_CODE], inline_state, run - at);
+            opaque_end = markdown_core_inline_scan_backticks(&index->ticks, inline_state, run - at);
             inline_state->pos = saved;
             if (!opaque_end) {
                 opaque_end = run;
@@ -986,6 +985,7 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     markdown_core_citation_run *run = markdown_core_run_state(inline_state, self);
     markdown_core_inline_free_citation_tokens(inline_state, &run->tokens);
     markdown_core_free(run->braces.entries);
+    markdown_core_backticks_free(&run->braces.ticks);
     run->braces = (citation_brace_index){0};
 }
 

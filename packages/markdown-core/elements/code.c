@@ -27,24 +27,18 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_
 // parsed).  Return 0 if you don't find matching closing
 // backticks, otherwise return the position in the inline state
 // after the closing backticks.
-/* ONE RUN'S BACKTICK INDEX (the code element's run record): the
- * last position of a run of each length up to `capacity`, recorded as the
- * first scan for a closer passes it, and whether a scan has reached the end
- * of the run, after which a length whose last run lies behind the cursor has
- * no closer. Allocated when a run first looks for a closer. */
-typedef struct {
-    bufsize_t *positions;
-    bufsize_t capacity;
-    bool scanned;
-} code_backticks;
-
 // Assumes that the inline state has a backtick at the current position.
 /* `code` is the code element's instance: the positions the scan indexes are
  * its run record, which another element's scan shares. */
 bufsize_t markdown_core_inline_scan_to_closing_backticks(const markdown_core_element_instance *code,
                                                          markdown_core_inline_state *inline_state,
                                                          bufsize_t openticklength) {
-    code_backticks *backticks = markdown_core_run_state(inline_state, code);
+    return markdown_core_inline_scan_backticks(markdown_core_run_state(inline_state, code), inline_state,
+                                               openticklength);
+}
+
+bufsize_t markdown_core_inline_scan_backticks(markdown_core_backticks *backticks,
+                                              markdown_core_inline_state *inline_state, bufsize_t openticklength) {
 
     bool found = false;
     if (openticklength > MAXBACKTICKS) {
@@ -179,10 +173,13 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
                                  markdown_core_inline_state *inline_state) {
     return character == '`' ? handle_backticks(self, inline_state) : NULL;
 }
-static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
-    code_backticks *backticks = markdown_core_run_state(inline_state, self);
+void markdown_core_backticks_free(markdown_core_backticks *backticks) {
     markdown_core_free(backticks->positions);
-    backticks->positions = NULL;
+    *backticks = (markdown_core_backticks){0};
+}
+
+static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    markdown_core_backticks_free(markdown_core_run_state(inline_state, self));
 }
 
 /* THE PARTS OF A CODE SPAN (parts.h): its literal, the bytes between its
@@ -236,7 +233,7 @@ static const markdown_core_inline_ops CODE_INLINES = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
-    .run_state_size = sizeof(code_backticks),
+    .run_state_size = sizeof(markdown_core_backticks),
     .name = "code",
     .inlines = &CODE_INLINES,
 };
