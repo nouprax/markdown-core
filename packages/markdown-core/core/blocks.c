@@ -961,7 +961,8 @@ static inline markdown_core_line_mark S_back_mark(const markdown_core_leap *leap
     return mark;
 }
 
-static bool S_leap_join_marks(markdown_core_parser *parser, markdown_core_node *node);
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_leap_join_marks(markdown_core_parser *parser,
+                                                                  markdown_core_node *node);
 
 /* The mark of `map` that reads content offset `offset` of its own, past
  * those it holds, from the back of the paragraph whose map it is (THE BACK
@@ -2498,7 +2499,8 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
 /* The content of `node` whole, its parts joined when it keeps them apart
  * (THE BACK OF A PARAGRAPH). False, with the parse failed, when storage
  * could not be had. */
-static bool S_content_whole(markdown_core_parser *parser, markdown_core_node *node) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_content_whole(markdown_core_parser *parser,
+                                                                            markdown_core_node *node) {
     if (!S_leap_join_marks(parser, node)) {
         return false;
     }
@@ -5895,7 +5897,8 @@ static void S_leap_apart(markdown_core_parser *parser, markdown_core_node *block
 /* The marks of the content's back the leap keeps (THE BACK OF A PARAGRAPH)
  * join the map of `node`, the paragraph's, after its front's. False, with
  * the parse failed, when storage could not be had. */
-static bool S_leap_join_marks(markdown_core_parser *parser, markdown_core_node *node) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_leap_join_marks(markdown_core_parser *parser,
+                                                                  markdown_core_node *node) {
     markdown_core_leap *leap = parser->stream->edit ? parser->stream->edit->leap : NULL;
     if (!leap || !leap->apart || leap->marked || node->content_map.first != leap->apart_first ||
         node->content_map.count != leap->apart_count) {
