@@ -8835,7 +8835,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_opener(markdown_core_par
         return;
     }
     markdown_core_parser_reach_shut(parser, lookahead->opener, start);
-    if (lookahead->line > lookahead->saved.line_number + 2) {
+    if (lookahead->line > lookahead->saved.line_number + 2 && !lookahead->opener->element->edit->shuts) {
         S_reach_lookahead(parser, lookahead);
     }
 }

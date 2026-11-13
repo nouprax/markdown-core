@@ -1137,6 +1137,27 @@ static bool session_stops(const markdown_core_session *session, size_t line, siz
     return found;
 }
 
+/* THE CLOSER AN EDIT WRITES (element.h, the edit's `shuts`): a rest point
+ * in a child of the root whose opener found its closer, the child's last
+ * line, decided only that it found one, which an edit that ends at `to` on
+ * or past the start of that line may undo: the edit reads from before the
+ * child, and so does a look, `to` SIZE_MAX, whose text ends before it. */
+static bool session_shut(const markdown_core_session *session, const session_rest_point *rest, size_t to) {
+    if (rest->depth != 1) {
+        return false;
+    }
+    const markdown_core_element_instance *structure =
+        markdown_core_parser_block_kind(session->committed, rest->chain[0])->structure;
+    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
+    /* A block another opener read (element.h, THE FORMER KIND) found no
+     * closer of the element's. */
+    if (!ops || !ops->shuts || (ops->former && ops->former(structure, rest->chain[0]) != MARKDOWN_CORE_NODE_NONE)) {
+        return false;
+    }
+    const size_t end = widths_end(&session->edits->widths, session->document.root, rest->path[0]);
+    return to >= session_line_start(session, markdown_core_parser_line_of(session->committed, end - 1));
+}
+
 markdown_core_status markdown_core_session_edit(markdown_core_session *session, markdown_core_position start,
                                                 markdown_core_position end, const uint8_t *text, size_t length,
                                                 const markdown_core_document **document) {
@@ -1165,6 +1186,10 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     session_rest_point rest;
     rest.prose = true;
     if (!session_rest(session, (size_t)start.line - 1, &child, &line, &rest)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (session_shut(session, &rest, to) &&
+        !session_rest(session, markdown_core_parser_line_of(session->committed, rest.starts[0]), &child, &line, &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     size_t rest_start, rest_end;
@@ -1296,6 +1321,13 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
     rest.prose = false;
     session_look look = {.session = session, .rest = &rest};
     if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    /* The text before the cursor holds no closer past it: a block whose
+     * opener found one there is no such block to it. */
+    if (session_shut(session, &rest, SIZE_MAX) &&
+        !session_rest(session, markdown_core_parser_line_of(session->committed, rest.starts[0]), &look.child,
+                      &look.line, &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     /* The text before the cursor ends in the cursor's line cut there, which

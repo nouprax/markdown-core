@@ -319,10 +319,13 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         if (record.structure) {
             const markdown_core_content_ops *content = S_content_of(structure);
             const markdown_core_line_ops *lines = S_lines_of(structure);
+            /* Lines are a block's content: an element's inline kinds take
+             * none, whatever its blocks take. */
+            const bool block = index < MARKDOWN_CORE_NODE_KIND_COUNT;
             record.flags = (uint16_t)((content->inlines ? MARKDOWN_CORE_KIND_INLINES : 0) |
                                       (content->holds_inlines ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
                                       (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
-                                      (content->mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
+                                      (block && content->mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
                                       (content->holds_lines ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
                                       (content->mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
                                       (content->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |

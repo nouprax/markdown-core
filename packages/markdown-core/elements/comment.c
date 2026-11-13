@@ -155,8 +155,11 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
         return NULL;
     }
     markdown_core_node_set_element(node, self->element);
-    /* The fence line is the block's marker and no part of its literal. */
-    markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
+    /* The rest of the fence line, spaces and its ending, is the first line
+     * of the block's content, as a fence's rest is a code block's (blocks.c,
+     * THE LEAP), and no part of its literal. */
+    markdown_core_parser_advance_offset(parser, (char *)input, first_nonspace + 2 - markdown_core_parser_get_offset(parser),
+                                        false);
     return node;
 }
 
@@ -216,10 +219,6 @@ static int block_matches(const markdown_core_element_instance *self, markdown_co
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
     return 1;
-}
-
-static int comment_accepts_lines(const markdown_core_element *element, markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK;
 }
 
 /* One closer unit: `%%` closes; any other byte is one byte of body. */
@@ -312,12 +311,13 @@ static bool comment_revert(const markdown_core_element_instance *self, markdown_
 
 static const markdown_core_edit_ops COMMENT_EDIT = {
     .stops = comment_stops,
+    .shuts = true,
     .former = comment_former,
     .revert = comment_revert,
 };
 
 static const markdown_core_content_ops COMMENT_CONTENT = {
-    .holds_lines = comment_accepts_lines,
+    .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
 static const markdown_core_inline_ops COMMENT_INLINES = {
@@ -366,8 +366,18 @@ static bufsize_t S_comment_open(const markdown_core_strbuf *content) {
     return open;
 }
 
+/* Where the body of a `%%` block's content starts: past its first line,
+ * the rest of its fence line, spaces and its line ending. */
+static bufsize_t S_percent_open(const markdown_core_strbuf *content) {
+    bufsize_t open = S_comment_open(content);
+    open += open < content->size && markdown_core_strbuf_at(content, open) == '\r';
+    open += open < content->size && markdown_core_strbuf_at(content, open) == '\n';
+    return open;
+}
+
 bufsize_t markdown_core_comment_block_start(const markdown_core_node *node) {
-    return S_comment_open(&node->content) + 4;
+    return node->flags & MARKDOWN_CORE_NODE__COMMENT_HTML ? S_comment_open(&node->content) + 4
+                                                          : S_percent_open(&node->content);
 }
 
 /* The byte at `at` of a content in its two parts (markdown_core_strbuf_span),
@@ -490,14 +500,14 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
     (void)parser;
     (void)parent;
     /* O3: a `%%` block comment arrives here with its lines in `content`:
-     * the opener line contributed nothing, because the element that
-     * opened it consumed the line, and the closer line is not there,
-     * because its matcher closed the block before the line could be
-     * added. The literal is the view of those lines, indentation and line
-     * endings as written after container-prefix removal. An HTML block
-     * comment never takes this arm: it is closed as the HTML block it was
-     * parsed as and becomes a CommentBlock there. */
-    *b->as.literal = (markdown_core_chunk){b->content.ptr, b->content.size, 0};
+     * the first is the rest of its fence line, and the closer line is not
+     * there, because its matcher closed the block before the line could be
+     * added. The literal is the view of the lines after the first,
+     * indentation and line endings as written after container-prefix
+     * removal, lazy as a literal block's (node.h, A LITERAL, LAZY). An HTML
+     * block comment never takes this arm: it is closed as the HTML block it
+     * was parsed as and becomes a CommentBlock there. */
+    markdown_core_literal_set(b, b->as.literal, S_percent_open(&b->content), b->content.size);
     return true;
 }
 

@@ -610,6 +610,15 @@ typedef struct markdown_core_edit_ops {
      * opener (markdown_core_parser_reach_open), and not what it read. NULL
      * for an element whose readings note what they read. */
     bool (*stops)(const markdown_core_element_instance *, const unsigned char *line, size_t length);
+    /* A reading from an opener in the document's root that found its stop
+     * line, the closer of the block it opens, decided only that it found
+     * one: the lines before it are the block's whatever they are, and the
+     * block reads them to that line as the reading did. It notes neither
+     * what it read nor its opener (blocks.c, AN OPENER READ TO THE END),
+     * and an edit of a later line of the block than its first leaps in it
+     * (THE LEAP) unless the edit writes its last, the closer (session.c,
+     * session_shut). */
+    bool shuts;
     /* A block of literal lines an edit's reading closes as its old reading
      * did, at an old line of its own (blocks.c, THE SPLICE IN A BLOCK): it
      * takes its old flags back, and the element its own state at that
