@@ -435,7 +435,7 @@ bool markdown_core_block_reference_definitions_whole(markdown_core_parser *parse
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     bool whole = chunk.len > 0;
     while (whole && chunk.len) {
-        reference_definition definition;
+        reference_definition definition = {0};
         const bufsize_t length = chunk.data[0] == '[' ? S_reference_definition(&chunk, &attributes, &definition) : 0;
         if (length) {
             markdown_core_attributes_free(&definition.value);
