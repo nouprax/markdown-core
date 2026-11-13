@@ -766,7 +766,8 @@ static markdown_core_node_type formula_former(const markdown_core_element_instan
 /* The fence it was, whose info string names a formula, as its opening left
  * it, which its completion promotes again (markdown_core_formula_promote_fence). */
 static bool formula_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent) {
+                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
+    (void)kept;
     const node_formula *formula = get_formula(node);
     const markdown_core_code fence = {.literal_start = formula->head,
                                       .fence_length = formula->fence_size,

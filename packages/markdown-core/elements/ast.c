@@ -237,14 +237,14 @@ static inline bool table_seal(markdown_core_parser *parser, definition_table *ta
 
 /* The children of `holder`, or no nodes when it is NULL. */
 static bool relation_children(markdown_core_relation *relation, const char *group, const markdown_core_node *holder) {
-    *relation = holder ? (markdown_core_relation){group, holder->children, holder->child_count, false, holder}
-                       : (markdown_core_relation){group, NULL, 0, false, NULL};
+    *relation = holder ? (markdown_core_relation){group, holder->children, holder->child_count, false, false, holder}
+                       : (markdown_core_relation){group, NULL, 0, false, false, NULL};
     return true;
 }
 
 /* The node the owner's field `slot` holds. */
 static bool relation_one(markdown_core_relation *relation, markdown_core_node **slot) {
-    *relation = (markdown_core_relation){NULL, slot, 1, false, NULL};
+    *relation = (markdown_core_relation){NULL, slot, 1, false, false, NULL};
     return true;
 }
 
@@ -364,7 +364,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
         /* A table's rows, in head then content order, are its children, which
          * a table always has: each group is a slice of them. */
         const uint32_t count = step == 0 ? table->head_count : (uint32_t)node->child_count - table->head_count;
-        *relation = (markdown_core_relation){table_groups[step], node->children + cursor->index, count, step > 0, node};
+        *relation = (markdown_core_relation){table_groups[step], node->children + cursor->index, count, step > 0,
+                                             step > 0, node};
         cursor->index += count;
         *more = step < 1;
         return true;
@@ -409,7 +410,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
         return step == 2 && relation_children(relation, "CitationSuffix", citation->suffix);
     }
     case SHAPE_DEFINITION: {
-        /* The term, then each body, a child of the definition. */
+        /* The term, then each body, a child of the definition: the bodies
+         * are one relation in groups, each continuing the one before, as a
+         * table's rows are, so a body's nodes lead from where the bodies
+         * before end and an edit of one moves none after it. */
         if (step == 0) {
             *more = node->child_count > 0;
             return relation_children(relation, "DefinitionTerm", node->as.definition->term);
@@ -419,7 +423,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
         }
         const markdown_core_node *body = node->children[cursor->index++];
         *more = cursor->index < node->child_count;
-        return relation_children(relation, "DefinitionBody", body);
+        relation_children(relation, "DefinitionBody", body);
+        relation->continues = cursor->index > 1;
+        return true;
     }
     case SHAPE_CHILDREN:
         *more = false;
@@ -1229,6 +1235,9 @@ typedef struct {
     uint32_t relation_final, relation_settled;
     uint8_t old, decided, relation_decided, relation_under;
     bool persists, published, keeps, committed;
+    /* A definition's walk stepped past the FINAL bodies before its next
+     * (publish_final_bodies), which that one goes on from. */
+    bool skips;
 } publish_match_frame;
 
 /* The field of the relation a cursor stepped to last, which names it from
@@ -1247,13 +1256,13 @@ static void old_relation_next(publish_match_frame *frame) {
 }
 
 /* Pairs the new node's relation `field` with the old node's: a relation the
- * old node lacks pairs with no old nodes. A relation that goes on from the
- * one before is one relation with it, on both sides: its nodes follow the
- * ones before in the same storage, so the old relation paired with the first
- * holds the old nodes of those that go on from it too, and one that goes on
+ * old node lacks pairs with no old nodes. A relation that shares the
+ * storage of the one before is one relation with it, on both sides: its
+ * nodes follow the ones before, so the old relation paired with the first
+ * holds the old nodes of those that share it too, and one that shares it
  * pairs with nothing new. */
-static void publish_pair(publish_match_frame *frame, int field, bool continues) {
-    if (continues) {
+static void publish_pair(publish_match_frame *frame, int field, bool shares) {
+    if (shares) {
         return;
     }
     while (frame->old_field < field) {
@@ -1267,7 +1276,7 @@ static void publish_pair(publish_match_frame *frame, int field, bool continues) 
     size_t count = frame->old_relation.count;
     frame->old_source = frame->old_start;
     old_relation_next(frame);
-    while (frame->old_field != INT_MAX && frame->old_relation.continues) {
+    while (frame->old_field != INT_MAX && frame->old_relation.shares) {
         count += frame->old_relation.count;
         old_relation_next(frame);
     }
@@ -1358,6 +1367,23 @@ static inline uint32_t publish_final_bodies(const markdown_core_node *node) {
     return at;
 }
 
+/* The body a definition's walk goes on to past its FINAL bodies goes on
+ * from where the last of their nodes ends, which the walk did not read, or,
+ * when they hold none, from where the definition starts, as the first
+ * body's relation does (relations_next). */
+static void publish_skip_bodies(const publish_match_frame *frame, publish_relation *hand) {
+    const markdown_core_node *node = frame->node;
+    for (size_t at = frame->walk.cursor.index - 1; at; at--) {
+        const markdown_core_node *body = node->children[at - 1];
+        if (body->child_count) {
+            hand->anchor = hand->source = body->children[body->child_count - 1]->place.end;
+            return;
+        }
+    }
+    hand->anchor = frame->walk.start;
+    hand->source = frame->walk.source_start;
+}
+
 /* The decided content of a node a holder's entry `holds` judges, the child
  * at `index` of the holder's children, and its entry `*entry` when it is a
  * holder too (A NODE PUBLISHED IN PLACE). */
@@ -1434,9 +1460,9 @@ static void publish_relation_decided(const markdown_core_parser *parser, publish
  * before, and a definition's body FINAL when it is COMMITTED and DECIDED. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void publish_relation_begin(
     const markdown_core_parser *parser, const content_places *places, publish_match_frame *frame,
-    publish_relation *hand, const markdown_core_node *holder, relation_shape shape, bool continues) {
+    publish_relation *hand, const markdown_core_node *holder, relation_shape shape, bool shares) {
     frame->holder = holder;
-    if (!continues) {
+    if (!shares) {
         frame->field = shape == SHAPE_CHILDREN ? 0 : relation_field(&frame->walk.cursor);
     }
     publish_relation_decided(parser, frame, holder, shape, hand->item, hand->end);
@@ -1809,8 +1835,10 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             frame->record = held;
             hand = first;
             publish_enter(&frame->walk, &placed, &hand, content);
+            frame->skips = false;
             if (published && shape == SHAPE_DEFINITION) {
                 frame->walk.cursor.index = publish_final_bodies(node);
+                frame->skips = frame->walk.cursor.index > 0;
                 assert(old_entries == OLD_RECORDS || !frame->walk.cursor.index);
             }
             if (old) {
@@ -1825,15 +1853,19 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
                 markdown_core_relation relation;
                 if (frame->walk.more && relations_next(&frame->walk.cursor, &relation, &frame->walk.more)) {
                     hand = publish_next(&frame->walk, &hand, &relation);
+                    if (frame->skips && relation.continues) {
+                        publish_skip_bodies(frame, &hand);
+                    }
+                    frame->skips = false;
                     /* A root's later relations are not its content. */
                     if (frame->walk.root) {
                         frame->walk.root = frame->walk.content = false;
                     }
                     if (frame->old == OLD_LIVE) {
-                        publish_pair(frame, relation_field(&frame->walk.cursor), relation.continues);
+                        publish_pair(frame, relation_field(&frame->walk.cursor), relation.shares);
                     }
                     publish_relation_begin(parser, &walk->places, frame, &hand, relation.holder,
-                                           (relation_shape)frame->walk.cursor.shape, relation.continues);
+                                           (relation_shape)frame->walk.cursor.shape, relation.shares);
                     continue;
                 }
                 if (--count) {
@@ -3307,6 +3339,22 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
     if (final) {
         root->children[final - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
+    return true;
+}
+
+bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_core_node *block) {
+    markdown_core_committed_tables *committed = parser->stream->committed;
+    if (!committed) {
+        return true;
+    }
+    for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        const markdown_core_listed_zipper *zipper = &committed->starts[table];
+        if (zipper->back_count && zipper->back[zipper->back_count - 1].node == block &&
+            !committed_cut(committed, &parser->roster, table, 1)) {
+            return false;
+        }
+    }
+    committed_check(committed);
     return true;
 }
 

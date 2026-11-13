@@ -1927,6 +1927,80 @@ static int continue_heading(const markdown_core_element_instance *self, markdown
     return 0;
 }
 
+/* A setext heading read its lines as a paragraph, which its underline made
+ * a heading (THE FORMER KIND). */
+static markdown_core_node_type heading_former(const markdown_core_element_instance *self,
+                                              const markdown_core_node *node) {
+    (void)self;
+    return node->kind == MARKDOWN_CORE_NODE_HEADING && node->as.heading->setext ? MARKDOWN_CORE_NODE_PARAGRAPH
+                                                                                : MARKDOWN_CORE_NODE_NONE;
+}
+
+/* The paragraph it was, its level kept for its underline's redo, without
+ * the attributes its inline content gave it or the anchor the headings
+ * computed, as a new paragraph is: its old entry, first in the back since
+ * the reopen (markdown_core_headings_reopen), takes the computed name's
+ * bytes, which it names, and lets them go with it. */
+static bool heading_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
+    markdown_core_heading_state *state = self->state;
+    heading_sync(state);
+    if (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) {
+        markdown_core_heading_zipper *headings = &state->headings;
+        markdown_core_heading_parse *entry = headings->back_count ? &headings->back[headings->back_count - 1] : NULL;
+        if (entry && entry->node == node && !entry->holds_name && entry->name == node->attributes.anchor.data) {
+            entry->holds_name = true;
+            node->attributes.anchor = (markdown_core_chunk){0};
+        } else {
+            assert(!entry || entry->node != node || entry->holds_name);
+            markdown_core_chunk_free(&node->attributes.anchor);
+        }
+        node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__ANCHOR_COMPUTED;
+    }
+    markdown_core_attributes_free(&node->attributes);
+    memset(&node->attributes, 0, sizeof(node->attributes));
+    const uint32_t level = (uint32_t)node->as.heading->level;
+    const markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_PARAGRAPH);
+    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        return false;
+    }
+    *kept = level;
+    return true;
+}
+
+/* The heading its old underline made it, as open_setext did. */
+static bool heading_redo(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node, markdown_core_node *parent, uint32_t kept) {
+    (void)self;
+    const markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_HEADING);
+    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        return false;
+    }
+    node->as.heading->level = (int)kept;
+    node->as.heading->setext = true;
+    return true;
+}
+
+/* A heading the splice closed as its old reading did, its old flags back,
+ * parses its inline content again, as the reading read it again. */
+static void heading_spliced(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *node) {
+    (void)self;
+    (void)parser;
+    node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__HEADING_PARSED;
+}
+
+static const markdown_core_edit_ops HEADING_EDIT = {
+    .spliced = heading_spliced,
+    .former = heading_former,
+    .revert = heading_revert,
+    .redo = heading_redo,
+};
+
 static const markdown_core_finish_ops HEADING_FINISH = {
     .reparse = reparse_inlines,
     .deferred = true,
@@ -1966,4 +2040,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .inlines = &HEADING_INLINES,
     .opens = &HEADING_OPENS,
     .lines = &HEADING_LINES,
+    .edit = &HEADING_EDIT,
 };

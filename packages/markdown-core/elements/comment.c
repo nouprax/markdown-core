@@ -297,8 +297,9 @@ static markdown_core_node_type comment_former(const markdown_core_element_instan
 /* The HTML block it was, of type 2, which its opening set, and which its
  * close makes a CommentBlock again when it still holds one comment. */
 static bool comment_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent) {
+                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
     (void)self;
+    (void)kept;
     const markdown_core_node_set_kind_result result =
         markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_HTML_BLOCK);
     assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);

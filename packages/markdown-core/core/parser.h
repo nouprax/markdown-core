@@ -251,6 +251,13 @@ void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_cor
 bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
                                      markdown_core_node *const *nodes, uint32_t count, uint32_t source);
 
+/* The committed definition `block` is, which an edit's reading reads again
+ * as another kind (blocks.c, THE FORMER KIND), goes from the committed
+ * tables now, while it still names its label, as the splice would let it
+ * go (markdown_core_publish_splice): it stands first in their back. False
+ * when storage could not be had. */
+bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_core_node *block);
+
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
  * of the document's tables -- Footnotes, Specimens, References, Headings --
@@ -807,6 +814,8 @@ typedef struct markdown_core_revert {
     struct markdown_core_node *node;
     uint64_t id;
     uint16_t kind;
+    /* What the element's `revert` kept for its `redo` (element.h). */
+    uint32_t kept;
 } markdown_core_revert;
 
 typedef struct markdown_core_edit {
@@ -2100,6 +2109,9 @@ bool markdown_core_parser_sort_reach(markdown_core_parser *parser);
  * reading past it from before it, in `*start`: false when none does. The
  * reach is sorted (markdown_core_parser_sort_reach). */
 bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start);
+/* The same of the readings that span `point` and read on past `past`, no
+ * earlier than `point`. */
+bool markdown_core_parser_spanned_past(const markdown_core_parser *parser, size_t point, size_t past, size_t *start);
 /* The same of the readings that start at `from` or later, but one that
  * starts at `close` and ends from `ends[0]` to `ends[1]`, or at `ends[2]`:
  * the close of a child of the root reopened below it (THE NESTED REOPEN),
@@ -2109,6 +2121,9 @@ bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t poi
 bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
                                          const size_t ends[3], size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
+/* Where the own bytes of line `line` of the flushed text begin, past the
+ * prefixes of the containers above its last open block (`own`). */
+size_t markdown_core_parser_line_own(const markdown_core_parser *parser, size_t line);
 /* How many lines the input has, the empty one after a last line ending
  * counted, which markdown_core_parser_line_span answers for. */
 size_t markdown_core_parser_line_count(const markdown_core_parser *parser);

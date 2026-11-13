@@ -72,9 +72,13 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
         /* A block of the document read from where its definitions began
-         * (blocks.c, THE REACH): an edit reads it from there. */
+         * (blocks.c, THE REACH): an edit reads it from there. The reading
+         * went on to the line read now, which a line's rest point the
+         * close of the block before would allow (elements/session.c,
+         * session_rest_root) does not reach. */
         if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            markdown_core_parser_reach(parser, b->place.start, (size_t)source + 1);
+            const size_t now = (size_t)parser->at.line_start + 1;
+            markdown_core_parser_reach(parser, b->place.start, now > (size_t)source + 1 ? now : (size_t)source + 1);
         }
         b->place.start = (uint32_t)source;
     }
