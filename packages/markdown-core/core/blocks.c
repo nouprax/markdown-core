@@ -4284,8 +4284,7 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
 static markdown_core_node_type S_former(const markdown_core_parser *parser, const markdown_core_node *block) {
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
     const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
-    const markdown_core_node_type former =
-        ops && ops->former ? ops->former(structure, block) : MARKDOWN_CORE_NODE_NONE;
+    const markdown_core_node_type former = ops && ops->former ? ops->former(structure, block) : MARKDOWN_CORE_NODE_NONE;
     return former != MARKDOWN_CORE_NODE_NONE &&
                    (markdown_core_dialect_kind(parser->dialect, former)->flags & MARKDOWN_CORE_KIND_LINES)
                ? former

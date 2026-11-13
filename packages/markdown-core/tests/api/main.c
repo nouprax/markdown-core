@@ -10899,9 +10899,10 @@ static void session_edits_former_kinds(test_batch_runner *runner) {
         for (int k = 0; k < 8; k++) {
             const markdown_core_position at = {4 + 30 + k % 3, 2};
             size_t from = 0, to = 0;
-            kept = kept && markdown_core_session_edit(session, at, at, (const uint8_t *)"y", 1, &document) ==
-                               MARKDOWN_CORE_OK &&
-                   session_as_parsed(session);
+            kept =
+                kept &&
+                markdown_core_session_edit(session, at, at, (const uint8_t *)"y", 1, &document) == MARKDOWN_CORE_OK &&
+                session_as_parsed(session);
             block = facade_child(markdown_core_document_root(document), 1);
             kept = kept && markdown_core_node_get_kind(block) == blocks[b].kind && markdown_core_node_id(block) == id;
             markdown_core_session_reread(session, &from, &to);
@@ -10919,7 +10920,7 @@ static void session_edits_former_kinds(test_batch_runner *runner) {
         block = facade_child(markdown_core_document_root(document), 1);
         OK(runner,
            markdown_core_node_get_kind(block) != blocks[b].kind ? markdown_core_node_id(block) != id
-                                                                 : markdown_core_node_id(block) == id,
+                                                                : markdown_core_node_id(block) == id,
            "a block no longer of the kind it became is a node of its own");
         markdown_core_session_close(session);
     }

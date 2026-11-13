@@ -370,50 +370,83 @@ bufsize_t markdown_core_comment_block_start(const markdown_core_node *node) {
     return S_comment_open(&node->content) + 4;
 }
 
-/* The content reads through its parts when it is in two (buffer.h,
- * markdown_core_split), and only its first line and its last: the block's
- * end condition closed it at the first line that holds a `-->`, so its
- * first `-->` is on its last line, or on its first when it has one. */
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
-                                               markdown_core_node *parent) {
-    const markdown_core_strbuf *content = &b->content;
-    const bufsize_t len = content->size;
-    const bufsize_t open = S_comment_open(content);
-    bufsize_t close;
-    bufsize_t rest;
+/* The byte at `at` of a content in its two parts (markdown_core_strbuf_span),
+ * or in `front` alone when `whole`. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) unsigned char S_byte(const unsigned char *front,
+                                                                            bufsize_t front_size,
+                                                                            const unsigned char *back, bufsize_t at,
+                                                                            const bool whole) {
+    return whole || at < front_size ? front[at] : back[at - front_size];
+}
 
-    if (len - open < 4 || markdown_core_strbuf_at(content, open) != '<' ||
-        markdown_core_strbuf_at(content, open + 1) != '!' || markdown_core_strbuf_at(content, open + 2) != '-' ||
-        markdown_core_strbuf_at(content, open + 3) != '-') {
-        return;
-    }
-    /* The start of the last line, past the line ending that ends it. */
-    bufsize_t last = len;
-    last -= last && markdown_core_strbuf_at(content, last - 1) == '\n';
-    last -= last && markdown_core_strbuf_at(content, last - 1) == '\r';
-    while (last && !markdown_core_is_line_end(markdown_core_strbuf_at(content, last - 1))) {
-        last--;
-    }
-    for (close = last > open + 2 ? last : open + 2; close + 3 <= len; close++) {
-        if (markdown_core_strbuf_at(content, close) == '-' && markdown_core_strbuf_at(content, close + 1) == '-' &&
-            markdown_core_strbuf_at(content, close + 2) == '>') {
-            break;
+/* Whether a `-->` starts on the line of `close`, past `from` and before
+ * `close`, of a content in its two parts: read back from `close`, a part's
+ * bytes at a time, each `>` that ends one. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_closed_before(const unsigned char *front,
+                                                                            bufsize_t front_size,
+                                                                            const unsigned char *back, bufsize_t from,
+                                                                            bufsize_t close, const bool whole) {
+    const bufsize_t low = from + 2;
+    for (bufsize_t at = close + 1; at > low;) {
+        const bool behind = !whole && at > front_size;
+        const unsigned char *part = behind ? back : front;
+        const bufsize_t base = behind ? front_size : 0;
+        const bufsize_t stop = behind && front_size > low ? front_size : low;
+        const unsigned char *const first = part + (stop - base);
+        for (const unsigned char *byte = part + (at - base); byte > first;) {
+            const unsigned char c = *--byte;
+            if (c > '>') {
+                continue;
+            }
+            const bufsize_t here = (bufsize_t)(byte - part) + base;
+            if (c == '>' && S_byte(front, front_size, back, here - 1, whole) == '-' &&
+                S_byte(front, front_size, back, here - 2, whole) == '-') {
+                return true;
+            }
+            if (markdown_core_is_line_end(c)) {
+                return false;
+            }
         }
+        at = stop;
     }
-    if (close + 3 > len) {
+    return false;
+}
+
+/* The content reads through its parts when it is in two (buffer.h,
+ * markdown_core_split), and only its first line and its last, from its
+ * end: the block's end condition closed it at the first line that holds a
+ * `-->`, so its first `-->` is on its last line, or on its first when it
+ * has one, and only spaces and tabs may follow it. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_convert(markdown_core_parser *parser,
+                                                                      markdown_core_node *b, markdown_core_node *parent,
+                                                                      const unsigned char *front, bufsize_t front_size,
+                                                                      const unsigned char *back, const bool whole) {
+    const bufsize_t len = b->content.size;
+    bufsize_t open = 0;
+    while (open < len && markdown_core_is_space_or_tab(S_byte(front, front_size, back, open, whole))) {
+        open++;
+    }
+    if (len - open < 4 || S_byte(front, front_size, back, open, whole) != '<' ||
+        S_byte(front, front_size, back, open + 1, whole) != '!' ||
+        S_byte(front, front_size, back, open + 2, whole) != '-' ||
+        S_byte(front, front_size, back, open + 3, whole) != '-') {
         return;
     }
-    rest = close + 3;
-    while (rest < len && markdown_core_is_space_or_tab(markdown_core_strbuf_at(content, rest))) {
-        rest++;
+    /* Past the spaces and tabs before the line ending that ends it, a
+     * `-->`, and no `-->` before it on its line from past the `<!`. */
+    bufsize_t end = len;
+    end -= end && S_byte(front, front_size, back, end - 1, whole) == '\n';
+    end -= end && S_byte(front, front_size, back, end - 1, whole) == '\r';
+    while (end && markdown_core_is_space_or_tab(S_byte(front, front_size, back, end - 1, whole))) {
+        end--;
     }
-    if (rest < len && markdown_core_strbuf_at(content, rest) == '\r') {
-        rest++;
+    if (end < open + 5 || S_byte(front, front_size, back, end - 1, whole) != '>' ||
+        S_byte(front, front_size, back, end - 2, whole) != '-' ||
+        S_byte(front, front_size, back, end - 3, whole) != '-') {
+        return;
     }
-    if (rest < len && markdown_core_strbuf_at(content, rest) == '\n') {
-        rest++;
-    }
-    if (rest != len) {
+    const bufsize_t close = end - 3;
+    if (S_closed_before(front, front_size, back, open + 2, close, whole)) {
         return;
     }
 
@@ -431,6 +464,19 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     /* The comment's literal is the body between its delimiters, lazy as a
      * literal block's (node.h, A LITERAL, LAZY). */
     markdown_core_literal_set(b, b->as.literal, body_start, body_end);
+}
+
+void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
+                                               markdown_core_node *parent) {
+    const markdown_core_strbuf *content = &b->content;
+    if (!content->split) {
+        S_convert(parser, b, parent, content->ptr, content->size, NULL, true);
+        return;
+    }
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_strbuf_span(content, 0, content->size, &front, &front_size, &back, &back_size);
+    S_convert(parser, b, parent, front, front_size, back, false);
 }
 
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,

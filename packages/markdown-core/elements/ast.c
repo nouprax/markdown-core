@@ -4072,7 +4072,9 @@ static bool literal_of(const markdown_core_node *node, markdown_core_string *lit
         return literal_string(node, &node->as.html_block->literal, 0, literal);
     }
     if (node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
-        return literal_string(node, node->as.literal, markdown_core_comment_block_start(node), literal);
+        /* Where its body starts counts only while it is pending. */
+        const bool held = markdown_core_claim_read((void *const *)&node->as.literal->data) != NULL;
+        return literal_string(node, node->as.literal, held ? 0 : markdown_core_comment_block_start(node), literal);
     }
     *literal = chunk_string(*node->as.literal);
     return true;

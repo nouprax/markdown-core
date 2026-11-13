@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include "claim.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -878,8 +879,18 @@ static MARKDOWN_CORE_INLINE void markdown_core_literal_set(markdown_core_node *n
  * its bytes `*data`, joined if it was pending: readers of a document may
  * read one at the same time, and the first join stands (claim.h). False
  * when storage could not be had. */
-bool markdown_core_literal_read(const markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start,
-                                const unsigned char **data);
+bool markdown_core_literal_whole(const markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start,
+                                 const unsigned char **data);
+static MARKDOWN_CORE_INLINE bool markdown_core_literal_read(const markdown_core_node *node,
+                                                            markdown_core_chunk *literal, bufsize_t start,
+                                                            const unsigned char **data) {
+    const unsigned char *held = (const unsigned char *)markdown_core_claim_read((void *const *)&literal->data);
+    if (held || !literal->len) {
+        *data = held;
+        return true;
+    }
+    return markdown_core_literal_whole(node, literal, start, data);
+}
 /* Its bytes in at most two parts, `front` then `back`, joined by none. */
 void markdown_core_literal_halves(const markdown_core_node *node, const markdown_core_chunk *literal, bufsize_t start,
                                   const unsigned char **front, bufsize_t *front_size, const unsigned char **back,

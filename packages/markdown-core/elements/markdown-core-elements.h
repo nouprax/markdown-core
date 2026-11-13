@@ -55,8 +55,7 @@ markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_n
 void markdown_core_elements_formula_halves(const markdown_core_node *node, const unsigned char **front,
                                            bufsize_t *front_size, const unsigned char **back, bufsize_t *back_size);
 /* Its bytes, joined if pending: false when storage could not be had. */
-bool markdown_core_elements_formula_read(const markdown_core_node *node, const unsigned char **data,
-                                         bufsize_t *size);
+bool markdown_core_elements_formula_read(const markdown_core_node *node, const unsigned char **data, bufsize_t *size);
 
 /** Sets the literal formula payload of a formula element node, returning 0
  * when the copy could not be allocated. */
