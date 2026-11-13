@@ -10793,11 +10793,9 @@ static void heading_long_anchor_refused(test_batch_runner *runner) {
     markdown_core_optional_string anchor = {0};
     markdown_core_status refused = MARKDOWN_CORE_OK;
     if (heading) {
-        payload_probe_arm();
-        payload_fail_at = payload_allocations + 1;
+        strbuf_refuse_next = 1;
         refused = markdown_core_node_anchor(heading, &anchor);
-        payload_fail_at = 0;
-        payload_probe_disarm();
+        strbuf_refuse_next = 0;
     }
     INT_EQ(runner, refused, MARKDOWN_CORE_ALLOCATION_FAILED, "a refused first read of a long anchor reports it");
     OK(runner,
