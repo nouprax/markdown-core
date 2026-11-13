@@ -217,7 +217,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_name_key(markdown_core_strbuf *na
     if (stem <= MARKDOWN_CORE_NAME_WHOLE) {
         return;
     }
-    markdown_core_measure measure = MARKDOWN_CORE_MEASURE_NONE;
+    markdown_core_measure measure = {0, {0, 0}, {1, 1}, {1, 1}};
     markdown_core_measure_add(&measure, name->ptr, stem);
     markdown_core_name_mark(name, measure, (bufsize_t)stem, name->size - (bufsize_t)stem);
 }
