@@ -53,9 +53,16 @@ public final class MarkdownSession {
             markdown_core_session_new(bytes.baseAddress, bytes.count, unit.native, &session)
         }
         guard status == MARKDOWN_CORE_OK, let session else { throw MarkdownCoreError(status) }
+        let first: Document
+        do {
+            first = try Document(native: markdown_core_session_document(session), unit: unit)
+        } catch {
+            markdown_core_session_close(session)
+            throw error
+        }
         self.session = session
         self.unit = unit
-        document = Document(native: markdown_core_session_document(session), unit: unit)
+        document = first
     }
 
     deinit {
@@ -157,7 +164,7 @@ public final class MarkdownSession {
             context = .blank
         }
         guard status == MARKDOWN_CORE_OK, let native else { throw MarkdownCoreError(status) }
-        document = Document(native: native, unit: unit)
+        document = try Document(native: native, unit: unit)
         return document
     }
 }
