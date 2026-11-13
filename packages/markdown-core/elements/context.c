@@ -1,3 +1,4 @@
+#include "heading.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -455,7 +456,8 @@ static bool carries(const context_query *query, const markdown_core_node *node, 
             return true;
         }
     }
-    return leads(&attributes->anchor, text, length);
+    const markdown_core_chunk anchor = markdown_core_heading_anchor(node);
+    return leads(&anchor, text, length);
 }
 
 /* Whether `citation` is one a field of `slot` writes: a footnote's label
@@ -609,7 +611,8 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
         if (misses) {
             continue;
         }
-        if ((slot == MARKDOWN_CORE_SLOT_ID && !names(query, &at_probe[i]->attributes.anchor, first, brace)) ||
+        const markdown_core_chunk anchor = markdown_core_heading_anchor(at_probe[i]);
+        if ((slot == MARKDOWN_CORE_SLOT_ID && !names(query, &anchor, first, brace)) ||
             (owner == MARKDOWN_CORE_KIND_CITATION && !refers(at_probe[i], slot)) ||
             (past != SIZE_MAX && !carries(query, at_probe[i], slot, first))) {
             continue;

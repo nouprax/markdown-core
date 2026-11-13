@@ -2958,6 +2958,7 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_leap *leap = edit->leap;
+    leap->measured = false;
     const bufsize_t size = S_content_bytes(node);
     /* A block the reading read as the kind it read its lines as has the id
      * the publish named it by back as completion ends (S_revert_end). */
@@ -3074,6 +3075,10 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     }
     stream->settled.address = NULL;
     leap->active = leap->armed = false;
+    /* The seams' measures stand from the first child on only while the
+     * measure of the seam the parse began at does (S_seam_measure). */
+    leap->based = !leap->seam.index || leap->metered;
+    leap->metered = leap->owing = false;
     const markdown_core_inline_settle *settle = &leap->settle;
     /* The children the parse made end at `made`; the old tail follows. */
     const bool met = leap->stops.met;
@@ -3145,6 +3150,10 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     const bufsize_t end = met ? leap->stops.end - stop.offset : content.len;
     const bool cr = from < end && memchr(text + from, '\r', (size_t)(end - from));
     uint32_t line = leap->seam.line, at = leap->held;
+    /* The seams from here on are measured once completion is done
+     * (S_seam_measure). */
+    leap->fresh = leap->seam_count;
+    leap->stop = stop.measure;
     /* The seams at the starts the parse listed, and at the one it met. */
     for (size_t k = 0; k <= settle->count; k++) {
         const bool last = k == settle->count;
@@ -3195,7 +3204,8 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
                                  source - node->place.start,
                                  place,
                                  read,
-                                 (uint32_t)(start - past)};
+                                 (uint32_t)(start - past),
+                                 MARKDOWN_CORE_MEASURE_NONE};
     }
     /* Where the paragraph ends, as the seams of the back are measured: from
      * the one met, which the old tail's ends measure, or as the content
@@ -3212,8 +3222,10 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
                                           final->end - node->place.start,
                                           (uint32_t)places->count,
                                           content.len,
-                                          0};
+                                          0,
+                                          MARKDOWN_CORE_MEASURE_NONE};
     }
+    leap->owing = true;
     /* The children a later reading may keep own the bytes they view of the
      * content, whose buffer the reading cuts and grows (THE LEAP), and so
      * does every node below them. */
@@ -3305,6 +3317,57 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdow
 
 void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node) {
     S_parse_root(parser, node);
+}
+
+/* THE MEASURE of the paragraph whose content the reading parsed from a
+ * seam, once completion is done and its children are as the publish shows
+ * them: the element of its kind measures the children before each seam the
+ * parse listed, from the measure of the seam it began at, and those past
+ * the last to its end, or to the seam of the back it met, which measures
+ * the rest (element.h, the finish's `measure`). Its measure, the ends',
+ * stands while every seam's does: from its first child on. */
+static void S_seam_measure(markdown_core_parser *parser) {
+    markdown_core_leap *leap = parser->stream->edit->leap;
+    if (!leap || !leap->owing) {
+        return;
+    }
+    leap->owing = false;
+    const markdown_core_node *node = leap->node;
+    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, node);
+    const markdown_core_finish_ops *finish = kind->structure ? kind->structure->element->finish : NULL;
+    const markdown_core_measure_func measures = finish ? finish->measure : NULL;
+    if (!measures || !leap->seam_count) {
+        return;
+    }
+    markdown_core_measure measure = leap->seam.index ? leap->seam.measure : MARKDOWN_CORE_MEASURE_NONE;
+    uint32_t at = leap->seam.index;
+    for (size_t k = leap->fresh; k < leap->seam_count; k++) {
+        if (!measures(kind->structure, node, at, leap->seams[k].index, &measure)) {
+            return;
+        }
+        leap->seams[k].measure = measure;
+        at = leap->seams[k].index;
+    }
+    if (leap->stops.met) {
+        leap->ends.measure = markdown_core_measure_join(measure, leap->stop);
+    } else if (measures(kind->structure, node, at, node->child_count, &measure)) {
+        leap->ends.measure = measure;
+    } else {
+        return;
+    }
+    leap->metered = leap->based;
+    leap->measured = leap->based;
+}
+
+bool markdown_core_parser_measured(const markdown_core_parser *parser, const markdown_core_node *node,
+                                   markdown_core_measure *measure) {
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    const markdown_core_leap *leap = edit ? edit->leap : NULL;
+    if (!leap || !leap->measured || leap->node != node) {
+        return false;
+    }
+    *measure = leap->ends.measure;
+    return true;
 }
 
 /* The index of the first child of `node` from `from` on that starts at
@@ -5211,7 +5274,7 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
             return false;
         }
         leap->seams = seams;
-        seams[leap->seam_count++] = markdown_core_seam_flip(leap->backs[--leap->back_count], &leap->ends);
+        seams[leap->seam_count++] = markdown_core_seam_front(leap->backs[--leap->back_count], &leap->ends);
     }
     /* The seams two lines or more before the rest point's, found by halves. */
     size_t low = 0, high = leap->seam_count;
@@ -5233,7 +5296,7 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
         }
         leap->backs = backs;
         for (size_t i = leap->seam_count; i-- > low;) {
-            backs[leap->back_count++] = markdown_core_seam_flip(leap->seams[i], &leap->ends);
+            backs[leap->back_count++] = markdown_core_seam_back(leap->seams[i], &leap->ends);
         }
     }
     leap->seam_count = low;
@@ -5470,6 +5533,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->leap->round++;
         stream->edit->leap->armed = false;
         stream->edit->leap->owed = stream->edit->leap->paned = false;
+        stream->edit->leap->measured = false;
     }
     if (depth && !S_chain_keep(parser, stream->edit, root, path, places, depth)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -11319,6 +11383,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
     if (!parser->error && parser->stream->edit) {
         S_revert_end(&parser->stream->edit->revert);
+        S_seam_measure(parser);
     }
     if (!parser->error && !parser->snapshot && parser->stream->miss_count) {
         S_complete_misses(parser);

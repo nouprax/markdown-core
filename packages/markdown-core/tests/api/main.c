@@ -7387,7 +7387,7 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
                    "declaration and occurrence use the same raw-label limit");
-            INT_EQ(runner, child_at(root, 0)->attributes.anchor.len, length,
+            INT_EQ(runner, markdown_core_node_anchor(child_at(root, 0)).value.length, length,
                    "label eligibility never limits generated heading anchors");
         }
         markdown_core_node_free(root);
@@ -10726,6 +10726,50 @@ static void session_edits_nested_notes(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* A heading whose text holds more before its last line than a label may
+ * hold parses from its seams as a paragraph does, and names itself by the
+ * measure they keep of its anchor's base (heading.c, A LONG NAME): an edit
+ * in one of two such headings that project to one base reads as a parse
+ * does, and each shows its anchor whole, the second the first's with -1. */
+static void session_edits_long_headings(test_batch_runner *runner) {
+    char line[16];
+    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
+    for (int copy = 0; copy < 2; copy++) {
+        for (int i = 0; i < 200; i++) {
+            snprintf(line, sizeof(line), "word %d\n", i);
+            markdown_core_strbuf_puts(&text, line);
+        }
+        markdown_core_strbuf_puts(&text, "===\n\n");
+    }
+    markdown_core_strbuf_puts(&text, "end\n");
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool edited = markdown_core_session_new(text.ptr, (size_t)text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                      MARKDOWN_CORE_OK &&
+                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    for (int edit = 0; edited && edit < 6; edit++) {
+        const markdown_core_position at = {(uint32_t)(100 + edit / 2), 2}, past = {(uint32_t)(100 + edit / 2), 3};
+        edited = (edit % 2 ? markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document)
+                           : markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document)) ==
+                     MARKDOWN_CORE_OK &&
+                 session_as_parsed(session);
+    }
+    OK(runner, edited, "edits in a long heading read as a parse does");
+    const markdown_core_node *root = edited ? markdown_core_document_root(document) : NULL;
+    const markdown_core_optional_string first =
+        root ? markdown_core_node_anchor(facade_child(root, 0)) : (markdown_core_optional_string){0};
+    const markdown_core_optional_string second =
+        root ? markdown_core_node_anchor(facade_child(root, 1)) : (markdown_core_optional_string){0};
+    OK(runner,
+       first.has_value && second.has_value && first.value.length > 1000 &&
+           second.value.length == first.value.length + 2 && memcmp(first.value.data, "word-0-word-1-", 14) == 0 &&
+           memcmp(first.value.data, second.value.data, first.value.length) == 0 &&
+           memcmp(second.value.data + first.value.length, "-1", 2) == 0,
+       "two long headings of one base show it, the second with -1");
+    markdown_core_session_close(session);
+    markdown_core_strbuf_free(&text);
+}
+
 /* What a session holds after an edit lets most of its text go: the edit
  * reads all of what is left into storage of its own, which holds no more
  * than twice what a session that reads that text afresh holds, and the
@@ -12422,6 +12466,7 @@ int main(void) {
     session_edits_name_headings(runner);
     session_edits_storage(runner);
     session_edits_nested_notes(runner);
+    session_edits_long_headings(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);

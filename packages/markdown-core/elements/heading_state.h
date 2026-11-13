@@ -93,6 +93,11 @@ typedef struct markdown_core_heading_names {
     /* The names of the headings the edit let go, each its stem's place and
      * size, four bytes each, then its bytes. */
     markdown_core_strbuf lost;
+    /* What measuring a long heading's children projects them to, and the
+     * projection's stack (heading.c, A LONG NAME). */
+    markdown_core_strbuf scratch;
+    void *stack;
+    size_t stack_room;
 } markdown_core_heading_names;
 
 typedef struct {

@@ -10,6 +10,7 @@
 #include "comment.h"
 #include "directive.h"
 #include "formula.h"
+#include "heading.h"
 #include "markdown-core-elements.h"
 #include "strikethrough.h"
 #include "table.h"
@@ -1745,13 +1746,22 @@ static void records_free(markdown_core_parser *parser, uint32_t at, bool release
     }
 }
 
+/* The id the publish names `root` by: a block the reading read as the kind
+ * it read its lines as has the one it had back as completion ends (blocks.c,
+ * THE FORMER KIND). */
+static uint64_t root_id(const markdown_core_parser *parser, const markdown_core_node *root) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    return edit && edit->revert.node == root ? edit->revert.id : root->id;
+}
+
 void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_core_node *root,
                                 markdown_core_node *const *nodes, uint32_t count) {
     markdown_core_tail_records *records = &parser->stream->records;
     uint32_t at = 0;
+    const uint64_t id = root_id(parser, root);
     for (size_t i = 0; i < records->count && !at; i++) {
         const markdown_core_tail_record *record = &records->items[i];
-        if (root->id && record->id == root->id && record->kind == root->kind && !record->node) {
+        if (id && record->id == id && record->kind == root->kind && !record->node) {
             at = record->held;
         }
     }
@@ -1779,14 +1789,15 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
     /* The owner's record: the chain's deepest block's is the one the reopen
      * gave it (reopen_chain), and any other is found among them all. */
     const markdown_core_edit *edit = parser->stream->edit;
+    const uint64_t id = root_id(parser, root);
     uint32_t owner = edit && edit->depth && edit->chain[edit->depth - 1] == root ? edit->owners[edit->depth - 1] : 0;
-    if (owner && (owner > records->count || records->items[owner - 1].id != root->id ||
+    if (owner && (owner > records->count || records->items[owner - 1].id != id ||
                   records->items[owner - 1].kind != root->kind || records->items[owner - 1].node)) {
         owner = 0;
     }
     for (size_t i = 0; i < records->count && !owner; i++) {
         const markdown_core_tail_record *record = &records->items[i];
-        if (record->id == root->id && record->kind == root->kind && !record->node) {
+        if (record->id == id && record->kind == root->kind && !record->node) {
             owner = (uint32_t)i + 1;
         }
     }
@@ -4636,7 +4647,12 @@ const markdown_core_attribute_value *markdown_core_node_attributes(const markdow
 }
 
 markdown_core_optional_string markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes) {
-    return (markdown_core_optional_string){attributes->anchor.len > 0, chunk_string(attributes->anchor)};
+    /* The attributes are a node's (markdown_core_node_attributes), whose
+     * anchor a long heading name shows as it reads it (heading.c). */
+    const markdown_core_node *node =
+        (const markdown_core_node *)(const void *)((const char *)attributes - offsetof(markdown_core_node, attributes));
+    const markdown_core_chunk anchor = markdown_core_heading_anchor(node);
+    return (markdown_core_optional_string){anchor.len > 0, chunk_string(anchor)};
 }
 
 size_t markdown_core_attribute_value_class_count(const markdown_core_attribute_value *attributes) {

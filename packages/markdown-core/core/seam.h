@@ -110,8 +110,8 @@ static inline bool markdown_core_seam_mend(markdown_core_node_pool *pool, markdo
 }
 
 /* A paragraph's seam measured back from its `ends`, as the back holds it,
- * or one the back holds measured as the front does (blocks.c, THE OLD TAIL
- * OF A PARAGRAPH). */
+ * or one the back holds measured as the front does: each of its places
+ * from the other end (blocks.c, THE OLD TAIL OF A PARAGRAPH). */
 static inline markdown_core_seam markdown_core_seam_flip(markdown_core_seam seam, const markdown_core_seam *ends) {
     seam.offset = ends->offset - seam.offset;
     seam.index = ends->index - seam.index;
@@ -123,11 +123,35 @@ static inline markdown_core_seam markdown_core_seam_flip(markdown_core_seam seam
     return seam;
 }
 
+/* The front's seam `seam` as the back holds it: its measure is of the
+ * children after it. */
+static inline markdown_core_seam markdown_core_seam_back(markdown_core_seam seam, const markdown_core_seam *ends) {
+    const markdown_core_measure measure = markdown_core_measure_back(seam.measure, ends->measure);
+    seam = markdown_core_seam_flip(seam, ends);
+    seam.measure = measure;
+    return seam;
+}
+
+/* The back's seam `seam` as the front holds it: its measure is of the
+ * children before it. */
+static inline markdown_core_seam markdown_core_seam_front(markdown_core_seam seam, const markdown_core_seam *ends) {
+    const markdown_core_measure measure = markdown_core_measure_front(seam.measure, ends->measure);
+    seam = markdown_core_seam_flip(seam, ends);
+    seam.measure = measure;
+    return seam;
+}
+
 /* The ends of a paragraph whose seam `seam` the back measures as `back`. */
 static inline markdown_core_seam markdown_core_seam_sum(markdown_core_seam seam, markdown_core_seam back) {
-    return (markdown_core_seam){
-        seam.offset + back.offset, seam.index + back.index, seam.uses + back.uses, seam.line + back.line,
-        seam.source + back.source, seam.place + back.place, seam.read + back.read, 0};
+    return (markdown_core_seam){seam.offset + back.offset,
+                                seam.index + back.index,
+                                seam.uses + back.uses,
+                                seam.line + back.line,
+                                seam.source + back.source,
+                                seam.place + back.place,
+                                seam.read + back.read,
+                                0,
+                                markdown_core_measure_join(seam.measure, back.measure)};
 }
 
 #ifdef __cplusplus

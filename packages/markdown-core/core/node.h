@@ -56,6 +56,9 @@ typedef struct {
     int level;
     bool setext;
     markdown_core_chunk label;
+    /* The anchor a long name shows, once read (heading.c, A LONG NAME): a
+     * claim (claim.h), the node's storage. */
+    void *shown;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.

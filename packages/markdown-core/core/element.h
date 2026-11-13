@@ -8,6 +8,7 @@
 #include "chunk.h"
 #include "delimiter.h"
 #include "node.h"
+#include "measure.h"
 
 /* A speculative opener reads following lines through its caller's source
  * view. Captured and streaming inputs therefore use the same grammar without
@@ -186,6 +187,12 @@ typedef struct markdown_core_document_ops {
                    uint32_t);
 } markdown_core_document_ops;
 
+/* The measure (measure.h) `*measure` with the measure an element takes of
+ * the children of the root `root` from `from` up to `to` after its own:
+ * false when storage could not be had. */
+typedef bool (*markdown_core_measure_func)(const markdown_core_element_instance *, const markdown_core_node *root,
+                                           uint32_t from, uint32_t to, markdown_core_measure *measure);
+
 /* THE COMPLETION'S HOOKS: what completion's walk asks of an element --
  * `complete` of each node of its kinds, `reparse` of one completed again,
  * and its finish `step` at the events its kind lists name. Each may be NULL
@@ -215,6 +222,11 @@ typedef struct markdown_core_finish_ops {
      * leaps in it (blocks.c, THE SEAMS): one whose content declares nothing
      * the preparation orders. NULL: none does. */
     bool (*seams)(const markdown_core_element_instance *, const markdown_core_node *);
+    /* The measure of the children of a root of the element's kinds that
+     * parses from seams, which each seam keeps of the children before it,
+     * so an edit's reading measures only the children it made (blocks.c,
+     * THE SEAMS; markdown_core_parser_measured). NULL: none. */
+    markdown_core_measure_func measure;
     /* The element's finish step (the API header states the contract), asked
      * from inside completion's walk at the EXIT of every node whose kind is
      * in `exits` and at the ENTER and EXIT of every node whose
