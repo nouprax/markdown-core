@@ -938,7 +938,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool heading_key_measured(name_pass *
     return false;
 }
 
-static void heading_key(name_pass *pass, markdown_core_heading_parse *heading) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void heading_key(name_pass *pass,
+                                                                        markdown_core_heading_parse *heading) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_strbuf *name = &pass->name;
     markdown_core_node *node = heading->node;
@@ -1264,9 +1265,9 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
         if (heading->authored) {
             continue;
         }
-        markdown_core_strbuf_clear(name);
         if (heading->name) {
             state->anchor_work += (size_t)heading->base_size;
+            markdown_core_strbuf_clear(name);
             markdown_core_strbuf_put(name, heading->name, heading->base_size);
             if (name->oom) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

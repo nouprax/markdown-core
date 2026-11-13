@@ -109,18 +109,35 @@ static MARKDOWN_CORE_INLINE void markdown_core_measure_sums(markdown_core_measur
                                                             size_t size) {
     uint64_t first = 0, second = 0;
     const uint64_t one = markdown_core_measure_base[0], two = markdown_core_measure_base[1];
-    for (size_t i = size; i-- > 0;) {
 #if defined(__SIZEOF_INT128__)
-        __extension__ typedef unsigned __int128 markdown_core_measure_wide;
-        const markdown_core_measure_wide x = (markdown_core_measure_wide)first * one,
-                                         y = (markdown_core_measure_wide)second * two;
-        first = ((uint64_t)x & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(x >> 61) + bytes[i] + 1;
-        second = ((uint64_t)y & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(y >> 61) + bytes[i] + 1;
+    __extension__ typedef unsigned __int128 markdown_core_measure_wide;
+#define MARKDOWN_CORE_MEASURE_STEP(at)                                                                                 \
+    do {                                                                                                               \
+        const markdown_core_measure_wide x = (markdown_core_measure_wide)first * one,                                  \
+                                         y = (markdown_core_measure_wide)second * two;                                 \
+        const uint64_t c = (uint64_t)bytes[at] + 1;                                                                    \
+        first = ((uint64_t)x & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(x >> 61) + c;                                 \
+        second = ((uint64_t)y & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(y >> 61) + c;                                \
+    } while (0)
 #else
-        first = markdown_core_measure_mod(markdown_core_measure_times(first, one) + bytes[i] + 1);
-        second = markdown_core_measure_mod(markdown_core_measure_times(second, two) + bytes[i] + 1);
+#define MARKDOWN_CORE_MEASURE_STEP(at)                                                                                 \
+    do {                                                                                                               \
+        first = markdown_core_measure_mod(markdown_core_measure_times(first, one) + bytes[at] + 1);                    \
+        second = markdown_core_measure_mod(markdown_core_measure_times(second, two) + bytes[at] + 1);                  \
+    } while (0)
 #endif
+    /* Four bytes a turn, the last first. */
+    size_t i = size;
+    for (; i >= 4; i -= 4) {
+        MARKDOWN_CORE_MEASURE_STEP(i - 1);
+        MARKDOWN_CORE_MEASURE_STEP(i - 2);
+        MARKDOWN_CORE_MEASURE_STEP(i - 3);
+        MARKDOWN_CORE_MEASURE_STEP(i - 4);
     }
+    while (i-- > 0) {
+        MARKDOWN_CORE_MEASURE_STEP(i);
+    }
+#undef MARKDOWN_CORE_MEASURE_STEP
     measure->sum[0] = markdown_core_measure_mod(first);
     measure->sum[1] = markdown_core_measure_mod(second);
     measure->size = (uint32_t)size;
