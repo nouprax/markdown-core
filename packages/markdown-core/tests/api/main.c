@@ -10858,17 +10858,25 @@ static void session_edits_name_headings(test_batch_runner *runner) {
     markdown_core_session_close(own);
 }
 
-/* A block a block of literal lines became as it closed, an HTML comment
- * block or a formula fence, reads an edit of a later line of its own from
- * that line, as the block of literal lines it read as (blocks.c, THE
- * FORMER KIND): it is that block again, the node it was, and the reading
- * takes the old text past it back. An edit that leaves it no longer the
- * block it became makes it a node of its own. */
-static void session_edits_former_kinds(test_batch_runner *runner) {
+/* Every block of literal lines reads an edit of a later line of its own
+ * from that line (blocks.c, THE LEAP): a code fence; a `$$`, `\\[` or `%%`
+ * block, whose opener's line gives its content its first line as a fence's
+ * does, and the `%%` block's opener, which read ahead for its closer,
+ * decided only that it found one (element.h, the edit's `shuts`); and a
+ * block a block of literal lines became as it closed, an HTML comment
+ * block or a formula fence, as the block it read as (THE FORMER KIND). It
+ * is the node it was, and the reading takes the old text past it back. An
+ * edit of its last line reads it as a fresh parse does, and one that leaves
+ * it no longer of its kind makes it a node of its own. */
+static void session_edits_literal_blocks(test_batch_runner *runner) {
     static const struct {
         const char *open, *close;
         markdown_core_node_kind kind;
     } blocks[] = {
+        {"```\n", "```\n", MARKDOWN_CORE_KIND_CODE_BLOCK},
+        {"$$\n", "$$\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
+        {"\\\\[  \n", "\\\\]\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
+        {"%%\n", "%%\n", MARKDOWN_CORE_KIND_COMMENT},
         {"<!--\n", "-->\n", MARKDOWN_CORE_KIND_COMMENT},
         {"```formula\n", "```\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
     };
@@ -12392,7 +12400,7 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_edits(runner);
-    session_edits_former_kinds(runner);
+    session_edits_literal_blocks(runner);
     session_edits_name_headings(runner);
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);

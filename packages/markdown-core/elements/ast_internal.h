@@ -116,13 +116,17 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
  * the previous node of its relation, or to the owner's start, and its first
  * run to where the source of that node ends, or the owner's begins. A
  * relation that `continues` goes on from the one before it, as a table's
- * body rows go on from its head rows: its first node is measured
- * from the last of the one before, or from where that one is. */
+ * body rows go on from its head rows and a definition's bodies from the
+ * bodies before: its first node is measured from the last of the one
+ * before, or from where that one is. One that also `shares` holds the
+ * nodes that follow the ones before in the same storage, a table's rows,
+ * and is one relation with it as a publish pairs old nodes with new; a
+ * definition's bodies, each its own storage, are paired each on its own. */
 typedef struct markdown_core_relation {
     const char *group;
     markdown_core_node **items;
     size_t count;
-    bool continues;
+    bool continues, shares;
     const markdown_core_node *holder;
 } markdown_core_relation;
 
@@ -165,6 +169,9 @@ typedef struct markdown_core_walk_frame {
     bool active, group_pending;
     /* The next node of the relation in hand, counted from 0. */
     size_t next;
+    /* The relations passed so far that hold the nodes of one of the
+     * owner's children (a definition's bodies). */
+    uint32_t held;
     /* Where the owner's source starts, and where the first run of the next
      * node of the relation in hand is measured from. */
     uint32_t owner_start, anchor;

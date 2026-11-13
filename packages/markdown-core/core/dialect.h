@@ -199,7 +199,10 @@ enum {
     MARKDOWN_CORE_KIND_TRAILED = 1u << 13,
     /* A block after one of the kind may still go on in it (element.h,
      * `awaits`). */
-    MARKDOWN_CORE_KIND_AWAITS = 1u << 14
+    MARKDOWN_CORE_KIND_AWAITS = 1u << 14,
+    /* One block yields blocks of the kind one after another as it closes
+     * (element.h, `joins`). */
+    MARKDOWN_CORE_KIND_JOINS = 1u << 15
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;

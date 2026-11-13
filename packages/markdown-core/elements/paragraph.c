@@ -83,6 +83,22 @@ static const markdown_core_inline_ops PARAGRAPH_INLINES = {
     .enter = begin_inline,
 };
 
+/* A paragraph of link reference definitions closes as the line that starts
+ * the next is read, as the old reading read on from them: the next reads
+ * as from a paragraph's start (link.c, THE REACH OF A DEFINITION). */
+static bool yields(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                   const markdown_core_node *open, markdown_core_node_type kind) {
+    (void)self;
+    return kind == MARKDOWN_CORE_NODE_REFERENCE && markdown_core_block_reference_definitions_whole(parser, open);
+}
+
+static const markdown_core_node_type PARAGRAPH_JOINS[] = {MARKDOWN_CORE_NODE_REFERENCE, MARKDOWN_CORE_NODE_NONE};
+
+static const markdown_core_edit_ops PARAGRAPH_EDIT = {
+    .yields = yields,
+    .joins = PARAGRAPH_JOINS,
+};
+
 static const markdown_core_candidate_ops PARAGRAPH_CANDIDATE = {
     .feed = markdown_core_block_feed_identifier_line,
     .decide = markdown_core_block_decide_identifier_line,
@@ -103,6 +119,7 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
+    .edit = &PARAGRAPH_EDIT,
     .content = &PARAGRAPH_CONTENT,
     .inlines = &PARAGRAPH_INLINES,
     .candidate = &PARAGRAPH_CANDIDATE,

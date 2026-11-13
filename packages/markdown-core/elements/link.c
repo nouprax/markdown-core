@@ -28,7 +28,43 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
  * on. Its length, 0 when there is none. */
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
                                   markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
-                                  bufsize_t before, int *line);
+                                  bufsize_t before, int *line, bool *wide);
+
+/* Whether a block of the document's root starting at `start` starts as a
+ * reading from its line would start it: past less than four spaces of its
+ * line, as a line that opens a paragraph is read. */
+static bool S_starts_line(const markdown_core_parser *parser, size_t start) {
+    size_t length;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+    size_t at = start;
+    while (at && start - at < 4 && source[at - 1] == ' ') {
+        at--;
+    }
+    return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
+}
+
+/* THE REACH OF A DEFINITION (blocks.c, THE REACH): a definition read in a
+ * block of the root, `length` bytes from `at` of the block's `size`, was
+ * decided by its own bytes and the first after them, or, `wide`, by those
+ * up to the line read `now`, and by the definitions before it from
+ * `*chain` on, where the last that starts its line as a reading from there
+ * would starts, which a reading from there reads again: a reading that
+ * starts at a definition reads a block that begins there. */
+static void S_note_reference(markdown_core_parser *parser, markdown_core_node *b, bufsize_t at, bufsize_t length,
+                             bufsize_t size, bool wide, size_t now, size_t *chain) {
+    int ignored;
+    bufsize_t start = (bufsize_t)b->place.start, next;
+    markdown_core_parser_content_place(parser, &b->content_map, at, &ignored, &start);
+    if (*chain == SIZE_MAX || S_starts_line(parser, (size_t)start)) {
+        *chain = (size_t)start;
+    }
+    size_t reached = now;
+    if (!wide && at + length < size &&
+        markdown_core_parser_content_place(parser, &b->content_map, at + length, &ignored, &next)) {
+        reached = (size_t)next + 1;
+    }
+    markdown_core_parser_reach(parser, *chain, reached);
+}
 
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
                                                             markdown_core_node *parent) {
@@ -39,10 +75,20 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     /* The definitions follow each other down the block's lines. */
     int line = parser->at.line_number;
+    /* Only a reading that notes reach notes what each definition read. */
+    const bool noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
+                       markdown_core_parser_block_root(parser) == parser->root;
+    const size_t now = (size_t)parser->at.line_start + 1;
+    size_t chain = SIZE_MAX;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
-        pos = S_read_reference(parser, b, parent, &chunk, &attributes, (bufsize_t)(chunk.data - text.data), &line);
+        const bufsize_t at = (bufsize_t)(chunk.data - text.data);
+        bool wide = false;
+        pos = S_read_reference(parser, b, parent, &chunk, &attributes, at, &line, &wide);
         if (!pos) {
             break;
+        }
+        if (noted && !parser->error) {
+            S_note_reference(parser, b, at, pos, text.len, wide, now, &chain);
         }
         chunk.data += pos;
         chunk.len -= pos;
@@ -72,11 +118,19 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
         /* A block of the document read from where its definitions began
-         * (blocks.c, THE REACH): an edit reads it from there. */
+         * (blocks.c, THE REACH): an edit reads it from there. The reading
+         * went on to the line read now, which a line's rest point the
+         * close of the block before would allow (elements/session.c,
+         * session_rest_root) does not reach. */
         if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            markdown_core_parser_reach(parser, b->place.start, (size_t)source + 1);
+            const size_t from = chain != SIZE_MAX ? chain : b->place.start;
+            markdown_core_parser_reach(parser, from, now > (size_t)source + 1 ? now : (size_t)source + 1);
         }
         b->place.start = (uint32_t)source;
+    } else if (chain != SIZE_MAX) {
+        /* Nothing is left of it: its close notes what the last definitions
+         * read from where they began. */
+        b->place.start = (uint32_t)chain;
     }
     return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
 }
@@ -265,11 +319,14 @@ static void spnl(markdown_core_inline_state *inline_state) {
 }
 
 static bool reference_tail(markdown_core_inline_state *inline_state, markdown_core_attribute_parser *attributes,
-                           markdown_core_attributes *value) {
+                           markdown_core_attributes *value, bool *wide) {
     bufsize_t before = inline_state->pos;
     spnl(inline_state);
     bufsize_t base = (bufsize_t)(inline_state->input.data - attributes->data);
     bufsize_t start = base + inline_state->pos;
+    /* An attribute list looked for reads on to where it ends, or to the
+     * text's end. */
+    *wide |= inline_state->pos < inline_state->input.len && inline_state->input.data[inline_state->pos] == '{';
     bufsize_t end = markdown_core_attributes_end(attributes, start);
     if (end) {
         inline_state->pos = end - base;
@@ -285,10 +342,13 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
 
 /* A link reference definition at the front of `input`: its length, 0 when
  * there is none, and its parts, the attributes `value` holds when there is
- * one. */
+ * one. `wide` when its reading may have read past its end and the first
+ * byte after it: a title or an attribute list looked for, which reads on
+ * to where it closes, or to the text's end. */
 typedef struct {
     markdown_core_chunk label, url, title;
     markdown_core_attributes value;
+    bool wide;
 } reference_definition;
 
 static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
@@ -324,6 +384,9 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     // parse optional link_title
     beforetitle = inline_state.pos;
     spnl(&inline_state);
+    const unsigned char opener = inline_state.pos != beforetitle && inline_state.pos < inline_state.input.len
+                                     ? inline_state.input.data[inline_state.pos]
+                                     : 0;
     matchlen = inline_state.pos == beforetitle
                    ? 0
                    : scan_link_title(inline_state.input.data, inline_state.input.len, inline_state.pos);
@@ -337,10 +400,10 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, &definition->value)) {
+    if (!reference_tail(&inline_state, attributes, &definition->value, &definition->wide)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, &definition->value)) {
+            if (!reference_tail(&inline_state, attributes, &definition->value, &definition->wide)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -354,6 +417,7 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
             return 0;
         }
     }
+    definition->wide |= !definition->title.data && (opener == '"' || opener == '\'' || opener == '(');
     return inline_state.pos;
 }
 
@@ -367,6 +431,26 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
     return length;
 }
 
+bool markdown_core_block_reference_definitions_whole(markdown_core_parser *parser, const markdown_core_node *b) {
+    markdown_core_chunk chunk = markdown_core_node_text(b);
+    markdown_core_attribute_parser attributes = {
+        .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
+    bool whole = chunk.len > 0;
+    while (whole && chunk.len) {
+        reference_definition definition = {0};
+        const bufsize_t length = chunk.data[0] == '[' ? S_reference_definition(&chunk, &attributes, &definition) : 0;
+        if (length) {
+            markdown_core_attributes_free(&definition.value);
+        }
+        whole = length && !definition.wide;
+        chunk.data += length;
+        chunk.len -= length;
+    }
+    whole = whole && !attributes.oom;
+    markdown_core_attribute_parser_free(&attributes);
+    return whole;
+}
+
 static bool S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                                bufsize_t before, const markdown_core_chunk *url);
 static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
@@ -376,9 +460,10 @@ static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, m
 
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
                                   markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
-                                  bufsize_t before, int *line) {
+                                  bufsize_t before, int *line, bool *wide) {
     reference_definition definition;
     bufsize_t length = S_reference_definition(input, attributes, &definition);
+    *wide = definition.wide;
     if (!length) {
         if (parser->sink) {
             S_report_unread(parser, b, input, before);

@@ -584,6 +584,14 @@ typedef struct markdown_core_edit_ops {
      * what `reopen_block` gives back is all of it. */
     bool (*resumes)(const markdown_core_element_instance *, const markdown_core_parser *,
                     const markdown_core_node *node, const markdown_core_node *next);
+    /* Whether `open`, a block of the element that holds no open block,
+     * closes as the line that starts an old sibling of kind `kind` is read,
+     * as the old reading closed it there, whatever the line's prefixes
+     * carry -- a definition, as the next one's term opens, or a paragraph of
+     * link reference definitions, which the next one goes on (blocks.c, THE
+     * SPLICE, THE NESTED SPLICE). NULL when only the prefixes close one. */
+    bool (*yields)(const markdown_core_element_instance *, markdown_core_parser *, const markdown_core_node *open,
+                   markdown_core_node_type kind);
     /* The block's first child is read with the block's opening and never
      * as a later child: no reopen rests at it, though the children abut (a
      * table's head row). */
@@ -601,6 +609,13 @@ typedef struct markdown_core_edit_ops {
      * (blocks.c, THE REACH), a reopen does not rest at the child after one
      * (THE NESTED REOPEN), terminated by MARKDOWN_CORE_NODE_NONE, or NULL. */
     const markdown_core_node_type *awaits;
+    /* The block kinds the element's block yields as it closes, more than
+     * one, one after another on the lines that follow -- a paragraph's link
+     * reference definitions: two of them on adjacent lines were one block
+     * as the later one's line was read, which a reading of a prefix of the
+     * text sees open from the first (session.c, THE LOOK), terminated by
+     * MARKDOWN_CORE_NODE_NONE, or NULL. */
+    const markdown_core_node_type *joins;
     /* THE STOP LINES (blocks.c, AN OPENER READ TO THE END): a test of one
      * line of the text as written, without its line ending, true for every
      * line the element's reading from an opener in the document's root
@@ -610,26 +625,45 @@ typedef struct markdown_core_edit_ops {
      * opener (markdown_core_parser_reach_open), and not what it read. NULL
      * for an element whose readings note what they read. */
     bool (*stops)(const markdown_core_element_instance *, const unsigned char *line, size_t length);
+    /* A reading from an opener in the document's root that found its stop
+     * line, the closer of the block it opens, decided only that it found
+     * one: the lines before it are the block's whatever they are, and the
+     * block reads them to that line as the reading did. It notes neither
+     * what it read nor its opener (blocks.c, AN OPENER READ TO THE END),
+     * and an edit of a later line of the block than its first leaps in it
+     * (THE LEAP) unless the edit writes its last, the closer (session.c,
+     * session_shut). */
+    bool shuts;
     /* A block of literal lines an edit's reading closes as its old reading
      * did, at an old line of its own (blocks.c, THE SPLICE IN A BLOCK): it
      * takes its old flags back, and the element its own state at that
      * close, which `reopen_block` gave up. NULL when it keeps none. */
     void (*spliced)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     /* THE FORMER KIND: a block of the element's that a block of literal
-     * lines of another element became as it closed or completed, an HTML
-     * comment block or a formula fence: the kind of literal lines it read
-     * as, which an edit's reading reopens it as at a later line of its own
-     * (blocks.c, THE LEAP), and its close makes it again; NONE for a block
+     * lines or a paragraph of another element became as it closed or
+     * completed or as a line made it so, an HTML comment block, a formula
+     * fence, a setext heading: the kind it read its lines as, which an
+     * edit's reading reopens it as at a later line of its own (blocks.c,
+     * THE LEAP), and its close or `redo` makes it again; NONE for a block
      * that read its lines as itself. NULL when the element makes no block
      * so. */
     markdown_core_node_type (*former)(const markdown_core_element_instance *, const markdown_core_node *);
     /* Gives `node`, a block `former` names a kind for, in `parent`, that
      * kind back, with the state its opening set, as the reading had it
      * before the block closed, which the reopen then takes as a block of
-     * that kind's (`reopen_block`). False, the node as it was, when
-     * storage could not be had. */
+     * that kind's (`reopen_block`), and in `*kept` what `redo` reads of
+     * the block it was. False, the node as it was, when storage could not
+     * be had. */
     bool (*revert)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                   markdown_core_node *parent);
+                   markdown_core_node *parent, uint32_t *kept);
+    /* Makes `node`, a block `revert` gave back the kind it read its lines
+     * as, the element's again, from what `revert` kept: the edit's reading
+     * takes back the old line that made it so (blocks.c, THE SPLICE IN A
+     * BLOCK), and the block closes as the element's. NULL for an element
+     * whose block's close makes it so. False when storage could not be
+     * had. */
+    bool (*redo)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                 markdown_core_node *parent, uint32_t kept);
 } markdown_core_edit_ops;
 
 struct markdown_core_element {

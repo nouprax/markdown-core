@@ -30,8 +30,8 @@
 
 typedef struct {
     markdown_core_chunk literal;
-    /* Where a FormulaBlock a fence became has its literal in its content,
-     * read while the literal is pending (node.h, A LITERAL, LAZY). */
+    /* Where a FormulaBlock has its literal in its content, read while the
+     * literal is pending (node.h, A LITERAL, LAZY). */
     bufsize_t start;
     /* What the fence a FormulaBlock was read as set as it opened, but its
      * info string, which is `formula`: where its literal starts in its
@@ -42,7 +42,6 @@ typedef struct {
     unsigned char fence_char;
     markdown_core_formula_mode mode;
     int block_delim;
-    int closed;
 } node_formula;
 
 /* A formula node's payload, its `opaque`. */
@@ -138,8 +137,6 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
     return 1;
 }
 
-/* A block formula's literal: the view of its block's content that the
- * block's own literal or lines are, trimmed of whitespace at both ends. */
 /* The whitespace at the start and at the end of bytes in two parts, the
  * first part's then the second's, as many as there are of each. */
 typedef struct {
@@ -173,18 +170,6 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_trim
     bufsize_t front_size, back_size;
     markdown_core_strbuf_span(content, start, end, &front, &front_size, &back, &back_size);
     return S_trim_halves(front, front_size, back, back_size);
-}
-
-static markdown_core_chunk S_trimmed(markdown_core_chunk literal) {
-    bufsize_t from = 0;
-    bufsize_t end = literal.len;
-    while (from < end && markdown_core_is_whitespace(literal.data[from])) {
-        from++;
-    }
-    while (end > from && markdown_core_is_whitespace(literal.data[end - 1])) {
-        end--;
-    }
-    return (markdown_core_chunk){literal.data + from, end - from, 0};
 }
 
 static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos) {
@@ -257,7 +242,13 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
 
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     formula->block_delim = block_delim;
-    markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
+    /* The rest of the line, spaces and its ending, is the first line of
+     * the block's content, as a fence's rest is a code block's (blocks.c,
+     * THE LEAP): the literal, trimmed, starts past it. */
+    markdown_core_parser_advance_offset(parser, (char *)input,
+                                        first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3) -
+                                            markdown_core_parser_get_offset(parser),
+                                        false);
     return node;
 }
 
@@ -266,14 +257,12 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
     node_formula *formula = get_formula(container);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
 
-    if (formula->closed) {
-        return 0;
-    }
-
+    /* The closer is the block's end condition: its line closes it and is
+     * no line of its content. */
     if (scan_formula_block_close(input, (bufsize_t)len, (bufsize_t)first_nonspace, formula->block_delim)) {
-        formula->closed = 1;
         markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
                                             false);
+        return MARKDOWN_CORE_BLOCK_CLOSED;
     }
 
     return 1;
@@ -675,8 +664,29 @@ static void insert_formula(const markdown_core_element_instance *self, markdown_
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_FORMULA,
                                                             MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_NONE};
 
-static int accepts_lines(const markdown_core_element *element, markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
+/* The literal of `formula`, a block's, which holds none: the bytes from
+ * `from` to `end` of the block's content, trimmed of whitespace at both
+ * ends, lazy as a literal block's (node.h, A LITERAL, LAZY): a content in
+ * two parts (buffer.h, markdown_core_split) is read through them. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_trim_into(markdown_core_node *node, node_formula *formula,
+                                                                        bufsize_t from, bufsize_t end) {
+    if (!node->content.split) {
+        const unsigned char *data = node->content.ptr;
+        while (from < end && markdown_core_is_whitespace(data[from])) {
+            from++;
+        }
+        while (end > from && markdown_core_is_whitespace(data[end - 1])) {
+            end--;
+        }
+        formula->literal.data = node->content.ptr + from;
+    } else {
+        const S_trim held = S_trim_span(&node->content, from, end);
+        end -= held.trail;
+        from += held.lead;
+        formula->literal.alloc = 1;
+    }
+    formula->literal.len = end - from;
+    formula->start = from;
 }
 
 /* An absent info string is not the word `formula`; it is no word at all. */
@@ -697,26 +707,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_promote(const mark
         return;
     }
     markdown_core_code *code = node->as.code;
-    bufsize_t from = code->literal_start;
-    bufsize_t end = from + code->literal.len;
-    /* What markdown_core_literal_set sets, in a literal that held none. */
-    if (!node->content.split) {
-        const unsigned char *data = node->content.ptr;
-        while (from < end && markdown_core_is_whitespace(data[from])) {
-            from++;
-        }
-        while (end > from && markdown_core_is_whitespace(data[end - 1])) {
-            end--;
-        }
-        payload->literal.data = node->content.ptr + from;
-    } else {
-        const S_trim held = S_trim_span(&node->content, from, end);
-        end -= held.trail;
-        from += held.lead;
-        payload->literal.alloc = 1;
-    }
-    payload->literal.len = end - from;
-    payload->start = from;
+    S_trim_into(node, payload, code->literal_start, code->literal_start + code->literal.len);
     payload->head = code->literal_start;
     payload->fence_size = code->fence_length;
     payload->fence_offset = code->fence_offset;
@@ -752,7 +743,9 @@ static bool close_formula_block(const markdown_core_element_instance *self, mark
     (void)self;
     (void)parser;
     (void)parent;
-    get_formula(node)->literal = S_trimmed((markdown_core_chunk){node->content.ptr, node->content.size, 0});
+    node_formula *formula = get_formula(node);
+    markdown_core_chunk_free(&formula->literal);
+    S_trim_into(node, formula, 0, node->content.size);
     return true;
 }
 
@@ -772,7 +765,8 @@ static markdown_core_node_type formula_former(const markdown_core_element_instan
 /* The fence it was, whose info string names a formula, as its opening left
  * it, which its completion promotes again (markdown_core_formula_promote_fence). */
 static bool formula_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent) {
+                           markdown_core_node *node, markdown_core_node *parent, uint32_t *kept) {
+    (void)kept;
     const node_formula *formula = get_formula(node);
     const markdown_core_code fence = {.literal_start = formula->head,
                                       .fence_length = formula->fence_size,
@@ -810,7 +804,7 @@ static const markdown_core_contain_ops FORMULA_CONTAIN = {
 };
 
 static const markdown_core_content_ops FORMULA_CONTENT = {
-    .holds_lines = accepts_lines,
+    .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
 static const markdown_core_inline_ops FORMULA_INLINES = {

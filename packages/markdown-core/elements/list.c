@@ -247,6 +247,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
     data->marker_offset = parser->at.indent;
 
     if (cont_type != MARKDOWN_CORE_NODE_LIST || !markdown_core_block_list_facts_match((*container)->as.list, data)) {
+        const size_t open = cont_type == MARKDOWN_CORE_NODE_LIST ? (*container)->place.start : SIZE_MAX;
         *container =
             markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, parser->at.first_nonspace + 1);
         if (!*container) {
@@ -254,6 +255,12 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
         }
 
         memcpy((*container)->as.list, data, sizeof(*data));
+        /* The open list it does not continue gave it what its marker
+         * leaves open, as a variant: its opener is that list's reading
+         * (THE REACH). */
+        if (open != SIZE_MAX) {
+            markdown_core_parser_reach(parser, open, (*container)->place.start + (size_t)matched);
+        }
     }
 
     // add the list item
@@ -343,6 +350,10 @@ static const markdown_core_edit_ops LIST_EDIT = {
     .reopens = true,
     .reopen_block = reopen_block,
     .abuts = LIST_KINDS,
+    /* A line after it, past blank lines, may still be its next item, and a
+     * list it does not continue takes what its marker leaves open from it
+     * (markdown_core_list_open). */
+    .awaits = LIST_KINDS,
 };
 
 static const markdown_core_fold_ops LIST_FOLD = {

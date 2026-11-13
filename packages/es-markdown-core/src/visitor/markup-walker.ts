@@ -107,7 +107,8 @@ function dispatch<Kind extends Markup["kind"]>(
 
 /** A chain that continues the relation of the chain before it: its first
  * node leads from where the source of that chain's last node ends. A table's
- * body rows continue its head rows. */
+ * body rows continue its head rows, and a definition's bodies the bodies
+ * before them. */
 interface Continuation {
     readonly continues: readonly Markup[];
 }
@@ -155,7 +156,8 @@ const relations: {
     directive: (node) => (node.label === null ? none : [[node.label]]),
     cite: (node) => [node.citations],
     definitionList: (node) => [node.definitions],
-    definition: (node) => [node.term, ...node.content],
+    // Each body after the first continues the bodies before it.
+    definition: (node) => [node.term, ...node.content.map((body, index) => (index ? { continues: body } : body))],
     citation: (node) =>
         node.referent.kind === "footnote" && node.referent.target.kind === "note"
             ? [[node.referent.target.footnote], node.prefix, node.suffix]
