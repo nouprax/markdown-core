@@ -479,11 +479,16 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
         if (parser->at.partially_consumed_tab) {
             initial += TAB_STOP - (parser->at.column % TAB_STOP) - 1;
         }
+        /* A first write of at most a line ending is the rest of an opener's
+         * line (a fence's, a `%%` or `$$` block's): no block's content
+         * starts blank otherwise, and the line after it is its content, so
+         * the room is a line's, which that line then does not grow. */
+        const size_t least = initial <= 2 ? 128 : 32;
         /* Saturate only the conversion; strbuf owns the capacity limit and
          * failure contract, including a tab expansion beyond that limit. */
         markdown_core_strbuf_grow(&node->content, initial > INT32_MAX ? INT32_MAX
-                                                  : initial > 32      ? (bufsize_t)initial
-                                                                      : 32);
+                                                  : initial > least   ? (bufsize_t)initial
+                                                                      : (bufsize_t)least);
         if (node->content.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
