@@ -10770,6 +10770,44 @@ static void session_edits_long_headings(test_batch_runner *runner) {
     markdown_core_strbuf_free(&text);
 }
 
+/* An authored anchor of a long name reserves it as a short one does: a
+ * heading whose computed base it is takes the next suffix, before the
+ * authored one and after it, and an edit that writes the authored anchor or
+ * lets it go reads as a parse does. */
+static void heading_long_authored_anchor(test_batch_runner *runner) {
+    char stem[1101];
+    memset(stem, 'a', 1100);
+    stem[1100] = '\0';
+    char text[4096];
+    const int size = snprintf(text, sizeof(text), "# %s\n\n# x {#%s}\n\n# %s\n", stem, stem, stem);
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool ok = markdown_core_session_new((const uint8_t *)text, (size_t)size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                  MARKDOWN_CORE_OK &&
+              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
+    bool shown = root != NULL;
+    static const char *const ends[] = {"-1", "", "-2"};
+    for (int i = 0; shown && i < 3; i++) {
+        const markdown_core_optional_string anchor = markdown_core_node_anchor(facade_child(root, i));
+        const size_t end = strlen(ends[i]);
+        shown = anchor.has_value && anchor.value.length == 1100 + end && memcmp(anchor.value.data, stem, 1100) == 0 &&
+                memcmp(anchor.value.data + 1100, ends[i], end) == 0;
+    }
+    OK(runner, shown, "a long authored anchor reserves its name before and after it");
+    /* Line 3 is the authored heading: its anchor goes, then comes back. */
+    const markdown_core_position at = {3, 5}, past = {3, (uint32_t)(5 + 3 + 1100)};
+    ok = ok && markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
+         session_as_parsed(session);
+    const int written = snprintf(text, sizeof(text), "{#%s}", stem);
+    ok = ok &&
+         markdown_core_session_edit(session, at, at, (const uint8_t *)text, (size_t)written, &document) ==
+             MARKDOWN_CORE_OK &&
+         session_as_parsed(session);
+    OK(runner, ok, "edits that write a long authored anchor or let it go read as a parse does");
+    markdown_core_session_close(session);
+}
+
 /* What a session holds after an edit lets most of its text go: the edit
  * reads all of what is left into storage of its own, which holds no more
  * than twice what a session that reads that text afresh holds, and the
@@ -12467,6 +12505,7 @@ int main(void) {
     session_edits_storage(runner);
     session_edits_nested_notes(runner);
     session_edits_long_headings(runner);
+    heading_long_authored_anchor(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);

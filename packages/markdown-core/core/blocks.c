@@ -2119,12 +2119,21 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
  * not one the headings computed for it. A node reserves it once it is
  * complete, and a block the snapshot ends without closing (S_close_tail) as
  * it ends. False when storage could not be had. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_anchor_key(markdown_core_parser *parser,
+                                                             const markdown_core_chunk *anchor, uint32_t start,
+                                                             bool withdraws);
+
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(markdown_core_parser *parser,
                                                                              const markdown_core_node *node,
                                                                              uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-           markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
+    if (!anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+        return true;
+    }
+    if (anchor->len > MARKDOWN_CORE_NAME_WHOLE) {
+        return S_anchor_key(parser, anchor, start, false);
+    }
+    return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
 }
 
 /* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8). A
@@ -10994,9 +11003,33 @@ static int S_collect_completed(markdown_core_node **slot, void *context) {
 /* The explicit anchor `node` reserved, withdrawn as starting at `start`. */
 static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_node *node, uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-           markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
+    if (!anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+        return true;
+    }
+    if (anchor->len > MARKDOWN_CORE_NAME_WHOLE) {
+        return S_anchor_key(parser, anchor, start, true);
+    }
+    return markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
                                          start);
+}
+
+/* An authored anchor of more than MARKDOWN_CORE_NAME_WHOLE bytes, declared
+ * or withdrawn by its key (measure.h, A LONG NAME'S KEY), which a long
+ * computed name is known by too. False when storage could not be had. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_anchor_key(markdown_core_parser *parser,
+                                                             const markdown_core_chunk *anchor, uint32_t start,
+                                                             bool withdraws) {
+    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_put(&key, anchor->data, anchor->len);
+    markdown_core_name_key(&key);
+    bool ok = !key.oom;
+    if (ok) {
+        ok = withdraws
+                 ? markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, key.ptr, key.size, start)
+                 : markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, key.ptr, key.size, start);
+    }
+    markdown_core_strbuf_free(&key);
+    return ok;
 }
 
 /* THE ANCHORS COMPLETING A ROOT RESERVED, withdrawn as starting at `start`,

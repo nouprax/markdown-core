@@ -32,6 +32,7 @@ set(HEADERS
     array.h
     zipper.h
     seam.h
+    measure.h
     claim.h
     sink.h)
 set(LIBRARY_SOURCES

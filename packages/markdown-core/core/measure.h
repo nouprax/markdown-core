@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "buffer.h"
 #include "config.h"
 
 #ifdef __cplusplus
@@ -49,28 +50,53 @@ static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_mod(uint64_t x) {
     return x >= MARKDOWN_CORE_MEASURE_PRIME ? x - MARKDOWN_CORE_MEASURE_PRIME : x;
 }
 
-/* `a` times `b`, both below the prime, modulo it: 2^61 is 1 and 2^64 is 8. */
+/* `a` times `b`, both below the prime, modulo it: 2^61 is 1, and 2^64 is 8
+ * where there is no product of 128 bits. */
 static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_times(uint64_t a, uint64_t b) {
+#if defined(__SIZEOF_INT128__)
+    __extension__ typedef unsigned __int128 markdown_core_measure_wide;
+    const markdown_core_measure_wide x = (markdown_core_measure_wide)a * b;
+    return markdown_core_measure_mod(((uint64_t)x & MARKDOWN_CORE_MEASURE_PRIME) + (uint64_t)(x >> 61));
+#else
     const uint64_t a0 = a & 0xFFFFFFFFu, a1 = a >> 32, b0 = b & 0xFFFFFFFFu, b1 = b >> 32;
     const uint64_t low = a0 * b0, middle = a1 * b0 + a0 * b1, high = a1 * b1;
     const uint64_t x = markdown_core_measure_mod(low) + (high << 3) + ((middle & 0x1FFFFFFFu) << 32) + (middle >> 29);
     return markdown_core_measure_mod(x);
+#endif
 }
 
-/* `*measure` with `size` bytes at `bytes` after its own. */
+/* `base`, below the prime, to the power `exponent`, modulo the prime. */
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_raise(uint64_t base, uint64_t exponent) {
+    uint64_t result = 1;
+    for (; exponent; exponent >>= 1) {
+        if (exponent & 1) {
+            result = markdown_core_measure_times(result, base);
+        }
+        base = markdown_core_measure_times(base, base);
+    }
+    return result;
+}
+
+/* `*measure` with `size` bytes at `bytes` after its own: their sum by
+ * Horner's rule from the last, one product a byte in each lane, and the
+ * powers they add by squaring. */
 static MARKDOWN_CORE_INLINE void markdown_core_measure_add(markdown_core_measure *measure, const unsigned char *bytes,
                                                            size_t size) {
+    if (!size) {
+        return;
+    }
     for (int lane = 0; lane < MARKDOWN_CORE_MEASURE_LANES; lane++) {
-        uint64_t sum = measure->sum[lane], power = measure->power[lane], less = measure->less[lane];
-        const uint64_t base = markdown_core_measure_base[lane], inverse = markdown_core_measure_inverse[lane];
-        for (size_t i = 0; i < size; i++) {
-            sum = markdown_core_measure_mod(sum + markdown_core_measure_times((uint64_t)bytes[i] + 1, power));
-            power = markdown_core_measure_times(power, base);
-            less = markdown_core_measure_times(less, inverse);
+        const uint64_t base = markdown_core_measure_base[lane];
+        uint64_t sum = 0;
+        for (size_t i = size; i-- > 0;) {
+            sum = markdown_core_measure_mod(markdown_core_measure_times(sum, base) + (uint64_t)bytes[i] + 1);
         }
-        measure->sum[lane] = sum;
-        measure->power[lane] = power;
-        measure->less[lane] = less;
+        measure->sum[lane] =
+            markdown_core_measure_mod(measure->sum[lane] + markdown_core_measure_times(sum, measure->power[lane]));
+        measure->power[lane] =
+            markdown_core_measure_times(measure->power[lane], markdown_core_measure_raise(base, (uint64_t)size));
+        measure->less[lane] = markdown_core_measure_times(
+            measure->less[lane], markdown_core_measure_raise(markdown_core_measure_inverse[lane], (uint64_t)size));
     }
     measure->size += (uint32_t)size;
 }
@@ -117,6 +143,83 @@ static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_front(ma
         measure.less[lane] = markdown_core_measure_times(whole.less[lane], back.power[lane]);
     }
     return measure;
+}
+
+/* A LONG NAME'S KEY. A name -- an anchor a heading computes or one a node
+ * authors -- whose bytes before its suffixes (the `-k` groups a heading's
+ * name may end in, heading.c, stem_parent) are more than
+ * MARKDOWN_CORE_NAME_WHOLE is known by its key: MARKDOWN_CORE_NAME_MARK, the
+ * two sums of the measure of those bytes and its size in hex, then the
+ * suffixes; every index of anchors holds the key (heading.c, A LONG NAME).
+ * A name of no more bytes is read whole at little cost, and no measure is
+ * made of it: an anchor or a heading of common length costs nothing more.
+ * Two different stems share a key only when both lanes of their measures
+ * agree: by chance about (n / 2^61)^2 of the time for n bytes, or when a
+ * document is made to, as the bases are fixed. */
+enum {
+    MARKDOWN_CORE_NAME_WHOLE = 1024,
+    MARKDOWN_CORE_NAME_SUMS = 1 + 16 * MARKDOWN_CORE_MEASURE_LANES,
+    MARKDOWN_CORE_NAME_KEY = MARKDOWN_CORE_NAME_SUMS + 8
+};
+#define MARKDOWN_CORE_NAME_MARK '\x01'
+
+/* The bytes of the base that stand before its suffixes: of `size` bytes at
+ * `bytes`, which stand `offset` bytes into the base. SIZE_MAX when the
+ * bytes before them may hold more of the suffixes. */
+static MARKDOWN_CORE_INLINE size_t markdown_core_name_stem(const unsigned char *bytes, size_t size, size_t offset) {
+    size_t stem = size;
+    for (;;) {
+        if (!stem) {
+            return offset ? SIZE_MAX : 0;
+        }
+        size_t at = stem;
+        while (at > 0 && bytes[at - 1] >= '0' && bytes[at - 1] <= '9') {
+            at--;
+        }
+        if (!at && offset) {
+            return SIZE_MAX;
+        }
+        if (at == stem || bytes[at] == '0' || offset + at < 2 || bytes[at - 1] != '-') {
+            return stem;
+        }
+        stem = at - 1;
+    }
+}
+
+/* The key of the base whose stem measures `measure`, its suffixes the
+ * `size` bytes of `name` from `from` on, which `name` holds then. */
+static MARKDOWN_CORE_INLINE void markdown_core_name_mark(markdown_core_strbuf *name, markdown_core_measure measure,
+                                                         bufsize_t from, bufsize_t size) {
+    static const char hex[] = "0123456789abcdef";
+    unsigned char key[MARKDOWN_CORE_NAME_KEY];
+    key[0] = (unsigned char)MARKDOWN_CORE_NAME_MARK;
+    for (int lane = 0; lane < MARKDOWN_CORE_MEASURE_LANES; lane++) {
+        for (int i = 0; i < 16; i++) {
+            key[1 + 16 * lane + i] = (unsigned char)hex[(measure.sum[lane] >> (60 - 4 * i)) & 15];
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        key[MARKDOWN_CORE_NAME_SUMS + i] = (unsigned char)hex[(measure.size >> (28 - 4 * i)) & 15];
+    }
+    markdown_core_strbuf_grow(name, MARKDOWN_CORE_NAME_KEY + size);
+    if (name->oom) {
+        return;
+    }
+    memmove(name->ptr + MARKDOWN_CORE_NAME_KEY, name->ptr + from, (size_t)size);
+    memcpy(name->ptr, key, MARKDOWN_CORE_NAME_KEY);
+    name->size = MARKDOWN_CORE_NAME_KEY + size;
+    name->ptr[name->size] = '\0';
+}
+
+/* The base `name` holds, its key: a long one by its measure. */
+static MARKDOWN_CORE_INLINE void markdown_core_name_key(markdown_core_strbuf *name) {
+    const size_t stem = markdown_core_name_stem(name->ptr, (size_t)name->size, 0);
+    if (stem <= MARKDOWN_CORE_NAME_WHOLE) {
+        return;
+    }
+    markdown_core_measure measure = MARKDOWN_CORE_MEASURE_NONE;
+    markdown_core_measure_add(&measure, name->ptr, stem);
+    markdown_core_name_mark(name, measure, (bufsize_t)stem, name->size - (bufsize_t)stem);
 }
 
 #ifdef __cplusplus

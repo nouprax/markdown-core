@@ -852,83 +852,19 @@ typedef struct {
     anchor_projection_stack stack;
 } name_pass;
 
-/* A LONG NAME. A base whose bytes before its suffixes -- the `-k` its
- * parent goes without, and its parent's, as far as they go (stem_parent) --
- * are more than NAME_WHOLE is named by their measure (measure.h): the key
- * the names are an index of is NAME_MARK, the measure's two sums and its
- * size in hex, then the suffixes. A heading's name stems from its parent's
- * as its base's does, and an edit of a long heading that parses from its
- * seams finds its key from the measure its seams keep (blocks.c, THE SEAMS)
- * and the projection of its last children, which hold the suffixes, so no
- * part of its naming reads its whole base; its node's anchor, which shows
- * the key, is the base and the suffixes once read
- * (markdown_core_heading_anchor).
- *
- * Two different stems share a key only when both lanes of their measures
- * agree: by chance about (n / 2^61)^2 of the time for n bytes, or when a
- * document is made to, as the bases are fixed; such stems then take one
- * base and its suffixes, the second a `-1`. Keys never leave a document. */
-enum { NAME_WHOLE = 256, NAME_SUMS = 1 + 16 * MARKDOWN_CORE_MEASURE_LANES, NAME_KEY = NAME_SUMS + 8 };
-#define NAME_MARK '\x01'
-
-/* The bytes of the base that stand before its suffixes: of `size` bytes at
- * `bytes`, which stand `offset` bytes into the base. SIZE_MAX when the
- * bytes before them may hold more of the suffixes. */
-static size_t name_stem(const unsigned char *bytes, size_t size, size_t offset) {
-    size_t stem = size;
-    for (;;) {
-        if (!stem) {
-            return offset ? SIZE_MAX : 0;
-        }
-        size_t at = stem;
-        while (at > 0 && bytes[at - 1] >= '0' && bytes[at - 1] <= '9') {
-            at--;
-        }
-        if (!at && offset) {
-            return SIZE_MAX;
-        }
-        if (at == stem || bytes[at] == '0' || offset + at < 2 || bytes[at - 1] != '-') {
-            return stem;
-        }
-        stem = at - 1;
-    }
-}
-
-/* The key of the base whose stem measures `measure`, its suffixes the
- * `size` bytes of `name` from `from` on, which `name` holds then. */
-static void name_mark(markdown_core_strbuf *name, markdown_core_measure measure, bufsize_t from, bufsize_t size) {
-    static const char hex[] = "0123456789abcdef";
-    unsigned char key[NAME_KEY];
-    key[0] = (unsigned char)NAME_MARK;
-    for (int lane = 0; lane < MARKDOWN_CORE_MEASURE_LANES; lane++) {
-        for (int i = 0; i < 16; i++) {
-            key[1 + 16 * lane + i] = (unsigned char)hex[(measure.sum[lane] >> (60 - 4 * i)) & 15];
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        key[NAME_SUMS + i] = (unsigned char)hex[(measure.size >> (28 - 4 * i)) & 15];
-    }
-    markdown_core_strbuf_grow(name, NAME_KEY + size);
-    if (name->oom) {
-        return;
-    }
-    memmove(name->ptr + NAME_KEY, name->ptr + from, (size_t)size);
-    memcpy(name->ptr, key, NAME_KEY);
-    name->size = NAME_KEY + size;
-    name->ptr[name->size] = '\0';
-}
-
-/* The base the pass's name holds, its key: a long one by its measure. */
-static void name_key(markdown_core_strbuf *name) {
-    const size_t stem = name_stem(name->ptr, (size_t)name->size, 0);
-    if (stem <= NAME_WHOLE) {
-        return;
-    }
-    markdown_core_measure measure = MARKDOWN_CORE_MEASURE_NONE;
-    markdown_core_measure_add(&measure, name->ptr, stem);
-    name_mark(name, measure, (bufsize_t)stem, name->size - (bufsize_t)stem);
-}
-
+/* A LONG NAME. A base whose stem -- its bytes before its suffixes, the
+ * `-k` its parent goes without and its parent's, as far as they go
+ * (stem_parent) -- is more than MARKDOWN_CORE_NAME_WHOLE bytes is named by
+ * its key (measure.h, A LONG NAME'S KEY). A heading's name stems from its
+ * parent's as its base's does, and an edit of a long heading that parses
+ * from its seams finds its key from the measure its seams keep (blocks.c,
+ * THE SEAMS) and the projection of its last children, which hold the
+ * suffixes, so no part of its naming reads its whole base; its node's
+ * anchor, which shows the key, is the base and the suffixes once read
+ * (markdown_core_heading_anchor). An anchor a node authors is declared by
+ * its key too (blocks.c, S_reserve_anchor): an authored long name and a
+ * computed one meet in the roster as their bytes would. Two stems that
+ * share a key take one base and its suffixes, the second a `-1`. */
 /* The key of the heading's base, in the pass's name, which it empties
  * first: from the measure its seams keep when it has it (A LONG NAME), from
  * its projection otherwise. */
@@ -938,27 +874,31 @@ static void heading_key(name_pass *pass, markdown_core_heading_parse *heading) {
     markdown_core_node *node = heading->node;
     markdown_core_measure whole;
     markdown_core_strbuf_clear(name);
-    if (markdown_core_parser_measured(parser, node, &whole) && whole.size > NAME_WHOLE) {
+    if (markdown_core_parser_measured(parser, node, &whole) && whole.size > MARKDOWN_CORE_NAME_WHOLE) {
         /* The last children's projection, from as far back as the suffixes
-         * reach. */
-        for (uint32_t from = node->child_count; from-- > 0;) {
+         * reach: twice as many children each time, so the children it
+         * projects are at most twice those the suffixes reach, and each of
+         * them a few times. */
+        const uint32_t count = node->child_count;
+        for (uint32_t span = 1; count; span = span < count ? span * 2 : count) {
+            const uint32_t from = span < count ? count - span : 0;
             markdown_core_strbuf_clear(name);
             if (!project_anchor_range(&pass->state->anchor_work, node, from, node->child_count, name, &pass->stack) ||
                 (size_t)name->size > (size_t)whole.size) {
                 break;
             }
             const size_t offset = (size_t)(whole.size - (uint32_t)name->size);
-            const size_t stem = name_stem(name->ptr, (size_t)name->size, offset);
+            const size_t stem = markdown_core_name_stem(name->ptr, (size_t)name->size, offset);
             if (stem == SIZE_MAX && from) {
                 continue;
             }
-            if (stem == SIZE_MAX || offset + stem <= NAME_WHOLE) {
+            if (stem == SIZE_MAX || offset + stem <= MARKDOWN_CORE_NAME_WHOLE) {
                 break;
             }
             markdown_core_measure suffixes = MARKDOWN_CORE_MEASURE_NONE;
             markdown_core_measure_add(&suffixes, name->ptr + stem, (size_t)name->size - stem);
-            name_mark(name, markdown_core_measure_front(suffixes, whole), (bufsize_t)stem,
-                      name->size - (bufsize_t)stem);
+            markdown_core_name_mark(name, markdown_core_measure_front(suffixes, whole), (bufsize_t)stem,
+                                    name->size - (bufsize_t)stem);
             if (name->oom) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
@@ -972,7 +912,7 @@ static void heading_key(name_pass *pass, markdown_core_heading_parse *heading) {
     }
     heading_anchor_base(parser, pass->state, node, name, &pass->stack);
     if (!parser->error) {
-        name_key(name);
+        markdown_core_name_key(name);
     }
     if (name->oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -2221,14 +2161,14 @@ typedef struct {
 markdown_core_chunk markdown_core_heading_anchor(const markdown_core_node *node) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (node->kind != MARKDOWN_CORE_NODE_HEADING || !(node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-        anchor->len < NAME_KEY || anchor->data[0] != (unsigned char)NAME_MARK) {
+        anchor->len < MARKDOWN_CORE_NAME_KEY || anchor->data[0] != (unsigned char)MARKDOWN_CORE_NAME_MARK) {
         return *anchor;
     }
     void **slot = &node->as.heading->shown;
     const shown_anchor *shown = markdown_core_claim_read(slot);
     if (!shown) {
         bufsize_t stem = 0;
-        for (int i = NAME_SUMS; i < NAME_KEY; i++) {
+        for (int i = MARKDOWN_CORE_NAME_SUMS; i < MARKDOWN_CORE_NAME_KEY; i++) {
             const unsigned char c = anchor->data[i];
             stem = stem * 16 + (bufsize_t)(c <= '9' ? c - '0' : c - 'a' + 10);
         }
@@ -2239,12 +2179,12 @@ markdown_core_chunk markdown_core_heading_anchor(const markdown_core_node *node)
             project_anchor_range(&work, (markdown_core_node *)node, 0, node->child_count, &base, &stack) &&
             base.size >= stem;
         markdown_core_free(stack.values);
-        const bufsize_t suffixes = anchor->len - NAME_KEY;
+        const bufsize_t suffixes = anchor->len - MARKDOWN_CORE_NAME_KEY;
         shown_anchor *made =
             projected ? markdown_core_alloc(1, sizeof(*made) + (size_t)stem + (size_t)suffixes + 1) : NULL;
         if (made) {
             memcpy(made->bytes, base.ptr, (size_t)stem);
-            memcpy(made->bytes + stem, anchor->data + NAME_KEY, (size_t)suffixes);
+            memcpy(made->bytes + stem, anchor->data + MARKDOWN_CORE_NAME_KEY, (size_t)suffixes);
             made->size = stem + suffixes;
         }
         markdown_core_strbuf_free(&base);
