@@ -49,6 +49,13 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len)
 /** The literal formula payload of a formula element node: owned by the node
  *  and not NUL-terminated. */
 markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_node *node);
+/* A formula's literal in at most two parts, as a literal block's (node.h, A
+ * LITERAL, LAZY): a FormulaBlock a fence became has it pending while its
+ * content is in two. */
+void markdown_core_elements_formula_halves(const markdown_core_node *node, const unsigned char **front,
+                                           bufsize_t *front_size, const unsigned char **back, bufsize_t *back_size);
+/* Its bytes, joined if pending: false when storage could not be had. */
+bool markdown_core_elements_formula_read(const markdown_core_node *node, const unsigned char **data, bufsize_t *size);
 
 /** Sets the literal formula payload of a formula element node, returning 0
  * when the copy could not be allocated. */

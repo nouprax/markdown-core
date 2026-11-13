@@ -615,6 +615,21 @@ typedef struct markdown_core_edit_ops {
      * takes its old flags back, and the element its own state at that
      * close, which `reopen_block` gave up. NULL when it keeps none. */
     void (*spliced)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* THE FORMER KIND: a block of the element's that a block of literal
+     * lines of another element became as it closed or completed, an HTML
+     * comment block or a formula fence: the kind of literal lines it read
+     * as, which an edit's reading reopens it as at a later line of its own
+     * (blocks.c, THE LEAP), and its close makes it again; NONE for a block
+     * that read its lines as itself. NULL when the element makes no block
+     * so. */
+    markdown_core_node_type (*former)(const markdown_core_element_instance *, const markdown_core_node *);
+    /* Gives `node`, a block `former` names a kind for, in `parent`, that
+     * kind back, with the state its opening set, as the reading had it
+     * before the block closed, which the reopen then takes as a block of
+     * that kind's (`reopen_block`). False, the node as it was, when
+     * storage could not be had. */
+    bool (*revert)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                   markdown_core_node *parent);
 } markdown_core_edit_ops;
 
 struct markdown_core_element {

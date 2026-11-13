@@ -10858,6 +10858,74 @@ static void session_edits_name_headings(test_batch_runner *runner) {
     markdown_core_session_close(own);
 }
 
+/* A block a block of literal lines became as it closed, an HTML comment
+ * block or a formula fence, reads an edit of a later line of its own from
+ * that line, as the block of literal lines it read as (blocks.c, THE
+ * FORMER KIND): it is that block again, the node it was, and the reading
+ * takes the old text past it back. An edit that leaves it no longer the
+ * block it became makes it a node of its own. */
+static void session_edits_former_kinds(test_batch_runner *runner) {
+    static const struct {
+        const char *open, *close;
+        markdown_core_node_kind kind;
+    } blocks[] = {
+        {"<!--\n", "-->\n", MARKDOWN_CORE_KIND_COMMENT},
+        {"```formula\n", "```\n", MARKDOWN_CORE_KIND_FORMULA_BLOCK},
+    };
+    for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); b++) {
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&text, "before\n\n");
+        markdown_core_strbuf_puts(&text, blocks[b].open);
+        for (int i = 0; i < 64; i++) {
+            markdown_core_strbuf_puts(&text, "x_line\n");
+        }
+        markdown_core_strbuf_puts(&text, blocks[b].close);
+        markdown_core_strbuf_puts(&text, "\nafter\n");
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document;
+        OK(runner,
+           markdown_core_session_new(text.ptr, (size_t)text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                   MARKDOWN_CORE_OK &&
+               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
+           "a session flushes the block");
+        markdown_core_strbuf_free(&text);
+        if (!session) {
+            continue;
+        }
+        const markdown_core_node *block = facade_child(markdown_core_document_root(document), 1);
+        const uint64_t id = markdown_core_node_id(block);
+        OK(runner, markdown_core_node_get_kind(block) == blocks[b].kind, "the block became its own kind");
+        bool kept = true, local = true;
+        for (int k = 0; k < 8; k++) {
+            const markdown_core_position at = {4 + 30 + k % 3, 2};
+            size_t from = 0, to = 0;
+            kept =
+                kept &&
+                markdown_core_session_edit(session, at, at, (const uint8_t *)"y", 1, &document) == MARKDOWN_CORE_OK &&
+                session_as_parsed(session);
+            block = facade_child(markdown_core_document_root(document), 1);
+            kept = kept && markdown_core_node_get_kind(block) == blocks[b].kind && markdown_core_node_id(block) == id;
+            markdown_core_session_reread(session, &from, &to);
+            local = local && to - from < 64;
+        }
+        OK(runner, kept, "an edit of a later line keeps the block, the node it was");
+        OK(runner, local, "and reads the text again only around the line");
+        /* Its last line no longer closes it: it reads to the text's end
+         * as the block of literal lines, or the fence it was. */
+        const markdown_core_position last = {3 + 64 + 1, 1}, cut = {3 + 64 + 1, 3};
+        OK(runner,
+           markdown_core_session_edit(session, last, cut, NULL, 0, &document) == MARKDOWN_CORE_OK &&
+               session_as_parsed(session),
+           "an edit of its last line reads it as a fresh parse does");
+        block = facade_child(markdown_core_document_root(document), 1);
+        OK(runner,
+           markdown_core_node_get_kind(block) != blocks[b].kind ? markdown_core_node_id(block) != id
+                                                                : markdown_core_node_id(block) == id,
+           "a block no longer of the kind it became is a node of its own");
+        markdown_core_session_close(session);
+    }
+}
+
 static void session_edits(test_batch_runner *runner) {
     static const char source[] = "one\n\ntw\xf0\xa0\x80\x80o\n";
     markdown_core_session *session = NULL;
@@ -12324,6 +12392,7 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_edits(runner);
+    session_edits_former_kinds(runner);
     session_edits_name_headings(runner);
     session_edits_storage(runner);
     session_edits_refresh_storage(runner);

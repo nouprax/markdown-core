@@ -593,7 +593,7 @@ static markdown_core_place nest_window(const session_widths *widths, const markd
 static bool session_literal(const markdown_core_session *session, markdown_core_node *block, uint32_t held,
                             markdown_core_place window, size_t level, size_t edited, session_rest_point *rest) {
     const markdown_core_parser *parser = session->committed;
-    const bool lines = markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES;
+    const bool lines = markdown_core_parser_reads_lines(parser, block);
     /* A paragraph only of the document, whose lines' own bytes are all its
      * content's (blocks.c, S_leap_lines). Its first line is read with the
      * next, which a call of the paragraph's opener reads ahead (element.h,

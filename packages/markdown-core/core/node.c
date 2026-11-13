@@ -618,7 +618,7 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         S_literal_view(&copy->as.code->literal);
         break;
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        markdown_core_chunk_view(copy->as.literal);
+        S_literal_view(copy->as.literal);
         break;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
         S_literal_view(&copy->as.html_block->literal);
@@ -1097,8 +1097,9 @@ void markdown_core_literal_halves(const markdown_core_node *node, const markdown
     markdown_core_strbuf_span(&node->content, start, start + literal->len, front, front_size, back, back_size);
 }
 
-bool markdown_core_literal_read(const markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start,
-                                const unsigned char **data) {
+/* A pending literal, joined: the first reader's join stands. */
+bool markdown_core_literal_whole(const markdown_core_node *node, markdown_core_chunk *literal, bufsize_t start,
+                                 const unsigned char **data) {
     const unsigned char *front, *back;
     bufsize_t front_size, back_size;
     markdown_core_literal_halves(node, literal, start, &front, &front_size, &back, &back_size);

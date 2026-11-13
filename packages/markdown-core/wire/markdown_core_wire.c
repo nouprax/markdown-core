@@ -572,7 +572,10 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA: {
         markdown_core_placement mode;
-        markdown_core_node_formula_properties(node, &mode, &literal);
+        if (markdown_core_node_formula_properties(node, &mode, &literal) != MARKDOWN_CORE_OK) {
+            buffer->failed = true;
+            return;
+        }
         /* A FormulaBlock's placement is implied by its kind. */
         if (kind == MARKDOWN_CORE_KIND_FORMULA) {
             put_index(buffer, mode, MARKDOWN_CORE_PLACEMENT_EMBEDDED);

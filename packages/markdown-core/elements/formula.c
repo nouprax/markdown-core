@@ -30,6 +30,16 @@
 
 typedef struct {
     markdown_core_chunk literal;
+    /* Where a FormulaBlock a fence became has its literal in its content,
+     * read while the literal is pending (node.h, A LITERAL, LAZY). */
+    bufsize_t start;
+    /* What the fence a FormulaBlock was read as set as it opened, but its
+     * info string, which is `formula`: where its literal starts in its
+     * content, and its fence, whose character is 0 for a block that read its
+     * lines as itself (element.h, THE FORMER KIND). */
+    bufsize_t head;
+    uint8_t fence_size, fence_offset;
+    unsigned char fence_char;
     markdown_core_formula_mode mode;
     int block_delim;
     int closed;
@@ -40,6 +50,18 @@ static node_formula *get_formula(markdown_core_node *node) { return (node_formul
 
 markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_node *node) {
     return ((const node_formula *)node->opaque)->literal;
+}
+
+void markdown_core_elements_formula_halves(const markdown_core_node *node, const unsigned char **front,
+                                           bufsize_t *front_size, const unsigned char **back, bufsize_t *back_size) {
+    const node_formula *formula = node->opaque;
+    markdown_core_literal_halves(node, &formula->literal, formula->start, front, front_size, back, back_size);
+}
+
+bool markdown_core_elements_formula_read(const markdown_core_node *node, const unsigned char **data, bufsize_t *size) {
+    node_formula *formula = node->opaque;
+    *size = formula->literal.len;
+    return markdown_core_literal_read(node, &formula->literal, formula->start, data);
 }
 
 int markdown_core_elements_set_formula_literal(markdown_core_node *node, const char *literal) {
@@ -78,7 +100,11 @@ static bool formula_opaque_view(const markdown_core_element *element, markdown_c
         return false;
     }
     *made = *(const node_formula *)node->opaque;
-    markdown_core_chunk_view(&made->literal);
+    /* A pending literal stays pending, joined of the content the view
+     * reads, its own when it is. */
+    if (made->literal.data) {
+        markdown_core_chunk_view(&made->literal);
+    }
     copy->opaque = made;
     return true;
 }
@@ -114,6 +140,41 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
 
 /* A block formula's literal: the view of its block's content that the
  * block's own literal or lines are, trimmed of whitespace at both ends. */
+/* The whitespace at the start and at the end of bytes in two parts, the
+ * first part's then the second's, as many as there are of each. */
+typedef struct {
+    bufsize_t lead, trail;
+} S_trim;
+
+static S_trim S_trim_halves(const unsigned char *front, bufsize_t front_size, const unsigned char *back,
+                            bufsize_t back_size) {
+    S_trim held = {0, 0};
+    const bufsize_t size = front_size + back_size;
+    while (held.lead < size &&
+           markdown_core_is_whitespace(held.lead < front_size ? front[held.lead] : back[held.lead - front_size])) {
+        held.lead++;
+    }
+    while (held.lead + held.trail < size) {
+        const bufsize_t at = size - 1 - held.trail;
+        if (!markdown_core_is_whitespace(at < front_size ? front[at] : back[at - front_size])) {
+            break;
+        }
+        held.trail++;
+    }
+    return held;
+}
+
+/* The whitespace at the ends of the bytes from `start` to `end` of a content
+ * in two parts (markdown_core_strbuf_span), out of line so that the promote
+ * of a content in one part stays light. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_trim
+    S_trim_span(const markdown_core_strbuf *content, bufsize_t start, bufsize_t end) {
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_strbuf_span(content, start, end, &front, &front_size, &back, &back_size);
+    return S_trim_halves(front, front_size, back, back_size);
+}
+
 static markdown_core_chunk S_trimmed(markdown_core_chunk literal) {
     bufsize_t from = 0;
     bufsize_t end = literal.len;
@@ -623,30 +684,43 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
     return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-void markdown_core_formula_promote_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
-                                         markdown_core_node *node, markdown_core_node *parent) {
-    /* Rewriting a valid block is optional: a parent that cannot hold a
-     * FormulaBlock keeps the code block. */
-    if (!info_is_formula(&node->as.code->info) || !parent ||
-        !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
-        return;
-    }
-    /* The formula views its content whole. */
-    markdown_core_code *code = node->as.code;
-    if (node->content.split) {
-        markdown_core_strbuf_split_join(&node->content);
-        if (node->content.oom) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        markdown_core_literal_set(node, &code->literal, code->literal_start, code->literal_start + code->literal.len);
-    }
+/* The fence `node`, in `parent`, a FormulaBlock (markdown_core_formula_promote_fence). */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_promote(const markdown_core_element_instance *formula,
+                                                                      markdown_core_parser *parser,
+                                                                      markdown_core_node *node,
+                                                                      markdown_core_node *parent) {
+    /* The formula's literal is the code's trimmed, lazy as the code's was
+     * (node.h, A LITERAL, LAZY): its ends read through the content's parts. */
     node_formula *payload = markdown_core_alloc(1, sizeof(node_formula));
     if (!payload) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    payload->literal = S_trimmed(code->literal);
+    markdown_core_code *code = node->as.code;
+    bufsize_t from = code->literal_start;
+    bufsize_t end = from + code->literal.len;
+    /* What markdown_core_literal_set sets, in a literal that held none. */
+    if (!node->content.split) {
+        const unsigned char *data = node->content.ptr;
+        while (from < end && markdown_core_is_whitespace(data[from])) {
+            from++;
+        }
+        while (end > from && markdown_core_is_whitespace(data[end - 1])) {
+            end--;
+        }
+        payload->literal.data = node->content.ptr + from;
+    } else {
+        const S_trim held = S_trim_span(&node->content, from, end);
+        end -= held.trail;
+        from += held.lead;
+        payload->literal.alloc = 1;
+    }
+    payload->literal.len = end - from;
+    payload->start = from;
+    payload->head = code->literal_start;
+    payload->fence_size = code->fence_length;
+    payload->fence_offset = code->fence_offset;
+    payload->fence_char = code->fence_char;
     payload->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     if (markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
         MARKDOWN_CORE_NODE_SET_KIND_OK) {
@@ -658,6 +732,16 @@ void markdown_core_formula_promote_fence(const markdown_core_element_instance *f
     node->content_map = (markdown_core_content_map){0};
     markdown_core_node_set_element(node, formula->element);
     node->opaque = payload;
+}
+
+void markdown_core_formula_promote_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
+                                         markdown_core_node *node, markdown_core_node *parent) {
+    /* Rewriting a valid block is optional: a parent that cannot hold a
+     * FormulaBlock keeps the code block. */
+    if (info_is_formula(&node->as.code->info) && parent &&
+        markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+        S_promote(formula, parser, node, parent);
+    }
 }
 
 /* A FormulaBlock's literal is the trimmed view of the lines it read. A
@@ -676,6 +760,43 @@ static bool close_formula_block(const markdown_core_element_instance *self, mark
  * set and NOT the terminator set: `is_core_special_character` refuses it there
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
+
+static markdown_core_node_type formula_former(const markdown_core_element_instance *self,
+                                              const markdown_core_node *node) {
+    (void)self;
+    return node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK && ((const node_formula *)node->opaque)->fence_char
+               ? MARKDOWN_CORE_NODE_CODE_BLOCK
+               : MARKDOWN_CORE_NODE_NONE;
+}
+
+/* The fence it was, whose info string names a formula, as its opening left
+ * it, which its completion promotes again (markdown_core_formula_promote_fence). */
+static bool formula_revert(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node, markdown_core_node *parent) {
+    const node_formula *formula = get_formula(node);
+    const markdown_core_code fence = {.literal_start = formula->head,
+                                      .fence_length = formula->fence_size,
+                                      .fence_offset = formula->fence_offset,
+                                      .fence_char = formula->fence_char,
+                                      .fenced = 1};
+    const markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_CODE_BLOCK);
+    assert(result != MARKDOWN_CORE_NODE_SET_KIND_REJECTED);
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        return false;
+    }
+    *node->as.code = fence;
+    node->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
+    formula_opaque_free(self->element, node);
+    node->opaque = NULL;
+    markdown_core_node_set_element(node, NULL);
+    return true;
+}
+
+static const markdown_core_edit_ops FORMULA_EDIT = {
+    .former = formula_former,
+    .revert = formula_revert,
+};
 
 static const markdown_core_opaque_ops FORMULA_OPAQUE = {
     .alloc = formula_opaque_alloc,
@@ -715,6 +836,7 @@ static const markdown_core_line_ops FORMULA_LINES = {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .name = "formula",
+    .edit = &FORMULA_EDIT,
     .opaque = &FORMULA_OPAQUE,
     .contain = &FORMULA_CONTAIN,
     .content = &FORMULA_CONTENT,
@@ -748,6 +870,10 @@ void markdown_core_formula_parts(markdown_core_parts *parts) {
             from++;
         }
     }
-    const markdown_core_chunk literal = markdown_core_elements_formula_literal(parts->node);
-    markdown_core_parts_find(parts, from, literal.data, literal.len);
+    /* Its literal in at most two parts, which part at a line's start. */
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_elements_formula_halves(parts->node, &front, &front_size, &back, &back_size);
+    from = markdown_core_parts_find(parts, from, front, front_size);
+    markdown_core_parts_find(parts, from, back, back_size);
 }
