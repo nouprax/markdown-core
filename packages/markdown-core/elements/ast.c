@@ -364,8 +364,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
         /* A table's rows, in head then content order, are its children, which
          * a table always has: each group is a slice of them. */
         const uint32_t count = step == 0 ? table->head_count : (uint32_t)node->child_count - table->head_count;
-        *relation = (markdown_core_relation){table_groups[step], node->children + cursor->index, count, step > 0,
-                                             step > 0, node};
+        *relation = (markdown_core_relation){
+            table_groups[step], node->children + cursor->index, count, step > 0, step > 0, node};
         cursor->index += count;
         *more = step < 1;
         return true;
@@ -452,6 +452,12 @@ static inline markdown_core_places **places_at(const markdown_core_node *node, r
         return node->as.callout->title ? &node->as.callout->title->source.places : NULL;
     }
     return &node->as.definition->term->source.places;
+}
+
+/* The field whose places a block of `shape` reads as its own (places_at),
+ * or NULL. */
+static inline markdown_core_node *field_of(const markdown_core_node *node, relation_shape shape) {
+    return shape < SHAPE_CALLOUT ? NULL : shape == SHAPE_CALLOUT ? node->as.callout->title : node->as.definition->term;
 }
 
 /* AN INLINE ROOT'S PLACES IN CONTENT ORDER: the content offset each place's
@@ -615,6 +621,9 @@ typedef struct {
     markdown_core_relation_cursor cursor;
     markdown_core_node **item, **end;
     uint32_t start, source_start, anchor, source;
+    /* For a definition, where the body before the next ends, which the
+     * next one's extent is relative to (publish_next). */
+    uint32_t bodies;
     bool more;
     /* Whether the relation in hand is in an inline root's content, and
      * whether this frame's node is the root whose content it is. */
@@ -695,14 +704,38 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_first(
     return relation.count > 0 || *more;
 }
 
+/* A definition's body that holds the relation the walk steps to next, a
+ * closed one, has its extent from where the body before ends, as any
+ * block's is from where the one before it ends, and the next is measured
+ * from where it ends: the edits measure the definition's children by their
+ * extents (elements/session.c, THE WIDTHS) though a body is no node of the
+ * tree. A body that holds no node has none, at where the one before ends,
+ * as its relation goes on from there (relations_next). An open body has
+ * none yet, and is the last. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void publish_body(publish_frame *frame, markdown_core_node *body) {
+    if (body->flags & MARKDOWN_CORE_NODE__OPEN) {
+        return;
+    }
+    if (!body->child_count) {
+        body->extent = (markdown_core_extent){0, 0};
+        return;
+    }
+    body->extent = (markdown_core_extent){(int32_t)((int64_t)body->place.start - (int64_t)frame->bodies),
+                                          body->place.end - body->place.start};
+    frame->bodies = body->place.end;
+}
+
 /* The relation `relation` of the node `frame` is for, after the one in
  * hand: measured from where the one in hand ended when it goes on from it,
  * and from the node's start otherwise. */
-static inline publish_relation publish_next(const publish_frame *frame, const publish_relation *hand,
+static inline publish_relation publish_next(publish_frame *frame, const publish_relation *hand,
                                             const markdown_core_relation *relation) {
     publish_relation next = relation->continues ? (publish_relation){NULL, NULL, hand->anchor, hand->source}
                                                 : (publish_relation){NULL, NULL, frame->start, frame->source_start};
     publish_range(&next, relation->items, relation->count);
+    if (frame->cursor.shape == SHAPE_DEFINITION && relation->holder) {
+        publish_body(frame, (markdown_core_node *)relation->holder);
+    }
     return next;
 }
 
@@ -1093,6 +1126,7 @@ static inline void publish_enter(publish_frame *frame, const publish_placed *pla
     frame->content = content || frame->root;
     frame->start = placed->place.start;
     frame->source_start = placed->source.start;
+    frame->bodies = placed->place.start;
     hand->anchor = frame->root ? 0 : placed->place.start;
     hand->source = placed->source.start;
 }
@@ -1221,7 +1255,10 @@ typedef struct {
     /* The old relation's field, or INT_MAX when the old node has no more. */
     int old_field;
     markdown_core_node **old_item, **old_end;
-    uint32_t old_start, old_source;
+    /* Where the old node's source starts, where its next old node's is
+     * measured from, and where the old relation paired last ends, which an
+     * old relation that goes on from it is measured from. */
+    uint32_t old_start, old_source, old_chain;
     uint32_t record, kept, recorded;
     int field;
     /* The node's decided content and, for a holder, its entry; those of
@@ -1242,17 +1279,27 @@ typedef struct {
 
 /* The field of the relation a cursor stepped to last, which names it from
  * one publish to the next: stepping leaves the cursor one past it, and a
- * definition's body is named by where it is among the definition's
- * children, as a publish steps past the FINAL bodies before it (THE FINAL
- * PREFIX). A kind that owns only its children has field 0. */
+ * definition's bodies, one relation in groups as a table's rows are, are
+ * its field 1, which a node goes on in from one body to another. A kind
+ * that owns only its children has field 0. */
 static inline int relation_field(const markdown_core_relation_cursor *cursor) {
-    return cursor->shape == SHAPE_DEFINITION && cursor->step > 1 ? (int)cursor->index : cursor->step - 1;
+    return cursor->shape == SHAPE_DEFINITION && cursor->step > 1 ? 1 : cursor->step - 1;
 }
 
 static void old_relation_next(publish_match_frame *frame) {
     bool more;
     frame->old_field =
         relations_next(&frame->old_cursor, &frame->old_relation, &more) ? relation_field(&frame->old_cursor) : INT_MAX;
+}
+
+/* Where the source of the last of the `count` old nodes `items`, the first
+ * measured from `from`, ends, or `from` when there are none: where an old
+ * relation that goes on from theirs is measured from. */
+static uint32_t old_relation_end(markdown_core_node *const *items, size_t count, uint32_t from) {
+    for (size_t i = 0; i < count; i++) {
+        from = runs_window(items[i], from).end;
+    }
+    return from;
 }
 
 /* Pairs the new node's relation `field` with the old node's: a relation the
@@ -1266,6 +1313,8 @@ static void publish_pair(publish_match_frame *frame, int field, bool shares) {
         return;
     }
     while (frame->old_field < field) {
+        frame->old_chain = old_relation_end(frame->old_relation.items, frame->old_relation.count,
+                                            frame->old_relation.continues ? frame->old_chain : frame->old_start);
         old_relation_next(frame);
     }
     if (frame->old_field != field) {
@@ -1274,7 +1323,7 @@ static void publish_pair(publish_match_frame *frame, int field, bool shares) {
     }
     markdown_core_node **items = frame->old_relation.items;
     size_t count = frame->old_relation.count;
-    frame->old_source = frame->old_start;
+    frame->old_source = frame->old_relation.continues ? frame->old_chain : frame->old_start;
     old_relation_next(frame);
     while (frame->old_field != INT_MAX && frame->old_relation.shares) {
         count += frame->old_relation.count;
@@ -1282,12 +1331,14 @@ static void publish_pair(publish_match_frame *frame, int field, bool shares) {
     }
     frame->old_item = items;
     frame->old_end = range_end(items, count);
+    frame->old_chain = old_relation_end(items, count, frame->old_source);
 }
 
 /* Pairs the new node's first relation with the old node's, as publish_first
  * finds it: a kind that owns only its children has that one relation on
  * both sides, and its old nodes are the old node's children. */
 static inline void publish_pair_first(publish_match_frame *frame, const markdown_core_node *old, relation_shape shape) {
+    frame->old_chain = frame->old_start;
     if (shape == SHAPE_CHILDREN) {
         frame->old_field = INT_MAX;
         frame->old_source = frame->old_start;
@@ -1367,21 +1418,19 @@ static inline uint32_t publish_final_bodies(const markdown_core_node *node) {
     return at;
 }
 
-/* The body a definition's walk goes on to past its FINAL bodies goes on
- * from where the last of their nodes ends, which the walk did not read, or,
- * when they hold none, from where the definition starts, as the first
- * body's relation does (relations_next). */
-static void publish_skip_bodies(const publish_match_frame *frame, publish_relation *hand) {
-    const markdown_core_node *node = frame->node;
-    for (size_t at = frame->walk.cursor.index - 1; at; at--) {
+/* Where a definition's walk that steps past its FINAL bodies to `next`
+ * goes on from: where the last of their nodes ends, which the walk did not
+ * read, as the bodies after them are measured from there (publish_body), or
+ * where the definition starts when they hold none, as the first body's
+ * relation is (relations_next). */
+static uint32_t publish_skip_bodies(const markdown_core_node *node, size_t next, uint32_t start) {
+    for (size_t at = next; at; at--) {
         const markdown_core_node *body = node->children[at - 1];
         if (body->child_count) {
-            hand->anchor = hand->source = body->children[body->child_count - 1]->place.end;
-            return;
+            return body->children[body->child_count - 1]->place.end;
         }
     }
-    hand->anchor = frame->walk.start;
-    hand->source = frame->walk.source_start;
+    return start;
 }
 
 /* The decided content of a node a holder's entry `holds` judges, the child
@@ -1489,11 +1538,17 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void publish_relation_beg
  * that span rows start inside the sources of the cells before them (plan
  * 5.9). A node that continues none passes the old nodes whose anchors lie
  * before its source, which no later node, starting no earlier, holds. */
-static const markdown_core_node *publish_match(const publish_edit *edit, publish_match_frame *owner,
-                                               const markdown_core_node *node, markdown_core_place source,
-                                               uint32_t *old_start) {
+/* The same within the old relation the frame pairs with now. */
+static const markdown_core_node *publish_match_in(const publish_edit *edit, publish_match_frame *owner,
+                                                  const markdown_core_node *node, markdown_core_place source,
+                                                  uint32_t *old_start, bool *ran) {
     uint32_t from = owner->old_source;
-    for (markdown_core_node **slot = owner->old_item; slot != owner->old_end; slot++) {
+    *ran = false;
+    for (markdown_core_node **slot = owner->old_item;; slot++) {
+        if (slot == owner->old_end) {
+            *ran = true;
+            break;
+        }
         const markdown_core_node *old = *slot;
         const markdown_core_place window = runs_window(old, from);
         uint32_t anchor;
@@ -1517,6 +1572,52 @@ static const markdown_core_node *publish_match(const publish_edit *edit, publish
         }
         owner->old_source = window.end;
         owner->old_item++;
+    }
+    return NULL;
+}
+
+/* The old relation after the one `frame` passed, when it goes on in the
+ * same field as the relation in hand from the one before -- a definition's
+ * next body -- its nodes now the ones the frame pairs with. */
+static bool old_relation_more(publish_match_frame *frame) {
+    if (frame->old_field == INT_MAX || frame->old_field != frame->field || !frame->old_relation.continues ||
+        frame->old_relation.shares) {
+        return false;
+    }
+    markdown_core_node **items = frame->old_relation.items;
+    const size_t count = frame->old_relation.count;
+    frame->old_source = frame->old_chain;
+    old_relation_next(frame);
+    frame->old_item = items;
+    frame->old_end = range_end(items, count);
+    frame->old_chain = old_relation_end(items, count, frame->old_source);
+    return true;
+}
+
+static const markdown_core_node *publish_match(const publish_edit *edit, publish_match_frame *owner,
+                                               const markdown_core_node *node, markdown_core_place source,
+                                               uint32_t *old_start) {
+    /* A relation that goes on in the old relations after it pairs with
+     * those too: once its old nodes are passed, and before, when none of
+     * them is continued and the node may hold an anchor past them, which
+     * passes those then. */
+    bool ran;
+    for (;;) {
+        const markdown_core_node *old = publish_match_in(edit, owner, node, source, old_start, &ran);
+        if (old) {
+            return old;
+        }
+        if (owner->old_item != owner->old_end || !old_relation_more(owner)) {
+            break;
+        }
+    }
+    publish_match_frame ahead = *owner;
+    while (ran && old_relation_more(&ahead)) {
+        const markdown_core_node *old = publish_match_in(edit, &ahead, node, source, old_start, &ran);
+        if (old) {
+            *owner = ahead;
+            return old;
+        }
     }
     return NULL;
 }
@@ -1839,6 +1940,8 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             if (published && shape == SHAPE_DEFINITION) {
                 frame->walk.cursor.index = publish_final_bodies(node);
                 frame->skips = frame->walk.cursor.index > 0;
+                frame->walk.bodies = publish_skip_bodies(node, frame->walk.cursor.index, frame->walk.start);
+
                 assert(old_entries == OLD_RECORDS || !frame->walk.cursor.index);
             }
             if (old) {
@@ -1852,17 +1955,22 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             if (hand.item == hand.end) {
                 markdown_core_relation relation;
                 if (frame->walk.more && relations_next(&frame->walk.cursor, &relation, &frame->walk.more)) {
+                    const uint32_t skipped = frame->walk.bodies;
                     hand = publish_next(&frame->walk, &hand, &relation);
                     if (frame->skips && relation.continues) {
-                        publish_skip_bodies(frame, &hand);
+                        hand.anchor = skipped;
+                        hand.source = skipped == frame->walk.start ? frame->walk.source_start : skipped;
                     }
                     frame->skips = false;
                     /* A root's later relations are not its content. */
                     if (frame->walk.root) {
                         frame->walk.root = frame->walk.content = false;
                     }
+                    /* A relation that goes on in the field of the one
+                     * before goes on pairing where that one stood. */
                     if (frame->old == OLD_LIVE) {
-                        publish_pair(frame, relation_field(&frame->walk.cursor), relation.shares);
+                        const int field = relation_field(&frame->walk.cursor);
+                        publish_pair(frame, field, relation.shares || (relation.continues && field == frame->field));
                     }
                     publish_relation_begin(parser, &walk->places, frame, &hand, relation.holder,
                                            (relation_shape)frame->walk.cursor.shape, relation.shares);
@@ -3108,6 +3216,10 @@ static bool reopen_record(markdown_core_tail_records *records, markdown_core_nod
     return true;
 }
 
+/* Whether `block`'s children are a definition's bodies, each a relation
+ * of its own whose nodes are the body's. */
+static inline bool holds_bodies(const markdown_core_node *block) { return shape_of(block) == SHAPE_DEFINITION; }
+
 /* THE CHAIN'S RECORDS. Each reopened block is recorded below its owner's
  * record as a block that stays, before the children its owner lets go,
  * which follow it there as the reading passes them (record_nest): the next
@@ -3121,6 +3233,16 @@ static bool reopen_record(markdown_core_tail_records *records, markdown_core_nod
  * does the next of the chain, which the reading reads: nothing walks the
  * children the block keeps or lets go. `*root_last` is the last of the
  * root's records, plus one, or 0. False when the records could not grow. */
+/* `field`, its place and its places, `moved` bytes on. */
+static void field_move(markdown_core_node *field, int64_t moved) {
+    field->place = (markdown_core_place){(uint32_t)(field->place.start + moved), (uint32_t)(field->place.end + moved)};
+    markdown_core_places *places = field->source.places;
+    for (uint32_t i = 0; places && i < places->count; i++) {
+        places->items[i].start = (uint32_t)(places->items[i].start + moved);
+        places->items[i].end = (uint32_t)(places->items[i].end + moved);
+    }
+}
+
 static bool reopen_chain(markdown_core_tail_records *records, const markdown_core_edit *edit, uint32_t *root_last) {
     markdown_core_node *block = edit->chain[0];
     markdown_core_place window = {edit->places[0].start, edit->places[0].start + block->extent.span};
@@ -3139,7 +3261,23 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
         markdown_core_relation_cursor cursor;
         markdown_core_relation relation;
         markdown_core_relations_begin(&cursor, block);
+        const bool bodies = holds_bodies(block);
+        const bool body = level && holds_bodies(edit->chain[level - 1]);
         while (markdown_core_relations_next(&cursor, &relation)) {
+            /* A definition's bodies are its children, a relation each: the
+             * last it keeps is FINAL, and the walk goes on from the body
+             * after it (publish_final_bodies). No chain goes on into one. */
+            if (bodies && cursor.step > 1) {
+                /* The body the chain goes on into is no node of the
+                 * records: its nodes are the definition's, in the bodies'
+                 * relation, below the definition's record. */
+                if (deeper && cursor.index - 1 == final) {
+                    const uint32_t start = edit->places[level + 1].start;
+                    next_window = (markdown_core_place){start, start + block->children[final]->extent.span};
+                    next = owner;
+                }
+                continue;
+            }
             if (relation.holder != block) {
                 for (size_t i = 0; i < relation.count; i++) {
                     relation.items[i]->flags |= MARKDOWN_CORE_NODE__FINAL;
@@ -3167,12 +3305,33 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
                 markdown_core_node *child = block->children[final];
                 const uint32_t start = edit->places[level + 1].start;
                 next_window = (markdown_core_place){start, start + child->extent.span};
-                assert(start == (uint32_t)((int64_t)edit->places[level].prior + child->extent.lead));
-                const uint32_t field = cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
+                assert(body || start == (uint32_t)((int64_t)edit->places[level].prior + child->extent.lead));
+                const uint32_t field = body                             ? 1
+                                       : cursor.shape == SHAPE_CHILDREN ? 0
+                                                                        : (uint32_t)relation_field(&cursor);
                 if (!reopen_record(records, NULL, child->id, child->kind, next_window, field, owner, &next)) {
                     return false;
                 }
             }
+        }
+        if (bodies && final) {
+            block->children[final - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
+            /* The last kept body that holds a node ends, and its last node
+             * does, where the edit's places say: the bodies after lead from
+             * there (publish_skip_bodies). */
+            for (uint32_t at = final; at; at--) {
+                markdown_core_node *kept = block->children[at - 1];
+                if (kept->child_count) {
+                    kept->place.end = kept->children[kept->child_count - 1]->place.end = edit->places[level].prior;
+                    break;
+                }
+            }
+        }
+        /* The field the block reads its places from was read where the
+         * block last started, as its place was: it moves with the block. */
+        markdown_core_node *field = field_of(block, shape_of(block));
+        if (field && window.start != block->place.start) {
+            field_move(field, (int64_t)window.start - block->place.start);
         }
         block->place.start = window.start;
         block->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__FINAL;
@@ -3208,14 +3367,38 @@ static bool record_nest(markdown_core_parser *parser) {
     const uint32_t end =
         edit->taken != SIZE_MAX && edit->taken < edit->nest_count ? (uint32_t)edit->taken : edit->nest_count;
     assert(!edit->nest_recorded);
+    /* A definition's body has no record (reopen_chain): its old children
+     * are its definition's, and the records of the bodies after it follow
+     * theirs. */
+    uint32_t carried = 0;
     for (size_t level = edit->depth; level-- > 0 && edit->nest_recorded < end;) {
         const markdown_core_node *block = edit->chain[level];
-        const uint32_t field = children_field(block);
-        uint32_t last = level + 1 < edit->depth ? edit->owners[level + 1] : 0;
+        const bool body = level && holds_bodies(edit->chain[level - 1]);
+        const uint32_t field = body ? 1 : children_field(block);
+        uint32_t last = carried ? carried : level + 1 < edit->depth ? edit->owners[level + 1] : 0;
+        carried = 0;
         uint32_t before = level + 1 < edit->depth ? edit->ends[level + 1] : edit->places[level].prior;
+        const bool bodies = holds_bodies(block);
         for (uint32_t i = 0; i < edit->levels[level].held && edit->nest_recorded < end; i++) {
             assert(edit->levels[level].saved > i);
             markdown_core_node *old = edit->nested[edit->levels[level].base + i];
+            if (bodies) {
+                /* A definition's body is no node: its nodes are recorded in
+                 * the bodies' relation (relation_field), from where the
+                 * nodes before end, as the bodies go on from one another
+                 * (relations_next). */
+                for (size_t k = 0; k < old->child_count; k++) {
+                    markdown_core_node *node = old->children[k];
+                    const uint32_t start = (uint32_t)((int64_t)before + node->extent.lead);
+                    before = start + node->extent.span;
+                    if (!reopen_record(records, node, node->id, node->kind, (markdown_core_place){start, before}, 1,
+                                       edit->owners[level], &last)) {
+                        return false;
+                    }
+                }
+                edit->nest_recorded++;
+                continue;
+            }
             const uint32_t start = (uint32_t)((int64_t)before + old->extent.lead);
             before = start + old->extent.span;
             if (!reopen_record(records, old, old->id, old->kind, (markdown_core_place){start, before}, field,
@@ -3223,6 +3406,9 @@ static bool record_nest(markdown_core_parser *parser) {
                 return false;
             }
             edit->nest_recorded++;
+        }
+        if (body) {
+            carried = last;
         }
     }
     return true;
@@ -3605,6 +3791,7 @@ static bool walk_push(markdown_core_walk *walk, const markdown_core_node *node, 
     markdown_core_walk_frame *frame = &walk->frames[walk->count++];
     frame->level = level;
     frame->active = false;
+    frame->held = 0;
     frame->owner_start = frame->anchor = start;
     markdown_core_relations_begin(&frame->cursor, node);
     return true;
@@ -3680,6 +3867,20 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
                 }
                 if ((size_t)at->last + 1 < from + count) {
                     frame->relation.count = (size_t)at->last + 1 - from;
+                }
+            } else if (at && frame->relation.holder && frame->held < at->holder->child_count &&
+                       at->holder->children[frame->held] == frame->relation.holder) {
+                /* A relation that holds the nodes of one of the holder's
+                 * children, which has no runs of its own (a definition's
+                 * body), is that child of the window: its first node is
+                 * measured from where the child's extent leads from. */
+                const uint32_t child = frame->held++;
+                if (child < at->first || child > at->last) {
+                    frame->active = false;
+                    continue;
+                }
+                if (child == at->first) {
+                    frame->anchor = (uint32_t)((int64_t)at->start - frame->relation.holder->extent.lead);
                 }
             } else if (at && at->first) {
                 frame->active = false;

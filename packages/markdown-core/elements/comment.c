@@ -158,8 +158,8 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     /* The rest of the fence line, spaces and its ending, is the first line
      * of the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP), and no part of its literal. */
-    markdown_core_parser_advance_offset(parser, (char *)input, first_nonspace + 2 - markdown_core_parser_get_offset(parser),
-                                        false);
+    markdown_core_parser_advance_offset(parser, (char *)input,
+                                        first_nonspace + 2 - markdown_core_parser_get_offset(parser), false);
     return node;
 }
 

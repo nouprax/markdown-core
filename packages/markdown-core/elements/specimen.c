@@ -86,6 +86,12 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         specimen.has_start = false;
         specimen.start = 0;
     }
+    /* What it numbers from is the block before it, which another reading
+     * may make another kind or another block: its opener's reading took the
+     * line end before it too (THE REACH), so no later reading resumes at it. */
+    if (previous) {
+        markdown_core_parser_reach(parser, (*container)->place.start - 1, (*container)->place.start + matched);
+    }
     *(*container)->as.specimen = specimen;
     markdown_core_specimen_state *state = self->state;
     /* A citation names a specimen by its label as written. */

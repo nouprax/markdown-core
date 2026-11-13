@@ -45,9 +45,11 @@ final class DefinitionRecord: MarkupRecord, @unchecked Sendable {
 
     override func relation(at step: Int) -> Relation? {
         guard step < ends.count else { return nil }
+        // Each body after the first continues the bodies before it.
         return Relation(
             name: step == 0 ? "DefinitionTerm" : "DefinitionBody",
-            indices: (step == 0 ? 0 : ends[step - 1])..<ends[step]
+            indices: (step == 0 ? 0 : ends[step - 1])..<ends[step],
+            continues: step > 1
         )
     }
 }

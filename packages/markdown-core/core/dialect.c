@@ -322,17 +322,18 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             /* Lines are a block's content: an element's inline kinds take
              * none, whatever its blocks take. */
             const bool block = index < MARKDOWN_CORE_NODE_KIND_COUNT;
-            record.flags = (uint16_t)((content->inlines ? MARKDOWN_CORE_KIND_INLINES : 0) |
-                                      (content->holds_inlines ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
-                                      (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
-                                      (block && content->mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
-                                      (content->holds_lines ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
-                                      (content->mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
-                                      (content->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
-                                      (lines->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
-                                      (lines->blank_last ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
-                                      (lines->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
-                                      (lines->blank_spreads ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
+            record.flags =
+                (uint16_t)((content->inlines ? MARKDOWN_CORE_KIND_INLINES : 0) |
+                           (content->holds_inlines ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
+                           (S_finish_of(structure)->deferred ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
+                           (block && content->mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
+                           (content->holds_lines ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
+                           (content->mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
+                           (content->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
+                           (lines->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
+                           (lines->blank_last ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
+                           (lines->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
+                           (lines->blank_spreads ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = S_finish_of(structure)->complete;
         }
         if (markdown_core_kind_owns_fields(kind)) {
@@ -353,6 +354,9 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         }
         for (const markdown_core_node_type *kind = edit ? edit->awaits : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
+        }
+        for (const markdown_core_node_type *kind = edit ? edit->joins : NULL; kind && *kind; kind++) {
+            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_JOINS;
         }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */

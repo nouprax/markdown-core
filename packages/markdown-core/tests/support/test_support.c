@@ -402,7 +402,7 @@ static ts_ast_range ts_source_window(const markdown_core_node *node, int64_t bas
 /* A node's relations in canonical field order, read through the public
  * facade alone: each relation's first node is measured from where the
  * owner's source starts, at `start`. A table's rows, in head then content
- * order, are one relation. */
+ * order, are one relation, and so are a definition's bodies. */
 static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *node, int64_t start) {
     ts_walk_stack relations = {0};
     size_t relation = 0;
@@ -435,13 +435,22 @@ static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *no
         break;
     }
     case MARKDOWN_CORE_KIND_DEFINITION: {
+        /* The bodies are one relation in groups: each body after the first
+         * goes on from where the last node of the bodies before ends. */
         size_t bodies;
+        int64_t chain = start;
         TS_CHAIN(ts_nodes(node, markdown_core_node_definition_term));
         TS_OK(markdown_core_node_definition_body_count(node, &bodies));
+        const size_t content_relation = relation++;
         for (size_t body = 0; body < bodies; body++) {
             markdown_core_nodes content;
             TS_OK(markdown_core_node_definition_body_at(node, body, &content));
-            TS_CHAIN(content);
+            const int64_t base = body ? chain : start;
+            ts_walk_push_nodes(&relations, content, base, node, content_relation);
+            chain = base;
+            for (size_t item = 0; item < content.count; item++) {
+                chain = ts_source_window(content.items[item], chain).end;
+            }
         }
         break;
     }

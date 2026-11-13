@@ -8,6 +8,10 @@ int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, ma
  * Reference nodes, settled in source order into `parent`, the block that
  * holds `b`, and drops their bytes from the content. Whether any content is
  * left that is not blank. */
+/* Whether the text of the open paragraph `b` is link reference definitions
+ * whole, none of whose readings read past the byte after it: a definition
+ * on the next line goes on from them as from the start of a paragraph. */
+bool markdown_core_block_reference_definitions_whole(markdown_core_parser *parser, const markdown_core_node *b);
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
                                                             markdown_core_node *parent);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;

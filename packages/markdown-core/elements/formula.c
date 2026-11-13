@@ -668,9 +668,8 @@ static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_F
  * `from` to `end` of the block's content, trimmed of whitespace at both
  * ends, lazy as a literal block's (node.h, A LITERAL, LAZY): a content in
  * two parts (buffer.h, markdown_core_split) is read through them. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_trim_into(markdown_core_node *node,
-                                                                         node_formula *formula, bufsize_t from,
-                                                                         bufsize_t end) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_trim_into(markdown_core_node *node, node_formula *formula,
+                                                                        bufsize_t from, bufsize_t end) {
     if (!node->content.split) {
         const unsigned char *data = node->content.ptr;
         while (from < end && markdown_core_is_whitespace(data[from])) {

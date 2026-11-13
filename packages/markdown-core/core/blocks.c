@@ -1535,10 +1535,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
     if (closing == parser->room_holder) {
         S_room_up(parser);
     }
+    /* From where the block starts once closed: a paragraph's definitions,
+     * cut from its front, note what they read (link.c, THE REACH OF A
+     * DEFINITION). */
+    const bool kept = S_close(parser, closing, kind, parent);
     if (parent == parser->root && markdown_core_parser_reaches(parser)) {
         S_reach_close(parser, closing);
     }
-    const bool kept = S_close(parser, closing, kind, parent);
     parser->at.current = parent;
     parser->at.pending = kept ? closing : NULL;
     if (!kept) {
@@ -4701,12 +4704,12 @@ static bool S_leap_index(markdown_core_parser *parser, markdown_core_node *block
     for (size_t n = first; n < line; n++) {
         const markdown_core_input_line *read = &input->lines.front.values[n];
         const size_t next = S_line_ends(text, size, at, 1, cr);
-        if (!S_append_content_mark(parser, &block->content_map,
-                                   (markdown_core_line_mark){(bufsize_t)at, (int)n + input->first_line,
-                                                             (bufsize_t)(n == first && leap->prose
-                                                                             ? (size_t)block->place.start
-                                                                             : S_leap_first(parser, read, 0)),
-                                                             1, 1, parser->at.indent})) {
+        if (!S_append_content_mark(
+                parser, &block->content_map,
+                (markdown_core_line_mark){
+                    (bufsize_t)at, (int)n + input->first_line,
+                    (bufsize_t)(n == first && leap->prose ? (size_t)block->place.start : S_leap_first(parser, read, 0)),
+                    1, 1, parser->at.indent})) {
             return false;
         }
         at = next == SIZE_MAX ? size : next;
@@ -5426,7 +5429,8 @@ static bool S_resumes(markdown_core_parser *parser, size_t start) {
     const size_t old = (size_t)((int64_t)start - edit->delta);
     if (parser->at.current != root) {
         if (edit->next >= edit->count || S_back_spans_past(&stream->reach, old, old + 1) ||
-            !S_close_inside(parser, root, (markdown_core_node_type)markdown_core_edit_old(edit, root, edit->next)->kind)) {
+            !S_close_inside(parser, root,
+                            (markdown_core_node_type)markdown_core_edit_old(edit, root, edit->next)->kind)) {
             return false;
         }
     }
@@ -5583,6 +5587,18 @@ static int S_carries(markdown_core_parser *parser, markdown_core_node *block, ma
  * with the reading as it was, when they do not. */
 static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind) {
     markdown_core_node *open = parser->at.current, *inside = NULL, *below = NULL;
+    /* Or the open child's element says the line closes it. */
+    const markdown_core_element_instance *structure =
+        open && open != block ? markdown_core_parser_block_kind(parser, open)->structure : NULL;
+    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
+    if (ops && ops->yields && markdown_core_scaffold_parent(open) == block &&
+        ops->yields(structure, parser, open, kind)) {
+        if (block != parser->root && S_carries(parser, block, kind) != 1) {
+            return false;
+        }
+        markdown_core_parser_close_below(parser, block);
+        return !parser->error;
+    }
     const bool abuts = markdown_core_parser_abuts(parser, block);
     for (; open && open != block; open = markdown_core_parser_builder_below(parser, open)) {
         const markdown_core_kind_record *record = markdown_core_parser_block_kind(parser, open);
@@ -5978,8 +5994,7 @@ static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core
     const markdown_core_stream *stream = parser->stream;
     const markdown_core_edit *edit = stream->edit;
     const markdown_core_leap *leap = edit->leap;
-    if (first == SIZE_MAX || (leap->prose && !leap) || block == stream->boundary ||
-        S_back_spans(&stream->reach, old)) {
+    if (first == SIZE_MAX || (leap->prose && !leap) || block == stream->boundary || S_back_spans(&stream->reach, old)) {
         return false;
     }
     for (size_t i = edit->reach_from; i < stream->reach.front.count; i++) {
@@ -6279,6 +6294,12 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
         return false;
     }
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    /* A block a paragraph's line made of another kind reads its content as
+     * that kind does, whole, with the marks of its back (THE BACK OF A
+     * PARAGRAPH). */
+    if (leap->prose && !(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) && !S_content_whole(parser, block)) {
+        return false;
+    }
     const size_t leaf = edit->depth - 1;
     const bool nested = leaf != 0;
     block->flags |= edit->states[leaf] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
@@ -6318,6 +6339,12 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     }
     parser->at.current = parent;
     parser->at.pending = block;
+    /* A paragraph that meets no seam of its old tail parses its content on
+     * from its seam to its end, which lists its uses there again: the old
+     * ones go, to its old end (THE OLD TAIL OF A PARAGRAPH). */
+    if (leap->prose && !leap->kept) {
+        S_uses_trim(edit, edit->ends[leaf]);
+    }
     if (nested) {
         /* Its holder takes back its old children after it, and each block
          * above all of its own (THE NESTED SPLICE). */
@@ -10976,10 +11003,16 @@ static void S_unqueue_chain(markdown_core_parser *parser) {
 }
 
 /* The first child taken back, measured from a child before it that ends
- * `lead` bytes later or sooner than the one it followed (THE SPLICE). */
+ * `lead` bytes later or sooner than the one it followed (THE SPLICE). A
+ * child with no runs of its own (a definition's body) is a holder whose
+ * first child is measured from there too. */
 static void S_move_lead(markdown_core_node *first, int64_t lead) {
     first->extent.lead = (int32_t)(first->extent.lead + lead);
-    first->source.runs->items[0].lead = (int32_t)(first->source.runs->items[0].lead + lead);
+    if (first->source.runs) {
+        first->source.runs->items[0].lead = (int32_t)(first->source.runs->items[0].lead + lead);
+    } else if (first->child_count) {
+        S_move_lead(first->children[0], lead);
+    }
 }
 
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {

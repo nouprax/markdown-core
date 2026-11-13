@@ -106,7 +106,9 @@ public sealed class Markup {
             }
 
             is Definition -> {
-                listOf(Relation("DefinitionTerm", term)) + content.map { Relation("DefinitionBody", it) }
+                // Each body after the first continues the bodies before it.
+                listOf(Relation("DefinitionTerm", term)) +
+                    content.mapIndexed { index, body -> Relation("DefinitionBody", body, continues = index > 0) }
             }
 
             is List -> {

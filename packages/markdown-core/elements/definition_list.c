@@ -378,10 +378,53 @@ static bool close_block(const markdown_core_element_instance *self, markdown_cor
 static const markdown_core_node_type DEFINITION_LIST_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION_LIST,
                                                                 MARKDOWN_CORE_NODE_NONE};
 
+/* The reading takes a definition's old bodies back only after a body that
+ * holds a node: an empty body stands where the one before it ends (ast.c,
+ * publish_body), so the bodies taken back are measured from where the last
+ * node before them ends either way. */
+static bool resumes(const markdown_core_element_instance *self, const markdown_core_parser *parser,
+                    const markdown_core_node *node, const markdown_core_node *next) {
+    (void)self;
+    (void)parser;
+    (void)next;
+    const markdown_core_node *last = node->child_count ? node->children[node->child_count - 1] : NULL;
+    return !last || last->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY || last->child_count;
+}
+
+/* A body reopened at the start of a child's line: the line a blank line's
+ * reading found the body goes on to is no later than that line, as a parse
+ * of the text before it found, which a line past it no longer reads. */
+static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node, const markdown_core_node *next, bool blank) {
+    (void)self;
+    (void)parser;
+    (void)next;
+    (void)blank;
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        node->as.definition_body->continuation_line = 0;
+    }
+}
+
+/* A definition holding no open block closes as the next one's term opens,
+ * whatever its prefixes carry (markdown_core_block_open_definition). */
+static bool yields(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                   const markdown_core_node *open, markdown_core_node_type kind) {
+    (void)self;
+    (void)parser;
+    return open->kind == MARKDOWN_CORE_NODE_DEFINITION && kind == MARKDOWN_CORE_NODE_DEFINITION;
+}
+
+/* A definition's bodies each start with their own marker. */
+static const markdown_core_node_type DEFINITION_KINDS[] = {MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_NONE};
+
 static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
     .reopens = true,
     /* A term after blank lines joins the list before it. */
     .awaits = DEFINITION_LIST_KINDS,
+    .abuts = DEFINITION_KINDS,
+    .reopen_block = reopen_block,
+    .resumes = resumes,
+    .yields = yields,
 };
 
 static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {

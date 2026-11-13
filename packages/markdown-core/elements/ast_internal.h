@@ -169,6 +169,9 @@ typedef struct markdown_core_walk_frame {
     bool active, group_pending;
     /* The next node of the relation in hand, counted from 0. */
     size_t next;
+    /* The relations passed so far that hold the nodes of one of the
+     * owner's children (a definition's bodies). */
+    uint32_t held;
     /* Where the owner's source starts, and where the first run of the next
      * node of the relation in hand is measured from. */
     uint32_t owner_start, anchor;
