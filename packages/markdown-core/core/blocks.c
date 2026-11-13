@@ -2547,9 +2547,37 @@ static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) 
     leap->stops = (markdown_core_seam_stops){0};
 }
 
-void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node) {
+/* Whether `node`, as a node of kind `kind`, parses its inline content from
+ * its seams (THE SEAMS): a paragraph does, and a node of a kind the
+ * preparation parses that its element says parses as one (element.h,
+ * `seams`). */
+static bool S_seams_as(const markdown_core_parser *parser, const markdown_core_node *node,
+                       markdown_core_node_type kind) {
+    const markdown_core_kind_record *record = markdown_core_dialect_kind(parser->dialect, kind);
+    if (record->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) {
+        return true;
+    }
+    const markdown_core_finish_ops *finish =
+        (record->flags & MARKDOWN_CORE_KIND_DEFERRED) ? record->structure->element->finish : NULL;
+    return finish && finish->seams && finish->seams(record->structure, node);
+}
+
+/* Whether the node an edit's reading leapt in parses from the seams its
+ * old parse listed: it is of the kind it was, which parses from seams. */
+static bool S_seams(const markdown_core_parser *parser, const markdown_core_node *node) {
+    const markdown_core_revert *revert = &parser->stream->edit->revert;
+    return (revert->node != node || revert->kind == node->kind) &&
+           S_seams_as(parser, node, (markdown_core_node_type)node->kind);
+}
+
+void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node_type kind) {
     markdown_core_edit *edit = parser->stream->edit;
     if (!edit || !edit->leap || !edit->leap->armed || edit->leap->node != node) {
+        return;
+    }
+    /* A block the reading read as the kind it read its lines as becomes the
+     * node it was again, which keeps them when it parses from seams. */
+    if (edit->revert.node == node && edit->revert.kind == kind && S_seams_as(parser, node, kind)) {
         return;
     }
     S_seam_undo(parser, node);
@@ -2931,9 +2959,11 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
     markdown_core_edit *edit = stream->edit;
     markdown_core_leap *leap = edit->leap;
     const bufsize_t size = S_content_bytes(node);
-    const bool lists = node->id == leap->id &&
-                       (markdown_core_parser_kind(parser, node)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) &&
-                       !markdown_core_parser_undecided(parser);
+    /* A block the reading read as the kind it read its lines as has the id
+     * the publish named it by back as completion ends (S_revert_end). */
+    const markdown_core_revert *revert = &edit->revert;
+    const uint64_t id = revert->node == node ? revert->id : node->id;
+    const bool lists = id == leap->id && S_seams(parser, node) && !markdown_core_parser_undecided(parser);
     assert(!leap->kept || node->child_count == leap->count);
     if (leap->kept && lists) {
         node->child_count = leap->seam.index;
@@ -3271,6 +3301,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdow
         }
         markdown_core_parse_inlines(parser, node, true);
     }
+}
+
+void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node) {
+    S_parse_root(parser, node);
 }
 
 /* The index of the first child of `node` from `from` on that starts at
@@ -6542,7 +6576,8 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     /* A block a paragraph's line made of another kind reads its content as
      * that kind does, whole, with the marks of its back (THE BACK OF A
      * PARAGRAPH). */
-    if (leap->prose && !(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) && !S_content_whole(parser, block)) {
+    const bool paragraph = S_seams(parser, block);
+    if (leap->prose && !paragraph && !S_content_whole(parser, block)) {
         return false;
     }
     const size_t leaf = edit->depth - 1;
@@ -6580,7 +6615,6 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     /* A paragraph keeps the runs, which its parse reads its content's own
      * source from (THE PANE); a block of another kind its paragraph's line
      * made reads its lines' places. */
-    const bool paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
     if (nested && (!S_leap_runs(parser, block, runs, (size_t)((int64_t)start - delta), index) ||
                    (leap->prose && !paragraph && !S_runs_lines(parser, block)))) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

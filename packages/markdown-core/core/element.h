@@ -210,6 +210,11 @@ typedef struct markdown_core_finish_ops {
     /* The element's kinds parse their inline content before completion's
      * walk, by the document's preparation, and not as the walk enters them. */
     bool deferred;
+    /* A node of the element's `deferred` kinds whose inline content parses
+     * as a paragraph's does, in place from its seams when an edit's reading
+     * leaps in it (blocks.c, THE SEAMS): one whose content declares nothing
+     * the preparation orders. NULL: none does. */
+    bool (*seams)(const markdown_core_element_instance *, const markdown_core_node *);
     /* The element's finish step (the API header states the contract), asked
      * from inside completion's walk at the EXIT of every node whose kind is
      * in `exits` and at the ENTER and EXIT of every node whose

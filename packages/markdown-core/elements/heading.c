@@ -78,6 +78,39 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
 
 static uint64_t heading_start_key(const void *entry) { return ((const markdown_core_heading_parse *)entry)->start; }
 
+/* Whether the heading `node` declares nothing its text may name: the bytes
+ * of its content before its last line, which alone may end with its
+ * attributes, are more than a label may hold. Its inline content parses as
+ * a paragraph's does, from its seams when an edit's reading leaps in it
+ * (blocks.c, THE SEAMS). */
+static bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
+    (void)self;
+    const markdown_core_strbuf *content = &node->content;
+    bufsize_t at = content->size;
+    if (at <= MAX_LINK_LABEL_LENGTH + 1) {
+        return false;
+    }
+    while (at > 0 && markdown_core_is_line_end(markdown_core_strbuf_at(content, at - 1))) {
+        at--;
+    }
+    while (at > 0 && !markdown_core_is_line_end(markdown_core_strbuf_at(content, at - 1))) {
+        at--;
+    }
+    return at > MAX_LINK_LABEL_LENGTH + 1;
+}
+
+/* The heading's inline content parsed whole, as its preparation and finish
+ * parse it, or as a paragraph's when it declares nothing (heading_seams). */
+static void heading_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_heading_parse *heading) {
+    if (heading_seams(self, heading->node)) {
+        markdown_core_parser_parse_root(parser, heading->node);
+        return;
+    }
+    markdown_core_prepare_heading(self, parser, heading);
+    markdown_core_finish_heading(parser, heading);
+}
+
 /* The inline content of every heading that settled since the last
  * completion: first, in source order, each one's inlines up to its
  * declaration dependency and the implicit reference it declares, then the
@@ -102,8 +135,10 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
         if (!(heading->node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED) &&
             markdown_core_parser_settled(parser, heading->node)) {
             *heading = (markdown_core_heading_parse){.node = heading->node, .start = heading->start};
-            parser->completing = heading->node;
-            markdown_core_prepare_heading(self, parser, heading);
+            if (!heading_seams(self, heading->node)) {
+                parser->completing = heading->node;
+                markdown_core_prepare_heading(self, parser, heading);
+            }
         }
     }
     for (size_t i = first; i < count && !parser->error; i++) {
@@ -113,7 +148,11 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
             continue;
         }
         parser->completing = node;
-        markdown_core_finish_heading(parser, heading);
+        if (heading_seams(self, node)) {
+            markdown_core_parser_parse_root(parser, node);
+        } else {
+            markdown_core_finish_heading(parser, heading);
+        }
         node->flags |= MARKDOWN_CORE_NODE__HEADING_PARSED;
         heading->authored = node->attributes.anchor.len != 0;
     }
@@ -162,8 +201,7 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
     }
     markdown_core_attributes_free(&node->attributes);
     markdown_core_heading_parse heading = {.node = node};
-    markdown_core_prepare_heading(self, parser, &heading);
-    markdown_core_finish_heading(parser, &heading);
+    heading_parse(self, parser, &heading);
     const bool authored = node->attributes.anchor.len != 0;
     if (authored) {
         markdown_core_chunk_free(&computed);
@@ -2020,6 +2058,7 @@ static const markdown_core_edit_ops HEADING_EDIT = {
 static const markdown_core_finish_ops HEADING_FINISH = {
     .reparse = reparse_inlines,
     .deferred = true,
+    .seams = heading_seams,
 };
 
 static const markdown_core_content_ops HEADING_CONTENT = {

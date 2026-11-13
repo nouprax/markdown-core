@@ -1332,9 +1332,16 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
 }
 
 /* The paragraph `node` an edit's reading reopened at a seam lets go of
- * the children it kept, as it becomes a block of another kind (blocks.c,
- * THE SEAMS). */
-void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node);
+ * the children it kept, as it becomes a block of kind `kind`, unless it is
+ * the node it was again, of a kind that parses from seams (blocks.c, THE
+ * SEAMS). */
+void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node_type kind);
+
+/* The inline content of the root `node`, of a kind the preparation parses
+ * that parses as a paragraph does (element.h, `seams`), parsed as
+ * completion's walk parses a paragraph's: from its seams when an edit's
+ * reading leapt in it (blocks.c, THE SEAMS), whole otherwise. */
+void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node);
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_node *node,
@@ -1342,7 +1349,7 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
                                                                                     markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
     if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
-        markdown_core_parser_unseam(parser, node);
+        markdown_core_parser_unseam(parser, node, kind);
     }
     return markdown_core_node_set_kind(node, parent, kind);
 }
