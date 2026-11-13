@@ -1627,7 +1627,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const markdown_core_node 
      * passes those then. */
     bool ran;
     const markdown_core_node *old = publish_match_in(edit, owner, node, source, old_start, &ran);
-    if (old || !owner->old_relation.continues || (!ran && owner->old_item != owner->old_end)) {
+    /* No relation goes on past this one unless old_relation_more says so:
+     * its first test, before the relation is read. */
+    if (old || owner->old_field == INT_MAX || !owner->old_relation.continues ||
+        (!ran && owner->old_item != owner->old_end)) {
         return old;
     }
     return publish_match_more(edit, owner, node, source, old_start, ran);
