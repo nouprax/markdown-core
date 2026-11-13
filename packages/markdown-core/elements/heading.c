@@ -855,15 +855,20 @@ typedef struct {
 /* A LONG NAME. A base whose bytes before its suffixes -- the `-k` its
  * parent goes without, and its parent's, as far as they go (stem_parent) --
  * are more than NAME_WHOLE is named by their measure (measure.h): the key
- * the names are an index of is NAME_MARK, the measure's sum and size in
- * hex, then the suffixes. A heading's name stems from its parent's as its
- * base's does, and an edit of a long heading that parses from its seams
- * finds its key from the measure its seams keep (blocks.c, THE SEAMS) and
- * the projection of its last children, which hold the suffixes, so no part
- * of its naming reads its whole base; its node's anchor, which shows the
- * key, is the base and the suffixes once read
- * (markdown_core_heading_anchor). */
-enum { NAME_WHOLE = 256, NAME_KEY = 25 };
+ * the names are an index of is NAME_MARK, the measure's two sums and its
+ * size in hex, then the suffixes. A heading's name stems from its parent's
+ * as its base's does, and an edit of a long heading that parses from its
+ * seams finds its key from the measure its seams keep (blocks.c, THE SEAMS)
+ * and the projection of its last children, which hold the suffixes, so no
+ * part of its naming reads its whole base; its node's anchor, which shows
+ * the key, is the base and the suffixes once read
+ * (markdown_core_heading_anchor).
+ *
+ * Two different stems share a key only when both lanes of their measures
+ * agree: by chance about (n / 2^61)^2 of the time for n bytes, or when a
+ * document is made to, as the bases are fixed; such stems then take one
+ * base and its suffixes, the second a `-1`. Keys never leave a document. */
+enum { NAME_WHOLE = 256, NAME_SUMS = 1 + 16 * MARKDOWN_CORE_MEASURE_LANES, NAME_KEY = NAME_SUMS + 8 };
 #define NAME_MARK '\x01'
 
 /* The bytes of the base that stand before its suffixes: of `size` bytes at
@@ -895,11 +900,13 @@ static void name_mark(markdown_core_strbuf *name, markdown_core_measure measure,
     static const char hex[] = "0123456789abcdef";
     unsigned char key[NAME_KEY];
     key[0] = (unsigned char)NAME_MARK;
-    for (int i = 0; i < 16; i++) {
-        key[1 + i] = (unsigned char)hex[(measure.sum >> (60 - 4 * i)) & 15];
+    for (int lane = 0; lane < MARKDOWN_CORE_MEASURE_LANES; lane++) {
+        for (int i = 0; i < 16; i++) {
+            key[1 + 16 * lane + i] = (unsigned char)hex[(measure.sum[lane] >> (60 - 4 * i)) & 15];
+        }
     }
     for (int i = 0; i < 8; i++) {
-        key[17 + i] = (unsigned char)hex[(measure.size >> (28 - 4 * i)) & 15];
+        key[NAME_SUMS + i] = (unsigned char)hex[(measure.size >> (28 - 4 * i)) & 15];
     }
     markdown_core_strbuf_grow(name, NAME_KEY + size);
     if (name->oom) {
@@ -2221,7 +2228,7 @@ markdown_core_chunk markdown_core_heading_anchor(const markdown_core_node *node)
     const shown_anchor *shown = markdown_core_claim_read(slot);
     if (!shown) {
         bufsize_t stem = 0;
-        for (int i = 17; i < NAME_KEY; i++) {
+        for (int i = NAME_SUMS; i < NAME_KEY; i++) {
             const unsigned char c = anchor->data[i];
             stem = stem * 16 + (bufsize_t)(c <= '9' ? c - '0' : c - 'a' + 10);
         }
