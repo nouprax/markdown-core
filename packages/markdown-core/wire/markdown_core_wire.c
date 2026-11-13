@@ -150,7 +150,12 @@ static void put_attributes(wire_buffer *buffer, const markdown_core_attribute_va
     size_t classes = markdown_core_attribute_value_class_count(attributes);
     size_t records = markdown_core_attribute_value_record_count(attributes);
     size_t index;
-    put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
+    markdown_core_optional_string anchor;
+    if (markdown_core_attribute_value_anchor(attributes, &anchor) != MARKDOWN_CORE_OK) {
+        buffer->failed = true;
+        return;
+    }
+    put_optional_string(buffer, anchor);
     put_count(buffer, classes);
     for (index = 0; index < classes && !buffer->failed; ++index) {
         markdown_core_string value;

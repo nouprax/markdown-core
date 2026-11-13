@@ -369,8 +369,10 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         if (node->as.heading->label.len) {
             markdown_core_node_pool_bytes_free(pool, node->as.heading->label.data);
         }
-        markdown_core_free(node->as.heading->shown);
-        node->as.heading->shown = NULL;
+        if (node->as.heading->shown) {
+            markdown_core_free(node->as.heading->shown);
+            node->as.heading->shown = NULL;
+        }
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(&node->as.specimen->label);

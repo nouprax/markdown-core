@@ -6,6 +6,12 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- `markdown_core_node_anchor` and `markdown_core_attribute_value_anchor`
+  return a `markdown_core_status` and give the anchor through an
+  out-parameter. A heading's computed anchor longer than 1024 bytes is made
+  at its first read, which answers `MARKDOWN_CORE_ALLOCATION_FAILED` when
+  storage cannot be had, instead of showing no anchor.
+
 - Lend one line of a flushed session: `markdown_core_session_lines` counts
   the text's lines, the empty one after a last line ending included, and
   `markdown_core_session_line(session, line, &text)` lends line `line`,

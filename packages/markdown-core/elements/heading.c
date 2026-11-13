@@ -92,19 +92,10 @@ static bool heading_line_end(const unsigned char *bytes, bufsize_t size) {
     return false;
 }
 
-/* Whether the heading `node` declares nothing its text may name: the bytes
- * of its content before its last line, which alone may end with its
- * attributes, are more than a label may hold. That is, a line ends past
- * the bytes a label may hold and before the line endings that end the
- * content. Its inline content parses as a paragraph's does, from its seams
- * when an edit's reading leaps in it (blocks.c, THE SEAMS). */
-static bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
-    (void)self;
-    const markdown_core_strbuf *content = &node->content;
+/* Whether a line of the content `content`, of more bytes than a label may
+ * hold, ends past those bytes and before the line endings that end it. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool heading_seams_past(const markdown_core_strbuf *content) {
     bufsize_t end = content->size;
-    if (end <= MAX_LINK_LABEL_LENGTH + 1) {
-        return false;
-    }
     while (end > MAX_LINK_LABEL_LENGTH + 1 && markdown_core_is_line_end(markdown_core_strbuf_at(content, end - 1))) {
         end--;
     }
@@ -115,6 +106,18 @@ static bool heading_seams(const markdown_core_element_instance *self, const mark
     bufsize_t front_size, back_size;
     markdown_core_strbuf_span(content, MAX_LINK_LABEL_LENGTH + 1, end, &front, &front_size, &back, &back_size);
     return heading_line_end(front, front_size) || heading_line_end(back, back_size);
+}
+
+/* Whether the heading `node` declares nothing its text may name: the bytes
+ * of its content before its last line, which alone may end with its
+ * attributes, are more than a label may hold. That is, a line ends past
+ * the bytes a label may hold and before the line endings that end the
+ * content (heading_seams_past). Its inline content parses as a paragraph's
+ * does, from its seams when an edit's reading leaps in it (blocks.c, THE
+ * SEAMS). */
+static inline bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
+    (void)self;
+    return node->content.size > MAX_LINK_LABEL_LENGTH + 1 && heading_seams_past(&node->content);
 }
 
 /* The heading's inline content parsed whole, as its preparation and finish
@@ -700,7 +703,9 @@ static bool push_anchor_children(anchor_projection_stack *stack, const markdown_
 
 /* What the stack holds, projected and appended to `base`, the work it took
  * added to `*work`. False when storage could not be had. */
-static bool project_anchor_stack(size_t *work, markdown_core_strbuf *base, anchor_projection_stack *stack) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack(size_t *work,
+                                                                                 markdown_core_strbuf *base,
+                                                                                 anchor_projection_stack *stack) {
     bool ok = true;
     while (stack->count && ok && !base->oom) {
         anchor_projection projection = stack->values[--stack->count];
@@ -786,8 +791,11 @@ static bool project_anchor_stack(size_t *work, markdown_core_strbuf *base, ancho
 
 /* The projection of the children of `root` from `from` up to `to`,
  * appended to `base`. False when storage could not be had. */
-static bool project_anchor_range(size_t *work, const markdown_core_node *root, uint32_t from, uint32_t to,
-                                 markdown_core_strbuf *base, anchor_projection_stack *stack) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_range(size_t *work,
+                                                                                 const markdown_core_node *root,
+                                                                                 uint32_t from, uint32_t to,
+                                                                                 markdown_core_strbuf *base,
+                                                                                 anchor_projection_stack *stack) {
     stack->count = 0;
     return push_anchor_range(stack, root, from, to, ANCHOR_CONTENT) && project_anchor_stack(work, base, stack);
 }
@@ -885,47 +893,61 @@ typedef struct {
 /* The key of the heading's base, in the pass's name, which it empties
  * first: from the measure its seams keep when it has it (A LONG NAME), from
  * its projection otherwise. */
+/* The key of the long heading `node`'s base, in the pass's name, from the
+ * measure `whole` its seams keep and the projection of its last children.
+ * False, the name empty, when those children hold no suffix boundary past
+ * the bytes a base is read whole within: the base is then projected. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool heading_key_measured(name_pass *pass, markdown_core_node *node,
+                                                                     markdown_core_measure whole) {
+    markdown_core_parser *parser = pass->parser;
+    markdown_core_strbuf *name = &pass->name;
+    /* The last children's projection, from as far back as the suffixes
+     * reach: twice as many children each time, so the children it projects
+     * are at most twice those the suffixes reach, and each of them a few
+     * times. */
+    const uint32_t count = node->child_count;
+    for (uint32_t span = 1; count; span = span < count ? span * 2 : count) {
+        const uint32_t from = span < count ? count - span : 0;
+        markdown_core_strbuf_clear(name);
+        if (!project_anchor_range(&pass->state->anchor_work, node, from, node->child_count, name, &pass->stack) ||
+            (size_t)name->size > (size_t)whole.size) {
+            break;
+        }
+        const size_t offset = (size_t)(whole.size - (uint32_t)name->size);
+        const size_t stem = markdown_core_name_stem(name->ptr, (size_t)name->size, offset);
+        if (stem == SIZE_MAX && from) {
+            continue;
+        }
+        if (stem == SIZE_MAX || offset + stem <= MARKDOWN_CORE_NAME_WHOLE) {
+            break;
+        }
+        markdown_core_measure suffixes = {0, {0, 0}, {1, 1}, {1, 1}};
+        markdown_core_measure_add(&suffixes, name->ptr + stem, (size_t)name->size - stem);
+        markdown_core_name_mark(name, markdown_core_measure_front(suffixes, whole), (bufsize_t)stem,
+                                name->size - (bufsize_t)stem);
+        if (name->oom) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        return true;
+    }
+    markdown_core_strbuf_clear(name);
+    if (name->oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return true;
+    }
+    return false;
+}
+
 static void heading_key(name_pass *pass, markdown_core_heading_parse *heading) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_strbuf *name = &pass->name;
     markdown_core_node *node = heading->node;
     markdown_core_measure whole;
     markdown_core_strbuf_clear(name);
-    if (markdown_core_parser_measured(parser, node, &whole) && whole.size > MARKDOWN_CORE_NAME_WHOLE) {
-        /* The last children's projection, from as far back as the suffixes
-         * reach: twice as many children each time, so the children it
-         * projects are at most twice those the suffixes reach, and each of
-         * them a few times. */
-        const uint32_t count = node->child_count;
-        for (uint32_t span = 1; count; span = span < count ? span * 2 : count) {
-            const uint32_t from = span < count ? count - span : 0;
-            markdown_core_strbuf_clear(name);
-            if (!project_anchor_range(&pass->state->anchor_work, node, from, node->child_count, name, &pass->stack) ||
-                (size_t)name->size > (size_t)whole.size) {
-                break;
-            }
-            const size_t offset = (size_t)(whole.size - (uint32_t)name->size);
-            const size_t stem = markdown_core_name_stem(name->ptr, (size_t)name->size, offset);
-            if (stem == SIZE_MAX && from) {
-                continue;
-            }
-            if (stem == SIZE_MAX || offset + stem <= MARKDOWN_CORE_NAME_WHOLE) {
-                break;
-            }
-            markdown_core_measure suffixes = MARKDOWN_CORE_MEASURE_NONE;
-            markdown_core_measure_add(&suffixes, name->ptr + stem, (size_t)name->size - stem);
-            markdown_core_name_mark(name, markdown_core_measure_front(suffixes, whole), (bufsize_t)stem,
-                                    name->size - (bufsize_t)stem);
-            if (name->oom) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
-            return;
-        }
-        markdown_core_strbuf_clear(name);
-        if (name->oom) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
+    /* Only a heading that parses from its seams keeps a measure. */
+    if (heading_seams(NULL, node) && markdown_core_parser_measured(parser, node, &whole) &&
+        whole.size > MARKDOWN_CORE_NAME_WHOLE && heading_key_measured(pass, node, whole)) {
+        return;
     }
     heading_anchor_base(parser, pass->state, node, name, &pass->stack);
     if (!parser->error) {
@@ -974,8 +996,10 @@ static inline const unsigned char *show_anchor(markdown_core_node *node, markdow
     }
     *anchor = made;
     node->flags |= MARKDOWN_CORE_NODE__ANCHOR_COMPUTED;
-    markdown_core_free(node->as.heading->shown);
-    node->as.heading->shown = NULL;
+    if (node->as.heading->shown) {
+        markdown_core_free(node->as.heading->shown);
+        node->as.heading->shown = NULL;
+    }
     return anchor->data;
 }
 
@@ -2175,11 +2199,12 @@ typedef struct {
     unsigned char bytes[];
 } shown_anchor;
 
-markdown_core_chunk markdown_core_heading_anchor(const markdown_core_node *node) {
+bool markdown_core_heading_anchor(const markdown_core_node *node, markdown_core_chunk *shows) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (node->kind != MARKDOWN_CORE_NODE_HEADING || !(node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
         anchor->len < MARKDOWN_CORE_NAME_KEY || anchor->data[0] != (unsigned char)MARKDOWN_CORE_NAME_MARK) {
-        return *anchor;
+        *shows = *anchor;
+        return true;
     }
     void **slot = &node->as.heading->shown;
     const shown_anchor *shown = markdown_core_claim_read(slot);
@@ -2206,14 +2231,15 @@ markdown_core_chunk markdown_core_heading_anchor(const markdown_core_node *node)
         }
         markdown_core_strbuf_free(&base);
         if (!made) {
-            return (markdown_core_chunk){0};
+            return false;
         }
         shown = markdown_core_claim(slot, made);
         if (shown != made) {
             markdown_core_free(made);
         }
     }
-    return (markdown_core_chunk){(unsigned char *)shown->bytes, shown->size, 0};
+    *shows = (markdown_core_chunk){(unsigned char *)shown->bytes, shown->size, 0};
+    return true;
 }
 
 /* (element.h, the finish's `measure`) The measure of a long heading's

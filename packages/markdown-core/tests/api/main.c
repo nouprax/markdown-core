@@ -1033,6 +1033,14 @@ static void attribute_eq(test_batch_runner *runner, markdown_core_node *node, si
        message);
 }
 
+/* The anchor `node` shows; none when it could not be read. */
+static markdown_core_optional_string anchor_of(const markdown_core_node *node) {
+    markdown_core_optional_string anchor = {0};
+    if (markdown_core_node_anchor(node, &anchor) != MARKDOWN_CORE_OK) {
+        return (markdown_core_optional_string){0};
+    }
+    return anchor;
+}
 static void directive_element_accessors(test_batch_runner *runner) {
     /* `:-a[]` was the input here until Step 7, and it is not a directive: a
      * name may not BEGIN with a hyphen or underscore any more than it may end
@@ -1050,7 +1058,7 @@ static void directive_element_accessors(test_batch_runner *runner) {
        "an explicit directive label is a typed node field");
     OK(runner, child_at(directive, 0) == NULL, "an inline directive label is not a content child");
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "a", "directive name getter");
-    markdown_core_optional_string anchor = markdown_core_node_anchor(directive);
+    markdown_core_optional_string anchor = anchor_of(directive);
     OK(runner, anchor.has_value && anchor.value.length == 3 && memcmp(anchor.value.data, "123", 3) == 0,
        "last ID wins");
     INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 5, "every record occurrence survives");
@@ -1066,8 +1074,7 @@ static void directive_element_accessors(test_batch_runner *runner) {
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "next_name-2",
            "directive name setter updates payload");
 
-    INT_EQ(runner, markdown_core_node_anchor(paragraph).has_value, 0,
-           "a non-directive node has no attribute container");
+    INT_EQ(runner, anchor_of(paragraph).has_value, 0, "a non-directive node has no attribute container");
     INT_EQ(runner, (int)markdown_core_node_attribute_record_count(paragraph), 0,
            "a non-directive node has no attributes to count");
     markdown_core_node_free(doc);
@@ -1124,7 +1131,7 @@ static void directive_element_accessors(test_batch_runner *runner) {
     paragraph = child_at(doc, 0);
     directive = child_at(paragraph, 0);
     for (int i = 0; i < 2; i++) {
-        OK(runner, !markdown_core_node_anchor(directive).has_value, "empty value has no anchor");
+        OK(runner, !anchor_of(directive).has_value, "empty value has no anchor");
         INT_EQ(runner, (int)markdown_core_node_attribute_class_count(directive), 0, "empty classes");
         INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 0, "empty records");
         if (i == 0) {
@@ -2681,14 +2688,14 @@ static void reference_attribute_lifecycle(test_batch_runner *runner) {
     markdown_core_node *reference = child_at(root, 1);
     INT_EQ(runner, markdown_core_node_get_kind(reference), MARKDOWN_CORE_KIND_REFERENCE, "the definition is a node");
     INT_EQ(runner, markdown_core_node_attribute_class_count(first), 0, "a bare occurrence has no attributes");
-    OK(runner, !markdown_core_node_anchor(first).has_value, "a bare occurrence has no anchor");
+    OK(runner, !anchor_of(first).has_value, "a bare occurrence has no anchor");
     INT_EQ(runner, markdown_core_node_attribute_class_count(second), 1, "an occurrence keeps its own classes");
     INT_EQ(runner, markdown_core_node_attribute_record_count(second), 1, "an occurrence keeps its own records");
     attribute_eq(runner, second, 0, "k", "2", "the occurrence's own declaration");
     INT_EQ(runner, markdown_core_node_attribute_record_count(reference), 2, "the Reference keeps duplicates");
     attribute_eq(runner, reference, 0, "k", "1", "the Reference's first declaration");
     attribute_eq(runner, reference, 1, "k", "1", "the Reference's duplicate declaration");
-    markdown_core_optional_string anchor = markdown_core_node_anchor(reference);
+    markdown_core_optional_string anchor = anchor_of(reference);
     OK(runner, anchor.has_value && anchor.value.length == 10 && !memcmp(anchor.value.data, "definition", 10),
        "the Reference has the anchor the definition states");
     markdown_core_node_free(root);
@@ -7387,7 +7394,7 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
                    "declaration and occurrence use the same raw-label limit");
-            INT_EQ(runner, markdown_core_node_anchor(child_at(root, 0)).value.length, length,
+            INT_EQ(runner, anchor_of(child_at(root, 0)).value.length, length,
                    "label eligibility never limits generated heading anchors");
         }
         markdown_core_node_free(root);
@@ -10757,9 +10764,9 @@ static void session_edits_long_headings(test_batch_runner *runner) {
     OK(runner, edited, "edits in a long heading read as a parse does");
     const markdown_core_node *root = edited ? markdown_core_document_root(document) : NULL;
     const markdown_core_optional_string first =
-        root ? markdown_core_node_anchor(facade_child(root, 0)) : (markdown_core_optional_string){0};
+        root ? anchor_of(facade_child(root, 0)) : (markdown_core_optional_string){0};
     const markdown_core_optional_string second =
-        root ? markdown_core_node_anchor(facade_child(root, 1)) : (markdown_core_optional_string){0};
+        root ? anchor_of(facade_child(root, 1)) : (markdown_core_optional_string){0};
     OK(runner,
        first.has_value && second.has_value && first.value.length > 1000 &&
            second.value.length == first.value.length + 2 && memcmp(first.value.data, "word-0-word-1-", 14) == 0 &&
@@ -10774,6 +10781,32 @@ static void session_edits_long_headings(test_batch_runner *runner) {
  * heading whose computed base it is takes the next suffix, before the
  * authored one and after it, and an edit that writes the authored anchor or
  * lets it go reads as a parse does. */
+/* A long computed anchor is made at its first read, which reports a
+ * refused allocation rather than showing no anchor, and reads again after. */
+static void heading_long_anchor_refused(test_batch_runner *runner) {
+    char text[1104] = "# ";
+    memset(text + 2, 'a', 1100);
+    text[1102] = '\n';
+    markdown_core_document *document = NULL;
+    const bool ok = markdown_core_document_parse((const uint8_t *)text, 1103, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
+    markdown_core_optional_string anchor = {0};
+    markdown_core_status refused = MARKDOWN_CORE_OK;
+    if (heading) {
+        payload_probe_arm();
+        payload_fail_at = payload_allocations + 1;
+        refused = markdown_core_node_anchor(heading, &anchor);
+        payload_fail_at = 0;
+        payload_probe_disarm();
+    }
+    INT_EQ(runner, refused, MARKDOWN_CORE_ALLOCATION_FAILED, "a refused first read of a long anchor reports it");
+    OK(runner,
+       heading && markdown_core_node_anchor(heading, &anchor) == MARKDOWN_CORE_OK && anchor.has_value &&
+           anchor.value.length == 1100,
+       "the long anchor reads once storage is had");
+    markdown_core_document_free(document);
+}
+
 static void heading_long_authored_anchor(test_batch_runner *runner) {
     char stem[1101];
     memset(stem, 'a', 1100);
@@ -10789,7 +10822,7 @@ static void heading_long_authored_anchor(test_batch_runner *runner) {
     bool shown = root != NULL;
     static const char *const ends[] = {"-1", "", "-2"};
     for (int i = 0; shown && i < 3; i++) {
-        const markdown_core_optional_string anchor = markdown_core_node_anchor(facade_child(root, i));
+        const markdown_core_optional_string anchor = anchor_of(facade_child(root, i));
         const size_t end = strlen(ends[i]);
         shown = anchor.has_value && anchor.value.length == 1100 + end && memcmp(anchor.value.data, stem, 1100) == 0 &&
                 memcmp(anchor.value.data + 1100, ends[i], end) == 0;
@@ -11303,7 +11336,7 @@ static void session_edits(test_batch_runner *runner) {
 
 /* The anchor `node` has, compared with `expected`. */
 static bool anchor_is(const markdown_core_node *node, const char *expected) {
-    markdown_core_optional_string anchor = node ? markdown_core_node_anchor(node) : (markdown_core_optional_string){0};
+    markdown_core_optional_string anchor = node ? anchor_of(node) : (markdown_core_optional_string){0};
     return anchor.has_value && anchor.value.length == strlen(expected) &&
            memcmp(anchor.value.data, expected, anchor.value.length) == 0;
 }
@@ -12506,6 +12539,7 @@ int main(void) {
     session_edits_nested_notes(runner);
     session_edits_long_headings(runner);
     heading_long_authored_anchor(runner);
+    heading_long_anchor_refused(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
