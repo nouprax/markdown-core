@@ -38,6 +38,15 @@ typedef struct markdown_core_measure {
 
 #define MARKDOWN_CORE_MEASURE_PRIME ((uint64_t)0x1FFFFFFFFFFFFFFF)
 
+/* The measure of `size` bytes whose sum is `sum` (no compound literal: the
+ * header is read by C++ too). */
+static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_make(uint32_t size, uint64_t sum) {
+    markdown_core_measure measure;
+    measure.size = size;
+    measure.sum = sum;
+    return measure;
+}
+
 /* `x`, below 2^64, modulo the prime. */
 static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_mod(uint64_t x) {
     x = (x & MARKDOWN_CORE_MEASURE_PRIME) + (x >> 61);
@@ -106,14 +115,14 @@ static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_of(const
         sum = ((sum << 3) & MARKDOWN_CORE_MEASURE_PRIME) + (sum >> 58) + (word & MARKDOWN_CORE_MEASURE_PRIME) +
               (word >> 61);
     }
-    return (markdown_core_measure){(uint32_t)size, markdown_core_measure_mod(sum)};
+    return markdown_core_measure_make((uint32_t)size, markdown_core_measure_mod(sum));
 }
 
 /* The bytes `a` measures, then those `b` measures. */
 static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_join(markdown_core_measure a,
                                                                              markdown_core_measure b) {
-    return (markdown_core_measure){a.size + b.size,
-                                   markdown_core_measure_mod(a.sum + markdown_core_measure_turn(b.sum, a.size))};
+    return markdown_core_measure_make(a.size + b.size,
+                                      markdown_core_measure_mod(a.sum + markdown_core_measure_turn(b.sum, a.size)));
 }
 
 /* `*measure` with `size` bytes at `bytes` after its own. */
@@ -126,7 +135,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_measure_add(markdown_core_measure
 static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_back(markdown_core_measure front,
                                                                              markdown_core_measure whole) {
     const uint64_t rest = markdown_core_measure_mod(whole.sum + MARKDOWN_CORE_MEASURE_PRIME - front.sum);
-    return (markdown_core_measure){whole.size - front.size, markdown_core_measure_unturn(rest, front.size)};
+    return markdown_core_measure_make(whole.size - front.size, markdown_core_measure_unturn(rest, front.size));
 }
 
 /* The bytes `whole` measures before those its end `back` measures. */
@@ -134,7 +143,7 @@ static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_front(ma
                                                                               markdown_core_measure whole) {
     const uint32_t size = whole.size - back.size;
     const uint64_t lead = markdown_core_measure_turn(back.sum, size);
-    return (markdown_core_measure){size, markdown_core_measure_mod(whole.sum + MARKDOWN_CORE_MEASURE_PRIME - lead)};
+    return markdown_core_measure_make(size, markdown_core_measure_mod(whole.sum + MARKDOWN_CORE_MEASURE_PRIME - lead));
 }
 
 #ifdef __cplusplus
