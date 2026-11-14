@@ -11,6 +11,7 @@
 #include "config.h"
 #include "markdown_core_ctype.h"
 #include "buffer.h"
+#include "pieces.h"
 
 /* Used as default value for markdown_core_strbuf->ptr so that people can always
  * assume ptr is non-NULL and zero terminated even for new markdown_core_strbufs.
@@ -219,6 +220,82 @@ void markdown_core_strbuf_split_join(markdown_core_strbuf *buf) {
     markdown_core_split *split = markdown_core_strbuf_split_take(buf);
     markdown_core_strbuf_put_ahead(buf, markdown_core_split_back(split), (bufsize_t)split->size);
     markdown_core_split_free(split);
+}
+
+bool markdown_core_strbuf_split_replace(markdown_core_strbuf *buf, bufsize_t from, bufsize_t to,
+                                        const unsigned char *bytes, bufsize_t size) {
+    assert(0 <= from && from <= to && to <= buf->size && size >= 0);
+    const size_t whole = (size_t)buf->size - (size_t)(to - from) + (size_t)size;
+    markdown_core_split *split;
+    if (buf->split) {
+        split = markdown_core_strbuf_split_take(buf);
+    } else {
+        /* A whole content parts at the change: what follows it is the back. */
+        split = markdown_core_split_new(whole + whole / 2);
+        if (!split) {
+            return false;
+        }
+        split->size = (size_t)(buf->size - to);
+        memcpy(markdown_core_split_back(split), buf->ptr + to, split->size);
+        markdown_core_strbuf_truncate(buf, to);
+    }
+    if (split->room < whole) {
+        markdown_core_split *grown = markdown_core_split_grow(split, whole + whole / 2);
+        if (!grown) {
+            markdown_core_strbuf_split_view(buf, split);
+            return false;
+        }
+        split = grown;
+    }
+    /* The gap moves to the change, which then goes, and the bytes take its
+     * place at the front's end. */
+    const bufsize_t front = buf->size;
+    if (to <= front) {
+        const size_t moved = (size_t)(front - to);
+        memcpy(markdown_core_split_back(split) - moved, buf->ptr + to, moved);
+        split->size += moved;
+        markdown_core_strbuf_truncate(buf, from);
+    } else if (from >= front) {
+        markdown_core_strbuf_put(buf, markdown_core_split_back(split), from - front);
+        split->size -= (size_t)(to - front);
+    } else {
+        markdown_core_strbuf_truncate(buf, from);
+        split->size -= (size_t)(to - front);
+    }
+    markdown_core_strbuf_put(buf, bytes, size);
+    if (buf->oom) {
+        markdown_core_split_free(split);
+        return false;
+    }
+    markdown_core_strbuf_split_view(buf, split);
+    return true;
+}
+
+bool markdown_core_pieces_same(const markdown_core_pieces *a, const markdown_core_pieces *b) {
+    if (a->size != b->size) {
+        return false;
+    }
+    uint32_t i = 0, k = 0;
+    bufsize_t at = 0, bt = 0;
+    while (i < a->count && k < b->count) {
+        const bufsize_t left = a->sizes[i] - at, right = b->sizes[k] - bt;
+        const bufsize_t take = left < right ? left : right;
+        const unsigned char *p = a->data[i] + at, *q = b->data[k] + bt;
+        if (p != q && memcmp(p, q, (size_t)take) != 0) {
+            return false;
+        }
+        at += take;
+        bt += take;
+        if (at == a->sizes[i]) {
+            i++;
+            at = 0;
+        }
+        if (bt == b->sizes[k]) {
+            k++;
+            bt = 0;
+        }
+    }
+    return true;
 }
 
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {

@@ -225,7 +225,7 @@ typedef struct markdown_core_finish_ops {
     /* The measure of the children of a root of the element's kinds that
      * parses from seams, which each seam keeps of the children before it,
      * so an edit's reading measures only the children it made (blocks.c,
-     * THE SEAMS; markdown_core_parser_measured). NULL: none. */
+     * THE SEAMS; markdown_core_parser_leapt). NULL: none. */
     markdown_core_measure_func measure;
     /* The element's finish step (the API header states the contract), asked
      * from inside completion's walk at the EXIT of every node whose kind is

@@ -14,22 +14,19 @@
  * reading put back to a mark takes back with the node; nodes remain owned
  * by the tree, and an entry names its node, which keeps its address for its
  * whole life. The parse writes the entry's fields after `start` anew.
- * `authored` says its attributes wrote its anchor. `name` is the anchor the headings computed
- * for it, the node's own bytes, `name_size` of them, of which the first
- * `base_size` are the base its text projects to; NULL when it holds none,
- * or when its inline content was made again since. */
+ * `authored` says its attributes wrote its anchor. `named` says its node
+ * holds the base its inline content projects to (node.h, the heading's
+ * name), which its inline content made again since does not; `suffix` is
+ * the suffix of the name the headings committed for it, which its node
+ * shows but while a snapshot gives it another (heading.c, A COMMITTED
+ * HEADING UNDER ANOTHER NAME), and `renamed` says the snapshot under way
+ * did. `stem` is its base's stem, its place plus one, once an edit keeps
+ * them (heading.c, THE NAMES AN EDIT MOVES). */
 typedef struct {
     markdown_core_node *node;
     markdown_core_inline_state *pending;
-    const unsigned char *name;
-    bufsize_t base_size, name_size;
-    uint32_t start;
-    bool authored;
-    /* A heading a streaming commit named whose node a snapshot gave another
-     * name (heading.c, A COMMITTED HEADING UNDER ANOTHER NAME): `holds_name`
-     * says the entry owns the bytes of `name`, which the node no longer
-     * shows; `renamed` says the snapshot under way gave it its name. */
-    bool holds_name, renamed;
+    uint32_t start, suffix, stem;
+    bool authored, named, renamed;
 } markdown_core_heading_parse;
 
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record).
@@ -57,29 +54,59 @@ typedef struct {
 typedef MARKDOWN_CORE_ZIPPER(markdown_core_heading_parse) markdown_core_heading_zipper;
 
 /* THE STEMS (heading.c, THE NAMES AN EDIT MOVES): a name that is the base
- * of a heading's anchor, its `key` the stem's own bytes, `size` of them;
- * where each heading of that base starts, a zipper about the headings'
- * focus, its back measured from their end; the present stems whose parent
- * it is, the stem's own name less one suffix `-k` of its end, linked
- * through `first`, then `next` and `prior`, each a stem's place plus one
- * or zero; what an edit's pass of the names last saw it in, the pass an
- * anchor the edit made or let go names it for, and the suffix that pass
- * tries next for its headings. */
+ * of a heading's anchor, kept as its `measure` alone, its bytes those its
+ * witness holds (heading.c, stem_text): its first heading's base, else its
+ * first child's bytes, else, once it holds neither, the bytes of what it
+ * lost last: the base its last heading to go had before the edit, `relic`,
+ * or its last child to go, `heir`. Where each heading of that base starts,
+ * a zipper about the headings' focus, its back measured from their end; the
+ * stem's parent, `up`, the stem's own name less one suffix `-k` of its end,
+ * and the present stems whose parent it is, linked through `first`, then
+ * `next` and `prior`, each a stem's place plus one or zero; what an edit's
+ * pass of the names last saw it in, the pass an anchor the edit made or let
+ * go names it for, and the suffix that pass tries next for its headings. A
+ * stem whose measure is empty is free. */
 typedef MARKDOWN_CORE_ZIPPER(uint32_t) markdown_core_heading_starts;
 
 typedef struct {
     markdown_core_heading_starts starts;
-    unsigned char *key;
-    bufsize_t size;
-    uint32_t first, next, prior, seen, anchored;
+    markdown_core_measure measure;
+    const markdown_core_strbuf *relic;
+    uint32_t up, first, next, prior, heir, seen, anchored;
     size_t suffix;
 } markdown_core_heading_stem;
 
+/* What an edit lets go of a heading: its stem and the suffix of its name. */
+typedef struct {
+    uint32_t stem, suffix;
+} markdown_core_heading_lost;
+
+/* THE BASE A HEADING THE EDIT READ TAKES, before the edit's end (heading.c,
+ * THE NEW BASES): the bytes of `old`, the base its node had, but for those
+ * from `front` to `back` before its end, which `mid` takes the place of; or,
+ * with no `old`, `mid` whole. It measures `measure`. */
+typedef struct {
+    const markdown_core_strbuf *old;
+    bufsize_t front, back;
+    markdown_core_strbuf mid;
+    markdown_core_measure measure;
+} markdown_core_heading_base;
+
+/* The base of a node an edit made a paragraph again (heading.c,
+ * heading_revert), kept to its end. */
+typedef struct {
+    const markdown_core_node *node;
+    markdown_core_strbuf *base;
+} markdown_core_heading_retired;
+
 /* WHAT AN EDIT KEEPS OF THE NAMES (heading.c, THE NAMES AN EDIT MOVES):
  * every stem, those free chained from `spare` through `next`, and the index
- * of their keys; where the edit's reading starts and its first heading;
- * the pass under way, the stems the edit touched, to name again, and the
- * names of the headings it let go. */
+ * of their names; where the edit's reading starts and its first heading;
+ * the pass under way, the stems the edit touched, to name again, what the
+ * headings it let go held, and the new bases of the headings it read, one
+ * for each from `fresh` on; and the bases of the nodes the edit made
+ * paragraphs again (heading_revert), which their stems' relics read until
+ * the edit's end. */
 typedef struct markdown_core_heading_names {
     markdown_core_heading_stem *stems;
     size_t stem_count, stem_room;
@@ -90,11 +117,14 @@ typedef struct markdown_core_heading_names {
     uint32_t pass;
     uint32_t *touched;
     size_t touched_count, touched_room;
-    /* The names of the headings the edit let go, each its stem's place and
-     * size, four bytes each, then its bytes. */
-    markdown_core_strbuf lost;
+    markdown_core_heading_lost *lost;
+    size_t lost_count, lost_room;
+    markdown_core_heading_base *bases;
+    size_t base_count, base_room;
+    markdown_core_heading_retired *retired;
+    size_t retired_count, retired_room;
     /* What measuring a long heading's children projects them to, and the
-     * projection's stack (heading.c, A LONG NAME). */
+     * projection's stack (heading.c, heading_measure). */
     markdown_core_strbuf scratch;
     void *stack;
     size_t stack_room;

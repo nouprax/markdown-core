@@ -1048,12 +1048,6 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_pa
         }
         return;
     }
-    sink->root = NULL;
-    markdown_core_free(sink->root_places);
-    markdown_core_free(sink->root_reads);
-    sink->root_places = sink->root_reads = NULL;
-    sink->root_place_count = 0;
-    sink->root_indexed = false;
     const markdown_core_places *places = inline_state->owner->source.places;
     if (inline_state->input.len == 0 || !places) {
         return;
@@ -1072,8 +1066,17 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_pa
         at++;
     }
     if (at < sink->length) {
+        /* Only the root whose content reaches the text's end reports; a run
+         * that does not leaves it, whose run may yet finish after this one
+         * (a heading's, prepared before the next heading's and finished
+         * after it). */
         return;
     }
+    markdown_core_free(sink->root_places);
+    markdown_core_free(sink->root_reads);
+    sink->root_places = sink->root_reads = NULL;
+    sink->root_place_count = 0;
+    sink->root_indexed = false;
     sink->root = inline_state->owner;
     inline_state->context = sink;
 }

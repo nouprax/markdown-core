@@ -22,6 +22,7 @@ specs/context/queries.json
 packages/markdown-core/core/case_fold.inc
 packages/markdown-core/core/case_fold_index.inc
 packages/markdown-core/core/entities.inc
+packages/markdown-core/core/measure_tables.inc
 packages/markdown-core/core/anchor_scalars.inc
 packages/markdown-core/core/unicode_categories.inc
 node_modules/

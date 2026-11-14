@@ -4,6 +4,9 @@
 #include "alloc.h"
 #include "map.h"
 
+/* The measure's tables (measure.h), defined here alone. */
+#include "measure_tables.inc"
+
 #define KEY_INDEX_MIN_CAPACITY 16
 
 /* The key's bytes from `p`, eight or four of them, as one number in the
@@ -30,7 +33,7 @@ static inline uint64_t mix_word(uint64_t hash, uint64_t word) {
  * a start that holds the key's length; the bytes of the rest are each read,
  * in two overlapping halves for four to seven of them, so that keys of one
  * length mix different words. Never zero. */
-static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
+uint64_t markdown_core_key_hash(const unsigned char *key, bufsize_t key_len) {
     const size_t length = (size_t)key_len;
     uint64_t hash = UINT64_C(1469598103934665603) ^ length;
     size_t at = 0;
@@ -51,19 +54,27 @@ static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
     return hash ? hash : 1;
 }
 
-static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot *slots, size_t capacity, uint64_t hash,
-                                                   const unsigned char *key, bufsize_t key_len) {
+/* The slot of the key `probe` stands for, which `holds` tells an occupied
+ * slot of the same hash and length holds, or the vacant slot its run ends
+ * at; NULL when the table is full. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
+    markdown_core_key_index_slot *find_slot(markdown_core_key_index_slot *slots, size_t capacity, uint64_t hash,
+                                            bufsize_t key_len, markdown_core_key_holds holds, const void *probe) {
     size_t position = (size_t)hash & (capacity - 1);
-    size_t probe;
-    for (probe = 0; probe < capacity; probe++) {
+    for (size_t step = 0; step < capacity; step++) {
         markdown_core_key_index_slot *slot = &slots[position];
-        if (!slot->key ||
-            (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0)) {
+        if (!slot->key || (slot->hash == hash && slot->key_len == key_len && holds(probe, slot))) {
             return slot;
         }
         position = (position + 1) & (capacity - 1);
     }
     return NULL;
+}
+
+/* A byte key: its bytes, the probe of the byte lookups. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_same(const void *probe,
+                                                                   const markdown_core_key_index_slot *slot) {
+    return memcmp(slot->key, probe, (size_t)slot->key_len) == 0;
 }
 
 /* The least capacity that holds `size` keys at most half full, or zero when
@@ -96,11 +107,12 @@ static int S_rehash(markdown_core_key_index *index, size_t capacity) {
         if (!source->key) {
             continue;
         }
-        destination = find_key_slot(slots, capacity, source->hash, source->key, source->key_len);
-        if (!destination) {
-            markdown_core_free(slots);
-            return 0;
+        /* Keys are distinct: each takes the first vacant slot of its run. */
+        size_t position = (size_t)source->hash & (capacity - 1);
+        while (slots[position].key) {
+            position = (position + 1) & (capacity - 1);
         }
+        destination = &slots[position];
         *destination = *source;
     }
     markdown_core_free(index->slots);
@@ -132,13 +144,13 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
     memset(index, 0, sizeof(*index));
 }
 
-markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
-                                                            bufsize_t key_len) {
-    uint64_t hash = hash_key(key, key_len);
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
+    markdown_core_key_index_slot *S_entry(markdown_core_key_index *index, uint64_t hash, bufsize_t key_len,
+                                          markdown_core_key_holds holds, const void *probe) {
     if (!index->capacity && !markdown_core_key_index_reserve(index, 1)) {
         return NULL;
     }
-    markdown_core_key_index_slot *slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+    markdown_core_key_index_slot *slot = find_slot(index->slots, index->capacity, hash, key_len, holds, probe);
     if (!slot || slot->key) {
         return slot;
     }
@@ -146,7 +158,7 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
         if (!markdown_core_key_index_reserve(index, index->size + 1)) {
             return NULL;
         }
-        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+        slot = find_slot(index->slots, index->capacity, hash, key_len, holds, probe);
         if (!slot) {
             return NULL;
         }
@@ -154,6 +166,32 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
     slot->hash = hash;
     slot->key_len = key_len;
     return slot;
+}
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
+    markdown_core_key_index_slot *S_find(const markdown_core_key_index *index, uint64_t hash, bufsize_t key_len,
+                                         markdown_core_key_holds holds, const void *probe) {
+    if (!index->capacity) {
+        return NULL;
+    }
+    markdown_core_key_index_slot *slot = find_slot(index->slots, index->capacity, hash, key_len, holds, probe);
+    return slot && slot->key ? slot : NULL;
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
+                                                            bufsize_t key_len) {
+    return S_entry(index, markdown_core_key_hash(key, key_len), key_len, S_same, key);
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_entry_hashed(markdown_core_key_index *index, uint64_t hash,
+                                                                   const unsigned char *key, bufsize_t key_len) {
+    return S_entry(index, hash, key_len, S_same, key);
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_place(markdown_core_key_index *index, uint64_t hash,
+                                                            bufsize_t key_len, markdown_core_key_holds holds,
+                                                            const void *probe) {
+    return S_entry(index, hash, key_len, holds, probe);
 }
 
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
@@ -165,12 +203,18 @@ void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_cor
 
 markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_key_index *index,
                                                            const unsigned char *key, bufsize_t key_len) {
-    if (!index->capacity) {
-        return NULL;
-    }
-    markdown_core_key_index_slot *slot =
-        find_key_slot(index->slots, index->capacity, hash_key(key, key_len), key, key_len);
-    return slot && slot->key ? slot : NULL;
+    return S_find(index, markdown_core_key_hash(key, key_len), key_len, S_same, key);
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_find_hashed(const markdown_core_key_index *index, uint64_t hash,
+                                                                  const unsigned char *key, bufsize_t key_len) {
+    return S_find(index, hash, key_len, S_same, key);
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_seek(const markdown_core_key_index *index, uint64_t hash,
+                                                           bufsize_t key_len, markdown_core_key_holds holds,
+                                                           const void *probe) {
+    return S_find(index, hash, key_len, holds, probe);
 }
 
 /* REMOVAL KEEPS EVERY PROBE CHAIN WHOLE. An occupied run is what a lookup

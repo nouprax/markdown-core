@@ -331,32 +331,24 @@ static int sweep_case(const oom_case *test) {
 }
 
 /* A dump of a valid document and source refuses each allocation in turn the
- * same way: no output and ALLOCATION_FAILED, never another status. */
+ * same way: no output and ALLOCATION_FAILED, never another status. Each dump
+ * reads a document of its own, since a read keeps what it joins (a heading's
+ * anchor, a literal) and the next read would not allocate it again. */
 static int sweep_dump(const oom_case *test) {
     markdown_core_document *document = NULL;
     uint8_t *output = NULL;
     size_t length = 0;
-    unsigned long total;
+    unsigned long total = 1;
     unsigned long allocation;
     int result = 0;
 
-    allocation_count = 0;
-    fail_at = 0;
-    if (parse_with_sweep(test, &document) != MARKDOWN_CORE_OK) {
-        fprintf(stderr, "%s: parse for the dump sweep failed\n", test->name);
-        return -1;
-    }
-    allocation_count = 0;
-    if (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
-                                    test->length, &output, &length) != MARKDOWN_CORE_OK) {
-        fprintf(stderr, "%s: counting dump failed\n", test->name);
-        markdown_core_document_free(document);
-        return -1;
-    }
-    free(output);
-    total = allocation_count;
-
-    for (allocation = 1; result == 0 && allocation <= total; allocation++) {
+    for (allocation = 0; result == 0 && allocation <= total; allocation++) {
+        allocation_count = 0;
+        fail_at = 0;
+        if (parse_with_sweep(test, &document) != MARKDOWN_CORE_OK) {
+            fprintf(stderr, "%s: parse for the dump sweep failed\n", test->name);
+            return -1;
+        }
         allocation_count = 0;
         fail_at = allocation;
         failure_fired = 0;
@@ -365,13 +357,20 @@ static int sweep_dump(const oom_case *test) {
             markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
                                         test->length, &output, &length);
         fail_at = 0;
-        if (!failure_fired || output || status != MARKDOWN_CORE_ALLOCATION_FAILED) {
+        if (!allocation) {
+            /* The counting dump. */
+            total = allocation_count;
+            if (status != MARKDOWN_CORE_OK) {
+                fprintf(stderr, "%s: counting dump failed\n", test->name);
+                result = -1;
+            }
+        } else if (!failure_fired || output || status != MARKDOWN_CORE_ALLOCATION_FAILED) {
             fprintf(stderr, "%s: dump allocation %lu / %lu was not reported as OOM\n", test->name, allocation, total);
-            free(output);
             result = -1;
         }
+        free(output);
+        markdown_core_document_free(document);
     }
-    markdown_core_document_free(document);
     return result;
 }
 

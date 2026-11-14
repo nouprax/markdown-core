@@ -1357,11 +1357,17 @@ void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_nod
  * reading leapt in it (blocks.c, THE SEAMS), whole otherwise. */
 void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node);
 
-/* Whether the root `node` an edit's reading parsed from its seams has the
- * measure its element takes of its children (element.h, the finish's
- * `measure`) as its parse made them, which `*measure` is then. */
-bool markdown_core_parser_measured(const markdown_core_parser *parser, const markdown_core_node *node,
-                                   markdown_core_measure *measure);
+/* THE LEAP A ROOT TOOK: whether the root `node` an edit's reading parsed
+ * from its seams has the measures its element takes of its children
+ * (element.h, the finish's `measure`) as its parse made them. Its children
+ * before `*from` and from `*to` on are those it kept, which measure `*front`
+ * and `*back`, and those between are those the parse made. */
+typedef struct {
+    markdown_core_measure front, back;
+    uint32_t from, to;
+} markdown_core_leapt;
+bool markdown_core_parser_leapt(const markdown_core_parser *parser, const markdown_core_node *node,
+                                markdown_core_leapt *leapt);
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_node *node,

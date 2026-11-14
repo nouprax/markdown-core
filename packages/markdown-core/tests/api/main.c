@@ -3018,8 +3018,13 @@ static void heading_reference_resolves_to_the_heading(test_batch_runner *runner)
         OK(runner, markdown_core_document_reference_for(document, destination.label) == heading,
            "the label resolves to the heading");
     }
-    STR_EQ(runner, (const char *)heading->attributes.anchor.data, "straße-and-more", "the anchor is the slug");
-    OK(runner, heading->attributes.anchor.alloc, "the heading owns its anchor");
+    const markdown_core_optional_string slug = anchor_of(heading);
+    OK(runner,
+       slug.has_value && slug.value.length == strlen("straße-and-more") &&
+           !memcmp(slug.value.data, "straße-and-more", slug.value.length),
+       "the anchor is the slug");
+    OK(runner, !heading->attributes.anchor.len && heading->as.heading->base.ptr == slug.value.data,
+       "the heading's anchor is its base, which it owns");
     INT_EQ(runner, markdown_core_document_reference_label_count(document), 1,
            "only the label a heading's text declares resolves");
     markdown_core_document_free(document);
@@ -3719,8 +3724,16 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
                 bool failed = false;
                 const markdown_core_roster_record *found = markdown_core_roster_find(
                     &roster, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
+                /* An anchor's key is filed under its measure (roster.c,
+                 * S_hash), any other's under its bytes. */
                 const markdown_core_key_index_slot *slot =
-                    found ? markdown_core_key_index_find(&roster.index, found->key, found->key_len) : NULL;
+                    !found ? NULL
+                    : found->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
+                        ? markdown_core_key_index_find_hashed(&roster.index,
+                                                              markdown_core_key_index_hash(markdown_core_measure_of(
+                                                                  found->key, (size_t)found->key_len)),
+                                                              found->key, found->key_len)
+                        : markdown_core_key_index_find(&roster.index, found->key, found->key_len);
                 agrees =
                     !failed && (found != NULL) == (key->count > 0) &&
                     (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
@@ -6150,7 +6163,7 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
             markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "deep Span/script headings parse successfully");
         if (root) {
-            STR_EQ(runner, (const char *)child_at(root, 0)->attributes.anchor.data, "a-b-x-1",
+            STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, "a-b-x-1",
                    "heading projection includes script bodies and reserves the later Span anchor");
             OK(runner,
                work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
@@ -7221,7 +7234,7 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         markdown_core_node *root = parse(cases[i].source);
         OK(runner, root != NULL, "completed inline ownership preserves anchor reservations");
         if (root) {
-            STR_EQ(runner, (char *)child_at(root, 0)->attributes.anchor.data, cases[i].anchor,
+            STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, cases[i].anchor,
                    "only final effective anchors on emitted nodes reserve names");
         }
         markdown_core_node_free(root);
@@ -7293,7 +7306,7 @@ static void heading_roster_invariants(test_batch_runner *runner) {
                     } else {
                         strcpy(expected, "same");
                     }
-                    STR_EQ(runner, (const char *)node->attributes.anchor.data, expected,
+                    STR_EQ(runner, (const char *)anchor_of(node).value.data, expected,
                            "every generated suffix is the smallest available");
                 }
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
@@ -7407,7 +7420,7 @@ static size_t count_anchors(markdown_core_node *root) {
     tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
     while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter)->attributes.anchor.len) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && anchor_of(tree_iter_get_node(iter)).has_value) {
             count++;
         }
     }
@@ -10644,13 +10657,13 @@ static void session_edits_allocations(test_batch_runner *runner) {
         markdown_core_position from, to;
         const char *text;
     } sweep_edit;
-    markdown_core_strbuf long_text = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf huge = MARKDOWN_CORE_BUF_INIT();
     for (int item = 0; item < 120; item++) {
         char line[64];
         snprintf(line, sizeof(line), "- item %03d\n\n  more [r]\n\n", item);
-        markdown_core_strbuf_puts(&long_text, line);
+        markdown_core_strbuf_puts(&huge, line);
     }
-    markdown_core_strbuf_puts(&long_text, "[r]: /u\n");
+    markdown_core_strbuf_puts(&huge, "[r]: /u\n");
     const sweep_edit edits[] = {
         {"paragraph", "one\n\ntwo\n\nthree\n", {3, 2}, {3, 2}, "x"},
         {"nested item", "- a\n  - b\n\n  c\n- d\n", {2, 6}, {2, 6}, "x"},
@@ -10658,12 +10671,12 @@ static void session_edits_allocations(test_batch_runner *runner) {
         {"definition", "see [r]\n\n[r]: /u\n\nmid\n\n[r] again\n", {3, 2}, {3, 3}, "s"},
         {"heading", "see [Title]\n\n# Title\n\nend [Title]\n", {3, 8}, {3, 8}, "s"},
         {"table", "| a |\n|---|\n| b [r] |\n\n[r]: /u\n", {3, 3}, {3, 3}, "c"},
-        {"compaction", (const char *)long_text.ptr, {3, 1}, {481, 1}, ""},
+        {"compaction", (const char *)huge.ptr, {3, 1}, {481, 1}, ""},
     };
     const markdown_core_position again = {1, 1};
     for (size_t e = 0; e < sizeof(edits) / sizeof(edits[0]); e++) {
         const sweep_edit *edit = &edits[e];
-        bool held = !long_text.oom, swept = false;
+        bool held = !huge.oom, swept = false;
         size_t fail = 1;
         for (; held && !swept && fail < 100000; fail++) {
             payload_probe_arm();
@@ -10695,7 +10708,7 @@ static void session_edits_allocations(test_batch_runner *runner) {
            "the %s edit refused at each of its %zu allocations keeps the session or fails it, and frees all",
            edit->name, fail - 1);
     }
-    markdown_core_strbuf_free(&long_text);
+    markdown_core_strbuf_free(&huge);
 }
 
 /* A use whose label holds a NUL, which the block replaces before the
@@ -10734,8 +10747,8 @@ static void session_edits_nested_notes(test_batch_runner *runner) {
 }
 
 /* A heading whose text holds more before its last line than a label may
- * hold parses from its seams as a paragraph does, and names itself by the
- * measure they keep of its anchor's base (heading.c, A LONG NAME): an edit
+ * hold parses from its seams as a paragraph does, and an edit that leaps in
+ * it projects only the children it made (heading.c, THE NEW BASES): an edit
  * in one of two such headings that project to one base reads as a parse
  * does, and each shows its anchor whole, the second the first's with -1. */
 static void session_edits_long_headings(test_batch_runner *runner) {
@@ -10777,47 +10790,99 @@ static void session_edits_long_headings(test_batch_runner *runner) {
     markdown_core_strbuf_free(&text);
 }
 
-/* An authored anchor of a long name reserves it as a short one does: a
- * heading whose computed base it is takes the next suffix, before the
- * authored one and after it, and an edit that writes the authored anchor or
- * lets it go reads as a parse does. */
-/* An authored anchor whose bytes are a long name's key reserves no name a
- * heading computes: it is known by a key of its own. */
-static void heading_marked_authored_anchor(test_batch_runner *runner) {
-    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
-    for (int i = 0; i < 1100; i++) {
-        markdown_core_strbuf_putc(&key, 'a');
-    }
-    markdown_core_name_key(&key);
-    char text[2048];
-    char stem[1101];
-    memset(stem, 'a', 1100);
-    stem[1100] = '\0';
-    const int size = snprintf(text, sizeof(text), "# %s\n\n# x {id=\"&#1;%.*s\"}\n", stem, (int)key.size - 1,
-                              (const char *)key.ptr + 1);
-    markdown_core_strbuf_free(&key);
-    markdown_core_document *document = NULL;
-    const bool ok = markdown_core_document_parse((const uint8_t *)text, (size_t)size, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
-    const markdown_core_optional_string first =
-        root ? anchor_of(facade_child(root, 0)) : (markdown_core_optional_string){0};
-    const markdown_core_optional_string second =
-        root ? anchor_of(facade_child(root, 1)) : (markdown_core_optional_string){0};
-    OK(runner, first.has_value && first.value.length == 1100, "a key-shaped authored anchor takes no long name");
-    OK(runner, second.has_value && second.value.length == MARKDOWN_CORE_NAME_KEY && second.value.data[0] == 1,
-       "the authored anchor shows its own bytes");
-    markdown_core_document_free(document);
+/* A NAME IS ITS BYTES (heading.c, THE NAMES): two bases that measure the
+ * same but differ are two names, each its own anchor, while a heading of
+ * the same bytes as one before takes the next suffix; and an authored
+ * anchor of a long name reserves it as a short one does. */
+static int compare_sums(const void *a, const void *b) {
+    const uint64_t x = *(const uint64_t *)a, z = *(const uint64_t *)b;
+    return (x > z) - (x < z);
 }
 
-/* A long computed anchor is made at its first read, which reports a
- * refused allocation rather than showing no anchor, and reads again after. */
-static void heading_long_anchor_refused(test_batch_runner *runner) {
-    char text[1104] = "# ";
-    memset(text + 2, 'a', 1100);
-    text[1102] = '\n';
+static void heading_names_exact(test_batch_runner *runner) {
+    /* Two runs of one measure (measure.h): sixteen bytes whose changes from
+     * the first cancel in G's weights, which lattice reduction finds. */
+    const char *same = "mmmmmmmmmmmmmmmm", *other = "ojlmppsrglnngihk";
+    const markdown_core_measure a = markdown_core_measure_of((const unsigned char *)same, 16),
+                                b = markdown_core_measure_of((const unsigned char *)other, 16);
+    OK(runner, a.size == b.size && a.sum == b.sum, "the pair shares its measure");
+    char text[512];
+    int size = snprintf(text, sizeof(text), "# %s\n\n# %s\n\n# %s\n", same, other, same);
     markdown_core_document *document = NULL;
-    const bool ok = markdown_core_document_parse((const uint8_t *)text, 1103, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
+    bool ok = markdown_core_document_parse((const uint8_t *)text, (size_t)size, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
+    markdown_core_optional_string anchors[3] = {{0}};
+    for (size_t i = 0; root && i < 3; i++) {
+        anchors[i] = anchor_of(facade_child(root, i));
+    }
+    OK(runner,
+       anchors[0].has_value && anchors[0].value.length == 16 && memcmp(anchors[0].value.data, same, 16) == 0 &&
+           anchors[1].has_value && anchors[1].value.length == 16 && memcmp(anchors[1].value.data, other, 16) == 0 &&
+           anchors[2].has_value && anchors[2].value.length == 18 && memcmp(anchors[2].value.data, same, 16) == 0 &&
+           memcmp(anchors[2].value.data + 16, "-1", 2) == 0,
+       "two bases of one measure are two names; the same bytes take -1");
+    markdown_core_document_free(document);
+
+    /* Changes that cancel take a lattice to find, not a pattern: 2^14 runs,
+     * with up to 14 bytes one up at the front and as many one down 61 bytes
+     * on, measure apart. */
+    enum { RUNS = 1 << 14 };
+    uint64_t *sums = (uint64_t *)malloc(RUNS * sizeof(*sums));
+    unsigned char run[140];
+    for (size_t v = 0; sums && v < RUNS; v++) {
+        memset(run, 'm', sizeof(run));
+        for (unsigned k = 0; k < 14; k++) {
+            if (v >> k & 1) {
+                run[k] = 'n';
+                run[61 + k] = 'l';
+            }
+        }
+        sums[v] = markdown_core_measure_of(run, sizeof(run)).sum;
+    }
+    if (sums) {
+        qsort(sums, RUNS, sizeof(*sums), compare_sums);
+    }
+    size_t shared = 0;
+    for (size_t v = 1; sums && v < RUNS; v++) {
+        shared += sums[v] == sums[v - 1];
+    }
+    OK(runner, sums && shared == 0, "a family of small changes measures apart");
+    free(sums);
+
+    markdown_core_strbuf huge = MARKDOWN_CORE_BUF_INIT();
+    char stem[2001];
+    memset(stem, 'a', 2000);
+    stem[2000] = '\0';
+    const char *parts[] = {"# ", stem, "\n\n# x {#", stem, "}\n\n# ", stem, "\n"};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        markdown_core_strbuf_puts(&huge, parts[i]);
+    }
+    document = NULL;
+    ok = markdown_core_document_parse(huge.ptr, (size_t)huge.size, &document) == MARKDOWN_CORE_OK;
+    root = ok ? markdown_core_document_root(document) : NULL;
+    for (size_t i = 0; root && i < 3; i++) {
+        anchors[i] = anchor_of(facade_child(root, i));
+    }
+    OK(runner,
+       anchors[0].has_value && anchors[0].value.length == 2002 && memcmp(anchors[0].value.data + 2000, "-1", 2) == 0 &&
+           anchors[1].has_value && anchors[1].value.length == 2000 && anchors[2].has_value &&
+           anchors[2].value.length == 2002 && memcmp(anchors[2].value.data + 2000, "-2", 2) == 0,
+       "an authored long anchor reserves its name before and after it");
+    markdown_core_document_free(document);
+    markdown_core_strbuf_free(&huge);
+}
+
+/* A name with a suffix is joined at its first read, which reports a refused
+ * allocation rather than showing no anchor, and reads again after. */
+static void heading_long_anchor_refused(test_batch_runner *runner) {
+    char text[2208] = "# ";
+    memset(text + 2, 'a', 1100);
+    memcpy(text + 1102, "\n# ", 3);
+    memset(text + 1105, 'a', 1100);
+    text[2205] = '\n';
+    markdown_core_document *document = NULL;
+    const bool ok = markdown_core_document_parse((const uint8_t *)text, 2206, &document) == MARKDOWN_CORE_OK;
+    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 1) : NULL;
     markdown_core_optional_string anchor = {0};
     markdown_core_status refused = MARKDOWN_CORE_OK;
     if (heading) {
@@ -10825,11 +10890,11 @@ static void heading_long_anchor_refused(test_batch_runner *runner) {
         refused = markdown_core_node_anchor(heading, &anchor);
         strbuf_refuse_next = 0;
     }
-    INT_EQ(runner, refused, MARKDOWN_CORE_ALLOCATION_FAILED, "a refused first read of a long anchor reports it");
+    INT_EQ(runner, refused, MARKDOWN_CORE_ALLOCATION_FAILED, "a refused first read of a joined anchor reports it");
     OK(runner,
        heading && markdown_core_node_anchor(heading, &anchor) == MARKDOWN_CORE_OK && anchor.has_value &&
-           anchor.value.length == 1100,
-       "the long anchor reads once storage is had");
+           anchor.value.length == 1102 && memcmp(anchor.value.data + 1100, "-1", 2) == 0,
+       "the joined anchor reads once storage is had");
     markdown_core_document_free(document);
 }
 
@@ -12598,7 +12663,7 @@ int main(void) {
     heading_long_authored_anchor(runner);
     heading_seams_end_keeps_ids(runner);
     heading_long_anchor_refused(runner);
-    heading_marked_authored_anchor(runner);
+    heading_names_exact(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
