@@ -43,11 +43,15 @@ typedef struct {
      * `end`: each search resumes past the last one's hit, so the lines'
      * ends cost one pass over the payload for each byte. */
     size_t feed, ret;
-    /* The parse's lines, as the engine measured them (parser.h), from the
-     * opening fence's, and the one `line` is; the places' reader, which
+    /* The parse's lines, as the engine measured them (parser.h), and the
+     * one `line` is, from the opening fence's; the places' reader, which
      * has the text alone, has none and finds the lines' ends itself. */
-    const markdown_core_input_line *lines;
+    const markdown_core_parser_input *lines;
     size_t index;
+    /* Line `index`, and how many lines from it on lie in place after it
+     * (markdown_core_tree_run); none until a probe finds it. */
+    const markdown_core_input_line *at;
+    size_t run;
 } properties;
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -399,10 +403,14 @@ static void classify_line(properties *p, size_t line) {
     }
     size_t stop;
     if (p->lines) {
-        while (p->lines[p->index].start < line) {
-            p->index++;
+        if (!p->run) {
+            p->at = markdown_core_tree_run(&p->lines->lines, p->index, sizeof(*p->at), &p->run);
         }
-        stop = p->lines[p->index].end;
+        while (p->at->start < line) {
+            p->index++;
+            p->at = --p->run ? p->at + 1 : markdown_core_tree_run(&p->lines->lines, p->index, sizeof(*p->at), &p->run);
+        }
+        stop = p->at->end;
     } else {
         if (!p->classified || p->feed < line) {
             p->feed = next_byte(p->text, line, p->end, '\n');
@@ -652,7 +660,8 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
                     .end = close,
                     .work = work,
                     .metadata = node->as.metadata,
-                    .lines = markdown_core_parser_source_line(parser, 1)};
+                    .lines = &parser->input,
+                    .index = (size_t)(1 - parser->input.first_line)};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p, next_line(source, 3, length));
     properties_close(&p);
