@@ -79,11 +79,10 @@ typedef struct markdown_core_tree {
     uint32_t levels;
     size_t count, front;
     const markdown_core_tree_ops *ops;
-    /* The last leaf, the rank of its first entry, and how many of its
-     * entries the counts above it hold: an append in place counts only in
-     * the leaf, and the next change counts it above. */
+    /* The last leaf, and how many of its entries the counts above it hold:
+     * an append in place counts only in the leaf, and the next change counts
+     * it above. */
     markdown_core_tree_leaf *last;
-    size_t last_first;
     uint32_t last_held;
     /* The places an append may take in the last leaf in place: none while
      * the tree has a back, or a shift is pending above the last leaf. */

@@ -243,7 +243,12 @@ static void S_descend(const markdown_core_tree *tree, size_t index, S_path *path
 }
 
 void markdown_core_tree_free(markdown_core_tree *tree) {
-    if (tree->root) {
+    /* A tree with no nodes is as an empty tree is made. */
+    if (!tree->root) {
+        assert(!tree->count && !tree->last);
+        return;
+    }
+    {
         void *stack[MARKDOWN_CORE_TREE_LEVELS + 1];
         uint32_t next[MARKDOWN_CORE_TREE_LEVELS + 1];
         uint32_t top = 0;
