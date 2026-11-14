@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_PARSER_H
 #define MARKDOWN_CORE_PARSER_H
 
+#include "measure.h"
 #include <assert.h>
 #include <stdint.h>
 #include "array.h"
@@ -715,6 +716,10 @@ typedef struct {
     uint32_t index, uses, line, source, place, read;
     /* How far before it the child before it ends in the content. */
     uint32_t lead;
+    /* The measure the element of the paragraph's kind takes of the children
+     * before it (element.h, the finish's `measure`), zero for none; a seam
+     * the back holds measures those after it. */
+    markdown_core_measure measure;
 } markdown_core_seam;
 
 /* THE SEAMS a paragraph's parse may meet (blocks.c): the old seams past
@@ -805,6 +810,15 @@ typedef struct markdown_core_leap {
      * source from the run `pane_run`, which starts at `pane_start`, on;
      * `pane_end` once it holds the content's end and the runs after it. */
     bool owed, paned, pane_end;
+    /* THE MEASURE of the paragraph's children (blocks.c): its `ends`'
+     * measure, once its last parse from a seam measured them, `measured`;
+     * the seams from `fresh` on the parse listed are to be measured while
+     * `owing`, the seam of the back it met measuring `stop`; the seams'
+     * measures stand from the first child on, `metered`, and did as the
+     * parse began, `based`. */
+    bool measured, owing, metered, based;
+    size_t fresh;
+    markdown_core_measure stop;
     markdown_core_content_map map;
     markdown_core_places *pane;
     size_t pane_room, pane_mark, pane_start;
@@ -1332,9 +1346,22 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
 }
 
 /* The paragraph `node` an edit's reading reopened at a seam lets go of
- * the children it kept, as it becomes a block of another kind (blocks.c,
- * THE SEAMS). */
-void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node);
+ * the children it kept, as it becomes a block of kind `kind`, unless it is
+ * the node it was again, of a kind that parses from seams (blocks.c, THE
+ * SEAMS). */
+void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node_type kind);
+
+/* The inline content of the root `node`, of a kind the preparation parses
+ * that parses as a paragraph does (element.h, `seams`), parsed as
+ * completion's walk parses a paragraph's: from its seams when an edit's
+ * reading leapt in it (blocks.c, THE SEAMS), whole otherwise. */
+void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node);
+
+/* Whether the root `node` an edit's reading parsed from its seams has the
+ * measure its element takes of its children (element.h, the finish's
+ * `measure`) as its parse made them, which `*measure` is then. */
+bool markdown_core_parser_measured(const markdown_core_parser *parser, const markdown_core_node *node,
+                                   markdown_core_measure *measure);
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_node *node,
@@ -1342,7 +1369,7 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
                                                                                     markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
     if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
-        markdown_core_parser_unseam(parser, node);
+        markdown_core_parser_unseam(parser, node, kind);
     }
     return markdown_core_node_set_kind(node, parent, kind);
 }

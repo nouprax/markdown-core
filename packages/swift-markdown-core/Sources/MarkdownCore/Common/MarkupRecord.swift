@@ -141,7 +141,7 @@ extension InheritedFields {
             id: MarkupID(markdown_core_node_id(node)),
             extent: Extent(markdown_core_node_extent(node)),
             runs: UnsafeBufferPointer(start: runs, count: runCount).map { Run($0) },
-            anchor: markdown_core_node_anchor(node).string,
+            anchor: answer(markdown_core_optional_string()) { markdown_core_node_anchor(node, $0) }.string,
             attributes: Attributes(from: node)
         )
     }

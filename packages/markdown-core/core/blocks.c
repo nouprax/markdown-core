@@ -2119,12 +2119,21 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
  * not one the headings computed for it. A node reserves it once it is
  * complete, and a block the snapshot ends without closing (S_close_tail) as
  * it ends. False when storage could not be had. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_anchor_key(markdown_core_parser *parser,
+                                                             const markdown_core_chunk *anchor, uint32_t start,
+                                                             bool withdraws);
+
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(markdown_core_parser *parser,
                                                                              const markdown_core_node *node,
                                                                              uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-           markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
+    if (!anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+        return true;
+    }
+    if (anchor->len > MARKDOWN_CORE_NAME_WHOLE || anchor->data[0] == (unsigned char)MARKDOWN_CORE_NAME_MARK) {
+        return S_anchor_key(parser, anchor, start, false);
+    }
+    return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
 }
 
 /* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8). A
@@ -2547,9 +2556,37 @@ static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) 
     leap->stops = (markdown_core_seam_stops){0};
 }
 
-void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node) {
+/* Whether `node`, as a node of kind `kind`, parses its inline content from
+ * its seams (THE SEAMS): a paragraph does, and a node of a kind the
+ * preparation parses that its element says parses as one (element.h,
+ * `seams`). */
+static bool S_seams_as(const markdown_core_parser *parser, const markdown_core_node *node,
+                       markdown_core_node_type kind) {
+    const markdown_core_kind_record *record = markdown_core_dialect_kind(parser->dialect, kind);
+    if (record->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) {
+        return true;
+    }
+    const markdown_core_finish_ops *finish =
+        (record->flags & MARKDOWN_CORE_KIND_DEFERRED) ? record->structure->element->finish : NULL;
+    return finish && finish->seams && finish->seams(record->structure, node);
+}
+
+/* Whether the node an edit's reading leapt in parses from the seams its
+ * old parse listed: it is of the kind it was, which parses from seams. */
+static bool S_seams(const markdown_core_parser *parser, const markdown_core_node *node) {
+    const markdown_core_revert *revert = &parser->stream->edit->revert;
+    return (revert->node != node || revert->kind == node->kind) &&
+           S_seams_as(parser, node, (markdown_core_node_type)node->kind);
+}
+
+void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node_type kind) {
     markdown_core_edit *edit = parser->stream->edit;
     if (!edit || !edit->leap || !edit->leap->armed || edit->leap->node != node) {
+        return;
+    }
+    /* A block the reading read as the kind it read its lines as becomes the
+     * node it was again, which keeps them when it parses from seams. */
+    if (edit->revert.node == node && edit->revert.kind == kind && S_seams_as(parser, node, kind)) {
         return;
     }
     S_seam_undo(parser, node);
@@ -2930,10 +2967,13 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_leap *leap = edit->leap;
+    leap->measured = false;
     const bufsize_t size = S_content_bytes(node);
-    const bool lists = node->id == leap->id &&
-                       (markdown_core_parser_kind(parser, node)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) &&
-                       !markdown_core_parser_undecided(parser);
+    /* A block the reading read as the kind it read its lines as has the id
+     * the publish named it by back as completion ends (S_revert_end). */
+    const markdown_core_revert *revert = &edit->revert;
+    const uint64_t id = revert->node == node ? revert->id : node->id;
+    const bool lists = id == leap->id && S_seams(parser, node) && !markdown_core_parser_undecided(parser);
     assert(!leap->kept || node->child_count == leap->count);
     if (leap->kept && lists) {
         node->child_count = leap->seam.index;
@@ -3044,6 +3084,10 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     }
     stream->settled.address = NULL;
     leap->active = leap->armed = false;
+    /* The seams' measures stand from the first child on only while the
+     * measure of the seam the parse began at does (S_seam_measure). */
+    leap->based = !leap->seam.index || leap->metered;
+    leap->metered = leap->owing = false;
     const markdown_core_inline_settle *settle = &leap->settle;
     /* The children the parse made end at `made`; the old tail follows. */
     const bool met = leap->stops.met;
@@ -3115,6 +3159,10 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     const bufsize_t end = met ? leap->stops.end - stop.offset : content.len;
     const bool cr = from < end && memchr(text + from, '\r', (size_t)(end - from));
     uint32_t line = leap->seam.line, at = leap->held;
+    /* The seams from here on are measured once completion is done
+     * (S_seam_measure). */
+    leap->fresh = leap->seam_count;
+    leap->stop = stop.measure;
     /* The seams at the starts the parse listed, and at the one it met. */
     for (size_t k = 0; k <= settle->count; k++) {
         const bool last = k == settle->count;
@@ -3165,7 +3213,8 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
                                  source - node->place.start,
                                  place,
                                  read,
-                                 (uint32_t)(start - past)};
+                                 (uint32_t)(start - past),
+                                 MARKDOWN_CORE_MEASURE_NONE};
     }
     /* Where the paragraph ends, as the seams of the back are measured: from
      * the one met, which the old tail's ends measure, or as the content
@@ -3182,8 +3231,10 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
                                           final->end - node->place.start,
                                           (uint32_t)places->count,
                                           content.len,
-                                          0};
+                                          0,
+                                          MARKDOWN_CORE_MEASURE_NONE};
     }
+    leap->owing = true;
     /* The children a later reading may keep own the bytes they view of the
      * content, whose buffer the reading cuts and grows (THE LEAP), and so
      * does every node below them. */
@@ -3271,6 +3322,61 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdow
         }
         markdown_core_parse_inlines(parser, node, true);
     }
+}
+
+void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node) {
+    S_parse_root(parser, node);
+}
+
+/* THE MEASURE of the paragraph whose content the reading parsed from a
+ * seam, once completion is done and its children are as the publish shows
+ * them: the element of its kind measures the children before each seam the
+ * parse listed, from the measure of the seam it began at, and those past
+ * the last to its end, or to the seam of the back it met, which measures
+ * the rest (element.h, the finish's `measure`). Its measure, the ends',
+ * stands while every seam's does: from its first child on. */
+static void S_seam_measure(markdown_core_parser *parser) {
+    markdown_core_leap *leap = parser->stream->edit->leap;
+    if (!leap || !leap->owing) {
+        return;
+    }
+    leap->owing = false;
+    const markdown_core_node *node = leap->node;
+    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, node);
+    const markdown_core_finish_ops *finish = kind->structure ? kind->structure->element->finish : NULL;
+    const markdown_core_measure_func measures = finish ? finish->measure : NULL;
+    if (!measures || !leap->seam_count) {
+        return;
+    }
+    markdown_core_measure measure = leap->seam.index ? leap->seam.measure : MARKDOWN_CORE_MEASURE_NONE;
+    uint32_t at = leap->seam.index;
+    for (size_t k = leap->fresh; k < leap->seam_count; k++) {
+        if (!measures(kind->structure, node, at, leap->seams[k].index, &measure)) {
+            return;
+        }
+        leap->seams[k].measure = measure;
+        at = leap->seams[k].index;
+    }
+    if (leap->stops.met) {
+        leap->ends.measure = markdown_core_measure_join(measure, leap->stop);
+    } else if (measures(kind->structure, node, at, node->child_count, &measure)) {
+        leap->ends.measure = measure;
+    } else {
+        return;
+    }
+    leap->metered = leap->based;
+    leap->measured = leap->based;
+}
+
+bool markdown_core_parser_measured(const markdown_core_parser *parser, const markdown_core_node *node,
+                                   markdown_core_measure *measure) {
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    const markdown_core_leap *leap = edit ? edit->leap : NULL;
+    if (!leap || !leap->measured || leap->node != node) {
+        return false;
+    }
+    *measure = leap->ends.measure;
+    return true;
 }
 
 /* The index of the first child of `node` from `from` on that starts at
@@ -5177,7 +5283,7 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
             return false;
         }
         leap->seams = seams;
-        seams[leap->seam_count++] = markdown_core_seam_flip(leap->backs[--leap->back_count], &leap->ends);
+        seams[leap->seam_count++] = markdown_core_seam_front(leap->backs[--leap->back_count], &leap->ends);
     }
     /* The seams two lines or more before the rest point's, found by halves. */
     size_t low = 0, high = leap->seam_count;
@@ -5199,7 +5305,7 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line) {
         }
         leap->backs = backs;
         for (size_t i = leap->seam_count; i-- > low;) {
-            backs[leap->back_count++] = markdown_core_seam_flip(leap->seams[i], &leap->ends);
+            backs[leap->back_count++] = markdown_core_seam_back(leap->seams[i], &leap->ends);
         }
     }
     leap->seam_count = low;
@@ -5436,6 +5542,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->leap->round++;
         stream->edit->leap->armed = false;
         stream->edit->leap->owed = stream->edit->leap->paned = false;
+        stream->edit->leap->measured = false;
     }
     if (depth && !S_chain_keep(parser, stream->edit, root, path, places, depth)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -6542,7 +6649,8 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     /* A block a paragraph's line made of another kind reads its content as
      * that kind does, whole, with the marks of its back (THE BACK OF A
      * PARAGRAPH). */
-    if (leap->prose && !(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) && !S_content_whole(parser, block)) {
+    const bool paragraph = S_seams(parser, block);
+    if (leap->prose && !paragraph && !S_content_whole(parser, block)) {
         return false;
     }
     const size_t leaf = edit->depth - 1;
@@ -6580,7 +6688,6 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     /* A paragraph keeps the runs, which its parse reads its content's own
      * source from (THE PANE); a block of another kind its paragraph's line
      * made reads its lines' places. */
-    const bool paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
     if (nested && (!S_leap_runs(parser, block, runs, (size_t)((int64_t)start - delta), index) ||
                    (leap->prose && !paragraph && !S_runs_lines(parser, block)))) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -10896,9 +11003,34 @@ static int S_collect_completed(markdown_core_node **slot, void *context) {
 /* The explicit anchor `node` reserved, withdrawn as starting at `start`. */
 static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_node *node, uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
-           markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
+    if (!anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+        return true;
+    }
+    if (anchor->len > MARKDOWN_CORE_NAME_WHOLE || anchor->data[0] == (unsigned char)MARKDOWN_CORE_NAME_MARK) {
+        return S_anchor_key(parser, anchor, start, true);
+    }
+    return markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
                                          start);
+}
+
+/* An authored anchor of more than MARKDOWN_CORE_NAME_WHOLE bytes, or one
+ * that starts with MARKDOWN_CORE_NAME_MARK, declared or withdrawn by its key
+ * (measure.h, A LONG NAME'S KEY), which a long computed name is known by
+ * too. False when storage could not be had. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_anchor_key(markdown_core_parser *parser,
+                                                             const markdown_core_chunk *anchor, uint32_t start,
+                                                             bool withdraws) {
+    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_put(&key, anchor->data, anchor->len);
+    markdown_core_name_key(&key);
+    bool ok = !key.oom;
+    if (ok) {
+        ok = withdraws
+                 ? markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, key.ptr, key.size, start)
+                 : markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, key.ptr, key.size, start);
+    }
+    markdown_core_strbuf_free(&key);
+    return ok;
 }
 
 /* THE ANCHORS COMPLETING A ROOT RESERVED, withdrawn as starting at `start`,
@@ -11285,6 +11417,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
     if (!parser->error && parser->stream->edit) {
         S_revert_end(&parser->stream->edit->revert);
+        S_seam_measure(parser);
     }
     if (!parser->error && !parser->snapshot && parser->stream->miss_count) {
         S_complete_misses(parser);

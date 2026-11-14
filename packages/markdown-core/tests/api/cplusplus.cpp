@@ -35,7 +35,9 @@ void test_cplusplus(test_batch_runner *runner) {
            markdown_core_node_attribute_record_at(directive, 0, &name, &value) == MARKDOWN_CORE_OK &&
                name.length == 5 && memcmp(name.data, "title", 5) == 0,
            "record order in C++");
-        OK(runner, markdown_core_node_anchor(directive).has_value, "anchor readable in C++");
+        markdown_core_optional_string anchor{};
+        OK(runner, markdown_core_node_anchor(directive, &anchor) == MARKDOWN_CORE_OK && anchor.has_value,
+           "anchor readable in C++");
     }
     markdown_core_node_free(document);
 }

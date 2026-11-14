@@ -28,12 +28,15 @@ struct DocumentBuilder {
     /// and reference, and every heading a label may resolve to.
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
 
-    init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) {
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
+    ///   when the engine cannot make a value it makes at its first read.
+    init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) throws {
         self.document = document
         self.unit = unit
         queue = [root]
         var index = 0
         while index < queue.count {
+            try Self.make(queue[index])
             let owned = scan(queue[index])
             relations.append(owned)
             index += 1
@@ -53,6 +56,35 @@ struct DocumentBuilder {
             records[index] = built
         }
         return unsafeDowncast(take(0), to: DocumentRecord.self)
+    }
+
+    /// Reads the values the engine makes at their first read, a long
+    /// heading's anchor and a literal held in two parts, so that a refused
+    /// allocation is thrown here. The engine keeps what it made, and the
+    /// records built after read it again.
+    private static func make(_ node: OpaquePointer) throws {
+        var anchor = markdown_core_optional_string()
+        try made(markdown_core_node_anchor(node, &anchor))
+        var literal = markdown_core_string()
+        switch markdown_core_node_get_kind(node) {
+        case MARKDOWN_CORE_KIND_TEXT, MARKDOWN_CORE_KIND_CODE, MARKDOWN_CORE_KIND_HTML,
+            MARKDOWN_CORE_KIND_HTML_BLOCK, MARKDOWN_CORE_KIND_COMMENT:
+            try made(markdown_core_node_literal(node, &literal))
+        case MARKDOWN_CORE_KIND_CODE_BLOCK:
+            var info = markdown_core_optional_string()
+            var language = markdown_core_optional_string()
+            var fenced = false
+            var closed = false
+            try made(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed))
+        case MARKDOWN_CORE_KIND_FORMULA, MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+            var mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
+            try made(markdown_core_node_formula_properties(node, &mode, &literal))
+        default: break
+        }
+    }
+
+    private static func made(_ status: markdown_core_status) throws {
+        guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
     }
 
     // Enumerate each facade-owned relation alongside its native kind.

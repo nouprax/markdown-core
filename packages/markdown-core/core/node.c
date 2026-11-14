@@ -369,6 +369,10 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         if (node->as.heading->label.len) {
             markdown_core_node_pool_bytes_free(pool, node->as.heading->label.data);
         }
+        if (node->as.heading->shown) {
+            markdown_core_free(node->as.heading->shown);
+            node->as.heading->shown = NULL;
+        }
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(&node->as.specimen->label);
@@ -631,6 +635,7 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         if (copy->as.heading->label.len && !S_label_own(state, &copy->as.heading->label)) {
             copy->as.heading->label = (markdown_core_chunk){0};
         }
+        copy->as.heading->shown = NULL;
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_chunk_view(&copy->as.specimen->label.value);

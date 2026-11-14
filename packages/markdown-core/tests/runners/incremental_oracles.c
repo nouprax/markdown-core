@@ -1259,6 +1259,15 @@ static int placed_order(const void *left, const void *right) {
  * free root, or when the anchor could share its base with an anchor of a
  * free place or with the fresh or the snapshot's anchor of an earlier
  * heading whose anchor may differ. */
+
+/* The anchor `node` shows; none when it could not be read. */
+static markdown_core_optional_string shown_anchor(const markdown_core_node *node) {
+    markdown_core_optional_string anchor = {0};
+    if (markdown_core_node_anchor(node, &anchor) != MARKDOWN_CORE_OK) {
+        return (markdown_core_optional_string){0};
+    }
+    return anchor;
+}
 static void check_anchors(run *state, const char *where, size_t step, const view *actual, const view *expected,
                           const uint32_t *relations, const correspondence *pairs) {
     placed *headings = (placed *)malloc(expected->count * sizeof(*headings));
@@ -1272,12 +1281,12 @@ static void check_anchors(run *state, const char *where, size_t step, const view
             headings[count++] = (placed){expected->nodes[index].range.start, index};
         }
         if (pairs->expected_free[index]) {
-            ok = add_bases(&loose, markdown_core_node_anchor(expected->nodes[index].object));
+            ok = add_bases(&loose, shown_anchor(expected->nodes[index].object));
         }
     }
     for (index = 0; ok && index < actual->count; index++) {
         if (pairs->actual_free[index]) {
-            ok = add_bases(&loose, markdown_core_node_anchor(actual->nodes[index].object));
+            ok = add_bases(&loose, shown_anchor(actual->nodes[index].object));
         }
     }
     if (!ok) {
@@ -1287,12 +1296,12 @@ static void check_anchors(run *state, const char *where, size_t step, const view
     qsort(headings, count, sizeof(*headings), placed_order);
     for (index = 0; index < count && !stopped(state); index++) {
         size_t heading = headings[index].index, mine = pairs->to_actual[heading];
-        markdown_core_optional_string theirs = markdown_core_node_anchor(expected->nodes[heading].object), own;
+        markdown_core_optional_string theirs = shown_anchor(expected->nodes[heading].object), own;
         bool may_differ;
         if (mine == SIZE_MAX) {
             continue;
         }
-        own = markdown_core_node_anchor(actual->nodes[mine].object);
+        own = shown_anchor(actual->nodes[mine].object);
         may_differ = relations[heading] || shares_base(&loose, theirs) || shares_base(&earlier, theirs);
         if (!may_differ && !same_anchor(own, theirs)) {
             fail(state, "4.1", "%s step %zu: heading %zu's anchor differs from the fresh parse's", where, step,

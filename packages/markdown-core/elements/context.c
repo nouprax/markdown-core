@@ -1,3 +1,4 @@
+#include "heading.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -411,9 +412,9 @@ static bool leads(const markdown_core_chunk *chunk, const uint8_t *text, size_t 
  * the cursor: a block that ends at the brace of another, a value's, holds
  * none of the members written inside that value. A field that holds an
  * escape, a reference, a quote or a NUL is passed, since its member holds
- * other bytes than its source. */
+ * other bytes than its source. `anchor` is the anchor the node shows. */
 static bool carries(const context_query *query, const markdown_core_node *node, markdown_core_slot_kind slot,
-                    size_t first) {
+                    size_t first, const markdown_core_chunk *anchor) {
     if ((slot != MARKDOWN_CORE_SLOT_CLASS && slot != MARKDOWN_CORE_SLOT_VALUE) || first > query->cursor) {
         return true;
     }
@@ -455,7 +456,7 @@ static bool carries(const context_query *query, const markdown_core_node *node, 
             return true;
         }
     }
-    return leads(&attributes->anchor, text, length);
+    return leads(anchor, text, length);
 }
 
 /* Whether `citation` is one a field of `slot` writes: a footnote's label
@@ -609,9 +610,15 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
         if (misses) {
             continue;
         }
-        if ((slot == MARKDOWN_CORE_SLOT_ID && !names(query, &at_probe[i]->attributes.anchor, first, brace)) ||
+        markdown_core_chunk anchor;
+        if (!markdown_core_heading_anchor(at_probe[i], &anchor)) {
+            markdown_core_free((void *)at_probe);
+            markdown_core_free((void *)at_first);
+            return false;
+        }
+        if ((slot == MARKDOWN_CORE_SLOT_ID && !names(query, &anchor, first, brace)) ||
             (owner == MARKDOWN_CORE_KIND_CITATION && !refers(at_probe[i], slot)) ||
-            (past != SIZE_MAX && !carries(query, at_probe[i], slot, first))) {
+            (past != SIZE_MAX && !carries(query, at_probe[i], slot, first, &anchor))) {
             continue;
         }
         bool starts = true, before = false;

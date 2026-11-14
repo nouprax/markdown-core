@@ -813,8 +813,11 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_body_at(con
                                                                              markdown_core_nodes *content);
 /** Universal fields. Classes and records retain source order and duplicates;
  * absent attributes have zero counts. An `_at` accessor answers OUT_OF_BOUNDS
- * for an index at or past its count. */
-MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node);
+ * for an index at or past its count. A heading's computed anchor may be made
+ * at its first read, which answers ALLOCATION_FAILED when storage cannot be
+ * had for it. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_anchor(const markdown_core_node *node,
+                                                                 markdown_core_optional_string *anchor);
 MARKDOWN_CORE_API size_t markdown_core_node_attribute_class_count(const markdown_core_node *node);
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_class_at(const markdown_core_node *node,
                                                                              size_t index, markdown_core_string *value);
@@ -828,8 +831,8 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_record_at(co
  * it names has the ones the definition states. */
 typedef struct markdown_core_attribute_value markdown_core_attribute_value;
 MARKDOWN_CORE_API const markdown_core_attribute_value *markdown_core_node_attributes(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_optional_string
-markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes);
+MARKDOWN_CORE_API markdown_core_status markdown_core_attribute_value_anchor(
+    const markdown_core_attribute_value *attributes, markdown_core_optional_string *anchor);
 MARKDOWN_CORE_API size_t markdown_core_attribute_value_class_count(const markdown_core_attribute_value *attributes);
 MARKDOWN_CORE_API markdown_core_status markdown_core_attribute_value_class_at(
     const markdown_core_attribute_value *attributes, size_t index, markdown_core_string *value);
