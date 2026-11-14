@@ -1467,7 +1467,8 @@ static void base_read(name_pass *pass, markdown_core_heading_parse *heading) {
         return;
     }
     /* A heading whose text projects to nothing borrows the base "section";
-     * any other takes the projection's storage, and the pass the node's. */
+     * any other copies the projection, so the pass keeps its storage for the
+     * next heading's. */
     markdown_core_heading *value = heading->node->as.heading;
     const markdown_core_strbuf *read = name->size ? name : &SECTION;
     markdown_core_pieces base;
@@ -1479,10 +1480,17 @@ static void base_read(name_pass *pass, markdown_core_heading_parse *heading) {
             }
             value->base = SECTION;
         } else {
-            if (markdown_core_strbuf_borrows(&value->base)) {
+            if (markdown_core_strbuf_borrows(&value->base) || value->base.split) {
+                if (!markdown_core_strbuf_borrows(&value->base)) {
+                    markdown_core_strbuf_free(&value->base);
+                }
                 markdown_core_strbuf_init(&value->base, 0);
             }
-            markdown_core_strbuf_swap(&value->base, name);
+            markdown_core_strbuf_set(&value->base, name->ptr, name->size);
+            if (value->base.oom) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                return;
+            }
         }
         name_unshow(value);
     }
