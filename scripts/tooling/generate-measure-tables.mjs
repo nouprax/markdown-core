@@ -39,7 +39,7 @@ assert.equal(
         return product;
     }, 1n),
     P - 1n,
-    "the factors are all of P - 1's",
+    "the factors are all of P - 1's"
 );
 /* G is the first generator from an arbitrary start. */
 let G = 0x0f3ac6b15d27e489n;
