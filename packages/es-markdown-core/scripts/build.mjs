@@ -18,6 +18,7 @@ const core = [
     "buffer.c",
     "roster.c",
     "map.c",
+    "tree.c",
     "sink.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"

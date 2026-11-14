@@ -19,6 +19,7 @@ set(HEADERS
     slab.h
     metadata.h
     roster.h
+    tree.h
     map.h
     utf8.h
     inlines.h
@@ -30,7 +31,6 @@ set(HEADERS
     delimiter.h
     ahead.h
     array.h
-    zipper.h
     seam.h
     measure.h
     claim.h
@@ -47,6 +47,7 @@ set(LIBRARY_SOURCES
     buffer.c
     roster.c
     map.c
+    tree.c
     sink.c
     houdini_html_u.c
     markdown_core_ctype.c

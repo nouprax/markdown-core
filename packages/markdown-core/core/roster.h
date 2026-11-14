@@ -4,9 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "map.h"
+#include "array.h"
 #include "pieces.h"
 #include "node.h"
-#include "zipper.h"
+#include "tree.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,13 +57,16 @@ extern "C" {
  * records up to it as it is appended.
  *
  * THE PLACES. A parse an edit reads again holds each kind's declarations in
- * a zipper (zipper.h) about the edit: the declarations before where the
- * reading starts in the front, and the rest in the back, which the reading
- * does not see, until it takes the old text back from a place (THE SPLICE,
- * blocks.c), the back's declarations before that place going with the text
- * they were in. A record holds where it starts as its entry does: in the
- * text, or, in the back, measured back from the end. A parse no edit read
- * has no places, and its records stand in the text. */
+ * a tree (tree.h) whose focus is the edit: the declarations before where
+ * the reading starts in the front, and the rest in the back, which the
+ * reading does not see, until it takes the old text back from a place (THE
+ * SPLICE, blocks.c), the back's declarations before that place going with
+ * the text they were in. A placed record's number says where its entry is
+ * (`where`), which holds where it starts: in the text, or, in the back, in
+ * the text before the edit until the splice. A parse no edit read has no
+ * places, and its records hold where they start in the text. */
+#define MARKDOWN_CORE_ROSTER_UNPLACED UINT32_MAX
+
 typedef enum {
     MARKDOWN_CORE_ROSTER_REFERENCE = 1,
     MARKDOWN_CORE_ROSTER_FOOTNOTE,
@@ -77,18 +81,21 @@ typedef struct markdown_core_roster_record {
      * beside the last it let go, where a search of the list begins
      * (S_link). A withdrawal: the declaration it withdrew, in `before`. */
     struct markdown_core_roster_record *before, *after, *hint;
-    /* Where the declaring or withdrawing definition starts: in the text, or
-     * measured back from the end when the record is in the back. */
+    /* Where the declaring or withdrawing definition starts in the text,
+     * while the kinds hold no places; then a declaration's entry holds it
+     * (markdown_core_roster_start). */
     uint32_t start;
+    /* A placed declaration's number in `where`, or MARKDOWN_CORE_ROSTER_UNPLACED. */
+    uint32_t id;
     /* A withdrawal: how many of the key's declarations stand after it. */
     uint32_t live;
     /* The key: the kind's byte, then the label, then NUL. */
     bufsize_t key_len;
     /* Whether the record withdraws a declaration of its key; whether, a
      * declaration, the index holds it in its key's list; whether a
-     * withdrawal withdrew it; whether it is in the back; and whether the
-     * text it was in is gone, which an edit replaced. */
-    bool withdraws, linked, withdrawn, back, gone;
+     * withdrawal withdrew it; and whether the text it was in is gone, which
+     * an edit replaced. */
+    bool withdraws, linked, withdrawn, gone;
     unsigned char key[];
 } markdown_core_roster_record;
 
@@ -97,8 +104,6 @@ typedef struct {
     uint32_t start;
     markdown_core_roster_record *record;
 } markdown_core_roster_place;
-
-typedef MARKDOWN_CORE_ZIPPER(markdown_core_roster_place) markdown_core_roster_places;
 
 /* Storage records are carved from, newest first (roster.c). */
 typedef struct markdown_core_roster_block markdown_core_roster_block;
@@ -112,7 +117,7 @@ typedef struct {
      * the log, and none after it. */
     size_t indexed, cursor;
     /* The kind's declarations about an edit, once one reads the parse. */
-    markdown_core_roster_places places;
+    markdown_core_tree places;
 } markdown_core_roster_space;
 
 typedef struct markdown_core_roster {
@@ -125,6 +130,11 @@ typedef struct markdown_core_roster {
     markdown_core_key_index index;
     markdown_core_roster_block *blocks;
     size_t block_used, block_size;
+    /* Where each placed declaration of a number has its entry (tree.h, A
+     * HANDLE); a number none holds has no leaf, and its slot is the next
+     * free number plus one, as `free` is the first's. */
+    MARKDOWN_CORE_ARRAY(markdown_core_tree_handle) where;
+    uint32_t free;
     /* Where a lookup assembles its key. */
     markdown_core_strbuf key;
     /* Whether the kinds hold their declarations in places, which an edit
@@ -180,17 +190,17 @@ const markdown_core_roster_record *markdown_core_roster_find_name(markdown_core_
 markdown_core_roster_record *markdown_core_roster_first(markdown_core_roster *roster, markdown_core_roster_kind kind,
                                                         const unsigned char *label, bufsize_t length, bool *failed);
 
-/* The declaration `record` of the index's list that starts where `record`
- * does, of its key, in the terms of the back when `back` or of the front:
- * the one of `kind` for `label`, as markdown_core_roster_first takes it,
- * that the index holds and starts at `start` there, or NULL, as it is when
- * the kinds hold no places. */
+/* The declaration of the index's list of the back when `back`, or of the
+ * front, of `kind` for `label`, as markdown_core_roster_first takes it,
+ * that starts at `start` in that part's terms, or NULL, as it is when the
+ * kinds hold no places. */
 const markdown_core_roster_record *markdown_core_roster_held_at(const markdown_core_roster *roster,
                                                                 markdown_core_roster_kind kind,
                                                                 const unsigned char *label, bufsize_t length, bool back,
                                                                 uint32_t start);
 /* The first declaration of the back in the list `first` begins, or NULL. */
-const markdown_core_roster_record *markdown_core_roster_back_first(markdown_core_roster_record *first);
+const markdown_core_roster_record *markdown_core_roster_back_first(const markdown_core_roster *roster,
+                                                                   markdown_core_roster_record *first);
 
 /* The earliest declaration of `kind` for the reference-label normal form of
  * `label`, as written, as above; a label that normalizes to nothing, or is
@@ -212,10 +222,28 @@ static inline markdown_core_chunk markdown_core_roster_label(const markdown_core
     return label;
 }
 
-/* Where the record starts in the text. */
+/* Where a placed declaration starts, in the terms of the part that holds
+ * it, and whether that is the back. */
+uint32_t markdown_core_roster_placed(const markdown_core_roster *roster, const markdown_core_roster_record *record,
+                                     bool *back);
+
+/* Where the record starts in the text: the text before the edit, for one
+ * of the back before the splice. */
 static inline uint32_t markdown_core_roster_start(const markdown_core_roster *roster,
                                                   const markdown_core_roster_record *record) {
-    return record->back ? (uint32_t)roster->spaces[record->key[0]].places.end - record->start : record->start;
+    bool back;
+    return record->id != MARKDOWN_CORE_ROSTER_UNPLACED ? markdown_core_roster_placed(roster, record, &back)
+                                                       : record->start;
+}
+
+/* Whether the declaration is in the back. */
+static inline bool markdown_core_roster_back(const markdown_core_roster *roster,
+                                             const markdown_core_roster_record *record) {
+    bool back = false;
+    if (record->id != MARKDOWN_CORE_ROSTER_UNPLACED) {
+        (void)markdown_core_roster_placed(roster, record, &back);
+    }
+    return back;
 }
 
 /* Whether the declaration `record`, the earliest of its key a lookup found,
@@ -279,7 +307,7 @@ static inline bool markdown_core_roster_stands(const markdown_core_roster_record
  * hidden from the reopen to the splice. */
 static inline bool markdown_core_roster_seen(const markdown_core_roster *roster,
                                              const markdown_core_roster_record *record) {
-    return markdown_core_roster_stands(record) && !(record->back && roster->hidden);
+    return markdown_core_roster_stands(record) && !(roster->hidden && markdown_core_roster_back(roster, record));
 }
 
 /* The point the log is at now. */
@@ -288,13 +316,12 @@ markdown_core_roster_mark markdown_core_roster_mark_now(const markdown_core_rost
  * release the storage they were carved from. */
 void markdown_core_roster_rollback(markdown_core_roster *roster, markdown_core_roster_mark mark);
 
-/* AN EDIT READS FROM `start` (blocks.c, THE REOPEN) of a text of `size`
- * bytes: each kind's declarations that start there or past it go to the
+/* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's declarations that start there or past it go to the
  * back, which lookups do not see until the splice; the first edit places
  * them, and one whose log holds more dead bytes than live compacts it
  * first. False, with the roster as it was, when storage could not be
  * had. */
-bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, size_t size);
+bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
 /* THE SPLICE (blocks.c): the back's declarations that start before `place`
  * of the text before the edit go with the text the edit replaced, their
  * keys kept for markdown_core_roster_lost, the end moves by `delta`, and

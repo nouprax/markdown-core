@@ -3432,10 +3432,36 @@ static markdown_core_key_entry key_of(const char *key) {
     return (markdown_core_key_entry){markdown_core_key_head(bytes, size), bytes, size, 0, NULL};
 }
 
-/* THE ORDERED INDEX AGREES WITH A SORTED MODEL whichever order the keys
- * arrive in -- rising, falling or scattered, through splits at every level:
- * one entry per key, each key's entry and rank, each rank's entry, a walk
- * from any key, a missing key's rank. Keys share heads, so the bytes past the
+static bool key_tree_before(const void *a, const void *b) { return markdown_core_key_before(a, b); }
+
+static const markdown_core_tree_ops key_tree_ops = {
+    sizeof(markdown_core_key_entry), NULL, key_tree_before, NULL, NULL, NULL};
+
+/* The entry of `key`'s key in `tree`, a tree of keys, or NULL, and the rank
+ * of that key into `*rank`. */
+static markdown_core_key_entry *key_tree_find(const markdown_core_tree *tree, const markdown_core_key_entry *key,
+                                              size_t *rank) {
+    *rank = markdown_core_tree_seek(tree, key);
+    if (*rank == tree->count) {
+        return NULL;
+    }
+    markdown_core_key_entry *entry = (markdown_core_key_entry *)(uintptr_t)markdown_core_tree_peek(tree, *rank);
+    return markdown_core_key_same(entry, key) ? entry : NULL;
+}
+
+/* The entry of `key`'s key, `key` put in when there was none. */
+static markdown_core_key_entry *key_tree_entry(markdown_core_tree *tree, const markdown_core_key_entry *key,
+                                               bool *made) {
+    size_t rank;
+    markdown_core_key_entry *held = key_tree_find(tree, key, &rank);
+    *made = !held;
+    return held ? held : markdown_core_tree_insert(tree, rank, key, false);
+}
+
+/* A TREE OF KEYS AGREES WITH A SORTED MODEL whichever order the keys arrive
+ * in -- rising, falling or scattered, through splits at every level: one
+ * entry per key, each key's entry and rank, each rank's entry, a walk from
+ * any key, a missing key's rank. Keys share heads, so the bytes past the
  * eighth and the lengths decide among them too. An insertion whose storage
  * cannot be had leaves the tree as it was, and the free releases every
  * node. */
@@ -3456,17 +3482,17 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
     qsort(sorted, COUNT, sizeof(*sorted), key_model_order);
     payload_probe_arm();
     for (size_t order = 0; order < ORDERS; order++) {
-        markdown_core_key_tree tree = {0};
+        markdown_core_tree tree = markdown_core_tree_make(&key_tree_ops);
         bool ok = true;
         for (size_t step = 0; step < COUNT && ok; step++) {
             const size_t i = order == 0 ? step : order == 1 ? COUNT - 1 - step : step * 1999 % COUNT;
             const markdown_core_key_entry key = key_of(keys[i]);
             bool made = false;
-            markdown_core_key_entry *entry = markdown_core_key_tree_entry(&tree, &key, &made);
+            markdown_core_key_entry *entry = key_tree_entry(&tree, &key, &made);
             ok = entry && made && entry->key == key.key;
             if (ok) {
                 entry->value = keys[i];
-                entry = markdown_core_key_tree_entry(&tree, &key, &made);
+                entry = key_tree_entry(&tree, &key, &made);
                 ok = entry && !made && entry->value == keys[i];
             }
         }
@@ -3475,13 +3501,13 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
         for (size_t rank = 0; rank < COUNT && agrees; rank++) {
             const markdown_core_key_entry key = key_of(sorted[rank]);
             size_t found_rank = SIZE_MAX;
-            const markdown_core_key_entry *found = markdown_core_key_tree_find(&tree, &key, &found_rank);
+            const markdown_core_key_entry *found = key_tree_find(&tree, &key, &found_rank);
             agrees = found && found->value == sorted[rank] && found_rank == rank &&
-                     markdown_core_key_tree_at(&tree, rank)->value == sorted[rank];
+                     ((const markdown_core_key_entry *)markdown_core_tree_peek(&tree, rank))->value == sorted[rank];
             char missing[40];
             snprintf(missing, sizeof(missing), "%s~", sorted[rank]);
             const markdown_core_key_entry absent = key_of(missing);
-            agrees = agrees && !markdown_core_key_tree_find(&tree, &absent, &found_rank);
+            agrees = agrees && !key_tree_find(&tree, &absent, &found_rank);
             const size_t expected = rank + 1 < COUNT && key_model_order(&sorted[rank + 1], &(const char *){missing}) < 0
                                         ? SIZE_MAX
                                         : rank + 1;
@@ -3491,11 +3517,12 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
         bool walks = true;
         for (size_t from = 0; from < COUNT && walks; from += 97) {
             const markdown_core_key_entry key = key_of(sorted[from]);
-            markdown_core_key_tree_cursor cursor;
-            markdown_core_key_tree_seek(&tree, &key, &cursor);
-            size_t at = from;
-            for (const markdown_core_key_entry *entry; (entry = markdown_core_key_tree_next(&cursor)); at++) {
-                walks = walks && at < COUNT && entry->value == sorted[at];
+            size_t at = markdown_core_tree_seek(&tree, &key);
+            walks = at == from;
+            for (; at < tree.count && walks; at++) {
+                walks =
+                    ((const markdown_core_key_entry *)markdown_core_tree_at(&tree, at, sizeof(markdown_core_key_entry)))
+                        ->value == sorted[at];
             }
             walks = walks && at == COUNT;
         }
@@ -3507,33 +3534,35 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
             const markdown_core_key_entry key = key_of("~");
             payload_fail_at = payload_allocations + fail;
             bool made = false;
-            const markdown_core_key_entry *entry = markdown_core_key_tree_entry(&tree, &key, &made);
+            const markdown_core_key_entry *entry = key_tree_entry(&tree, &key, &made);
             payload_fail_at = 0;
             if (entry) {
                 kept = kept && made && tree.count == COUNT + 1;
                 break;
             }
-            kept = tree.count == COUNT && markdown_core_key_tree_at(&tree, COUNT - 1)->value == sorted[COUNT - 1];
+            kept = tree.count == COUNT &&
+                   ((const markdown_core_key_entry *)markdown_core_tree_peek(&tree, COUNT - 1))->value ==
+                       sorted[COUNT - 1];
         }
         OK(runner, kept, "order %zu: a refused insertion leaves the tree as it was", order);
-        markdown_core_key_tree_free(&tree);
+        markdown_core_tree_free(&tree);
     }
-    markdown_core_key_tree numbers = {0};
+    markdown_core_tree numbers = markdown_core_tree_make(&key_tree_ops);
     bool ok = true;
     for (uint32_t i = 0; i < COUNT && ok; i++) {
         const markdown_core_key_entry key = markdown_core_key_number(COUNT - i);
         bool made = false;
-        markdown_core_key_entry *entry = markdown_core_key_tree_entry(&numbers, &key, &made);
+        markdown_core_key_entry *entry = key_tree_entry(&numbers, &key, &made);
         ok = entry && made;
         if (ok) {
             entry->extra = COUNT - i;
         }
     }
     for (uint32_t rank = 0; rank < COUNT && ok; rank++) {
-        ok = markdown_core_key_tree_at(&numbers, rank)->extra == rank + 1;
+        ok = ((const markdown_core_key_entry *)markdown_core_tree_peek(&numbers, rank))->extra == rank + 1;
     }
     OK(runner, ok, "numbers are keys in numeric order");
-    markdown_core_key_tree_free(&numbers);
+    markdown_core_tree_free(&numbers);
     INT_EQ(runner, payload_live, 0, "the trees' nodes are all released");
     payload_probe_disarm();
 }
@@ -3774,9 +3803,9 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
                                              MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_DEFINITION_LIST};
     /* Blocks open and take content on the line the driver visits; no input
      * has begun, so stand on an empty line at the start of the source. */
-    parser->input.lines.front.values[0] = (markdown_core_input_line){0};
+    *(markdown_core_input_line *)markdown_core_tree_push(&parser->input.lines, sizeof(markdown_core_input_line)) =
+        (markdown_core_input_line){0};
     parser->input.first_line = parser->at.line_number;
-    parser->input.lines.front.count = 1;
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
@@ -3834,7 +3863,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
         markdown_core_node_array_pop(parser->root->children, &parser->root->child_count);
         markdown_core_parser_release_node(parser, node);
     }
-    parser->input.lines.front.count = 0;
+    markdown_core_tree_erase(&parser->input.lines, 0, parser->input.lines.count);
 }
 
 static bool begin_with_lazy_block_inspection(markdown_core_dialect_builder *builder, void *context) {
@@ -5237,8 +5266,8 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = properties->line_work;
     work->physical_line_bytes = parser->input_line_work;
-    work->physical_lines = parser->input.lines.front.count;
-    work->physical_capacity = parser->input.lines.front.ahead.capacity;
+    work->physical_lines = parser->input.lines.front;
+    work->physical_capacity = markdown_core_tree_room(&parser->input.lines);
     work->physical_facts = parser->input.fact_count;
     work->physical_fact_capacity = parser->input.fact_capacity;
     work->normalized_lines = 0;
@@ -5267,7 +5296,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     for (size_t i = 0; i < parser->roster.count; i++) {
         work->definitions += parser->roster.records[i]->key[0] == MARKDOWN_CORE_ROSTER_REFERENCE;
     }
-    work->heading_collection_disposed = headings->headings.front.values == NULL && headings->count == 0;
+    work->heading_collection_disposed = headings->headings.root == NULL && headings->count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
@@ -8356,7 +8385,8 @@ static void properties_envelope_derives_each_line_once(test_batch_runner *runner
 }
 
 /* Unknown plain keys and already accepted fields borrow their source spans.
- * Only the line index grows with rejected members; values allocate nothing. */
+ * Only the line index grows with rejected members, a leaf at a time; values
+ * allocate nothing. */
 static void properties_rejected_members_borrow_source(test_batch_runner *runner) {
     size_t baseline_allocations = 0, baseline_decoded = 0;
     for (size_t members = 0; members <= 1024; members += 1024) {
@@ -8375,8 +8405,10 @@ static void properties_rejected_members_borrow_source(test_batch_runner *runner)
             baseline_allocations = payload_allocations;
             baseline_decoded = work.metadata_value_bytes;
         } else {
-            OK(runner, payload_allocations <= baseline_allocations + 16,
-               "rejected members add logarithmic index growth, not per-key allocations: %zu versus %zu",
+            /* The line index takes a leaf for each MARKDOWN_CORE_TREE_LEAF
+             * lines (tree.h), and an inner node for each fanout of those. */
+            OK(runner, payload_allocations <= baseline_allocations + 16 + 2 * members / MARKDOWN_CORE_TREE_LEAF,
+               "rejected members add only the line index's leaves, not per-key allocations: %zu versus %zu",
                payload_allocations, baseline_allocations);
             INT_EQ(runner, work.metadata_value_bytes, baseline_decoded,
                    "unknown and duplicate values are never decoded");
@@ -8400,6 +8432,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             /* The whole text: no commit follows. */
             markdown_core_stream whole = {.ends = true};
             markdown_core_parser reader = {.stream = &whole};
+            reader.input.lines = markdown_core_tree_make(&markdown_core_input_lines);
             reader.input.source = bytes;
             reader.input.size = sizeof(bytes);
             reader.input.first_line = 1;
@@ -8407,7 +8440,9 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bool split = value == '\r' || value == '\n';
             OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
                "only CR and LF end a physical line: byte %u at %zu", value, position);
-            OK(runner, first && ((first->facts && reader.input.facts[first->facts - 1].nul_count == 1) == (value == 0)),
+            OK(runner,
+               first && ((markdown_core_input_facts(&reader.input, first) &&
+                          markdown_core_input_facts(&reader.input, first)->nul_count == 1) == (value == 0)),
                "only NUL requests normalization: byte %u", value);
             markdown_core_input_line *second = markdown_core_parser_source_line(&reader, 2);
             bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
@@ -8416,12 +8451,13 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
             INT_EQ(runner, reader.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
             markdown_core_free(reader.input.facts);
-            markdown_core_array_free(&reader.input.lines.front);
+            markdown_core_tree_free(&reader.input.lines);
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_stream whole = {.ends = true};
     markdown_core_parser parser = {.stream = &whole};
+    parser.input.lines = markdown_core_tree_make(&markdown_core_input_lines);
     parser.input.source = source;
     parser.input.size = sizeof(source) - 1;
     parser.input.first_line = 7;
@@ -8433,7 +8469,9 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                line && line->start == starts[i] && line->end == ends[i] &&
                    markdown_core_input_line_next(&parser, line) == next[i],
                "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
-            OK(runner, line && (line->facts && parser.input.facts[line->facts - 1].nul_count != 0) == (i == 0),
+            OK(runner,
+               line && (markdown_core_input_facts(&parser.input, line) &&
+                        markdown_core_input_facts(&parser.input, line)->nul_count != 0) == (i == 0),
                "NUL normalization is a line fact");
         }
         INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
@@ -8452,7 +8490,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     INT_EQ(runner, parser.input.fact_count, 2, "only queried lines own speculative facts");
     INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
     markdown_core_free(parser.input.facts);
-    markdown_core_array_free(&parser.input.lines.front);
+    markdown_core_tree_free(&parser.input.lines);
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
@@ -8480,8 +8518,8 @@ static void short_line_storage_is_bounded(test_batch_runner *runner) {
                shape == 2 ? work.physical_fact_capacity >= count && work.physical_fact_capacity < 2 * count
                           : work.physical_fact_capacity == 0,
                "optional facts obey their own doubling bound");
-            OK(runner, work.physical_capacity >= count && work.physical_capacity < 2 * count,
-               "retained geometry capacity is bounded by twice the number of lines");
+            OK(runner, work.physical_capacity >= count && work.physical_capacity < count + MARKDOWN_CORE_TREE_LEAF,
+               "retained geometry capacity is bounded by the lines and one leaf");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
