@@ -129,7 +129,12 @@ void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const vo
 
 /* The `count` entries from rank `index` go; the focus keeps its place among
  * the others. */
-void markdown_core_tree_erase(markdown_core_tree *tree, size_t index, size_t count);
+void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count);
+static inline void markdown_core_tree_erase(markdown_core_tree *tree, size_t index, size_t count) {
+    if (count) {
+        markdown_core_tree_cut(tree, index, count);
+    }
+}
 
 /* Every entry from rank `index` on moves by `delta` in the text. */
 void markdown_core_tree_shift(markdown_core_tree *tree, size_t index, int64_t delta);

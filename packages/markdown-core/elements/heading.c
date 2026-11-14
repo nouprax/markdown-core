@@ -232,7 +232,19 @@ static void heading_parse(const markdown_core_element_instance *self, markdown_c
  * before every later one in source order, so only the headings after them
  * are put in order: those that closed since, and those the last completion
  * left because they had not settled. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void headings_prepare(const markdown_core_element_instance *self,
+                                                                 markdown_core_parser *parser);
+
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    const markdown_core_heading_state *state = self->state;
+    /* Every heading the parse holds is parsed, and none past them is left
+     * from a reading put back: there is nothing to prepare. */
+    if (state->parsed < state->count || state->headings.front > state->count) {
+        headings_prepare(self, parser);
+    }
+}
+
+static void headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     heading_sync(state);
     const size_t first = state->parsed, count = state->count;

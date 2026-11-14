@@ -360,7 +360,7 @@ size_t markdown_core_tree_from(const markdown_core_tree *tree, size_t place, siz
 size_t markdown_core_tree_seek(const markdown_core_tree *tree, const void *key) {
     /* A tree of keys moves none, and appends none in place: nothing is
      * pending in it, and the counts above its leaves hold. */
-    if (!tree->root) {
+    if (!tree->count) {
         return 0;
     }
     assert(!tree->ops->shift && !tree->spare && tree->last_held == tree->last->count);
@@ -809,9 +809,25 @@ static void S_drop_leaf(markdown_core_tree *tree, const S_path *path) {
     }
 }
 
-void markdown_core_tree_erase(markdown_core_tree *tree, size_t index, size_t count) {
-    assert(index + count <= tree->count);
-    if (!count) {
+void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count) {
+    assert(count && index + count <= tree->count);
+    /* A tree of one leaf: the entries go from the leaf alone, which stays,
+     * empty or not, for the entries to come. */
+    if (!tree->levels) {
+        S_leaf *leaf = tree->root;
+        const size_t size = tree->ops->size;
+        const uint32_t k = (uint32_t)index;
+        memmove(S_entry(tree, leaf, k), S_entry(tree, leaf, k + count), (leaf->count - k - count) * size);
+        leaf->count -= (uint32_t)count;
+        S_moved(tree, leaf, k, leaf->count);
+        tree->count -= count;
+        tree->last_held = leaf->count;
+        if (index < tree->front) {
+            tree->front -= tree->front - index < count ? tree->front - index : count;
+        }
+        tree->seen = leaf;
+        tree->seen_first = 0;
+        S_spare(tree);
         return;
     }
     S_settle(tree);
