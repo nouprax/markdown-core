@@ -132,9 +132,8 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
     memset(index, 0, sizeof(*index));
 }
 
-markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
-                                                            bufsize_t key_len) {
-    uint64_t hash = hash_key(key, key_len);
+static MARKDOWN_CORE_INLINE markdown_core_key_index_slot *S_entry(markdown_core_key_index *index, uint64_t hash,
+                                                                  const unsigned char *key, bufsize_t key_len) {
     if (!index->capacity && !markdown_core_key_index_reserve(index, 1)) {
         return NULL;
     }
@@ -156,6 +155,16 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
     return slot;
 }
 
+markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
+                                                            bufsize_t key_len) {
+    return S_entry(index, hash_key(key, key_len), key, key_len);
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_entry_hashed(markdown_core_key_index *index, uint64_t hash,
+                                                                   const unsigned char *key, bufsize_t key_len) {
+    return S_entry(index, hash, key, key_len);
+}
+
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
                                     const unsigned char *key) {
     assert(!entry->key && key);
@@ -170,6 +179,15 @@ markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_k
     }
     markdown_core_key_index_slot *slot =
         find_key_slot(index->slots, index->capacity, hash_key(key, key_len), key, key_len);
+    return slot && slot->key ? slot : NULL;
+}
+
+markdown_core_key_index_slot *markdown_core_key_index_find_hashed(const markdown_core_key_index *index, uint64_t hash,
+                                                                  const unsigned char *key, bufsize_t key_len) {
+    if (!index->capacity) {
+        return NULL;
+    }
+    markdown_core_key_index_slot *slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
     return slot && slot->key ? slot : NULL;
 }
 

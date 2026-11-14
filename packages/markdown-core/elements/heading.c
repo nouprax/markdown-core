@@ -921,8 +921,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool heading_key_measured(name_pass *
         if (stem == SIZE_MAX || offset + stem <= MARKDOWN_CORE_NAME_WHOLE) {
             break;
         }
-        markdown_core_measure suffixes = {0, {0, 0}, {1, 1}, {1, 1}};
-        markdown_core_measure_add(&suffixes, name->ptr + stem, (size_t)name->size - stem);
+        const markdown_core_measure suffixes = markdown_core_measure_of(name->ptr + stem, (size_t)name->size - stem);
         markdown_core_name_mark(name, markdown_core_measure_front(suffixes, whole), (bufsize_t)stem,
                                 name->size - (bufsize_t)stem);
         if (name->oom) {

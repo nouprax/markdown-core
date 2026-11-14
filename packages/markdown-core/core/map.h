@@ -2,6 +2,7 @@
 #define MARKDOWN_CORE_MAP_H
 
 #include "chunk.h"
+#include "measure.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,21 @@ typedef struct markdown_core_key_index {
     size_t size;
 } markdown_core_key_index;
 
+/* The hash an index that takes given hashes files a key under: its measure (measure.h), mixed so
+ * that keys that differ in their last bytes alone, whose sums differ in
+ * their low bits alone, spread over the table. A key's hash follows from
+ * the measures of its parts (markdown_core_measure_join), so a key read in
+ * parts is found as its bytes whole are. Never zero. */
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_key_index_hash(markdown_core_measure measure) {
+    uint64_t hash = measure.sum ^ (uint64_t)measure.size * UINT64_C(0x9e3779b97f4a7c15);
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
+    hash ^= hash >> 33;
+    return hash ? hash : 1;
+}
+
 int markdown_core_key_index_init(markdown_core_key_index *index, size_t expected_size);
 /* Make room for `size` keys in all, so that taking that many grows the index
  * no further. Zero means allocation failure. */
@@ -39,9 +55,17 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
                                                             bufsize_t key_len);
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
                                     const unsigned char *key);
+/* The same, filed under a hash the caller gives (markdown_core_key_index_hash
+ * of the key's measure, which the caller may have joined from parts). An
+ * index takes every key one way: by its bytes or by a given hash, never
+ * both, since a slot keeps the hash it was filed under. */
+markdown_core_key_index_slot *markdown_core_key_index_entry_hashed(markdown_core_key_index *index, uint64_t hash,
+                                                                   const unsigned char *key, bufsize_t key_len);
 /* The occupied entry for `key`, or NULL; never grows the index. */
 markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_key_index *index,
                                                            const unsigned char *key, bufsize_t key_len);
+markdown_core_key_index_slot *markdown_core_key_index_find_hashed(const markdown_core_key_index *index, uint64_t hash,
+                                                                  const unsigned char *key, bufsize_t key_len);
 /* Remove an occupied entry. Every other entry stays findable; entries the
  * index holds may move, so no entry pointer survives the call. */
 void markdown_core_key_index_remove(markdown_core_key_index *index, markdown_core_key_index_slot *entry);
