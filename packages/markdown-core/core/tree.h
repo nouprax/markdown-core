@@ -94,14 +94,16 @@ typedef struct markdown_core_tree {
     size_t seen_first;
 } markdown_core_tree;
 
-/* The leaf at hand of a tree that has none. */
-extern markdown_core_tree_leaf markdown_core_tree_bare;
+/* The leaf at hand of a tree that has none. Never written: a reader of it
+ * finds no entries, and every change to a tree puts another leaf at hand
+ * first. */
+extern const markdown_core_tree_leaf markdown_core_tree_bare;
 
 /* An empty tree of entries `ops` describes. */
 static inline markdown_core_tree markdown_core_tree_make(const markdown_core_tree_ops *ops) {
     markdown_core_tree tree = {0};
     tree.ops = ops;
-    tree.seen = &markdown_core_tree_bare;
+    tree.seen = (markdown_core_tree_leaf *)&markdown_core_tree_bare;
     return tree;
 }
 

@@ -10,7 +10,7 @@
  * an append may have just made. */
 typedef markdown_core_tree_leaf S_leaf;
 
-markdown_core_tree_leaf markdown_core_tree_bare;
+const markdown_core_tree_leaf markdown_core_tree_bare = {.count = 0};
 
 typedef struct S_inner {
     uint32_t count;
@@ -844,7 +844,7 @@ void markdown_core_tree_erase(markdown_core_tree *tree, size_t index, size_t cou
     if (index < tree->front) {
         tree->front -= tree->front - index < gone ? tree->front - index : gone;
     }
-    tree->seen = &markdown_core_tree_bare;
+    tree->seen = (markdown_core_tree_leaf *)&markdown_core_tree_bare;
     S_spare(tree);
 }
 
