@@ -2378,16 +2378,6 @@ static markdown_core_key_entry *labels_held(markdown_core_tree *tree, const mark
     return (markdown_core_key_entry *)(uintptr_t)labels_find(tree, key, NULL);
 }
 
-/* The entry of `key`'s key, `key` itself put in when the tree had none,
- * which `*made` says. NULL, with the tree as it was, when storage could
- * not be had. The entry holds until the next change to the tree. */
-static markdown_core_key_entry *labels_entry(markdown_core_tree *tree, const markdown_core_key_entry *key, bool *made) {
-    size_t rank;
-    markdown_core_key_entry *held = (markdown_core_key_entry *)(uintptr_t)labels_find(tree, key, &rank);
-    *made = !held;
-    return held ? held : markdown_core_tree_insert(tree, rank, key, false);
-}
-
 /* The entry of `key`'s key taken out, when the tree has one. */
 static void labels_remove(markdown_core_tree *tree, const markdown_core_key_entry *key) {
     size_t rank;
@@ -2441,7 +2431,8 @@ static unsigned char *committed_carve(markdown_core_committed_tables *committed,
 static markdown_core_key_entry *committed_entry(markdown_core_committed_tables *committed, uint32_t labels,
                                                 const label_entry *named, bool *made) {
     markdown_core_tree *tree = &committed->labels[labels];
-    markdown_core_key_entry *held = labels_held(tree, named);
+    size_t rank;
+    markdown_core_key_entry *held = (markdown_core_key_entry *)(uintptr_t)labels_find(tree, named, &rank);
     *made = false;
     if (held) {
         return held;
@@ -2455,7 +2446,8 @@ static markdown_core_key_entry *committed_entry(markdown_core_committed_tables *
         memcpy(bytes, owned.key, (size_t)owned.key_len);
         owned.key = bytes;
     }
-    held = labels_entry(tree, &owned, made);
+    held = markdown_core_tree_insert(tree, rank, &owned, false);
+    *made = held != NULL;
     if (held) {
         committed->label_live += (size_t)owned.key_len;
     }

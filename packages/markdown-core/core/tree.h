@@ -131,6 +131,14 @@ void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const vo
  * the others. */
 void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count);
 static inline void markdown_core_tree_erase(markdown_core_tree *tree, size_t index, size_t count) {
+    /* The last entries, appended in place and counted nowhere else, go
+     * from the last leaf alone, which stays open to appends. */
+    if (tree->spare && index + count == tree->count && count <= tree->last->count - tree->last_held) {
+        tree->last->count -= (uint32_t)count;
+        tree->count = tree->front = index;
+        tree->spare += (uint32_t)count;
+        return;
+    }
     if (count) {
         markdown_core_tree_cut(tree, index, count);
     }

@@ -598,6 +598,13 @@ static void S_raise(markdown_core_tree *tree, void *split, size_t made, S_inner 
 
 void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const void *entry, bool front) {
     assert(index <= tree->count);
+    /* An entry that joins the front at the end goes in as an append. */
+    if (front && index == tree->count && tree->spare) {
+        void *pushed = markdown_core_tree_push(tree, tree->ops->size);
+        memcpy(pushed, entry, tree->ops->size);
+        S_moved(tree, tree->last, tree->last->count - 1, tree->last->count);
+        return pushed;
+    }
     if (!tree->root) {
         S_leaf *leaf = S_leaf_new(tree);
         if (!leaf) {
@@ -605,6 +612,27 @@ void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const vo
         }
         tree->root = tree->last = leaf;
         tree->last_held = 0;
+    }
+    /* A tree of one leaf with room: the entry goes into the leaf alone. */
+    if (!tree->levels && ((S_leaf *)tree->root)->count < MARKDOWN_CORE_TREE_LEAF) {
+        S_leaf *leaf = tree->root;
+        const size_t size = tree->ops->size;
+        const uint32_t k = (uint32_t)index;
+        if (k < leaf->count) {
+            memmove(S_entry(tree, leaf, k + 1), S_entry(tree, leaf, k), (leaf->count - k) * size);
+        }
+        memcpy(S_entry(tree, leaf, k), entry, size);
+        leaf->count++;
+        S_moved(tree, leaf, k, leaf->count);
+        tree->count++;
+        tree->last_held = leaf->count;
+        if (index < tree->front || (index == tree->front && front)) {
+            tree->front++;
+        }
+        tree->seen = leaf;
+        tree->seen_first = 0;
+        S_spare(tree);
+        return S_entry(tree, leaf, k);
     }
     S_settle(tree);
     void *room[MARKDOWN_CORE_TREE_LEVELS + 2];
@@ -811,15 +839,42 @@ static void S_drop_leaf(markdown_core_tree *tree, const S_path *path) {
 
 void markdown_core_tree_cut(markdown_core_tree *tree, size_t index, size_t count) {
     assert(count && index + count <= tree->count);
+    /* The last entries, which the last leaf holds with others before them:
+     * they go from the leaf, and from the counts above it those of them
+     * the counts hold. */
+    S_leaf *last = tree->last;
+    const size_t lead = tree->count - last->count;
+    if (index > lead && index + count == tree->count) {
+        const uint32_t k = (uint32_t)(index - lead);
+        const uint32_t held = tree->last_held > k ? tree->last_held - k : 0;
+        if (!held || !tree->ops->end) {
+            void *node = tree->root;
+            for (uint32_t level = 0; held && level < tree->levels; level++) {
+                S_inner *inner = node;
+                inner->counts[inner->count - 1] -= held;
+                node = inner->children[inner->count - 1];
+            }
+            last->count = k;
+            tree->last_held -= held;
+            tree->count -= count;
+            if (index < tree->front) {
+                tree->front = index;
+            }
+            S_spare(tree);
+            return;
+        }
+    }
     /* A tree of one leaf: the entries go from the leaf alone, which stays,
      * empty or not, for the entries to come. */
     if (!tree->levels) {
         S_leaf *leaf = tree->root;
         const size_t size = tree->ops->size;
         const uint32_t k = (uint32_t)index;
-        memmove(S_entry(tree, leaf, k), S_entry(tree, leaf, k + count), (leaf->count - k - count) * size);
         leaf->count -= (uint32_t)count;
-        S_moved(tree, leaf, k, leaf->count);
+        if (k < leaf->count) {
+            memmove(S_entry(tree, leaf, k), S_entry(tree, leaf, k + count), (leaf->count - k) * size);
+            S_moved(tree, leaf, k, leaf->count);
+        }
         tree->count -= count;
         tree->last_held = leaf->count;
         if (index < tree->front) {

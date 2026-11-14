@@ -94,7 +94,11 @@ static void headings_erase(markdown_core_heading_state *state, size_t index, siz
 static inline void heading_sync(markdown_core_heading_state *state) {
     markdown_core_tree *headings = headings_of(state);
     if (headings->front > state->count) {
-        headings_erase(state, state->count, headings->front - state->count);
+        if (state->names) {
+            headings_erase(state, state->count, headings->front - state->count);
+        } else {
+            markdown_core_tree_erase(headings, state->count, headings->front - state->count);
+        }
     }
 }
 
@@ -106,6 +110,21 @@ static inline size_t heading_total(const markdown_core_heading_state *state) {
 }
 static inline markdown_core_heading_parse *heading_at(markdown_core_heading_state *state, size_t at) {
     return heading_tree_at(headings_of(state), at);
+}
+
+/* The headings from rank `first` to `count` in place, when one stretch of
+ * storage holds them all, or NULL; and heading `at` of them, from the
+ * stretch when there is one. */
+static inline markdown_core_heading_parse *heading_span(markdown_core_heading_state *state, size_t first,
+                                                        size_t count) {
+    size_t run = 0;
+    markdown_core_heading_parse *span =
+        first < count ? markdown_core_tree_run(headings_of(state), first, sizeof(*span), &run) : NULL;
+    return run >= count - first ? span : NULL;
+}
+static inline markdown_core_heading_parse *held_at(markdown_core_heading_state *state,
+                                                   markdown_core_heading_parse *span, size_t first, size_t at) {
+    return span ? span + (at - first) : heading_at(state, at);
 }
 
 /* A heading closes into the element's collection, which declares its label
@@ -146,9 +165,10 @@ static uint64_t heading_start_key(const void *entry) { return ((const markdown_c
 static bool headings_order(markdown_core_heading_state *state, markdown_core_parser *parser, size_t first,
                            size_t count) {
     markdown_core_tree *headings = headings_of(state);
+    markdown_core_heading_parse *const span = heading_span(state, first, count);
     bool ordered = true;
     for (size_t i = first + 1; ordered && i < count; i++) {
-        ordered = heading_tree_at(headings, i - 1)->start <= heading_tree_at(headings, i)->start;
+        ordered = held_at(state, span, first, i - 1)->start <= held_at(state, span, first, i)->start;
     }
     if (ordered) {
         return true;
@@ -252,10 +272,11 @@ static void headings_prepare(const markdown_core_element_instance *self, markdow
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    markdown_core_heading_parse *const span = heading_span(state, first, count);
     /* Anchors are numbered in source order, whatever order mapped inputs were
      * scheduled and headings closed in. */
     for (size_t i = first; i < count && !parser->error; i++) {
-        markdown_core_heading_parse *heading = heading_at(state, i);
+        markdown_core_heading_parse *heading = held_at(state, span, first, i);
         if (!(heading->node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED) &&
             markdown_core_parser_settled(parser, heading->node)) {
             *heading = (markdown_core_heading_parse){.node = heading->node, .start = heading->start, .id = heading->id};
@@ -266,7 +287,7 @@ static void headings_prepare(const markdown_core_element_instance *self, markdow
         }
     }
     for (size_t i = first; i < count && !parser->error; i++) {
-        markdown_core_heading_parse *heading = heading_at(state, i);
+        markdown_core_heading_parse *heading = held_at(state, span, first, i);
         markdown_core_node *node = heading->node;
         if ((node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED) || !markdown_core_parser_settled(parser, node)) {
             continue;
@@ -282,10 +303,10 @@ static void headings_prepare(const markdown_core_element_instance *self, markdow
     }
     /* A failed parse lets go the inline states it held for the headings. */
     for (size_t i = first; parser->error && i < count; i++) {
-        markdown_core_dispose_heading(heading_at(state, i));
+        markdown_core_dispose_heading(held_at(state, span, first, i));
     }
     while (state->parsed < count &&
-           (heading_at(state, state->parsed)->node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED)) {
+           (held_at(state, span, first, state->parsed)->node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED)) {
         state->parsed++;
     }
 }
