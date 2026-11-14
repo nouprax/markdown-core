@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "map.h"
+#include "pieces.h"
 #include "node.h"
 #include "zipper.h"
 
@@ -166,6 +167,11 @@ bool markdown_core_roster_withdraw(markdown_core_roster *roster, markdown_core_r
 const markdown_core_roster_record *markdown_core_roster_find(markdown_core_roster *roster,
                                                              markdown_core_roster_kind kind, const unsigned char *label,
                                                              bufsize_t length, bool *failed);
+
+/* The same of an ANCHOR, `name` kept in pieces and measuring `measure`. */
+const markdown_core_roster_record *markdown_core_roster_find_name(markdown_core_roster *roster,
+                                                                  const markdown_core_pieces *name,
+                                                                  markdown_core_measure measure, bool *failed);
 
 /* The earliest declaration of `kind` for `label`, in the kind's normal
  * form, that stands, one of a back that lookups do not see as well: the

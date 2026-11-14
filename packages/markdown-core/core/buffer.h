@@ -231,6 +231,30 @@ markdown_core_split *markdown_core_strbuf_split_take(markdown_core_strbuf *buf);
  * split goes: the buffer is poisoned when storage could not be had. */
 void markdown_core_strbuf_split_join(markdown_core_strbuf *buf);
 
+/* A BORROWED BUFFER reads bytes another buffer owns: it holds no room and
+ * is not split, so it owns nothing, and a write to it first makes it a
+ * buffer of its own (markdown_core_strbuf_borrow). A node's view borrows what
+ * its block's buffers hold (node.c, THE VIEW). */
+static MARKDOWN_CORE_INLINE bool markdown_core_strbuf_borrows(const markdown_core_strbuf *buf) {
+    return !buf->asize && !buf->split && buf->ptr != markdown_core_strbuf__initbuf;
+}
+
+/* `buf`, a copy of a buffer that owns its bytes, borrows them. */
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_borrow(markdown_core_strbuf *buf) {
+    assert(!buf->split);
+    buf->asize = 0;
+    buf->ahead = 0;
+}
+
+/* The bytes of `buf` from `from` to `to` replaced by the `size` bytes at
+ * `bytes`, which lie elsewhere: the gap moves to the change, so only the
+ * bytes between the two and the change itself are moved; a buffer that
+ * was whole parts there first, its bytes past the change moved to the back.
+ * `buf` is split after. False, with the parts kept but their bytes no
+ * longer known, when storage could not be had. */
+bool markdown_core_strbuf_split_replace(markdown_core_strbuf *buf, bufsize_t from, bufsize_t to,
+                                        const unsigned char *bytes, bufsize_t size);
+
 /* The byte at `at` of `buf`, which may be split. */
 static MARKDOWN_CORE_INLINE unsigned char markdown_core_strbuf_at(const markdown_core_strbuf *buf, bufsize_t at) {
     const markdown_core_split *split = buf->split ? markdown_core_strbuf_split_of(buf) : NULL;

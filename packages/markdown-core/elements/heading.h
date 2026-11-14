@@ -27,9 +27,10 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
 bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self,
                                       markdown_core_inline_state *inline_state, markdown_core_node *parent);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING;
-/* The anchor the heading `node` shows, in `*anchor`: its name, or the base
- * and suffixes of a long one (heading.c, A LONG NAME), made at its first
- * read. Any other node's anchor is its own. False, `*anchor` untouched,
+/* The anchor the heading `node` shows, in `*anchor`: the one its attributes
+ * write, or its name (heading.c, THE NAMES), its base itself when that is
+ * whole and takes no suffix, joined at its first read otherwise. Any other
+ * node's anchor is its own. False, `*anchor` untouched,
  * when storage could not be had for it. */
 bool markdown_core_heading_anchor(const markdown_core_node *node, markdown_core_chunk *anchor);
 

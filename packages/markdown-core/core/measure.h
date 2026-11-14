@@ -25,9 +25,10 @@ extern "C" {
  * it reads (blocks.c, THE SEAMS). The empty run measures NONE.
  *
  * A sum is a hash, not an identity: two runs whose bytes differ can share
- * it, by chance or by design, as two bytes 61 apart weigh the same. Every
- * index of keys reads it (map.c) and compares the bytes of keys whose sums
- * and sizes agree, so a shared sum costs a comparison and nothing else. */
+ * it, by chance or by design, as two bytes 61 apart weigh the same. An
+ * index of names files them under it (map.h, markdown_core_key_index_hash)
+ * and compares the bytes of names whose sums and sizes agree, so a shared
+ * sum costs a comparison and nothing else. */
 typedef struct markdown_core_measure {
     uint32_t size;
     uint64_t sum;
@@ -57,13 +58,26 @@ static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_unturn(uint64_t x, ui
 }
 
 /* The `count` bytes at `bytes`, below eight, as a number, the first the
- * least significant. */
+ * least significant: four to seven as two overlapping halves, fewer as
+ * their first, middle and last, each where it stands. */
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_half(const unsigned char *bytes) {
+    uint32_t half;
+    memcpy(&half, bytes, sizeof(half));
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    half = __builtin_bswap32(half);
+#endif
+    return half;
+}
 static MARKDOWN_CORE_INLINE uint64_t markdown_core_measure_few(const unsigned char *bytes, size_t count) {
-    uint64_t word = 0;
-    for (size_t i = count; i-- > 0;) {
-        word = word << 8 | bytes[i];
+    if (count >= 4) {
+        return markdown_core_measure_half(bytes) | (markdown_core_measure_half(bytes + count - 4) >> (8 * (8 - count)))
+                                                       << 32;
     }
-    return word;
+    if (!count) {
+        return 0;
+    }
+    return (uint64_t)bytes[0] | (uint64_t)bytes[count / 2] << (8 * (count / 2)) |
+           (uint64_t)bytes[count - 1] << (8 * (count - 1));
 }
 
 /* The eight bytes at `bytes` as a number, the first the least
@@ -121,90 +135,6 @@ static MARKDOWN_CORE_INLINE markdown_core_measure markdown_core_measure_front(ma
     const uint32_t size = whole.size - back.size;
     const uint64_t lead = markdown_core_measure_turn(back.sum, size);
     return (markdown_core_measure){size, markdown_core_measure_mod(whole.sum + MARKDOWN_CORE_MEASURE_PRIME - lead)};
-}
-
-/* A LONG NAME'S KEY. A name -- an anchor a heading computes or one a node
- * authors -- whose bytes before its suffixes (the `-k` groups a heading's
- * name may end in, heading.c, stem_parent) are more than
- * MARKDOWN_CORE_NAME_WHOLE is known by its key: MARKDOWN_CORE_NAME_MARK, the
- * two sums of the measure of those bytes and its size in hex, then the
- * suffixes; every index of anchors holds the key (heading.c, A LONG NAME).
- * A name of no more bytes is read whole at little cost, and no measure is
- * made of it: an anchor or a heading of common length costs nothing more.
- * Two different stems share a key only when both lanes of their measures
- * agree: by chance about (n / 2^61)^2 of the time for n bytes, or when a
- * document is made to, as the bases are fixed. No computed name holds the
- * mark, which a heading's projection drops as it drops every control; an
- * authored one that starts with it is known by its key whatever its length
- * (markdown_core_name_keyed), so that no name's bytes are another's key. */
-enum {
-    MARKDOWN_CORE_NAME_WHOLE = 1024,
-    MARKDOWN_CORE_NAME_SUMS = 1 + 16,
-    MARKDOWN_CORE_NAME_KEY = MARKDOWN_CORE_NAME_SUMS + 8
-};
-#define MARKDOWN_CORE_NAME_MARK '\x01'
-
-/* The bytes of the base that stand before its suffixes: of `size` bytes at
- * `bytes`, which stand `offset` bytes into the base. SIZE_MAX when the
- * bytes before them may hold more of the suffixes. */
-static MARKDOWN_CORE_INLINE size_t markdown_core_name_stem(const unsigned char *bytes, size_t size, size_t offset) {
-    size_t stem = size;
-    for (;;) {
-        if (!stem) {
-            return offset ? SIZE_MAX : 0;
-        }
-        size_t at = stem;
-        while (at > 0 && bytes[at - 1] >= '0' && bytes[at - 1] <= '9') {
-            at--;
-        }
-        if (!at && offset) {
-            return SIZE_MAX;
-        }
-        if (at == stem || bytes[at] == '0' || offset + at < 2 || bytes[at - 1] != '-') {
-            return stem;
-        }
-        stem = at - 1;
-    }
-}
-
-/* The key of the base whose stem measures `measure`, its suffixes the
- * `size` bytes of `name` from `from` on, which `name` holds then. */
-static MARKDOWN_CORE_INLINE void markdown_core_name_mark(markdown_core_strbuf *name, markdown_core_measure measure,
-                                                         bufsize_t from, bufsize_t size) {
-    static const char hex[] = "0123456789abcdef";
-    unsigned char key[MARKDOWN_CORE_NAME_KEY];
-    key[0] = (unsigned char)MARKDOWN_CORE_NAME_MARK;
-    for (int i = 0; i < 16; i++) {
-        key[1 + i] = (unsigned char)hex[(measure.sum >> (60 - 4 * i)) & 15];
-    }
-    for (int i = 0; i < 8; i++) {
-        key[MARKDOWN_CORE_NAME_SUMS + i] = (unsigned char)hex[(measure.size >> (28 - 4 * i)) & 15];
-    }
-    markdown_core_strbuf_grow(name, MARKDOWN_CORE_NAME_KEY + size);
-    if (name->oom) {
-        return;
-    }
-    memmove(name->ptr + MARKDOWN_CORE_NAME_KEY, name->ptr + from, (size_t)size);
-    memcpy(name->ptr, key, MARKDOWN_CORE_NAME_KEY);
-    name->size = MARKDOWN_CORE_NAME_KEY + size;
-    name->ptr[name->size] = '\0';
-}
-
-/* Whether the name of `size` bytes at `bytes` whose stem is `stem` bytes is
- * known by its key: a long one, and one that starts with the mark. */
-static MARKDOWN_CORE_INLINE bool markdown_core_name_keyed(const unsigned char *bytes, size_t size, size_t stem) {
-    return stem > MARKDOWN_CORE_NAME_WHOLE || (size && bytes[0] == (unsigned char)MARKDOWN_CORE_NAME_MARK);
-}
-
-/* The base `name` holds, its key: a long one by its measure, and one that
- * starts with the mark. */
-static MARKDOWN_CORE_INLINE void markdown_core_name_key(markdown_core_strbuf *name) {
-    const size_t stem = markdown_core_name_stem(name->ptr, (size_t)name->size, 0);
-    if (!markdown_core_name_keyed(name->ptr, (size_t)name->size, stem)) {
-        return;
-    }
-    markdown_core_name_mark(name, markdown_core_measure_of(name->ptr, stem), (bufsize_t)stem,
-                            name->size - (bufsize_t)stem);
 }
 
 #ifdef __cplusplus

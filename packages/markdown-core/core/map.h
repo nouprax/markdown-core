@@ -28,7 +28,7 @@ typedef struct markdown_core_key_index {
     size_t size;
 } markdown_core_key_index;
 
-/* The hash an index that takes given hashes files a key under: its measure (measure.h), mixed so
+/* The hash a name is filed under: its measure (measure.h), mixed so
  * that keys that differ in their last bytes alone, whose sums differ in
  * their low bits alone, spread over the table. A key's hash follows from
  * the measures of its parts (markdown_core_measure_join), so a key read in
@@ -55,17 +55,29 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
                                                             bufsize_t key_len);
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
                                     const unsigned char *key);
-/* The same, filed under a hash the caller gives (markdown_core_key_index_hash
- * of the key's measure, which the caller may have joined from parts). An
- * index takes every key one way: by its bytes or by a given hash, never
- * both, since a slot keeps the hash it was filed under. */
-markdown_core_key_index_slot *markdown_core_key_index_entry_hashed(markdown_core_key_index *index, uint64_t hash,
-                                                                   const unsigned char *key, bufsize_t key_len);
 /* The occupied entry for `key`, or NULL; never grows the index. */
 markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_key_index *index,
                                                            const unsigned char *key, bufsize_t key_len);
+/* KEYS UNDER A HASH THEIR USER GIVES. An index files a key under one hash
+ * for its whole life: a byte key under markdown_core_key_hash, which the
+ * calls above give, or under one its user computes, which the calls below
+ * take. A name is filed under its measure's (markdown_core_key_index_hash),
+ * which follows from the measures of its parts, so that a name kept in
+ * pieces is found as its bytes whole would be. The calls that take a
+ * `probe` and `holds` tell an occupied slot of the hash and length holds the
+ * key by asking `holds`; such a slot's `key` need only not be NULL. */
+typedef bool (*markdown_core_key_holds)(const void *probe, const markdown_core_key_index_slot *slot);
+uint64_t markdown_core_key_hash(const unsigned char *key, bufsize_t key_len);
+markdown_core_key_index_slot *markdown_core_key_index_entry_hashed(markdown_core_key_index *index, uint64_t hash,
+                                                                   const unsigned char *key, bufsize_t key_len);
 markdown_core_key_index_slot *markdown_core_key_index_find_hashed(const markdown_core_key_index *index, uint64_t hash,
                                                                   const unsigned char *key, bufsize_t key_len);
+markdown_core_key_index_slot *markdown_core_key_index_place(markdown_core_key_index *index, uint64_t hash,
+                                                            bufsize_t key_len, markdown_core_key_holds holds,
+                                                            const void *probe);
+markdown_core_key_index_slot *markdown_core_key_index_seek(const markdown_core_key_index *index, uint64_t hash,
+                                                           bufsize_t key_len, markdown_core_key_holds holds,
+                                                           const void *probe);
 /* Remove an occupied entry. Every other entry stays findable; entries the
  * index holds may move, so no entry pointer survives the call. */
 void markdown_core_key_index_remove(markdown_core_key_index *index, markdown_core_key_index_slot *entry);

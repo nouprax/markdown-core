@@ -56,9 +56,17 @@ typedef struct {
     int level;
     bool setext;
     markdown_core_chunk label;
-    /* The anchor a long name shows, once read (heading.c, A LONG NAME): a
-     * claim (claim.h), the node's storage. */
+    /* THE NAME the headings computed for it (heading.c, THE NAMES), when its
+     * attributes write no anchor: the `base` its text projects to, which
+     * an edit that reads it from a seam keeps in two parts (buffer.h,
+     * markdown_core_split), and the `suffix` it shows: the name is the
+     * base, or the base, a hyphen and the suffix. Empty when it holds none.
+     * The record fits the node's slot (MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES). */
+    markdown_core_strbuf base;
+    /* The anchor its name shows, once read, when it is not the base whole
+     * (markdown_core_heading_anchor): a claim (claim.h), the node's storage. */
     void *shown;
+    uint32_t suffix;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.
@@ -333,10 +341,6 @@ enum markdown_core_node__internal_flags {
      * from, which releasing it does not give back
      * (markdown_core_node_candidate). */
     MARKDOWN_CORE_NODE__BORROWS_CONTENT = (1 << 10),
-    /* A heading's anchor that the headings computed rather than one its
-     * attributes wrote: it reserves no name, so releasing the heading
-     * withdraws none (heading.c). */
-    MARKDOWN_CORE_NODE__ANCHOR_COMPUTED = (1 << 11),
     /* A node whose source holds the runs a publish made (ast.c): an open
      * block's, which its close lets go and the next publish makes again, or
      * a closed node's, which stand with its extent while the node is in the

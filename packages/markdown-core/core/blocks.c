@@ -2115,23 +2115,17 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
     return push_owned_root(slot ? *slot : NULL, context);
 }
 
-/* The explicit anchor `node` holds reserved as starting at `start`: its own,
- * not one the headings computed for it. A node reserves it once it is
- * complete, and a block the snapshot ends without closing (S_close_tail) as
- * it ends. False when storage could not be had. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_anchor_key(markdown_core_parser *parser,
-                                                             const markdown_core_chunk *anchor, uint32_t start,
-                                                             bool withdraws);
-
+/* The explicit anchor `node` holds reserved as starting at `start`: the
+ * anchor its attributes write, as the headings compute theirs elsewhere
+ * (node.h, markdown_core_heading). A node reserves it once it is complete,
+ * and a block the snapshot ends without closing (S_close_tail) as it ends.
+ * False when storage could not be had. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(markdown_core_parser *parser,
                                                                              const markdown_core_node *node,
                                                                              uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    if (!anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+    if (!anchor->len) {
         return true;
-    }
-    if (anchor->len > MARKDOWN_CORE_NAME_WHOLE || anchor->data[0] == (unsigned char)MARKDOWN_CORE_NAME_MARK) {
-        return S_anchor_key(parser, anchor, start, false);
     }
     return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
 }
@@ -2263,7 +2257,7 @@ static bool S_settled_own(markdown_core_settled *settled, markdown_core_node *no
             continue;
         }
         owned = markdown_core_node_own_viewed(below);
-        if (owned && below->attributes.anchor.len && !(below->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+        if (owned && below->attributes.anchor.len) {
             markdown_core_node **nodes =
                 markdown_core_reserve(settled->anchored, &settled->anchored_capacity, *anchored + 1, sizeof(*nodes));
             owned = nodes != NULL;
@@ -3368,14 +3362,17 @@ static void S_seam_measure(markdown_core_parser *parser) {
     leap->measured = leap->based;
 }
 
-bool markdown_core_parser_measured(const markdown_core_parser *parser, const markdown_core_node *node,
-                                   markdown_core_measure *measure) {
+bool markdown_core_parser_leapt(const markdown_core_parser *parser, const markdown_core_node *node,
+                                markdown_core_leapt *leapt) {
     const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
     const markdown_core_leap *leap = edit ? edit->leap : NULL;
     if (!leap || !leap->measured || leap->node != node) {
         return false;
     }
-    *measure = leap->ends.measure;
+    const bool met = leap->stops.met;
+    *leapt = (markdown_core_leapt){leap->seam.index ? leap->seam.measure : MARKDOWN_CORE_MEASURE_NONE,
+                                   met ? leap->stop : MARKDOWN_CORE_MEASURE_NONE, leap->seam.index,
+                                   met ? leap->spliced : node->child_count};
     return true;
 }
 
@@ -11003,34 +11000,11 @@ static int S_collect_completed(markdown_core_node **slot, void *context) {
 /* The explicit anchor `node` reserved, withdrawn as starting at `start`. */
 static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_node *node, uint32_t start) {
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    if (!anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+    if (!anchor->len) {
         return true;
-    }
-    if (anchor->len > MARKDOWN_CORE_NAME_WHOLE || anchor->data[0] == (unsigned char)MARKDOWN_CORE_NAME_MARK) {
-        return S_anchor_key(parser, anchor, start, true);
     }
     return markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
                                          start);
-}
-
-/* An authored anchor of more than MARKDOWN_CORE_NAME_WHOLE bytes, or one
- * that starts with MARKDOWN_CORE_NAME_MARK, declared or withdrawn by its key
- * (measure.h, A LONG NAME'S KEY), which a long computed name is known by
- * too. False when storage could not be had. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_anchor_key(markdown_core_parser *parser,
-                                                             const markdown_core_chunk *anchor, uint32_t start,
-                                                             bool withdraws) {
-    markdown_core_strbuf key = MARKDOWN_CORE_BUF_INIT();
-    markdown_core_strbuf_put(&key, anchor->data, anchor->len);
-    markdown_core_name_key(&key);
-    bool ok = !key.oom;
-    if (ok) {
-        ok = withdraws
-                 ? markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, key.ptr, key.size, start)
-                 : markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, key.ptr, key.size, start);
-    }
-    markdown_core_strbuf_free(&key);
-    return ok;
 }
 
 /* THE ANCHORS COMPLETING A ROOT RESERVED, withdrawn as starting at `start`,
