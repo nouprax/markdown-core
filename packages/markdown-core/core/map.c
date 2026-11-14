@@ -4,6 +4,9 @@
 #include "alloc.h"
 #include "map.h"
 
+/* The measure's tables (measure.h), defined here alone. */
+#include "measure_tables.inc"
+
 #define KEY_INDEX_MIN_CAPACITY 16
 
 /* The key's bytes from `p`, eight or four of them, as one number in the

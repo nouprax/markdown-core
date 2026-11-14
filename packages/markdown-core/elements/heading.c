@@ -223,15 +223,15 @@ static const unsigned char HELD[1] = {0};
 
 /* The suffix `suffix` as a name ends with it, a hyphen and its digits, in
  * `tail`: how many bytes. */
-static bufsize_t suffix_write(unsigned char *tail, size_t suffix) {
-    unsigned char *end = tail + SUFFIX_ROOM, *start = end;
-    do {
-        *--start = (unsigned char)('0' + suffix % 10);
-        suffix /= 10;
-    } while (suffix);
-    *--start = '-';
-    const bufsize_t size = (bufsize_t)(end - start);
-    memmove(tail, start, (size_t)size);
+static inline bufsize_t suffix_write(unsigned char *tail, size_t suffix) {
+    bufsize_t size = 2;
+    for (size_t rest = suffix / 10; rest; rest /= 10) {
+        size++;
+    }
+    tail[0] = '-';
+    for (bufsize_t at = size; at-- > 1; suffix /= 10) {
+        tail[at] = (unsigned char)('0' + suffix % 10);
+    }
     return size;
 }
 
@@ -247,15 +247,23 @@ static inline markdown_core_measure pieces_measure(const markdown_core_pieces *p
     return measure;
 }
 
-/* A NAME IN PIECES: the base's pieces and its suffix's digits, and their
- * measure; and the base's measure, pieces and size, so that the name of
- * the base and another suffix is made in place. It reads its own digits, so
- * it stays where it is made. */
+/* A NAME IN PIECES: the base's pieces and its suffix's digits; and the
+ * base's pieces and size, so that the name of the base and another suffix
+ * is made in place. It reads its own digits, so it stays where it is made.
+ * An edit, which must not read a long base whole, knows a name by its
+ * measure, made of the base's (THE NAMES AN EDIT MOVES); the committed
+ * pass, which reads each base whole, by the hash of its bytes read in turn
+ * (map.h, A KEY READ IN PARTS), the base's read once for all its suffixes:
+ * a name `hashed` keeps the hash, any other the measure. */
 typedef struct {
     markdown_core_pieces pieces;
     markdown_core_measure measure, base;
+    markdown_core_key_stream stream;
+    uint64_t hash;
+    bool hashed;
     uint32_t parts;
     bufsize_t size;
+    size_t suffix;
     unsigned char tail[SUFFIX_ROOM];
 } name_view;
 
@@ -263,19 +271,42 @@ typedef struct {
 static inline void name_base(name_view *name, const markdown_core_pieces *base, markdown_core_measure measure) {
     name->pieces = *base;
     name->measure = name->base = measure;
+    name->hashed = false;
     name->parts = base->count;
     name->size = base->size;
+    name->suffix = 0;
+}
+
+/* The name of the base `base` pieces hold, hashed. */
+static inline void name_hashed(name_view *name) {
+    markdown_core_key_stream_start(&name->stream);
+    for (uint32_t i = 0; i < name->pieces.count; i++) {
+        markdown_core_key_stream_add(&name->stream, name->pieces.data[i], (size_t)name->pieces.sizes[i]);
+    }
+    name->hash = markdown_core_key_stream_end(&name->stream);
+    name->hashed = true;
+    name->parts = name->pieces.count;
+    name->size = name->pieces.size;
+    name->suffix = 0;
 }
 
 /* The name of its base and `suffix`. */
 static inline void name_suffix(name_view *name, size_t suffix) {
     name->pieces.count = name->parts;
     name->pieces.size = name->size;
-    name->measure = name->base;
-    if (suffix) {
-        const bufsize_t size = suffix_write(name->tail, suffix);
+    name->suffix = suffix;
+    const bufsize_t size = suffix ? suffix_write(name->tail, suffix) : 0;
+    if (size) {
         markdown_core_pieces_add(&name->pieces, name->tail, size);
-        name->measure = markdown_core_measure_join(name->base, markdown_core_measure_of(name->tail, (size_t)size));
+    }
+    if (name->hashed) {
+        markdown_core_key_stream stream = name->stream;
+        markdown_core_key_stream_add(&stream, name->tail, (size_t)size);
+        name->hash = markdown_core_key_stream_end(&stream);
+    } else {
+        name->measure = size
+                            ? markdown_core_measure_join(name->base, markdown_core_measure_of(name->tail, (size_t)size))
+                            : name->base;
     }
 }
 
@@ -297,12 +328,10 @@ static inline void node_base(const markdown_core_node *node, markdown_core_piece
     markdown_core_pieces_span(pieces, base, 0, base->size);
 }
 
-/* The name of the base heading `node` keeps. */
+/* The name of the base heading `node` keeps, hashed. */
 static inline void name_node(name_view *name, const markdown_core_node *node) {
     node_base(node, &name->pieces);
-    name->measure = name->base = pieces_measure(&name->pieces);
-    name->parts = name->pieces.count;
-    name->size = name->pieces.size;
+    name_hashed(name);
 }
 
 /* The anchor the node showed, once read, goes: its name changed. */
@@ -1193,40 +1222,58 @@ static inline uint32_t holder_suffix(const markdown_core_heading_parse *heading,
  * whether the slots are the overlay's. */
 typedef struct {
     markdown_core_heading_state *state;
-    const markdown_core_pieces *name;
+    const name_view *name;
     bool overlay;
 } name_probe;
 
+/* A name and a holder's of one size whose bases are of one size too are
+ * one name when their bases are and their suffixes are: their digits are
+ * of one size, which only the suffix zero writes none of. */
 static bool name_holds(const void *probe, const markdown_core_key_index_slot *slot) {
     const name_probe *look = probe;
+    const name_view *name = look->name;
     if (!slot->extra) {
-        return markdown_core_pieces_are(look->name, slot->key, slot->key_len);
+        return markdown_core_pieces_are(&name->pieces, slot->key, slot->key_len);
     }
     const markdown_core_heading_parse *holder = heading_at(look->state, slot->extra - 1);
+    const markdown_core_strbuf *base = &holder->node->as.heading->base;
+    const uint32_t suffix = holder_suffix(holder, look->overlay);
+    if (base->size == name->size) {
+        if (suffix != name->suffix) {
+            return false;
+        }
+        const unsigned char *front, *back;
+        bufsize_t front_size, back_size;
+        markdown_core_strbuf_span(base, 0, base->size, &front, &front_size, &back, &back_size);
+        if (name->parts == 1 && !back_size) {
+            return name->pieces.data[0] == front || !memcmp(name->pieces.data[0], front, (size_t)front_size);
+        }
+    }
     markdown_core_pieces held;
     node_base(holder->node, &held);
-    const uint32_t suffix = holder_suffix(holder, look->overlay);
     unsigned char tail[SUFFIX_ROOM];
     if (suffix) {
         markdown_core_pieces_add(&held, tail, suffix_write(tail, suffix));
     }
-    return markdown_core_pieces_same(look->name, &held);
+    return markdown_core_pieces_same(&name->pieces, &held);
 }
 
 /* The occupied entry for the name in the index the pass writes, or NULL. */
 static markdown_core_key_index_slot *name_seek(name_pass *pass, const name_view *name) {
-    const name_probe probe = {pass->state, &name->pieces, pass->beneath != NULL};
-    return markdown_core_key_index_seek(pass->index, markdown_core_key_index_hash(name->measure), name->pieces.size,
-                                        name_holds, &probe);
+    const name_probe probe = {pass->state, name, pass->beneath != NULL};
+    assert(name->hashed);
+    return markdown_core_key_index_seek(pass->index, name->hash, name->pieces.size, name_holds, &probe);
 }
 
 /* The entry for the name among the names taken, occupied or vacant, in the
  * index the pass writes: an overlay first takes the committed entry of a
  * name it has none for. NULL when the index could not grow. */
-static markdown_core_key_index_slot *name_entry(name_pass *pass, const name_view *name) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_key_index_slot *name_entry(name_pass *pass,
+                                                                                                const name_view *name) {
     pass->state->anchor_work += (size_t)name->pieces.size + 1;
-    const uint64_t hash = markdown_core_key_index_hash(name->measure);
-    name_probe probe = {pass->state, &name->pieces, pass->beneath != NULL};
+    assert(name->hashed);
+    const uint64_t hash = name->hash;
+    name_probe probe = {pass->state, name, pass->beneath != NULL};
     markdown_core_key_index_slot *entry =
         markdown_core_key_index_place(pass->index, hash, name->pieces.size, name_holds, &probe);
     if (entry && !entry->key && pass->beneath) {
@@ -1267,7 +1314,7 @@ static bool rename_committed(markdown_core_parser *parser, markdown_core_heading
 /* Heading `at` takes the name of its base and `suffix`: its node shows it,
  * and its entry keeps it unless an overlay names a committed heading (A
  * COMMITTED HEADING UNDER ANOTHER NAME). False with the parse failed. */
-static bool name_take(name_pass *pass, size_t at, uint32_t suffix) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool name_take(name_pass *pass, size_t at, uint32_t suffix) {
     markdown_core_heading_state *state = pass->state;
     markdown_core_heading_parse *heading = heading_at(state, at);
     name_show(heading->node, suffix);
@@ -1368,11 +1415,10 @@ static void read_record(name_pass *pass, const markdown_core_roster_record *reco
     if (pass->fresh && !markdown_core_roster_seen(&parser->roster, record)) {
         return;
     }
-    markdown_core_pieces text;
-    markdown_core_pieces_clear(&text);
-    markdown_core_pieces_add(&text, label.data, label.len);
     name_view name;
-    name_make(&name, &text, markdown_core_measure_of(label.data, (size_t)label.len), 0);
+    markdown_core_pieces_clear(&name.pieces);
+    markdown_core_pieces_add(&name.pieces, label.data, label.len);
+    name_hashed(&name);
     if (record->withdraws) {
         assert(!pass->beneath);
         if (!record->live) {

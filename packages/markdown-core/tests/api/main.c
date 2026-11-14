@@ -10794,15 +10794,18 @@ static void session_edits_long_headings(test_batch_runner *runner) {
  * same but differ are two names, each its own anchor, while a heading of
  * the same bytes as one before takes the next suffix; and an authored
  * anchor of a long name reserves it as a short one does. */
+static int compare_sums(const void *a, const void *b) {
+    const uint64_t x = *(const uint64_t *)a, z = *(const uint64_t *)b;
+    return (x > z) - (x < z);
+}
+
 static void heading_names_exact(test_batch_runner *runner) {
-    /* Bytes 61 apart weigh the same (measure.h): one more at the first and
-     * one less at the 62nd leave the measure as it was. */
-    char same[72], other[72];
-    memset(same, 'm', 70);
-    memcpy(other, same, 70);
-    other[0] = 'n';
-    other[61] = 'l';
-    same[70] = other[70] = '\0';
+    /* Two runs of one measure (measure.h): sixteen bytes whose changes from
+     * the first cancel in G's weights, which lattice reduction finds. */
+    const char *same = "mmmmmmmmmmmmmmmm", *other = "ojlmppsrglnngihk";
+    const markdown_core_measure a = markdown_core_measure_of((const unsigned char *)same, 16),
+                                b = markdown_core_measure_of((const unsigned char *)other, 16);
+    OK(runner, a.size == b.size && a.sum == b.sum, "the pair shares its measure");
     char text[512];
     int size = snprintf(text, sizeof(text), "# %s\n\n# %s\n\n# %s\n", same, other, same);
     markdown_core_document *document = NULL;
@@ -10813,12 +10816,38 @@ static void heading_names_exact(test_batch_runner *runner) {
         anchors[i] = anchor_of(facade_child(root, i));
     }
     OK(runner,
-       anchors[0].has_value && anchors[0].value.length == 70 && memcmp(anchors[0].value.data, same, 70) == 0 &&
-           anchors[1].has_value && anchors[1].value.length == 70 && memcmp(anchors[1].value.data, other, 70) == 0 &&
-           anchors[2].has_value && anchors[2].value.length == 72 && memcmp(anchors[2].value.data, same, 70) == 0 &&
-           memcmp(anchors[2].value.data + 70, "-1", 2) == 0,
+       anchors[0].has_value && anchors[0].value.length == 16 && memcmp(anchors[0].value.data, same, 16) == 0 &&
+           anchors[1].has_value && anchors[1].value.length == 16 && memcmp(anchors[1].value.data, other, 16) == 0 &&
+           anchors[2].has_value && anchors[2].value.length == 18 && memcmp(anchors[2].value.data, same, 16) == 0 &&
+           memcmp(anchors[2].value.data + 16, "-1", 2) == 0,
        "two bases of one measure are two names; the same bytes take -1");
     markdown_core_document_free(document);
+
+    /* Changes that cancel take a lattice to find, not a pattern: 2^14 runs,
+     * with up to 14 bytes one up at the front and as many one down 61 bytes
+     * on, measure apart. */
+    enum { RUNS = 1 << 14 };
+    uint64_t *sums = (uint64_t *)malloc(RUNS * sizeof(*sums));
+    unsigned char run[140];
+    for (size_t v = 0; sums && v < RUNS; v++) {
+        memset(run, 'm', sizeof(run));
+        for (unsigned k = 0; k < 14; k++) {
+            if (v >> k & 1) {
+                run[k] = 'n';
+                run[61 + k] = 'l';
+            }
+        }
+        sums[v] = markdown_core_measure_of(run, sizeof(run)).sum;
+    }
+    if (sums) {
+        qsort(sums, RUNS, sizeof(*sums), compare_sums);
+    }
+    size_t shared = 0;
+    for (size_t v = 1; sums && v < RUNS; v++) {
+        shared += sums[v] == sums[v - 1];
+    }
+    OK(runner, sums && shared == 0, "a family of small changes measures apart");
+    free(sums);
 
     markdown_core_strbuf huge = MARKDOWN_CORE_BUF_INIT();
     char stem[2001];

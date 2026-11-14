@@ -61,13 +61,117 @@ markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_k
 /* KEYS UNDER A HASH THEIR USER GIVES. An index files a key under one hash
  * for its whole life: a byte key under markdown_core_key_hash, which the
  * calls above give, or under one its user computes, which the calls below
- * take. A name is filed under its measure's (markdown_core_key_index_hash),
- * which follows from the measures of its parts, so that a name kept in
- * pieces is found as its bytes whole would be. The calls that take a
+ * take: a name kept in pieces under a hash of its parts' bytes read in
+ * turn (markdown_core_key_stream), or under its measure's
+ * (markdown_core_key_index_hash), which follows from the measures of its
+ * parts without reading them; either way it is found as its bytes whole
+ * would be. The calls that take a
  * `probe` and `holds` tell an occupied slot of the hash and length holds the
  * key by asking `holds`; such a slot's `key` need only not be NULL. */
 typedef bool (*markdown_core_key_holds)(const void *probe, const markdown_core_key_index_slot *slot);
 uint64_t markdown_core_key_hash(const unsigned char *key, bufsize_t key_len);
+/* A KEY READ IN PARTS: the hash of the bytes of the parts one after
+ * another, the parts' bounds aside, eight bytes at a time as they come and
+ * the last few held until the end (markdown_core_key_stream_end). A stream
+ * copied stands for its bytes so far, so that one key and several endings
+ * are read once for the key. Not markdown_core_key_hash's value: an index
+ * files its keys under one of the two. */
+typedef struct {
+    uint64_t hash;
+    size_t size;
+    /* The bytes past the last whole eight, the first lowest, the rest of
+     * the word zero. */
+    uint64_t rest;
+    unsigned held;
+} markdown_core_key_stream;
+
+/* Eight bytes as one number, the first lowest, as the bytes a stream holds
+ * one by one make it: a key read in other parts reads the same words. */
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_key_stream_word(const unsigned char *bytes) {
+    uint64_t word;
+    memcpy(&word, bytes, sizeof(word));
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    word = __builtin_bswap64(word);
+#endif
+    return word;
+}
+
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_key_stream_mix(uint64_t hash, uint64_t word) {
+    hash = (hash ^ word) * UINT64_C(0x9e3779b97f4a7c15);
+    return hash ^ hash >> 32;
+}
+
+static MARKDOWN_CORE_INLINE void markdown_core_key_stream_start(markdown_core_key_stream *stream) {
+    stream->hash = UINT64_C(1469598103934665603);
+    stream->size = 0;
+    stream->rest = 0;
+    stream->held = 0;
+}
+
+/* Fewer than eight bytes as one number, the first lowest: read in two
+ * halves or three bytes that overlap, which put the bytes both read in one
+ * place. */
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_key_stream_few(const unsigned char *bytes, size_t size) {
+    if (size >= 4) {
+        uint32_t front, back;
+        memcpy(&front, bytes, sizeof(front));
+        memcpy(&back, bytes + size - 4, sizeof(back));
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        front = __builtin_bswap32(front);
+        back = __builtin_bswap32(back);
+#endif
+        return (uint64_t)front | (uint64_t)back << (8 * (size - 4));
+    }
+    if (!size) {
+        return 0;
+    }
+    return (uint64_t)bytes[0] | (uint64_t)bytes[size / 2] << (8 * (size / 2)) |
+           (uint64_t)bytes[size - 1] << (8 * (size - 1));
+}
+
+static MARKDOWN_CORE_INLINE void markdown_core_key_stream_add(markdown_core_key_stream *stream,
+                                                              const unsigned char *bytes, size_t size) {
+    stream->size += size;
+    unsigned held = stream->held;
+    uint64_t hash = stream->hash, rest = stream->rest;
+    if (held) {
+        const size_t take = size < 8 - held ? size : 8 - held;
+        rest |= markdown_core_key_stream_few(bytes, take) << (8 * held);
+        held += (unsigned)take;
+        bytes += take;
+        size -= take;
+        if (held == 8) {
+            hash = markdown_core_key_stream_mix(hash, rest);
+            rest = 0;
+            held = 0;
+        }
+    }
+    for (; size >= 8; bytes += 8, size -= 8) {
+        hash = markdown_core_key_stream_mix(hash, markdown_core_key_stream_word(bytes));
+    }
+    if (size) {
+        /* Past the whole eights, so none is held. */
+        rest = markdown_core_key_stream_few(bytes, size);
+        held = (unsigned)size;
+    }
+    stream->hash = hash;
+    stream->rest = rest;
+    stream->held = held;
+}
+
+static MARKDOWN_CORE_INLINE uint64_t markdown_core_key_stream_end(const markdown_core_key_stream *stream) {
+    uint64_t hash = stream->hash;
+    if (stream->held) {
+        hash = markdown_core_key_stream_mix(hash, stream->rest);
+    }
+    hash ^= (uint64_t)stream->size * UINT64_C(0x9e3779b97f4a7c15);
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
+    hash ^= hash >> 33;
+    return hash ? hash : 1;
+}
 markdown_core_key_index_slot *markdown_core_key_index_entry_hashed(markdown_core_key_index *index, uint64_t hash,
                                                                    const unsigned char *key, bufsize_t key_len);
 markdown_core_key_index_slot *markdown_core_key_index_find_hashed(const markdown_core_key_index *index, uint64_t hash,
