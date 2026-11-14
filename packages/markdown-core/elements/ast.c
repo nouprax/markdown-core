@@ -2676,23 +2676,31 @@ static bool committed_unlabel(markdown_core_committed_tables *committed, markdow
     return true;
 }
 
-/* The `count` entries of table `table`'s back nearest the focus go, the
- * rest move by `delta`, as the roster's did, and then the labels the gone
- * held move on: the roster still holds their declarations when `held`.
- * False when storage could not be had. */
-static bool committed_cut(markdown_core_committed_tables *committed, markdown_core_roster *roster, uint32_t table,
-                          size_t count, int64_t delta, bool held) {
+/* The `count` entries of table `table`'s back nearest the focus go, into
+ * `*taken`, and the rest move by `delta`, as the roster's did. False when
+ * storage could not be had. */
+static bool committed_take(markdown_core_committed_tables *committed, uint32_t table, size_t count, int64_t delta,
+                           markdown_core_listed **taken) {
     markdown_core_tree *tree = &committed->starts[table];
     assert(count <= tree->count - tree->front);
-    markdown_core_listed *taken = count ? markdown_core_alloc(count, sizeof(*taken)) : NULL;
-    if (count && !taken) {
+    *taken = count ? markdown_core_alloc(count, sizeof(**taken)) : NULL;
+    if (count && !*taken) {
         return false;
     }
     for (size_t i = 0; i < count; i++) {
-        taken[i] = *listed_at(tree, tree->front + i);
+        (*taken)[i] = *listed_at(tree, tree->front + i);
     }
     listed_erase(committed, table, tree->front, count);
     markdown_core_tree_shift(tree, tree->front, delta);
+    return true;
+}
+
+/* The labels the `count` entries `taken` of table `table` held move on, once
+ * every table is in the text's terms, as a label's next holder may be in
+ * another: the roster still holds their declarations when `held`. `taken`
+ * goes. False when storage could not be had. */
+static bool committed_drop(markdown_core_committed_tables *committed, markdown_core_roster *roster, uint32_t table,
+                           markdown_core_listed *taken, size_t count, bool held) {
     bool ok = true;
     for (size_t i = 0; ok && i < count; i++) {
         const committed_gone gone = {held, true, taken[i].start};
@@ -2700,6 +2708,16 @@ static bool committed_cut(markdown_core_committed_tables *committed, markdown_co
     }
     markdown_core_free(taken);
     return ok && committed_settle(committed);
+}
+
+/* The `count` entries of table `table`'s back nearest the focus go, the
+ * rest move by `delta`, and then the labels the gone held move on
+ * (committed_take, committed_drop). */
+static bool committed_cut(markdown_core_committed_tables *committed, markdown_core_roster *roster, uint32_t table,
+                          size_t count, int64_t delta, bool held) {
+    markdown_core_listed *taken;
+    return committed_take(committed, table, count, delta, &taken) &&
+           committed_drop(committed, roster, table, taken, count, held);
 }
 
 /* The front's entries of table `table` from `first` on go, and the labels
@@ -3703,12 +3721,24 @@ bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, 
     /* The rest of the back moves into the text's terms, as the roster's did
      * (markdown_core_roster_splice), which let the gone's declarations go. */
     const size_t old = (size_t)((int64_t)point - edit->delta);
-    for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+    markdown_core_listed *taken[MARKDOWN_CORE_DEFINITION_TABLES] = {NULL};
+    size_t cuts[MARKDOWN_CORE_DEFINITION_TABLES] = {0};
+    bool ok = true;
+    for (uint32_t table = 0; ok && table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_tree *tree = &committed->starts[table];
-        const size_t cut = markdown_core_tree_from(tree, old, tree->front, tree->count) - tree->front;
-        if (!committed_cut(committed, &parser->roster, table, cut, edit->delta, false)) {
-            return false;
+        cuts[table] = markdown_core_tree_from(tree, old, tree->front, tree->count) - tree->front;
+        ok = committed_take(committed, table, cuts[table], edit->delta, &taken[table]);
+    }
+    /* Every table is in the text's terms before a label moves on. */
+    for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        if (ok) {
+            ok = committed_drop(committed, &parser->roster, table, taken[table], cuts[table], false);
+        } else {
+            markdown_core_free(taken[table]);
         }
+    }
+    if (!ok) {
+        return false;
     }
     committed_check(committed);
     /* The chain's old children the reading took back have no records:
