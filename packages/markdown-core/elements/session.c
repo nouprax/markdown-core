@@ -122,12 +122,6 @@ static inline uint32_t holder_base(const markdown_core_node *holder, size_t star
     return holder->source.runs ? (uint32_t)start : (uint32_t)((int64_t)start - holder->extent.lead);
 }
 
-/* The bytes from where the child before `child` ends to where it ends. */
-static inline uint32_t child_width(const markdown_core_node *child) {
-    const markdown_core_extent extent = child_extent(child);
-    return (uint32_t)((int64_t)extent.lead + extent.span);
-}
-
 static size_t width_start(const void *entry) { return ((const session_width *)entry)->start; }
 
 static size_t width_end(const void *entry) { return ((const session_width *)entry)->end; }
