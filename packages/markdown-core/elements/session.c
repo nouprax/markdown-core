@@ -1338,7 +1338,50 @@ static void session_look_line(void *owner, size_t offset, size_t *line, size_t *
     *start = session_line_start(look->session, *line);
 }
 
+static markdown_core_status session_locate_flushed(markdown_core_session *session, markdown_core_position position,
+                                                   markdown_core_context **context);
+
+/* THE LOOK OF A TEXT AS A WHOLE: a context of `size` bytes of `source` no
+ * flushed session holds -- a session's text while it streams, a document's
+ * -- is the one a session of the whole text, flushed, reads at the cursor,
+ * which `context` takes. */
+static markdown_core_status session_locate_whole(const uint8_t *source, size_t size, markdown_core_text_unit unit,
+                                                 markdown_core_position position, markdown_core_context **context) {
+    markdown_core_session whole = {0};
+    markdown_core_status status = session_open(&whole, source, size, unit);
+    if (status == MARKDOWN_CORE_OK && !markdown_core_parser_edits(whole.committed)) {
+        status = MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (status == MARKDOWN_CORE_OK) {
+        status = session_flush(&whole);
+    }
+    if (status == MARKDOWN_CORE_OK) {
+        status = session_locate_flushed(&whole, position, context);
+    }
+    session_close(&whole);
+    return status;
+}
+
+markdown_core_status markdown_core_context_of(const uint8_t *source, size_t size, markdown_core_text_unit unit,
+                                              markdown_core_position position, markdown_core_context **context) {
+    return session_locate_whole(source, size, unit, position, context);
+}
+
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
+    markdown_core_context *fresh = NULL;
+    const markdown_core_status status =
+        session->flushed ? session_locate_flushed(session, position, &fresh)
+                         : session_locate_whole((const uint8_t *)session_source(session), session->text.count,
+                                                session->document.unit, position, &fresh);
+    if (status == MARKDOWN_CORE_OK) {
+        markdown_core_context_take(session->context, fresh);
+        session->located = true;
+    }
+    return status;
+}
+
+static markdown_core_status session_locate_flushed(markdown_core_session *session, markdown_core_position position,
+                                                   markdown_core_context **context) {
     /* THE PREFIX FROM A REST POINT (context.c): a flushed session reads the
      * text before the cursor from the rest point an edit of the cursor's
      * line reads from (THE LOOK), and the query reads the lines from that
@@ -1349,13 +1392,9 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
      * that holds the cursor's line. */
     const markdown_core_node *root = session->document.root;
     size_t start, end;
-    if (!session->flushed || !root || !root->child_count || position.line < 1 ||
+    if (position.line < 1 || position.column < 1 ||
         !markdown_core_parser_line_span(session->committed, (size_t)position.line - 1, &start, &end)) {
-        markdown_core_status status =
-            markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
-                                         session->text.count, position, NULL);
-        session->located |= status == MARKDOWN_CORE_OK;
-        return status;
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     if (!session->edits && !(session->edits = markdown_core_alloc(1, sizeof(*session->edits)))) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
@@ -1404,7 +1443,8 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
     /* A rest point inside a block of literal lines (session_literal) is
      * below a block with no children: the window keeps to the block. */
     const size_t levels = rest.depth - (rest.depth && !rest.chain[rest.depth - 1]->child_count);
-    for (size_t level = 0; level <= levels; level++) {
+    /* A root of no children holds no window: the query reads it whole. */
+    for (size_t level = 0; root->child_count && level <= levels; level++) {
         markdown_core_window_level *at = &locus.window.levels[level];
         const bool deepest = level == rest.depth;
         const uint32_t first = !deepest ? rest.path[level] : !level ? look.child : rest.path[level];
@@ -1438,12 +1478,12 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
             holder = rest.chain[level];
         }
     }
-    locus.window.depth = levels + 1;
+    locus.window.depth = root->child_count ? levels + 1 : 0;
     session_chain_folds(session->edits, &rest, rest.depth, look.folds);
     /* From the document's start, the lines reach the first child's too,
      * past the envelope, whose members a cursor in it reads. */
     size_t cursor = (size_t)position.line - 1, next, after;
-    if (!rest.depth && !look.child) {
+    if (!rest.depth && !look.child && root->child_count) {
         const size_t opening = markdown_core_parser_line_of(session->committed, widths_start(widths, root, 0));
         cursor = opening > cursor ? opening : cursor;
     }
@@ -1457,11 +1497,9 @@ markdown_core_status markdown_core_session_locate(markdown_core_session *session
         markdown_core_parser_line_span(session->committed, look.line + i, &locus.lines.starts[i], &after);
     }
     look.span = (uint32_t)(position.line - look.line + 2);
-    markdown_core_status status =
-        markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
-                                     session->text.count, position, &locus);
+    markdown_core_status status = markdown_core_context_read(
+        &session->document, (const uint8_t *)session_source(session), session->text.count, position, &locus, context);
     markdown_core_free(locus.lines.starts);
-    session->located |= status == MARKDOWN_CORE_OK;
     return status;
 }
 
@@ -1535,75 +1573,6 @@ markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size
     markdown_core_status status = session_open(&session, source, length, unit);
     if (status == MARKDOWN_CORE_OK) {
         status = session_flush(&session);
-    }
-    if (status != MARKDOWN_CORE_OK) {
-        session_close(&session);
-        markdown_core_free(parsed);
-        return status;
-    }
-    *parsed = session.document;
-    session.document.root = NULL;
-    session_close(&session);
-    *document = parsed;
-    return MARKDOWN_CORE_OK;
-}
-
-/* Declares in `roster` every label `whole` defines: the reference
- * labels its occurrences resolve, its footnotes' and its specimens'. */
-static bool seed_labels(markdown_core_roster *roster, const markdown_core_document *whole) {
-    bool ok = true;
-    for (size_t i = 0; ok && i < markdown_core_document_reference_label_count(whole); i++) {
-        markdown_core_string label;
-        const markdown_core_node *target;
-        if (markdown_core_document_reference_label_at(whole, i, &label, &target) == MARKDOWN_CORE_OK) {
-            ok = markdown_core_roster_declare(roster, MARKDOWN_CORE_ROSTER_REFERENCE, label.data,
-                                              (bufsize_t)label.length, 0);
-        }
-    }
-    for (size_t i = 0; ok && i < markdown_core_document_footnote_count(whole); i++) {
-        const markdown_core_node *node;
-        markdown_core_optional_string label;
-        if (markdown_core_document_footnote_at(whole, i, &node) == MARKDOWN_CORE_OK &&
-            markdown_core_footnote_label(node, &label) == MARKDOWN_CORE_OK && label.has_value) {
-            ok = markdown_core_roster_declare(roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, label.value.data,
-                                              (bufsize_t)label.value.length, 0);
-        }
-    }
-    for (size_t i = 0; ok && i < markdown_core_document_specimen_count(whole); i++) {
-        const markdown_core_node *node;
-        if (markdown_core_document_specimen_at(whole, i, &node) == MARKDOWN_CORE_OK &&
-            node->as.specimen->label.has_value) {
-            ok =
-                markdown_core_roster_declare(roster, MARKDOWN_CORE_ROSTER_SPECIMEN, node->as.specimen->label.value.data,
-                                             node->as.specimen->label.value.len, 0);
-        }
-    }
-    return ok;
-}
-
-/* The parse of the text before a cursor is a fresh parse whose parser
- * reports what it leaves open to `sink` (sink.h): the sink names the
- * text, and the document is the context query's alone. What the text
- * after the cursor defines, `whole` names: its labels are declared before
- * the parse reads a line, so an occurrence resolves as it does there. */
-markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sink *sink, markdown_core_text_unit unit,
-                                                       const markdown_core_document *whole,
-                                                       markdown_core_document **document) {
-    markdown_core_document *parsed = markdown_core_alloc(1, sizeof(*parsed));
-    if (!parsed) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    markdown_core_session session = {0};
-    markdown_core_status status = session_open(&session, sink->source, sink->length, unit);
-    if (status == MARKDOWN_CORE_OK && whole && !seed_labels(&session.committed->roster, whole)) {
-        status = MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    if (status == MARKDOWN_CORE_OK) {
-        session.committed->sink = sink;
-        status = session_flush(&session);
-    }
-    if (status == MARKDOWN_CORE_OK && sink->failed) {
-        status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status != MARKDOWN_CORE_OK) {
         session_close(&session);

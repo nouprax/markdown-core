@@ -123,7 +123,7 @@ static bool lines_hold(const context_query *query, size_t offset) {
     while (last < query->length && query->source[last] != '\n' && query->source[last] != '\r') {
         last++;
     }
-    return !query->locus || offset <= last + 1;
+    return offset <= last + 1;
 }
 #endif
 
@@ -132,7 +132,7 @@ static bool lines_hold(const context_query *query, size_t offset) {
  * them, as of a block the cursor's is nested in. */
 static size_t query_line(const context_query *query, size_t offset, size_t *start) {
     assert(lines_hold(query, offset));
-    if (query->locus && offset < query->lines.starts[0]) {
+    if (offset < query->lines.starts[0]) {
         size_t line;
         query->locus->line(query->locus->owner, offset, &line, start);
         return line;
@@ -1683,7 +1683,8 @@ static bool take_envelope(markdown_core_context *context, const context_query *q
  * asks of the document is about the bytes from a rest point of the root
  * through the cursor's line, so it reads the lines and the root's children
  * of the locus only, and its cost keeps to them, however long the document
- * is. Without a locus, the text before the cursor is parsed whole. */
+ * is. A text no flushed session holds is read by a session of it,
+ * flushed (session.c, THE LOOK OF A TEXT AS A WHOLE). */
 static markdown_core_status context_at(const markdown_core_document *document, const uint8_t *source, size_t length,
                                        markdown_core_position position, const markdown_core_locus *locus,
                                        markdown_core_context **context) {
@@ -1698,42 +1699,31 @@ static markdown_core_status context_at(const markdown_core_document *document, c
                            .marks = marks,
                            .tail = &tail,
                            .locus = locus,
-                           .window = locus ? &locus->window : NULL};
-    if (locus) {
-        query.lines = locus->lines;
-    } else if (!markdown_core_source_lines_read(&query.lines, source, length)) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    size_t *const owned = locus ? NULL : query.lines.starts;
+                           .window = &locus->window};
+    query.lines = locus->lines;
     if (!markdown_core_position_offset(&query.lines, source, length, position, document->unit, true, &query.cursor)) {
-        markdown_core_free(owned);
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     if (!read_holdings(&query)) {
         markdown_core_free(query.holdings);
-        markdown_core_free(owned);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     markdown_core_context_sink sink = {.source = source, .length = query.cursor};
-    markdown_core_document *before = NULL;
     markdown_core_context *made = markdown_core_alloc(1, sizeof(*made));
     bool inside = false;
     markdown_core_status status =
         made && take_envelope(made, &query, &inside) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
     if (status == MARKDOWN_CORE_OK && !inside) {
-        status = locus ? locus->look(locus->owner, &sink)
-                       : markdown_core_parse_before_cursor(&sink, document->unit, document, &before);
+        status = locus->look(locus->owner, &sink);
     }
     if (status == MARKDOWN_CORE_OK && !inside &&
         (sink.failed || !take_blocks(made, &query, &sink) || !take_inlines(made, &query, &sink) ||
          !take_slots(made, &query, &sink))) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    markdown_core_document_free(before);
     markdown_core_context_sink_clear(&sink);
     markdown_core_attribute_parser_free(&tail.parser);
     markdown_core_free(query.holdings);
-    markdown_core_free(owned);
     if (status != MARKDOWN_CORE_OK) {
         markdown_core_context_free(made);
         return status;
@@ -1745,7 +1735,7 @@ static markdown_core_status context_at(const markdown_core_document *document, c
 markdown_core_status markdown_core_document_context(const markdown_core_document *document, const uint8_t *source,
                                                     size_t length, markdown_core_position position,
                                                     markdown_core_context **context) {
-    return context_at(document, source, length, position, NULL, context);
+    return markdown_core_context_of(source, length, document->unit, position, context);
 }
 
 /* The bytes after which a slot may begin empty (markdown_core_slot_cues).
@@ -1823,19 +1813,16 @@ void markdown_core_context_free(markdown_core_context *context) {
  * it whole. */
 markdown_core_context *markdown_core_context_new(void) { return markdown_core_alloc(1, sizeof(markdown_core_context)); }
 
-markdown_core_status markdown_core_context_locate(markdown_core_context *context,
-                                                  const markdown_core_document *document, const uint8_t *source,
-                                                  size_t length, markdown_core_position position,
-                                                  const markdown_core_locus *locus) {
-    markdown_core_context *fresh = NULL;
-    markdown_core_status status = context_at(document, source, length, position, locus, &fresh);
-    if (status != MARKDOWN_CORE_OK) {
-        return status;
-    }
+markdown_core_status markdown_core_context_read(const markdown_core_document *document, const uint8_t *source,
+                                                size_t length, markdown_core_position position,
+                                                const markdown_core_locus *locus, markdown_core_context **context) {
+    return context_at(document, source, length, position, locus, context);
+}
+
+void markdown_core_context_take(markdown_core_context *context, markdown_core_context *fresh) {
     markdown_core_context_clear(context);
     *context = *fresh;
     markdown_core_free(fresh);
-    return MARKDOWN_CORE_OK;
 }
 
 /* SPELLING (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1): the text

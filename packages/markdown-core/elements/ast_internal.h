@@ -88,14 +88,10 @@ bool markdown_core_column_offset(const uint8_t *source, size_t at, size_t end, i
 bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, const markdown_core_node ***nodes,
                                 size_t *count, const markdown_core_node **last);
 
-/* Parses `sink`'s text, the text before a cursor, as a fresh parse whose
- * parser reports what it leaves open to `sink`, with the labels `whole`
- * defines declared (session.c). */
-struct markdown_core_context_sink;
-markdown_core_status markdown_core_parse_before_cursor(struct markdown_core_context_sink *sink,
-                                                       markdown_core_text_unit unit,
-                                                       const markdown_core_document *whole,
-                                                       markdown_core_document **document);
+/* The context at `position` of `size` bytes of `source`, read by a session
+ * of the whole text, flushed (session.c, THE LOOK OF A TEXT AS A WHOLE). */
+markdown_core_status markdown_core_context_of(const uint8_t *source, size_t size, markdown_core_text_unit unit,
+                                              markdown_core_position position, struct markdown_core_context **context);
 
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;
@@ -250,16 +246,15 @@ typedef struct markdown_core_locus {
 } markdown_core_locus;
 
 /* A session's context state (context.c, THE SESSION'S CONTEXT): a new
- * empty context, or NULL when the allocation failed; the context at
- * `position` of `document`, parsed from `length` bytes of `source`, which
- * replaces what `context` holds and leaves it as it was on a failure, read
- * in `locus`, or in the whole document when it is NULL; and the empty
- * context `context` becomes again. */
+ * empty context, or NULL when the allocation failed; a fresh context at
+ * `position` of `document`, parsed from `length` bytes of `source`, read in
+ * `locus`; `fresh` taken into `context`, which holds what it held until
+ * then; and the empty context `context` becomes again. */
 markdown_core_context *markdown_core_context_new(void);
-markdown_core_status markdown_core_context_locate(markdown_core_context *context,
-                                                  const markdown_core_document *document, const uint8_t *source,
-                                                  size_t length, markdown_core_position position,
-                                                  const markdown_core_locus *locus);
+markdown_core_status markdown_core_context_read(const markdown_core_document *document, const uint8_t *source,
+                                                size_t length, markdown_core_position position,
+                                                const markdown_core_locus *locus, markdown_core_context **context);
+void markdown_core_context_take(markdown_core_context *context, markdown_core_context *fresh);
 void markdown_core_context_clear(markdown_core_context *context);
 
 #ifdef __cplusplus

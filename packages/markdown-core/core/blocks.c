@@ -7113,9 +7113,8 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     edit->point = SIZE_MAX;
     stream->edit = edit;
     /* Room for the log up front, so a step it grows in pays no
-     * allocation; a refusal here leaves the step to grow it. */
-    (void)markdown_core_array_reserve(&stream->noted, 64);
-    return true;
+     * allocation. */
+    return markdown_core_array_reserve(&stream->noted, 64);
 }
 
 bool markdown_core_parser_takes_edits(const markdown_core_parser *parser) {
