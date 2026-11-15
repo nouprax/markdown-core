@@ -4382,16 +4382,35 @@ static bool S_uses_flush(markdown_core_parser *parser) {
     const size_t front = uses->front;
     /* A reading notes its roots' uses mostly in order. */
     size_t sorted = edit->uses_from + (front > edit->uses_from);
-    while (sorted < front && S_use_at(uses, sorted - 1)->start <= S_use_at(uses, sorted)->start) {
-        sorted++;
+    if (sorted < front) {
+        uint32_t prior = S_use_at(uses, sorted - 1)->start;
+        size_t run = 0;
+        const markdown_core_use *at = NULL;
+        while (sorted < front) {
+            if (!run) {
+                at = markdown_core_tree_run(uses, sorted, sizeof(*at), &run);
+            }
+            if (at->start < prior) {
+                break;
+            }
+            prior = at->start;
+            at++;
+            run--;
+            sorted++;
+        }
     }
     /* A root the reading completed again may start before its rest point,
      * as a container it reopened does: its uses go among those before. */
     size_t from = edit->uses_from;
     if (from < front) {
         uint32_t least = S_use_at(uses, from)->start;
-        for (size_t i = sorted; i < front; i++) {
-            least = S_use_at(uses, i)->start < least ? S_use_at(uses, i)->start : least;
+        size_t run = 0;
+        const markdown_core_use *at = NULL;
+        for (size_t i = sorted; i < front; i++, at++, run--) {
+            if (!run) {
+                at = markdown_core_tree_run(uses, i, sizeof(*at), &run);
+            }
+            least = at->start < least ? at->start : least;
         }
         if (from && S_use_at(uses, from - 1)->start > least) {
             from = markdown_core_tree_from(uses, least, 0, edit->uses_from);

@@ -66,7 +66,10 @@ typedef struct markdown_core_tree_ops {
 } markdown_core_tree_ops;
 
 typedef struct markdown_core_tree_leaf {
-    uint32_t count;
+    /* Its entries, and the entries its storage holds: MARKDOWN_CORE_TREE_LEAF
+     * but in the first leaf of a tree, which grows to it while it is the
+     * tree's only leaf. */
+    uint32_t count, room;
     struct markdown_core_tree_leaf *next, *prev;
     /* The inner node above it, or NULL at the root. */
     void *parent;
@@ -153,7 +156,10 @@ void markdown_core_tree_shift(markdown_core_tree *tree, size_t index, int64_t de
  * of the first entry whose key is not before `key`'s, or the count (a tree
  * of keys, which a seek reads with no change to it: any number of readers
  * may seek at once). */
-size_t markdown_core_tree_from(const markdown_core_tree *tree, size_t place, size_t low, size_t high);
+size_t markdown_core_tree_bound(const markdown_core_tree *tree, size_t place, size_t low, size_t high);
+static inline size_t markdown_core_tree_from(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
+    return low < high ? markdown_core_tree_bound(tree, place, low, high) : low;
+}
 size_t markdown_core_tree_seek(const markdown_core_tree *tree, const void *key);
 
 /* The rank of the first entry of ranks `low` up to `high` that ends past

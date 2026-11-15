@@ -48,13 +48,48 @@ static inline void S_adopted(void *node, uint32_t height, S_inner *parent) {
     }
 }
 
-/* A leaf of no entries: its storage holds nothing until an entry is put. */
-static S_leaf *S_leaf_new(const markdown_core_tree *tree) {
-    S_leaf *leaf = markdown_core_realloc(NULL, sizeof(S_leaf) + MARKDOWN_CORE_TREE_LEAF * tree->ops->size);
+/* A leaf of no entries, with storage for `room`: its storage holds nothing
+ * until an entry is put. */
+static S_leaf *S_leaf_new(const markdown_core_tree *tree, uint32_t room) {
+    S_leaf *leaf = markdown_core_realloc(NULL, sizeof(S_leaf) + room * tree->ops->size);
     if (leaf) {
-        *leaf = (S_leaf){0};
+        *leaf = (S_leaf){.room = room};
     }
     return leaf;
+}
+
+/* The room of a tree's first leaf: a tree of a few entries takes little. */
+enum { S_FIRST_ROOM = 8 };
+
+/* THE FIRST LEAF grows, while it is the tree's only leaf, when it is full
+ * and holds less than a leaf may: twice its room, up to a leaf's, its
+ * entries told where they went. False, with the tree as it was, when
+ * storage could not be had. */
+static bool S_grow(markdown_core_tree *tree) {
+    S_leaf *old = tree->root;
+    assert(!tree->levels && old->count == old->room && old->room < MARKDOWN_CORE_TREE_LEAF);
+    const uint32_t room = old->room * 2 < MARKDOWN_CORE_TREE_LEAF ? old->room * 2 : MARKDOWN_CORE_TREE_LEAF;
+    /* Taken anew and copied, as an array grows: the allocator hands a small
+     * block from its caches, where a reallocation that cannot grow in place
+     * looks for one in its bins. */
+    S_leaf *leaf = S_leaf_new(tree, room);
+    if (!leaf) {
+        return false;
+    }
+    memcpy(leaf, old, sizeof(S_leaf) + old->count * tree->ops->size);
+    leaf->room = room;
+    markdown_core_free(old);
+    tree->root = tree->last = leaf;
+    if (tree->seen != &markdown_core_tree_bare) {
+        tree->seen = leaf;
+        tree->seen_first = 0;
+    }
+    if (tree->ops->moved) {
+        for (uint32_t i = 0; i < leaf->count; i++) {
+            tree->ops->moved(tree, (unsigned char *)leaf->entries + i * tree->ops->size, leaf, i);
+        }
+    }
+    return true;
 }
 
 static S_inner *S_inner_new(const markdown_core_tree *tree) {
@@ -219,7 +254,7 @@ static void S_spare(markdown_core_tree *tree) {
         }
         node = inner->children[inner->count - 1];
     }
-    tree->spare = MARKDOWN_CORE_TREE_LEAF - tree->last->count;
+    tree->spare = tree->last->room - tree->last->count;
 }
 
 /* The walk to the leaf that holds rank `index`, or the last leaf for the
@@ -353,7 +388,7 @@ static size_t S_from(markdown_core_tree *tree, size_t place, const void *key, si
     return found < high ? found : high;
 }
 
-size_t markdown_core_tree_from(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
+size_t markdown_core_tree_bound(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
     return S_from((markdown_core_tree *)tree, place, NULL, low, high);
 }
 
@@ -606,15 +641,19 @@ void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const vo
         return pushed;
     }
     if (!tree->root) {
-        S_leaf *leaf = S_leaf_new(tree);
+        S_leaf *leaf = S_leaf_new(tree, S_FIRST_ROOM);
         if (!leaf) {
             return NULL;
         }
         tree->root = tree->last = leaf;
         tree->last_held = 0;
     }
+    if (!tree->levels && ((S_leaf *)tree->root)->count == ((S_leaf *)tree->root)->room &&
+        ((S_leaf *)tree->root)->room < MARKDOWN_CORE_TREE_LEAF && !S_grow(tree)) {
+        return NULL;
+    }
     /* A tree of one leaf with room: the entry goes into the leaf alone. */
-    if (!tree->levels && ((S_leaf *)tree->root)->count < MARKDOWN_CORE_TREE_LEAF) {
+    if (!tree->levels && ((S_leaf *)tree->root)->count < ((S_leaf *)tree->root)->room) {
         S_leaf *leaf = tree->root;
         const size_t size = tree->ops->size;
         const uint32_t k = (uint32_t)index;
@@ -639,7 +678,7 @@ void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const vo
     const uint32_t needed = S_put_room(tree, index);
     assert(tree->levels + 1 < MARKDOWN_CORE_TREE_LEVELS);
     for (uint32_t i = 0; i < needed; i++) {
-        room[i] = i ? (void *)S_inner_new(tree) : (void *)S_leaf_new(tree);
+        room[i] = i ? (void *)S_inner_new(tree) : (void *)S_leaf_new(tree, MARKDOWN_CORE_TREE_LEAF);
         if (!room[i]) {
             while (i) {
                 markdown_core_free(room[--i]);
@@ -708,7 +747,7 @@ void *markdown_core_tree_append(markdown_core_tree *tree) {
     if (tree->spare) {
         return markdown_core_tree_push(tree, tree->ops->size);
     }
-    if (tree->last && tree->last->count < MARKDOWN_CORE_TREE_LEAF) {
+    if (tree->last && tree->last->count < tree->last->room) {
         /* Room, behind a pending shift: hand it down. */
         S_path path;
         S_last_path(tree, &path);
@@ -718,7 +757,14 @@ void *markdown_core_tree_append(markdown_core_tree *tree) {
         S_spare(tree);
         return markdown_core_tree_push(tree, tree->ops->size);
     }
-    S_leaf *leaf = S_leaf_new(tree);
+    if (tree->root && !tree->levels && tree->last->room < MARKDOWN_CORE_TREE_LEAF) {
+        if (!S_grow(tree)) {
+            return NULL;
+        }
+        S_spare(tree);
+        return markdown_core_tree_push(tree, tree->ops->size);
+    }
+    S_leaf *leaf = S_leaf_new(tree, tree->root ? MARKDOWN_CORE_TREE_LEAF : S_FIRST_ROOM);
     if (!leaf) {
         return NULL;
     }
@@ -990,7 +1036,7 @@ size_t markdown_core_tree_rank(const markdown_core_tree *tree, markdown_core_tre
 size_t markdown_core_tree_room(const markdown_core_tree *tree) {
     size_t room = 0;
     for (const S_leaf *leaf = tree->last; leaf; leaf = leaf->prev) {
-        room += MARKDOWN_CORE_TREE_LEAF;
+        room += leaf->room;
     }
     return room;
 }

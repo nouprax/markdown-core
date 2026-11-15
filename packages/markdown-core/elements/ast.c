@@ -2275,6 +2275,32 @@ static const markdown_core_tree_ops listed_ops = {sizeof(markdown_core_listed), 
 
 MARKDOWN_CORE_TREE_OPS(listed, markdown_core_listed)
 
+/* The rank of the first entry of ranks `low` up to `high`, in the front,
+ * that starts at or past `place`, or `high`: read in the leaf of entry
+ * `high - 1` when the rank is there, as it mostly is, for a place near the
+ * front's end. */
+static size_t listed_from(markdown_core_tree *tree, uint32_t place, size_t low, size_t high) {
+    if (low >= high) {
+        return low;
+    }
+    const markdown_core_listed *last = listed_at(tree, high - 1);
+    const size_t base = tree->seen_first;
+    const markdown_core_listed *rows = last - (high - 1 - base);
+    size_t first = low > base ? low - base : 0, end = high - base;
+    if (!first && base > low && rows->start >= place) {
+        return markdown_core_tree_bound(tree, place, low, base);
+    }
+    while (first < end) {
+        const size_t middle = first + (end - first) / 2;
+        if (rows[middle].start < place) {
+            first = middle + 1;
+        } else {
+            end = middle;
+        }
+    }
+    return base + first;
+}
+
 /* A number of table `table` no entry holds, or UINT32_MAX when storage
  * could not be had. */
 static uint32_t listed_number(markdown_core_committed_tables *committed, uint32_t table) {
@@ -2488,8 +2514,7 @@ static bool committed_keep(markdown_core_committed_tables *committed, uint32_t t
     markdown_core_tree *tree = &committed->starts[table];
     const size_t count = tree->front;
     assert(count == tree->count || listed_at(tree, count)->start > start);
-    const size_t at =
-        count && listed_at(tree, count - 1)->start < start ? count : markdown_core_tree_from(tree, start, 0, count);
+    const size_t at = listed_from(tree, start, 0, count);
     if (at < count && listed_at(tree, at)->start == start) {
         assert(listed_at(tree, at)->node == node);
         return true;
@@ -2854,8 +2879,12 @@ bool markdown_core_publish_withdraw(markdown_core_parser *parser, markdown_core_
     for (uint32_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_tree *tree = &committed->starts[table];
         assert(tree->front == tree->count || listed_at(tree, tree->front)->start >= place.end);
-        const size_t first = markdown_core_tree_from(tree, place.start, 0, tree->front);
-        const size_t end = markdown_core_tree_from(tree, place.end, first, tree->front);
+        /* Mostly, the root goes after every entry the front holds. */
+        if (!tree->front || listed_at(tree, tree->front - 1)->start < place.start) {
+            continue;
+        }
+        const size_t first = listed_from(tree, place.start, 0, tree->front);
+        const size_t end = listed_from(tree, place.end, first, tree->front);
         /* The labels move on first, past every entry that goes. */
         const committed_out out = {table, first, end, root};
         for (size_t i = first; i < end; i++) {
@@ -2880,7 +2909,7 @@ bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, 
         return false;
     }
     markdown_core_tree *tree = &committed->starts[table];
-    const size_t at = markdown_core_tree_from(tree, start, 0, tree->front);
+    const size_t at = listed_from(tree, start, 0, tree->front);
     if (at < tree->front && listed_at(tree, at)->start == start) {
         const markdown_core_node *old = listed_at(tree, at)->node;
         const committed_out out = {table, at, at + 1, NULL};
