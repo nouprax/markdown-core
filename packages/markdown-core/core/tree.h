@@ -66,10 +66,7 @@ typedef struct markdown_core_tree_ops {
 } markdown_core_tree_ops;
 
 typedef struct markdown_core_tree_leaf {
-    /* Its entries, and the entries its storage holds: MARKDOWN_CORE_TREE_LEAF
-     * but in the first leaf of a tree, which grows to it while it is the
-     * tree's only leaf. */
-    uint32_t count, room;
+    uint32_t count;
     struct markdown_core_tree_leaf *next, *prev;
     /* The inner node above it, or NULL at the root. */
     void *parent;
