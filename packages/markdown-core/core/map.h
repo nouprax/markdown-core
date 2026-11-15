@@ -237,47 +237,6 @@ static inline bool markdown_core_key_same(const markdown_core_key_entry *a, cons
     return a->head == b->head && markdown_core_key_tie_order(a, b) == 0;
 }
 
-/* AN ORDERED INDEX OF KEYED ENTRIES, one per key: a B+ tree whose inner
- * nodes count the entries below each child, so that the entry of a key and
- * its rank, the number of keys before it, the entry of a rank, and an
- * insertion each take time logarithmic in the entries. Its leaves are linked
- * in key order for a walk. It borrows its keys as the key index does. */
-typedef struct markdown_core_key_tree {
-    void *root;
-    size_t count;
-    /* The levels of inner nodes above the leaves. */
-    uint32_t levels;
-} markdown_core_key_tree;
-
-/* A walk of a tree's entries in key order, from where a seek left it. */
-typedef struct markdown_core_key_tree_cursor {
-    struct markdown_core_key_tree_leaf *leaf;
-    uint32_t index;
-} markdown_core_key_tree_cursor;
-
-void markdown_core_key_tree_free(markdown_core_key_tree *tree);
-/* The entry of `key`'s key, or NULL, with the rank of that key into
- * `*rank` when `rank` is not NULL. */
-markdown_core_key_entry *markdown_core_key_tree_find(const markdown_core_key_tree *tree,
-                                                     const markdown_core_key_entry *key, size_t *rank);
-/* The entry of `key`'s key, made with `key`'s key, a zero number and a NULL
- * pointer when the tree had none, which `*made` says. NULL, with the tree as
- * it was, when storage could not be had. The entry is borrowed until the
- * next insertion. */
-markdown_core_key_entry *markdown_core_key_tree_entry(markdown_core_key_tree *tree, const markdown_core_key_entry *key,
-                                                      bool *made);
-/* The entry of `key`'s key taken out, when the tree has one: its node may
- * be left with fewer entries than a split leaves, or none, which a search
- * and a walk pass, and no storage goes until the tree is freed. */
-void markdown_core_key_tree_remove(markdown_core_key_tree *tree, const markdown_core_key_entry *key);
-/* The entry of rank `rank`, below the tree's count. */
-markdown_core_key_entry *markdown_core_key_tree_at(const markdown_core_key_tree *tree, size_t rank);
-/* Sets `*cursor` at the first entry whose key is not before `key`'s. */
-void markdown_core_key_tree_seek(const markdown_core_key_tree *tree, const markdown_core_key_entry *key,
-                                 markdown_core_key_tree_cursor *cursor);
-/* The cursor's entry, the cursor stepped past it; NULL past the last. */
-markdown_core_key_entry *markdown_core_key_tree_next(markdown_core_key_tree_cursor *cursor);
-
 #ifdef __cplusplus
 }
 #endif

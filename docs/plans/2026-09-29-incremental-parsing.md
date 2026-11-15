@@ -1250,7 +1250,7 @@ The edit runs in five steps:
     flips when no declaration outside the reading declares it; one it lost
     flips when no declaration is left. The byte filter is gone: a session
     keeps every inline root's lookups, found or not, as its uses
-    (`markdown_core_edit`, `uses`, a zipper keyed by where the root starts),
+    (`markdown_core_edit`, `uses`, a tree (core/tree.h) keyed by where the root starts),
     and the roots that used an altered key are read again
     (`markdown_core_parser_uses_of`), in at most eight readings, parted at
     the widest gaps between them: each reads as an edit of nothing just past
