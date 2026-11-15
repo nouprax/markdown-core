@@ -899,9 +899,9 @@ bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const mar
 /* The source of input line `line` from where its own bytes begin to where it
  * ends, through its terminator on a line of the document itself. False when
  * the line's content could not be read. */
-static bool S_line_own(markdown_core_parser *parser, int line, markdown_core_place *own_place) {
+static bool S_line_own(markdown_core_parser *parser, int line, markdown_core_input_line *geometry,
+                       markdown_core_place *own_place) {
     bufsize_t length;
-    markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
     if (!S_input_line_content(parser, geometry, &length)) {
         return false;
     }
@@ -932,8 +932,13 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_places(markdown_core_pars
     }
     places->count = places->content = 0;
     markdown_core_place own;
-    for (int line = first; line <= last; line++) {
-        if (!S_line_own(parser, line, &own)) {
+    markdown_core_input_line *row = NULL;
+    size_t run = 0;
+    for (int line = first; line <= last; line++, run--) {
+        row = run ? row + 1
+                  : markdown_core_tree_run(&parser->input.lines, (size_t)(line - parser->input.first_line),
+                                           sizeof(*row), &run);
+        if (!S_line_own(parser, line, row, &own)) {
             markdown_core_node_pool_bytes_free(parser->pool, places);
             return;
         }
@@ -962,16 +967,22 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
     }
     const int visited = parser->input.first_line + (int)parser->input.lines.front - 1;
     const uint32_t start = node->place.start, end = node->place.end;
-    int first = *line;
-    while (first > parser->input.first_line && (uint32_t)S_line_offset(parser, first) > start) {
-        first--;
+    size_t index = (size_t)(*line - parser->input.first_line), behind;
+    const markdown_core_input_line *back = markdown_core_tree_back(&parser->input.lines, index, sizeof(*back), &behind);
+    while (index && (uint32_t)S_input_source(parser, (bufsize_t)back->start) > start) {
+        index--;
+        back = behind-- ? back - 1 : markdown_core_tree_back(&parser->input.lines, index, sizeof(*back), &behind);
     }
+    int first = parser->input.first_line + (int)index;
     /* Down the lines from there: one that begins at or before the start is
      * the first so far, and the node ends on the last that begins before
      * its end. */
     int last = first;
-    while (last < visited) {
-        const uint32_t next = (uint32_t)S_line_offset(parser, last + 1);
+    const markdown_core_input_line *row = NULL;
+    size_t run = 0;
+    for (index = (size_t)(last + 1 - parser->input.first_line); last < visited; index++, run--) {
+        row = run ? row + 1 : markdown_core_tree_run(&parser->input.lines, index, sizeof(*row), &run);
+        const uint32_t next = (uint32_t)S_input_source(parser, (bufsize_t)row->start);
         if (next > start && next >= end) {
             break;
         }
@@ -6554,8 +6565,11 @@ static bool S_leap_runs(markdown_core_parser *parser, markdown_core_node *block,
         }
     }
     markdown_core_place own;
-    for (size_t line = leap->top; line < index; line++) {
-        if (!S_line_own(parser, (int)line + parser->input.first_line, &own)) {
+    markdown_core_input_line *row = NULL;
+    size_t run = 0;
+    for (size_t line = leap->top; line < index; line++, run--) {
+        row = run ? row + 1 : markdown_core_tree_run(&parser->input.lines, line, sizeof(*row), &run);
+        if (!S_line_own(parser, (int)line + parser->input.first_line, row, &own)) {
             markdown_core_free(places);
             return false;
         }
@@ -7350,8 +7364,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
  * name blocks a reading made, gone, and the facts past the first
  * `fact_count` with them. */
 static void S_drop_facts(markdown_core_parser_input *input, size_t first, size_t end, size_t fact_count) {
-    for (size_t i = first; i < end; i++) {
-        markdown_core_input_line *line = markdown_core_input_line_at(input, i);
+    /* The lines in the runs of their leaves (markdown_core_tree_run). */
+    markdown_core_input_line *line = NULL;
+    size_t run = 0;
+    for (size_t i = first; i < end; i++, run--) {
+        line = run ? line + 1 : markdown_core_tree_run(&input->lines, i, sizeof(*line), &run);
         markdown_core_line_facts *facts = markdown_core_input_facts(input, line);
         if (!facts) {
             continue;

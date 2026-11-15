@@ -207,6 +207,17 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void *markdown_core_tree_
     return entry;
 }
 
+/* Entry `index`'s storage, as markdown_core_tree_at gives it, and in
+ * `*behind` how many entries before it lie before it in that storage: a
+ * reader that walks the ranks down steps through them as through an array. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void *markdown_core_tree_back(const markdown_core_tree *tree,
+                                                                                     size_t index, size_t size,
+                                                                                     size_t *behind) {
+    void *entry = markdown_core_tree_at(tree, index, size);
+    *behind = index - tree->seen_first;
+    return entry;
+}
+
 /* Storage for an entry appended at the end of a tree with no back, which
  * the caller writes: in place while the last leaf has room. NULL when
  * storage could not be had. */
