@@ -7821,15 +7821,46 @@ static void S_close_tail(markdown_core_parser *parser) {
     }
 }
 
+/* THE LOOK: a reading that commits nothing, which the snapshot and the
+ * locate's look share. It begins at a mark, with nothing settling as
+ * committed; it reads the text through `length` bytes of `source` and ends
+ * it there (S_close_tail), completing what settled; and it ends back at the
+ * mark, the lent blocks' views read until the take-back. Where it begins,
+ * what it lends and what it makes of the reading are its caller's. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_look_begin(markdown_core_parser *parser,
+                                                                         S_snapshot_mark *mark) {
+    S_mark(parser, mark);
+    parser->settle_flags = 0;
+    parser->snapshot = true;
+}
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_look_read(markdown_core_parser *parser,
+                                                                        const char *source, size_t length) {
+    S_parse_source(parser, (const unsigned char *)source, length);
+    if (!parser->error) {
+        S_close_tail(parser);
+    }
+    if (!parser->error) {
+        S_complete_settled(parser);
+    }
+}
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_look_end(markdown_core_parser *parser,
+                                                                       const S_snapshot_mark *mark) {
+    S_rollback(parser, mark);
+    parser->stream->claimant = NULL;
+    parser->stream->snapshot_mark = NULL;
+    parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
+    parser->snapshot = false;
+}
+
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length) {
     if (parser->error) {
         return NULL;
     }
     markdown_core_stream *const stream = parser->stream;
     S_snapshot_mark mark = {.kept = (unsigned char *)stream->candidate_room + parser->dialect->candidate_state_size};
-    S_mark(parser, &mark);
-    parser->settle_flags = 0;
-    parser->snapshot = true;
+    S_look_begin(parser, &mark);
     markdown_core_node *result = NULL;
     /* A SNAPSHOT SEES A CANDIDATE END (THE CANDIDATES): the commit puts
      * back what it read since the call and holds there, its calls waiting,
@@ -7845,13 +7876,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
 
     const bool lent = !parser->error && S_lend_tail(parser, length);
     if (lent) {
-        S_parse_source(parser, (const unsigned char *)source, length);
-        if (!parser->error) {
-            S_close_tail(parser);
-        }
-        if (!parser->error) {
-            S_complete_settled(parser);
-        }
+        S_look_read(parser, source, length);
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         if (!parser->error) {
             document->element->document->finish(document, parser);
@@ -7879,11 +7904,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
         S_settled_release(parser, &stream->settled);
     }
     stream->settled.root = NULL;
-    S_rollback(parser, &mark);
-    stream->claimant = NULL;
-    stream->snapshot_mark = NULL;
-    parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
-    parser->snapshot = false;
+    S_look_end(parser, &mark);
     return result;
 }
 
@@ -8030,9 +8051,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
     parser->root = root;
 
     S_snapshot_mark mark = {.kept = (unsigned char *)stream->candidate_room + parser->dialect->candidate_state_size};
-    S_mark(parser, &mark);
-    parser->settle_flags = 0;
-    parser->snapshot = true;
+    S_look_begin(parser, &mark);
     stream->snapshot_mark = &mark;
     /* Every block held open is lent, the root last: the reading ends with
      * the document closing, however little of it there is. */
@@ -8083,13 +8102,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
             }
         }
         if (!parser->error) {
-            S_parse_source(parser, (const unsigned char *)source, length);
-        }
-        if (!parser->error) {
-            S_close_tail(parser);
-        }
-        if (!parser->error) {
-            S_complete_settled(parser);
+            S_look_read(parser, source, length);
         }
     }
     S_revert_end(&revert);
@@ -8107,11 +8120,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
 #endif
     const bool ok = !parser->error;
     S_take_back(parser, true);
-    S_rollback(parser, &mark);
-    stream->claimant = NULL;
-    stream->snapshot_mark = NULL;
-    parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
-    parser->snapshot = false;
+    S_look_end(parser, &mark);
     parser->error = MARKDOWN_CORE_PARSE_OK;
 
     /* The blocks as they stood, with the children the reading wrote over. */
