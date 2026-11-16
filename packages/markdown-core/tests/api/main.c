@@ -12054,6 +12054,85 @@ static bool dumps_as_a_parse(const markdown_core_document *document, const char 
     return same;
 }
 
+/* A paragraph typed at its end, a few bytes an edit, on a flushed session,
+ * dumps after every edit as a parse of the text so far does (blocks.c, THE
+ * SEAMS): the reading parses its content from a seam inside its last line
+ * while the edit only goes on from where the content ended, and from a seam
+ * before when a line it reads takes the lines before it from the paragraph,
+ * as a table's delimiter row and a heading's underline do. */
+static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runner) {
+#define LINES "one *two* three `four` five\nsix [seven](x) eight **nine** ten\neleven *twelve* thirteen\n"
+    static const char *const sources[] = {
+        LINES LINES "fourteen *fifteen* sixteen\n",
+        LINES LINES "a | b\n| - | - |\n| c | d |\n",
+        LINES LINES "head *line*\n=====\n\ntail *one* two\n",
+        LINES "hard *break*  \nnext *line*\\\nlast *line*\n",
+        LINES "an *open and `code\nspan` closes* later\n",
+        LINES "a [use][label] here *x* and\nmore *y* words\n\n[label]: /url\n",
+        LINES LINES "- item *one*\n- item *two*\n",
+        LINES "with trailing *spaces*   \nand *more*\r\nlines *crlf*\r\n",
+    };
+    static const size_t steps[] = {1, 3, 2, 5, 1, 4, 7, 2};
+    for (size_t s = 0; s < sizeof(sources) / sizeof(*sources); s++) {
+        const char *source = sources[s];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        bool ok = markdown_core_session_new(NULL, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
+                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+        size_t at = 0, k = 0;
+        markdown_core_position end = {1, 1};
+        while (ok && at < length) {
+            size_t size = steps[k++ % (sizeof(steps) / sizeof(*steps))];
+            size = size < length - at ? size : length - at;
+            ok = markdown_core_session_edit(session, end, end, (const uint8_t *)source + at, size, &document) ==
+                 MARKDOWN_CORE_OK;
+            for (size_t i = at; i < at + size; i++) {
+                const bool breaks = source[i] == '\n' || (source[i] == '\r' && source[i + 1] != '\n');
+                end = breaks ? (markdown_core_position){end.line + 1, 1}
+                             : (markdown_core_position){end.line, end.column + 1};
+            }
+            at += size;
+            ok = ok && dumps_as_a_parse(document, source, at);
+        }
+        OK(runner, ok, "a paragraph typed at its end dumps as a parse after every edit (source %zu, at %zu)", s, at);
+        markdown_core_session_close(session);
+    }
+    /* Whole lines written at the end, after an edit that leaves seams. */
+    static const char *const pieces[][6] = {
+        {LINES LINES, "a | b", "\n", "| - | - |\n", "| c | d |\n", NULL},
+        {LINES LINES, "head *x*", "\n", "===\n", "more *y*", NULL},
+        {LINES LINES, "head *x*", "\n", "---\n", "more *y*", NULL},
+        {LINES, "a *b* c", "\n", "| - |\n", NULL, NULL},
+        {LINES, "x *y*  ", "\n", "z *w*\\", "\n", "end"},
+    };
+    for (size_t s = 0; s < sizeof(pieces) / sizeof(*pieces); s++) {
+        char source[1024];
+        size_t at = 0;
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        bool ok = markdown_core_session_new(NULL, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
+                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+        markdown_core_position end = {1, 1};
+        for (size_t k = 0; ok && k < 6 && pieces[s][k]; k++) {
+            const size_t size = strlen(pieces[s][k]);
+            memcpy(source + at, pieces[s][k], size);
+            ok = markdown_core_session_edit(session, end, end, (const uint8_t *)source + at, size, &document) ==
+                 MARKDOWN_CORE_OK;
+            for (size_t i = at; i < at + size; i++) {
+                end = source[i] == '\n' ? (markdown_core_position){end.line + 1, 1}
+                                        : (markdown_core_position){end.line, end.column + 1};
+            }
+            at += size;
+            ok = ok && dumps_as_a_parse(document, source, at);
+        }
+        OK(runner, ok, "lines written at a paragraph's end dump as a parse after every edit (pieces %zu, at %zu)", s,
+           at);
+        markdown_core_session_close(session);
+    }
+#undef LINES
+}
+
 /* Whether `source`, appended in pieces that end at each of the `count`
  * offsets `ends`, in order, gives after each append a snapshot whose dump is
  * a fresh parse's of the same text, and a flushed document whose dump is a
@@ -12782,6 +12861,7 @@ int main(void) {
     session_opener_fields(runner);
     node_view_views(runner);
     session_flush_matches_a_parse(runner);
+    session_typed_paragraph_end_matches_a_parse(runner);
     session_walks_through_definition_bodies(runner);
     session_roots_at_every_depth(runner);
     session_allocation_failures(runner);

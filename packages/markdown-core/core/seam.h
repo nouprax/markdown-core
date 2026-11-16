@@ -21,7 +21,7 @@ extern "C" {
  * holder stands in its empty state, so that what it made before the seam
  * reads no byte past it. Each holder's reading does the same four steps:
  *
- * - REST: it finds the last seam two lines or more before the edit
+ * - REST: it finds the last seam before the edit that the edit leaves standing
  *   (elements/session.c, session_rest and session_rest_in, for the root and
  *   the blocks of the chain; blocks.c, S_seam_pick, for a paragraph).
  * - KEEP: it keeps the children before the seam, and the old ones past it
@@ -151,7 +151,9 @@ static inline markdown_core_seam markdown_core_seam_sum(markdown_core_seam seam,
                                 seam.place + back.place,
                                 seam.read + back.read,
                                 0,
-                                markdown_core_measure_join(seam.measure, back.measure)};
+                                markdown_core_measure_join(seam.measure, back.measure),
+                                false,
+                                0};
 }
 
 #ifdef __cplusplus

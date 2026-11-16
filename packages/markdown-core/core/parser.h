@@ -728,6 +728,11 @@ typedef struct {
      * before it (element.h, the finish's `measure`), zero for none; a seam
      * the back holds measures those after it. */
     markdown_core_measure measure;
+    /* Whether it lies inside the content's last line, `base` bytes past
+     * where that line starts: a seam only an edit at the content's end
+     * keeps (blocks.c, THE SEAMS). */
+    bool inner;
+    uint32_t base;
 } markdown_core_seam;
 
 /* THE SEAMS a paragraph's parse may meet (blocks.c): the old seams past
