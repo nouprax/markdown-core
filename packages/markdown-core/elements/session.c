@@ -809,14 +809,29 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     if (held < root->child_count && widths_end(widths, root, held) <= edited_start) {
         held++;
     }
-    const markdown_core_place window = held < root->child_count
-                                           ? (markdown_core_place){(uint32_t)widths_start(widths, root, held),
-                                                                   (uint32_t)widths_end(widths, root, held)}
-                                           : (markdown_core_place){0, 0};
+    markdown_core_place window = held < root->child_count
+                                     ? (markdown_core_place){(uint32_t)widths_start(widths, root, held),
+                                                             (uint32_t)widths_end(widths, root, held)}
+                                     : (markdown_core_place){0, 0};
     const bool inside = held < root->child_count && session_inside(session, root->children[held], window, edited);
     session_rest_root(session, start, edited, child, line);
     rest->depth = 0;
-    if (!inside &&
+    /* An edit on the line after a paragraph's last, which may go on with
+     * it, rests in it as one of its own lines does (THE LEAP), from its last
+     * line: the reading decides whether the edited line goes on with it. */
+    bool prior = false;
+    if (!inside && held &&
+        (held >= root->child_count || !markdown_core_parser_leaps(session->committed, root->children[held]))) {
+        const markdown_core_place before = {(uint32_t)widths_start(widths, root, held - 1),
+                                            (uint32_t)widths_end(widths, root, held - 1)};
+        if (markdown_core_parser_line_of(session->committed, before.end - 1) + 1 == edited &&
+            !markdown_core_parser_reads_lines(session->committed, root->children[held - 1])) {
+            held--;
+            window = before;
+            prior = true;
+        }
+    }
+    if (!inside && !prior &&
         (held >= root->child_count || !markdown_core_parser_leaps(session->committed, root->children[held]))) {
         return true;
     }
@@ -828,7 +843,7 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     rest->ends[1] = (held + 1 < root->child_count ? widths_start(widths, root, held + 1) : session->text.count) + 1;
     rest->ends[2] = session_line_start(session, markdown_core_parser_line_of(session->committed, window.end - 1)) + 1;
     if (!inside) {
-        if (session_literal(session, root->children[held], held, window, 0, edited, rest)) {
+        if (session_literal(session, root->children[held], held, window, 0, edited - prior, rest)) {
             *child = held + 1;
             *line = rest->line;
         }
