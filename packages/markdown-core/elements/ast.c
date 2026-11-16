@@ -3583,6 +3583,9 @@ static bool record_nest(markdown_core_parser *parser) {
                         return false;
                     }
                 }
+                /* Its nodes are their records' now; the body goes. */
+                old->child_count = 0;
+                markdown_core_node_pool_release(parser->pool, old);
                 edit->nest_recorded++;
                 continue;
             }
