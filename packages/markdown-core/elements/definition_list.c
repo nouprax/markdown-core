@@ -102,9 +102,18 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * long prose) and admitted any line with ': ' in it. Every answer of false
  * is a line the transaction would refuse too. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_lines_admit(
-    markdown_core_parser *parser, const markdown_core_node *parent) {
+    markdown_core_parser *parser, const markdown_core_node *parent, const unsigned char **seen) {
     const unsigned char *cursor = parser->at.lookahead_cursor;
-    for (int line = 0; line < 2 && cursor && !markdown_core_parser_input_ends(parser, cursor); line++) {
+    if (!cursor) {
+        return false;
+    }
+    for (int line = 0; line < 2; line++) {
+        /* The text's end it met: what follows the text may hold a marker
+         * (blocks.c, THE REACH: past the text's end). */
+        if (markdown_core_parser_input_ends(parser, cursor)) {
+            *seen = cursor + 1;
+            return false;
+        }
         const unsigned char *at = cursor;
         const markdown_core_node *container = parent;
         while (!markdown_core_parser_input_ends(parser, at) && parser->dialect->container_prefix[*at]) {
@@ -115,28 +124,39 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
              * lets one do so without this key silently refusing the
              * definitions inside it. */
             if (*at == ':' || *at == '~') {
+                *seen = at + 1;
                 return true;
             }
             if (!markdown_core_is_space_or_tab(*at)) {
                 container = markdown_core_parser_parent(parser, container);
                 if (!container) {
+                    *seen = at + 1;
                     return false;
                 }
             }
             at++;
         }
-        if (!markdown_core_parser_input_ends(parser, at) && !markdown_core_is_line_end(*at)) {
+        if (markdown_core_parser_input_ends(parser, at)) {
+            *seen = at + 1;
+            return false;
+        }
+        if (!markdown_core_is_line_end(*at)) {
+            *seen = at + 1 + (*at == ':' || *at == '~');
             return (*at == ':' || *at == '~') &&
                    (markdown_core_parser_input_ends(parser, at + 1) || markdown_core_is_whitespace(at[1]));
         }
-        /* Blank once stripped: the transaction skips one such line. */
+        /* Blank once stripped: the transaction skips one such line, whose
+         * CR is read with the byte after it. */
         cursor = at;
-        if (!markdown_core_parser_input_ends(parser, cursor) && *cursor == '\r') {
+        if (*cursor == '\r') {
             cursor++;
+            if (markdown_core_parser_input_ends(parser, cursor) || *cursor != '\n') {
+                *seen = cursor + 1;
+                continue;
+            }
         }
-        if (!markdown_core_parser_input_ends(parser, cursor) && *cursor == '\n') {
-            cursor++;
-        }
+        cursor++;
+        *seen = cursor;
     }
     return false;
 }
@@ -152,9 +172,19 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
     const markdown_core_element_instance *self, markdown_core_parser *parser, const markdown_core_node *parent,
     markdown_core_chunk *input) {
     ((markdown_core_definition_list_work *)self->state)->work++;
-    return !parser->at.blank && parser->at.indent < 4 &&
-           !markdown_core_block_definition_marker(input, parser->at.first_nonspace, parser->at.indent) &&
-           definition_next_lines_admit(parser, parent);
+    if (parser->at.blank || parser->at.indent >= 4 ||
+        markdown_core_block_definition_marker(input, parser->at.first_nonspace, parser->at.indent)) {
+        return false;
+    }
+    /* What the key read of the lines after decided the line (THE REACH). */
+    const unsigned char *seen = NULL;
+    const bool admits = definition_next_lines_admit(parser, parent, &seen);
+    if (seen && markdown_core_parser_reaches(parser)) {
+        size_t length;
+        const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+        markdown_core_parser_reach(parser, (size_t)parser->at.line_start, (size_t)(seen - source));
+    }
+    return admits;
 }
 
 /* THE TERM'S READING of a line `input` in `parent` its admission admits:

@@ -1149,8 +1149,22 @@ export function hardScripts() {
     /* Typing in a paragraph re-reads it and the paragraph before it, and
      * resyncs at the next. */
     add("type-in-middle-paragraph", "one\n\ntwo\n\nthree\n", (s) =>
-        s.insert(6, "x").reread(0, 11).remove(6, 7).reread(0, 10)
+        s.insert(6, "x").reread(5, 11).remove(6, 7).reread(5, 10)
     );
+    /* A lookahead a quote's prefix turns away read that line and no more:
+     * typing in the last paragraph re-reads it alone. */
+    {
+        const text = "> term\n: def\n\n" + "para\n\n".repeat(20) + "last\n";
+        const at = bytes(text) - 3;
+        add("quote-lookahead-reach", text, (s) => s.insert(at, "x").reread(134, 140));
+    }
+    /* So does the line after a block identifier that a quote's prefix turns
+     * away. */
+    {
+        const text = "> - item\n>\n> #id#\npara\n\n" + "para\n\n".repeat(20) + "last\n";
+        const at = bytes(text) - 3;
+        add("identifier-lookahead-reach", text, (s) => s.insert(at, "x").reread(144, 150));
+    }
     /* A definition marker after a paragraph makes it a term of the
      * definition list before it, past a blank line, inside a container
      * too, where no close is noted. */

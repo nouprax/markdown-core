@@ -48,6 +48,10 @@ document documents/identity-typing-paragraph-5-of-1000.md
 script documents/identity-typing-paragraph-5-of-1000.md scripts/identity-typing-paragraph-5-of-1000.script
 document documents/hard-type-in-middle-paragraph.md
 script documents/hard-type-in-middle-paragraph.md scripts/hard-type-in-middle-paragraph.script
+document documents/hard-quote-lookahead-reach.md
+script documents/hard-quote-lookahead-reach.md scripts/hard-quote-lookahead-reach.script
+document documents/hard-identifier-lookahead-reach.md
+script documents/hard-identifier-lookahead-reach.md scripts/hard-identifier-lookahead-reach.script
 document documents/hard-term-enters-list-in-directive.md
 script documents/hard-term-enters-list-in-directive.md scripts/hard-term-enters-list-in-directive.script
 document documents/hard-term-enters-list-in-quote.md

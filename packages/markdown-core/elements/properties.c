@@ -626,11 +626,11 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     }
     work->line_work += fence_work;
     /* The envelope's reading decides the document's start from every line
-     * up to its fence (blocks.c, THE REACH), or, when it found none, from
+     * up to its fence and the byte after it (blocks.c, THE REACH), or, when it found none, from
      * where its first fence would be (AN OPENER READ TO THE END). */
     if (closed) {
         markdown_core_parser_reach_shut(parser, owner, 0);
-        markdown_core_parser_reach(parser, 0, close + 3);
+        markdown_core_parser_reach(parser, 0, close + 4);
     } else {
         markdown_core_parser_reach_open(parser, owner, 0);
     }
