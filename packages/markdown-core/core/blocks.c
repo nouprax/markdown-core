@@ -4667,6 +4667,27 @@ static bool S_back_spans_past(const markdown_core_tree *reach, size_t old, size_
 /* The same, past `old`. */
 static bool S_back_spans(const markdown_core_tree *reach, size_t old) { return S_back_spans_past(reach, old, old); }
 
+/* Whether a reading of the old tail that starts before `old`, a line's
+ * start, read past `past`, where the line ends, or stopped inside the line
+ * past its first byte: what stopped there was the opener of the line's
+ * first block, which decided from what came before (a list's variant, a
+ * specimen's number), as a reading of whole lines, a lookahead or a close,
+ * stops at a line's end. */
+static bool S_reads_into(const markdown_core_place *place, size_t old, size_t past) {
+    const size_t end = markdown_core_reach_end(place);
+    return end > past || (!markdown_core_reach_spans(place) && end > old + 1 && end < past);
+}
+
+static bool S_back_reads_into(const markdown_core_tree *reach, size_t old, size_t past) {
+    const size_t high = markdown_core_tree_from(reach, old, reach->front, reach->count);
+    for (size_t i = reach->front; (i = markdown_core_tree_past(reach, old + 1, i, high)) < high; i++) {
+        if (S_reads_into(S_reach_at(reach, i), old, past)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void S_release_tail(markdown_core_parser *parser);
 static void S_tail_out(markdown_core_parser *parser, const markdown_core_node *root, uint32_t end);
 
@@ -6006,7 +6027,7 @@ static bool S_resumes(markdown_core_parser *parser, size_t start) {
     const size_t old = (size_t)((int64_t)start - edit->delta);
     const size_t past = (size_t)((int64_t)S_line_past(parser, start) - edit->delta);
     if (parser->at.current != root) {
-        if (edit->next >= edit->count || S_back_spans_past(&stream->reach, old, past) ||
+        if (edit->next >= edit->count || S_back_reads_into(&stream->reach, old, past) ||
             !S_close_inside(parser, root, (markdown_core_node_type)markdown_core_edit_old(edit, root, edit->next)->kind,
                             start)) {
             return false;
@@ -6016,7 +6037,7 @@ static bool S_resumes(markdown_core_parser *parser, size_t start) {
     if (last && (markdown_core_parser_block_kind(parser, last)->flags & MARKDOWN_CORE_KIND_TRAILED)) {
         return false;
     }
-    return !S_back_spans_past(&stream->reach, old, past);
+    return !S_back_reads_into(&stream->reach, old, past);
 }
 
 /* The root, which holds the children the reading gave it after those
@@ -6259,11 +6280,12 @@ static bool S_resumes_in(markdown_core_parser *parser, size_t start, size_t inde
      * block on it does (S_reach_close): the line is old, and reads as it
      * did. */
     const size_t past = S_line_past(parser, start);
-    if (S_back_spans_past(&stream->reach, old, (size_t)((int64_t)past - edit->delta))) {
+    if (S_back_reads_into(&stream->reach, old, (size_t)((int64_t)past - edit->delta))) {
         return false;
     }
     for (size_t i = edit->reach_from; i < stream->noted.count; i++) {
-        if (stream->noted.values[i].start < start && markdown_core_reach_end(&stream->noted.values[i]) > past) {
+        const markdown_core_place *place = &stream->noted.values[i];
+        if (place->start < start && S_reads_into(place, start, past)) {
             return false;
         }
     }
