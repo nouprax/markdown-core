@@ -259,7 +259,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
          * leaves open, as a variant: its opener is that list's reading
          * (THE REACH). */
         if (open != SIZE_MAX) {
-            markdown_core_parser_reach(parser, open, (*container)->place.start + (size_t)matched);
+            markdown_core_parser_reach(parser, *container, open, (*container)->place.start + (size_t)matched);
         }
     }
 

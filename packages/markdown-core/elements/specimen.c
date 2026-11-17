@@ -90,7 +90,8 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
      * may make another kind or another block: its opener's reading took the
      * line end before it too (THE REACH), so no later reading resumes at it. */
     if (previous) {
-        markdown_core_parser_reach(parser, (*container)->place.start - 1, (*container)->place.start + matched);
+        markdown_core_parser_reach(parser, *container, (*container)->place.start - 1,
+                                   (*container)->place.start + matched);
     }
     *(*container)->as.specimen = specimen;
     markdown_core_specimen_state *state = self->state;

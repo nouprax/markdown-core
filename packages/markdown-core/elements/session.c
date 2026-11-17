@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -818,6 +819,96 @@ static void session_rest_root(const markdown_core_session *session, size_t start
  * otherwise. Below the child that holds the line, the rest point may be
  * deeper (session_rest_in): then the child is the first after it, and
  * `rest` holds the chain. False when storage could not be had. */
+#ifndef NDEBUG
+/* THE READS CHECK (MARKDOWN_CORE_READS_CHECK set): every reading of the
+ * reach is held by a node of the tree, which starts on its line or before,
+ * its reading from there on as far (node.h, `opened`, `closed`, `look`). */
+typedef struct {
+    size_t from, start, closed, look;
+} session_read;
+
+static void session_reads_check(const markdown_core_session *session) {
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("MARKDOWN_CORE_READS_CHECK") != NULL;
+    }
+    if (!on || !session->document.root) {
+        return;
+    }
+    const markdown_core_parser *parser = session->committed;
+    session_read *reads = NULL;
+    size_t count = 0, capacity = 0;
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, session->document.root);
+    reads = malloc(sizeof(*reads) * (capacity = 64));
+    const markdown_core_node *root = session->document.root;
+    if (root->opened || root->closed || root->look) {
+        reads[count++] = (session_read){0, 0, root->closed, root->look};
+    }
+    while (markdown_core_walk_next(&walk, &item)) {
+        const markdown_core_node *node = item.node;
+        if (!node || !(node->opened || node->closed || node->look)) {
+            continue;
+        }
+        if (count == capacity) {
+            reads = realloc(reads, sizeof(*reads) * (capacity *= 2));
+        }
+        const size_t start = item.place.start;
+        reads[count++] = (session_read){start - node->opened, start, node->closed ? start + node->closed : 0,
+                                        node->look ? start + node->look : 0};
+    }
+    markdown_core_walk_end(&walk);
+    const size_t lines = markdown_core_parser_line_count(parser);
+    for (size_t line = 0; line < lines; line++) {
+        const size_t look = markdown_core_parser_line_looks(parser, line);
+        if (look) {
+            size_t start, end;
+            markdown_core_parser_line_span(parser, line, &start, &end);
+            if (count == capacity) {
+                reads = realloc(reads, sizeof(*reads) * (capacity *= 2));
+            }
+            reads[count++] = (session_read){start, start, 0, look};
+        }
+    }
+    size_t missed = 0, early = 0, records = 0;
+    for (size_t i = 0;; i++) {
+        const markdown_core_place *place = markdown_core_parser_reach_record(parser, i);
+        if (!place) {
+            break;
+        }
+        records++;
+        const bool spans = markdown_core_reach_spans(place);
+        const size_t end = markdown_core_reach_end(place);
+        const size_t line = markdown_core_parser_line_of(parser, place->start);
+        bool held = false, exact = false;
+        for (size_t k = 0; k < count; k++) {
+            const session_read *read = &reads[k];
+            const size_t reached = spans ? read->closed : read->look;
+            if (reached >= end && markdown_core_parser_line_of(parser, read->from) <= line) {
+                held = true;
+                exact = exact || markdown_core_parser_line_of(parser, read->from) == line;
+            }
+        }
+        if (!held) {
+            missed++;
+            fprintf(stderr, "READS missed %s [%u, %zu) line %zu\n", spans ? "span" : "look", place->start, end, line);
+        } else if (!exact) {
+            early++;
+        }
+        if ((!held || !exact) && getenv("MARKDOWN_CORE_READS_TEXT")) {
+            fprintf(stderr, "READS %s %s [%u, %zu) text:\n%.*s\nREADS end\n", held ? "early" : "missed",
+                    spans ? "span" : "look", place->start, end, (int)session->text.count, session_source(session));
+        }
+    }
+    if (getenv("MARKDOWN_CORE_READS_COUNT")) {
+        fprintf(stderr, "READS records %zu nodes %zu missed %zu early %zu\n", records, count, missed, early);
+    }
+    free(reads);
+    assert(!missed);
+}
+#endif
+
 static bool session_rest(markdown_core_session *session, size_t edited, uint32_t *child, size_t *line,
                          session_rest_point *rest) {
     const markdown_core_node *root = session->document.root;
@@ -827,6 +918,9 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     if (!markdown_core_parser_sort_reach(session->committed)) {
         return false;
     }
+#ifndef NDEBUG
+    session_reads_check(session);
+#endif
     markdown_core_parser_line_span(session->committed, edited, &start, &end);
     const size_t edited_start = start;
     /* The child that holds the edited line. */

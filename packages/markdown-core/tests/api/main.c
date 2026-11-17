@@ -8494,7 +8494,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 16, "ordinary physical geometry occupies sixteen bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 20,
+           "ordinary physical geometry and the line look occupy twenty bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();

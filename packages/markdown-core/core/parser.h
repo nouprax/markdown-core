@@ -970,6 +970,11 @@ typedef struct markdown_core_edit {
      * block of the chain on (blocks.c, S_close_inside), as its old reading
      * did; 0 when it closes none. */
     size_t shut;
+    /* A look read on the line in hand by a reading that names no block, its
+     * start and end: the line's block takes it as the line ends
+     * (markdown_core_parser_reach), and that line. End 0 for none. */
+    markdown_core_place look;
+    int look_line;
     size_t complete, to, point, resumed;
     int64_t delta, lead;
 } markdown_core_edit;
@@ -1511,6 +1516,10 @@ typedef struct markdown_core_input_line {
      * them, or the lookahead of the call that claimed the line
      * (markdown_core_parser_claim; markdown_core_parser_line_places). */
     uint32_t own;
+    /* How far past its start the looks that began on the line read, of the
+     * readings that began no block's first line here (blocks.c, THE BLOCK
+     * OF A LINE): 0 for none. */
+    uint32_t look;
 } markdown_core_input_line;
 
 #define MARKDOWN_CORE_FACTS_DROPPED INT_MIN
@@ -2181,14 +2190,50 @@ static inline size_t markdown_core_reach_end(const markdown_core_place *place) {
 static inline bool markdown_core_reach_spans(const markdown_core_place *place) {
     return place->end & MARKDOWN_CORE_REACH_SPAN;
 }
-static inline void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end) {
-    if (markdown_core_parser_reaches(parser) && end > start) {
-        markdown_core_parser_note_reach(parser, start, end);
+/* `node` read from `start` to `end`, a span or a look: what its reading
+ * read (node.h, `opened`, `closed`, `look`). */
+static inline void markdown_core_node_reads(markdown_core_node *node, size_t start, size_t end, bool span) {
+    const size_t at = node->place.start;
+    if (start < at && at - start > node->opened) {
+        node->opened = (uint32_t)(at - start);
+    }
+    const uint32_t past = end > at ? (uint32_t)(end - at) : 0;
+    uint32_t *field = span ? &node->closed : &node->look;
+    if (past > *field) {
+        *field = past;
     }
 }
-static inline void markdown_core_parser_reach_span(markdown_core_parser *parser, size_t start, size_t end) {
+/* `node` starts at `start` from now on, and what its reading read stays
+ * where it was. */
+static inline void markdown_core_node_restart(markdown_core_node *node, size_t start) {
+    const int64_t moved = (int64_t)start - (int64_t)node->place.start;
+    const int64_t opened = (int64_t)node->opened + moved;
+    node->opened = opened > 0 ? (uint32_t)opened : 0;
+    node->closed = (int64_t)node->closed > moved ? (uint32_t)((int64_t)node->closed - moved) : 0;
+    node->look = (int64_t)node->look > moved ? (uint32_t)((int64_t)node->look - moved) : 0;
+    node->place.start = (uint32_t)start;
+}
+/* A look of the reading in hand that names no block, which the block of
+ * its line takes as the line ends (blocks.c, THE REACH). */
+void markdown_core_parser_line_look(markdown_core_parser *parser, size_t start, size_t end);
+/* `node`'s reading read from `start` to `end`, a look, or a span for
+ * markdown_core_parser_reach_span; NULL for the block of the line in hand. */
+static inline void markdown_core_parser_reach(markdown_core_parser *parser, markdown_core_node *node, size_t start,
+                                              size_t end) {
+    if (markdown_core_parser_reaches(parser) && end > start) {
+        markdown_core_parser_note_reach(parser, start, end);
+        if (node) {
+            markdown_core_node_reads(node, start, end, false);
+        } else {
+            markdown_core_parser_line_look(parser, start, end);
+        }
+    }
+}
+static inline void markdown_core_parser_reach_span(markdown_core_parser *parser, markdown_core_node *node, size_t start,
+                                                   size_t end) {
     if (markdown_core_parser_reaches(parser) && end > start) {
         markdown_core_parser_note_reach(parser, start, end | MARKDOWN_CORE_REACH_SPAN);
+        markdown_core_node_reads(node, start, end, true);
     }
 }
 /* AN OPENER READ TO THE END (blocks.c): the reading of `owner`'s opener
@@ -2214,6 +2259,12 @@ bool markdown_core_parser_sort_reach(markdown_core_parser *parser);
  * REOPEN): one span from each of their starts, which their reopen notes
  * again. Its start in `*start`. The reach is sorted
  * (markdown_core_parser_sort_reach). */
+#ifndef NDEBUG
+/* Where the looks that began on line `line` read to, 0 for none. */
+size_t markdown_core_parser_line_looks(const markdown_core_parser *parser, size_t line);
+/* The reading `index` of the sorted reach, NULL past the last. */
+const markdown_core_place *markdown_core_parser_reach_record(const markdown_core_parser *parser, size_t index);
+#endif
 bool markdown_core_parser_crossed(const markdown_core_parser *parser, size_t point, size_t past, size_t from,
                                   const uint32_t *opens, size_t count, size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
