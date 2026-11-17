@@ -11307,13 +11307,14 @@ static void session_edits(test_batch_runner *runner) {
            markdown_core_node_id(facade_child(markdown_core_document_root(document), 2)) == third,
        "an edit in the middle paragraph takes the last one back");
     markdown_core_session_reread(session, &from, &to);
-    OK(runner, from == 0 && to == 11, "it reads the text again only up to the last paragraph");
+    OK(runner, from == 5 && to == 11, "it reads the text again only from the middle paragraph up to the last");
     OK(runner,
        markdown_core_session_edit(session, typed, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
            session_as_parsed(session),
        "an edit that takes the typed byte away takes the last paragraph back again");
     markdown_core_session_reread(session, &from, &to);
-    OK(runner, from == 0 && to == 10, "it reads the text again only up to where the last paragraph starts");
+    OK(runner, from == 5 && to == 10,
+       "it reads the text again only from the middle paragraph up to where the last starts");
     const markdown_core_position later = {5, 3};
     OK(runner,
        markdown_core_session_edit(session, later, later, (const uint8_t *)"\n\n# t", 5, &document) ==

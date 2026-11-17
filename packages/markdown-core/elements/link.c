@@ -46,10 +46,11 @@ static bool S_starts_line(const markdown_core_parser *parser, size_t start) {
 /* THE REACH OF A DEFINITION (blocks.c, THE REACH): a definition read in a
  * block of the root, `length` bytes from `at` of the block's `size`, was
  * decided by its own bytes and the first after them, or, `wide`, by those
- * up to the line read `now`, and by the definitions before it from
- * `*chain` on, where the last that starts its line as a reading from there
- * would starts, which a reading from there reads again: a reading that
- * starts at a definition reads a block that begins there. */
+ * through the line read, up to `now` (markdown_core_parser_read_past), and
+ * by the definitions before it from `*chain` on, where the last that starts
+ * its line as a reading from there would starts, which a reading from
+ * there reads again: a reading that starts at a definition reads a block
+ * that begins there. */
 static void S_note_reference(markdown_core_parser *parser, markdown_core_node *b, bufsize_t at, bufsize_t length,
                              bufsize_t size, bool wide, size_t now, size_t *chain) {
     int ignored;
@@ -78,7 +79,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     /* Only a reading that notes reach notes what each definition read. */
     const bool noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
                        markdown_core_parser_block_root(parser) == parser->root;
-    const size_t now = (size_t)parser->at.line_start + 1;
+    const size_t now = noted ? markdown_core_parser_read_past(parser) : 0;
     size_t chain = SIZE_MAX;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
         const bufsize_t at = (bufsize_t)(chunk.data - text.data);
@@ -117,19 +118,22 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * unread. Taking the answer from the surviving run rather than from the
      * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
-        /* A block of the document read from where its definitions began
-         * (blocks.c, THE REACH): an edit reads it from there. The reading
-         * went on to the line read now, which a line's rest point the
-         * close of the block before would allow (elements/session.c,
-         * session_rest_root) does not reach. */
+        /* A block of the document whose reading was open from where it
+         * started, before its definitions, through the line read, up to
+         * `now`, and past where it now starts, a span its close goes on
+         * with (blocks.c, THE REACH): no reading starts afresh inside it. */
         if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            const size_t from = chain != SIZE_MAX ? chain : b->place.start;
-            markdown_core_parser_reach(parser, from, now > (size_t)source + 1 ? now : (size_t)source + 1);
+            markdown_core_parser_reach_span(parser, b->place.start,
+                                            now > (size_t)source + 1 ? now : (size_t)source + 1);
         }
         b->place.start = (uint32_t)source;
     } else if (chain != SIZE_MAX) {
         /* Nothing is left of it: its close notes what the last definitions
-         * read from where they began. */
+         * read from where they began, and its reading was open from where
+         * it started up to there. */
+        if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
+            markdown_core_parser_reach_span(parser, b->place.start, now > chain + 1 ? now : chain + 1);
+        }
         b->place.start = (uint32_t)chain;
     }
     return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);

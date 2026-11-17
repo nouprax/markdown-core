@@ -886,9 +886,9 @@ typedef struct markdown_core_edit {
      * took none, its old tail (`levels`), whose `start` is how many
      * children it keeps, and the fold marks
      * of its children (`folds`), or NULL. `shift` is what the lead of the
-     * first it took back moves by. `closed` is where the old close of the
-     * root's child ended, and `reach_from` the first reach its reading
-     * noted (markdown_core_stream, `noted`).
+     * first it took back moves by. `closes` is where the old close of
+     * each ended, 0 when the log held none, and `reach_from` the first
+     * reach its reading noted (markdown_core_stream, `noted`).
      *
      * THE OLD NESTED TAIL IN PLACE (blocks.c): each block of the chain
      * holds its old tail in its own storage as the root does (THE OLD TAIL
@@ -902,13 +902,13 @@ typedef struct markdown_core_edit {
      * `level` its block. The first `nest_recorded` have records (ast.c,
      * record_nest); those past them up to the first taken back the parse
      * lets go when it fails. */
-    uint32_t *ends, *states, *owners, *tails;
+    uint32_t *ends, *states, *owners, *tails, *closes;
     markdown_core_seam_tail *levels;
     struct markdown_core_folds **folds;
     struct markdown_core_node **nested;
     size_t nested_capacity, taken, level, reach_from, nest_level;
     uint32_t nest_count, nest_index, nest_prior, nest_recorded;
-    uint32_t closed, opener_count;
+    uint32_t opener_count;
     int64_t shift;
     bool nest_on;
     /* The chain's deepest block when the reopen gave it the kind it read
@@ -966,6 +966,10 @@ typedef struct markdown_core_edit {
      * them go when it fails before its publish. */
     uint32_t recorded, unrecorded;
     markdown_core_parser_at at;
+    /* Where the line ends, past its line ending, that the splice closes a
+     * block of the chain on (blocks.c, S_close_inside), as its old reading
+     * did; 0 when it closes none. */
+    size_t shut;
     size_t complete, to, point, resumed;
     int64_t delta, lead;
 } markdown_core_edit;
@@ -2155,9 +2159,34 @@ void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start,
 static inline bool markdown_core_parser_reaches(const markdown_core_parser *parser) {
     return parser->stream && parser->stream->edit && !parser->stream->snapshot_mark;
 }
+/* Where a reading of the line in hand ends, in a parse that notes reach
+ * (THE REACH: an end is past the last byte read): past its line ending,
+ * or past the text's end when it met it, a line with no ending or no line
+ * at all as the input ends, as what follows the text may go on with what
+ * it read. On the line the splice closes blocks of the chain on, as their
+ * old reading did (blocks.c, S_close_inside). */
+size_t markdown_core_parser_read_past(const markdown_core_parser *parser);
+/* THE TWO KINDS OF READING (blocks.c, THE REACH): a LOOK read the bytes up
+ * to its end and decided from them, and what it decided stands while they
+ * do; a SPAN is a block's reading held open from its start to its end, as
+ * a block's close notes it, and no reading starts afresh inside it, the
+ * bytes there changed or not. A span's end carries the bit below, which
+ * no text reaches (MARKDOWN_CORE_SOURCE_CAPACITY). */
+#define MARKDOWN_CORE_REACH_SPAN (UINT32_C(1) << 31)
+static inline size_t markdown_core_reach_end(const markdown_core_place *place) {
+    return place->end & ~MARKDOWN_CORE_REACH_SPAN;
+}
+static inline bool markdown_core_reach_spans(const markdown_core_place *place) {
+    return place->end & MARKDOWN_CORE_REACH_SPAN;
+}
 static inline void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end) {
     if (markdown_core_parser_reaches(parser) && end > start) {
         markdown_core_parser_note_reach(parser, start, end);
+    }
+}
+static inline void markdown_core_parser_reach_span(markdown_core_parser *parser, size_t start, size_t end) {
+    if (markdown_core_parser_reaches(parser) && end > start) {
+        markdown_core_parser_note_reach(parser, start, end | MARKDOWN_CORE_REACH_SPAN);
     }
 }
 /* AN OPENER READ TO THE END (blocks.c): the reading of `owner`'s opener
@@ -2176,21 +2205,15 @@ const markdown_core_unclosed *markdown_core_parser_openers(const markdown_core_p
 /* Puts the reach of the flushed document in the order its queries need;
  * it reads as it did. False when storage could not be had. */
 bool markdown_core_parser_sort_reach(markdown_core_parser *parser);
-/* The first start of a reading of the flushed document that spans `point`,
- * reading past it from before it, in `*start`: false when none does. The
- * reach is sorted (markdown_core_parser_sort_reach). */
-bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start);
-/* The same of the readings that span `point` and read on past `past`, no
- * earlier than `point`. */
-bool markdown_core_parser_spanned_past(const markdown_core_parser *parser, size_t point, size_t past, size_t *start);
-/* The same of the readings that start at `from` or later, but one that
- * starts at `close` and ends from `ends[0]` to `ends[1]`, or at `ends[2]`:
- * the close of a child of the root reopened below it (THE NESTED REOPEN),
- * noted as a line after it was read, the first of the next child or one of
- * the blank lines before, or on its last line, when its own end condition
- * or the input's end closed it (blocks.c, S_reach_close). */
-bool markdown_core_parser_spanned_inside(const markdown_core_parser *parser, size_t point, size_t from, size_t close,
-                                         const size_t ends[3], size_t *start);
+/* Whether a reading that starts before `point` reads on past `past`, no
+ * earlier than `point`, but a look that ended no later than `from`, where
+ * the edit begins, which read none of what it writes, and the close of
+ * each of the `count` blocks that start at `opens`, open there (THE NESTED
+ * REOPEN): one span from each of their starts, which their reopen notes
+ * again. Its start in `*start`. The reach is sorted
+ * (markdown_core_parser_sort_reach). */
+bool markdown_core_parser_crossed(const markdown_core_parser *parser, size_t point, size_t past, size_t from,
+                                  const uint32_t *opens, size_t count, size_t *start);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
 /* Where the own bytes of line `line` of the flushed text begin, past the
  * prefixes of the containers above its last open block (`own`). */

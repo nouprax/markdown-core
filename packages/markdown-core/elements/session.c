@@ -446,9 +446,7 @@ static bool session_offset(const markdown_core_session *session, markdown_core_p
 /* THE REST POINT. The edit reads from the start of a line where a block
  * starts: a child of the root, or one below it (blocks.c, THE NESTED
  * REOPEN), `depth` blocks down the `chain` the reading reopens, at their
- * `path` (parser.h, markdown_core_edit), at the start of input line `line`.
- * `close` is where the chain's child of the root starts and `ends` where
- * the reach notes its close as reading to. */
+ * `path` (parser.h, markdown_core_edit), at the start of input line `line`. */
 #define SESSION_DEPTH 32
 
 typedef struct {
@@ -457,7 +455,7 @@ typedef struct {
     /* Where each block of the chain starts, and where its child before the
      * one on the path ends, or where it starts when that is its first. */
     uint32_t starts[SESSION_DEPTH], priors[SESSION_DEPTH];
-    size_t depth, line, close, ends[3];
+    size_t depth, line;
     /* Where the chain's deepest block ends, when it is a leaf the rest
      * point is in (session_literal). */
     size_t last;
@@ -465,7 +463,19 @@ typedef struct {
      * and a look's may not, as the look reads the paragraph's text before
      * the cursor whole. */
     bool prose;
+    /* Where the edit begins, or the look's cursor: a reading that ended no
+     * later read none of what it writes (THE REACH: an end is past the
+     * last byte read), and stands. */
+    size_t from;
 } session_rest_point;
+
+/* Whether a reading that starts before `point` read past `past`, but a
+ * look that ended no later than `from`, where the edit begins or the
+ * look's cursor is (markdown_core_parser_crossed). */
+static bool session_crossed(const markdown_core_session *session, size_t from, size_t point, size_t past,
+                            const uint32_t *opens, size_t count, size_t *start) {
+    return markdown_core_parser_crossed(session->committed, point, past, from, opens, count, start);
+}
 
 static size_t session_line_start(const markdown_core_session *session, size_t line) {
     size_t start, end;
@@ -581,19 +591,22 @@ static bool session_literal(const markdown_core_session *session, markdown_core_
     const markdown_core_parser *parser = session->committed;
     const bool lines = markdown_core_parser_reads_lines(parser, block);
     /* A paragraph only of the document, whose lines' own bytes are all its
-     * content's (blocks.c, S_leap_lines). Its first line is read with the
-     * next, which a call of the paragraph's opener reads ahead (element.h,
-     * the opening's `last`): it rests from its third line on. */
+     * content's (blocks.c, S_leap_lines), from its second line on: what
+     * its opener read ahead is in the reach (element.h, the opening's
+     * `last`). */
     if (level == SESSION_DEPTH || (!lines && !rest->prose) || !markdown_core_parser_leaps(parser, block) ||
-        markdown_core_parser_line_of(parser, window.start) + (lines ? 0 : 1) >= edited ||
+        markdown_core_parser_line_of(parser, window.start) >= edited ||
         markdown_core_parser_line_of(parser, window.end - 1) < edited) {
         return false;
     }
+    /* No reading from before the line read it, but the closes of the
+     * chain's blocks and the leaf's own, which their reopen notes again. */
     const size_t start = session_line_start(session, edited);
+    uint32_t opens[SESSION_DEPTH];
+    memcpy(opens, rest->starts, level * sizeof(*opens));
+    opens[level] = window.start;
     size_t reached;
-    if (markdown_core_parser_spanned(parser, start, &reached) &&
-        (reached < rest->close ||
-         markdown_core_parser_spanned_inside(parser, start, rest->close, rest->close, rest->ends, &reached))) {
+    if (session_crossed(session, rest->from, start, start, opens, level + 1, &reached)) {
         return false;
     }
     rest->chain[level] = block;
@@ -678,9 +691,6 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
      * before. That block is inside the child when the child is one that
      * may hold the rest point and the line is a later one of it. */
     size_t child = held;
-    if (!session_inside(session, block->children[held], holder, edited)) {
-        child = held ? held - 1 : 0;
-    }
     /* The first child of a block whose children abut starts the block's
      * own first line: the block, reopened with none, reads it as a later
      * child's (blocks.c, markdown_core_parser_abuts). */
@@ -691,40 +701,39 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
         const size_t line = markdown_core_parser_line_of(parser, widths_start_at(widths, block, base, child));
         const size_t line_start = session_line_start(session, line);
         size_t reached;
-        if (child && (line >= edited || nest_window(widths, block, base, child - 1).end > line_start)) {
+        if (child && (line > edited || nest_window(widths, block, base, child - 1).end > line_start)) {
             child--;
             continue;
         }
         /* A child before that the child's line may still have gone on in
-         * was open as that line began, which no close below the root notes
-         * (element.h, `awaits`). */
-        if (child &&
-            (markdown_core_parser_block_kind(parser, block->children[child - 1])->flags & MARKDOWN_CORE_KIND_AWAITS)) {
+         * (element.h, `awaits`), or that a later line may write when the
+         * edit writes the child's first line (`trailed_kinds`). */
+        const unsigned before = child ? markdown_core_parser_block_kind(parser, block->children[child - 1])->flags : 0;
+        if ((before & MARKDOWN_CORE_KIND_AWAITS) || ((before & MARKDOWN_CORE_KIND_TRAILED) && line == edited)) {
             child--;
             continue;
         }
-        if (markdown_core_parser_spanned(parser, line_start, &reached) && reached < rest->close) {
-            return false;
-        }
         /* What the block's first line opens its reading decided, which
-         * must not have read the edited line: the line after its own, which
-         * the reach does not note, or one past it, from anywhere on its
-         * line -- a block identifier after the block names it from where it
-         * starts, which is past the line's indentation. */
-        if (!child && (edited <= line + 1 || (markdown_core_parser_spanned_inside(parser, start, line_start,
-                                                                                  rest->close, rest->ends, &reached) &&
-                                              markdown_core_parser_line_of(parser, reached) == line))) {
+         * must not have read the edited line, from anywhere on its line --
+         * a block identifier after the block names it from where it starts,
+         * which is past the line's indentation. */
+        if (!child &&
+            (edited <= line || (session_crossed(session, rest->from, start, start, rest->starts, level + 1, &reached) &&
+                                markdown_core_parser_line_of(parser, reached) == line))) {
             return false;
         }
-        if (markdown_core_parser_spanned_inside(parser, line_start, rest->close, rest->close, rest->ends, &reached)) {
-            /* The child before the one the reading began in. */
+        /* A reading from before the child's line that read no further than
+         * that line, as the close of the child before it, decided the same
+         * when the edit begins on a later line: the line reads as it did. */
+        const size_t past = line < edited ? session_line_start(session, line + 1) : line_start;
+        if (session_crossed(session, rest->from, line_start, past, rest->starts, level + 1, &reached)) {
+            /* The child the reading began in. */
             if (!child) {
                 return false;
             }
             while (child && widths_start_at(widths, block, base, child) > reached) {
                 child--;
             }
-            child = child ? child - 1 : 0;
             continue;
         }
         if (child && markdown_core_parser_rest_blank(parser, (const unsigned char *)session_source(session),
@@ -753,25 +762,41 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
  * the text's end makes of a block begun before it notes the same, so a
  * child there that block's reading yields (a paragraph after a definition)
  * keeps no rest point of its own. */
-static void session_rest_root(const markdown_core_session *session, size_t start, size_t edited, uint32_t *child,
-                              size_t *line) {
+static void session_rest_root(const markdown_core_session *session, size_t start, size_t edited, size_t from_at,
+                              uint32_t *child, size_t *line) {
     const markdown_core_node *root = session->document.root;
     const markdown_core_parser *parser = session->committed;
     const session_widths *widths = &session->edits->widths;
     size_t end;
+    /* The child that holds the line, or the one after it: the first that
+     * ends past its start. One that starts past the line, or none, leaves
+     * the line to no child of its own: the child before is read again. */
     uint32_t at = widths_child(widths, root, start);
+    at += at < root->child_count && widths_end(widths, root, at) <= start;
+    if (at == root->child_count || widths_start(widths, root, at) > start) {
+        at = at ? at - 1 : 0;
+    }
     size_t from = 0;
     while (at) {
         from = markdown_core_parser_line_of(parser, widths_start(widths, root, at));
         markdown_core_parser_line_span(parser, from, &start, &end);
-        const bool awaits =
-            markdown_core_parser_block_kind(parser, root->children[at - 1])->flags & MARKDOWN_CORE_KIND_AWAITS;
+        const unsigned before = markdown_core_parser_block_kind(parser, root->children[at - 1])->flags;
+        const bool awaits = before & MARKDOWN_CORE_KIND_AWAITS;
         const size_t next = from < edited && !awaits ? session_line_start(session, from + 1) : start;
         const size_t past = next < session->text.count ? next : start;
         size_t reached;
-        if (markdown_core_parser_spanned_past(parser, start, past, &reached)) {
+        if (session_crossed(session, from_at, start, past, NULL, 0, &reached)) {
+            /* The child the reading began in, or the one before when it
+             * began between children. */
+            const uint32_t was = at;
             at = widths_child(widths, root, reached);
-        } else if (widths_end(widths, root, at - 1) > start) {
+            at += at < root->child_count && widths_end(widths, root, at) <= reached;
+            at = at < was ? at : was - 1;
+        } else if (widths_end(widths, root, at - 1) > start ||
+                   ((before & MARKDOWN_CORE_KIND_TRAILED) && from == edited)) {
+            /* A child that starts on the line the one before ends on, or
+             * one whose first line the edit writes after a block a later
+             * line may write (element.h, `trailed_kinds`). */
             at--;
         } else {
             break;
@@ -814,7 +839,7 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
                                                              (uint32_t)widths_end(widths, root, held)}
                                      : (markdown_core_place){0, 0};
     const bool inside = held < root->child_count && session_inside(session, root->children[held], window, edited);
-    session_rest_root(session, start, edited, child, line);
+    session_rest_root(session, start, edited, rest->from, child, line);
     rest->depth = 0;
     /* An edit on the line after a paragraph's last, which may go on with
      * it, rests in it as one of its own lines does (THE LEAP), from its last
@@ -835,13 +860,6 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
         (held >= root->child_count || !markdown_core_parser_leaps(session->committed, root->children[held]))) {
         return true;
     }
-    /* Its close, noted as a line after it was read, from the first after
-     * its last to the next child's first, or as its last line, when its own
-     * end condition or the input's end closes it (blocks.c, S_reach_close). */
-    rest->close = window.start;
-    rest->ends[0] = window.end + 1;
-    rest->ends[1] = (held + 1 < root->child_count ? widths_start(widths, root, held + 1) : session->text.count) + 1;
-    rest->ends[2] = session_line_start(session, markdown_core_parser_line_of(session->committed, window.end - 1)) + 1;
     if (!inside) {
         if (session_literal(session, root->children[held], held, window, 0, edited - prior, rest)) {
             *child = held + 1;
@@ -1067,6 +1085,7 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
         size_t line;
         session_rest_point rest;
         rest.prose = false;
+        rest.from = inside;
         if (!session_rest(session, markdown_core_parser_line_of(session->committed, inside), &child, &line, &rest)) {
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
             break;
@@ -1231,6 +1250,7 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     size_t line;
     session_rest_point rest;
     rest.prose = true;
+    rest.from = from;
     if (!session_rest(session, (size_t)start.line - 1, &child, &line, &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -1421,6 +1441,8 @@ static markdown_core_status session_locate_flushed(markdown_core_session *sessio
     session_rest_point rest;
     rest.prose = false;
     session_look look = {.session = session, .rest = &rest};
+    size_t point;
+    rest.from = session_offset(session, position, &point) ? point : 0;
     if (!session_rest(session, (size_t)position.line - 1, &look.child, &look.line, &rest)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -1435,7 +1457,7 @@ static markdown_core_status session_locate_flushed(markdown_core_session *sessio
      * may be a stop line of an opener before the rest point that the whole
      * line is not: the look reads from before the opener then (THE OPENERS
      * AN EDIT MAY CLOSE), as the text it reads has no line past it. */
-    size_t point, opened;
+    size_t opened;
     if (session_offset(session, position, &point) &&
         session_stops(session, (size_t)position.line - 1, point, point, NULL, 0, true,
                       session_line_start(session, look.line), &opened) &&

@@ -153,18 +153,20 @@ static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_n
     }
     const bool line = markdown_core_parser_lookahead_next(&lookahead, &next, &first_nonspace, &indent, &blank_lines);
     *undecided = !line && !blank_lines && (lookahead.exhausted || lookahead.waited);
-    *reached = lookahead.cursor;
+    /* Past the line it read, or the text's end it met. */
+    *reached = line ? lookahead.cursor : NULL;
     markdown_core_parser_lookahead_end(&lookahead);
     return blank_lines > 0;
 }
 
 /* The line after an identifier line decides the block before it, `owner`,
- * from the bytes up to `reached` (blocks.c, THE REACH). */
+ * from the bytes up to `reached`, or past the text's end the reading met,
+ * NULL (blocks.c, THE REACH). */
 static void S_reach(markdown_core_parser *parser, const markdown_core_node *owner, const unsigned char *reached) {
     if (owner && markdown_core_parser_block_root(parser) == parser->root) {
         size_t length;
         const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        markdown_core_parser_reach(parser, owner->place.start, reached ? (size_t)(reached - source) : length);
+        markdown_core_parser_reach(parser, owner->place.start, reached ? (size_t)(reached - source) : length + 1);
     }
 }
 
