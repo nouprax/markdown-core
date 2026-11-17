@@ -1,0 +1,5 @@
+markdown-core incremental script 2
+script hard-identifier-lookahead-reach hard
+flush
+edit 146 146 78
+expect reread 144 150

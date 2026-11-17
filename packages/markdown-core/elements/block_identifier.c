@@ -153,8 +153,18 @@ static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_n
     }
     const bool line = markdown_core_parser_lookahead_next(&lookahead, &next, &first_nonspace, &indent, &blank_lines);
     *undecided = !line && !blank_lines && (lookahead.exhausted || lookahead.waited);
-    /* Past the line it read, or the text's end it met. */
-    *reached = line ? lookahead.cursor : NULL;
+    /* Past the line it read, or a line a container's prefix turned away,
+     * or the text's end it met or waits at: an unterminated last line read
+     * to the end. */
+    const bool stopped = !lookahead.ended && !lookahead.exhausted && !lookahead.waited;
+    *reached = line || stopped ? lookahead.cursor : NULL;
+    if (*reached) {
+        size_t length;
+        const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+        if (*reached == source + length && length && source[length - 1] != '\n' && source[length - 1] != '\r') {
+            *reached = NULL;
+        }
+    }
     markdown_core_parser_lookahead_end(&lookahead);
     return blank_lines > 0;
 }
