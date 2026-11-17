@@ -819,7 +819,7 @@ static void session_rest_root(const markdown_core_session *session, size_t start
  * otherwise. Below the child that holds the line, the rest point may be
  * deeper (session_rest_in): then the child is the first after it, and
  * `rest` holds the chain. False when storage could not be had. */
-#ifndef NDEBUG
+#if defined(MARKDOWN_CORE_READS_CHECK) && !defined(NDEBUG)
 /* THE READS CHECK (MARKDOWN_CORE_READS_CHECK set): every reading of the
  * reach is held by a node of the tree, which starts on its line or before,
  * its reading from there on as far (node.h, `opened`, `closed`, `look`). */
@@ -828,11 +828,7 @@ typedef struct {
 } session_read;
 
 static void session_reads_check(const markdown_core_session *session) {
-    static int on = -1;
-    if (on < 0) {
-        on = getenv("MARKDOWN_CORE_READS_CHECK") != NULL;
-    }
-    if (!on || !session->document.root) {
+    if (!getenv("MARKDOWN_CORE_READS_CHECK") || !session->document.root) {
         return;
     }
     const markdown_core_parser *parser = session->committed;
@@ -918,7 +914,7 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
     if (!markdown_core_parser_sort_reach(session->committed)) {
         return false;
     }
-#ifndef NDEBUG
+#if defined(MARKDOWN_CORE_READS_CHECK) && !defined(NDEBUG)
     session_reads_check(session);
 #endif
     markdown_core_parser_line_span(session->committed, edited, &start, &end);
