@@ -535,24 +535,36 @@ void markdown_core_node_free(markdown_core_node *node) { markdown_core_node_pool
  * slot moves with the node it belongs to, and each node's view of it is
  * pointed at the slot the node now lies in. The slots exchange their bytes
  * a block at a time, each block read from both before either is written,
- * the last block what is left of the slot. */
+ * the last block what is left of the slot. Every block has a size known
+ * when the code is made, so each copy is a few moves, not a call. */
 static inline void S_record_follow(markdown_core_node *node) {
     if (node->as.data && !node->node_data_allocation) {
         node->as.data = S_slot_of(node)->record;
     }
 }
 
-enum { S_SWAP_BLOCK = 96 };
+enum {
+    S_SWAP_BLOCK = 96,
+    S_SWAP_LAST = sizeof(markdown_core_node_slot) % S_SWAP_BLOCK,
+};
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_swap_block(unsigned char *x, unsigned char *y,
+                                                                         size_t size) {
+    unsigned char held[S_SWAP_BLOCK], taken[S_SWAP_BLOCK];
+    memcpy(held, x, size);
+    memcpy(taken, y, size);
+    memcpy(x, taken, size);
+    memcpy(y, held, size);
+}
 
 void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b) {
     unsigned char *x = (unsigned char *)S_slot_of(a), *y = (unsigned char *)S_slot_of(b);
-    for (size_t at = 0; at < sizeof(markdown_core_node_slot); at += S_SWAP_BLOCK) {
-        const size_t left = sizeof(markdown_core_node_slot) - at, size = left < S_SWAP_BLOCK ? left : S_SWAP_BLOCK;
-        unsigned char held[S_SWAP_BLOCK], taken[S_SWAP_BLOCK];
-        memcpy(held, x + at, size);
-        memcpy(taken, y + at, size);
-        memcpy(x + at, taken, size);
-        memcpy(y + at, held, size);
+    size_t at = 0;
+    for (; at + S_SWAP_BLOCK <= sizeof(markdown_core_node_slot); at += S_SWAP_BLOCK) {
+        S_swap_block(x + at, y + at, S_SWAP_BLOCK);
+    }
+    if (S_SWAP_LAST) {
+        S_swap_block(x + at, y + at, S_SWAP_LAST);
     }
     S_record_follow(a);
     S_record_follow(b);
