@@ -1729,6 +1729,8 @@ typedef struct {
     /* Where the reading stood as `begin` found it, which `end` puts back. */
     markdown_core_parser_at saved;
     bool active;
+    /* The reading met the end of the input. */
+    bool ended;
     bool exhausted;
     bool incomplete;
     bool waits;

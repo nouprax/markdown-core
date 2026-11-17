@@ -1679,7 +1679,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
  * lines are read again. */
 size_t markdown_core_parser_read_past(const markdown_core_parser *parser) {
     const markdown_core_edit *edit = parser->stream->edit;
-    size_t end = parser->input.size + 1;
+    size_t end;
+    (void)markdown_core_parser_input_text(parser, &end);
+    end++;
     if (edit->shut) {
         end = edit->shut;
     } else if (parser->reading && parser->at.lookahead_cursor) {
@@ -4738,8 +4740,9 @@ static size_t S_line_past(const markdown_core_parser *parser, size_t start) {
     if (line + 1 < lines->count - lines->front) {
         return (size_t)((int64_t)S_lines_back_start(lines, line + 1) + delta);
     }
-    const size_t size = parser->input.size;
-    const unsigned char last = size ? parser->input.source[size - 1] : 0;
+    size_t size;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &size);
+    const unsigned char last = size ? source[size - 1] : 0;
     return size + (start == size || (last != '\n' && last != '\r'));
 }
 
@@ -9477,6 +9480,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
     }
     S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
     lookahead->active = false;
+    lookahead->ended = true;
     return 0;
 }
 
@@ -9492,8 +9496,13 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_
      * (THE REACH). */
     size_t end;
     const unsigned char *source = markdown_core_parser_input_text(parser, &end);
-    if (lookahead->cursor && lookahead->active && !lookahead->waited) {
+    const size_t size = end;
+    if (lookahead->cursor && !lookahead->ended && !lookahead->waited) {
+        /* A line a container's prefix turned away was read through its
+         * terminator, and no further: the last line, unterminated, read to
+         * the text's end. */
         end = (size_t)(lookahead->cursor - source);
+        end += end == size && size && source[size - 1] != '\n' && source[size - 1] != '\r';
     } else {
         end++;
     }
