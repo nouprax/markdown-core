@@ -182,7 +182,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
     if (seen && markdown_core_parser_reaches(parser)) {
         size_t length;
         const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        markdown_core_parser_reach(parser, (size_t)parser->at.line_start, (size_t)(seen - source));
+        markdown_core_parser_reach(parser, NULL, (size_t)parser->at.line_start, (size_t)(seen - source));
     }
     return admits;
 }

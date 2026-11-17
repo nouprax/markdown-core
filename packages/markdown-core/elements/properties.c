@@ -630,7 +630,7 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
      * where its first fence would be (AN OPENER READ TO THE END). */
     if (closed) {
         markdown_core_parser_reach_shut(parser, owner, 0);
-        markdown_core_parser_reach(parser, 0, close + 4);
+        markdown_core_parser_reach(parser, parser->root, 0, close + 4);
     } else {
         markdown_core_parser_reach_open(parser, owner, 0);
     }

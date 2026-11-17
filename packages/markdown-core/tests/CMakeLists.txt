@@ -221,6 +221,18 @@ foreach(family IN LISTS _markdown_core_incremental_families)
             "${shard}/${_markdown_core_incremental_shards}")
     endforeach()
 endforeach()
+# The reads check (session.c, THE READS CHECK; a debug build's): every
+# reading of the reach of the `hard` family is held by a node or a line.
+markdown_core_add_test(
+    incremental_reads
+    incremental
+    3600
+    incremental_runner
+    --set
+    "${MARKDOWN_CORE_INCREMENTAL_DIR}"
+    --family
+    hard)
+set_tests_properties(incremental_reads PROPERTIES ENVIRONMENT MARKDOWN_CORE_READS_CHECK=1)
 # 4.10: the session fuzz target's decoding over the fuzz corpus, seeded.
 markdown_core_add_test(
     incremental_fuzz
@@ -236,6 +248,9 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/headings.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md")
+# The fuzz scripts stream, flush and edit in turn: the reads check runs on
+# each of their edits.
+set_tests_properties(incremental_fuzz PROPERTIES ENVIRONMENT MARKDOWN_CORE_READS_CHECK=1)
 markdown_core_add_test(
     api_incremental_faulty
     api

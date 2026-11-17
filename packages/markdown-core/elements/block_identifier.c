@@ -172,11 +172,12 @@ static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_n
 /* The line after an identifier line decides the block before it, `owner`,
  * from the bytes up to `reached`, or past the text's end the reading met,
  * NULL (blocks.c, THE REACH). */
-static void S_reach(markdown_core_parser *parser, const markdown_core_node *owner, const unsigned char *reached) {
+static void S_reach(markdown_core_parser *parser, markdown_core_node *owner, const unsigned char *reached) {
     if (owner && markdown_core_parser_block_root(parser) == parser->root) {
         size_t length;
         const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        markdown_core_parser_reach(parser, owner->place.start, reached ? (size_t)(reached - source) : length + 1);
+        markdown_core_parser_reach(parser, owner, owner->place.start,
+                                   reached ? (size_t)(reached - source) : length + 1);
     }
 }
 

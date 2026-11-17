@@ -51,8 +51,8 @@ static bool S_starts_line(const markdown_core_parser *parser, size_t start) {
  * its line as a reading from there would starts, which a reading from
  * there reads again: a reading that starts at a definition reads a block
  * that begins there. */
-static void S_note_reference(markdown_core_parser *parser, markdown_core_node *b, bufsize_t at, bufsize_t length,
-                             bufsize_t size, bool wide, size_t now, size_t *chain) {
+static void S_note_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
+                             bufsize_t at, bufsize_t length, bufsize_t size, bool wide, size_t now, size_t *chain) {
     int ignored;
     bufsize_t start = (bufsize_t)b->place.start, next;
     markdown_core_parser_content_place(parser, &b->content_map, at, &ignored, &start);
@@ -64,7 +64,9 @@ static void S_note_reference(markdown_core_parser *parser, markdown_core_node *b
         markdown_core_parser_content_place(parser, &b->content_map, at + length, &ignored, &next)) {
         reached = (size_t)next + 1;
     }
-    markdown_core_parser_reach(parser, *chain, reached);
+    /* The definition read last, which settled before the block. */
+    assert(parent->child_count > 1 && parent->children[parent->child_count - 1] == b);
+    markdown_core_parser_reach(parser, parent->children[parent->child_count - 2], *chain, reached);
 }
 
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
@@ -89,7 +91,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
             break;
         }
         if (noted && !parser->error) {
-            S_note_reference(parser, b, at, pos, text.len, wide, now, &chain);
+            S_note_reference(parser, b, parent, at, pos, text.len, wide, now, &chain);
         }
         chunk.data += pos;
         chunk.len -= pos;
@@ -123,18 +125,22 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
          * `now`, and past where it now starts, a span its close goes on
          * with (blocks.c, THE REACH): no reading starts afresh inside it. */
         if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            markdown_core_parser_reach_span(parser, b->place.start,
+            markdown_core_parser_reach_span(parser, b, b->place.start,
                                             now > (size_t)source + 1 ? now : (size_t)source + 1);
         }
-        b->place.start = (uint32_t)source;
+        markdown_core_node_restart(b, (size_t)source);
     } else if (chain != SIZE_MAX) {
         /* Nothing is left of it: its close notes what the last definitions
          * read from where they began, and its reading was open from where
          * it started up to there. */
         if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            markdown_core_parser_reach_span(parser, b->place.start, now > chain + 1 ? now : chain + 1);
+            markdown_core_parser_reach_span(parser, b, b->place.start, now > chain + 1 ? now : chain + 1);
+            /* The block may hold nothing to keep: the definition read
+             * last holds the span too. */
+            markdown_core_node *last = parent->children[parent->child_count - 2];
+            markdown_core_node_reads(last, b->place.start, now > chain + 1 ? now : chain + 1, true);
         }
-        b->place.start = (uint32_t)chain;
+        markdown_core_node_restart(b, chain);
     }
     return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
 }
