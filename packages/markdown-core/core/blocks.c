@@ -7081,6 +7081,8 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
     return parser->error != MARKDOWN_CORE_PARSE_OK;
 }
 
+static void S_line_look_settle(markdown_core_parser *parser);
+
 /* At the start of the line at `start`, line `index` of the input, which the
  * line loop's limit stopped at: the reading takes the old tail back when
  * the child it tries next starts its line there and the reading resumes,
@@ -7097,7 +7099,12 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
     if (edit->point != start) {
         return false;
     }
-    if (edit->nest_on ? S_resumes_in(parser, start, index) : S_resumes(parser, start)) {
+    const bool resumes = edit->nest_on ? S_resumes_in(parser, start, index) : S_resumes(parser, start);
+    /* What the test read from the line that ended goes to that line. */
+    if (edit->look.end) {
+        S_line_look_settle(parser);
+    }
+    if (resumes) {
         if (edit->nest_on) {
             S_splice_in(parser, start, index, start);
         } else {
@@ -7390,12 +7397,15 @@ static void S_line_reads(markdown_core_parser *parser, int line, size_t start, s
     }
 }
 
-/* The look of the line that ends goes where its line says; one of a line
- * the reading went back before, as a candidate's accept or an edit puts it
- * back, goes with what that reading read. */
+/* The look of the line that ends goes where its line says, and so does
+ * one a reading that went back before its line meets, as a candidate's
+ * decision does: what a rollback puts back it puts back with the mark
+ * (S_restore). A look of a line the input no longer holds, as a reading
+ * that read it was let go after its last line, goes with that reading. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_look_settle(markdown_core_parser *parser) {
     markdown_core_edit *edit = parser->stream->edit;
-    if (edit->look_line <= parser->at.line_number) {
+    const int first = parser->input.first_line;
+    if (edit->look_line < first || (size_t)(edit->look_line - first) < parser->input.lines.front) {
         S_line_reads(parser, edit->look_line, edit->look.start, edit->look.end);
     }
     edit->look = (markdown_core_place){0, 0};
@@ -7404,12 +7414,21 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_look_settle(markdown_core
 void markdown_core_parser_line_look(markdown_core_parser *parser, size_t start, size_t end) {
     markdown_core_edit *edit = parser->stream->edit;
     markdown_core_place *look = &edit->look;
-    if (look->end && edit->look_line != parser->at.line_number) {
+    const int line = parser->at.line_number, first = parser->input.first_line;
+    /* A look from a line before the one in hand, whose end settled what
+     * starts on it, goes to that line now. */
+    if (line > first && start < markdown_core_parser_visited_line(parser, line)->start) {
+        const int from = first + (int)markdown_core_parser_line_of(parser, start);
+        S_line_reads(parser, start < markdown_core_parser_visited_line(parser, first)->start ? first - 1 : from, start,
+                     end);
+        return;
+    }
+    if (look->end && edit->look_line != line) {
         S_line_look_settle(parser);
     }
     if (!look->end) {
         *look = (markdown_core_place){(uint32_t)start, (uint32_t)end};
-        edit->look_line = parser->at.line_number;
+        edit->look_line = line;
         return;
     }
     look->start = start < look->start ? (uint32_t)start : look->start;
@@ -7591,6 +7610,9 @@ typedef struct markdown_core_parser_mark {
     markdown_core_node *completion_first, *completion_last;
     size_t block_input_count, block_input_cursor;
     size_t reach_count;
+    /* The look of the line in hand that waits for its line's end. */
+    markdown_core_place look;
+    int look_line;
     unsigned char *kept;
 } S_snapshot_mark;
 
@@ -7623,6 +7645,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
     if (parser->line_marks.count) {
         mark->last_mark = parser->line_marks.values[parser->line_marks.count - 1];
     }
+    if (parser->stream && parser->stream->edit) {
+        mark->look = parser->stream->edit->look;
+        mark->look_line = parser->stream->edit->look_line;
+    }
 }
 
 /* Puts back the parser's state as `mark` found it: where the reading stood,
@@ -7651,6 +7677,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
     parser->block_input_cursor = mark->block_input_cursor;
     if (parser->stream) {
         markdown_core_array_truncate(&parser->stream->noted, mark->reach_count);
+        /* A look that waited at the mark waits again: a snapshot that
+         * ended its line gave it to a view the take-back lets go. */
+        if (parser->stream->edit) {
+            parser->stream->edit->look = mark->look;
+            parser->stream->edit->look_line = mark->look_line;
+        }
     }
 }
 

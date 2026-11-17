@@ -248,6 +248,9 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/headings.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md")
+# The fuzz scripts stream, flush and edit in turn: the reads check runs on
+# each of their edits.
+set_tests_properties(incremental_fuzz PROPERTIES ENVIRONMENT MARKDOWN_CORE_READS_CHECK=1)
 markdown_core_add_test(
     api_incremental_faulty
     api
