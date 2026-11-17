@@ -827,17 +827,32 @@ typedef struct {
     size_t from, start, closed, look;
 } session_read;
 
-static void session_reads_check(const markdown_core_session *session) {
+static bool session_reads_grow(session_read **reads, size_t *capacity) {
+    session_read *grown = realloc(*reads, sizeof(**reads) * *capacity * 2);
+    if (!grown) {
+        return false;
+    }
+    *reads = grown;
+    *capacity *= 2;
+    return true;
+}
+
+static bool session_reads_check(const markdown_core_session *session) {
     if (!getenv("MARKDOWN_CORE_READS_CHECK") || !session->document.root) {
-        return;
+        return true;
     }
     const markdown_core_parser *parser = session->committed;
     session_read *reads = NULL;
     size_t count = 0, capacity = 0;
     markdown_core_walk walk;
     markdown_core_walk_item item;
+    /* A walk or a list that cannot be had fails the rest, as storage the
+     * operation could not have. */
+    if (!(reads = malloc(sizeof(*reads) * (capacity = 64)))) {
+        return false;
+    }
     markdown_core_walk_begin(&walk, session->document.root);
-    reads = malloc(sizeof(*reads) * (capacity = 64));
+    bool failed = false;
     const markdown_core_node *root = session->document.root;
     if (root->opened || root->closed || root->look) {
         reads[count++] = (session_read){0, 0, root->closed, root->look};
@@ -847,25 +862,30 @@ static void session_reads_check(const markdown_core_session *session) {
         if (!node || !(node->opened || node->closed || node->look)) {
             continue;
         }
-        if (count == capacity) {
-            reads = realloc(reads, sizeof(*reads) * (capacity *= 2));
+        if (count == capacity && (failed = !session_reads_grow(&reads, &capacity))) {
+            break;
         }
         const size_t start = item.place.start;
         reads[count++] = (session_read){start - node->opened, start, node->closed ? start + node->closed : 0,
                                         node->look ? start + node->look : 0};
     }
+    failed = failed || walk.failed;
     markdown_core_walk_end(&walk);
     const size_t lines = markdown_core_parser_line_count(parser);
-    for (size_t line = 0; line < lines; line++) {
+    for (size_t line = 0; line < lines && !failed; line++) {
         const size_t look = markdown_core_parser_line_looks(parser, line);
         if (look) {
             size_t start, end;
             markdown_core_parser_line_span(parser, line, &start, &end);
-            if (count == capacity) {
-                reads = realloc(reads, sizeof(*reads) * (capacity *= 2));
+            if (count == capacity && (failed = !session_reads_grow(&reads, &capacity))) {
+                break;
             }
             reads[count++] = (session_read){start, start, 0, look};
         }
+    }
+    if (failed) {
+        free(reads);
+        return false;
     }
     size_t missed = 0, early = 0, records = 0;
     for (size_t i = 0;; i++) {
@@ -902,6 +922,7 @@ static void session_reads_check(const markdown_core_session *session) {
     }
     free(reads);
     assert(!missed);
+    return true;
 }
 #endif
 
@@ -915,7 +936,9 @@ static bool session_rest(markdown_core_session *session, size_t edited, uint32_t
         return false;
     }
 #if defined(MARKDOWN_CORE_READS_CHECK) && !defined(NDEBUG)
-    session_reads_check(session);
+    if (!session_reads_check(session)) {
+        return false;
+    }
 #endif
     markdown_core_parser_line_span(session->committed, edited, &start, &end);
     const size_t edited_start = start;
