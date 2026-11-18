@@ -128,7 +128,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
             markdown_core_parser_reach_span(parser, b, b->place.start,
                                             now > (size_t)source + 1 ? now : (size_t)source + 1);
         }
-        markdown_core_node_restart(b, (size_t)source);
+        markdown_core_node_restart(parser, b, (size_t)source);
     } else if (chain != SIZE_MAX) {
         /* Nothing is left of it: its close notes what the last definitions
          * read from where they began, and its reading was open from where
@@ -140,7 +140,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
             markdown_core_node *last = parent->children[parent->child_count - 2];
             markdown_core_node_reads(last, b->place.start, now > chain + 1 ? now : chain + 1, true);
         }
-        markdown_core_node_restart(b, chain);
+        markdown_core_node_restart(parser, b, chain);
     }
     return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
 }
