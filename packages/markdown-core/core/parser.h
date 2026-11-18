@@ -2213,8 +2213,7 @@ void markdown_core_parser_line_look(markdown_core_parser *parser, size_t start, 
 /* A look of `node`'s from `start`, before it, which goes to the block of
  * its line when that is a line before the node's (blocks.c, THE BLOCK OF A
  * LINE): a look's reading begins on the line it is the look of. */
-void markdown_core_parser_look_before(markdown_core_parser *parser, markdown_core_node *node, size_t start,
-                                      size_t end);
+void markdown_core_parser_look_before(markdown_core_parser *parser, markdown_core_node *node, size_t start, size_t end);
 /* `node` starts at `start` from now on, and what its reading read stays
  * where it was: its spans from where they began (`opened`), and its look,
  * which began where it started, the block of that line's (THE BLOCK OF A

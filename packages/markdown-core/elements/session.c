@@ -12,6 +12,7 @@
 #include "markdown-core-elements.h"
 
 #include <element.h>
+#include <index.h>
 #include <parser.h>
 #include <utf8.h>
 
@@ -40,64 +41,12 @@
  * lends it for its whole life. It is empty until the first locate, and an
  * append or the flush, which change the document, empty it again. A fresh
  * parse's session has none. */
-/* THE WIDTHS: where the root's children are, from their extents alone
- * (docs/plans/relative-positions.md): a tree (tree.h) of where each child
- * starts and ends, measured from where its holder's first child is, which
- * an edit, which moves no child it takes back, mends: the children it read
- * go and come again, and those it took back move with it. A child is found
- * at an offset, and where it is, in time logarithmic in the children. They
- * are made at the first edit or locate, and an edit that could not have
- * their storage leaves them to the next to make again. */
+/* What only an edit keeps, made at the first: the child index (index.h),
+ * and the bytes of the text the last edit read again. A session that is
+ * never edited holds none of it. */
 typedef struct {
-    uint32_t start, end;
-    /* The furthest any reading of the child or below it read (node.h,
-     * `closed`, `look`), or `start` for none: the children whose readings
-     * read past a byte are found by it (markdown_core_tree_past; THE READS
-     * PAST). */
-    uint32_t reach;
-    /* How many children on is the nearest later child whose reading
-     * began at or before this one starts (node.h, `opened`: a paragraph
-     * its definitions were cut from), or 0 for none. */
-    uint32_t cover;
-} session_width;
-
-typedef struct {
-    markdown_core_tree tree;
-    /* `bare`: a child the widths measured since they were made from the
-     * first has no extent (child_extent: a definition's body that holds no
-     * node), so its holder has no source of its own to measure. */
-    bool made, bare;
-} session_widths;
-
-/* The widths of the children of `holder`, a block below the root, and the
- * marks of what they fold into it (parser.h, THE FOLD MARKS). */
-typedef struct {
-    const markdown_core_node *holder;
-    session_widths widths;
-    markdown_core_folds folds;
-} session_nest;
-
-static void nest_free(session_nest *nest) {
-    markdown_core_tree_free(&nest->widths.tree);
-    markdown_core_free(nest->folds.flags);
-    markdown_core_free(nest->folds.passes);
-}
-
-/* What only an edit keeps, made at the first: the widths, and the bytes of
- * the text the last edit read again. A session that is never edited holds
- * none of it. */
-typedef struct {
-    session_widths widths;
+    markdown_core_index index;
     size_t reread_from, reread_to;
-    /* The widths of the blocks below the root a rest point was looked for
-     * in (session_rest_in): those of the last edit's chain, which it
-     * mended, and those a locate since looked in. */
-    session_nest *nests;
-    size_t nest_count, nest_capacity;
-    /* The nests by holder: an open table of `slot_count` slots, a power
-     * of two, each a nest's number plus one, or 0 (nest_find). */
-    size_t *slots;
-    size_t slot_count;
     /* The most text the session has held since it last read all of it into
      * storage of its own (THE COMPACTION). */
     size_t peak;
@@ -114,233 +63,6 @@ struct markdown_core_session {
     bool flushed;
     session_edits *edits;
 };
-
-/* The extent of `child`, which a publish gave it: a definition's body, no
- * node of the tree, has one too (ast.c, publish_body). */
-static inline markdown_core_extent child_extent(const markdown_core_node *child) { return child->extent; }
-
-/* Whether `child` has no extent to measure: a holder with no runs of its
- * own that holds no node (a definition's empty body), which stands where
- * the one before it ends. */
-static inline bool child_bare(const markdown_core_node *child) { return !child->source.runs && !child->child_count; }
-
-/* Where the children of `holder`, which starts at `start`, are measured
- * from: its start, or, for a holder with no runs of its own (a
- * definition's body), where the relation its nodes go on from ends, which
- * its extent is measured from too (ast.c, publish_body). */
-static inline uint32_t holder_base(const markdown_core_node *holder, size_t start) {
-    return holder->source.runs ? (uint32_t)start : (uint32_t)((int64_t)start - holder->extent.lead);
-}
-
-static size_t width_start(const void *entry) { return ((const session_width *)entry)->start; }
-
-static size_t width_reach(const void *entry) { return ((const session_width *)entry)->reach; }
-
-static void width_shift(void *entry, int64_t delta) {
-    session_width *width = entry;
-    width->start = (uint32_t)((int64_t)width->start + delta);
-    width->end = (uint32_t)((int64_t)width->end + delta);
-    width->reach = (uint32_t)((int64_t)width->reach + delta);
-}
-
-static const markdown_core_tree_ops width_ops = {sizeof(session_width), width_start, NULL,
-                                                 width_shift,           NULL,        width_reach};
-
-MARKDOWN_CORE_TREE_OPS(width_tree, session_width)
-
-struct markdown_core_session;
-static uint32_t node_reach(const struct markdown_core_session *session, const markdown_core_node *node, size_t depth,
-                           bool nests);
-
-/* Child `child` of `holder`, measured from where the one before it ends,
- * `after`; its reach from its nest when it has one and `nests` says so. */
-static inline session_width width_of(const struct markdown_core_session *session, const markdown_core_node *holder,
-                                     size_t child, uint32_t after, bool nests) {
-    const markdown_core_extent extent = child_extent(holder->children[child]);
-    const uint32_t start = (uint32_t)((int64_t)after + extent.lead);
-    const uint32_t reach = node_reach(session, holder->children[child], 0, nests);
-    return (session_width){start, start + (uint32_t)extent.span, start + reach, 0};
-}
-
-/* Child `child` of `holder` began its reading before it starts: the
- * children before it from where it did, from `low` on, are covered by it,
- * as far as no nearer child covers them. */
-static void widths_cover(markdown_core_tree *tree, const markdown_core_node *holder, size_t child, size_t low) {
-    const markdown_core_node *node = holder->children[child];
-    if (!node->opened) {
-        return;
-    }
-    const session_width *width = width_tree_at(tree, child);
-    const uint32_t from = width->start - node->opened;
-    for (size_t i = child; i-- > low;) {
-        session_width *before = width_tree_at(tree, i);
-        if (before->start < from) {
-            break;
-        }
-        if (!before->cover || i + before->cover > child) {
-            before->cover = (uint32_t)(child - i);
-        }
-    }
-}
-
-/* The widths of `holder`'s children made whole. False, with the widths to
- * be made again, when storage could not be had. */
-static bool widths_build(const struct markdown_core_session *session, session_widths *widths,
-                         const markdown_core_node *holder, bool nests) {
-    markdown_core_tree_free(&widths->tree);
-    widths->tree = markdown_core_tree_make(&width_ops);
-    widths->bare = false;
-    uint32_t after = 0;
-    for (size_t i = 0; i < holder->child_count; i++) {
-        session_width *width = width_tree_push(&widths->tree);
-        if (!width) {
-            widths->made = false;
-            return false;
-        }
-        *width = width_of(session, holder, i, after, nests);
-        after = width->end;
-        widths->bare |= child_bare(holder->children[i]);
-        widths_cover(&widths->tree, holder, i, 0);
-    }
-    widths->made = true;
-    return true;
-}
-
-/* After an edit that moved the text after it by `delta`, of `holder`'s
- * children, `count` of them before, the ones from `first` up to `tail` read
- * again, and those from `tail` on taken back, or none when `tail` is
- * UINT32_MAX: the read go and come again, and the taken move. False, with
- * the widths to be made again, when storage could not be had. */
-static bool widths_mend(const struct markdown_core_session *session, session_widths *widths,
-                        const markdown_core_node *holder, size_t first, uint32_t tail, size_t count, int64_t delta) {
-    markdown_core_tree *tree = &widths->tree;
-    const size_t now = holder->child_count;
-    const size_t taken = tail == UINT32_MAX ? 0 : now - tail;
-    const size_t end = tail == UINT32_MAX ? now : tail;
-    assert(tree->count == count && taken <= count && first <= end);
-    markdown_core_tree_erase(tree, first, count - taken - first);
-    markdown_core_tree_shift(tree, first, delta);
-    uint32_t after = first ? width_tree_at(tree, first - 1)->end : 0;
-    /* The child before, which the reading kept, holds what a block it
-     * read that yields no node read (blocks.c, S_reads_pass): it reaches
-     * further, as far as it now does. */
-    if (first) {
-        session_width *before = width_tree_at(tree, first - 1);
-        const uint32_t reach = before->start + node_reach(session, holder->children[first - 1], 0, true);
-        if (reach > before->reach) {
-            before->reach = reach;
-            markdown_core_tree_raise(tree, first - 1);
-        }
-    }
-    for (size_t i = first; i < end; i++) {
-        const session_width width = width_of(session, holder, i, after, true);
-        if (!width_tree_insert(tree, i, width, false)) {
-            widths->made = false;
-            return false;
-        }
-        after = width.end;
-        widths->bare |= child_bare(holder->children[i]);
-    }
-    if (end < now) {
-        widths->bare |= child_bare(holder->children[end]);
-    }
-    /* The children read cover, and so does the one before, which may
-     * have taken a reading that began before it, and the first taken back
-     * when its reading began among them. */
-    for (size_t i = first ? first - 1 : 0; i < now && i <= end; i++) {
-        widths_cover(tree, holder, i, 0);
-    }
-    return true;
-}
-
-/* Makes the widths when they are not made. */
-static bool widths_make(const struct markdown_core_session *session, session_widths *widths,
-                        const markdown_core_node *root) {
-    return widths->made || widths_build(session, widths, root, true);
-}
-
-/* Where the child `child` of `holder`, whose first child is measured from
- * `base`, starts. */
-static size_t widths_start_at(const session_widths *widths, const markdown_core_node *holder, int64_t base,
-                              size_t child) {
-    (void)holder;
-    return (size_t)(base + width_tree_at((markdown_core_tree *)&widths->tree, child)->start);
-}
-
-/* Where the root's child `child` starts. */
-static size_t widths_start(const session_widths *widths, const markdown_core_node *root, size_t child) {
-    return widths_start_at(widths, root, root->extent.lead, child);
-}
-
-/* Where the root's child `child` ends. */
-static size_t widths_end(const session_widths *widths, const markdown_core_node *root, size_t child) {
-    return (size_t)(root->extent.lead + width_tree_at((markdown_core_tree *)&widths->tree, child)->end);
-}
-
-/* The child of `holder`, whose first child is measured from `base`, before
- * the first that ends past `offset`, or its first. */
-static uint32_t widths_child_at(const session_widths *widths, const markdown_core_node *root, int64_t base,
-                                size_t offset) {
-    (void)root;
-    if ((int64_t)offset < base) {
-        return 0;
-    }
-    /* The first that ends past the offset: the last that starts at or
-     * before it, when it does, or the one after it, as children are in
-     * order and apart. */
-    markdown_core_tree *tree = (markdown_core_tree *)&widths->tree;
-    const size_t at = (size_t)((int64_t)offset - base);
-    size_t past = markdown_core_tree_from(tree, at + 1, 0, tree->count);
-    if (past && width_tree_at(tree, past - 1)->end > at) {
-        past--;
-    }
-    return past ? (uint32_t)(past - 1) : 0;
-}
-
-static uint32_t widths_child(const session_widths *widths, const markdown_core_node *root, size_t offset) {
-    return widths_child_at(widths, root, root->extent.lead, offset);
-}
-
-#ifndef NDEBUG
-/* The widths an edit mended are the widths of their block made anew. */
-static void nest_check(const struct markdown_core_session *session, const session_widths *widths,
-                       const markdown_core_node *holder) {
-    session_widths fresh = {0};
-    if (widths_build(session, &fresh, holder, false)) {
-        assert(fresh.tree.count == widths->tree.count);
-        for (size_t i = 0; i < fresh.tree.count; i++) {
-            const session_width *made = width_tree_at(&fresh.tree, i);
-            const session_width *kept = width_tree_at((markdown_core_tree *)&widths->tree, i);
-            assert(made->start == kept->start && made->end == kept->end && made->reach == kept->reach &&
-                   made->cover == kept->cover);
-            (void)made;
-            (void)kept;
-        }
-    }
-    markdown_core_tree_free(&fresh.tree);
-}
-
-/* The widths an edit mended are the widths of its root made anew, and
- * each child stands where the walk finds it. */
-static void widths_check(const struct markdown_core_session *session, const session_widths *widths,
-                         const markdown_core_node *root) {
-    nest_check(session, widths, root);
-    /* The walk measures each child from the one before. */
-    markdown_core_walk walk;
-    markdown_core_walk_item item;
-    markdown_core_walk_begin(&walk, root);
-    size_t child = 0;
-    while (markdown_core_walk_next(&walk, &item)) {
-        if (item.node && item.level == 1 && child < root->child_count && item.node == root->children[child]) {
-            assert(widths_start(widths, root, child) == item.place.start);
-            assert(widths_end(widths, root, child) == item.place.end);
-            child++;
-        }
-    }
-    assert(walk.failed || child == root->child_count);
-    markdown_core_walk_end(&walk);
-}
-#endif
 
 /* The text a parser reads: an empty text is the empty buffer. */
 static const char *session_source(const markdown_core_session *session) {
@@ -412,12 +134,7 @@ static void session_close(markdown_core_session *session) {
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_array_free(&session->text);
     if (session->edits) {
-        markdown_core_tree_free(&session->edits->widths.tree);
-        for (size_t i = 0; i < session->edits->nest_count; i++) {
-            nest_free(&session->edits->nests[i]);
-        }
-        markdown_core_free(session->edits->nests);
-        markdown_core_free(session->edits->slots);
+        markdown_core_index_free(&session->edits->index);
         markdown_core_free(session->edits);
     }
     markdown_core_context_free(session->context);
@@ -538,13 +255,70 @@ typedef struct {
     size_t from;
 } session_rest_point;
 
-/* Whether a reading that starts before `point` read past `past`, but a
- * look that ended no later than `from`, where the edit begins or the
- * look's cursor is, and the closes of the `count` blocks that start at
- * `opens`, each once, as their reopen notes them again; where the first
- * began in `*start` (THE READS PAST). */
-static bool session_crossed(const markdown_core_session *session, size_t from, size_t point, size_t past,
-                            const uint32_t *opens, size_t count, size_t *start);
+/* Whether a reading that starts before `point` read past `past`
+ * (markdown_core_index_crossed). */
+static inline bool session_crossed(const markdown_core_session *session, size_t from, size_t point, size_t past,
+                                   const uint32_t *opens, size_t count, size_t *start) {
+    return markdown_core_index_crossed(&session->edits->index, from, point, past, opens, count, start);
+}
+
+/* The widths of the children of `holder`, a block below the root
+ * (markdown_core_index_nest). */
+static inline const markdown_core_widths *session_nest(const markdown_core_session *session,
+                                                       const markdown_core_node *holder) {
+    return markdown_core_index_nest(&session->edits->index, holder);
+}
+
+/* Where the root's child `child` starts and ends, and the root's child
+ * before the first that ends past `offset`, or its first. */
+static inline size_t widths_start(const markdown_core_widths *widths, const markdown_core_node *root, size_t child) {
+    return markdown_core_widths_start(widths, root, root->extent.lead, child);
+}
+
+static inline size_t widths_end(const markdown_core_widths *widths, const markdown_core_node *root, size_t child) {
+    return markdown_core_widths_window(widths, root, (uint32_t)root->extent.lead, child).end;
+}
+
+static inline uint32_t widths_child(const markdown_core_widths *widths, const markdown_core_node *root, size_t offset) {
+    return markdown_core_widths_child(widths, root, root->extent.lead, offset);
+}
+
+#ifndef NDEBUG
+/* Each of the root's children stands where the walk finds it. */
+static void session_walk_check(const markdown_core_widths *widths, const markdown_core_node *root) {
+    /* The walk measures each child from the one before. */
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, root);
+    size_t child = 0;
+    while (markdown_core_walk_next(&walk, &item)) {
+        if (item.node && item.level == 1 && child < root->child_count && item.node == root->children[child]) {
+            assert(widths_start(widths, root, child) == item.place.start);
+            assert(widths_end(widths, root, child) == item.place.end);
+            child++;
+        }
+    }
+    assert(walk.failed || child == root->child_count);
+    markdown_core_walk_end(&walk);
+}
+#endif
+
+/* The source of the child `child` of `holder`, a block below the root that
+ * starts at `base`, from its extent, which its runs agree with. */
+static markdown_core_place session_window(const markdown_core_widths *widths, const markdown_core_node *holder,
+                                          uint32_t base, size_t child) {
+    const markdown_core_place place = markdown_core_widths_window(widths, holder, base, child);
+#ifndef NDEBUG
+    const markdown_core_node *before = child ? holder->children[child - 1] : NULL;
+    const size_t after =
+        before ? markdown_core_widths_start(widths, holder, base, child - 1) + before->extent.span : base;
+    if (holder->children[child]->source.runs) {
+        const markdown_core_place runs = markdown_core_node_window(holder->children[child], (uint32_t)after);
+        assert(runs.start == place.start && runs.end == place.end);
+    }
+#endif
+    return place;
+}
 
 static size_t session_line_start(const markdown_core_session *session, size_t line) {
     size_t start, end;
@@ -563,388 +337,6 @@ static bool session_inside(const markdown_core_session *session, const markdown_
     return structure && structure->element->edit && structure->element->edit->reopens && block->child_count &&
            markdown_core_parser_line_of(parser, window.start) < edited &&
            markdown_core_parser_line_of(parser, window.end - 1) >= edited;
-}
-
-/* The slot of the table that holds the nest of `holder`, or the empty one
- * where it would go; NULL when there is no table. */
-static size_t *nest_slot(const session_edits *edits, const markdown_core_node *holder) {
-    if (!edits->slot_count) {
-        return NULL;
-    }
-    const size_t mask = edits->slot_count - 1;
-    size_t at = (size_t)(((uint64_t)(uintptr_t)holder >> 4) * UINT64_C(0x9E3779B97F4A7C15) >> 32) & mask;
-    while (edits->slots[at] && edits->nests[edits->slots[at] - 1].holder != holder) {
-        at = (at + 1) & mask;
-    }
-    return &edits->slots[at];
-}
-
-/* THE REACH OF A NODE: the furthest any reading of `node` or of a node
- * below it read, or where a child of a node below it starts when that is
- * further, measured from where the node starts: as the widths of a
- * node's children hold it (`reach`, `start` for none), from the widths of
- * a node's children when it has a nest and `nests` says so, else from its
- * children's own, to any depth. The children of a block of inlines read
- * nothing of their own. Reads as far as any when storage could not be
- * had. */
-typedef struct {
-    const markdown_core_node *node;
-    int64_t at;
-    size_t next;
-    uint32_t after;
-} session_reach_frame;
-
-static inline bool node_reads_none_below(const markdown_core_session *session, const markdown_core_node *node) {
-    if (!node->child_count) {
-        return true;
-    }
-    if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(node->kind) ||
-        (markdown_core_parser_block_kind(session->committed, node)->flags & MARKDOWN_CORE_KIND_INLINES)) {
-#ifndef NDEBUG
-        for (size_t i = 0; i < node->child_count; i++) {
-            assert(!node->children[i]->closed && !node->children[i]->look);
-        }
-#endif
-        return true;
-    }
-    return false;
-}
-
-static inline int64_t node_own(const markdown_core_node *node) {
-    return node->closed > node->look ? node->closed : node->look;
-}
-
-static uint32_t node_reach(const markdown_core_session *session, const markdown_core_node *node, size_t depth,
-                           bool nests) {
-    (void)depth;
-    int64_t reach = node_own(node);
-    session_reach_frame room[16], *stack = room;
-    size_t count = 0, capacity = 16;
-    bool failed = false;
-    /* A node to read below, at `at` from `node`. */
-#define REACH_PUSH(child, offset)                                                                                      \
-    do {                                                                                                               \
-        if (count == capacity) {                                                                                       \
-            session_reach_frame *grown = markdown_core_alloc(capacity * 2, sizeof(*grown));                           \
-            if (!grown) {                                                                                              \
-                failed = true;                                                                                         \
-                break;                                                                                                 \
-            }                                                                                                          \
-            memcpy(grown, stack, count * sizeof(*grown));                                                              \
-            if (stack != room) {                                                                                       \
-                markdown_core_free(stack);                                                                             \
-            }                                                                                                          \
-            stack = grown;                                                                                             \
-            capacity *= 2;                                                                                             \
-        }                                                                                                              \
-        stack[count++] = (session_reach_frame){(child), (offset), 0, 0};                                               \
-    } while (0)
-    REACH_PUSH(node, 0);
-    while (count && !failed) {
-        session_reach_frame *frame = &stack[count - 1];
-        const markdown_core_node *holder = frame->node;
-        if (!frame->next) {
-            if (node_reads_none_below(session, holder)) {
-                count--;
-                continue;
-            }
-            const size_t *slot = nests && session->edits ? nest_slot(session->edits, holder) : NULL;
-            if (slot && *slot && session->edits->nests[*slot - 1].widths.made) {
-                const int64_t base = holder->source.runs ? 0 : -(int64_t)holder->extent.lead;
-                const int64_t far =
-                    frame->at + base + (int64_t)markdown_core_tree_furthest(&session->edits->nests[*slot - 1].widths.tree);
-                reach = far > reach ? far : reach;
-                count--;
-                continue;
-            }
-        }
-        if (frame->next == holder->child_count) {
-            count--;
-            continue;
-        }
-        const int64_t base = holder->source.runs ? 0 : -(int64_t)holder->extent.lead;
-        const markdown_core_node *child = holder->children[frame->next++];
-        const markdown_core_extent extent = child_extent(child);
-        const uint32_t start = (uint32_t)((int64_t)frame->after + extent.lead);
-        frame->after = start + (uint32_t)extent.span;
-        const int64_t at = frame->at + base + start;
-        const int64_t far = at + node_own(child);
-        reach = far > reach ? far : reach;
-        REACH_PUSH(child, at);
-    }
-#undef REACH_PUSH
-    if (stack != room) {
-        markdown_core_free(stack);
-    }
-    return failed ? UINT32_MAX / 2 : (uint32_t)reach;
-}
-
-/* The table made again with `count` slots, a power of two, from the nests.
- * False, with the table as it was, when storage could not be had. */
-static bool nest_index(session_edits *edits, size_t count) {
-    size_t *slots = markdown_core_alloc(count, sizeof(*slots));
-    if (!slots) {
-        return false;
-    }
-    markdown_core_free(edits->slots);
-    edits->slots = slots;
-    edits->slot_count = count;
-    for (size_t i = 0; i < edits->nest_count; i++) {
-        *nest_slot(edits, edits->nests[i].holder) = i + 1;
-    }
-    return true;
-}
-
-/* The nest of `holder`, a block below the root, made when there is none;
- * NULL when storage could not be had. */
-static session_nest *nest_find(const markdown_core_session *session, const markdown_core_node *holder) {
-    session_edits *edits = session->edits;
-    size_t *slot = nest_slot(edits, holder);
-    if (slot && *slot) {
-        return &edits->nests[*slot - 1];
-    }
-    /* Room in the table for one more, at most half full. */
-    if ((edits->nest_count + 1) * 2 > edits->slot_count) {
-        if (!nest_index(edits, edits->slot_count ? edits->slot_count * 2 : 16)) {
-            return NULL;
-        }
-        slot = nest_slot(edits, holder);
-    }
-    session_nest *grew =
-        markdown_core_reserve(edits->nests, &edits->nest_capacity, edits->nest_count + 1, sizeof(*edits->nests));
-    if (!grew) {
-        return NULL;
-    }
-    edits->nests = grew;
-    session_nest *nest = &grew[edits->nest_count];
-    *nest = (session_nest){.holder = holder};
-    if (!widths_make(session, &nest->widths, holder)) {
-        nest_free(nest);
-        return NULL;
-    }
-    *slot = ++edits->nest_count;
-    return nest;
-}
-
-/* The widths of the children of `holder`, as nest_find makes them. */
-static const session_widths *nest_of(const markdown_core_session *session, const markdown_core_node *holder) {
-    const session_nest *nest = nest_find(session, holder);
-    return nest ? &nest->widths : NULL;
-}
-
-/* The source of the child `child` of `holder`, a block below the root that
- * starts at `base`, from its extent. */
-static markdown_core_place nest_window(const session_widths *widths, const markdown_core_node *holder, uint32_t base,
-                                       size_t child) {
-    const size_t start = widths_start_at(widths, holder, base, child);
-    const markdown_core_place place = {(uint32_t)start, (uint32_t)(start + child_extent(holder->children[child]).span)};
-#ifndef NDEBUG
-    const markdown_core_node *before = child ? holder->children[child - 1] : NULL;
-    const size_t after = before ? widths_start_at(widths, holder, base, child - 1) + child_extent(before).span : base;
-    if (holder->children[child]->source.runs) {
-        const markdown_core_place runs = markdown_core_node_window(holder->children[child], (uint32_t)after);
-        assert(runs.start == place.start && runs.end == place.end);
-    }
-#endif
-    return place;
-}
-
-/* THE READS PAST (docs/plans/no-flush.md, 10.10): whether a reading that
- * began before `point` read past `past` -- a block's close (node.h,
- * `closed`) but those of the blocks the reading reopens, which start at
- * `opens`, each once; a look (`look`, and a line's) that read past `from`
- * too -- and where the first such began, from the nodes and the lines
- * alone: down the blocks that hold the point, the children before each,
- * found by how far their readings reached (THE REACH OF A NODE), and the
- * lines before it, by how far their looks read. */
-typedef struct {
-    const markdown_core_session *session;
-    size_t point, past, look;
-    const uint32_t *opens;
-    size_t count;
-    uint64_t used;
-    /* Where the first reading found began, or SIZE_MAX. */
-    size_t start;
-} session_past;
-
-static inline void past_found(session_past *past, size_t from) { past->start = from < past->start ? from : past->start; }
-
-/* Whether `node`, which starts at `start`, read past by a reading of its
- * own: its close, unless it is `exempt`, or a look. */
-static inline bool past_own(const session_past *past, const markdown_core_node *node, size_t start, bool exempt) {
-    return (!exempt && node->closed && start + node->closed > past->past) ||
-           (node->look && start + node->look > past->look);
-}
-
-/* The readings below `holder`, which starts at `start`, of its children
- * from `low` up to `high`, which start before the point and are before
- * it whole, and below them, to any depth. */
-typedef struct {
-    const markdown_core_node *holder;
-    size_t start, next, high;
-} session_past_frame;
-
-static void past_children(session_past *past, const markdown_core_node *holder, size_t start, size_t low,
-                          size_t high) {
-    const markdown_core_session *session = past->session;
-    session_past_frame room[16], *stack = room;
-    size_t count = 1, capacity = 16;
-    stack[0] = (session_past_frame){holder, start, low, high};
-    while (count) {
-        session_past_frame *frame = &stack[count - 1];
-        const markdown_core_node *at_holder = frame->holder;
-        const bool root = at_holder == session->document.root;
-        /* A nest made below moves the nests: the holder's is found again. */
-        const session_widths *widths = root ? &session->edits->widths : nest_of(session, at_holder);
-        if (!widths || widths->bare) {
-            /* No children to read apart: the reading is taken to begin
-             * where the holder does. */
-            past_found(past, frame->start - at_holder->opened);
-            count--;
-            continue;
-        }
-        const int64_t base = root ? (int64_t)at_holder->extent.lead : (int64_t)holder_base(at_holder, frame->start);
-        const size_t at = (int64_t)past->past > base ? (size_t)((int64_t)past->past - base) : 0;
-        const size_t i = frame->next < frame->high ? markdown_core_tree_past(&widths->tree, at, frame->next, frame->high)
-                                                   : frame->high;
-        if (i == frame->high) {
-            count--;
-            continue;
-        }
-        frame->next = i + 1;
-        const markdown_core_node *child = at_holder->children[i];
-        const size_t from = (size_t)(base + width_tree_at((markdown_core_tree *)&widths->tree, i)->start);
-        if (from - child->opened >= past->start) {
-            count--;
-            continue;
-        }
-        if (past_own(past, child, from, false)) {
-            past_found(past, from - child->opened);
-            continue;
-        }
-        if (!child->child_count || MARKDOWN_CORE_NODE_TYPE_INLINE_P(child->kind) ||
-            (markdown_core_parser_block_kind(session->committed, child)->flags & MARKDOWN_CORE_KIND_INLINES)) {
-            continue;
-        }
-        if (count == capacity) {
-            session_past_frame *grown = markdown_core_alloc(capacity * 2, sizeof(*grown));
-            if (!grown) {
-                /* What is below goes unread: its reading is taken to begin
-                 * where it does. */
-                past_found(past, from - child->opened);
-                continue;
-            }
-            memcpy(grown, stack, count * sizeof(*grown));
-            if (stack != room) {
-                markdown_core_free(stack);
-            }
-            stack = grown;
-            capacity *= 2;
-        }
-        stack[count++] = (session_past_frame){child, from, 0, child->child_count};
-    }
-    if (stack != room) {
-        markdown_core_free(stack);
-    }
-}
-
-static bool session_crossed(const markdown_core_session *session, size_t from, size_t point, size_t past_at,
-                            const uint32_t *opens, size_t count, size_t *start) {
-    const markdown_core_parser *parser = session->committed;
-    session_past past = {session, point, past_at, past_at > from ? past_at : from, opens, count, 0, SIZE_MAX};
-    if (!point) {
-        return false;
-    }
-    /* The lines' looks. */
-    const size_t lines = markdown_core_parser_line_of(parser, point - 1) + 1;
-    const size_t looked = markdown_core_parser_line_looked(parser, lines, past.look);
-    if (looked < lines) {
-        past.start = session_line_start(session, looked);
-    }
-#ifndef NDEBUG
-    else {
-    }
-#endif
-    const markdown_core_node *holder = session->document.root;
-    if (holder->look && holder->look > past.look) {
-        past.start = 0;
-    }
-    size_t holder_start = 0;
-    while (holder->child_count) {
-        if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(holder->kind) ||
-            (markdown_core_parser_block_kind(parser, holder)->flags & MARKDOWN_CORE_KIND_INLINES)) {
-            break;
-        }
-        const bool root = holder == session->document.root;
-        const session_widths *widths = root ? &session->edits->widths : nest_of(session, holder);
-        if (!widths || widths->bare) { past_found(&past, holder_start - holder->opened);
-            break;
-        }
-        markdown_core_tree *tree = (markdown_core_tree *)&widths->tree;
-        const int64_t base = root ? (int64_t)holder->extent.lead : (int64_t)holder_base(holder, holder_start);
-        const size_t count_children = holder->child_count;
-        /* The first child that starts at or past the point, and the one
-         * before it when it holds the point. */
-        const size_t first = (int64_t)point > base ? markdown_core_tree_from(tree, (size_t)((int64_t)point - base), 0,
-                                                                              count_children)
-                                                   : 0;
-        size_t held = SIZE_MAX;
-        if (first && (size_t)(base + width_tree_at(tree, first - 1)->end) > point) {
-            held = first - 1;
-        }
-        past_children(&past, holder, holder_start, 0, held == SIZE_MAX ? first : held);
-        /* A child from the point on whose reading began before it, as a
-         * paragraph its definitions were cut from (`opened`): the child
-         * that holds the point, or the first after it, is covered by it. */
-        widths = root ? &session->edits->widths : nest_of(session, holder);
-        if (!widths) {
-            past_found(&past, holder_start - holder->opened);
-            break;
-        }
-        tree = (markdown_core_tree *)&widths->tree;
-        for (size_t k = held == SIZE_MAX ? first : held; k < count_children;) {
-            const session_width *width = width_tree_at(tree, k);
-            const markdown_core_node *child = holder->children[k];
-            const size_t at = (size_t)(base + width->start);
-            /* Its close, when the reading reopens where it began. */
-            bool exempt = false;
-            for (size_t o = 0; o < count && !exempt && k >= first; o++) {
-                if (!(past.used >> o & 1) && opens[o] == at - child->opened) {
-                    past.used |= UINT64_C(1) << o;
-                    exempt = true;
-                }
-            }
-            if (k >= first && at - child->opened < point && past_own(&past, child, at, exempt)) {
-                past_found(&past, at - child->opened);
-            }
-            if (!width->cover) {
-                break;
-            }
-            k += width->cover;
-        }
-        if (held == SIZE_MAX) {
-            break;
-        }
-        const markdown_core_node *child = holder->children[held];
-        const size_t at = (size_t)(base + width_tree_at(tree, held)->start);
-        /* The block's own close, when the reading reopens it. */
-        bool exempt = false;
-        for (size_t k = 0; k < count && !exempt; k++) {
-            if (!(past.used >> k & 1) && (opens[k] == at || opens[k] == at - child->opened)) {
-                past.used |= UINT64_C(1) << k;
-                exempt = true;
-            }
-        }
-        if (past_own(&past, child, at, exempt)) {
-            if (at - child->opened < past.start) {
-            }
-            past_found(&past, at - child->opened);
-        }
-        holder = child;
-        holder_start = at;
-    }
-    *start = past.start;
-    return past.start != SIZE_MAX;
 }
 
 /* Whether the edit that begins on line `edited` rests at that line inside
@@ -1015,42 +407,42 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     const size_t count = block->child_count;
     /* A child with no extent (a definition's body that holds no node) has
      * no source of its own to measure: no rest point is found below. */
-    const session_widths *widths = nest_of(session, block);
+    const markdown_core_widths *widths = session_nest(session, block);
     if (!widths || widths->bare) {
         return false;
     }
-    const uint32_t base = holder_base(block, window.start);
+    const uint32_t base = markdown_core_holder_base(block, window.start);
     rest->chain[level] = block;
     rest->starts[level] = window.start;
     size_t start, end;
     markdown_core_parser_line_span(parser, edited, &start, &end);
     /* The child that holds the edited line: the last that starts before the
      * line ends. */
-    size_t held = widths_child_at(widths, block, base, end);
-    while (held + 1 < count && widths_start_at(widths, block, base, held + 1) < end) {
+    size_t held = markdown_core_widths_child(widths, block, base, end);
+    while (held + 1 < count && markdown_core_widths_start(widths, block, base, held + 1) < end) {
         held++;
     }
-    while (held && widths_start_at(widths, block, base, held) >= end) {
+    while (held && markdown_core_widths_start(widths, block, base, held) >= end) {
         held--;
     }
-    if (widths_start_at(widths, block, base, held) >= end) {
+    if (markdown_core_widths_start(widths, block, base, held) >= end) {
         return false;
     }
-    const markdown_core_place holder = nest_window(widths, block, base, held);
+    const markdown_core_place holder = session_window(widths, block, base, held);
     /* Or inside the child, a block of literal lines (THE LEAP). */
     /* A child with no runs of its own (a definition's body) is no node a
      * chain of the published tree goes on through: the rest point stays at
      * the children. */
     const bool below =
-        holder.end > start && !child_bare(block->children[held]) &&
+        holder.end > start && !markdown_core_child_bare(block->children[held]) &&
         (session_rest_in(session, block->children[held], holder, level + 1, edited, opens + 1, rest) ||
          session_literal(session, block->children[held], (uint32_t)held, holder, level + 1, edited, rest));
     /* A rest point looked for below may have made a nest, which moves the
      * nests: the block's is found again. */
-    widths = nest_of(session, block);
+    widths = session_nest(session, block);
     if (below) {
         rest->path[level + 1] = (uint32_t)held;
-        rest->priors[level] = held ? nest_window(widths, block, base, held - 1).end : base;
+        rest->priors[level] = held ? session_window(widths, block, base, held - 1).end : base;
         return true;
     }
     /* As at the root, the block before the one that holds the line is read
@@ -1061,14 +453,15 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
     /* The first child of a block whose children abut starts the block's
      * own first line: the block, reopened with none, reads it as a later
      * child's (blocks.c, markdown_core_parser_abuts). */
-    const bool first = markdown_core_parser_abuts(parser, block) && !structure->element->edit->headed &&
-                       opens >= above &&
-                       markdown_core_parser_line_of(parser, widths_start_at(widths, block, base, 0)) == opens;
+    const bool first =
+        markdown_core_parser_abuts(parser, block) && !structure->element->edit->headed && opens >= above &&
+        markdown_core_parser_line_of(parser, markdown_core_widths_start(widths, block, base, 0)) == opens;
     while (child || first) {
-        const size_t line = markdown_core_parser_line_of(parser, widths_start_at(widths, block, base, child));
+        const size_t line =
+            markdown_core_parser_line_of(parser, markdown_core_widths_start(widths, block, base, child));
         const size_t line_start = session_line_start(session, line);
         size_t reached;
-        if (child && (line > edited || nest_window(widths, block, base, child - 1).end > line_start)) {
+        if (child && (line > edited || session_window(widths, block, base, child - 1).end > line_start)) {
             child--;
             continue;
         }
@@ -1098,19 +491,19 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
             if (!child) {
                 return false;
             }
-            while (child && widths_start_at(widths, block, base, child) > reached) {
+            while (child && markdown_core_widths_start(widths, block, base, child) > reached) {
                 child--;
             }
             continue;
         }
         if (child && markdown_core_parser_rest_blank(parser, (const unsigned char *)session_source(session),
                                                      rest->chain, level + 1, line,
-                                                     nest_window(widths, block, base, child - 1).end) == SIZE_MAX) {
+                                                     session_window(widths, block, base, child - 1).end) == SIZE_MAX) {
             child--;
             continue;
         }
         rest->path[level + 1] = (uint32_t)child;
-        rest->priors[level] = child ? nest_window(widths, block, base, child - 1).end : base;
+        rest->priors[level] = child ? session_window(widths, block, base, child - 1).end : base;
         rest->depth = level + 1;
         rest->line = line;
         return true;
@@ -1133,7 +526,7 @@ static void session_rest_root(const markdown_core_session *session, size_t start
                               uint32_t *child, size_t *line) {
     const markdown_core_node *root = session->document.root;
     const markdown_core_parser *parser = session->committed;
-    const session_widths *widths = &session->edits->widths;
+    const markdown_core_widths *widths = &session->edits->index.widths;
     size_t end;
     /* The child that holds the line, or the one after it: the first that
      * ends past its start. One that starts past the line, or none, leaves
@@ -1295,7 +688,7 @@ static bool session_reads_check(const markdown_core_session *session) {
 static bool session_rest(markdown_core_session *session, size_t edited, uint32_t *child, size_t *line,
                          session_rest_point *rest) {
     const markdown_core_node *root = session->document.root;
-    const session_widths *widths = &session->edits->widths;
+    const markdown_core_widths *widths = &session->edits->index.widths;
     size_t start, end;
     rest->last = 0;
     if (!markdown_core_parser_sort_reach(session->committed)) {
@@ -1384,92 +777,7 @@ static bool session_replace(markdown_core_session *session, size_t from, size_t 
 static void session_chain_folds(session_edits *edits, const session_rest_point *rest, size_t depth,
                                 markdown_core_folds **folds) {
     for (size_t level = 0; level < depth; level++) {
-        const size_t *slot = nest_slot(edits, rest->chain[level]);
-        folds[level] = slot && *slot ? &edits->nests[*slot - 1].folds : NULL;
-    }
-}
-
-/* The table of the nests made again for those kept, or none of them. */
-static void nest_reindex(session_edits *edits) {
-    size_t slots = 16;
-    while (slots < (edits->nest_count + 1) * 2) {
-        slots *= 2;
-    }
-    if (!nest_index(edits, slots)) {
-        for (size_t i = 0; i < edits->nest_count; i++) {
-            nest_free(&edits->nests[i]);
-        }
-        edits->nest_count = 0;
-        markdown_core_free(edits->slots);
-        edits->slots = NULL;
-        edits->slot_count = 0;
-    }
-}
-
-/* After a reading from `rest`, through `depth` blocks of its chain, which
- * had `counts` children each: the widths of each block of the chain are
- * made again from the child on its path, through the first it took back
- * when its count of children is as it was, the deepest first, as a block's
- * reach is its children's (node_reach); those of every other block are let
- * go first, as the reading may have let the block go, and a block it made
- * may stand where it stood. */
-static void session_mend_nests(markdown_core_session *session, const session_rest_point *rest, size_t depth,
-                               const uint32_t *counts, int64_t delta) {
-    session_edits *edits = session->edits;
-    depth = rest ? depth : 0;
-    size_t kept = 0;
-    for (size_t i = 0; i < edits->nest_count; i++) {
-        session_nest nest = edits->nests[i];
-        size_t level = 0;
-        while (rest && level < depth && rest->chain[level] != nest.holder) {
-            level++;
-        }
-        if (rest && level < depth) {
-            edits->nests[kept++] = nest;
-        } else {
-            nest_free(&nest);
-        }
-    }
-    edits->nest_count = kept;
-    nest_reindex(edits);
-    for (size_t level = depth; level--;) {
-        size_t *slot = nest_slot(edits, rest->chain[level]);
-        if (!slot || !*slot) {
-            continue;
-        }
-        session_nest *nest = &edits->nests[*slot - 1];
-        const markdown_core_node *holder = nest->holder;
-        const uint32_t tail = markdown_core_parser_tail_in(session->committed, level);
-        const size_t last = tail != UINT32_MAX && holder->child_count == counts[level] ? tail : SIZE_MAX;
-        const size_t marked = rest->path[level + 1] / MARKDOWN_CORE_FOLD_CHUNK;
-        nest->folds.count = nest->folds.count < marked ? nest->folds.count : marked;
-        /* The passes of the chunks the reading wrote go, and all from
-         * there on when the children after them moved. */
-        if (last == SIZE_MAX) {
-            nest->folds.pass_count = nest->folds.pass_count < marked ? nest->folds.pass_count : marked;
-        }
-        for (size_t chunk = marked;
-             last != SIZE_MAX && chunk <= last / MARKDOWN_CORE_FOLD_CHUNK && chunk < nest->folds.pass_count; chunk++) {
-            nest->folds.passes[chunk].count = 0;
-        }
-        if (widths_mend(session, &nest->widths, holder, rest->path[level + 1], tail, counts[level], delta)) {
-#ifndef NDEBUG
-            nest_check(session, &nest->widths, holder);
-#endif
-        }
-    }
-    /* The nests a mend could not make go. */
-    kept = 0;
-    for (size_t i = 0; i < edits->nest_count; i++) {
-        if (edits->nests[i].widths.made) {
-            edits->nests[kept++] = edits->nests[i];
-        } else {
-            nest_free(&edits->nests[i]);
-        }
-    }
-    if (kept != edits->nest_count) {
-        edits->nest_count = kept;
-        nest_reindex(edits);
+        folds[level] = markdown_core_index_folds(&edits->index, rest->chain[level]);
     }
 }
 
@@ -1488,7 +796,8 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     session->document.root = NULL;
     size_t start, end;
     markdown_core_parser_line_span(session->committed, line, &start, &end);
-    const uint32_t prior = child ? (uint32_t)widths_end(&edits->widths, root, child - 1) : (uint32_t)root->extent.lead;
+    const uint32_t prior =
+        child ? (uint32_t)widths_end(&edits->index.widths, root, child - 1) : (uint32_t)root->extent.lead;
     /* The chain's blocks stay, and how many children each had. */
     const size_t depth = rest && !whole ? rest->depth : 0;
     uint32_t counts[SESSION_DEPTH];
@@ -1512,19 +821,21 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     edits->reread_from = start;
     edits->reread_to = resumed ? resumed : session->text.count;
     if (status != MARKDOWN_CORE_OK) {
-        edits->widths.made = false;
+        markdown_core_index_drop(&edits->index);
     }
     /* The chain's nests first: the root's child on the path reaches as its
-     * nest says (node_reach). */
-    session_mend_nests(session, status == MARKDOWN_CORE_OK ? rest : NULL, depth, counts, delta);
-    if (status == MARKDOWN_CORE_OK && edits->widths.made) {
+     * nest says (THE REACH OF A NODE, index.c). */
+    const bool read = status == MARKDOWN_CORE_OK && rest;
+    markdown_core_index_mend_nests(&edits->index, read ? rest->chain : NULL, read ? rest->path : NULL, read ? depth : 0,
+                                   counts, delta);
+    if (status == MARKDOWN_CORE_OK && edits->index.widths.made) {
         /* The children it read, and the first it took back, whose lead is
          * from the last it read. */
         root = session->document.root;
         const uint32_t tail = resumed ? markdown_core_parser_tail(session->committed) : UINT32_MAX;
-        if (widths_mend(session, &edits->widths, root, child - (rest && rest->depth ? 1 : 0), tail, count, delta)) {
+        if (markdown_core_index_mend(&edits->index, root, child - (rest && rest->depth ? 1 : 0), tail, count, delta)) {
 #ifndef NDEBUG
-            widths_check(session, &edits->widths, root);
+            session_walk_check(&edits->index.widths, root);
 #endif
         }
     }
@@ -1750,7 +1061,7 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (!session->edits && !(session->edits = markdown_core_alloc(1, sizeof(*session->edits)))) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    if (!widths_make(session, &session->edits->widths, session->document.root)) {
+    if (!markdown_core_index_make(&session->edits->index, session->committed, session->document.root)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     session_forget(session);
@@ -1855,7 +1166,7 @@ typedef struct session_look {
 static bool session_joined(const markdown_core_session *session, uint32_t child) {
     const markdown_core_parser *parser = session->committed;
     const markdown_core_node *root = session->document.root;
-    const session_widths *widths = &session->edits->widths;
+    const markdown_core_widths *widths = &session->edits->index.widths;
     if (!(markdown_core_parser_block_kind(parser, root->children[child])->flags & MARKDOWN_CORE_KIND_JOINS) ||
         !(markdown_core_parser_block_kind(parser, root->children[child - 1])->flags & MARKDOWN_CORE_KIND_JOINS)) {
         return false;
@@ -1942,8 +1253,8 @@ static markdown_core_status session_locate_flushed(markdown_core_session *sessio
     if (!session->edits && !(session->edits = markdown_core_alloc(1, sizeof(*session->edits)))) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    const session_widths *widths = &session->edits->widths;
-    if (!widths_make(session, &session->edits->widths, root)) {
+    const markdown_core_widths *widths = &session->edits->index.widths;
+    if (!markdown_core_index_make(&session->edits->index, session->committed, root)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     session_rest_point rest;
@@ -2004,18 +1315,19 @@ static markdown_core_status session_locate_flushed(markdown_core_session *sessio
                 }
             }
         } else {
-            const session_widths *nest = nest_of(session, holder);
-            const uint32_t base = holder_base(holder, rest.starts[level - 1]);
+            const markdown_core_widths *nest = session_nest(session, holder);
+            const uint32_t base = markdown_core_holder_base(holder, rest.starts[level - 1]);
             if (!nest) {
                 return MARKDOWN_CORE_ALLOCATION_FAILED;
             }
-            at->start = (uint32_t)widths_start_at(nest, holder, base, at->first);
+            at->start = (uint32_t)markdown_core_widths_start(nest, holder, base, at->first);
             if (deepest) {
                 at->last = first;
-                while (at->last + 1 < holder->child_count && widths_start_at(nest, holder, base, at->last + 1) <= end) {
+                while (at->last + 1 < holder->child_count &&
+                       markdown_core_widths_start(nest, holder, base, at->last + 1) <= end) {
                     at->last++;
                 }
-                look.before = first ? nest_window(nest, holder, base, first - 1).end : 0;
+                look.before = first ? session_window(nest, holder, base, first - 1).end : 0;
             }
         }
         if (!deepest) {
