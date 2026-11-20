@@ -6295,10 +6295,9 @@ static int S_carries(markdown_core_parser *parser, markdown_core_node *block, ma
         edit->quiet = false;
         return -1;
     }
-    markdown_core_chunk line;
-    int first, indent, blanks;
-    const int read = markdown_core_parser_lookahead_next(&lookahead, &line, &first, &indent, &blanks);
-    const int carried = blanks ? -1 : !read ? 0 : lookahead.line == parser->at.read.number + 2 ? 1 : -1;
+    int blanks;
+    const bool read = markdown_core_parser_lookahead_next(&lookahead, &blanks) != NULL;
+    const int carried = blanks ? -1 : !read ? 0 : lookahead.line == lookahead.saved.read.number + 2 ? 1 : -1;
     markdown_core_parser_lookahead_end(&lookahead);
     edit->quiet = false;
     return parser->error ? -1 : carried;
@@ -9557,15 +9556,13 @@ static void S_lookahead_wait(markdown_core_block_lookahead *lookahead, int line,
 
 /* The next line of `lookahead`, which is a reading that can wait,
  * `can_wait`, when its `limit` is set (markdown_core_block_lookahead). */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(markdown_core_block_lookahead *lookahead,
-                                                                            markdown_core_chunk *line,
-                                                                            int *first_nonspace, int *indent,
-                                                                            int *blank_lines, const bool can_wait) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_lookahead_next(
+    markdown_core_block_lookahead *lookahead, int *blank_lines, const bool can_wait) {
     markdown_core_parser *parser = lookahead->parser;
 
     *blank_lines = 0;
     if (!lookahead->active) {
-        return 0;
+        return NULL;
     }
     while (lookahead->cursor && !parser->error) {
         if (!can_wait && markdown_core_parser_input_ends(parser, lookahead->cursor)) {
@@ -9575,7 +9572,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
             /* A reading that can wait waits here, as it is. */
             S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
             lookahead->exhausted = true;
-            return 0;
+            return NULL;
         }
         const unsigned char *start = lookahead->cursor;
         const unsigned char *next;
@@ -9594,12 +9591,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
         markdown_core_input_line *geometry =
             can_wait ? S_source_line_unread(parser, this_line) : markdown_core_parser_source_line(parser, this_line);
         if (!geometry) {
-            return 0;
+            return NULL;
         }
         bufsize_t content_length;
         const unsigned char *content = S_input_line_content(parser, geometry, &content_length);
         if (!content) {
-            return 0;
+            return NULL;
         }
         next = parser->input.source + markdown_core_input_line_next(parser, geometry);
         parser->block_lookahead_work++;
@@ -9615,7 +9612,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
                 markdown_core_strbuf_putc(&parser->input.last_line, '\n');
                 if (parser->input.last_line.oom) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                    return 0;
+                    return NULL;
                 }
                 parser->input.last_line_ready = true;
             }
@@ -9646,7 +9643,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
         const bool unfinished = can_wait && lookahead->waits && !finished;
         entry = markdown_core_parser_get_line_facts(parser, this_line);
         if (!entry && parser->error) {
-            return 0;
+            return NULL;
         }
         if (entry && entry->container && entry->depth < lookahead->depth &&
             lookahead->path[entry->depth] == entry->container && (!unfinished || entry->decided)) {
@@ -9685,7 +9682,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
             const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
             if (unfinished && !S_continue_decided(parser, kind, container, reader)) {
                 S_lookahead_wait(lookahead, this_line, start);
-                return 0;
+                return NULL;
             }
             const markdown_core_element_instance *structure = kind->structure;
             if (structure && structure->lines->matches) {
@@ -9706,7 +9703,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
         if (!carried || closing) {
             S_lookahead_close_run(lookahead, this_line, start);
             lookahead->active = false;
-            return 0;
+            return NULL;
         }
         if (!taken) {
             markdown_core_reader_find(reader);
@@ -9714,14 +9711,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
         blank = taken || parser->at.read.blank;
         if (unfinished && !taken && blank) {
             S_lookahead_wait(lookahead, this_line, start);
-            return 0;
+            return NULL;
         }
 
         /* Element callbacks may append optional facts and move their vector.
          * A line number, not the earlier borrow, survives that boundary. */
         entry = markdown_core_parser_get_line_facts(parser, this_line);
         if (!entry) {
-            return 0;
+            return NULL;
         }
         /* Record the deepest result for the scans that come after this one.
          * A run an earlier scan recorded from this line stays until this scan
@@ -9752,22 +9749,21 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
             continue;
         }
         S_lookahead_close_run(lookahead, this_line, start);
-        *line = input;
-        *first_nonspace = parser->at.read.nonspace;
-        *indent = parser->at.read.indent;
+        reader->number = this_line;
+        reader->start = (bufsize_t)geometry->start;
+        reader->end = (bufsize_t)geometry->end;
         lookahead->incomplete = start >= markdown_core_parser_complete_end(parser);
-        return 1;
+        return reader;
     }
     S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
     lookahead->active = false;
     lookahead->ended = true;
-    return 0;
+    return NULL;
 }
 
-int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
-                                        int *first_nonspace, int *indent, int *blank_lines) {
-    return lookahead->limit ? S_lookahead_next(lookahead, line, first_nonspace, indent, blank_lines, true)
-                            : S_lookahead_next(lookahead, line, first_nonspace, indent, blank_lines, false);
+markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines) {
+    return lookahead->limit ? S_lookahead_next(lookahead, blank_lines, true)
+                            : S_lookahead_next(lookahead, blank_lines, false);
 }
 
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_parser *parser,
@@ -9819,6 +9815,8 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_containers[i].flags & mask));
     }
+    /* The reader is back on the line in hand, the reading's own. */
+    parser->at = lookahead->saved;
     /* A reading of the document past its own line (THE REACH), to the
      * end of the last line it read. */
     if (markdown_core_parser_reaches(parser) && lookahead->opener && lookahead->opener->element->edit &&
@@ -9834,7 +9832,6 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
          * (session.c, session_shut). */
         S_reach_lookahead(parser, lookahead);
     }
-    parser->at = lookahead->saved;
     lookahead->active = false;
     lookahead->parser = NULL;
 }
@@ -10353,10 +10350,9 @@ static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parse
     const markdown_core_element_instance *owner = candidate->owner;
     markdown_core_candidate_step step = MARKDOWN_CORE_CANDIDATE_CONTINUES;
     for (;;) {
-        markdown_core_chunk content;
-        markdown_core_candidate_line line = {.content = &content};
+        markdown_core_candidate_line line = {0};
         bool ends = candidate->ends;
-        if (markdown_core_parser_lookahead_next(&lookahead, &content, &line.first, &line.indent, &line.blanks)) {
+        if ((line.reader = markdown_core_parser_lookahead_next(&lookahead, &line.blanks))) {
             line.unfinished = waits && lookahead.incomplete;
             step = owner->element->candidate->feed(owner, parser, state, &line, &ends);
             if (step != MARKDOWN_CORE_CANDIDATE_CONTINUES) {

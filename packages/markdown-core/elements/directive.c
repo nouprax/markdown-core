@@ -624,17 +624,6 @@ static void free_parsed_directive(parsed_directive *parsed) {
     markdown_core_attribute_parser_free(&parsed->attributes);
 }
 
-static int probe_directive_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_chunk *input, int first, int indent,
-                                 markdown_core_block_reader *reader) {
-    (void)self;
-    (void)reader;
-    parsed_directive parsed;
-    bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
-    free_parsed_directive(&parsed);
-    return matched;
-}
-
 static markdown_core_node *open_directive_block(const markdown_core_element_instance *self, int indented,
                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
                                                 markdown_core_reader *reader) {
@@ -791,13 +780,11 @@ static const markdown_core_inline_ops DIRECTIVE_INLINES = {
 };
 
 static const markdown_core_open_ops DIRECTIVE_OPENS = {
-    .interrupts = true,
     .indent = 3,
     .open = open_directive_block,
     /* `scan_directive_block` needs at least two leading colons, so a line that
      * does not start with one cannot open a directive. */
     .open_needs = {.bytes = ":"},
-    .probe = probe_directive_block,
 };
 
 static const markdown_core_line_ops DIRECTIVE_LINES = {

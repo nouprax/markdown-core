@@ -4,7 +4,7 @@
 #include "block_internal.h"
 #include "directive.h"
 
-static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
+static bool markdown_core_block_definition_marker(const markdown_core_reader *reader);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_reader *reader, bool compact);
@@ -27,10 +27,9 @@ static bool definition_body_continues(markdown_core_parser *parser, markdown_cor
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
-    markdown_core_chunk next;
-    int first, indent, blanks;
-    const bool continues =
-        markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && indent >= continuation;
+    int blanks;
+    const markdown_core_reader *next = markdown_core_parser_lookahead_next(&lookahead, &blanks);
+    const bool continues = next && next->indent >= continuation;
     *line = lookahead.line - 1;
     markdown_core_parser_lookahead_end(&lookahead);
     return continues;
@@ -71,9 +70,13 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
     return continues;
 }
 
-static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent) {
-    return indent < 4 && at + 1 < input->len && (input->data[at] == ':' || input->data[at] == '~') &&
-           markdown_core_is_whitespace(input->data[at + 1]);
+/* Whether the reader's line holds a definition marker at its first
+ * non-space byte. */
+static bool markdown_core_block_definition_marker(const markdown_core_reader *reader) {
+    const bufsize_t at = reader->nonspace;
+    return reader->indent < 4 && at + 1 < reader->line.len &&
+           (markdown_core_reader_peek(reader, at) == ':' || markdown_core_reader_peek(reader, at) == '~') &&
+           markdown_core_is_whitespace(markdown_core_reader_peek(reader, at + 1));
 }
 
 /* A definition marker is ':' or '~' followed by a space, a tab or the line
@@ -172,8 +175,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
     const markdown_core_element_instance *self, markdown_core_parser *parser, const markdown_core_node *parent,
     markdown_core_reader *reader) {
     ((markdown_core_definition_list_work *)self->state)->work++;
-    if (reader->blank || reader->indent >= 4 ||
-        markdown_core_block_definition_marker(&reader->line, reader->nonspace, reader->indent)) {
+    if (reader->blank || reader->indent >= 4 || markdown_core_block_definition_marker(reader)) {
         return false;
     }
     /* What the key read of the lines after decided the line (THE REACH). */
@@ -211,10 +213,9 @@ static bool definition_term_reads(const markdown_core_element_instance *self, ma
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &lookahead)) {
         return false;
     }
-    markdown_core_chunk next;
-    int first, indent, blanks;
-    bool matched = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && blanks <= 1 &&
-                   markdown_core_block_definition_marker(&next, first, indent);
+    int blanks;
+    const markdown_core_reader *next = markdown_core_parser_lookahead_next(&lookahead, &blanks);
+    bool matched = next && blanks <= 1 && markdown_core_block_definition_marker(next);
     if (matched) {
         *compact = blanks == 0;
     }
@@ -288,8 +289,7 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
     (void)self;
     markdown_core_reader *reader = context->reader;
     int first = reader->nonspace;
-    if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION &&
-          markdown_core_block_definition_marker(&reader->line, first, reader->indent))) {
+    if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
         return false;
     }
     if (parser->sink && reader->line.data[first] == ':' && markdown_core_is_line_end(reader->line.data[first + 1])) {
@@ -349,7 +349,7 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     if (candidate->call == DEFINITION_TERM && line->blanks > 1) {
         return MARKDOWN_CORE_CANDIDATE_ENDS;
     }
-    if (!line->content) {
+    if (!line->reader) {
         *ends = false;
         return MARKDOWN_CORE_CANDIDATE_CONTINUES;
     }

@@ -200,14 +200,6 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
-static int probe_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_chunk *input, int first, int indent, markdown_core_block_reader *reader) {
-    (void)self;
-    (void)parser;
-    (void)reader;
-    return indent < 4 && scan_formula_block_open(input->data, input->len, first) != FORMULA_BLOCK_DELIM_NONE;
-}
-
 static markdown_core_node *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
                                                      markdown_core_parser *parser, markdown_core_node *parent_container,
                                                      markdown_core_reader *reader) {
@@ -813,12 +805,10 @@ static const markdown_core_inline_ops FORMULA_INLINES = {
 };
 
 static const markdown_core_open_ops FORMULA_OPENS = {
-    .interrupts = true,
     .indent = 3,
     .open = try_opening_formula_block,
     /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
     .open_needs = {.bytes = "$\\"},
-    .probe = probe_formula_block,
 };
 
 static const markdown_core_line_ops FORMULA_LINES = {

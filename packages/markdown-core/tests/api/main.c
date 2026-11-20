@@ -5830,16 +5830,18 @@ static void probe_directive_openers(const markdown_core_element_instance *self, 
     text_counting = 1;
     const char *directives[] = {"::: {.a k=1} junk\n", "::: {.a k=1}\n", "::: classname junk\n", "::: classname\n",
                                 "::: {.a k=1\n"};
-    for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i++) {
-        markdown_core_chunk input = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0};
+    /* The openers a line's tail refuses: the opener validates the complete
+     * line before it opens anything. */
+    for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i += 2) {
+        markdown_core_reader reader = {.line = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0}};
         size_t work = parser->attribute_scratch.work;
         text_allocation_calls = 0;
-        int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.opens->probe(directive, parser, &input, 0, 0, NULL);
-        INT_EQ(runner, matched, i == 1 || i == 3, "directive probe validates the complete opener");
-        OK(runner, text_allocation_calls <= (i == 2 || i == 3 ? 0 : 1),
-           "directive probes allocate no semantic attributes");
-        if (i != 2 && i != 3) {
-            OK(runner, parser->attribute_scratch.work > work, "probe attribute recognition work is accounted");
+        markdown_core_node *opened =
+            MARKDOWN_CORE_ELEMENT_DIRECTIVE.opens->open(directive, 0, parser, parser->root, &reader);
+        OK(runner, opened == NULL, "the directive opener validates the complete opener");
+        OK(runner, text_allocation_calls <= (i == 2 ? 0 : 1), "a refused opener allocates no semantic attributes");
+        if (i != 2) {
+            OK(runner, parser->attribute_scratch.work > work, "opener attribute recognition work is accounted");
         }
     }
 }

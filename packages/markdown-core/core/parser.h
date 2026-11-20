@@ -1902,12 +1902,13 @@ int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdow
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);
-/* The next non-blank line that carries the prefixes: its bytes through its
- * line ending, the index of its first non-space byte, its indentation after
- * the prefixes, and the blank lines stepped over before it. Returns 0 when the
- * lookahead has ended. */
-int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
-                                        int *first_nonspace, int *indent, int *blank_lines);
+/* The next non-blank line that carries the prefixes, as the reader on it
+ * (reader.h): its bytes through its line ending, its number, the offset
+ * past the prefixes, its first non-space byte and its indentation after
+ * them; and the blank lines stepped over before it. NULL when the
+ * lookahead has ended. The reader is the parser's: the lookahead's end
+ * puts it back on the line in hand. */
+markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
 /* THE CANDIDATES (blocks.c). A call whose reading waited or read where the

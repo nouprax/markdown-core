@@ -143,15 +143,14 @@ static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_n
         return true;
     }
     markdown_core_block_lookahead lookahead;
-    markdown_core_chunk next;
-    int first_nonspace, indent, blank_lines;
+    int blank_lines;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
     if (waits) {
         markdown_core_parser_lookahead_wait(&lookahead);
     }
-    const bool line = markdown_core_parser_lookahead_next(&lookahead, &next, &first_nonspace, &indent, &blank_lines);
+    const bool line = markdown_core_parser_lookahead_next(&lookahead, &blank_lines) != NULL;
     *undecided = !line && !blank_lines && (lookahead.exhausted || lookahead.waited);
     /* Past the line it read, or a line a container's prefix turned away,
      * or the text's end it met or waits at: an unterminated last line read

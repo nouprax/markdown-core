@@ -10,18 +10,6 @@
 #include "node.h"
 #include "measure.h"
 
-/* A speculative opener reads following lines through its caller's source
- * view. Captured and streaming inputs therefore use the same grammar without
- * nesting parser transactions or changing tree ownership. */
-typedef struct markdown_core_block_reader {
-    void *context;
-    int (*next)(void *context, markdown_core_chunk *input, int *first, int *indent);
-} markdown_core_block_reader;
-
-typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              markdown_core_chunk *input, int first, int indent,
-                                              markdown_core_block_reader *reader);
-
 /* Node-valued fields are independent child-tree roots. This internal hook
  * exposes their owning slots only to parser phases; it does not change a
  * node's public children or make a field a parent/child edge. Destruction
@@ -43,14 +31,13 @@ typedef enum {
 } markdown_core_inline_precedence;
 
 /* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; the candidate's `feed`):
- * its content after the prefixes of the candidate's holder, NULL when the
- * lines read so far end after the blank lines; its first non-space byte and
- * its indentation there; the blank lines before it; and whether the text has
- * not finished it, whose bytes past the prefixes are read only as far as
- * they decide. */
+ * the reader on it past the prefixes of the candidate's holder, NULL when
+ * the lines read so far end after the blank lines; the blank lines before
+ * it; and whether the text has not finished it, whose bytes past the
+ * prefixes are read only as far as they decide. */
 typedef struct {
-    const markdown_core_chunk *content;
-    int first, indent, blanks;
+    const markdown_core_reader *reader;
+    int blanks;
     bool unfinished;
 } markdown_core_candidate_line;
 
@@ -444,12 +431,6 @@ typedef struct markdown_core_open_ops {
                                      markdown_core_node *, markdown_core_reader *, bool);
     /* What `interrupt` needs on a non-indented line. */
     markdown_core_block_gate interrupt_needs;
-    /* Its `probe` asks over a paragraph too: a block of it interrupts one. */
-    bool interrupts;
-    /* Non-consuming recognition before this element's block-opening slot.
-     * Shares the producer's grammar; may report allocation failure, but never
-     * opens a node or claims source. */
-    markdown_core_probe_block_func probe;
     /* The most indentation a line opening a block of it may have. */
     int indent;
     /* Opens the text block (a paragraph) on a line nothing else opens on:

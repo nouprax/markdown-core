@@ -215,10 +215,7 @@ void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builde
     builder->element_capacity = 0;
 }
 
-/* Whether an element whose opening is `opens` implements `hook`. The PROBE family carries a second
- * static condition: `markdown_core_parser_has_block_start` only ever asked a
- * probe that also interrupts a paragraph, and that is a descriptor property,
- * so it belongs in the projection rather than in the loop. */
+/* Whether an element whose opening is `opens` implements `hook`. */
 static bool S_opens_implement(const markdown_core_open_ops *opens, markdown_core_block_hook hook) {
     switch (hook) {
     case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
@@ -229,8 +226,6 @@ static bool S_opens_implement(const markdown_core_open_ops *opens, markdown_core
         return opens->open != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
         return opens->last != NULL;
-    case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
-        return opens->probe != NULL && opens->interrupts;
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;
     }
@@ -251,7 +246,6 @@ static markdown_core_block_gate S_opens_gate(const markdown_core_open_ops *opens
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
         return opens->open_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
-    case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;
     }
