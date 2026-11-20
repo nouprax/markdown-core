@@ -88,6 +88,9 @@ typedef struct markdown_core_tree {
     /* The places an append may take in the last leaf in place: none while
      * the tree has a back, or a shift is pending above the last leaf. */
     uint32_t spare;
+    /* The slot in the leaf at hand that a seek of a place found last: the
+     * next seek starts there. */
+    uint32_t found;
     /* The leaf read or appended to last, with no shift pending above it,
      * or a leaf of no entries (markdown_core_tree_bare), and the rank of its
      * first entry. */
@@ -154,7 +157,7 @@ void markdown_core_tree_shift(markdown_core_tree *tree, size_t index, int64_t de
  * of the first entry whose key is not before `key`'s, or the count (a tree
  * of keys, which a seek reads with no change to it: any number of readers
  * may seek at once). */
-size_t markdown_core_tree_bound(const markdown_core_tree *tree, size_t place, size_t low, size_t high);
+static inline size_t markdown_core_tree_bound(const markdown_core_tree *tree, size_t place, size_t low, size_t high);
 static inline size_t markdown_core_tree_from(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
     return low < high ? markdown_core_tree_bound(tree, place, low, high) : low;
 }
@@ -204,6 +207,61 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void *markdown_core_tree_
         return (unsigned char *)tree->seen->entries + k * size;
     }
     return markdown_core_tree_find((markdown_core_tree *)tree, index);
+}
+
+/* The bound read from the root, which puts the leaf it ends in at hand. */
+size_t markdown_core_tree_bound_root(markdown_core_tree *tree, size_t place, size_t low, size_t high);
+
+/* The leaf read last answers when the first entry not before the place is
+ * in it, or just past it: what is before the part of the range in it is
+ * before the place, and what is past it is not. The search starts from the
+ * slot the last seek found, and steps out from there by doubling strides,
+ * so a reader that seeks near where it sought last reads a few entries, and
+ * any other a logarithm of the leaf; else the tree is read from the root. */
+static inline size_t markdown_core_tree_bound(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
+    const markdown_core_tree_leaf *seen = tree->seen;
+    const size_t size = tree->ops->size;
+    size_t (*const start)(const void *entry) = tree->ops->start;
+    const unsigned char *entries = (const unsigned char *)seen->entries;
+    const size_t base = tree->seen_first;
+    const size_t seen_low = low > base ? low : base;
+    const size_t seen_high = high < base + seen->count ? high : base + seen->count;
+    if (seen_low < seen_high) {
+        /* The answer is in [first, last]. It is the answer of the whole
+         * range unless it is an end of the leaf's part that is not an end of
+         * the range: then entries of another leaf decide. */
+        size_t at = base + tree->found;
+        at = at < seen_low ? seen_low : at >= seen_high ? seen_high - 1 : at;
+        size_t first, last, step = 1;
+        if (start(entries + (at - base) * size) < place) {
+            first = at + 1;
+            while (first + step <= seen_high && start(entries + (first + step - 1 - base) * size) < place) {
+                first += step;
+                step *= 2;
+            }
+            last = first + step <= seen_high ? first + step - 1 : seen_high;
+        } else {
+            last = at;
+            while (last >= seen_low + step && start(entries + (last - step - base) * size) >= place) {
+                last -= step;
+                step *= 2;
+            }
+            first = last >= seen_low + step ? last - step + 1 : seen_low;
+        }
+        while (first < last) {
+            const size_t middle = first + (last - first) / 2;
+            if (start(entries + (middle - base) * size) < place) {
+                first = middle + 1;
+            } else {
+                last = middle;
+            }
+        }
+        if ((first < seen_high || seen_high == high) && (first > seen_low || seen_low == low)) {
+            ((markdown_core_tree *)tree)->found = (uint32_t)(first - base);
+            return first;
+        }
+    }
+    return markdown_core_tree_bound_root((markdown_core_tree *)tree, place, low, high);
 }
 
 /* Entry `index`'s storage, as markdown_core_tree_at gives it, and in `*run`
