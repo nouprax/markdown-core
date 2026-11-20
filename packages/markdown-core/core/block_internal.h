@@ -47,23 +47,10 @@ void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_cor
 /* The current block, its range settled, closes and becomes the pending child
  * of the block below it. */
 void markdown_core_block_close_current(markdown_core_parser *parser);
-void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
-                                        bool columns);
-/* Where a column-counted advance that takes the byte before `at` stops
- * reading (markdown_core_block_advance_offset): it takes the continuation
- * bytes after that byte as its scalar's, so it reads to the first byte from
- * `at` on that is not one, which the line's end is at the latest (element.h,
- * HOW FAR A STEP READS). */
-static inline bufsize_t markdown_core_block_scalar_end(const markdown_core_chunk *input, bufsize_t at) {
-    while ((input->data[at] & 0xC0) == 0x80) {
-        at++;
-    }
-    return at;
-}
 typedef struct markdown_core_block_start_context {
     markdown_core_node *container;
-    markdown_core_chunk *input;
-    int first, column, indent;
+    /* The line, at its first non-space byte. */
+    markdown_core_reader *reader;
     /* `paragraph`: the container is a paragraph the line would continue.
      * `lazy`: the line missed the current block's prefix, and that block
      * would take it as text. Indented code, an HTML block of the seventh
@@ -80,25 +67,23 @@ typedef struct markdown_core_block_start {
     /* The claiming owner's open, and the owner itself, which the dispatcher
      * records and hands `open` as its `self`. */
     bool (*open)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node **,
-                 markdown_core_chunk *, struct markdown_core_block_start *);
+                 markdown_core_reader *, struct markdown_core_block_start *);
     const markdown_core_element_instance *owner;
     markdown_core_node_type kind;
     bufsize_t matched;
     markdown_core_list list;
     markdown_core_specimen_value specimen;
 } block_start;
-int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input, int marker_width);
-void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markdown_core_chunk *input);
-bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
-                                           bool has_content);
+int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
 /* How far a continuation reads that matches by the line's indentation and
  * whether the line is blank: to its first non-space byte, and through the
  * continuation bytes after it, which a column-counted advance over the
  * indentation that ends at the byte reads (element.h, HOW FAR A STEP READS;
- * markdown_core_block_scalar_end). */
+ * markdown_core_reader_scalar_end). */
 bufsize_t markdown_core_block_indent_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                           const markdown_core_node *node, const markdown_core_chunk *input);
-void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
+                                           const markdown_core_node *node, const markdown_core_reader *reader);
+/* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */
+void markdown_core_block_add_line(markdown_core_parser *parser, markdown_core_node *node);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type kind);
 /* Commit a parent selected by block_parent_for without repeating its policy. */

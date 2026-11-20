@@ -10,6 +10,7 @@
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
+#include "reader.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -377,7 +378,7 @@ typedef struct markdown_core_line_stop {
     bufsize_t offset, column;
     uint32_t own;
     markdown_core_line_step step;
-    bool all_matched, opened, maybe_lazy, partially_consumed_tab;
+    bool all_matched, opened, maybe_lazy, split;
 } markdown_core_line_stop;
 
 /* WHAT A STREAMING PARSE KEEPS: every parse, which takes snapshots
@@ -587,19 +588,13 @@ typedef struct markdown_core_parser_at {
      * document rosters. Input roots stay owned by the AST; the queue only
      * borrows them until their block content is read. */
     struct markdown_core_node *block_root, *current, *pending;
-    /* The line being read, its input line number, and where on it the
-     * reading stands: the byte offset and the column, the first non-space
-     * byte and its column, the indentation between them, whether the line is
-     * blank, whether a tab the offset is inside is partly consumed, and
-     * where a thematic break failed on it. */
-    int line_number, indent;
-    bufsize_t offset, column, first_nonspace, first_nonspace_column, thematic_break_kill_pos;
-    bool blank, partially_consumed_tab;
-    /* Where input line `line_number` starts in the active input and where it
-     * ends, before its line ending: the driver records both as it hands the
-     * line to the block parser, they hold while `curline` does, and a claim
-     * of later lines moves the start. Where the last line read ended. */
-    bufsize_t line_start, line_end, last_line_end;
+    /* The line being read (reader.h, THE READER): the driver records its
+     * number, start and end as it hands the line to the block parser, they
+     * hold while `curline` does, and a claim of later lines moves the start.
+     * Where a thematic break failed on it, and where the last line read
+     * ended. */
+    markdown_core_reader read;
+    bufsize_t thematic_break_kill_pos, last_line_end;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
@@ -1554,7 +1549,7 @@ typedef struct markdown_core_line_facts {
     /* The line state after that container's prefix: what S_advance_offset left. */
     bufsize_t offset;
     bufsize_t column;
-    bool partially_consumed_tab;
+    bool split;
     /* Whether the line's bytes decided every prefix up to the container: on
      * a line the text has finished, and on one it has not, as a reading that
      * waits matched it; a reading that reads the end there decides a prefix
@@ -1796,14 +1791,6 @@ void *markdown_core_parser_walk_stack(markdown_core_parser *parser, size_t count
 int markdown_core_order_source_entries(markdown_core_source_order *workspace, void *entries, size_t count,
                                        size_t stride, uint64_t (*key)(const void *));
 
-struct markdown_core_block_reader;
-/* Query the ordinary block-start rules before the table slot. Paragraph
- * continuation uses its real interruption rules (notably list starts, type-7
- * HTML and indentation); following lines come from the caller's source view. */
-bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
-                                          markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
-                                          struct markdown_core_block_reader *reader);
-
 /* Close every block open above `container` on the builder stack, the
  * current one first, so the container is the current block (THE BUILDERS,
  * above). */
@@ -1957,12 +1944,12 @@ static inline bool markdown_core_parser_candidate_meets(markdown_core_parser *pa
     return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container, ask);
 }
 /* The decision of the candidate being decided (markdown_core_candidate_ops, `decide`)
- * reads its line as its call did: `start` puts the parser's line state at
- * the call on a line, and gives the line through its line ending and the
- * container the call was asked in; `end` puts the line state back. False,
- * with the parse failed, when storage could not be had. */
-bool markdown_core_parser_candidate_start(markdown_core_parser *parser, markdown_core_chunk *line,
-                                          struct markdown_core_node **container);
+ * reads its line as its call did: `start` puts the reader at the call on
+ * a line and returns it, and gives the container the call was asked in;
+ * `end` puts the reader back. NULL, with the parse failed, when storage
+ * could not be had. */
+markdown_core_reader *markdown_core_parser_candidate_start(markdown_core_parser *parser,
+                                                           struct markdown_core_node **container);
 void markdown_core_parser_candidate_end(markdown_core_parser *parser);
 /* THE DECIDED CONTENT (blocks.c, THE CANDIDATES): what an accept can take
  * away or put back is UNDECIDED -- every block the first line's mark found

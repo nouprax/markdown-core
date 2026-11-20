@@ -1,31 +1,30 @@
 #include "alloc.h"
 #include "specimen.h"
-#define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
 #include "parts.h"
 
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
-                                                           markdown_core_chunk *input, bufsize_t pos,
+                                                           const markdown_core_reader *reader, bufsize_t pos,
                                                            markdown_core_specimen_value *value);
 static bool markdown_core_specimen_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start);
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
-                                                           markdown_core_chunk *input, bufsize_t pos,
+                                                           const markdown_core_reader *reader, bufsize_t pos,
                                                            markdown_core_specimen_value *value) {
     bufsize_t begin = pos;
     *value = (markdown_core_specimen_value){0};
     state->work++;
-    if (BLOCK_PEEK(input, pos++) != '(') {
+    if (markdown_core_reader_peek(reader, pos++) != '(') {
         return 0;
     }
     int digits = 0;
-    while (digits < 9 && markdown_core_isdigit(BLOCK_PEEK(input, pos))) {
+    while (digits < 9 && markdown_core_isdigit(markdown_core_reader_peek(reader, pos))) {
         state->work++;
-        value->start = value->start * 10 + input->data[pos++] - '0';
+        value->start = value->start * 10 + reader->line.data[pos++] - '0';
         digits++;
     }
     value->has_start = digits > 0;
-    if ((digits && !value->start) || BLOCK_PEEK(input, pos++) != '@') {
+    if ((digits && !value->start) || markdown_core_reader_peek(reader, pos++) != '@') {
         return 0;
     }
     /* A LABEL IS WHAT A BARE REFERENCE READS WHOLE. A reference `@label` is
@@ -38,14 +37,15 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
      * reference could not name whole would be unreachable, so it is not a
      * definition: `(@a--b)` and `(@x-)` are text. */
     bufsize_t label = pos;
-    while (pos < input->len) {
-        unsigned char c = input->data[pos];
-        int width = c == '_' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos, input->len - pos);
+    while (pos < reader->line.len) {
+        unsigned char c = reader->line.data[pos];
+        int width = c == '_' ? 1 : markdown_core_utf8proc_alnum_width(reader->line.data + pos, reader->line.len - pos);
         state->work++;
-        if (!width && c == '-' && pos > label && pos + 1 < input->len) {
-            unsigned char next = input->data[pos + 1];
-            int following =
-                next == '_' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos + 1, input->len - pos - 1);
+        if (!width && c == '-' && pos > label && pos + 1 < reader->line.len) {
+            unsigned char next = reader->line.data[pos + 1];
+            int following = next == '_' ? 1
+                                        : markdown_core_utf8proc_alnum_width(reader->line.data + pos + 1,
+                                                                             reader->line.len - pos - 1);
             width = following ? 1 + following : 0;
         }
         if (!width) {
@@ -53,17 +53,18 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
         }
         pos += width;
     }
-    if (BLOCK_PEEK(input, pos) != ')' || !markdown_core_is_whitespace(BLOCK_PEEK(input, pos + 1))) {
+    if (markdown_core_reader_peek(reader, pos) != ')' ||
+        !markdown_core_is_whitespace(markdown_core_reader_peek(reader, pos + 1))) {
         return 0;
     }
     if (pos > label) {
-        value->label = markdown_core_optional_chunk_present(markdown_core_chunk_dup(input, label, pos - label));
+        value->label = markdown_core_optional_chunk_present(markdown_core_chunk_dup(&reader->line, label, pos - label));
     }
     return pos + 1 - begin;
 }
 
 static bool markdown_core_specimen_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        markdown_core_node **container, markdown_core_chunk *input,
+                                        markdown_core_node **container, markdown_core_reader *reader,
                                         block_start *start) {
     bufsize_t matched = start->matched;
     markdown_core_specimen_value specimen = start->specimen;
@@ -72,8 +73,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_SPECIMEN, parser->at.first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_SPECIMEN, reader->nonspace + 1);
     if (!*container) {
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
@@ -102,9 +102,9 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
-    while (markdown_core_is_space_or_tab(input->data[parser->at.offset])) {
-        markdown_core_block_advance_offset(parser, input, 1, true);
+    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
+    while (markdown_core_is_space_or_tab(reader->line.data[reader->offset])) {
+        markdown_core_reader_advance(reader, 1, true);
         state->work++;
     }
     return true;
@@ -113,10 +113,10 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
 static bool markdown_core_specimen_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start) {
     (void)parser;
-    markdown_core_chunk *input = context->input;
-    int first = context->first;
+    markdown_core_reader *reader = context->reader;
+    int first = reader->nonspace;
     if (!(!context->paragraph &&
-          (start->matched = markdown_core_block_parse_specimen_marker(self->state, input, first, &start->specimen)))) {
+          (start->matched = markdown_core_block_parse_specimen_marker(self->state, reader, first, &start->specimen)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;
@@ -125,15 +125,15 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
 }
 
 bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                     markdown_core_chunk *input) {
-    return markdown_core_block_continue_indented(parser, input, 4, true);
+                                     markdown_core_reader *reader) {
+    return markdown_core_reader_indented(reader, 4, true);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_node *node, markdown_core_reader *reader,
+                               const markdown_core_node *joining, bool *taken) {
     (void)self;
-    return markdown_core_specimen_continue(parser, node, input);
+    return markdown_core_specimen_continue(parser, node, reader);
 }
 static const markdown_core_edit_ops SPECIMEN_EDIT = {
     .reopens = true,

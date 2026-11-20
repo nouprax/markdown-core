@@ -12,6 +12,6 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
                                             markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                             struct bracket *opener);
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                     markdown_core_chunk *input);
+                                     markdown_core_reader *reader);
 
 #endif

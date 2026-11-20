@@ -7,7 +7,7 @@
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
-                                                               markdown_core_chunk *input, bool compact);
+                                                               markdown_core_reader *reader, bool compact);
 static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                block_start_context *context, block_start *start);
 /* THE CANDIDATES of the element (blocks.c, THE CANDIDATES), each record
@@ -41,12 +41,12 @@ static bool definition_body_continues(markdown_core_parser *parser, markdown_cor
  * read it where more text may follow decides nothing, and asks to be a
  * candidate; a call that meets its candidate declines the line. */
 static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *body) {
+                          markdown_core_node *body, const markdown_core_reader *reader) {
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         return true;
     }
     ((markdown_core_definition_list_work *)self->state)->work++;
-    if (body->as.definition_body->continuation_line > parser->at.line_number) {
+    if (body->as.definition_body->continuation_line > reader->number) {
         return true;
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
@@ -161,7 +161,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
     return false;
 }
 
-/* THE TERM'S ADMISSION of the line `input` in `parent`, which reads the
+/* THE TERM'S ADMISSION of the reader's line in `parent`, which reads the
  * line and the first bytes of the two lines after it, and so can read the
  * end: whether a term can start there at all. The reading
  * (definition_term_reads) is begun only on a line it admits. The next lines
@@ -170,10 +170,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_line
  * decision, so the order changes nothing else. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admits(
     const markdown_core_element_instance *self, markdown_core_parser *parser, const markdown_core_node *parent,
-    markdown_core_chunk *input) {
+    markdown_core_reader *reader) {
     ((markdown_core_definition_list_work *)self->state)->work++;
-    if (parser->at.blank || parser->at.indent >= 4 ||
-        markdown_core_block_definition_marker(input, parser->at.first_nonspace, parser->at.indent)) {
+    if (reader->blank || reader->indent >= 4 ||
+        markdown_core_block_definition_marker(&reader->line, reader->nonspace, reader->indent)) {
         return false;
     }
     /* What the key read of the lines after decided the line (THE REACH). */
@@ -182,18 +182,18 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
     if (seen && markdown_core_parser_reaches(parser)) {
         size_t length;
         const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        markdown_core_parser_reach(parser, NULL, (size_t)parser->at.line_start, (size_t)(seen - source));
+        markdown_core_parser_reach(parser, NULL, (size_t)reader->start, (size_t)(seen - source));
     }
     return admits;
 }
 
-/* THE TERM'S READING of a line `input` in `parent` its admission admits:
+/* THE TERM'S READING of the reader's line in `parent` its admission admits:
  * whether a definition marker line follows it, after one blank line at
  * most. */
 static bool definition_term_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                  markdown_core_node *parent, markdown_core_chunk *input, bool *compact) {
+                                  markdown_core_node *parent, markdown_core_reader *reader, bool *compact) {
     markdown_core_definition_list_work *counts = self->state;
-    markdown_core_chunk term = {input->data + parser->at.first_nonspace, input->len - parser->at.first_nonspace, 0};
+    markdown_core_chunk term = {reader->line.data + reader->nonspace, reader->line.len - reader->nonspace, 0};
     if (term.data[0] == '[') {
         counts->work += term.len;
         markdown_core_attribute_parser attributes = {
@@ -224,21 +224,21 @@ static bool definition_term_reads(const markdown_core_element_instance *self, ma
 
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
-                                                               markdown_core_chunk *input, bool compact) {
+                                                               markdown_core_reader *reader, bool compact) {
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
     if (parent->kind == MARKDOWN_CORE_NODE_DEFINITION) {
         parent = markdown_core_block_close(parser, parent);
     }
     if (parent->kind != MARKDOWN_CORE_NODE_DEFINITION_LIST) {
-        parent = markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST,
-                                                parser->at.first_nonspace + 1);
+        parent =
+            markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, reader->nonspace + 1);
         if (!parent) {
             return NULL;
         }
     }
     markdown_core_node *definition =
-        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, parser->at.first_nonspace + 1);
+        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, reader->nonspace + 1);
     if (!definition) {
         return NULL;
     }
@@ -249,51 +249,50 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
         return definition;
     }
     definition->as.definition->term = term;
-    int begin = parser->at.first_nonspace, end = input->len;
-    while (end > begin && markdown_core_is_whitespace(input->data[end - 1])) {
+    int begin = reader->nonspace, end = reader->line.len;
+    while (end > begin && markdown_core_is_whitespace(reader->line.data[end - 1])) {
         end--;
     }
     counts->work += end - begin;
-    term->place =
-        (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->at.line_number, begin + 1),
-                              (uint32_t)markdown_core_parser_source_end(parser, parser->at.line_number, end)};
-    markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
-    if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->at.line_number, begin + 1,
-                                                                       term->content.size, 0)) {
+    term->place = (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, reader->number, begin + 1),
+                                        (uint32_t)markdown_core_parser_source_end(parser, reader->number, end)};
+    markdown_core_strbuf_put(&term->content, reader->line.data + begin, end - begin);
+    if (term->content.oom ||
+        !markdown_core_parser_append_source_marks(parser, term, reader->number, begin + 1, term->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_block_settle_field(parser, term, definition);
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
+    markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
     return definition;
 }
 
 static bool markdown_core_definition_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node **container, markdown_core_chunk *input,
+                                               markdown_core_node **container, markdown_core_reader *reader,
                                                block_start *start) {
     (void)self;
 
-    int continuation = parser->at.indent + markdown_core_block_consume_item_marker(parser, input, 1);
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY,
-                                                parser->at.first_nonspace + 1);
+    int continuation = reader->indent + markdown_core_block_consume_item_marker(reader, 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY, reader->nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->as.definition_body->continuation = continuation;
     (*container)->internal_offset =
-        (int)markdown_core_parser_source_end(parser, parser->at.line_number, (int)input->len - 1);
+        (int)markdown_core_parser_source_end(parser, reader->number, (int)reader->line.len - 1);
     return true;
 }
 
 static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                block_start_context *context, block_start *start) {
     (void)self;
-    markdown_core_chunk *input = context->input;
-    int first = context->first;
+    markdown_core_reader *reader = context->reader;
+    int first = reader->nonspace;
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION &&
-          markdown_core_block_definition_marker(input, first, context->indent))) {
+          markdown_core_block_definition_marker(&reader->line, first, reader->indent))) {
         return false;
     }
-    if (parser->sink && input->data[first] == ':' && markdown_core_is_line_end(input->data[first + 1])) {
+    if (parser->sink && reader->line.data[first] == ':' && markdown_core_is_line_end(reader->line.data[first + 1])) {
         markdown_core_directive_report_line(parser, first);
     }
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
@@ -302,8 +301,8 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
 }
 
 bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                            markdown_core_chunk *input) {
-    return markdown_core_block_continue_indented(parser, input, container->as.definition_body->continuation, true);
+                                            markdown_core_reader *reader) {
+    return markdown_core_reader_indented(reader, container->as.definition_body->continuation, true);
 }
 
 /* THE TERM, the paragraph opener's call: a line its reading admits opens a
@@ -312,17 +311,16 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
  * nothing, and asks to be a candidate; a call that meets its candidate
  * declines. */
 static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
-                                         markdown_core_parser *parser, markdown_core_node *parent, unsigned char *data,
-                                         int length) {
+                                         markdown_core_parser *parser, markdown_core_node *parent,
+                                         markdown_core_reader *reader) {
     (void)indented;
     if (markdown_core_parser_candidate_meets(parser, self, parent)) {
         return NULL;
     }
-    markdown_core_chunk input = {data, length, 0};
     bool compact = false;
     markdown_core_parser_clear_end_read(parser);
-    const bool term = definition_term_admits(self, parser, parent, &input) &&
-                      definition_term_reads(self, parser, parent, &input, &compact);
+    const bool term = definition_term_admits(self, parser, parent, reader) &&
+                      definition_term_reads(self, parser, parent, reader, &compact);
     if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const definition_candidate candidate = {DEFINITION_TERM, 0};
@@ -334,7 +332,7 @@ static markdown_core_node *try_paragraph(const markdown_core_element_instance *s
     if (!term) {
         return NULL;
     }
-    return markdown_core_block_open_definition(self->state, parser, parent, &input, compact);
+    return markdown_core_block_open_definition(self->state, parser, parent, reader, compact);
 }
 
 /* THE FEED of the element's candidates (element.h). The term's reading is
@@ -364,16 +362,16 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
                                                          markdown_core_parser *parser, const void *state) {
     const definition_candidate *candidate = state;
-    markdown_core_chunk line;
     markdown_core_node *container;
-    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
+    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
+    if (!reader) {
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
     bool claims;
     if (candidate->call == DEFINITION_TERM) {
         bool compact = false;
-        claims = definition_term_admits(self, parser, container, &line) &&
-                 definition_term_reads(self, parser, container, &line, &compact);
+        claims = definition_term_admits(self, parser, container, reader) &&
+                 definition_term_reads(self, parser, container, reader, &compact);
     } else {
         int next;
         claims = definition_body_continues(parser, container, candidate->continuation, &next);
@@ -383,11 +381,11 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_node *node, markdown_core_reader *reader,
+                               const markdown_core_node *joining, bool *taken) {
     (void)self;
     return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
-           markdown_core_definition_list_continue(parser, node, input);
+           markdown_core_definition_list_continue(parser, node, reader);
 }
 /* A definition list, a definition and a body end where their last child
  * ends, and a body without children ends with its marker's line: taken as

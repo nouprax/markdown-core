@@ -20,7 +20,7 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
  * identifier attached, or the call asked to be a candidate. */
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
-                                                markdown_core_chunk *input);
+                                                markdown_core_reader *reader);
 /* The candidate of the identifier line (blocks.c, THE CANDIDATES), the
  * paragraph element's hooks (element.h). */
 markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,

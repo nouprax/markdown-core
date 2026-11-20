@@ -74,9 +74,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table
  * each once it is whole: a cell into its row once its line is read, a row
  * made whole into its table after its cells, and a pipe body row, an open
  * block, as the table takes its next row or closes. */
-static markdown_core_node *new_cell(markdown_core_parser *parser, int column) {
-    return table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, parser->at.line_number, column, parser->at.line_number,
-                       column);
+static markdown_core_node *new_cell(markdown_core_parser *parser, const markdown_core_reader *reader, int column) {
+    return table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, reader->number, column, reader->number, column);
 }
 
 /* A PIPE CELL HOLDS ITS BYTES, whichever path found its row: trimmed of the
@@ -340,7 +339,7 @@ static markdown_core_node *S_open_table(markdown_core_parser *parser, markdown_c
  * releases the partially built table. */
 static markdown_core_node *try_opening_table_header(const markdown_core_element_instance *self,
                                                     markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                    unsigned char *input, int len) {
+                                                    markdown_core_reader *reader) {
     markdown_core_node *table_header;
     pipe_row header_row, delimiter_row;
     markdown_core_chunk text;
@@ -350,24 +349,25 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         return NULL;
     }
 
-    if (!scan_table_start(input, len, markdown_core_parser_get_first_nonspace(parser))) {
+    if (!scan_table_start(reader->line.data, reader->line.len, reader->nonspace)) {
         return NULL;
     }
     /* A delimiter row that opens with `:` is one only while the input's
      * end leaves it be: written on, it may be a directive's name. */
-    const int first = markdown_core_parser_get_first_nonspace(parser);
-    if (parser->sink && input[first] == ':' && first + 1 < len && !markdown_core_is_whitespace(input[first + 1])) {
+    const int first = reader->nonspace;
+    if (parser->sink && reader->line.data[first] == ':' && first + 1 < reader->line.len &&
+        !markdown_core_is_whitespace(reader->line.data[first + 1])) {
         int end = first;
-        while (end < len && !markdown_core_is_whitespace(input[end])) {
+        while (end < reader->line.len && !markdown_core_is_whitespace(reader->line.data[end])) {
             end++;
         }
-        if (end == len || markdown_core_is_line_end(input[end])) {
+        if (end == reader->line.len || markdown_core_is_line_end(reader->line.data[end])) {
             markdown_core_directive_report_line(parser, first);
         }
     }
 
-    if (!recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),
-                            len - markdown_core_parser_get_first_nonspace(parser), &delimiter_row)) {
+    if (!recognize_pipe_row(reader->line.data + reader->nonspace, reader->line.len - reader->nonspace,
+                            &delimiter_row)) {
         return NULL;
     }
 
@@ -423,8 +423,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
     /* The header row is made whole from the table's content, as its cells
      * are: it is never an open block. */
-    table_header =
-        table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, parser->at.line_number, 1, parser->at.line_number, 1);
+    table_header = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, reader->number, 1, reader->number, 1);
     if (!table_header) {
 
         return node;
@@ -436,29 +435,28 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     pipe_row_cursor header = pipe_row_cells(&header_row);
     while (pipe_row_next(&header, &geometry)) {
         const node_cell *cell = &geometry;
-        markdown_core_node *header_cell = new_cell(parser, 1);
+        markdown_core_node *header_cell = new_cell(parser, reader, 1);
         if (!header_cell) {
             break;
         }
         S_place_content_span(parser, node, header_cell, cell->start_offset, cell->end_offset);
-        set_cell_content(parser, header_cell, cell, node, parser->at.line_number, parser->at.line_start,
+        set_cell_content(parser, header_cell, cell, node, reader->number, reader->start,
                          (bufsize_t)(cell->content.data - header_row.source));
         markdown_core_block_settle(parser, header_cell, table_header);
     }
     markdown_core_block_settle(parser, table_header, node);
 
-    markdown_core_parser_advance_offset(
-        parser, (char *)input, (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser), false);
+    markdown_core_reader_advance(reader, (int)strlen((char *)reader->line.data) - 1 - reader->offset, false);
 
     return node;
 }
 
 static markdown_core_node *try_opening_table_row(const markdown_core_element *self, markdown_core_parser *parser,
-                                                 markdown_core_node *parent_container, unsigned char *input, int len) {
+                                                 markdown_core_node *parent_container, markdown_core_reader *reader) {
     markdown_core_node *table_row_block;
     pipe_row row;
 
-    if (markdown_core_parser_is_blank(parser)) {
+    if (reader->blank) {
         return NULL;
     }
 
@@ -467,22 +465,22 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         return NULL;
     }
 
-    if (!recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),
-                            len - markdown_core_parser_get_first_nonspace(parser), &row)) {
+    if (!recognize_pipe_row(reader->line.data + reader->nonspace, reader->line.len - reader->nonspace, &row)) {
         return NULL;
     }
     /* A pipe row begins at its own first non-space byte, as its header does:
-     * `parser->at.offset` is the container's content, which holds the row's
+     * `reader->offset` is the container's content, which holds the row's
      * indentation or the tail of a tab its container prefix shares. */
     /* The row is whole once its line is read: it settles into the table,
      * which stays the current block, and a reopen at the next row finds
      * none open inside it. */
-    bufsize_t completed_at = len;
-    while (completed_at > 0 && (input[completed_at - 1] == '\n' || input[completed_at - 1] == '\r')) {
+    bufsize_t completed_at = reader->line.len;
+    while (completed_at > 0 &&
+           (reader->line.data[completed_at - 1] == '\n' || reader->line.data[completed_at - 1] == '\r')) {
         completed_at--;
     }
-    table_row_block = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, parser->at.line_number,
-                                  parser->at.first_nonspace + 1, parser->at.line_number, (int)completed_at);
+    table_row_block = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, reader->number, reader->nonspace + 1,
+                                  reader->number, (int)completed_at);
     if (!table_row_block) {
         return NULL;
     }
@@ -498,14 +496,14 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         node_cell geometry;
         for (i = 0; i < table_columns && pipe_row_next(&cells, &geometry); ++i) {
             const node_cell *cell = &geometry;
-            markdown_core_node *node = new_cell(parser, parser->at.first_nonspace + 1 + cell->start_offset);
+            markdown_core_node *node = new_cell(parser, reader, reader->nonspace + 1 + cell->start_offset);
             if (!node) {
                 break;
             }
-            node->place.end = (uint32_t)markdown_core_parser_source_end(
-                parser, parser->at.line_number, parser->at.first_nonspace + 1 + cell->end_offset);
-            set_cell_content(parser, node, cell, NULL, parser->at.line_number, parser->at.line_start,
-                             (bufsize_t)(cell->content.data - input));
+            node->place.end = (uint32_t)markdown_core_parser_source_end(parser, reader->number,
+                                                                        reader->nonspace + 1 + cell->end_offset);
+            set_cell_content(parser, node, cell, NULL, reader->number, reader->start,
+                             (bufsize_t)(cell->content.data - reader->line.data));
             markdown_core_block_settle(parser, node, table_row_block);
         }
 
@@ -525,19 +523,17 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
          * than at nothing, and it is registered in
          * specs/positions/containment.json rather than hidden. */
         for (; i < table_columns; ++i) {
-            markdown_core_node *node = new_cell(parser, (int)completed_at);
+            markdown_core_node *node = new_cell(parser, reader, (int)completed_at);
             if (!node) {
                 break;
             }
-            node->place.end =
-                (uint32_t)markdown_core_parser_source_end(parser, parser->at.line_number, (int)completed_at);
+            node->place.end = (uint32_t)markdown_core_parser_source_end(parser, reader->number, (int)completed_at);
             markdown_core_block_settle(parser, node, table_row_block);
         }
     }
 
     markdown_core_block_settle(parser, table_row_block, parent_container);
-    markdown_core_parser_advance_offset(parser, (char *)input, len - 1 - markdown_core_parser_get_offset(parser),
-                                        false);
+    markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
 
     return parent_container;
 }
@@ -546,13 +542,13 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
  * the paragraph above it, and takes a row on each later line it matches. */
 static markdown_core_node *try_opening_table_block(const markdown_core_element_instance *self, int indented,
                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                   unsigned char *input, int len) {
+                                                   markdown_core_reader *reader) {
     markdown_core_node_type parent_type = (markdown_core_node_type)parent_container->kind;
 
     if (!indented && parent_type == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        return try_opening_table_header(self, parser, parent_container, input, len);
+        return try_opening_table_header(self, parser, parent_container, reader);
     } else if (!indented && parent_type == MARKDOWN_CORE_NODE_TABLE) {
-        return try_opening_table_row(self->element, parser, parent_container, input, len);
+        return try_opening_table_row(self->element, parser, parent_container, reader);
     }
 
     return NULL;
@@ -560,15 +556,14 @@ static markdown_core_node *try_opening_table_block(const markdown_core_element_i
 
 /* A table goes on at any line a pipe row reads: a blank line or a block
  * start that interrupts it ends it. */
-static int matches(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *input,
-                   int len, markdown_core_node *parent_container) {
+static int matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                   markdown_core_reader *reader, markdown_core_node *parent_container) {
     (void)self;
     if (parent_container->kind != MARKDOWN_CORE_NODE_TABLE) {
         return 0;
     }
     pipe_row row;
-    return recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),
-                              len - markdown_core_parser_get_first_nonspace(parser), &row);
+    return recognize_pipe_row(reader->line.data + reader->nonspace, reader->line.len - reader->nonspace, &row);
 }
 
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_TABLE_ROW,

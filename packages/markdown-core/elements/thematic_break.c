@@ -30,16 +30,16 @@ static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, b
 }
 
 static bool open_thematic(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                          markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
 
     // it's only now that we know the line is not part of a setext heading:
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                                parser->at.first_nonspace + 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, reader->nonspace + 1);
     if (!*container) {
         return false;
     }
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
+    markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
 
     return true;
 }
@@ -49,8 +49,9 @@ static bool scan_thematic(const markdown_core_element_instance *self, markdown_c
     if (context->paragraph && !context->all_matched) {
         return false;
     }
-    if (context->thematic_kill > context->first ||
-        !(start->matched = S_scan_thematic_break(context->input, context->first, &context->thematic_kill))) {
+    if (context->thematic_kill > context->reader->nonspace ||
+        !(start->matched =
+              S_scan_thematic_break(&context->reader->line, context->reader->nonspace, &context->thematic_kill))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;

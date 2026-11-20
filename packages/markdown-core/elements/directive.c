@@ -637,12 +637,12 @@ static int probe_directive_block(const markdown_core_element_instance *self, mar
 
 static markdown_core_node *open_directive_block(const markdown_core_element_instance *self, int indented,
                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                unsigned char *input, int len) {
+                                                markdown_core_reader *reader) {
     (void)indented;
-    bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
+    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
     parsed_directive parsed;
     bufsize_t colon_count =
-        scan_directive_block(parser, input, len, first_nonspace, markdown_core_parser_get_indent(parser), &parsed);
+        scan_directive_block(parser, reader->line.data, reader->line.len, first_nonspace, reader->indent, &parsed);
     markdown_core_node *node = NULL;
     node_directive *directive;
     if (!colon_count) {
@@ -657,8 +657,8 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque || !apply_parsed_directive(self->element, parser, node, input, &parsed,
-                                                 markdown_core_parser_get_line_number(parser))) {
+    if (!node->opaque ||
+        !apply_parsed_directive(self->element, parser, node, reader->line.data, &parsed, reader->number)) {
         /* The suffix already validated; failure here is allocation loss.
          * The block is the parse's builder from its opening and goes with
          * the parse. */
@@ -673,7 +673,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     if (directive->label) {
         markdown_core_block_settle_field(parser, directive->label, node);
     }
-    markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
+    markdown_core_reader_advance(reader, reader->line.len - reader->offset, false);
 
 done:
     free_parsed_directive(&parsed);
@@ -684,35 +684,37 @@ done:
  * long as the opener, at indentation zero to three, alone on its line. Shared
  * by the matcher that closes the container and the lookahead that only asks. */
 static int directive_closer_line(const node_directive *directive, markdown_core_parser *parser,
-                                 const unsigned char *input, int len) {
-    bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
-    bufsize_t colon_count = count_colons(input, (bufsize_t)len, first_nonspace);
+                                 markdown_core_reader *reader) {
+    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
+    bufsize_t colon_count = count_colons(reader->line.data, (bufsize_t)reader->line.len, first_nonspace);
 
-    return markdown_core_parser_get_indent(parser) <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
-           markdown_core_is_blank_to_line_end(input, first_nonspace + colon_count, (bufsize_t)len);
+    return reader->indent <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
+           markdown_core_is_blank_to_line_end(reader->line.data, first_nonspace + colon_count,
+                                              (bufsize_t)reader->line.len);
 }
 
 static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     const unsigned char *input, int len, markdown_core_node *container) {
+                                     markdown_core_reader *reader, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
 
     if (!directive || directive->fence_length == 2) {
         return 0;
     }
 
-    if (!directive_closer_line(directive, parser, input, len)) {
+    if (!directive_closer_line(directive, parser, reader)) {
         return 1;
     }
     /* A closer the input's end cuts short may yet be an opener's colons. */
     if (parser->sink) {
-        const bufsize_t first = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
-        S_report_block(parser, input, len, first, first + count_colons(input, (bufsize_t)len, first));
+        const bufsize_t first = (bufsize_t)reader->nonspace;
+        S_report_block(parser, reader->line.data, reader->line.len, first,
+                       first + count_colons(reader->line.data, (bufsize_t)reader->line.len, first));
     }
     return MARKDOWN_CORE_BLOCK_PENDING_CLOSE;
 }
 
 static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   unsigned char *input, int len, markdown_core_node *container) {
+                                   markdown_core_reader *reader, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
 
     if (!directive) {
@@ -721,7 +723,7 @@ static int directive_block_matches(const markdown_core_element_instance *self, m
 
     directive->consume_line = 0;
 
-    return directive_block_continues(self, parser, input, len, container);
+    return directive_block_continues(self, parser, reader, container);
 }
 
 static const markdown_core_node_type containment_kinds[] = {

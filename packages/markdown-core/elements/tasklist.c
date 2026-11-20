@@ -3,9 +3,11 @@
 #include "utf8.h"
 #include "parts.h"
 
-void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item, const unsigned char *input,
-                                     bufsize_t len) {
-    bufsize_t start = parser->at.first_nonspace;
+void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item,
+                                     markdown_core_reader *reader) {
+    const unsigned char *input = reader->line.data;
+    const bufsize_t len = reader->line.len;
+    bufsize_t start = reader->nonspace;
     if (len - start < 4 || input[start] != '[') {
         return;
     }
@@ -32,7 +34,7 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
         return;
     }
     item->as.list->task_marker = markdown_core_optional_chunk_present(marker);
-    markdown_core_parser_advance_offset(parser, (const char *)input, end - parser->at.offset, false);
+    markdown_core_reader_advance(reader, end - reader->offset, false);
 }
 
 /* THE PARTS OF A LIST ITEM (parts.h): a task item's marker, the character

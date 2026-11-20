@@ -119,10 +119,10 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     return node;
 }
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_node *node, markdown_core_reader *reader,
+                               const markdown_core_node *joining, bool *taken) {
     (void)self;
-    return markdown_core_footnote_continue(parser, node, input);
+    return markdown_core_footnote_continue(parser, node, reader);
 }
 static const markdown_core_edit_ops FOOTNOTE_EDIT = {
     .reopens = true,
@@ -277,11 +277,11 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
 }
 
 static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        markdown_core_node **container, markdown_core_chunk *input,
+                                        markdown_core_node **container, markdown_core_reader *reader,
                                         block_start *start) {
     bufsize_t matched = start->matched;
 
-    markdown_core_chunk c = markdown_core_chunk_dup(input, parser->at.first_nonspace + 2, matched - 2);
+    markdown_core_chunk c = markdown_core_chunk_dup(&reader->line, reader->nonspace + 2, matched - 2);
 
     while (c.data[c.len - 1] != ']') {
         --c.len;
@@ -294,7 +294,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         return false;
     }
 
-    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
+    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
     /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
      * where its OPENING BRACKET was written. It used to start at the
      * byte after `[^label]:`, which is a column that need not exist --
@@ -302,8 +302,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * began at column 13. Every other block in this engine starts at
      * its own first byte and the marker is inside it; a footnote
      * definition was the one that started after its own marker. */
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, parser->at.first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, reader->nonspace + 1);
     if (!*container) {
         markdown_core_chunk_free(&c);
         return false;
@@ -350,10 +349,10 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start) {
     (void)self;
-    markdown_core_chunk *input = context->input;
-    int first = context->first;
+    markdown_core_reader *reader = context->reader;
+    int first = reader->nonspace;
     if (!(context->depth < MAX_FOOTNOTE_DEPTH &&
-          (start->matched = scan_footnote_definition(input->data, input->len, first)))) {
+          (start->matched = scan_footnote_definition(reader->line.data, reader->line.len, first)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_FOOTNOTE;
@@ -362,8 +361,8 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
 }
 
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                     markdown_core_chunk *input) {
-    return markdown_core_block_continue_indented(parser, input, 4, true);
+                                     markdown_core_reader *reader) {
+    return markdown_core_reader_indented(reader, 4, true);
 }
 
 /* A definition's part: its label, inside `[^` and the `]` before its `:`. An

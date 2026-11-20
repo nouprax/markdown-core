@@ -441,7 +441,7 @@ typedef struct markdown_core_open_ops {
     /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
     markdown_core_open_block_func last;
     markdown_core_node *(*interrupt)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_chunk *, bool);
+                                     markdown_core_node *, markdown_core_reader *, bool);
     /* What `interrupt` needs on a non-indented line. */
     markdown_core_block_gate interrupt_needs;
     /* Its `probe` asks over a paragraph too: a block of it interrupts one. */
@@ -455,7 +455,7 @@ typedef struct markdown_core_open_ops {
     /* Opens the text block (a paragraph) on a line nothing else opens on:
      * the dialect's last owner of it is asked. */
     markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                                markdown_core_chunk *);
+                                markdown_core_reader *);
     /* The bytes a line may hold and still make the paragraph line before it
      * a block of the element's, as a table's delimiter row makes its head:
      * while a streamed paragraph's last line holds only such bytes, the line
@@ -484,7 +484,7 @@ struct markdown_core_line_ops {
     markdown_core_continues_block_func continues;
     /* The container's prefix match on a line, which strips its marker. */
     bool (*prefix)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                   markdown_core_chunk *, const markdown_core_node *, bool *);
+                   markdown_core_reader *, const markdown_core_node *, bool *);
     /* HOW FAR A STEP READS (docs/plans/2026-09-29-incremental-parsing.md,
      * 5.1), asked of a line a session holds unfinished before the step runs,
      * with the cursor and the first non-space byte found: the furthest byte
@@ -497,7 +497,7 @@ struct markdown_core_line_ops {
      * question leaves its steps to the snapshot (blocks.c, THE LINE A
      * SESSION HOLDS). */
     bufsize_t (*reach)(const markdown_core_element_instance *, markdown_core_parser *, const markdown_core_node *,
-                       const markdown_core_chunk *);
+                       const markdown_core_reader *);
     /* The bytes `prefix` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only; it strips at most one of them from a line. A
@@ -513,10 +513,12 @@ struct markdown_core_line_ops {
      * lookahead rather than walking over it. */
     const char *prefix_bytes;
     /* Whether the block takes a blank line; NULL takes it. */
-    bool (*blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    bool (*blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                  const markdown_core_reader *);
     /* Whether a blank line it took leaves its last line blank (BLANK_ASK,
      * dialect.h); NULL decides by whether it takes lines. */
-    bool (*blank_last)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    bool (*blank_last)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                       const markdown_core_reader *);
     /* What a blank line means inside it (BLANK_OPAQUE, BLANK_RUNS and
      * BLANK_PROPAGATES, dialect.h). */
     bool blank_opaque;
@@ -525,12 +527,12 @@ struct markdown_core_line_ops {
     /* The end condition, tested on a line the block took as content: true
      * closes it there. */
     bool (*ends)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 markdown_core_chunk *);
+                 markdown_core_reader *);
     /* Reads a line its block took whole (MARKDOWN_CORE_BLOCK_TAKEN), from
      * the parser's cursor, which the block's matcher left where the blocks
      * above it end. Required of an element whose matcher returns that. */
     void (*take)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 markdown_core_chunk *);
+                 markdown_core_reader *);
     /* THE CLOSE HOOK, asked of a block as it closes inside the block that
      * holds it, which it settles into later. It reads the block -- its
      * content, its children and its open state -- and makes the node the
@@ -556,8 +558,9 @@ struct markdown_core_line_ops {
      * that refuse a lazy line (`block_start_context`) open no block on it, so
      * the line is lazy exactly when it would be after a paragraph's line. */
     markdown_core_node *(*lazy_open)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_chunk *);
-    bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+                                     markdown_core_node *, markdown_core_reader *);
+    bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                 const markdown_core_reader *);
     /* The flags of the block that its container's prefix match sets line by
      * line, which a lookahead puts back. A line that holds a byte other
      * than spaces, tabs and container prefix bytes sets them as no line

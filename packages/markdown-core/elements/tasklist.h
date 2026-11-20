@@ -9,8 +9,8 @@ extern "C" {
 
 /* Called once, immediately after the inherited list algorithm opens an item
  * and finds its first non-space byte, before deciding its first block. */
-void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item, const unsigned char *input,
-                                     bufsize_t len);
+void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item,
+                                     markdown_core_reader *reader);
 
 #ifdef __cplusplus
 }

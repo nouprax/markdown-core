@@ -77,7 +77,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     /* The definitions follow each other down the block's lines. */
-    int line = parser->at.line_number;
+    int line = parser->at.read.number;
     /* Only a reading that notes reach notes what each definition read. */
     const bool noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
                        markdown_core_parser_block_root(parser) == parser->root;

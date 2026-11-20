@@ -18,44 +18,44 @@ static bool close_paragraph(const markdown_core_element_instance *self, markdown
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              unsigned char *data, int length, markdown_core_node *container) {
-    return !parser->at.blank;
+                              markdown_core_reader *reader, markdown_core_node *container) {
+    return !reader->blank;
 }
 /* The paragraph reads whether the line is blank: its first non-space byte. */
 static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                const markdown_core_node *node, const markdown_core_chunk *input) {
+                                const markdown_core_node *node, const markdown_core_reader *reader) {
     (void)self;
     (void)node;
-    (void)input;
-    return parser->at.first_nonspace;
+    return reader->nonspace;
 }
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node) {
+                         markdown_core_node *node, const markdown_core_reader *reader) {
+    (void)reader;
     (void)self;
     (void)parser;
     (void)node;
     return true;
 }
 static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *node, markdown_core_chunk *input) {
+                                     markdown_core_node *node, markdown_core_reader *reader) {
     (void)self;
     return node;
 }
 
 /* A text line no block claims opens a paragraph: the dialect's text block. */
 static markdown_core_node *open_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *container, markdown_core_chunk *input) {
+                                     markdown_core_node *container, markdown_core_reader *reader) {
     container = markdown_core_block_parent_for(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!container) {
         return NULL;
     }
-    if (markdown_core_block_attach_identifier_line(self, parser, container, input) || parser->error) {
+    if (markdown_core_block_attach_identifier_line(self, parser, container, reader) || parser->error) {
         return NULL;
     }
-    container = markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                         parser->at.first_nonspace + 1);
+    container =
+        markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, reader->nonspace + 1);
     if (container) {
-        markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace - parser->at.offset, false);
+        markdown_core_reader_skip(reader);
     }
     return container;
 }

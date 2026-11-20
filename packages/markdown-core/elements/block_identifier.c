@@ -189,16 +189,16 @@ static void S_reach(markdown_core_parser *parser, markdown_core_node *owner, con
  * meets its candidate declines. */
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
-                                                markdown_core_chunk *input) {
+                                                markdown_core_reader *reader) {
     markdown_core_block_identifier_work *work = self->state;
     markdown_core_node *owner = markdown_core_parser_last_child(parent);
     block_identifier candidate;
-    if (parser->at.indent >= CODE_INDENT || input->data[parser->at.first_nonspace] != '#' || !owner ||
+    if (reader->indent >= CODE_INDENT || reader->line.data[reader->nonspace] != '#' || !owner ||
         owner->attributes.anchor.len ||
         (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
-        !S_scan_block_identifier(work, input->data + parser->at.first_nonspace, input->len - parser->at.first_nonspace,
+        !S_scan_block_identifier(work, reader->line.data + reader->nonspace, reader->line.len - reader->nonspace,
                                  &candidate) ||
         !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner) ||
         markdown_core_parser_candidate_meets(parser, self, parent)) {
@@ -246,9 +246,8 @@ markdown_core_candidate_decision markdown_core_block_decide_identifier_line(cons
                                                                             const void *state) {
     (void)self;
     (void)state;
-    markdown_core_chunk line;
     markdown_core_node *container;
-    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
+    if (!markdown_core_parser_candidate_start(parser, &container)) {
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
     bool undecided;

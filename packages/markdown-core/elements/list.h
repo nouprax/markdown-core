@@ -3,7 +3,7 @@
 #include "inlines.h"
 #include "block_internal.h"
 bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                 markdown_core_chunk *input, const markdown_core_node *joining, bool *taken);
+                                 markdown_core_reader *reader, const markdown_core_node *joining, bool *taken);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST;
 
 /* THE LIST MARKER GRAMMAR'S WORK (the list element's parse record):

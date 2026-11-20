@@ -8,6 +8,7 @@ extern "C" {
 #include "node_type.h"
 #include "buffer.h"
 #include <stdbool.h>
+#include "reader.h"
 
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
@@ -146,7 +147,7 @@ int markdown_core_delimiter_can_open(const delimiter *delim);
 int markdown_core_delimiter_can_close(const delimiter *delim);
 
 /** Should create and add a new open block to 'parent_container' if
- * 'input' matches a syntax rule for that block type. It is allowed
+ * the reader's line matches a syntax rule for that block type. It is allowed
  * to modify the type of 'parent_container'.
  *
  * Should return the newly created block if there is one, or
@@ -154,8 +155,8 @@ int markdown_core_delimiter_can_close(const delimiter *delim);
  */
 typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
                                                              markdown_core_parser *parser,
-                                                             markdown_core_node *parent_container, unsigned char *input,
-                                                             int len);
+                                                             markdown_core_node *parent_container,
+                                                             markdown_core_reader *reader);
 
 typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
@@ -169,7 +170,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
                                                      markdown_core_inline_state *inline_state, delimiter *opener,
                                                      delimiter *closer);
 
-/** Returned by a 'markdown_core_match_block_func' when 'input' is the
+/** Returned by a 'markdown_core_match_block_func' when the reader's line is the
  *  container's own closing line.
  *
  *  The parser closes the container and every block still open inside it, ends
@@ -195,17 +196,17 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
  * before it. */
 #define MARKDOWN_CORE_BLOCK_TAKEN 4
 
-/** Should return 'true' if 'input' can be contained in 'container',
- *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if 'input' is the
+/** Should return 'true' if the reader's line can be contained in 'container',
+ *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if it is the
  *  container's own closing line. A DirectiveBlock returns
  *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
  *  A container that takes the line whole returns MARKDOWN_CORE_BLOCK_TAKEN
  *  and changes nothing: its element reads the line in `take_line`.
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              unsigned char *input, int len, markdown_core_node *container);
+                                              markdown_core_reader *reader, markdown_core_node *container);
 
-/** Whether 'input' would continue 'container', asked AHEAD OF TIME.
+/** Whether the reader's line would continue 'container', asked AHEAD OF TIME.
  *
  *  A block start may look at the lines after its own before it opens (see
  *  markdown_core_parser_lookahead_begin in the core), and it then asks every
@@ -213,14 +214,14 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element_instan
  *  must leave no trace: the lines' `matches` consumes the line, closes the
  *  container on its fence and records state on the node, so it cannot be
  *  asked speculatively. An element that opens block CONTAINERS provides this
- *  hook as the same test with none of those effects: 1 when 'input' continues
+ *  hook as the same test with none of those effects: 1 when the line continues
  *  'container', 0 when it does not or is the container's own closing line. It
- *  must not change the parser beyond the cursor fields the core resets, the
+ *  must not change the parser beyond the reader, which the core resets, the
  *  container, or any node. A container whose element provides no hook ends
  *  every lookahead at its next line.
  */
 typedef int (*markdown_core_continues_block_func)(const markdown_core_element_instance *self,
-                                                  markdown_core_parser *parser, const unsigned char *input, int len,
+                                                  markdown_core_parser *parser, markdown_core_reader *reader,
                                                   markdown_core_node *container);
 
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
@@ -388,68 +389,6 @@ struct markdown_core_element_instance {
 const markdown_core_element_instance *markdown_core_parser_instance(const markdown_core_parser *parser,
                                                                     const markdown_core_element *element);
 
-/** Return the index of the line currently being parsed, starting with 1.
- */
-int markdown_core_parser_get_line_number(markdown_core_parser *parser);
-
-/** Return the offset in bytes in the line being processed.
- *
- * Example:
- *
- * ### foo
- *
- * Here, offset will first be 0, then 5 (the index of the 'f' character).
- */
-int markdown_core_parser_get_offset(markdown_core_parser *parser);
-
-/**
- * Return the offset in 'columns' in the line being processed.
- *
- * This value may differ from the value returned by
- * markdown_core_parser_get_offset() in that each complete Unicode scalar
- * counts as one column and tabs expand to the next multiple of four. This
- * value should not be used as an index in the current line's
- * buffer.
- *
- * Example:
- *
- * markdown_core_parser_advance_offset() can be called to advance the
- * offset by a number of columns, instead of a number of bytes.
- *
- * In that case, if offset falls "in the middle" of a tab
- * character, 'column' and offset will differ.
- *
- * ```
- * foo                 \t bar
- * ^                   ^^
- * offset (0)          20
- * ```
- *
- * If markdown_core_parser_advance_offset is called here with 'columns'
- * set to 'true' and 'offset' set to 22, markdown_core_parser_get_offset()
- * will return 20, whereas markdown_core_parser_get_column() will return
- * 22.
- *
- * Additionally, as tabs expand to the next multiple of 4 column,
- * markdown_core_parser_has_partially_consumed_tab() will now return
- * 'true'.
- */
-int markdown_core_parser_get_column(markdown_core_parser *parser);
-
-/** Return the absolute index in bytes of the first nonspace
- * character coming after the offset as returned by
- * markdown_core_parser_get_offset() in the line currently being processed.
- *
- * Example:
- *
- * ```
- *   foo        bar            baz  \n
- * ^               ^           ^
- * 0            offset (16) first_nonspace (28)
- * ```
- */
-int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
-
 /** Declare that 'node''s content -- which the caller SET rather than the parser
  * parsing it -- begins at (line, column) in the source, and runs on from there
  * without a break. Returns 1, or 0 if it could not be recorded, in which case
@@ -519,62 +458,6 @@ int markdown_core_parser_content_end_place(markdown_core_parser *parser, const m
 int markdown_core_parser_content_indent(markdown_core_parser *parser, const markdown_core_content_map *map,
                                         bufsize_t offset);
 
-/** Return the absolute index of the first nonspace column coming after 'offset'
- * in the line currently being processed, counting tabs as multiple
- * columns as appropriate.
- *
- * See the documentation for markdown_core_parser_get_first_nonspace() and
- * markdown_core_parser_get_column() for more information.
- */
-int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser);
-
-/** Return the difference between the values returned by
- * markdown_core_parser_get_first_nonspace_column() and
- * markdown_core_parser_get_column().
- *
- * This is not a byte offset, as it can count one tab as multiple
- * characters.
- */
-int markdown_core_parser_get_indent(markdown_core_parser *parser);
-
-/** Return 'true' if the line currently being processed has been entirely
- * consumed, 'false' otherwise.
- *
- * Example:
- *
- * ```
- *   foo        bar            baz  \n
- * ^
- * offset
- * ```
- *
- * This function will return 'false' here.
- *
- * ```
- *   foo        bar            baz  \n
- *                 ^
- *              offset
- * ```
- * This function will still return 'false'.
- *
- * ```
- *   foo        bar            baz  \n
- *                                ^
- *                             offset
- * ```
- *
- * At this point, this function will now return 'true'.
- */
-int markdown_core_parser_is_blank(markdown_core_parser *parser);
-
-/** Return 'true' if the value returned by markdown_core_parser_get_offset()
- * is 'inside' an expanded tab.
- *
- * See the documentation for markdown_core_parser_get_column() for more
- * information.
- */
-int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser);
-
 /** Return the source offset just after the previously processed line's last
  * byte, excluding its line ending: the line's start for an empty line. In a
  * table cell's content, which the parser reads as an input of its own, it is
@@ -590,13 +473,6 @@ bufsize_t markdown_core_parser_get_last_line_end(markdown_core_parser *parser);
  */
 markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type block_type, int start_column);
-
-/** Advance the 'offset' of the parser in the current line.
- *
- * See the documentation of markdown_core_parser_get_offset() and
- * markdown_core_parser_get_column() for more information.
- */
-void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
 
 /** Register 'element' after every element 'builder' already holds.
  *  See the documentation for markdown_core_element for more information.

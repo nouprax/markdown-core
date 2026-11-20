@@ -1,24 +1,23 @@
 #include "callout.h"
-#define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
 #include "parts.h"
 #include "sink.h"
 
 static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_node *node, markdown_core_chunk *input);
+                                                       markdown_core_node *node, markdown_core_reader *reader);
 static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        block_start_context *context, block_start *start);
-bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
+bool markdown_core_block_parse_callout_prefix(markdown_core_reader *reader) {
     bool res = false;
     bufsize_t matched = 0;
 
-    matched = parser->at.indent <= 3 && BLOCK_PEEK(input, parser->at.first_nonspace) == '>';
+    matched = reader->indent <= 3 && markdown_core_reader_peek(reader, reader->nonspace) == '>';
     if (matched) {
 
-        markdown_core_block_advance_offset(parser, input, parser->at.indent + 1, true);
+        markdown_core_reader_advance(reader, reader->indent + 1, true);
 
-        if (markdown_core_is_space_or_tab(BLOCK_PEEK(input, parser->at.offset))) {
-            markdown_core_block_advance_offset(parser, input, 1, true);
+        if (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
+            markdown_core_reader_advance(reader, 1, true);
         }
 
         res = true;
@@ -41,13 +40,13 @@ static bufsize_t variant_end(const unsigned char *data, bufsize_t length) {
 
 /* A `[!` at `open` whose variant the line's end cuts short, to the parse's
  * context sink. */
-static void S_report_variant(markdown_core_parser *parser, const markdown_core_chunk *input, bufsize_t open) {
-    bufsize_t end = input->len;
-    while (end > open && markdown_core_is_line_end(input->data[end - 1])) {
+static void S_report_variant(markdown_core_parser *parser, const markdown_core_reader *reader, bufsize_t open) {
+    bufsize_t end = reader->line.len;
+    while (end > open && markdown_core_is_line_end(reader->line.data[end - 1])) {
         end--;
     }
-    if (end - open < 2 || input->data[open] != '[' || input->data[open + 1] != '!' ||
-        open + 2 + variant_end(input->data + open + 2, end - open - 2) != end) {
+    if (end - open < 2 || reader->line.data[open] != '[' || reader->line.data[open + 1] != '!' ||
+        open + 2 + variant_end(reader->line.data + open + 2, end - open - 2) != end) {
         return;
     }
     const markdown_core_field variant = {
@@ -56,48 +55,48 @@ static void S_report_variant(markdown_core_parser *parser, const markdown_core_c
 }
 
 static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_node *node, markdown_core_chunk *input) {
-    bufsize_t pos = parser->at.offset;
+                                                       markdown_core_node *node, markdown_core_reader *reader) {
+    bufsize_t pos = reader->offset;
     bufsize_t begin = pos;
-    while (pos < input->len && input->data[pos] == ' ' && pos - begin < 3) {
+    while (pos < reader->line.len && reader->line.data[pos] == ' ' && pos - begin < 3) {
         pos++;
         counts->scan++;
     }
     counts->scan++;
-    if (parser->sink && !parser->at.partially_consumed_tab) {
-        S_report_variant(parser, input, pos);
+    if (parser->sink && !reader->split) {
+        S_report_variant(parser, reader, pos);
     }
-    if (parser->at.partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
-        input->data[pos + 1] != '!') {
+    if (reader->split || pos + 2 >= reader->line.len || reader->line.data[pos] != '[' ||
+        reader->line.data[pos + 1] != '!') {
         return false;
     }
     pos += 2;
     begin = pos;
-    while (pos < input->len) {
-        unsigned char c = input->data[pos];
+    while (pos < reader->line.len) {
+        unsigned char c = reader->line.data[pos];
         counts->scan++;
         if (!variant_byte(c)) {
             break;
         }
         pos++;
     }
-    if (pos == begin || pos >= input->len || input->data[pos] != ']') {
+    if (pos == begin || pos >= reader->line.len || reader->line.data[pos] != ']') {
         return false;
     }
-    markdown_core_chunk variant = {input->data + begin, pos - begin, 0};
+    markdown_core_chunk variant = {reader->line.data + begin, pos - begin, 0};
     pos++;
-    bool has_fold = pos < input->len && (input->data[pos] == '+' || input->data[pos] == '-');
-    bool collapsed = has_fold && input->data[pos] == '-';
+    bool has_fold = pos < reader->line.len && (reader->line.data[pos] == '+' || reader->line.data[pos] == '-');
+    bool collapsed = has_fold && reader->line.data[pos] == '-';
     pos += has_fold;
-    if (pos < input->len && !markdown_core_is_whitespace(input->data[pos])) {
+    if (pos < reader->line.len && !markdown_core_is_whitespace(reader->line.data[pos])) {
         return false;
     }
-    while (pos < input->len && markdown_core_is_space_or_tab(input->data[pos])) {
+    while (pos < reader->line.len && markdown_core_is_space_or_tab(reader->line.data[pos])) {
         pos++;
         counts->scan++;
     }
-    bufsize_t end = input->len;
-    while (end > pos && markdown_core_is_whitespace(input->data[end - 1])) {
+    bufsize_t end = reader->line.len;
+    while (end > pos && markdown_core_is_whitespace(reader->line.data[end - 1])) {
         end--;
         counts->scan++;
     }
@@ -115,28 +114,29 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
         }
         node->as.callout->title = title;
         title->place =
-            (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->at.line_number, pos + 1),
-                                  (uint32_t)markdown_core_parser_source_end(parser, parser->at.line_number, end)};
-        markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
-        if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->at.line_number,
-                                                                            pos + 1, title->content.size, 0)) {
+            (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, reader->number, pos + 1),
+                                  (uint32_t)markdown_core_parser_source_end(parser, reader->number, end)};
+        markdown_core_strbuf_put(&title->content, reader->line.data + pos, end - pos);
+        if (title->content.oom ||
+            !markdown_core_parser_append_source_marks(parser, title, reader->number, pos + 1, title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         markdown_core_block_settle_field(parser, title, node);
     }
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
+    markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
     return true;
 }
 
 static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                       markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                                       markdown_core_node **container, markdown_core_reader *reader,
+                                       block_start *start) {
 
-    bufsize_t blockquote_startpos = parser->at.first_nonspace;
+    bufsize_t blockquote_startpos = reader->nonspace;
 
-    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + 1 - parser->at.offset, false);
+    markdown_core_reader_advance(reader, reader->nonspace + 1 - reader->offset, false);
     // optional following character
-    if (markdown_core_is_space_or_tab(input->data[parser->at.offset])) {
-        markdown_core_block_advance_offset(parser, input, 1, true);
+    if (markdown_core_is_space_or_tab(reader->line.data[reader->offset])) {
+        markdown_core_reader_advance(reader, 1, true);
     }
     *container =
         markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CALLOUT, blockquote_startpos + 1);
@@ -144,7 +144,7 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
         return false;
     }
 
-    if (markdown_core_block_parse_callout_metadata(self->state, parser, *container, input)) {
+    if (markdown_core_block_parse_callout_metadata(self->state, parser, *container, reader)) {
         return false;
     }
 
@@ -154,9 +154,9 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
 static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        block_start_context *context, block_start *start) {
     (void)self;
-    markdown_core_chunk *input = context->input;
-    int first = context->first;
-    if (!(input->data[first] == '>')) {
+    markdown_core_reader *reader = context->reader;
+    int first = reader->nonspace;
+    if (!(reader->line.data[first] == '>')) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_CALLOUT;
@@ -165,36 +165,36 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
 }
 
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node) {
+                         markdown_core_node *node, const markdown_core_reader *reader) {
     (void)self;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
            !markdown_core_parser_last_child(node) &&
-           markdown_core_parser_starts_on_line(parser, node, parser->at.line_number - 1);
+           markdown_core_parser_starts_on_line(parser, node, reader->number - 1);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_node *node, markdown_core_reader *reader,
+                               const markdown_core_node *joining, bool *taken) {
     (void)self;
-    return markdown_core_block_parse_callout_prefix(parser, input);
+    return markdown_core_block_parse_callout_prefix(reader);
 }
 /* The prefix reads the first non-space byte. Its column-counted advance
  * over a `>` reads the byte after the `>`'s scalar, and takes it when it is
- * a space or a tab -- a space's scalar too (markdown_core_block_scalar_end). */
+ * a space or a tab -- a space's scalar too (markdown_core_reader_scalar_end). */
 static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                const markdown_core_node *node, const markdown_core_chunk *input) {
+                                const markdown_core_node *node, const markdown_core_reader *reader) {
     (void)self;
     (void)node;
-    const bufsize_t first = parser->at.first_nonspace;
-    if (parser->at.indent > 3 || input->data[first] != '>') {
+    const bufsize_t first = reader->nonspace;
+    if (reader->indent > 3 || reader->line.data[first] != '>') {
         return first;
     }
-    const bufsize_t after = markdown_core_block_scalar_end(input, first + 1);
-    return input->data[after] == ' ' ? markdown_core_block_scalar_end(input, after + 1) : after;
+    const bufsize_t after = markdown_core_reader_scalar_end(reader, first + 1);
+    return reader->line.data[after] == ' ' ? markdown_core_reader_scalar_end(reader, after + 1) : after;
 }
 /* The scan reads the first non-space byte. The open reads the byte after
  * the `>`, which it takes when it is a space -- with the space's scalar
- * (markdown_core_block_scalar_end) -- or one column of a tab; then, unless
+ * (markdown_core_reader_scalar_end) -- or one column of a tab; then, unless
  * that tab is only partly taken, up to three spaces and the two bytes after
  * them, which a metadata line opens with `[!`, and whose header reads to the
  * line's end (markdown_core_block_parse_callout_metadata). */
@@ -202,26 +202,26 @@ static bufsize_t start_reach(const markdown_core_element_instance *self, markdow
                              const block_start_context *context, bool *opens) {
     (void)self;
     (void)parser;
-    const markdown_core_chunk *input = context->input;
-    const bufsize_t end = input->len - 1;
-    bufsize_t at = context->first;
-    if (input->data[at] != '>') {
+    const markdown_core_reader *reader = context->reader;
+    const bufsize_t end = reader->line.len - 1;
+    bufsize_t at = reader->nonspace;
+    if (reader->line.data[at] != '>') {
         return at;
     }
     *opens = true;
     at++;
-    if (input->data[at] == '\t') {
-        if (TAB_STOP - (context->column + 1) % TAB_STOP > 1) {
+    if (reader->line.data[at] == '\t') {
+        if (TAB_STOP - (reader->nonspace_column + 1) % TAB_STOP > 1) {
             return at;
         }
         at++;
-    } else if (input->data[at] == ' ') {
-        at = markdown_core_block_scalar_end(input, at + 1);
+    } else if (reader->line.data[at] == ' ') {
+        at = markdown_core_reader_scalar_end(reader, at + 1);
     }
-    for (int spaces = 0; spaces < 3 && input->data[at] == ' '; spaces++) {
+    for (int spaces = 0; spaces < 3 && reader->line.data[at] == ' '; spaces++) {
         at++;
     }
-    if (at + 1 >= end || (input->data[at] == '[' && input->data[at + 1] == '!')) {
+    if (at + 1 >= end || (reader->line.data[at] == '[' && reader->line.data[at + 1] == '!')) {
         return end;
     }
     return at + 1;
@@ -230,10 +230,10 @@ static bufsize_t start_reach(const markdown_core_element_instance *self, markdow
  * cannot continue a paragraph: it starts the body's first one, as the same
  * text would with the quote's prefix. */
 static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *node, markdown_core_chunk *input) {
+                                     markdown_core_node *node, markdown_core_reader *reader) {
     (void)self;
     const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
-    return text_block->element->opens->text(text_block, parser, node, input);
+    return text_block->element->opens->text(text_block, parser, node, reader);
 }
 
 static const markdown_core_node_type CALLOUT_TRAILED[] = {MARKDOWN_CORE_NODE_CALLOUT, MARKDOWN_CORE_NODE_NONE};

@@ -104,10 +104,10 @@ static int read_block_line(void *context, markdown_core_chunk *input, int *first
     return 1;
 }
 
-/* The block's reading from the fence line `line` in `parent`: whether a
+/* The block's reading from the fence line, the reader's, in `parent`: whether a
  * later line under the same prefixes closes it. */
 static bool comment_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *parent, markdown_core_chunk *line, int first, bool *undecided) {
+                          markdown_core_node *parent, markdown_core_reader *reader, bool *undecided) {
     /* The lookahead's beginning writes the lookahead whole. */
     comment_lines lines;
     lines.undecided = false;
@@ -118,8 +118,8 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
     if (!markdown_core_parser_candidate_final(parser)) {
         markdown_core_parser_lookahead_wait(&lines.lookahead);
     }
-    markdown_core_block_reader reader = {&lines, read_block_line};
-    const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
+    markdown_core_block_reader next = {&lines, read_block_line};
+    const bool closed = probe_comment_block(self, parser, &reader->line, reader->nonspace, reader->indent, &next);
     markdown_core_parser_lookahead_opener(&lines.lookahead, self, closed);
     markdown_core_parser_lookahead_end(&lines.lookahead);
     *undecided = !closed && lines.undecided;
@@ -130,17 +130,16 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
  * a call that meets its candidate declines. */
 static markdown_core_node *open_block(const markdown_core_element_instance *self, int indented,
                                       markdown_core_parser *parser, markdown_core_node *parent_container,
-                                      unsigned char *input, int len) {
-    int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
+                                      markdown_core_reader *reader) {
+    int first_nonspace = reader->nonspace;
     markdown_core_node *node;
 
-    if (indented || !is_fence_line(input, len, first_nonspace) ||
+    if (indented || !is_fence_line(reader->line.data, reader->line.len, first_nonspace) ||
         markdown_core_parser_candidate_meets(parser, self, parent_container)) {
         return NULL;
     }
-    markdown_core_chunk line = {input, len, 0};
     bool undecided;
-    const bool closed = comment_reads(self, parser, parent_container, &line, first_nonspace, &undecided);
+    const bool closed = comment_reads(self, parser, parent_container, reader, &undecided);
     if (undecided && !parser->error) {
         markdown_core_parser_request_candidate(parser, self, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, NULL,
                                                false);
@@ -158,8 +157,7 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     /* The rest of the fence line, spaces and its ending, is the first line
      * of the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP), and no part of its literal. */
-    markdown_core_parser_advance_offset(parser, (char *)input,
-                                        first_nonspace + 2 - markdown_core_parser_get_offset(parser), false);
+    markdown_core_reader_advance(reader, first_nonspace + 2 - reader->offset, false);
     return node;
 }
 
@@ -194,14 +192,14 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
                                                          markdown_core_parser *parser, const void *state) {
     (void)state;
-    markdown_core_chunk line;
     markdown_core_node *container;
-    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
+    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
+    if (!reader) {
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
     bool closed = false, undecided = false;
-    if (parser->at.indent < 4 && is_fence_line(line.data, line.len, parser->at.first_nonspace)) {
-        closed = comment_reads(self, parser, container, &line, parser->at.first_nonspace, &undecided);
+    if (reader->indent < 4 && is_fence_line(reader->line.data, reader->line.len, reader->nonspace)) {
+        closed = comment_reads(self, parser, container, reader, &undecided);
     }
     markdown_core_parser_candidate_end(parser);
     return undecided ? MARKDOWN_CORE_CANDIDATE_WAIT
@@ -212,10 +210,9 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
 /* Every line reaches the open block until its closer; the closer line closes
  * it and is not added. The lookahead saw this closer before the block opened,
  * through the same container matchers, so an open block always finds it. */
-static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *input,
-                         int len, markdown_core_node *container) {
-    if (markdown_core_parser_get_indent(parser) <= 3 &&
-        is_fence_line(input, len, markdown_core_parser_get_first_nonspace(parser))) {
+static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_reader *reader, markdown_core_node *container) {
+    if (reader->indent <= 3 && is_fence_line(reader->line.data, reader->line.len, reader->nonspace)) {
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
     return 1;

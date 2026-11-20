@@ -15,6 +15,7 @@ set(HEADERS
     node.h
     node_type.h
     chunk.h
+    reader.h
     attributes.h
     slab.h
     metadata.h

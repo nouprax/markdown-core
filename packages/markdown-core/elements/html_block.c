@@ -4,8 +4,8 @@
 #include "block_internal.h"
 
 #include "comment.h"
-static int continue_html(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
-                         int length, markdown_core_node *container) {
+static int continue_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_reader *reader, markdown_core_node *container) {
     bool res = false;
     int html_block_type = container->as.html_block->block_type;
 
@@ -21,7 +21,7 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
         break;
     case 6:
     case 7:
-        res = !parser->at.blank;
+        res = !reader->blank;
         break;
     }
 
@@ -43,17 +43,17 @@ static bool close_html(const markdown_core_element_instance *self, markdown_core
     return true;
 }
 static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                      markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK,
-                                                parser->at.first_nonspace + 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK, reader->nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->as.html_block->block_type = matched;
-    // note, we don't adjust parser->at.offset because the tag is part of the
+    // note, we don't adjust reader->offset because the tag is part of the
     // text
 
     return true;
@@ -61,9 +61,11 @@ static bool open_html(const markdown_core_element_instance *self, markdown_core_
 static bool scan_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
                       block_start_context *context, block_start *start) {
     (void)self;
-    if (!(start->matched = scan_html_block_start(context->input->data, context->input->len, context->first)) &&
+    if (!(start->matched = scan_html_block_start(context->reader->line.data, context->reader->line.len,
+                                                 context->reader->nonspace)) &&
         !(!context->paragraph && !context->lazy &&
-          (start->matched = scan_html_block_start_7(context->input->data, context->input->len, context->first)))) {
+          (start->matched = scan_html_block_start_7(context->reader->line.data, context->reader->line.len,
+                                                    context->reader->nonspace)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_HTML_BLOCK;
@@ -71,25 +73,26 @@ static bool scan_html(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool ends_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_node *container, markdown_core_chunk *input) {
+                      markdown_core_node *container, markdown_core_reader *reader) {
     (void)self;
     switch (container->as.html_block->block_type) {
     case 1:
-        return scan_html_block_end_1(input->data, input->len, parser->at.first_nonspace);
+        return scan_html_block_end_1(reader->line.data, reader->line.len, reader->nonspace);
     case 2:
-        return scan_html_block_end_2(input->data, input->len, parser->at.first_nonspace);
+        return scan_html_block_end_2(reader->line.data, reader->line.len, reader->nonspace);
     case 3:
-        return scan_html_block_end_3(input->data, input->len, parser->at.first_nonspace);
+        return scan_html_block_end_3(reader->line.data, reader->line.len, reader->nonspace);
     case 4:
-        return scan_html_block_end_4(input->data, input->len, parser->at.first_nonspace);
+        return scan_html_block_end_4(reader->line.data, reader->line.len, reader->nonspace);
     case 5:
-        return scan_html_block_end_5(input->data, input->len, parser->at.first_nonspace);
+        return scan_html_block_end_5(reader->line.data, reader->line.len, reader->nonspace);
     default:
         return false;
     }
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node) {
+                       markdown_core_node *node, const markdown_core_reader *reader) {
+    (void)reader;
     (void)self;
     return true;
 }

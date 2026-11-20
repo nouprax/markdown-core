@@ -210,17 +210,17 @@ static int probe_formula_block(const markdown_core_element_instance *self, markd
 
 static markdown_core_node *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
                                                      markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                     unsigned char *input, int len) {
+                                                     markdown_core_reader *reader) {
     int block_delim;
     markdown_core_node *node;
     node_formula *formula;
-    int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
+    int first_nonspace = reader->nonspace;
 
     if (indented) {
         return NULL;
     }
 
-    block_delim = scan_formula_block_open(input, (bufsize_t)len, (bufsize_t)first_nonspace);
+    block_delim = scan_formula_block_open(reader->line.data, (bufsize_t)reader->line.len, (bufsize_t)first_nonspace);
     if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
         return NULL;
     }
@@ -245,23 +245,21 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     /* The rest of the line, spaces and its ending, is the first line of
      * the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP): the literal, trimmed, starts past it. */
-    markdown_core_parser_advance_offset(parser, (char *)input,
-                                        first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3) -
-                                            markdown_core_parser_get_offset(parser),
-                                        false);
+    markdown_core_reader_advance(
+        reader, first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3) - reader->offset, false);
     return node;
 }
 
 static int formula_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 unsigned char *input, int len, markdown_core_node *container) {
+                                 markdown_core_reader *reader, markdown_core_node *container) {
     node_formula *formula = get_formula(container);
-    int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
+    int first_nonspace = reader->nonspace;
 
     /* The closer is the block's end condition: its line closes it and is
      * no line of its content. */
-    if (scan_formula_block_close(input, (bufsize_t)len, (bufsize_t)first_nonspace, formula->block_delim)) {
-        markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
-                                            false);
+    if (scan_formula_block_close(reader->line.data, (bufsize_t)reader->line.len, (bufsize_t)first_nonspace,
+                                 formula->block_delim)) {
+        markdown_core_reader_advance(reader, reader->line.len - reader->offset, false);
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
 
