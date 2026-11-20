@@ -7451,26 +7451,30 @@ static inline void S_line_cut_set(markdown_core_input_line *line, size_t past, s
 
 void markdown_core_parser_look_cut(markdown_core_parser *parser, size_t start, size_t end) {
     markdown_core_tree *lines = &parser->input.lines;
-    const size_t after = S_lines_front_from(lines, end);
-    if (!after) {
+    const size_t front = lines->front;
+    /* The lines read in end where the next is read from. */
+    const size_t scanned = parser->input.scanned;
+    if (!front || end <= start + 1) {
         return;
     }
-    markdown_core_input_line *line = S_line(lines, after - 1);
-    size_t past;
-    if (after < lines->front) {
-        past = S_lines_start(lines, after);
-    } else {
-        size_t size;
-        const unsigned char *source = markdown_core_parser_input_text(parser, &size);
-        past = line->end + (line->end + 1 < size && source[line->end] == '\r' && source[line->end + 1] == '\n' ? 2 : 1);
-        if (end > past + 1) {
-            /* Its line is not read in yet: it waits for it. */
-            if (!markdown_core_array_push(&parser->stream->edit->cuts,
-                                          ((markdown_core_place){(uint32_t)start, (uint32_t)end}))) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
+    if (end > scanned + 1) {
+        /* Its line is not read in yet: it waits for it. */
+        if (!markdown_core_array_push(&parser->stream->edit->cuts,
+                                      ((markdown_core_place){(uint32_t)start, (uint32_t)end}))) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        return;
+    }
+    /* Mostly the last line read in. */
+    markdown_core_input_line *line = S_line(lines, front - 1);
+    size_t past = scanned;
+    if (end <= line->start) {
+        const size_t after = S_lines_front_from(lines, end);
+        if (!after) {
             return;
         }
+        line = S_line(lines, after - 1);
+        past = S_lines_start(lines, after);
     }
     S_line_cut_set(line, past, start, end);
 }
