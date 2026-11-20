@@ -10516,6 +10516,22 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         OK(runner, edited && session_as_parsed(session), "a specimen after a comment that stops being one");
         markdown_core_session_close(session);
     }
+    /* A candidate's lookahead notes its reach where its lines put it,
+     * before the reader is back on its own line: typing before a comment
+     * whose next line is a list item reads as a parse does. */
+    {
+        static const char looked[] = "%%\ni. x";
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        const markdown_core_position at = {1, 1};
+        const bool edited =
+            markdown_core_session_new((const uint8_t *)looked, strlen(looked), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) == MARKDOWN_CORE_OK &&
+            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+            markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
+        OK(runner, edited && session_as_parsed(session), "typing before a comment a list item follows");
+        markdown_core_session_close(session);
+    }
     markdown_core_session *session = NULL;
     const markdown_core_document *document = NULL;
     bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,

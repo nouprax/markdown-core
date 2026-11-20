@@ -7553,7 +7553,9 @@ static void S_cuts_settle(markdown_core_edit *edit, markdown_core_input_line *li
 static markdown_core_node *S_line_block(const markdown_core_parser *parser, markdown_core_node *from, size_t start,
                                         size_t next) {
     markdown_core_node *node = from;
-    while (node->child_count) {
+    /* A block whose content is inline content holds no block: a look that
+     * settles after its content was parsed goes to it, not to an inline. */
+    while (node->child_count && !(markdown_core_parser_block_kind(parser, node)->flags & MARKDOWN_CORE_KIND_INLINES)) {
         /* The last child that starts before the line ends. */
         size_t low = 0, high = node->child_count;
         while (low < high) {
@@ -9619,18 +9621,22 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         markdown_core_reader_find(reader);
 
         const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-        markdown_core_reader before;
+        /* On the line a session holds, where a step that read what more
+         * text can change goes back to. */
+        markdown_core_reader room;
+        const markdown_core_reader *before = NULL;
         if (hold) {
             if (!S_step_decided(reader)) {
                 *held = true;
                 return above;
             }
-            before = *reader;
+            room = *reader;
+            before = &room;
         }
         const markdown_core_element_instance *structure = kind->structure;
         if (structure && structure->lines->matches) {
-            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker,
-                                     hold ? &before : NULL, held)) {
+            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker, before,
+                                     held)) {
                 if (hold && *held) {
                     return above;
                 }
@@ -9649,8 +9655,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
                 goto done;
             }
             const bool prefixed = S_container_prefix_matches(parser, structure, container, reader, NULL, &taken);
-            if (hold && !S_step_decided(reader)) {
-                *reader = before;
+            if (before && !S_step_decided(reader)) {
+                *reader = *before;
                 *held = true;
                 return above;
             }
@@ -11242,14 +11248,16 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                                        .depth = depth + 1,
                                        .thematic_kill = parser->at.thematic_break_kill_pos};
         parser->at.step_asks = parser->at.asks;
-        markdown_core_reader before;
+        markdown_core_reader room;
+        const markdown_core_reader *before = NULL;
         if (hold) {
             if (!S_step_decided(reader) || S_start_interrupts(parser, reader)) {
                 *opens = (S_opens){maybe_lazy, depth};
                 *held = true;
                 return;
             }
-            before = *reader;
+            room = *reader;
+            before = &room;
         }
         scan_element_start(parser, &context, &start);
         if (parser->error) {
@@ -11263,8 +11271,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
             start.reads(start.owner, &probe, &start);
             reader->last = probe.last;
         }
-        if (hold && (!start.open || !S_step_decided(reader))) {
-            *reader = before;
+        if (before && (!start.open || !S_step_decided(reader))) {
+            *reader = *before;
             *opens = (S_opens){maybe_lazy, depth};
             *held = true;
             return;
