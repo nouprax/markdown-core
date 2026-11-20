@@ -684,6 +684,12 @@ bool markdown_core_index_make(markdown_core_index *index, const markdown_core_pa
 
 void markdown_core_index_drop(markdown_core_index *index) { index->widths.made = false; }
 
+const markdown_core_widths *markdown_core_index_held(const markdown_core_index *index,
+                                                     const markdown_core_node *holder) {
+    const size_t *slot = nest_slot(index, holder);
+    return slot && *slot && index->nests[*slot - 1].widths.made ? &index->nests[*slot - 1].widths : NULL;
+}
+
 markdown_core_folds *markdown_core_index_folds(markdown_core_index *index, const markdown_core_node *holder) {
     const size_t *slot = nest_slot(index, holder);
     return slot && *slot ? &index->nests[*slot - 1].folds : NULL;

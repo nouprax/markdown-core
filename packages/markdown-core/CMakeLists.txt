@@ -69,13 +69,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Tsan")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
 endif()
 
-# THE READS CHECK (elements/session.c) is test machinery read from the
-# environment: test builds compile it in, and builds without CMake (the ES,
-# Swift and Kotlin packages) and NDEBUG builds leave it out.
-if(MARKDOWN_CORE_TESTS)
-    add_compile_definitions(MARKDOWN_CORE_READS_CHECK)
-endif()
-
 add_subdirectory(core)
 add_subdirectory(elements)
 if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
