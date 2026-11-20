@@ -61,7 +61,8 @@ typedef struct markdown_core_tree_ops {
     /* Where the entry ends in the text, for a tree whose inner nodes keep
      * the furthest end below each child (markdown_core_tree_past), which a
      * shift moves as it moves the entry; NULL for one that keeps none. Such
-     * a tree's entries are not written in place. */
+     * a tree's entries are not written in place but to end further, which
+     * markdown_core_tree_raise then tells it. */
     size_t (*end)(const void *entry);
 } markdown_core_tree_ops;
 
@@ -162,6 +163,15 @@ size_t markdown_core_tree_seek(const markdown_core_tree *tree, const void *key);
 /* The rank of the first entry of ranks `low` up to `high` that ends past
  * `place`, or `high` (a tree whose ops give `end`). */
 size_t markdown_core_tree_past(const markdown_core_tree *tree, size_t place, size_t low, size_t high);
+
+/* The furthest end of all the entries, or 0 for none (a tree whose ops
+ * give `end`). */
+size_t markdown_core_tree_furthest(const markdown_core_tree *tree);
+
+/* Entry `index`, written in place to end further than it did (a tree whose
+ * ops give `end`): the furthest ends above it are raised to its end. An
+ * entry an append wrote that the tree has not counted above needs none. */
+void markdown_core_tree_raise(markdown_core_tree *tree, size_t index);
 
 /* A HANDLE: where an entry is, as its `moved` last said, which holds until
  * the next `moved` of the entry. The entry it holds, its places where they

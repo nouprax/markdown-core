@@ -118,8 +118,16 @@ static void S_line_shift(void *entry, int64_t delta) {
     line->end = (uint32_t)((int64_t)line->end + delta);
 }
 
+/* Where the looks that began on the line end (`look`), or its start for
+ * none: the lines whose looks read past a byte are found as the readings
+ * are (markdown_core_parser_line_looked). */
+static size_t S_line_looks(const void *entry) {
+    const markdown_core_input_line *line = entry;
+    return (size_t)line->start + line->look;
+}
+
 const markdown_core_tree_ops markdown_core_input_lines = {
-    sizeof(markdown_core_input_line), S_line_start, NULL, S_line_shift, NULL, NULL};
+    sizeof(markdown_core_input_line), S_line_start, NULL, S_line_shift, NULL, S_line_looks};
 
 /* THE REACH TREE (stream, `reach`): readings in order of start, the
  * furthest end below each child kept. */
@@ -1708,15 +1716,46 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_candidate_drops(markdown_core_
  * children. A block a snapshot lent waits for the take-back (THE LENDING),
  * one a candidate lent for its decision (THE CANDIDATES), and the block the
  * lending reaches next is lent as it closes. */
-/* What `gone`, a block that yields no node, read, `to` holds: the block
- * before it, or its parent. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reads_pass(const markdown_core_node *gone, markdown_core_node *to) {
+/* What `gone`, a block that yields no node, read, a block of `parent`
+ * holds: the first of its children from where the reading began on, of
+ * those it read (S_reads_kept), as
+ * the reading of a paragraph its definitions were cut from began at the
+ * first (THE BLOCK OF A LINE), or the last before it, or `parent`. */
+/* How many of `parent`'s first children an edit's reading kept, whose
+ * places their publish gave and no reading since (ast.c, THE RECORDS): those
+ * of the root or of a block of the chain before the reading's first, and
+ * the block of the chain among them. */
+static size_t S_reads_kept(const markdown_core_parser *parser, const markdown_core_node *parent) {
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    if (!edit || !edit->reading) {
+        return 0;
+    }
+    if (parent == parser->root) {
+        return edit->depth ? (size_t)edit->path[0] + 1 : edit->root.start;
+    }
+    for (size_t level = 0; level < edit->depth; level++) {
+        if (edit->chain[level] == parent) {
+            return level + 1 < edit->depth ? (size_t)edit->path[level + 1] + 1 : edit->path[level + 1];
+        }
+    }
+    return 0;
+}
+
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reads_pass(markdown_core_parser *parser,
+                                                             const markdown_core_node *gone,
+                                                             markdown_core_node *parent) {
     const size_t start = gone->place.start, from = start - gone->opened;
+    const size_t kept = S_reads_kept(parser, parent);
+    size_t k = parent->child_count;
+    while (k > kept && parent->children[k - 1]->place.start >= from) {
+        k--;
+    }
+    markdown_core_node *to = k < parent->child_count ? parent->children[k] : k ? parent->children[k - 1] : parent;
     if (gone->closed) {
         markdown_core_node_reads(to, from, start + gone->closed, true);
     }
     if (gone->look) {
-        markdown_core_node_reads(to, from, start + gone->look, false);
+        markdown_core_parser_look_before(parser, to, start, start + gone->look);
     }
 }
 
@@ -1746,7 +1785,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
         assert(parent->children[parent->child_count - 1] == closing);
         markdown_core_node_array_pop(parent->children, &parent->child_count);
         if (closing->closed || closing->look) {
-            S_reads_pass(closing, parent->child_count ? parent->children[parent->child_count - 1] : parent);
+            S_reads_pass(parser, closing, parent);
         }
         if (!(closing->flags & MARKDOWN_CORE_NODE__LENT)) {
             markdown_core_parser_release_node(parser, closing);
@@ -5887,6 +5926,17 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->miss_root = NULL;
     markdown_core_strbuf_clear(&stream->miss_labels);
     stream->defined_count = 0;
+    /* What the readings from the rest point on read goes with them (node.h,
+     * `look`): the document's prefix's, read from its start, when the
+     * reading is from there, and a block's of the chain that starts there. */
+    if (!start) {
+        root->look = 0;
+    }
+    for (size_t level = 0; level < depth; level++) {
+        if (stream->edit->places[level].start >= start) {
+            stream->edit->chain[level]->look = 0;
+        }
+    }
     if (depth) {
         /* The closes of the blocks of the chain, which their reading notes
          * again, or a splice as they were (THE NESTED SPLICE). Only those
@@ -6184,10 +6234,11 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
  * a lookahead, which leaves the reading as it was, and notes no reach
  * (THE REACH). */
 static int S_carries(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind) {
-    markdown_core_stream *stream = parser->stream;
-    const size_t reach = stream->noted.count;
+    markdown_core_edit *edit = parser->stream->edit;
     markdown_core_block_lookahead lookahead;
+    edit->quiet = true;
     if (!markdown_core_parser_lookahead_begin(parser, block, kind, &lookahead)) {
+        edit->quiet = false;
         return -1;
     }
     markdown_core_chunk line;
@@ -6195,7 +6246,7 @@ static int S_carries(markdown_core_parser *parser, markdown_core_node *block, ma
     const int read = markdown_core_parser_lookahead_next(&lookahead, &line, &first, &indent, &blanks);
     const int carried = blanks ? -1 : !read ? 0 : lookahead.line == parser->at.line_number + 2 ? 1 : -1;
     markdown_core_parser_lookahead_end(&lookahead);
-    markdown_core_array_truncate(&stream->noted, reach);
+    edit->quiet = false;
     return parser->error ? -1 : carried;
 }
 
@@ -7394,6 +7445,7 @@ static void S_line_reads(markdown_core_parser *parser, int line, size_t start, s
         markdown_core_node_reads(block, start, end, false);
     } else if (end > at && end - at > geometry->look) {
         geometry->look = (uint32_t)(end - at);
+        markdown_core_tree_raise(&parser->input.lines, (size_t)(line - parser->input.first_line));
     }
 }
 
@@ -7409,6 +7461,19 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_look_settle(markdown_core
         S_line_reads(parser, edit->look_line, edit->look.start, edit->look.end);
     }
     edit->look = (markdown_core_place){0, 0};
+}
+
+void markdown_core_parser_look_before(markdown_core_parser *parser, markdown_core_node *node, size_t start,
+                                      size_t end) {
+    /* Lines the reading has read in, in the front (THE LINE TREE). */
+    const markdown_core_tree *lines = &parser->input.lines;
+    const size_t from = S_lines_front_from(lines, start + 1), at = S_lines_front_from(lines, node->place.start + 1);
+    if (from < at) {
+        S_line_reads(parser, !from ? parser->input.first_line - 1 : parser->input.first_line + (int)from - 1, start,
+                     end);
+    } else {
+        markdown_core_node_reads(node, start, end, false);
+    }
 }
 
 void markdown_core_parser_line_look(markdown_core_parser *parser, size_t start, size_t end) {
@@ -7527,35 +7592,8 @@ const markdown_core_place *markdown_core_parser_reach_record(const markdown_core
 }
 #endif
 
-bool markdown_core_parser_crossed(const markdown_core_parser *parser, size_t point, size_t past, size_t from,
-                                  const uint32_t *opens, size_t count, size_t *start) {
-    assert(past >= point && count <= 64);
-    const markdown_core_tree *reach = &parser->stream->reach;
-    const size_t high = markdown_core_tree_from(reach, point, 0, reach->count);
-    uint64_t used = 0;
-    for (size_t i = 0; i < high; i++) {
-        /* The next reading that reads past `past`, found by the furthest
-         * ends the tree keeps. */
-        i = markdown_core_tree_past(reach, past, i, high);
-        if (i == high) {
-            break;
-        }
-        const markdown_core_place place = *S_reach_at(reach, i);
-        const bool spans = markdown_core_reach_spans(&place);
-        if (!spans && markdown_core_reach_end(&place) <= from) {
-            continue;
-        }
-        size_t k = 0;
-        while (k < count && (!spans || opens[k] != place.start || (used >> k & 1))) {
-            k++;
-        }
-        if (k == count) {
-            *start = place.start;
-            return true;
-        }
-        used |= UINT64_C(1) << k;
-    }
-    return false;
+size_t markdown_core_parser_line_looked(const markdown_core_parser *parser, size_t lines, size_t past) {
+    return markdown_core_tree_past(&parser->input.lines, past, 0, lines);
 }
 
 /* THE SNAPSHOT (docs/plans/2026-09-29-incremental-parsing.md, 5.3; step 7,

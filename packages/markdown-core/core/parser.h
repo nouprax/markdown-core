@@ -975,6 +975,9 @@ typedef struct markdown_core_edit {
      * (markdown_core_parser_reach), and that line. End 0 for none. */
     markdown_core_place look;
     int look_line;
+    /* A lookahead that leaves the reading as it was reads in hand: what it
+     * reads is noted nowhere, in the reach nor in a node or a line. */
+    bool quiet;
     size_t complete, to, point, resumed;
     int64_t delta, lead;
 } markdown_core_edit;
@@ -2168,7 +2171,7 @@ bool markdown_core_parser_takes_edits(const markdown_core_parser *parser);
  * snapshot, whose readings its rollback takes back. */
 void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end);
 static inline bool markdown_core_parser_reaches(const markdown_core_parser *parser) {
-    return parser->stream && parser->stream->edit && !parser->stream->snapshot_mark;
+    return parser->stream && parser->stream->edit && !parser->stream->snapshot_mark && !parser->stream->edit->quiet;
 }
 /* Where a reading of the line in hand ends, in a parse that notes reach
  * (THE REACH: an end is past the last byte read): past its line ending,
@@ -2194,7 +2197,7 @@ static inline bool markdown_core_reach_spans(const markdown_core_place *place) {
  * read (node.h, `opened`, `closed`, `look`). */
 static inline void markdown_core_node_reads(markdown_core_node *node, size_t start, size_t end, bool span) {
     const size_t at = node->place.start;
-    if (start < at && at - start > node->opened) {
+    if (span && start < at && at - start > node->opened) {
         node->opened = (uint32_t)(at - start);
     }
     const uint32_t past = end > at ? (uint32_t)(end - at) : 0;
@@ -2203,26 +2206,42 @@ static inline void markdown_core_node_reads(markdown_core_node *node, size_t sta
         *field = past;
     }
 }
-/* `node` starts at `start` from now on, and what its reading read stays
- * where it was. */
-static inline void markdown_core_node_restart(markdown_core_node *node, size_t start) {
-    const int64_t moved = (int64_t)start - (int64_t)node->place.start;
-    const int64_t opened = (int64_t)node->opened + moved;
-    node->opened = opened > 0 ? (uint32_t)opened : 0;
-    node->closed = (int64_t)node->closed > moved ? (uint32_t)((int64_t)node->closed - moved) : 0;
-    node->look = (int64_t)node->look > moved ? (uint32_t)((int64_t)node->look - moved) : 0;
-    node->place.start = (uint32_t)start;
-}
+
 /* A look of the reading in hand that names no block, which the block of
  * its line takes as the line ends (blocks.c, THE REACH). */
 void markdown_core_parser_line_look(markdown_core_parser *parser, size_t start, size_t end);
+/* A look of `node`'s from `start`, before it, which goes to the block of
+ * its line when that is a line before the node's (blocks.c, THE BLOCK OF A
+ * LINE): a look's reading begins on the line it is the look of. */
+void markdown_core_parser_look_before(markdown_core_parser *parser, markdown_core_node *node, size_t start, size_t end);
+/* `node` starts at `start` from now on, and what its reading read stays
+ * where it was: its spans from where they began (`opened`), and its look,
+ * which began where it started, the block of that line's (THE BLOCK OF A
+ * LINE). */
+static inline void markdown_core_node_restart(markdown_core_parser *parser, markdown_core_node *node, size_t start) {
+    const size_t old = node->place.start;
+    const int64_t moved = (int64_t)start - (int64_t)old;
+    const size_t look = node->look ? old + node->look : 0;
+    if (node->opened || node->closed) {
+        const int64_t opened = (int64_t)node->opened + moved;
+        node->opened = opened > 0 ? (uint32_t)opened : 0;
+    }
+    node->closed = (int64_t)node->closed > moved ? (uint32_t)((int64_t)node->closed - moved) : 0;
+    node->look = 0;
+    node->place.start = (uint32_t)start;
+    if (look) {
+        markdown_core_parser_look_before(parser, node, old, look);
+    }
+}
 /* `node`'s reading read from `start` to `end`, a look, or a span for
  * markdown_core_parser_reach_span; NULL for the block of the line in hand. */
 static inline void markdown_core_parser_reach(markdown_core_parser *parser, markdown_core_node *node, size_t start,
                                               size_t end) {
     if (markdown_core_parser_reaches(parser) && end > start) {
         markdown_core_parser_note_reach(parser, start, end);
-        if (node) {
+        if (node && start < node->place.start) {
+            markdown_core_parser_look_before(parser, node, start, end);
+        } else if (node) {
             markdown_core_node_reads(node, start, end, false);
         } else {
             markdown_core_parser_line_look(parser, start, end);
@@ -2252,21 +2271,15 @@ const markdown_core_unclosed *markdown_core_parser_openers(const markdown_core_p
 /* Puts the reach of the flushed document in the order its queries need;
  * it reads as it did. False when storage could not be had. */
 bool markdown_core_parser_sort_reach(markdown_core_parser *parser);
-/* Whether a reading that starts before `point` reads on past `past`, no
- * earlier than `point`, but a look that ended no later than `from`, where
- * the edit begins, which read none of what it writes, and the close of
- * each of the `count` blocks that start at `opens`, open there (THE NESTED
- * REOPEN): one span from each of their starts, which their reopen notes
- * again. Its start in `*start`. The reach is sorted
- * (markdown_core_parser_sort_reach). */
 #ifndef NDEBUG
 /* Where the looks that began on line `line` read to, 0 for none. */
 size_t markdown_core_parser_line_looks(const markdown_core_parser *parser, size_t line);
 /* The reading `index` of the sorted reach, NULL past the last. */
 const markdown_core_place *markdown_core_parser_reach_record(const markdown_core_parser *parser, size_t index);
 #endif
-bool markdown_core_parser_crossed(const markdown_core_parser *parser, size_t point, size_t past, size_t from,
-                                  const uint32_t *opens, size_t count, size_t *start);
+/* The first of the first `lines` lines whose looks read past `past`
+ * (markdown_core_input_line, `look`), or `lines`. */
+size_t markdown_core_parser_line_looked(const markdown_core_parser *parser, size_t lines, size_t past);
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end);
 /* Where the own bytes of line `line` of the flushed text begin, past the
  * prefixes of the containers above its last open block (`own`). */

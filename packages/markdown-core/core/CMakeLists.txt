@@ -20,6 +20,7 @@ set(HEADERS
     metadata.h
     roster.h
     tree.h
+    index.h
     map.h
     utf8.h
     inlines.h
@@ -48,6 +49,7 @@ set(LIBRARY_SOURCES
     roster.c
     map.c
     tree.c
+    index.c
     sink.c
     houdini_html_u.c
     markdown_core_ctype.c

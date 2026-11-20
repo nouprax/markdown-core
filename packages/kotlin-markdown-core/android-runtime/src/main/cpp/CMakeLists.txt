@@ -22,6 +22,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/roster.c"
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
     "${MARKDOWN_CORE_CORE_DIR}/tree.c"
+    "${MARKDOWN_CORE_CORE_DIR}/index.c"
     "${MARKDOWN_CORE_CORE_DIR}/sink.c"
     "${MARKDOWN_CORE_CORE_DIR}/houdini_html_u.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core_ctype.c"

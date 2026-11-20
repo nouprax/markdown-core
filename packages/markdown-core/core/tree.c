@@ -432,6 +432,38 @@ size_t markdown_core_tree_past(const markdown_core_tree *tree, size_t place, siz
     return found < high ? found : high;
 }
 
+size_t markdown_core_tree_furthest(const markdown_core_tree *tree) {
+    assert(tree->ops->end);
+    if (!tree->root) {
+        return 0;
+    }
+    S_settle((markdown_core_tree *)tree);
+    return S_end(tree, tree->root, tree->levels);
+}
+
+void markdown_core_tree_raise(markdown_core_tree *tree, size_t index) {
+    assert(tree->ops->end && index < tree->count);
+    /* No level above, or an entry of the appends in place the next change
+     * counts above with its end as it is then. */
+    if (!tree->levels || index >= tree->count - tree->last->count + tree->last_held) {
+        return;
+    }
+    S_settle(tree);
+    S_path path;
+    S_descend(tree, index, &path);
+    const size_t end = tree->ops->end(S_entry(tree, path.leaf, index - path.before));
+    for (uint32_t level = tree->levels; level--;) {
+        S_inner *inner = path.nodes[level];
+        if (inner->ends[path.at[level]] >= end) {
+            break;
+        }
+        inner->ends[path.at[level]] = end;
+    }
+    tree->seen = path.leaf;
+    tree->seen_first = path.before;
+    S_spare(tree);
+}
+
 /* AN INSERTION goes down by rank, handing pending shifts down, into the
  * leaf, which splits when full, and each full node above it splits in turn
  * as it takes the new node after its child: the node keeps its first half

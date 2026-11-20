@@ -28,6 +28,7 @@ let package = Package(
                 "core/roster.c",
                 "core/map.c",
                 "core/tree.c",
+                "core/index.c",
                 "core/sink.c",
                 "core/houdini_html_u.c",
                 "core/markdown_core_ctype.c",
