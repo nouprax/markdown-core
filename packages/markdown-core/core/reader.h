@@ -107,7 +107,12 @@ typedef struct {
 } markdown_core_reader_mark;
 
 static inline markdown_core_reader_mark markdown_core_reader_tell(const markdown_core_reader *reader) {
-    return (markdown_core_reader_mark){reader->offset, reader->column, reader->split};
+    /* No compound literal: C++ includes this header. */
+    markdown_core_reader_mark mark;
+    mark.offset = reader->offset;
+    mark.column = reader->column;
+    mark.split = reader->split;
+    return mark;
 }
 
 static inline void markdown_core_reader_back(markdown_core_reader *reader, markdown_core_reader_mark mark) {
