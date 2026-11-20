@@ -105,61 +105,53 @@ static bool markdown_core_block_definition_marker(const markdown_core_reader *re
  * long prose) and admitted any line with ': ' in it. Every answer of false
  * is a line the transaction would refuse too. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_lines_admit(
-    markdown_core_parser *parser, const markdown_core_node *parent, const unsigned char **seen) {
-    const unsigned char *cursor = parser->at.lookahead_cursor;
-    if (!cursor) {
-        return false;
-    }
+    markdown_core_parser *parser, markdown_core_reader *reader, const markdown_core_node *parent) {
+    size_t cursor = markdown_core_reader_after(reader, parser);
     for (int line = 0; line < 2; line++) {
         /* The text's end it met: what follows the text may hold a marker
-         * (blocks.c, THE REACH: past the text's end). */
-        if (markdown_core_parser_input_ends(parser, cursor)) {
-            *seen = cursor + 1;
-            return false;
-        }
-        const unsigned char *at = cursor;
+         * (blocks.c, THE REACH: past the text's end); the reader notes the
+         * read of it. */
+        size_t at = cursor;
+        int c = markdown_core_reader_byte(reader, parser, at);
         const markdown_core_node *container = parent;
-        while (!markdown_core_parser_input_ends(parser, at) && parser->dialect->container_prefix[*at]) {
+        while (c >= 0 && parser->dialect->container_prefix[c]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
              * told from the marker here; only the transaction can, so the
              * key admits. No element declares one today; the rule is what
              * lets one do so without this key silently refusing the
              * definitions inside it. */
-            if (*at == ':' || *at == '~') {
-                *seen = at + 1;
+            if (c == ':' || c == '~') {
                 return true;
             }
-            if (!markdown_core_is_space_or_tab(*at)) {
+            if (!markdown_core_is_space_or_tab((unsigned char)c)) {
                 container = markdown_core_parser_parent(parser, container);
                 if (!container) {
-                    *seen = at + 1;
                     return false;
                 }
             }
-            at++;
+            c = markdown_core_reader_byte(reader, parser, ++at);
         }
-        if (markdown_core_parser_input_ends(parser, at)) {
-            *seen = at + 1;
+        if (c < 0) {
             return false;
         }
-        if (!markdown_core_is_line_end(*at)) {
-            *seen = at + 1 + (*at == ':' || *at == '~');
-            return (*at == ':' || *at == '~') &&
-                   (markdown_core_parser_input_ends(parser, at + 1) || markdown_core_is_whitespace(at[1]));
+        if (!markdown_core_is_line_end((unsigned char)c)) {
+            if (c != ':' && c != '~') {
+                return false;
+            }
+            const int next = markdown_core_reader_byte(reader, parser, at + 1);
+            return next < 0 || markdown_core_is_whitespace((unsigned char)next);
         }
         /* Blank once stripped: the transaction skips one such line, whose
          * CR is read with the byte after it. */
-        cursor = at;
-        if (*cursor == '\r') {
-            cursor++;
-            if (markdown_core_parser_input_ends(parser, cursor) || *cursor != '\n') {
-                *seen = cursor + 1;
+        cursor = at + 1;
+        if (c == '\r') {
+            const int next = markdown_core_reader_byte(reader, parser, cursor);
+            if (next < 0 || next != '\n') {
                 continue;
             }
+            cursor++;
         }
-        cursor++;
-        *seen = cursor;
     }
     return false;
 }
@@ -178,15 +170,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
     if (reader->blank || reader->indent >= 4 || markdown_core_block_definition_marker(reader)) {
         return false;
     }
-    /* What the key read of the lines after decided the line (THE REACH). */
-    const unsigned char *seen = NULL;
-    const bool admits = definition_next_lines_admit(parser, parent, &seen);
-    if (seen && markdown_core_parser_reaches(parser)) {
-        size_t length;
-        const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        markdown_core_parser_reach(parser, NULL, (size_t)reader->start, (size_t)(seen - source));
-    }
-    return admits;
+    /* What the key reads of the lines after decides the line: the reader
+     * notes it (THE REACH). */
+    return definition_next_lines_admit(parser, reader, parent);
 }
 
 /* THE TERM'S READING of the reader's line in `parent` its admission admits:
@@ -391,7 +377,7 @@ static bool continue_container(const markdown_core_element_instance *self, markd
  * ends, and a body without children ends with its marker's line: taken as
  * each closes, once its children have settled. */
 static bool close_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node *node, markdown_core_node *parent) {
+                        markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;

@@ -729,7 +729,7 @@ void markdown_core_formula_promote_fence(const markdown_core_element_instance *f
  * paragraph whose only content is a standalone formula stays a paragraph that
  * holds that Formula. */
 static bool close_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                markdown_core_node *node, markdown_core_node *parent) {
+                                markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;

@@ -131,7 +131,7 @@ static inline markdown_core_heading_parse *held_at(markdown_core_heading_state *
  * and assigns its anchor as the parse ends: in its place, numbered, in an
  * edit's parse. */
 static bool close_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *node, markdown_core_node *parent) {
+                          markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)parent;
     markdown_core_heading_state *state = self->state;
     heading_sync(state);

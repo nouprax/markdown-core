@@ -32,7 +32,7 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
  * condition closed and that holds one comment and nothing else is that
  * comment. */
 static bool close_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
-                       markdown_core_node *parent) {
+                       markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     const bool comment =
         b->as.html_block->block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;

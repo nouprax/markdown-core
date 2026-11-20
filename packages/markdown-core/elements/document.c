@@ -85,13 +85,14 @@ static void publish_candidate(const markdown_core_element_instance *self, markdo
  * (parser.h, markdown_core_parser_end_read): one that read it where more
  * text may follow decides nothing, and asks to be a candidate (blocks.c, THE
  * CANDIDATES); a call that meets its candidate declines. */
-static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_reader *reader) {
     if (markdown_core_parser_candidate_meets(parser, self, parser->root)) {
         return 0;
     }
     markdown_core_parser_clear_end_read(parser);
     size_t fence;
-    const bool closed = markdown_core_properties_closed(self->state, parser, self, &fence);
+    const bool closed = markdown_core_properties_closed(self->state, parser, reader, self, &fence);
     if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const bool opened = false;
@@ -132,9 +133,15 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
                                                          markdown_core_parser *parser, const void *state) {
     (void)state;
+    markdown_core_node *container;
+    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
+    if (!reader) {
+        return MARKDOWN_CORE_CANDIDATE_REJECT;
+    }
     size_t fence;
-    return markdown_core_properties_closed(self->state, parser, self, &fence) ? MARKDOWN_CORE_CANDIDATE_ACCEPT
-                                                                              : MARKDOWN_CORE_CANDIDATE_REJECT;
+    const bool closed = markdown_core_properties_closed(self->state, parser, reader, self, &fence);
+    markdown_core_parser_candidate_end(parser);
+    return closed ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 static const markdown_core_edit_ops DOCUMENT_EDIT = {

@@ -169,7 +169,7 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
     (void)self;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
            !markdown_core_parser_last_child(node) &&
-           markdown_core_parser_starts_on_line(parser, node, reader->number - 1);
+           markdown_core_reader_starts(reader, parser, node, reader->number - 1);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,

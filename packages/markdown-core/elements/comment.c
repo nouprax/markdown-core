@@ -252,7 +252,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
-                          markdown_core_node *);
+                          markdown_core_node *, markdown_core_reader *);
 
 /* An HTML block of type 2 that its own end condition closed and that
  * holds one comment became a CommentBlock as it closed
@@ -469,7 +469,7 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
 }
 
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b, markdown_core_node *parent) {
+                          markdown_core_node *b, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;

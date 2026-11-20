@@ -140,12 +140,12 @@ typedef struct markdown_core_opaque_ops {
 typedef struct markdown_core_document_ops {
     void (*init)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* Reads what the document's input opens with, before its first line, in
-     * the input's text (markdown_core_parser_input_text, parser.h). In a
-     * commit more text may follow, a call whose reading read the end asks to
-     * be a candidate (blocks.c, THE CANDIDATES): it stops in the root at line
-     * 0, and its candidate is fed the lines from line 1. */
-    size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* Reads what the document's input opens with, before its first line,
+     * through the reader, which stands at the input's start with no line in
+     * hand. In a commit more text may follow, a call whose reading read the
+     * end asks to be a candidate (blocks.c, THE CANDIDATES): it stops in the
+     * root at line 0, and its candidate is fed the lines from line 1. */
+    size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_reader *);
     void (*prepare)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
@@ -524,7 +524,7 @@ struct markdown_core_line_ops {
      * on a list item's first line). False when the block yields no node of
      * its own: a paragraph whose text was all reference definitions. */
     bool (*close)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                  markdown_core_node *);
+                  markdown_core_node *, markdown_core_reader *);
     /* Its `matches` may answer MARKDOWN_CORE_BLOCK_PENDING_CLOSE: a
      * closer whose ownership the blocks inside decide. */
     bool pending;

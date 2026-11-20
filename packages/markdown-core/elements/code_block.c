@@ -95,7 +95,7 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
  * line, which is the rest of the fence line and gave the info string as the
  * block opened. */
 static bool close_code(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
-                       markdown_core_node *parent) {
+                       markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;

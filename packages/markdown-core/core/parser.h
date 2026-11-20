@@ -1881,9 +1881,6 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
  * line it reads (markdown_core_input_line, `own`), so the call claims before
  * it places nodes on the lines. */
 void markdown_core_parser_claim(markdown_core_parser *parser, int line, const unsigned char *cursor, bufsize_t end);
-/* Whether `node` begins on input line `line`, a line of the active input the
- * driver has reached. */
-bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 /* An inline root's content, `length` bytes of it read, becomes the input its
  * nodes are placed in: its map to the source is kept in its places, among
  * the places of length 0 of its own source, and its map becomes the identity

@@ -78,20 +78,12 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    /* The block before it is the one before it among its parent's children,
-     * which it joined as it opened. */
-    const markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
-    const markdown_core_node *previous = parent->child_count > 1 ? parent->children[parent->child_count - 2] : NULL;
+    /* What it numbers from is the block before it, which another reading
+     * may make another kind or another block: its opener reads it. */
+    const markdown_core_node *previous = markdown_core_reader_before(reader, parser, *container);
     if (previous && previous->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;
-    }
-    /* What it numbers from is the block before it, which another reading
-     * may make another kind or another block: its opener's reading took the
-     * line end before it too (THE REACH), so no later reading resumes at it. */
-    if (previous) {
-        markdown_core_parser_reach(parser, *container, (*container)->place.start - 1,
-                                   (*container)->place.start + matched);
     }
     *(*container)->as.specimen = specimen;
     markdown_core_specimen_state *state = self->state;

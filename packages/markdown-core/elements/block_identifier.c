@@ -92,7 +92,7 @@ static bool S_ends_text(markdown_core_parser *parser, markdown_core_node *paragr
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                     markdown_core_node *parent) {
+                                                     markdown_core_node *parent, const markdown_core_reader *reader) {
     block_identifier candidate;
     const markdown_core_chunk text = markdown_core_node_text(paragraph);
     if (!S_scan_block_identifier(work, text.data, text.len, &candidate)) {
@@ -112,7 +112,7 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 1 &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - text.data), &line, &source) &&
-        markdown_core_parser_starts_on_line(parser, parent, line)) {
+        markdown_core_reader_starts(reader, parser, parent, line)) {
         owner = parent;
     }
     const int indent = markdown_core_parser_content_indent(parser, &paragraph->content_map,
@@ -134,12 +134,11 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
  * read leaves the reading `undecided`, and the call asks to be a candidate
  * (blocks.c, THE CANDIDATES). A line the reading returns is not blank,
  * however much of it the text has finished. */
-static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_node *parent, bool *undecided,
-                                   const unsigned char **reached) {
+static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_reader *reader,
+                                   markdown_core_node *parent, bool *undecided) {
     const bool waits = !markdown_core_parser_candidate_final(parser);
     *undecided = false;
-    *reached = NULL;
-    if (!waits && markdown_core_parser_input_ends(parser, parser->at.lookahead_cursor)) {
+    if (!waits && markdown_core_reader_byte(reader, parser, markdown_core_reader_after(reader, parser)) < 0) {
         return true;
     }
     markdown_core_block_lookahead lookahead;
@@ -152,32 +151,8 @@ static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_n
     }
     const bool line = markdown_core_parser_lookahead_next(&lookahead, &blank_lines) != NULL;
     *undecided = !line && !blank_lines && (lookahead.exhausted || lookahead.waited);
-    /* Past the line it read, or a line a container's prefix turned away,
-     * or the text's end it met or waits at: an unterminated last line read
-     * to the end. */
-    const bool stopped = !lookahead.ended && !lookahead.exhausted && !lookahead.waited;
-    *reached = line || stopped ? lookahead.cursor : NULL;
-    if (*reached) {
-        size_t length;
-        const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        if (*reached == source + length && length && source[length - 1] != '\n' && source[length - 1] != '\r') {
-            *reached = NULL;
-        }
-    }
     markdown_core_parser_lookahead_end(&lookahead);
     return blank_lines > 0;
-}
-
-/* The line after an identifier line decides the block before it, `owner`,
- * from the bytes up to `reached`, or past the text's end the reading met,
- * NULL (blocks.c, THE REACH). */
-static void S_reach(markdown_core_parser *parser, markdown_core_node *owner, const unsigned char *reached) {
-    if (owner && markdown_core_parser_block_root(parser) == parser->root) {
-        size_t length;
-        const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-        markdown_core_parser_reach(parser, owner, owner->place.start,
-                                   reached ? (size_t)(reached - source) : length + 1);
-    }
 }
 
 /* THE IDENTIFIER LINE, the text opener's call (paragraph.c) on a line that
@@ -190,26 +165,28 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                 markdown_core_reader *reader) {
     markdown_core_block_identifier_work *work = self->state;
-    markdown_core_node *owner = markdown_core_parser_last_child(parent);
     block_identifier candidate;
-    if (reader->indent >= CODE_INDENT || reader->line.data[reader->nonspace] != '#' || !owner ||
-        owner->attributes.anchor.len ||
+    if (reader->indent >= CODE_INDENT || markdown_core_reader_peek(reader, reader->nonspace) != '#' ||
+        !S_scan_block_identifier(work, reader->line.data + reader->nonspace, reader->line.len - reader->nonspace,
+                                 &candidate) ||
+        !candidate.own_line || candidate.content_end) {
+        return false;
+    }
+    /* The line decides the block before it, which it names. */
+    markdown_core_node *owner = markdown_core_reader_last(reader, parser, parent);
+    if (!owner || owner->attributes.anchor.len ||
         (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
-        !S_scan_block_identifier(work, reader->line.data + reader->nonspace, reader->line.len - reader->nonspace,
-                                 &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner) ||
+        !markdown_core_block_ends_with_blank_line(owner) ||
         markdown_core_parser_candidate_meets(parser, self, parent)) {
         return false;
     }
     bool undecided;
-    const unsigned char *reached;
-    const bool boundary = S_followed_by_boundary(parser, parent, &undecided, &reached);
+    const bool boundary = S_followed_by_boundary(parser, reader, parent, &undecided);
     if (parser->error) {
         return false;
     }
-    S_reach(parser, owner, reached);
     if (undecided) {
         markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, NULL, true);
         return true;
@@ -246,13 +223,13 @@ markdown_core_candidate_decision markdown_core_block_decide_identifier_line(cons
     (void)self;
     (void)state;
     markdown_core_node *container;
-    if (!markdown_core_parser_candidate_start(parser, &container)) {
+    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
+    if (!reader) {
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
+    markdown_core_reader_last(reader, parser, container);
     bool undecided;
-    const unsigned char *reached;
-    const bool boundary = S_followed_by_boundary(parser, container, &undecided, &reached);
-    S_reach(parser, markdown_core_parser_last_child(container), reached);
+    const bool boundary = S_followed_by_boundary(parser, reader, container, &undecided);
     markdown_core_parser_candidate_end(parser);
     return undecided  ? MARKDOWN_CORE_CANDIDATE_WAIT
            : boundary ? MARKDOWN_CORE_CANDIDATE_ACCEPT

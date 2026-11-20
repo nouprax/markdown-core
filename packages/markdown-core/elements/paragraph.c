@@ -9,11 +9,11 @@
  * less a block identifier at the back of its text, when anything of it is
  * left. */
 static bool close_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *paragraph, markdown_core_node *parent) {
+                            markdown_core_node *paragraph, markdown_core_node *parent, markdown_core_reader *reader) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph, parent)) {
         return false;
     }
-    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent);
+    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent, reader);
     return true;
 }
 

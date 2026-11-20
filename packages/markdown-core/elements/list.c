@@ -246,19 +246,17 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
     data->marker_offset = reader->indent;
 
     if (cont_type != MARKDOWN_CORE_NODE_LIST || !markdown_core_block_list_facts_match((*container)->as.list, data)) {
-        const size_t open = cont_type == MARKDOWN_CORE_NODE_LIST ? (*container)->place.start : SIZE_MAX;
+        /* The open list it does not continue gave it what its marker
+         * leaves open, as a variant: its opener reads that list. */
+        if (cont_type == MARKDOWN_CORE_NODE_LIST) {
+            markdown_core_reader_open(reader, *container);
+        }
         *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, reader->nonspace + 1);
         if (!*container) {
             return false;
         }
 
         memcpy((*container)->as.list, data, sizeof(*data));
-        /* The open list it does not continue gave it what its marker
-         * leaves open, as a variant: its opener is that list's reading
-         * (THE REACH). */
-        if (open != SIZE_MAX) {
-            markdown_core_parser_reach(parser, *container, open, (*container)->place.start + (size_t)matched);
-        }
     }
 
     // add the list item
@@ -336,7 +334,7 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
                        markdown_core_node *node, const markdown_core_reader *reader) {
     (void)self;
     return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(node) &&
-             markdown_core_parser_starts_on_line(parser, node, reader->number));
+             markdown_core_reader_starts(reader, parser, node, reader->number));
 }
 
 static const markdown_core_edit_ops LIST_EDIT = {
