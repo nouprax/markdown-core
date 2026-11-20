@@ -9196,7 +9196,9 @@ void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count,
             }
         }
     }
-    reader->far = reader->offset + 1 > reader->far ? reader->offset + 1 : reader->far;
+    if (reader->offset + 1 >= reader->line.len) {
+        reader->last = true;
+    }
 }
 
 bool markdown_core_reader_indented(markdown_core_reader *reader, int continuation, bool blank) {
@@ -9280,19 +9282,23 @@ static bool S_cut_starts_line(markdown_core_parser *parser, size_t start) {
     return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
 }
 
-static const uint8_t *S_gate_candidates(const markdown_core_dialect *dialect, markdown_core_block_hook hook, int key,
-                                        size_t *count);
+/* Whether a cut owner reads an item from `byte` (dialect.h, `fronts`). */
+static inline bool S_cut_fronts(const markdown_core_dialect *dialect, unsigned char byte) {
+    return (dialect->fronts[byte >> 3] >> (byte & 7)) & 1u;
+}
 
 /* The item one of the dialect's cut owners reads at the front of
  * `cut->rest`, or 0. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     S_cut_one(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_cut *cut) {
     const markdown_core_dialect *dialect = parser->dialect;
+    if (!S_cut_fronts(dialect, cut->rest.data[0])) {
+        return 0;
+    }
     const markdown_core_element_instance *const *owners = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_CUT];
-    size_t count;
-    const uint8_t *candidates = S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_CUT, cut->rest.data[0], &count);
+    const size_t count = dialect->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_CUT];
     for (size_t i = 0; i < count && !parser->error; i++) {
-        const markdown_core_element_instance *owner = owners[candidates ? candidates[i] : i];
+        const markdown_core_element_instance *owner = owners[i];
         cut->wide = false;
         cut->made = NULL;
         const bufsize_t length = owner->element->opens->cut(owner, parser, reader, cut);
@@ -9334,10 +9340,7 @@ bool markdown_core_reader_cut_front(markdown_core_reader *reader, markdown_core_
     const markdown_core_chunk text = markdown_core_node_text(b);
     /* No owner cuts an item that starts with the text's first byte, and
      * nothing was cut before: the block keeps its front. */
-    size_t owners;
-    (void)S_gate_candidates(parser->dialect, MARKDOWN_CORE_BLOCK_HOOK_CUT,
-                            text.len ? text.data[0] : MARKDOWN_CORE_BLOCK_GATE_KEY_NONE, &owners);
-    if (!owners && !b->cut_front) {
+    if (!(text.len && S_cut_fronts(parser->dialect, text.data[0])) && !b->cut_front) {
         return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
     }
     markdown_core_cut cut = {
@@ -9540,9 +9543,7 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, const markd
 /* Whether the step just taken on the line a session holds read only bytes
  * the line already has (THE LINE A SESSION HOLDS): none past the last the
  * line has, and nothing past the line. */
-static inline bool S_step_decided(const markdown_core_reader *reader) {
-    return reader->far < reader->line.len && !reader->past;
-}
+static inline bool S_step_decided(const markdown_core_reader *reader) { return !reader->last && !reader->past; }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     markdown_core_parser *parser, const markdown_core_kind_record *kind, markdown_core_node *container,
@@ -9946,7 +9947,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         input.alloc = 0;
         markdown_core_reader *const reader = &parser->at.read;
         reader->line = input;
-        reader->far = 0;
+        reader->last = false;
         lookahead->cursor = next;
         lookahead->line = this_line + 1;
 
@@ -10515,7 +10516,7 @@ markdown_core_reader *markdown_core_parser_candidate_start(markdown_core_parser 
     parser->at.read.start = (bufsize_t)found->start;
     parser->at.read.end = (bufsize_t)found->end;
     parser->at.read.line = (markdown_core_chunk){.data = parser->curline.ptr, .len = parser->curline.size, .alloc = 0};
-    parser->at.read.far = 0;
+    parser->at.read.last = false;
     markdown_core_reader_find(&parser->at.read);
     *container = candidate->stop.container;
     return &parser->at.read;
@@ -11260,7 +11261,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
         if (hold && start.open && start.reads) {
             markdown_core_reader probe = *reader;
             start.reads(start.owner, &probe, &start);
-            reader->far = probe.far;
+            reader->last = probe.last;
         }
         if (hold && (!start.open || !S_step_decided(reader))) {
             *reader = before;
@@ -11554,7 +11555,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     parser->at.read.split = false;
 
     reader->line = (markdown_core_chunk){parser->curline.ptr, parser->curline.size, 0};
-    reader->far = 0;
+    reader->last = false;
 
     parser->at.asks = parser->at.step_asks = from ? from->asks : 0;
     if (from) {

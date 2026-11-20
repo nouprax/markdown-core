@@ -303,6 +303,10 @@ typedef struct markdown_core_dialect {
     bool container_prefix[256];
     /* Every byte an element's `claims` declares. */
     bool claims[256];
+    /* Every first byte a cut owner reads an item from (element.h,
+     * `cut_needs`), one bit each: a block whose text starts with no such
+     * byte keeps its front. */
+    uint8_t fronts[32];
     /* The inline-content families, in descriptor order. */
     const markdown_core_element_instance *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];

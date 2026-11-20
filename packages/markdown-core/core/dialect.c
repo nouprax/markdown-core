@@ -248,7 +248,8 @@ static markdown_core_block_gate S_opens_gate(const markdown_core_open_ops *opens
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
         return opens->open_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_CUT:
-        return opens->cut_needs;
+        /* Asked as a block closes, not per line: its gate is the byte set
+         * `fronts` (dialect.h). */
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;
@@ -739,9 +740,19 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
             dialect->container_prefix[*c] = true;
         }
-        const char *claims = S_opens_of(instances[i].element)->claims;
+        const markdown_core_open_ops *opens = S_opens_of(instances[i].element);
+        const char *claims = opens->claims;
         for (const unsigned char *c = (const unsigned char *)claims; claims && *c; c++) {
             dialect->claims[*c] = true;
+        }
+        if (opens->cut) {
+            const unsigned char *needs = (const unsigned char *)opens->cut_needs.bytes;
+            if (!needs) {
+                memset(dialect->fronts, 0xFF, sizeof(dialect->fronts));
+            }
+            for (const unsigned char *c = needs; needs && *c; c++) {
+                dialect->fronts[*c >> 3] |= (uint8_t)(1u << (*c & 7));
+            }
         }
     }
 
