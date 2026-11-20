@@ -312,6 +312,27 @@ static size_t S_from(markdown_core_tree *tree, size_t place, const void *key, si
     if (!tree->root || low >= high) {
         return low;
     }
+    /* The leaf read last answers when the first entry not before the place
+     * is in it, or just past it: what is before the part of the range in
+     * it is before the place, and what is past it is not. */
+    const S_leaf *seen = tree->seen;
+    const size_t seen_first = tree->seen_first;
+    const size_t seen_low = low > seen_first ? low : seen_first;
+    const size_t seen_high = high < seen_first + seen->count ? high : seen_first + seen->count;
+    if (seen_low < seen_high &&
+        (seen_low == low || S_before(tree, S_entry(tree, seen, seen_low - seen_first), place, key)) &&
+        (seen_high == high || !S_before(tree, S_entry(tree, seen, seen_high - 1 - seen_first), place, key))) {
+        size_t first = seen_low, last = seen_high;
+        while (first < last) {
+            const size_t middle = first + (last - first) / 2;
+            if (S_before(tree, S_entry(tree, seen, middle - seen_first), place, key)) {
+                first = middle + 1;
+            } else {
+                last = middle;
+            }
+        }
+        return first;
+    }
     S_settle(tree);
     void *node = tree->root;
     size_t before = 0;

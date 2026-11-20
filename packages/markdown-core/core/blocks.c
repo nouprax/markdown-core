@@ -7455,15 +7455,14 @@ void markdown_core_parser_look_cut(markdown_core_parser *parser, size_t start, s
     if (!front || end <= start + 1) {
         return;
     }
-    /* Mostly the last line read in, or past it. */
-    markdown_core_input_line *line = S_line(lines, front - 1);
+    /* The line read in that holds the look's last byte, or the last. */
+    const size_t after = S_lines_front_from(lines, end);
+    if (!after) {
+        return;
+    }
+    markdown_core_input_line *line = S_line(lines, after - 1);
     size_t past;
-    if (end <= line->start) {
-        const size_t after = S_lines_front_from(lines, end);
-        if (!after) {
-            return;
-        }
-        line = S_line(lines, after - 1);
+    if (after < front) {
         past = S_lines_start(lines, after);
     } else if (end <= (size_t)line->end) {
         /* It stops before the line's ending. */
