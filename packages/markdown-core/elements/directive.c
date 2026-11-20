@@ -631,7 +631,8 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
     parsed_directive parsed;
     bufsize_t colon_count =
-        scan_directive_block(parser, reader->line.data, reader->line.len, first_nonspace, reader->indent, &parsed);
+        scan_directive_block(parser, (unsigned char *)markdown_core_reader_rest(reader, 0),
+                             markdown_core_reader_length(reader), first_nonspace, reader->indent, &parsed);
     markdown_core_node *node = NULL;
     node_directive *directive;
     if (!colon_count) {
@@ -646,8 +647,8 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque ||
-        !apply_parsed_directive(self->element, parser, node, reader->line.data, &parsed, reader->number)) {
+    if (!node->opaque || !apply_parsed_directive(self->element, parser, node, markdown_core_reader_bytes(reader, 0),
+                                                 &parsed, reader->number)) {
         /* The suffix already validated; failure here is allocation loss.
          * The block is the parse's builder from its opening and goes with
          * the parse. */
@@ -662,7 +663,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     if (directive->label) {
         markdown_core_block_settle_field(parser, directive->label, node);
     }
-    markdown_core_reader_advance(reader, reader->line.len - reader->offset, false);
+    markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
 
 done:
     free_parsed_directive(&parsed);
@@ -675,11 +676,12 @@ done:
 static int directive_closer_line(const node_directive *directive, markdown_core_parser *parser,
                                  markdown_core_reader *reader) {
     bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
-    bufsize_t colon_count = count_colons(reader->line.data, (bufsize_t)reader->line.len, first_nonspace);
+    bufsize_t colon_count =
+        count_colons(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first_nonspace);
 
     return reader->indent <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
-           markdown_core_is_blank_to_line_end(reader->line.data, first_nonspace + colon_count,
-                                              (bufsize_t)reader->line.len);
+           markdown_core_is_blank_to_line_end(markdown_core_reader_rest(reader, 0), first_nonspace + colon_count,
+                                              (bufsize_t)markdown_core_reader_length(reader));
 }
 
 static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -696,8 +698,9 @@ static int directive_block_continues(const markdown_core_element_instance *self,
     /* A closer the input's end cuts short may yet be an opener's colons. */
     if (parser->sink) {
         const bufsize_t first = (bufsize_t)reader->nonspace;
-        S_report_block(parser, reader->line.data, reader->line.len, first,
-                       first + count_colons(reader->line.data, (bufsize_t)reader->line.len, first));
+        S_report_block(
+            parser, markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first,
+            first + count_colons(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first));
     }
     return MARKDOWN_CORE_BLOCK_PENDING_CLOSE;
 }

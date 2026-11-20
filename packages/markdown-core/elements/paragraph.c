@@ -21,15 +21,8 @@ static int continue_paragraph(const markdown_core_element_instance *self, markdo
                               markdown_core_reader *reader, markdown_core_node *container) {
     return !reader->blank;
 }
-/* The paragraph reads whether the line is blank: its first non-space byte. */
-static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                const markdown_core_node *node, const markdown_core_reader *reader) {
-    (void)self;
-    (void)node;
-    return reader->nonspace;
-}
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, const markdown_core_reader *reader) {
+                         markdown_core_node *node, markdown_core_reader *reader) {
     (void)reader;
     (void)self;
     (void)parser;
@@ -112,7 +105,6 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .lazy = accepts_lazy,
     .lazy_open = open_lazy,
     .matches = continue_paragraph,
-    .reach = continue_reach,
     .close = close_paragraph,
 };
 

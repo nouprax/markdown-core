@@ -92,7 +92,7 @@ static bool S_ends_text(markdown_core_parser *parser, markdown_core_node *paragr
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                     markdown_core_node *parent, const markdown_core_reader *reader) {
+                                                     markdown_core_node *parent, markdown_core_reader *reader) {
     block_identifier candidate;
     const markdown_core_chunk text = markdown_core_node_text(paragraph);
     if (!S_scan_block_identifier(work, text.data, text.len, &candidate)) {
@@ -167,8 +167,8 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
     markdown_core_block_identifier_work *work = self->state;
     block_identifier candidate;
     if (reader->indent >= CODE_INDENT || markdown_core_reader_peek(reader, reader->nonspace) != '#' ||
-        !S_scan_block_identifier(work, reader->line.data + reader->nonspace, reader->line.len - reader->nonspace,
-                                 &candidate) ||
+        !S_scan_block_identifier(work, markdown_core_reader_rest(reader, reader->nonspace),
+                                 markdown_core_reader_length(reader) - reader->nonspace, &candidate) ||
         !candidate.own_line || candidate.content_end) {
         return false;
     }

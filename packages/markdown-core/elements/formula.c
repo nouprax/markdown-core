@@ -212,7 +212,8 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
         return NULL;
     }
 
-    block_delim = scan_formula_block_open(reader->line.data, (bufsize_t)reader->line.len, (bufsize_t)first_nonspace);
+    block_delim = scan_formula_block_open(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                          (bufsize_t)first_nonspace);
     if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
         return NULL;
     }
@@ -249,9 +250,9 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
 
     /* The closer is the block's end condition: its line closes it and is
      * no line of its content. */
-    if (scan_formula_block_close(reader->line.data, (bufsize_t)reader->line.len, (bufsize_t)first_nonspace,
-                                 formula->block_delim)) {
-        markdown_core_reader_advance(reader, reader->line.len - reader->offset, false);
+    if (scan_formula_block_close(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                 (bufsize_t)first_nonspace, formula->block_delim)) {
+        markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
 

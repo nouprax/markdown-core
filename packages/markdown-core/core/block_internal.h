@@ -63,6 +63,14 @@ typedef struct markdown_core_block_start_context {
     bufsize_t thematic_kill;
 } block_start_context;
 
+/* What a callout's scan found after its marker (callout.c): a header
+ * `[!variant]`, its fold and title, and where a variant the line's end cuts
+ * short stands, -1 for none, which its open reports. */
+typedef struct {
+    bufsize_t variant, variant_end, title, title_end, report;
+    bool metadata, fold, collapsed;
+} markdown_core_callout_header;
+
 typedef struct markdown_core_block_start {
     /* The claiming owner's open, and the owner itself, which the dispatcher
      * records and hands `open` as its `self`. */
@@ -73,15 +81,9 @@ typedef struct markdown_core_block_start {
     bufsize_t matched;
     markdown_core_list list;
     markdown_core_specimen_value specimen;
+    markdown_core_callout_header callout;
 } block_start;
 int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
-/* How far a continuation reads that matches by the line's indentation and
- * whether the line is blank: to its first non-space byte, and through the
- * continuation bytes after it, which a column-counted advance over the
- * indentation that ends at the byte reads (element.h, HOW FAR A STEP READS;
- * markdown_core_reader_scalar_end). */
-bufsize_t markdown_core_block_indent_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                           const markdown_core_node *node, const markdown_core_reader *reader);
 /* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */
 void markdown_core_block_add_line(markdown_core_parser *parser, markdown_core_node *node);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,

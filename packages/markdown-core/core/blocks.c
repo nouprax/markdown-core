@@ -9118,12 +9118,13 @@ read:
  * with nothing to maintain, and pays for the division only on a line that
  * actually contains a tab. */
 void markdown_core_reader_find(markdown_core_reader *reader) {
-    char c;
+    const unsigned char *const data = reader->line.data;
+    unsigned char c;
 
     if (reader->nonspace <= reader->offset) {
         reader->nonspace = reader->offset;
         reader->nonspace_column = reader->column;
-        while ((c = markdown_core_reader_peek(reader, reader->nonspace))) {
+        while ((c = data[reader->nonspace])) {
             if (c == ' ') {
                 reader->nonspace += 1;
                 reader->nonspace_column += 1;
@@ -9137,7 +9138,8 @@ void markdown_core_reader_find(markdown_core_reader *reader) {
     }
 
     reader->indent = reader->nonspace_column - reader->column;
-    reader->blank = markdown_core_is_line_end(markdown_core_reader_peek(reader, reader->nonspace));
+    reader->blank = markdown_core_is_line_end(data[reader->nonspace]);
+    reader->far = reader->nonspace + 1 > reader->far ? reader->nonspace + 1 : reader->far;
 }
 
 // Advance reader->offset and reader->column.  reader->offset is the
@@ -9147,48 +9149,51 @@ void markdown_core_reader_find(markdown_core_reader *reader) {
 // how far to advance the offset.  If columns is true, then count
 // indicates a number of columns; otherwise, a number of bytes.
 // If advancing a certain number of columns partially consumes
-// a tab character, reader->split is set to true.
+// a tab character, reader->split is set to true. Each byte it reads, it
+// reads up to the one at the offset it stops at.
 void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count, bool columns) {
-    char c;
+    const unsigned char *const data = reader->line.data;
+    unsigned char c;
     int chars_to_tab;
     int chars_to_advance;
+    if (count <= 0) {
+        return;
+    }
     /* Complete a virtual column only at the scalar's end, the byte before
      * one that is no continuation byte: the text is taken as valid UTF-8.
      * Byte-counted advances may split a scalar; column-counted advances
      * always consume it completely. */
     if (!columns) {
-        while (count > 0 && reader->offset < reader->line.len &&
-               (c = markdown_core_reader_peek(reader, reader->offset))) {
+        while (count > 0 && reader->offset < reader->line.len && (c = data[reader->offset])) {
             reader->split = false;
             if (c == '\t') {
                 reader->column += TAB_STOP - (reader->column % TAB_STOP);
                 reader->offset += 1;
             } else {
                 reader->offset += 1;
-                reader->column += reader->offset == reader->line.len ||
-                                  (markdown_core_reader_peek(reader, reader->offset) & 0xC0) != 0x80;
+                reader->column += reader->offset == reader->line.len || (data[reader->offset] & 0xC0) != 0x80;
             }
             count -= 1;
         }
-        return;
-    }
-    while (count > 0 && reader->offset < reader->line.len && (c = markdown_core_reader_peek(reader, reader->offset))) {
-        if (c == '\t') {
-            chars_to_tab = TAB_STOP - (reader->column % TAB_STOP);
-            reader->split = chars_to_tab > count;
-            chars_to_advance = MIN(count, chars_to_tab);
-            reader->column += chars_to_advance;
-            reader->offset += (reader->split ? 0 : 1);
-            count -= chars_to_advance;
-        } else {
-            reader->split = false;
-            reader->offset += 1;
-            const bool scalar_end = reader->offset == reader->line.len ||
-                                    (markdown_core_reader_peek(reader, reader->offset) & 0xC0) != 0x80;
-            reader->column += scalar_end;
-            count -= scalar_end;
+    } else {
+        while (count > 0 && reader->offset < reader->line.len && (c = data[reader->offset])) {
+            if (c == '\t') {
+                chars_to_tab = TAB_STOP - (reader->column % TAB_STOP);
+                reader->split = chars_to_tab > count;
+                chars_to_advance = MIN(count, chars_to_tab);
+                reader->column += chars_to_advance;
+                reader->offset += (reader->split ? 0 : 1);
+                count -= chars_to_advance;
+            } else {
+                reader->split = false;
+                reader->offset += 1;
+                const bool scalar_end = reader->offset == reader->line.len || (data[reader->offset] & 0xC0) != 0x80;
+                reader->column += scalar_end;
+                count -= scalar_end;
+            }
         }
     }
+    reader->far = reader->offset + 1 > reader->far ? reader->offset + 1 : reader->far;
 }
 
 bool markdown_core_reader_indented(markdown_core_reader *reader, int continuation, bool blank) {
@@ -9304,13 +9309,6 @@ static inline void S_reader_close(markdown_core_parser *parser) {
     }
 }
 
-bufsize_t markdown_core_block_indent_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                           const markdown_core_node *node, const markdown_core_reader *reader) {
-    (void)self;
-    (void)node;
-    return markdown_core_reader_scalar_end(reader, parser->at.read.nonspace);
-}
-
 /* ONE CONTAINER'S CLAIM ON THE LINE at the parser's cursor, for the kinds whose
  * prefix the core knows: the block quote's `>`, the list item's indentation,
  * a footnote or specimen's four columns, and the list's rule for consecutive
@@ -9333,9 +9331,17 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, const markd
            structure->lines->prefix(structure, parser, container, reader, joining, taken);
 }
 
+/* Whether the step just taken on the line a session holds read only bytes
+ * the line already has (THE LINE A SESSION HOLDS): none past the last the
+ * line has, and nothing past the line. */
+static inline bool S_step_decided(const markdown_core_reader *reader) {
+    return reader->far < reader->line.len && !reader->past;
+}
+
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     markdown_core_parser *parser, const markdown_core_kind_record *kind, markdown_core_node *container,
-    markdown_core_reader *reader, bool *should_continue, markdown_core_node **closing, markdown_core_node **taker) {
+    markdown_core_reader *reader, bool *should_continue, markdown_core_node **closing, markdown_core_node **taker,
+    const markdown_core_reader *before, bool *held) {
     const markdown_core_element_instance *structure = kind->structure;
     int matched;
 
@@ -9344,6 +9350,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     }
 
     matched = structure->lines->matches(structure, parser, reader, container);
+    /* On the line a session holds, a match that read what more text can
+     * change is not taken: the reader goes back to before it. */
+    if (before && !S_step_decided(reader)) {
+        *reader = *before;
+        *held = true;
+        return false;
+    }
     if (matched && structure->lines->pending) {
         *closing = matched == MARKDOWN_CORE_BLOCK_PENDING_CLOSE ? container : NULL;
     } else if (matched && S_kind_accepts_lines(kind, container)) {
@@ -9370,26 +9383,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
 
 /* Whether the call just made asked to be a candidate (THE CANDIDATES). */
 static inline bool S_requested(const markdown_core_parser *parser) { return parser->stream->requested; }
-
-/* Whether the step that matches `container` on the line a session holds
- * reads only bytes the line already has (THE LINE A SESSION HOLDS): as far
- * as its element says, and the first non-space byte, whether the line is
- * blank, when the element matches without reading the line. An element
- * that reads the line and does not say how far is not asked. */
-static bool S_continue_decided(markdown_core_parser *parser, const markdown_core_kind_record *kind,
-                               const markdown_core_node *container, const markdown_core_reader *reader) {
-    const markdown_core_element_instance *structure = kind->structure;
-    bufsize_t reach = parser->at.read.nonspace;
-    if (structure) {
-        const markdown_core_line_ops *lines = structure->lines;
-        if (lines->reach) {
-            reach = lines->reach(structure, parser, container, reader);
-        } else if (lines->matches || lines->prefix) {
-            return false;
-        }
-    }
-    return reach < reader->line.len - 1;
-}
 
 /* Matches the line against the open blocks below `from`, the block root on a
  * new line. On the line a session holds, `hold`, it stops before the
@@ -9419,13 +9412,21 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         markdown_core_reader_find(reader);
 
         const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-        if (hold && !S_continue_decided(parser, kind, container, reader)) {
-            *held = true;
-            return above;
+        markdown_core_reader before;
+        if (hold) {
+            if (!S_step_decided(reader)) {
+                *held = true;
+                return above;
+            }
+            before = *reader;
         }
         const markdown_core_element_instance *structure = kind->structure;
         if (structure && structure->lines->matches) {
-            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker)) {
+            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker,
+                                     hold ? &before : NULL, held)) {
+                if (hold && *held) {
+                    return above;
+                }
                 goto done;
             }
         } else {
@@ -9440,7 +9441,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
                 }
                 goto done;
             }
-            if (!S_container_prefix_matches(parser, structure, container, reader, NULL, &taken)) {
+            const bool prefixed = S_container_prefix_matches(parser, structure, container, reader, NULL, &taken);
+            if (hold && !S_step_decided(reader)) {
+                *reader = before;
+                *held = true;
+                return above;
+            }
+            if (!prefixed) {
                 goto done;
             }
             if (taken) {
@@ -9733,6 +9740,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         input.alloc = 0;
         markdown_core_reader *const reader = &parser->at.read;
         reader->line = input;
+        reader->far = 0;
         lookahead->cursor = next;
         lookahead->line = this_line + 1;
 
@@ -9788,11 +9796,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             markdown_core_node *container = lookahead->path[i];
             markdown_core_reader_find(reader);
             const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-            if (unfinished && !S_continue_decided(parser, kind, container, reader)) {
+            if (unfinished && !S_step_decided(reader)) {
                 S_lookahead_wait(lookahead, this_line, start);
                 return NULL;
             }
             const markdown_core_element_instance *structure = kind->structure;
+            markdown_core_reader before = {0};
+            if (unfinished) {
+                before = *reader;
+            }
             if (structure && structure->lines->matches) {
                 int match =
                     structure->lines->continues ? structure->lines->continues(structure, parser, reader, container) : 0;
@@ -9803,6 +9815,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             } else {
                 carried = S_container_prefix_matches(parser, structure, container, reader,
                                                      markdown_core_parser_lookahead_parent(lookahead), &taken);
+            }
+            /* A match on a line the text has not finished that read what
+             * more text can change waits for it. */
+            if (unfinished && !S_step_decided(reader)) {
+                *reader = before;
+                S_lookahead_wait(lookahead, this_line, start);
+                return NULL;
             }
         }
         /* The work of this visit is the prefix bytes it had to match itself:
@@ -10290,6 +10309,7 @@ markdown_core_reader *markdown_core_parser_candidate_start(markdown_core_parser 
     parser->at.read.start = (bufsize_t)found->start;
     parser->at.read.end = (bufsize_t)found->end;
     parser->at.read.line = (markdown_core_chunk){.data = parser->curline.ptr, .len = parser->curline.size, .alloc = 0};
+    parser->at.read.far = 0;
     markdown_core_reader_find(&parser->at.read);
     *container = candidate->stop.container;
     return &parser->at.read;
@@ -10955,37 +10975,15 @@ static bool scan_element_start(markdown_core_parser *parser, block_start_context
 }
 
 /* Whether the block start at the line's first non-space byte, on the line a
- * session holds, reads only bytes the line already has (THE LINE A SESSION
- * HOLDS): every element the dispatcher asks there before one claims it
- * says how far it reads, the one that claims it opens a container, and no
- * interrupter is asked there. */
-static bool S_start_decided(markdown_core_parser *parser, const block_start_context *context) {
-    const markdown_core_dialect *const dialect = parser->dialect;
-    const int key = S_gate_key(context->reader, context->reader->nonspace, context->reader->indent);
+ * session holds, may be taken from bytes the line already has (THE LINE A
+ * SESSION HOLDS): an interrupter decides and opens in one call, so a line
+ * one is asked on holds before the start; the scans are asked and the start
+ * taken when the one that claims the line read only bytes it has. */
+static bool S_start_interrupts(const markdown_core_parser *parser, const markdown_core_reader *reader) {
     size_t count;
-    S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT, key, &count);
-    if (count) {
-        return false;
-    }
-    const markdown_core_element_instance *const *owners = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_SCAN];
-    const uint8_t *candidates = S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_SCAN, key, &count);
-    bufsize_t reach = context->reader->nonspace;
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_element_instance *owner = owners[candidates ? candidates[i] : i];
-        if (context->reader->indent > owner->element->opens->indent) {
-            continue;
-        }
-        if (!owner->element->opens->reach) {
-            return false;
-        }
-        bool opens = false;
-        const bufsize_t read = owner->element->opens->reach(owner, parser, context, &opens);
-        reach = read > reach ? read : reach;
-        if (opens) {
-            return reach < context->reader->line.len - 1;
-        }
-    }
-    return false;
+    S_gate_candidates(parser->dialect, MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
+                      S_gate_key(reader, reader->nonspace, reader->indent), &count);
+    return count != 0;
 }
 
 /* Where the line machine stands as it opens blocks: whether the line may
@@ -11036,16 +11034,29 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                                        .depth = depth + 1,
                                        .thematic_kill = parser->at.thematic_break_kill_pos};
         parser->at.step_asks = parser->at.asks;
-        if (hold && !S_start_decided(parser, &context)) {
+        markdown_core_reader before;
+        if (hold) {
+            if (!S_step_decided(reader) || S_start_interrupts(parser, reader)) {
+                *opens = (S_opens){maybe_lazy, depth};
+                *held = true;
+                return;
+            }
+            before = *reader;
+        }
+        scan_element_start(parser, &context, &start);
+        if (parser->error) {
+            return;
+        }
+        /* A start no scan claims is asked of the openers, which decide and
+         * open in one call; a claim that read what more text can change is
+         * not taken. Either holds before the start. */
+        if (hold && (!start.open || !S_step_decided(reader))) {
+            *reader = before;
             *opens = (S_opens){maybe_lazy, depth};
             *held = true;
             return;
         }
         depth++;
-        scan_element_start(parser, &context, &start);
-        if (parser->error) {
-            return;
-        }
         parser->at.thematic_break_kill_pos = context.thematic_kill;
 
         /* Dash-led tables precede thematic breaks and lists. An opener may
@@ -11077,6 +11088,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
 
         if (start.open) {
             const bool opened = start.open(start.owner, parser, container, reader, &start);
+            /* An open reads only what its scan decided from. */
+            assert(!hold || S_step_decided(reader));
             S_reader_close(parser);
             if (!opened) {
                 return;
@@ -11251,8 +11264,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
 /* THE LINE A SESSION HOLDS. A commit more text may follow reads the lines
  * the text has finished and then, of the line it has not, each step whose
  * decision reads only bytes the line has
- * (docs/plans/2026-09-29-incremental-parsing.md, 5.1): matching an open block, and opening a container, as far as their
- * elements say they read (element.h, HOW FAR A STEP READS). The line's last
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.1): matching an open
+ * block, and opening a block a scan claims. The step runs, and the reader
+ * says how far it read (reader.h, `far`): a step that read too far is not
+ * taken, the reader going back to before it; a step's decision writes only
+ * the reader, and an open reads only what its scan read. The line's last
  * byte is the end of the text or the last before its terminator, and a step
  * that reads it reads what more text can change, so the commit stops before
  * it, and before the text the line leaves to its leaf, and keeps where it
@@ -11326,6 +11342,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     parser->at.read.split = false;
 
     reader->line = (markdown_core_chunk){parser->curline.ptr, parser->curline.size, 0};
+    reader->far = 0;
 
     parser->at.asks = parser->at.step_asks = from ? from->asks : 0;
     if (from) {

@@ -36,7 +36,7 @@ typedef enum {
  * it; and whether the text has not finished it, whose bytes past the
  * prefixes are read only as far as they decide. */
 typedef struct {
-    const markdown_core_reader *reader;
+    markdown_core_reader *reader;
     int blanks;
     bool unfinished;
 } markdown_core_candidate_line;
@@ -443,11 +443,6 @@ typedef struct markdown_core_open_ops {
      * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
      * Projected into the dialect's `claims`. NULL for none. */
     const char *claims;
-    /* `scan`'s furthest byte read on a line a session holds unfinished, and
-     * in `*opens` whether a block opens there (markdown_core_line_ops,
-     * `reach`, HOW FAR A STEP READS). */
-    bufsize_t (*reach)(const markdown_core_element_instance *, markdown_core_parser *,
-                       const struct markdown_core_block_start_context *, bool *);
 } markdown_core_open_ops;
 
 /* THE LINES: how an open block of the element's takes each line after its
@@ -466,19 +461,6 @@ struct markdown_core_line_ops {
     /* The container's prefix match on a line, which strips its marker. */
     bool (*prefix)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                    markdown_core_reader *, const markdown_core_node *, bool *);
-    /* HOW FAR A STEP READS (docs/plans/2026-09-29-incremental-parsing.md,
-     * 5.1), asked of a line a session holds unfinished before the step runs,
-     * with the cursor and the first non-space byte found: the furthest byte
-     * of the line the answer reads -- `prefix`'s for `node`, and
-     * the opening's `scan`'s with the open it names, which says in `*opens`
-     * whether a block opens there. A block start answers only for a
-     * container it opens; one that would claim the line for a block that
-     * takes text answers the line's end. A step whose bytes are all in the
-     * line decides from bytes alone and commits; an element without the
-     * question leaves its steps to the snapshot (blocks.c, THE LINE A
-     * SESSION HOLDS). */
-    bufsize_t (*reach)(const markdown_core_element_instance *, markdown_core_parser *, const markdown_core_node *,
-                       const markdown_core_reader *);
     /* The bytes `prefix` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only; it strips at most one of them from a line. A
@@ -495,11 +477,11 @@ struct markdown_core_line_ops {
     const char *prefix_bytes;
     /* Whether the block takes a blank line; NULL takes it. */
     bool (*blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                  const markdown_core_reader *);
+                  markdown_core_reader *);
     /* Whether a blank line it took leaves its last line blank (BLANK_ASK,
      * dialect.h); NULL decides by whether it takes lines. */
     bool (*blank_last)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                       const markdown_core_reader *);
+                       markdown_core_reader *);
     /* What a blank line means inside it (BLANK_OPAQUE, BLANK_RUNS and
      * BLANK_PROPAGATES, dialect.h). */
     bool blank_opaque;
@@ -541,7 +523,7 @@ struct markdown_core_line_ops {
     markdown_core_node *(*lazy_open)(const markdown_core_element_instance *, markdown_core_parser *,
                                      markdown_core_node *, markdown_core_reader *);
     bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 const markdown_core_reader *);
+                 markdown_core_reader *);
     /* The flags of the block that its container's prefix match sets line by
      * line, which a lookahead puts back. A line that holds a byte other
      * than spaces, tabs and container prefix bytes sets them as no line

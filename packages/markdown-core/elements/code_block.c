@@ -66,13 +66,14 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
 
         if (reader->indent <= 3 &&
             (markdown_core_reader_peek(reader, reader->nonspace) == container->as.code->fence_char)) {
-            matched = scan_close_code_fence(reader->line.data, reader->line.len, reader->nonspace);
+            matched = scan_close_code_fence(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                            reader->nonspace);
         }
 
         if (matched >= container->as.code->fence_length) {
             // closing fence - and since we're at
-            // the end of a line, we can stop processing it:
-            container->as.code->fence_closed = true;
+            // the end of a line, we can stop processing it; the close
+            // notes the fence closed it (close_code):
             markdown_core_reader_advance(reader, matched, false);
             return MARKDOWN_CORE_BLOCK_CLOSED;
         } else {
@@ -99,6 +100,9 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     (void)self;
     (void)parser;
     (void)parent;
+    /* The matcher only decides; what its fence closed is the close's to
+     * write. */
+    b->as.code->fence_closed = b->as.code->fenced && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
     const markdown_core_strbuf *content = &b->content;
     const bufsize_t start = b->as.code->literal_start;
     const bufsize_t end = b->as.code->fenced ? content->size : S_indented_literal_end(content);
@@ -205,7 +209,7 @@ static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
  * the references that spell them before it. Both are candidates: what
  * follows the cursor decides whether the brace opens a tail or is a byte of
  * the word, so the query confirms one against the whole line. */
-static void S_report_info(markdown_core_parser *parser, const markdown_core_reader *reader, const unsigned char *rest,
+static void S_report_info(markdown_core_parser *parser, markdown_core_reader *reader, const unsigned char *rest,
                           bufsize_t length) {
     const bufsize_t offset = reader->offset;
     const unsigned char *line = rest - offset;
@@ -237,9 +241,9 @@ static void S_report_info(markdown_core_parser *parser, const markdown_core_read
  * of the fence line, less an attribute tail, trimmed of spaces and tabs as
  * written. References and escapes are decoded after the trim, so a space one
  * of them spells is the info string's own. */
-static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_reader *reader) {
-    const unsigned char *rest = reader->line.data + reader->offset;
-    const bufsize_t length = reader->line.len - reader->offset;
+static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, markdown_core_reader *reader) {
+    const unsigned char *rest = markdown_core_reader_rest(reader, reader->offset);
+    const bufsize_t length = markdown_core_reader_length(reader) - reader->offset;
     const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
     assert(line_end);
     const bufsize_t pos = (bufsize_t)(line_end - rest);
@@ -330,13 +334,13 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     if (context->reader->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
         if (context->paragraph || context->lazy ||
-            markdown_core_is_line_end(context->reader->line.data[context->reader->nonspace])) {
+            markdown_core_is_line_end(markdown_core_reader_peek(context->reader, context->reader->nonspace))) {
             return false;
         }
         start->open = open_indented;
     } else {
-        start->matched =
-            scan_open_code_fence(context->reader->line.data, context->reader->line.len, context->reader->nonspace);
+        start->matched = scan_open_code_fence(markdown_core_reader_rest(context->reader, 0),
+                                              markdown_core_reader_length(context->reader), context->reader->nonspace);
         if (!start->matched) {
             return false;
         }
@@ -346,7 +350,7 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node, const markdown_core_reader *reader) {
+                       markdown_core_node *node, markdown_core_reader *reader) {
     (void)reader;
     (void)self;
     return !node->as.code->fenced;

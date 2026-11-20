@@ -4,12 +4,19 @@
 #include "parts.h"
 
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
-                                                           const markdown_core_reader *reader, bufsize_t pos,
+                                                           markdown_core_reader *reader, bufsize_t pos,
                                                            markdown_core_specimen_value *value);
 static bool markdown_core_specimen_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start);
+/* The width of the letter or number at `at`, a scalar the reader reads
+ * whole; 0 for any other scalar. */
+static int S_key_width(markdown_core_reader *reader, bufsize_t at) {
+    const bufsize_t stop = markdown_core_reader_scalar_end(reader, at + 1);
+    return markdown_core_utf8proc_alnum_width(markdown_core_reader_bytes(reader, at), stop - at);
+}
+
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
-                                                           const markdown_core_reader *reader, bufsize_t pos,
+                                                           markdown_core_reader *reader, bufsize_t pos,
                                                            markdown_core_specimen_value *value) {
     bufsize_t begin = pos;
     *value = (markdown_core_specimen_value){0};
@@ -20,7 +27,7 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
     int digits = 0;
     while (digits < 9 && markdown_core_isdigit(markdown_core_reader_peek(reader, pos))) {
         state->work++;
-        value->start = value->start * 10 + reader->line.data[pos++] - '0';
+        value->start = value->start * 10 + markdown_core_reader_peek(reader, pos++) - '0';
         digits++;
     }
     value->has_start = digits > 0;
@@ -37,15 +44,13 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
      * reference could not name whole would be unreachable, so it is not a
      * definition: `(@a--b)` and `(@x-)` are text. */
     bufsize_t label = pos;
-    while (pos < reader->line.len) {
-        unsigned char c = reader->line.data[pos];
-        int width = c == '_' ? 1 : markdown_core_utf8proc_alnum_width(reader->line.data + pos, reader->line.len - pos);
+    while (!markdown_core_reader_ends(reader, pos)) {
+        unsigned char c = markdown_core_reader_peek(reader, pos);
+        int width = c == '_' ? 1 : S_key_width(reader, pos);
         state->work++;
-        if (!width && c == '-' && pos > label && pos + 1 < reader->line.len) {
-            unsigned char next = reader->line.data[pos + 1];
-            int following = next == '_' ? 1
-                                        : markdown_core_utf8proc_alnum_width(reader->line.data + pos + 1,
-                                                                             reader->line.len - pos - 1);
+        if (!width && c == '-' && pos > label && !markdown_core_reader_ends(reader, pos + 1)) {
+            unsigned char next = markdown_core_reader_peek(reader, pos + 1);
+            int following = next == '_' ? 1 : S_key_width(reader, pos + 1);
             width = following ? 1 + following : 0;
         }
         if (!width) {
@@ -58,9 +63,19 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
         return 0;
     }
     if (pos > label) {
-        value->label = markdown_core_optional_chunk_present(markdown_core_chunk_dup(&reader->line, label, pos - label));
+        value->label = markdown_core_optional_chunk_present(
+            (markdown_core_chunk){(unsigned char *)markdown_core_reader_bytes(reader, label), pos - label, 0});
     }
     return pos + 1 - begin;
+}
+
+/* The marker's motion: past the marker and the spaces after it. */
+static void S_specimen_marker(markdown_core_specimen_state *state, markdown_core_reader *reader, bufsize_t matched) {
+    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
+    while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
+        markdown_core_reader_advance(reader, 1, true);
+        state->work++;
+    }
 }
 
 static bool markdown_core_specimen_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -94,11 +109,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
-    while (markdown_core_is_space_or_tab(reader->line.data[reader->offset])) {
-        markdown_core_reader_advance(reader, 1, true);
-        state->work++;
-    }
+    S_specimen_marker(state, reader, matched);
     return true;
 }
 
@@ -111,6 +122,10 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
           (start->matched = markdown_core_block_parse_specimen_marker(self->state, reader, first, &start->specimen)))) {
         return false;
     }
+    /* What the open reads, read here on a copy of the reader. */
+    markdown_core_reader probe = *reader;
+    S_specimen_marker(self->state, &probe, start->matched);
+    reader->far = probe.far;
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;
     start->open = markdown_core_specimen_open;
     return true;
@@ -139,7 +154,6 @@ static const markdown_core_open_ops SPECIMEN_OPENS = {
 
 static const markdown_core_line_ops SPECIMEN_LINES = {
     .prefix = continue_container,
-    .reach = markdown_core_block_indent_reach,
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {

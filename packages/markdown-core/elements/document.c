@@ -116,7 +116,7 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     (void)self;
     (void)parser;
     bool *opened = state;
-    const int fence = line->reader ? markdown_core_properties_fence(line->reader->line.data) : -1;
+    const int fence = line->reader ? markdown_core_properties_fence(markdown_core_reader_rest(line->reader, 0)) : -1;
     if (line->unfinished && fence > 0) {
         return MARKDOWN_CORE_CANDIDATE_WAITS;
     }

@@ -2422,7 +2422,9 @@ static bool open_atx(const markdown_core_element_instance *self, markdown_core_p
         return false;
     }
 
-    hashpos = markdown_core_chunk_strchr(&reader->line, '#', reader->nonspace);
+    markdown_core_chunk line = {(unsigned char *)markdown_core_reader_rest(reader, 0),
+                                markdown_core_reader_length(reader), 0};
+    hashpos = markdown_core_chunk_strchr(&line, '#', reader->nonspace);
 
     while (markdown_core_reader_peek(reader, hashpos) == '#') {
         level++;
@@ -2456,7 +2458,7 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
         }
         (*container)->as.heading->level = matched;
         (*container)->as.heading->setext = true;
-        markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
+        markdown_core_reader_end(reader);
     }
 
     return true;
@@ -2464,12 +2466,13 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
 static bool scan_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          block_start_context *context, block_start *start) {
     (void)self;
-    if ((start->matched = scan_atx_heading_start(context->reader->line.data, context->reader->line.len,
-                                                 context->reader->nonspace))) {
+    if ((start->matched =
+             scan_atx_heading_start(markdown_core_reader_rest(context->reader, 0),
+                                    markdown_core_reader_length(context->reader), context->reader->nonspace))) {
         start->open = open_atx;
         if (parser->sink) {
-            const unsigned char *data = context->reader->line.data;
-            bufsize_t end = context->reader->nonspace, last = context->reader->line.len;
+            const unsigned char *data = markdown_core_reader_rest(context->reader, 0);
+            bufsize_t end = context->reader->nonspace, last = markdown_core_reader_length(context->reader);
             while (end < last && data[end] == '#') {
                 end++;
             }
@@ -2480,9 +2483,9 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
                 markdown_core_topic_report_line(parser, context->reader->nonspace, end);
             }
         }
-    } else if (context->paragraph &&
-               (start->matched = scan_setext_heading_line(context->reader->line.data, context->reader->line.len,
-                                                          context->reader->nonspace))) {
+    } else if (context->paragraph && (start->matched = scan_setext_heading_line(
+                                          markdown_core_reader_rest(context->reader, 0),
+                                          markdown_core_reader_length(context->reader), context->reader->nonspace))) {
         start->open = open_setext;
     } else {
         return false;

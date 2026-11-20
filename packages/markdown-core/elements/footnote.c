@@ -142,7 +142,6 @@ static const markdown_core_open_ops FOOTNOTE_OPENS = {
 
 static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
-    .reach = markdown_core_block_indent_reach,
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
@@ -281,7 +280,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
                                         block_start *start) {
     bufsize_t matched = start->matched;
 
-    markdown_core_chunk c = markdown_core_chunk_dup(&reader->line, reader->nonspace + 2, matched - 2);
+    markdown_core_chunk c = {(unsigned char *)markdown_core_reader_bytes(reader, reader->nonspace + 2), matched - 2, 0};
 
     while (c.data[c.len - 1] != ']') {
         --c.len;
@@ -352,7 +351,8 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
     markdown_core_reader *reader = context->reader;
     int first = reader->nonspace;
     if (!(context->depth < MAX_FOOTNOTE_DEPTH &&
-          (start->matched = scan_footnote_definition(reader->line.data, reader->line.len, first)))) {
+          (start->matched = scan_footnote_definition(markdown_core_reader_rest(reader, 0),
+                                                     markdown_core_reader_length(reader), first)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_FOOTNOTE;

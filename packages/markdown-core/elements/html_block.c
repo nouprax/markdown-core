@@ -61,11 +61,13 @@ static bool open_html(const markdown_core_element_instance *self, markdown_core_
 static bool scan_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
                       block_start_context *context, block_start *start) {
     (void)self;
-    if (!(start->matched = scan_html_block_start(context->reader->line.data, context->reader->line.len,
-                                                 context->reader->nonspace)) &&
+    if (!(start->matched =
+              scan_html_block_start(markdown_core_reader_rest(context->reader, 0),
+                                    markdown_core_reader_length(context->reader), context->reader->nonspace)) &&
         !(!context->paragraph && !context->lazy &&
-          (start->matched = scan_html_block_start_7(context->reader->line.data, context->reader->line.len,
-                                                    context->reader->nonspace)))) {
+          (start->matched =
+               scan_html_block_start_7(markdown_core_reader_rest(context->reader, 0),
+                                       markdown_core_reader_length(context->reader), context->reader->nonspace)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_HTML_BLOCK;
@@ -77,21 +79,26 @@ static bool ends_html(const markdown_core_element_instance *self, markdown_core_
     (void)self;
     switch (container->as.html_block->block_type) {
     case 1:
-        return scan_html_block_end_1(reader->line.data, reader->line.len, reader->nonspace);
+        return scan_html_block_end_1(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                     reader->nonspace);
     case 2:
-        return scan_html_block_end_2(reader->line.data, reader->line.len, reader->nonspace);
+        return scan_html_block_end_2(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                     reader->nonspace);
     case 3:
-        return scan_html_block_end_3(reader->line.data, reader->line.len, reader->nonspace);
+        return scan_html_block_end_3(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                     reader->nonspace);
     case 4:
-        return scan_html_block_end_4(reader->line.data, reader->line.len, reader->nonspace);
+        return scan_html_block_end_4(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                     reader->nonspace);
     case 5:
-        return scan_html_block_end_5(reader->line.data, reader->line.len, reader->nonspace);
+        return scan_html_block_end_5(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                     reader->nonspace);
     default:
         return false;
     }
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node, const markdown_core_reader *reader) {
+                       markdown_core_node *node, markdown_core_reader *reader) {
     (void)reader;
     (void)self;
     return true;

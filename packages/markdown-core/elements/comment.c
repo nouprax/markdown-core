@@ -84,7 +84,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
     }
     bool closed = false;
     int blanks;
-    const markdown_core_reader *line;
+    markdown_core_reader *line;
     while ((line = markdown_core_parser_lookahead_next(&lookahead, &blanks))) {
         if (lookahead.limit && lookahead.incomplete) {
             *undecided = true;
@@ -112,7 +112,8 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     int first_nonspace = reader->nonspace;
     markdown_core_node *node;
 
-    if (indented || !is_fence_line(reader->line.data, reader->line.len, first_nonspace) ||
+    if (indented ||
+        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first_nonspace) ||
         markdown_core_parser_candidate_meets(parser, self, parent_container)) {
         return NULL;
     }
@@ -149,10 +150,11 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     (void)self;
     (void)parser;
     (void)state;
-    const markdown_core_reader *reader = line->reader;
+    markdown_core_reader *reader = line->reader;
     if (reader && reader->indent < 4) {
         const int first = reader->nonspace;
-        const bool fence = is_fence_line(reader->line.data, reader->line.len, first);
+        const bool fence =
+            is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first);
         if (fence && !line->unfinished) {
             return MARKDOWN_CORE_CANDIDATE_ENDS;
         }
@@ -176,7 +178,8 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
     bool closed = false, undecided = false;
-    if (reader->indent < 4 && is_fence_line(reader->line.data, reader->line.len, reader->nonspace)) {
+    if (reader->indent < 4 &&
+        is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
         closed = comment_reads(self, parser, container, &undecided);
     }
     markdown_core_parser_candidate_end(parser);
@@ -190,7 +193,8 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
  * through the same container matchers, so an open block always finds it. */
 static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_reader *reader, markdown_core_node *container) {
-    if (reader->indent <= 3 && is_fence_line(reader->line.data, reader->line.len, reader->nonspace)) {
+    if (reader->indent <= 3 &&
+        is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
     return 1;

@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_READER_H
 #define MARKDOWN_CORE_READER_H
 
+#include <assert.h>
 #include <stdbool.h>
 #include "chunk.h"
 
@@ -18,7 +19,10 @@
  * column, the indentation between them, whether the line is blank, and
  * whether a tab the offset is inside is split, partly consumed. Columns
  * count each Unicode scalar once and expand tabs to tab stops; offsets are
- * bytes. */
+ * bytes. `far` is one past the furthest byte of the line the reading read,
+ * which every read of the line notes: a step on a line the text has not
+ * finished is taken only when it read none of what more text could change
+ * (blocks.c, THE LINE A SESSION HOLDS). */
 struct markdown_core_node;
 struct markdown_core_parser;
 struct markdown_core_element_instance;
@@ -35,7 +39,7 @@ typedef struct markdown_core_reader {
     markdown_core_chunk line;
     int number, indent;
     bufsize_t offset, column, nonspace, nonspace_column;
-    bufsize_t start, end;
+    bufsize_t start, end, far;
     bool blank, split, writes;
     const struct markdown_core_node *read;
     struct markdown_core_node *made;
@@ -45,16 +49,45 @@ typedef struct markdown_core_reader {
 } markdown_core_reader;
 
 /* The byte at `at` on the line; its NUL past the line ending. */
-static inline unsigned char markdown_core_reader_peek(const markdown_core_reader *reader, bufsize_t at) {
+static inline unsigned char markdown_core_reader_peek(markdown_core_reader *reader, bufsize_t at) {
+    reader->far = at + 1 > reader->far ? at + 1 : reader->far;
     return reader->line.data[at];
+}
+
+/* Whether `at` is at the line's end, past its bytes. */
+static inline bool markdown_core_reader_ends(markdown_core_reader *reader, bufsize_t at) {
+    reader->far = at + 1 > reader->far ? at + 1 : reader->far;
+    return at >= reader->line.len;
+}
+
+/* The line from `at` to its end, which the reading reads whole, the line's
+ * end with it. */
+static inline const unsigned char *markdown_core_reader_rest(markdown_core_reader *reader, bufsize_t at) {
+    reader->far = reader->line.len + 1;
+    return reader->line.data + at;
+}
+
+/* The line's bytes from `at` on, for bytes the reading has read already: an
+ * open builds from what its scan read. */
+static inline const unsigned char *markdown_core_reader_bytes(const markdown_core_reader *reader, bufsize_t at) {
+    assert(at <= reader->far);
+    return reader->line.data + at;
+}
+
+/* The line's length, through its line ending: a reading that asks it reads
+ * where the line ends. */
+static inline bufsize_t markdown_core_reader_length(markdown_core_reader *reader) {
+    reader->far = reader->line.len + 1;
+    return reader->line.len;
 }
 
 /* The end of the scalar at `at`: the first byte from `at` on that is no
  * continuation byte, which the line's end is at the latest. */
-static inline bufsize_t markdown_core_reader_scalar_end(const markdown_core_reader *reader, bufsize_t at) {
+static inline bufsize_t markdown_core_reader_scalar_end(markdown_core_reader *reader, bufsize_t at) {
     while ((reader->line.data[at] & 0xC0) == 0x80) {
         at++;
     }
+    reader->far = at + 1 > reader->far ? at + 1 : reader->far;
     return at;
 }
 
@@ -67,6 +100,11 @@ void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count,
 /* Moves the offset on to the first non-space byte found. */
 static inline void markdown_core_reader_skip(markdown_core_reader *reader) {
     markdown_core_reader_advance(reader, reader->nonspace - reader->offset, false);
+}
+/* Moves the offset on to the line's ending, reading the line to its end. */
+static inline void markdown_core_reader_end(markdown_core_reader *reader) {
+    reader->far = reader->line.len + 1;
+    markdown_core_reader_advance(reader, reader->line.len - 1 - reader->offset, false);
 }
 /* Whether the line continues a block by `continuation` columns of
  * indentation, or, when `blank` lets it, by being blank; a line that does

@@ -1727,7 +1727,7 @@ typedef struct markdown_core_lookahead_container {
  * reads on as an ordinary reading. `incomplete` says the line returned last
  * is one the text has not finished, and a reader that decides from that line
  * reads the end itself. With `waits`, such a line is read only as far as its
- * bytes decide each prefix (element.h, HOW FAR A STEP READS): where they do
+ * bytes decide each prefix (reader.h, `far`): where they do
  * not decide one, or leave the line blank so far, `next` returns no line and
  * sets `waited`, with the line unread, and a reader that clears `waits`
  * reads it on as an ordinary reading. */

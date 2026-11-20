@@ -14,7 +14,7 @@ typedef struct {
  * identifier at its end names it, or the list item it opens. */
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                     markdown_core_node *parent, const markdown_core_reader *reader);
+                                                     markdown_core_node *parent, markdown_core_reader *reader);
 /* A line that would open a paragraph in `parent`: an identifier alone on it
  * names the pending block, and true when the line opens nothing -- the
  * identifier attached, or the call asked to be a candidate. */
