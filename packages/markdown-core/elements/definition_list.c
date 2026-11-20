@@ -4,7 +4,7 @@
 #include "block_internal.h"
 #include "directive.h"
 
-static bool markdown_core_block_definition_marker(markdown_core_reader *reader);
+static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_reader *reader, bool compact);
@@ -72,7 +72,7 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
 
 /* Whether the reader's line holds a definition marker at its first
  * non-space byte. */
-static bool markdown_core_block_definition_marker(markdown_core_reader *reader) {
+static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader) {
     const bufsize_t at = reader->nonspace;
     return reader->indent < 4 && !markdown_core_reader_ends(reader, at + 1) &&
            (markdown_core_reader_peek(reader, at) == ':' || markdown_core_reader_peek(reader, at) == '~') &&
@@ -271,6 +271,16 @@ static bool markdown_core_definition_list_open(const markdown_core_element_insta
     return true;
 }
 
+/* What the open reads past the marker (block_start.reads): its padding and
+ * where the line ends, which the body's internal offset is. */
+static void S_body_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
+                         const block_start *start) {
+    (void)self;
+    (void)start;
+    (void)markdown_core_block_consume_item_marker(reader, 1);
+    (void)markdown_core_reader_length(reader);
+}
+
 static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                block_start_context *context, block_start *start) {
     (void)self;
@@ -283,15 +293,9 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
         markdown_core_is_line_end(markdown_core_reader_peek(reader, first + 1))) {
         markdown_core_directive_report_line(parser, first);
     }
-    /* What the open reads, read here on a copy of the reader: the marker
-     * and its padding, and where the line ends, which the body's internal
-     * offset is. */
-    markdown_core_reader probe = *reader;
-    (void)markdown_core_block_consume_item_marker(&probe, 1);
-    (void)markdown_core_reader_length(&probe);
-    reader->far = probe.far;
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
     start->open = markdown_core_definition_list_open;
+    start->reads = S_body_reads;
     return true;
 }
 

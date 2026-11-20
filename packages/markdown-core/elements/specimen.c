@@ -10,9 +10,12 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
                                         block_start_context *context, block_start *start);
 /* The width of the letter or number at `at`, a scalar the reader reads
  * whole; 0 for any other scalar. */
-static int S_key_width(markdown_core_reader *reader, bufsize_t at) {
-    const bufsize_t stop = markdown_core_reader_scalar_end(reader, at + 1);
-    return markdown_core_utf8proc_alnum_width(markdown_core_reader_bytes(reader, at), stop - at);
+static inline int S_key_width(markdown_core_reader *reader, bufsize_t at) {
+    int32_t scalar;
+    const int width = markdown_core_reader_decode(reader, at, &scalar);
+    return markdown_core_utf8proc_classes(scalar) & (MARKDOWN_CORE_UNICODE_LETTER | MARKDOWN_CORE_UNICODE_NUMBER)
+               ? width
+               : 0;
 }
 
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
@@ -45,8 +48,13 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
      * definition: `(@a--b)` and `(@x-)` are text. */
     bufsize_t label = pos;
     while (!markdown_core_reader_ends(reader, pos)) {
-        unsigned char c = markdown_core_reader_peek(reader, pos);
-        int width = c == '_' ? 1 : S_key_width(reader, pos);
+        int32_t scalar;
+        int width = markdown_core_reader_decode(reader, pos, &scalar);
+        const int32_t c = scalar;
+        width = c == '_' || markdown_core_utf8proc_classes(scalar) &
+                                (MARKDOWN_CORE_UNICODE_LETTER | MARKDOWN_CORE_UNICODE_NUMBER)
+                    ? width
+                    : 0;
         state->work++;
         if (!width && c == '-' && pos > label && !markdown_core_reader_ends(reader, pos + 1)) {
             unsigned char next = markdown_core_reader_peek(reader, pos + 1);
@@ -113,6 +121,12 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     return true;
 }
 
+/* What the open reads past the marker (block_start.reads). */
+static void S_specimen_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
+                             const block_start *start) {
+    S_specimen_marker(self->state, reader, start->matched);
+}
+
 static bool markdown_core_specimen_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start) {
     (void)parser;
@@ -122,12 +136,9 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
           (start->matched = markdown_core_block_parse_specimen_marker(self->state, reader, first, &start->specimen)))) {
         return false;
     }
-    /* What the open reads, read here on a copy of the reader. */
-    markdown_core_reader probe = *reader;
-    S_specimen_marker(self->state, &probe, start->matched);
-    reader->far = probe.far;
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;
     start->open = markdown_core_specimen_open;
+    start->reads = S_specimen_reads;
     return true;
 }
 

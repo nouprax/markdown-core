@@ -8,6 +8,7 @@
 #include "chunk.h"
 #include "delimiter.h"
 #include "node.h"
+#include "attributes.h"
 #include "measure.h"
 
 /* Node-valued fields are independent child-tree roots. This internal hook
@@ -414,6 +415,23 @@ typedef struct markdown_core_candidate_ops {
  * text block every dialect has -- each entered only when the line holds
  * what its gate `*_needs` says. Each may be NULL; the dialect projects the
  * gates and owners by byte as it is sealed. */
+/* THE FRONT CUT (blocks.c): one item an element cuts off the front of a
+ * block's text -- a link reference definition off a paragraph's. The
+ * engine hands the element the text left, `rest`, `at` bytes into the
+ * block's text `text`; the element reads one item there and makes its node,
+ * `made`, or with `measure` only measures it, and says in `wide` whether
+ * the bytes through the line read decided it rather than its own and the
+ * one after them. The engine places and settles the node, notes what the
+ * cut read, and moves the block's front past it. `attributes` reads the
+ * attributes of the whole text, kept across the items. */
+typedef struct markdown_core_cut {
+    markdown_core_node *block, *parent, *made;
+    markdown_core_chunk text, rest;
+    bufsize_t at;
+    bool wide, measure;
+    markdown_core_attribute_parser attributes;
+} markdown_core_cut;
+
 typedef struct markdown_core_open_ops {
     /* A block start: whether the line opens a block, with what it opens in
      * `start`, without opening it. */
@@ -443,6 +461,13 @@ typedef struct markdown_core_open_ops {
      * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
      * Projected into the dialect's `claims`. NULL for none. */
     const char *claims;
+    /* The item of the element's at the front of `cut->rest`, which it reads
+     * through the reader and makes (THE FRONT CUT): its length, 0 for none.
+     * Projected into the dialect's cut owners. */
+    bufsize_t (*cut)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_reader *,
+                     markdown_core_cut *);
+    /* What `cut` needs as the first byte of what is left of the text. */
+    markdown_core_block_gate cut_needs;
 } markdown_core_open_ops;
 
 /* THE LINES: how an open block of the element's takes each line after its
@@ -507,6 +532,17 @@ struct markdown_core_line_ops {
      * its own: a paragraph whose text was all reference definitions. */
     bool (*close)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                   markdown_core_node *, markdown_core_reader *);
+    /* Its blocks' text may open with items the dialect's elements cut off
+     * its front (blocks.c, THE FRONT CUT), which the engine cuts as a block
+     * closes or changes kind; a block whose text was all such items yields
+     * no node of its own, and closes as the line that starts an old item of
+     * a kind the element joins is read when its items were all decided
+     * whole. */
+    bool cuts;
+    /* A block of a cutting kind that changes to this kind keeps its text
+     * as written: the engine cuts nothing first (a table whose header row
+     * was a paragraph's text). */
+    bool uncut;
     /* Its `matches` may answer MARKDOWN_CORE_BLOCK_PENDING_CLOSE: a
      * closer whose ownership the blocks inside decide. */
     bool pending;

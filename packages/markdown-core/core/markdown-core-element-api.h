@@ -502,6 +502,9 @@ typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_OK,
     MARKDOWN_CORE_NODE_SET_KIND_REJECTED,
     MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
+    /* The items the block's text opened with were all of it (THE FRONT
+     * CUT): the block keeps its kind and yields no node of its own. */
+    MARKDOWN_CORE_NODE_SET_KIND_CUT,
 } markdown_core_node_set_kind_result;
 
 /** Change 'node', which 'parent' holds, to the internal kind encoded by 'kind'.

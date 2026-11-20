@@ -226,6 +226,8 @@ static bool S_opens_implement(const markdown_core_open_ops *opens, markdown_core
         return opens->open != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
         return opens->last != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_CUT:
+        return opens->cut != NULL;
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;
     }
@@ -245,6 +247,8 @@ static markdown_core_block_gate S_opens_gate(const markdown_core_open_ops *opens
         return opens->interrupt_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
         return opens->open_needs;
+    case MARKDOWN_CORE_BLOCK_HOOK_CUT:
+        return opens->cut_needs;
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
         break;

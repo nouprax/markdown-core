@@ -153,7 +153,7 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
     (void)self;
     const markdown_core_callout_header *header = &start->callout;
     bufsize_t blockquote_startpos = reader->nonspace;
-    S_callout_marker(reader);
+    markdown_core_reader_back(reader, header->after);
     *container =
         markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CALLOUT, blockquote_startpos + 1);
     if (!*container) {
@@ -185,12 +185,14 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
     if (!(markdown_core_reader_peek(reader, first) == '>')) {
         return false;
     }
-    /* What the open reads, read here on a copy of the reader: the marker's
-     * motion and the header after it. */
-    markdown_core_reader probe = *reader;
-    S_callout_marker(&probe);
-    S_callout_header(self->state, parser, &probe, &start->callout);
-    reader->far = probe.far;
+    /* What the open reads, read here: the marker's motion and the header
+     * after it, from where the reader comes back to the marker. */
+    const markdown_core_reader_mark mark = markdown_core_reader_tell(reader);
+    S_callout_marker(reader);
+    const markdown_core_reader_mark after = markdown_core_reader_tell(reader);
+    S_callout_header(self->state, parser, reader, &start->callout);
+    start->callout.after = after;
+    markdown_core_reader_back(reader, mark);
     start->kind = MARKDOWN_CORE_NODE_CALLOUT;
     start->open = markdown_core_callout_open;
     return true;

@@ -675,6 +675,7 @@ static const markdown_core_open_ops TABLE_OPENS = {
 
 static const markdown_core_line_ops TABLE_LINES = {
     .matches = matches,
+    .uncut = true,
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {

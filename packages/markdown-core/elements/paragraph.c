@@ -1,18 +1,13 @@
 #include "paragraph.h"
 #include "block_internal.h"
 
-#include "link.h"
 #include "block_identifier.h"
 #include "heading.h"
-/* A paragraph closing inside `parent` yields the reference definitions at
- * the front of its text, settled into `parent` before it, and then itself,
- * less a block identifier at the back of its text, when anything of it is
- * left. */
+/* A paragraph closing inside `parent`, past the items its text opened with
+ * (`cuts`, blocks.c, THE FRONT CUT), yields itself less a block identifier
+ * at the back of its text. */
 static bool close_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *paragraph, markdown_core_node *parent, markdown_core_reader *reader) {
-    if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph, parent)) {
-        return false;
-    }
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent, reader);
     return true;
 }
@@ -76,19 +71,9 @@ static const markdown_core_inline_ops PARAGRAPH_INLINES = {
     .enter = begin_inline,
 };
 
-/* A paragraph of link reference definitions closes as the line that starts
- * the next is read, as the old reading read on from them: the next reads
- * as from a paragraph's start (link.c, THE REACH OF A DEFINITION). */
-static bool yields(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                   const markdown_core_node *open, markdown_core_node_type kind) {
-    (void)self;
-    return kind == MARKDOWN_CORE_NODE_REFERENCE && markdown_core_block_reference_definitions_whole(parser, open);
-}
-
 static const markdown_core_node_type PARAGRAPH_JOINS[] = {MARKDOWN_CORE_NODE_REFERENCE, MARKDOWN_CORE_NODE_NONE};
 
 static const markdown_core_edit_ops PARAGRAPH_EDIT = {
-    .yields = yields,
     .joins = PARAGRAPH_JOINS,
 };
 
@@ -106,6 +91,7 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .lazy_open = open_lazy,
     .matches = continue_paragraph,
     .close = close_paragraph,
+    .cuts = true,
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {

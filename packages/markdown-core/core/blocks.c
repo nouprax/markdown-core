@@ -1647,6 +1647,20 @@ static inline void S_shut(markdown_core_parser *parser, markdown_core_node *bloc
  * yields no node of its own: a paragraph that held only reference
  * definitions yielded them as References settled into `parent` before it,
  * and the caller lets it go. */
+/* THE CLOSE OF A BLOCK's element: the items its text opens with cut first
+ * when the element's blocks cut them (THE FRONT CUT), then its close hook.
+ * False when the block yields no node of its own. */
+static bool S_close_hook(markdown_core_parser *parser, const markdown_core_element_instance *structure,
+                         markdown_core_node *b, markdown_core_node *parent) {
+    if (!structure) {
+        return true;
+    }
+    if (structure->lines->cuts && !markdown_core_reader_cut_front(&parser->at.read, parser, b, parent)) {
+        return false;
+    }
+    return !structure->lines->close || structure->lines->close(structure, parser, b, parent, &parser->at.read);
+}
+
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_core_parser *parser, markdown_core_node *b,
                                                                     const markdown_core_kind_record *kind,
                                                                     markdown_core_node *parent) {
@@ -1655,8 +1669,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
      * of the document itself lies on whole lines, its own source its range. */
     const bool lines = parent && parent != parser->root && S_kind_takes_text(kind, b);
     const markdown_core_element_instance *structure = kind->structure;
-    if (structure && structure->lines->close &&
-        !structure->lines->close(structure, parser, b, parent, &parser->at.read)) {
+    if (structure && !S_close_hook(parser, structure, b, parent)) {
         return false;
     }
     if (lines) {
@@ -2550,7 +2563,7 @@ static bool S_settled_found(markdown_core_parser *parser, const markdown_core_se
         const markdown_core_chunk label = {(unsigned char *)settled->labels.ptr + miss->label_start, miss->label_size,
                                            0};
         bool failed = false;
-        const bool found = markdown_core_parser_find_definition(parser, miss->kind, &label, miss->at, &failed);
+        const bool found = markdown_core_parser_find_definition(parser, miss->kind, &label, miss->at, &failed) != NULL;
         if (failed) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -6103,6 +6116,17 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     return true;
 }
 
+/* Whether `kind` is one the element's block yields one after another as it
+ * closes (element.h, `joins`). */
+static bool S_joins(const markdown_core_edit_ops *ops, markdown_core_node_type kind) {
+    for (const markdown_core_node_type *each = ops ? ops->joins : NULL; each && *each; each++) {
+        if (*each == kind) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind,
                            size_t start);
 
@@ -6338,8 +6362,10 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
     const markdown_core_element_instance *structure =
         open && open != block ? markdown_core_parser_block_kind(parser, open)->structure : NULL;
     const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
-    if (ops && ops->yields && markdown_core_scaffold_parent(open) == block &&
-        ops->yields(structure, parser, open, kind)) {
+    if (markdown_core_scaffold_parent(open) == block &&
+        ((ops && ops->yields && ops->yields(structure, parser, open, kind)) ||
+         (structure && structure->lines->cuts && S_joins(ops, kind) &&
+          markdown_core_reader_cuts_whole(&parser->at.read, parser, open)))) {
         if (block != parser->root && S_carries(parser, block, kind) != 1) {
             return false;
         }
@@ -7081,9 +7107,7 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
         S_room_up(parser);
     }
     const markdown_core_element_instance *structure = kind->structure;
-    const bool kept = nested ? !structure || !structure->lines->close ||
-                                   structure->lines->close(structure, parser, block, parent, &parser->at.read)
-                             : S_close(parser, block, kind, parent);
+    const bool kept = nested ? S_close_hook(parser, structure, block, parent) : S_close(parser, block, kind, parent);
     assert(kept);
     if (!kept || parser->error) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -8240,9 +8264,7 @@ static void S_close_tail(markdown_core_parser *parser) {
         markdown_core_node *const below = markdown_core_scaffold_parent(node);
         node->place.end = end;
         const markdown_core_element_instance *structure = kind->structure;
-        if (structure && structure->lines->close) {
-            structure->lines->close(structure, parser, node, below, &parser->at.read);
-        }
+        (void)S_close_hook(parser, structure, node, below);
         if (parser->error || !S_reserve_anchor(parser, node, node->place.start)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
@@ -9117,31 +9139,6 @@ read:
  * TAB_STOP. Deriving it at the one place it is read leaves the space branch
  * with nothing to maintain, and pays for the division only on a line that
  * actually contains a tab. */
-void markdown_core_reader_find(markdown_core_reader *reader) {
-    const unsigned char *const data = reader->line.data;
-    unsigned char c;
-
-    if (reader->nonspace <= reader->offset) {
-        reader->nonspace = reader->offset;
-        reader->nonspace_column = reader->column;
-        while ((c = data[reader->nonspace])) {
-            if (c == ' ') {
-                reader->nonspace += 1;
-                reader->nonspace_column += 1;
-            } else if (c == '\t') {
-                reader->nonspace += 1;
-                reader->nonspace_column += TAB_STOP - (reader->nonspace_column % TAB_STOP);
-            } else {
-                break;
-            }
-        }
-    }
-
-    reader->indent = reader->nonspace_column - reader->column;
-    reader->blank = markdown_core_is_line_end(data[reader->nonspace]);
-    reader->far = reader->nonspace + 1 > reader->far ? reader->nonspace + 1 : reader->far;
-}
-
 // Advance reader->offset and reader->column.  reader->offset is the
 // byte position in input; reader->column is a virtual column number
 // that counts each Unicode scalar once and expands tabs to tab stops.
@@ -9213,11 +9210,6 @@ bool markdown_core_reader_indented(markdown_core_reader *reader, int continuatio
     return res;
 }
 
-int markdown_core_reader_byte(markdown_core_reader *reader, markdown_core_parser *parser, size_t place) {
-    reader->past = place + 1 > reader->past ? place + 1 : reader->past;
-    return markdown_core_parser_input_ends(parser, parser->input.source + place) ? -1 : parser->input.source[place];
-}
-
 size_t markdown_core_reader_seek(markdown_core_reader *reader, markdown_core_parser *parser, size_t place,
                                  unsigned char byte) {
     size_t size;
@@ -9231,22 +9223,18 @@ size_t markdown_core_reader_seek(markdown_core_reader *reader, markdown_core_par
     return at;
 }
 
-size_t markdown_core_reader_after(const markdown_core_reader *reader, const markdown_core_parser *parser) {
-    (void)reader;
-    size_t size;
-    const unsigned char *source = markdown_core_parser_input_text(parser, &size);
-    return parser->at.lookahead_cursor ? (size_t)(parser->at.lookahead_cursor - source) : size;
-}
-
 markdown_core_node *markdown_core_reader_last(markdown_core_reader *reader, markdown_core_parser *parser,
                                               markdown_core_node *parent) {
+    (void)reader;
     (void)parser;
-    markdown_core_node *last = markdown_core_parser_last_child(parent);
-    if (last) {
-        reader->read = last;
+    return markdown_core_parser_last_child(parent);
+}
+
+void markdown_core_reader_write(markdown_core_reader *reader, markdown_core_node *node) {
+    if (node) {
+        reader->read = node;
         reader->writes = true;
     }
-    return last;
 }
 
 const markdown_core_node *markdown_core_reader_before(markdown_core_reader *reader, markdown_core_parser *parser,
@@ -9262,6 +9250,206 @@ const markdown_core_node *markdown_core_reader_before(markdown_core_reader *read
         reader->made = node;
     }
     return before;
+}
+
+/* THE FRONT CUT (element.h, markdown_core_cut). A block's text may open
+ * with items an element cuts off its front -- a paragraph's link reference
+ * definitions -- which settle before the block, each as it is read. The
+ * elements read the items; what is the same for every item is the
+ * engine's: where each item is placed and settled, what its reading read,
+ * and the block's front, which moves past the items, its map with it. */
+
+/* Whether a block of the document's root starting at `start` starts as a
+ * reading from its line would start it: past less than four spaces of its
+ * line, as a line that opens a paragraph is read. */
+static bool S_cut_starts_line(markdown_core_parser *parser, size_t start) {
+    size_t length;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+    size_t at = start;
+    while (at && start - at < 4 && source[at - 1] == ' ') {
+        at--;
+    }
+    return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
+}
+
+static const uint8_t *S_gate_candidates(const markdown_core_dialect *dialect, markdown_core_block_hook hook, int key,
+                                        size_t *count);
+
+/* The item one of the dialect's cut owners reads at the front of
+ * `cut->rest`, or 0. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
+    S_cut_one(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_cut *cut) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    const markdown_core_element_instance *const *owners = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_CUT];
+    size_t count;
+    const uint8_t *candidates = S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_CUT, cut->rest.data[0], &count);
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        const markdown_core_element_instance *owner = owners[candidates ? candidates[i] : i];
+        cut->wide = false;
+        cut->made = NULL;
+        const bufsize_t length = owner->element->opens->cut(owner, parser, reader, cut);
+        if (length) {
+            return length;
+        }
+    }
+    return 0;
+}
+
+/* WHAT AN ITEM READ (blocks.c, THE REACH): an item cut in a block of the
+ * root, `length` bytes from `at` of the block's text, was decided by its own
+ * bytes and the first after them, or, `wide`, by those through the line
+ * read, up to `now` (markdown_core_parser_read_past), and by the items before
+ * it from `*chain` on, where the last that starts its line as a reading from
+ * there would starts, which a reading from there reads again: a reading that
+ * starts at an item reads a block that begins there. */
+static void S_cut_note(markdown_core_parser *parser, const markdown_core_cut *cut, bufsize_t length, size_t now,
+                       size_t *chain) {
+    markdown_core_node *b = cut->block, *parent = cut->parent;
+    int ignored;
+    bufsize_t start = (bufsize_t)b->place.start, next;
+    markdown_core_parser_content_place(parser, &b->content_map, cut->at, &ignored, &start);
+    if (*chain == SIZE_MAX || S_cut_starts_line(parser, (size_t)start)) {
+        *chain = (size_t)start;
+    }
+    size_t reached = now;
+    if (!cut->wide && cut->at + length < cut->text.len &&
+        markdown_core_parser_content_place(parser, &b->content_map, cut->at + length, &ignored, &next)) {
+        reached = (size_t)next + 1;
+    }
+    /* The item read last, which settled before the block. */
+    assert(parent->child_count > 1 && parent->children[parent->child_count - 1] == b);
+    markdown_core_parser_reach(parser, parent->children[parent->child_count - 2], *chain, reached);
+}
+
+bool markdown_core_reader_cut_front(markdown_core_reader *reader, markdown_core_parser *parser, markdown_core_node *b,
+                                    markdown_core_node *parent) {
+    const markdown_core_chunk text = markdown_core_node_text(b);
+    /* No owner cuts an item that starts with the text's first byte, and
+     * nothing was cut before: the block keeps its front. */
+    size_t owners;
+    (void)S_gate_candidates(parser->dialect, MARKDOWN_CORE_BLOCK_HOOK_CUT,
+                            text.len ? text.data[0] : MARKDOWN_CORE_BLOCK_GATE_KEY_NONE, &owners);
+    if (!owners && !b->cut_front) {
+        return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
+    }
+    markdown_core_cut cut = {
+        .block = b,
+        .parent = parent,
+        .text = text,
+        .rest = text,
+        .attributes = {.data = text.data, .length = text.len, .scratch = &parser->attribute_scratch}};
+    /* The items follow each other down the block's lines. */
+    int line = parser->at.read.number;
+    /* Only a reading that notes reach notes what each item read. */
+    const bool noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
+                       markdown_core_parser_block_root(parser) == parser->root;
+    size_t now = 0;
+    size_t chain = SIZE_MAX;
+    while (cut.rest.len && !parser->error) {
+        cut.at = (bufsize_t)(cut.rest.data - text.data);
+        const bufsize_t length = S_cut_one(parser, reader, &cut);
+        if (!length) {
+            break;
+        }
+        if (cut.made) {
+            if (noted && !now) {
+                now = markdown_core_parser_read_past(parser);
+            }
+            /* An item is read whole: it settles as it is made, before the
+             * block it was read from, which settles later if anything of
+             * it is left. */
+            markdown_core_parser_line_places(parser, cut.made, parent, &line);
+            markdown_core_block_settle_before(parser, cut.made, parent);
+            if (noted && !parser->error) {
+                S_cut_note(parser, &cut, length, now, &chain);
+            }
+        }
+        cut.rest.data += length;
+        cut.rest.len -= length;
+    }
+    if (cut.attributes.oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_attribute_parser_free(&cut.attributes);
+    /* The items read are cut from the front of the block's text, and its
+     * map follows the cut. */
+    bufsize_t read = text.len - cut.rest.len;
+    if (read) {
+        markdown_core_block_rebase_content_marks(parser, b, read, cut.rest.len);
+        b->cut_front += read;
+    }
+    if (!b->cut_front) {
+        return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
+    }
+    if (noted && !now) {
+        now = markdown_core_parser_read_past(parser);
+    }
+    int ignored;
+    bufsize_t source;
+    /* The block now begins where its FIRST SURVIVING line was written, and
+     * that is asked of the map rather than derived: this can be reached
+     * twice on one paragraph -- once at the setext-underline check and again
+     * as the block closes -- and the first call can consume everything
+     * recorded so far, leaving the line that carries what is left still
+     * unread. Taking the answer from the surviving run rather than from the
+     * size of the cut is what makes both arrivals give the same result. */
+    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
+        /* A block of the document whose reading was open from where it
+         * started, before its items, through the line read, up to `now`,
+         * and past where it now starts, a span its close goes on with
+         * (THE REACH): no reading starts afresh inside it. */
+        if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
+            markdown_core_parser_reach_span(parser, b, b->place.start,
+                                            now > (size_t)source + 1 ? now : (size_t)source + 1);
+        }
+        markdown_core_node_restart(parser, b, (size_t)source);
+    } else if (chain != SIZE_MAX) {
+        /* Nothing is left of it: its close notes what the last items read
+         * from where they began, and its reading was open from where it
+         * started up to there. */
+        if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
+            markdown_core_parser_reach_span(parser, b, b->place.start, now > chain + 1 ? now : chain + 1);
+            /* The block may hold nothing to keep: the item read last holds
+             * the span too. */
+            markdown_core_node *last = parent->children[parent->child_count - 2];
+            markdown_core_node_reads(last, b->place.start, now > chain + 1 ? now : chain + 1, true);
+        }
+        markdown_core_node_restart(parser, b, chain);
+    }
+    return !markdown_core_is_blank_to_line_end(cut.rest.data, 0, cut.rest.len);
+}
+
+bool markdown_core_parser_kind_cut(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent,
+                                   markdown_core_node_type kind) {
+    const markdown_core_element_instance *from = markdown_core_parser_block_kind(parser, node)->structure;
+    if (!from || !from->lines->cuts) {
+        return true;
+    }
+    const markdown_core_element_instance *to = markdown_core_dialect_block_kind(parser->dialect, kind)->structure;
+    return (to && (to->lines->cuts || to->lines->uncut)) ||
+           markdown_core_reader_cut_front(&parser->at.read, parser, node, parent);
+}
+
+bool markdown_core_reader_cuts_whole(markdown_core_reader *reader, markdown_core_parser *parser,
+                                     const markdown_core_node *b) {
+    const markdown_core_chunk text = markdown_core_node_text(b);
+    markdown_core_cut cut = {
+        .block = (markdown_core_node *)b,
+        .text = text,
+        .rest = text,
+        .measure = true,
+        .attributes = {.data = text.data, .length = text.len, .scratch = &parser->attribute_scratch}};
+    bool whole = text.len > 0;
+    while (whole && cut.rest.len) {
+        cut.at = (bufsize_t)(cut.rest.data - text.data);
+        const bufsize_t length = S_cut_one(parser, reader, &cut);
+        whole = length && !cut.wide;
+        cut.rest.data += length;
+        cut.rest.len -= length;
+    }
+    whole = whole && !cut.attributes.oom;
+    markdown_core_attribute_parser_free(&cut.attributes);
+    return whole;
 }
 
 /* THE READER CLOSES. What a step's reading read beyond the line in hand is
@@ -9304,8 +9492,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reader_note(markdown_core_pars
 }
 
 static inline void S_reader_close(markdown_core_parser *parser) {
-    if (parser->at.read.read || parser->at.read.past || parser->at.read.opener) {
+    markdown_core_reader *reader = &parser->at.read;
+    if (reader->opener || ((reader->read || reader->past) && markdown_core_parser_reaches(parser))) {
         S_reader_note(parser);
+    } else if (reader->read || reader->past) {
+        /* A reading that notes no reach has nothing to note. */
+        reader->read = NULL;
+        reader->made = NULL;
+        reader->past = reader->seen = 0;
     }
 }
 
@@ -10955,6 +11149,7 @@ static bool scan_element_start(markdown_core_parser *parser, block_start_context
                           S_gate_key(context->reader, context->reader->nonspace, context->reader->indent), &count);
 
     start->open = NULL;
+    start->reads = NULL;
     start->kind = MARKDOWN_CORE_NODE_NONE;
     start->matched = 0;
     for (size_t i = 0; i < count; i++) {
@@ -11050,6 +11245,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
         /* A start no scan claims is asked of the openers, which decide and
          * open in one call; a claim that read what more text can change is
          * not taken. Either holds before the start. */
+        if (hold && start.open && start.reads) {
+            markdown_core_reader probe = *reader;
+            start.reads(start.owner, &probe, &start);
+            reader->far = probe.far;
+        }
         if (hold && (!start.open || !S_step_decided(reader))) {
             *reader = before;
             *opens = (S_opens){maybe_lazy, depth};

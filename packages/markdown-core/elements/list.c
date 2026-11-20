@@ -18,6 +18,17 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
                                                        markdown_core_reader *reader, bufsize_t pos,
                                                        markdown_core_node *container, int first_column,
                                                        bool interrupts_paragraph, markdown_core_list *data);
+/* What the open reads past the marker (block_start.reads): its padding,
+ * the item's first non-space byte and a task prefix there. */
+static void S_list_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
+                         const block_start *start) {
+    (void)self;
+    markdown_core_block_consume_item_marker(reader, start->matched);
+    markdown_core_reader_find(reader);
+    bufsize_t width;
+    (void)markdown_core_task_prefix_end(reader, &width);
+}
+
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start);
 /* The upper-case roman letters: the terms of ordered_numeral's roman variant. */
@@ -282,17 +293,9 @@ static bool markdown_core_list_scan(const markdown_core_element_instance *self, 
                context->reader->nonspace_column, context->paragraph, &start->list)))) {
         return false;
     }
-    /* What the open reads, read here on a copy of the reader: the marker
-     * and its padding, the item's first non-space byte and a task prefix
-     * there. */
-    markdown_core_reader probe = *context->reader;
-    markdown_core_block_consume_item_marker(&probe, start->matched);
-    markdown_core_reader_find(&probe);
-    bufsize_t width;
-    (void)markdown_core_task_prefix_end(&probe, &width);
-    context->reader->far = probe.far;
     start->kind = MARKDOWN_CORE_NODE_LIST;
     start->open = markdown_core_list_open;
+    start->reads = S_list_reads;
     return true;
 }
 
@@ -392,17 +395,15 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
 
 int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width) {
     markdown_core_reader_advance(reader, reader->nonspace + marker_width - reader->offset, false);
-    int offset = reader->offset, column = reader->column;
-    bool partial = reader->split;
+    const markdown_core_reader_mark mark = markdown_core_reader_tell(reader);
+    const bufsize_t column = reader->column;
     while (reader->column - column < 5 &&
            markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
         markdown_core_reader_advance(reader, 1, true);
     }
     int padding = reader->column - column;
     if (padding < 1 || padding >= 5 || markdown_core_is_line_end(markdown_core_reader_peek(reader, reader->offset))) {
-        reader->offset = offset;
-        reader->column = column;
-        reader->split = partial;
+        markdown_core_reader_back(reader, mark);
         if (padding > 0) {
             markdown_core_reader_advance(reader, 1, true);
         }

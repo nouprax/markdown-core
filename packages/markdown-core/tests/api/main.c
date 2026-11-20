@@ -10484,6 +10484,22 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
            typed[t]);
         markdown_core_session_close(session);
     }
+    /* An identifier line after a block it cannot name -- a comment -- writes
+     * nothing of that block, so replacing the lines after it rereads as a
+     * parse does. */
+    {
+        static const char rejected[] = "e\n%%\n%%\n#d#\n";
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        const markdown_core_position from = {3, 1}, to = {5, 1};
+        const bool edited =
+            markdown_core_session_new((const uint8_t *)rejected, strlen(rejected), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) == MARKDOWN_CORE_OK &&
+            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+            markdown_core_session_edit(session, from, to, (const uint8_t *)"t", 1, &document) == MARKDOWN_CORE_OK;
+        OK(runner, edited && session_as_parsed(session), "an identifier line after a comment writes nothing of it");
+        markdown_core_session_close(session);
+    }
     markdown_core_session *session = NULL;
     const markdown_core_document *document = NULL;
     bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,

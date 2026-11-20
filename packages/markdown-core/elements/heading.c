@@ -1909,7 +1909,8 @@ static void heading_rename(name_pass *pass) {
         for (;;) {
             name_suffix(&name, suffix);
             bool failed = false;
-            const bool reserved = markdown_core_roster_find_name(&parser->roster, &name.pieces, name.measure, &failed);
+            const bool reserved =
+                markdown_core_roster_find_name(&parser->roster, &name.pieces, name.measure, &failed) != NULL;
             if (failed) {
                 ok = false;
                 break;
@@ -2441,26 +2442,23 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
                         markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
-    bool has_content;
-    // The paragraph's reference definitions are read first; what is left becomes the heading.
+    /* The change of kind cuts the items the paragraph's text opens with
+     * first (blocks.c, THE FRONT CUT): what is left becomes the heading. */
     markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
-    has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container, parent);
-
-    if (has_content) {
-
-        markdown_core_node_set_kind_result result =
-            markdown_core_parser_set_node_kind(parser, *container, parent, MARKDOWN_CORE_NODE_HEADING);
-        if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-            if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
-            return false;
-        }
-        (*container)->as.heading->level = matched;
-        (*container)->as.heading->setext = true;
-        markdown_core_reader_end(reader);
+    markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, *container, parent, MARKDOWN_CORE_NODE_HEADING);
+    if (result == MARKDOWN_CORE_NODE_SET_KIND_CUT) {
+        return true;
     }
-
+    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        return false;
+    }
+    (*container)->as.heading->level = matched;
+    (*container)->as.heading->setext = true;
+    markdown_core_reader_end(reader);
     return true;
 }
 static bool scan_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,

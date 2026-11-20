@@ -26,124 +26,6 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
  * into `parent`, the block that holds `b`, which starts on input line
  * `*line`, an earlier one or a later one, and leaves `*line` the line it ends
  * on. Its length, 0 when there is none. */
-static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
-                                  markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
-                                  bufsize_t before, int *line, bool *wide);
-
-/* Whether a block of the document's root starting at `start` starts as a
- * reading from its line would start it: past less than four spaces of its
- * line, as a line that opens a paragraph is read. */
-static bool S_starts_line(const markdown_core_parser *parser, size_t start) {
-    size_t length;
-    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-    size_t at = start;
-    while (at && start - at < 4 && source[at - 1] == ' ') {
-        at--;
-    }
-    return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
-}
-
-/* THE REACH OF A DEFINITION (blocks.c, THE REACH): a definition read in a
- * block of the root, `length` bytes from `at` of the block's `size`, was
- * decided by its own bytes and the first after them, or, `wide`, by those
- * through the line read, up to `now` (markdown_core_parser_read_past), and
- * by the definitions before it from `*chain` on, where the last that starts
- * its line as a reading from there would starts, which a reading from
- * there reads again: a reading that starts at a definition reads a block
- * that begins there. */
-static void S_note_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
-                             bufsize_t at, bufsize_t length, bufsize_t size, bool wide, size_t now, size_t *chain) {
-    int ignored;
-    bufsize_t start = (bufsize_t)b->place.start, next;
-    markdown_core_parser_content_place(parser, &b->content_map, at, &ignored, &start);
-    if (*chain == SIZE_MAX || S_starts_line(parser, (size_t)start)) {
-        *chain = (size_t)start;
-    }
-    size_t reached = now;
-    if (!wide && at + length < size &&
-        markdown_core_parser_content_place(parser, &b->content_map, at + length, &ignored, &next)) {
-        reached = (size_t)next + 1;
-    }
-    /* The definition read last, which settled before the block. */
-    assert(parent->child_count > 1 && parent->children[parent->child_count - 1] == b);
-    markdown_core_parser_reach(parser, parent->children[parent->child_count - 2], *chain, reached);
-}
-
-bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
-                                                            markdown_core_node *parent) {
-    bufsize_t pos;
-    const markdown_core_chunk text = markdown_core_node_text(b);
-    markdown_core_chunk chunk = text;
-    markdown_core_attribute_parser attributes = {
-        .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
-    /* The definitions follow each other down the block's lines. */
-    int line = parser->at.read.number;
-    /* Only a reading that notes reach notes what each definition read. */
-    const bool noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
-                       markdown_core_parser_block_root(parser) == parser->root;
-    const size_t now = noted ? markdown_core_parser_read_past(parser) : 0;
-    size_t chain = SIZE_MAX;
-    while (chunk.len && chunk.data[0] == '[' && !parser->error) {
-        const bufsize_t at = (bufsize_t)(chunk.data - text.data);
-        bool wide = false;
-        pos = S_read_reference(parser, b, parent, &chunk, &attributes, at, &line, &wide);
-        if (!pos) {
-            break;
-        }
-        if (noted && !parser->error) {
-            S_note_reference(parser, b, parent, at, pos, text.len, wide, now, &chain);
-        }
-        chunk.data += pos;
-        chunk.len -= pos;
-    }
-    if (attributes.oom) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    markdown_core_attribute_parser_free(&attributes);
-    /* The definitions read are cut from the front of the block's text, and
-     * its map follows the cut. */
-    bufsize_t read = text.len - chunk.len;
-    if (read) {
-        markdown_core_block_rebase_content_marks(parser, b, read, chunk.len);
-        b->cut_front += read;
-    }
-    if (!b->cut_front) {
-        return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
-    }
-    int ignored;
-    bufsize_t source;
-    /* The block now begins where its FIRST SURVIVING line was written, and
-     * that is asked of the map rather than derived: this function can be
-     * reached twice on one paragraph -- once at the setext-underline check and
-     * again as the block closes -- and the first call can consume everything
-     * recorded so far, leaving the line that carries what is left still
-     * unread. Taking the answer from the surviving run rather than from the
-     * size of the cut is what makes both arrivals give the same result. */
-    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
-        /* A block of the document whose reading was open from where it
-         * started, before its definitions, through the line read, up to
-         * `now`, and past where it now starts, a span its close goes on
-         * with (blocks.c, THE REACH): no reading starts afresh inside it. */
-        if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            markdown_core_parser_reach_span(parser, b, b->place.start,
-                                            now > (size_t)source + 1 ? now : (size_t)source + 1);
-        }
-        markdown_core_node_restart(parser, b, (size_t)source);
-    } else if (chain != SIZE_MAX) {
-        /* Nothing is left of it: its close notes what the last definitions
-         * read from where they began, and its reading was open from where
-         * it started up to there. */
-        if (parent == parser->root && markdown_core_parser_block_root(parser) == parser->root) {
-            markdown_core_parser_reach_span(parser, b, b->place.start, now > chain + 1 ? now : chain + 1);
-            /* The block may hold nothing to keep: the definition read
-             * last holds the span too. */
-            markdown_core_node *last = parent->children[parent->child_count - 2];
-            markdown_core_node_reads(last, b->place.start, now > chain + 1 ? now : chain + 1, true);
-        }
-        markdown_core_node_restart(parser, b, chain);
-    }
-    return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
-}
 
 /* A destination is its source less the angle brackets, with escapes and
  * references decoded. Nothing is trimmed: an unbracketed destination cannot
@@ -441,26 +323,6 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
     return length;
 }
 
-bool markdown_core_block_reference_definitions_whole(markdown_core_parser *parser, const markdown_core_node *b) {
-    markdown_core_chunk chunk = markdown_core_node_text(b);
-    markdown_core_attribute_parser attributes = {
-        .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
-    bool whole = chunk.len > 0;
-    while (whole && chunk.len) {
-        reference_definition definition = {0};
-        const bufsize_t length = chunk.data[0] == '[' ? S_reference_definition(&chunk, &attributes, &definition) : 0;
-        if (length) {
-            markdown_core_attributes_free(&definition.value);
-        }
-        whole = length && !definition.wide;
-        chunk.data += length;
-        chunk.len -= length;
-    }
-    whole = whole && !attributes.oom;
-    markdown_core_attribute_parser_free(&attributes);
-    return whole;
-}
-
 static bool S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                                bufsize_t before, const markdown_core_chunk *url);
 static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
@@ -468,12 +330,26 @@ static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b,
 static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
                           bufsize_t before);
 
-static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
-                                  markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
-                                  bufsize_t before, int *line, bool *wide) {
-    reference_definition definition;
-    bufsize_t length = S_reference_definition(input, attributes, &definition);
-    *wide = definition.wide;
+/* THE FRONT CUT'S ITEM (element.h, markdown_core_cut): the link reference
+ * definition at the front of `cut->rest`, `cut->at` bytes into the block's
+ * text, made a Reference node, which the engine settles before the block;
+ * with `measure`, only its length. Its length, 0 when there is none. */
+static bufsize_t S_cut_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                 markdown_core_reader *reader, markdown_core_cut *cut) {
+    (void)self;
+    (void)reader;
+    markdown_core_node *b = cut->block;
+    markdown_core_chunk *input = &cut->rest;
+    const bufsize_t before = cut->at;
+    reference_definition definition; /* S_reference_definition writes it whole. */
+    bufsize_t length = S_reference_definition(input, &cut->attributes, &definition);
+    cut->wide = definition.wide;
+    if (cut->measure) {
+        if (length) {
+            markdown_core_attributes_free(&definition.value);
+        }
+        return length;
+    }
     if (!length) {
         if (parser->sink) {
             S_report_unread(parser, b, input, before);
@@ -533,10 +409,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
     markdown_core_parser_content_end_place(parser, &b->content_map, before + end - 1, &ignored, &stop);
     reference->place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
-    markdown_core_parser_line_places(parser, reference, parent, line);
-    /* A definition is read whole: it settles as it is made, before the block
-     * it was read from, which settles later if anything of it is left. */
-    markdown_core_block_settle_before(parser, reference, parent);
+    cut->made = reference;
     /* The document defines the label from where the definition starts. */
     if (!parser->error &&
         !markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_REFERENCE, label.data, label.len, start)) {
@@ -1472,8 +1345,16 @@ static const markdown_core_inline_ops LINK_INLINES = {
     .dispatch = "[]",
 };
 
+/* A paragraph's text opens with its link reference definitions, which the
+ * engine cuts off its front (blocks.c, THE FRONT CUT). */
+static const markdown_core_open_ops LINK_OPENS = {
+    .cut = S_cut_reference,
+    .cut_needs = {.bytes = "["},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
+    .opens = &LINK_OPENS,
     .state_size = sizeof(markdown_core_bracket_work),
     .run_state_size = sizeof(markdown_core_bracket_scope),
     .name = "link",

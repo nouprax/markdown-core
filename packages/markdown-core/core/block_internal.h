@@ -69,6 +69,8 @@ typedef struct markdown_core_block_start_context {
 typedef struct {
     bufsize_t variant, variant_end, title, title_end, report;
     bool metadata, fold, collapsed;
+    /* Where the marker's motion leaves the reader. */
+    markdown_core_reader_mark after;
 } markdown_core_callout_header;
 
 typedef struct markdown_core_block_start {
@@ -76,6 +78,13 @@ typedef struct markdown_core_block_start {
      * records and hands `open` as its `self`. */
     bool (*open)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node **,
                  markdown_core_reader *, struct markdown_core_block_start *);
+    /* What the open reads past what the scan read, read on a copy of the
+     * reader the engine hands it (the marker's padding, the item's first
+     * byte). The engine asks it only on a line more text can change, where
+     * how far the step reads decides whether the line is held; NULL when the
+     * open reads nothing more. */
+    void (*reads)(const markdown_core_element_instance *, markdown_core_reader *,
+                  const struct markdown_core_block_start *);
     const markdown_core_element_instance *owner;
     markdown_core_node_type kind;
     bufsize_t matched;

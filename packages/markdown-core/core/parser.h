@@ -1385,17 +1385,6 @@ typedef struct {
 bool markdown_core_parser_leapt(const markdown_core_parser *parser, const markdown_core_node *node,
                                 markdown_core_leapt *leapt);
 
-static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
-                                                                                    markdown_core_node *node,
-                                                                                    markdown_core_node *parent,
-                                                                                    markdown_core_node_type kind) {
-    markdown_core_parser_note_kind(parser, kind);
-    if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
-        markdown_core_parser_unseam(parser, node, kind);
-    }
-    return markdown_core_node_set_kind(node, parent, kind);
-}
-
 /* THE BUILDER STACK'S QUESTIONS (the builders, above), each answered from
  * one builder's scaffold. The current block. */
 static inline markdown_core_node *markdown_core_parser_current(const markdown_core_parser *parser) {
@@ -1501,6 +1490,29 @@ static inline const markdown_core_kind_record *markdown_core_parser_kind(const m
 static inline const markdown_core_kind_record *markdown_core_parser_block_kind(const markdown_core_parser *parser,
                                                                                const markdown_core_node *block) {
     return markdown_core_dialect_block_kind(parser->dialect, (markdown_core_node_type)block->kind);
+}
+
+/* Whether a block of `node`'s kind changing to `kind` keeps a block: one
+ * whose element cuts the items its text opens with, becoming one of a kind
+ * that does not, has them cut first (blocks.c, THE FRONT CUT). False when
+ * they were all of it, or the parse failed. */
+bool markdown_core_parser_kind_cut(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent,
+                                   markdown_core_node_type kind);
+/* A block's change of kind: a block whose element cuts the items its text
+ * opens with, becoming one of a kind that does not, has them cut first
+ * (blocks.c, THE FRONT CUT), and keeps its kind when they were all of it. */
+static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
+                                                                                    markdown_core_node *node,
+                                                                                    markdown_core_node *parent,
+                                                                                    markdown_core_node_type kind) {
+    if (parser->dialect && kind != node->kind && parent && !markdown_core_parser_kind_cut(parser, node, parent, kind)) {
+        return parser->error ? MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED : MARKDOWN_CORE_NODE_SET_KIND_CUT;
+    }
+    markdown_core_parser_note_kind(parser, kind);
+    if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
+        markdown_core_parser_unseam(parser, node, kind);
+    }
+    return markdown_core_node_set_kind(node, parent, kind);
 }
 
 /* Physical geometry is present for every visited line. Optional normalized
@@ -1664,6 +1676,20 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
     }
     markdown_core_parser_see_end(parser);
     return true;
+}
+
+/* The reader's reads past its line (reader.h, READS PAST THE LINE). */
+static inline int markdown_core_reader_byte(markdown_core_reader *reader, markdown_core_parser *parser, size_t place) {
+    reader->past = place + 1 > reader->past ? place + 1 : reader->past;
+    return markdown_core_parser_input_ends(parser, parser->input.source + place) ? -1 : parser->input.source[place];
+}
+
+static inline size_t markdown_core_reader_after(const markdown_core_reader *reader,
+                                                const markdown_core_parser *parser) {
+    (void)reader;
+    size_t size;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &size);
+    return parser->at.lookahead_cursor ? (size_t)(parser->at.lookahead_cursor - source) : size;
 }
 
 /* WHERE THE LINES THE TEXT HAS FINISHED END (`complete`): a line that

@@ -182,6 +182,7 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         markdown_core_parser_candidate_meets(parser, self, parent)) {
         return false;
     }
+    markdown_core_reader_write(reader, owner);
     bool undecided;
     const bool boundary = S_followed_by_boundary(parser, reader, parent, &undecided);
     if (parser->error) {
@@ -227,7 +228,7 @@ markdown_core_candidate_decision markdown_core_block_decide_identifier_line(cons
     if (!reader) {
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
-    markdown_core_reader_last(reader, parser, container);
+    markdown_core_reader_write(reader, markdown_core_reader_last(reader, parser, container));
     bool undecided;
     const bool boundary = S_followed_by_boundary(parser, reader, container, &undecided);
     markdown_core_parser_candidate_end(parser);
