@@ -102,6 +102,9 @@ markdown_core_place markdown_core_widths_window(const markdown_core_widths *widt
 /* The widths of the children of `holder`, a block below the root, made
  * when there are none; NULL when storage could not be had. */
 const markdown_core_widths *markdown_core_index_nest(markdown_core_index *index, const markdown_core_node *holder);
+/* The widths of the children of `holder`, found, never made, or NULL. */
+const markdown_core_widths *markdown_core_index_held(const markdown_core_index *index,
+                                                     const markdown_core_node *holder);
 /* The fold marks of the nest of `holder`, found, never made, or NULL. */
 markdown_core_folds *markdown_core_index_folds(markdown_core_index *index, const markdown_core_node *holder);
 /* Whether a reading that starts before `point` read past `past`, but a

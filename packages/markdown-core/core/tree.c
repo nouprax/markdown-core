@@ -303,12 +303,7 @@ const void *markdown_core_tree_peek(const markdown_core_tree *tree, size_t index
     return S_entry(tree, node, index - before);
 }
 
-/* Whether the entry at `entry` comes before `place` or `key`. */
-static inline bool S_before(const markdown_core_tree *tree, const unsigned char *entry, size_t place, const void *key) {
-    return key ? tree->ops->before(entry, key) : tree->ops->start(entry) < place;
-}
-
-static size_t S_from(markdown_core_tree *tree, size_t place, const void *key, size_t low, size_t high) {
+size_t markdown_core_tree_bound_root(markdown_core_tree *tree, size_t place, size_t low, size_t high) {
     if (!tree->root || low >= high) {
         return low;
     }
@@ -325,7 +320,7 @@ static size_t S_from(markdown_core_tree *tree, size_t place, const void *key, si
         }
         size_t start = before + inner->counts[child];
         for (uint32_t i = child + 1; i < inner->count && start < high && inner->counts[i]; i++) {
-            if (!S_before(tree, S_key(tree, inner, i), place, key)) {
+            if (tree->ops->start(S_key(tree, inner, i)) >= place) {
                 break;
             }
             before = start;
@@ -340,7 +335,7 @@ static size_t S_from(markdown_core_tree *tree, size_t place, const void *key, si
     uint32_t last = high - before < leaf->count ? (uint32_t)(high - before) : leaf->count;
     while (first < last) {
         const uint32_t middle = first + (last - first) / 2;
-        if (S_before(tree, S_entry(tree, leaf, middle), place, key)) {
+        if (tree->ops->start(S_entry(tree, leaf, middle)) < place) {
             first = middle + 1;
         } else {
             last = middle;
@@ -348,13 +343,10 @@ static size_t S_from(markdown_core_tree *tree, size_t place, const void *key, si
     }
     tree->seen = leaf;
     tree->seen_first = before;
+    tree->found = first;
     S_spare(tree);
     const size_t found = before + first;
     return found < high ? found : high;
-}
-
-size_t markdown_core_tree_bound(const markdown_core_tree *tree, size_t place, size_t low, size_t high) {
-    return S_from((markdown_core_tree *)tree, place, NULL, low, high);
 }
 
 size_t markdown_core_tree_seek(const markdown_core_tree *tree, const void *key) {
