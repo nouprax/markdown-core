@@ -33,16 +33,15 @@ struct markdown_core_element_instance;
  * it closes the reader (blocks.c, THE READER CLOSES): `read`, a block
  * before the line, and whether the reading writes it, `writes`, or the
  * block it makes depends on it, `made`, the first block the step made after
- * it read one; `past`, one past the furthest byte it read past the line,
- * and `seen`, one past the furthest a lookahead it ran read, 0 for none;
- * and `opener`, the element whose opener the reading read to its closer,
- * `shut`, or to the end without one. */
+ * it read one, and whether what it read is only how `read` closes, `close`; `past`, one past the furthest byte it read
+ * past the line, and `seen`, one past the furthest a lookahead it ran read, 0 for none; and `opener`, the element whose
+ * opener the reading read to its closer, `shut`, or to the end without one. */
 typedef struct markdown_core_reader {
     markdown_core_chunk line;
     int number, indent;
     bufsize_t offset, column, nonspace, nonspace_column;
     bufsize_t start, end, far;
-    bool blank, split, writes;
+    bool blank, split, writes, close;
     const struct markdown_core_node *read;
     struct markdown_core_node *made;
     size_t past, seen;
@@ -205,7 +204,7 @@ bool markdown_core_reader_cuts_whole(markdown_core_reader *reader, struct markdo
 static inline const struct markdown_core_node *markdown_core_reader_open(markdown_core_reader *reader,
                                                                          const struct markdown_core_node *node) {
     reader->read = node;
-    reader->writes = false;
+    reader->writes = reader->close = false;
     return node;
 }
 

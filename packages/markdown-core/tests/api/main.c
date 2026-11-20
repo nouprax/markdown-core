@@ -10500,6 +10500,22 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         OK(runner, edited && session_as_parsed(session), "an identifier line after a comment writes nothing of it");
         markdown_core_session_close(session);
     }
+    /* A specimen reads how the block before it closes, from the line end
+     * before it: a comment that stops being one rereads with the paragraph
+     * before it, which it joins. */
+    {
+        static const char numbered[] = "x\n%%\n%%\n(@a) b\n";
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        const markdown_core_position from = {3, 2}, to = {3, 3};
+        const bool edited =
+            markdown_core_session_new((const uint8_t *)numbered, strlen(numbered), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) == MARKDOWN_CORE_OK &&
+            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+            markdown_core_session_edit(session, from, to, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
+        OK(runner, edited && session_as_parsed(session), "a specimen after a comment that stops being one");
+        markdown_core_session_close(session);
+    }
     markdown_core_session *session = NULL;
     const markdown_core_document *document = NULL;
     bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,

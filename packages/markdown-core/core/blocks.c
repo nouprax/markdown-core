@@ -3933,9 +3933,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
      * walk starts -- so swapping frames leaves nothing behind. */
     for (size_t left = first, right = walk->count; left < right && left < --right; left++) {
         owned_tree_frame *a = S_frame(walk, left), *b = S_frame(walk, right);
-        const owned_tree_frame swap = *a;
-        *a = *b;
-        *b = swap;
+        const inline_walk walk_a = a->walk;
+        markdown_core_node *const parsed_a = a->parsed;
+        const int depth_a = a->script_depth;
+        a->walk = b->walk;
+        a->parsed = b->parsed;
+        a->script_depth = b->script_depth;
+        b->walk = walk_a;
+        b->parsed = parsed_a;
+        b->script_depth = depth_a;
     }
     return walk->count != first;
 }
@@ -9234,6 +9240,7 @@ void markdown_core_reader_write(markdown_core_reader *reader, markdown_core_node
     if (node) {
         reader->read = node;
         reader->writes = true;
+        reader->close = false;
     }
 }
 
@@ -9247,6 +9254,7 @@ const markdown_core_node *markdown_core_reader_before(markdown_core_reader *read
     if (before) {
         reader->read = before;
         reader->writes = false;
+        reader->close = true;
         reader->made = node;
     }
     return before;
@@ -9479,7 +9487,11 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reader_note(markdown_core_pars
             end = end > at ? end : at;
             markdown_core_node *target =
                 reader->writes || !reader->made ? (markdown_core_node *)reader->read : reader->made;
-            markdown_core_parser_reach(parser, target, reader->read->place.start, end);
+            /* A reading of how the block before ends reads the line end
+             * before the block it made: a reading of the block before
+             * reads on through it, and resumes no later. */
+            const size_t from = reader->close ? reader->made->place.start - 1 : reader->read->place.start;
+            markdown_core_parser_reach(parser, target, from, end);
         } else if (reader->past && reader->number >= parser->input.first_line) {
             /* A reading before line 1 that read no block read only line
              * 1's own bytes, which that line's reading reads again. */
