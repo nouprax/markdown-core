@@ -382,10 +382,8 @@ struct markdown_core_element_instance {
     /* The parse record, or NULL when the element declares none. */
     void *state;
     /* Where the element's record lies in a run's block of records, and
-     * where what a mark keeps of its parse record (element.h, `kept_size`)
-     * lies in a mark's, and where its record lies in a bracket's
-     * (bracket.h, `bracket_size`). */
-    size_t run_offset, kept_offset, bracket_offset;
+     * where its record lies in a bracket's (bracket.h, `bracket_size`). */
+    size_t run_offset, bracket_offset;
     /* The instances of the descriptor's `peers`, in its order. */
     const markdown_core_element_instance *const *peers;
     /* Where the element's `mine` rules for closing a bracket lie among the

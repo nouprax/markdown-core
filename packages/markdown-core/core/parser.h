@@ -1409,13 +1409,6 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
 
 /* Whether a block that closed has settled: every one has but the pending
  * block, which a later line can still write. */
-/* WHAT THE COMMITS KEEP: in a snapshot, what `self`'s parse record keeps
- * with a mark (element.h, `kept_size`) as the earliest mark the reading can
- * be put back to found it -- the oldest candidate's, else the snapshot's --
- * and, in `*records`, the roster's length there. No put-back reaches what
- * the reading made before it. */
-const void *markdown_core_parser_kept(const markdown_core_parser *parser, const markdown_core_element_instance *self,
-                                      size_t *records);
 /* How many entries of the names (names.h) were read by their owners, as
  * the earliest mark the reading can go back to found them, and the roster's
  * records then in `*records`. */

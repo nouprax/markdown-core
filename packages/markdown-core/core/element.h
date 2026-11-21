@@ -772,13 +772,10 @@ struct markdown_core_element {
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
      * IT"); zero declares none (a candidate's record is the candidate's,
-     * markdown_core_candidate_ops). `kept_size` is how many bytes at the front of the
-     * parse record are WHAT A MARK KEEPS (blocks.c, THE MARK): what the
-     * element's record says of the reading so far, which a reading put back
-     * to a mark -- a snapshot's end, an accept -- finds as the mark found
-     * it; the rest of the record says nothing a reading put back takes
-     * back. */
-    size_t state_size, run_state_size, kept_size;
+     * markdown_core_candidate_ops). A record says nothing a reading put back
+     * to a mark takes back (blocks.c, THE MARK): what the reading so far
+     * says lives in the engine's services. */
+    size_t state_size, run_state_size;
     /* A record in each bracket a run opens (bracket.h,
      * markdown_core_bracket_record), zeroed as it opens. */
     size_t bracket_size;

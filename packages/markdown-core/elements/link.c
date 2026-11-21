@@ -4,7 +4,6 @@
 #define advance(inline_state) ((inline_state)->pos += 1)
 #include "attributes.h"
 #include "parts.h"
-#include "citation.h"
 #include "link.h"
 #include "embedded.h"
 #include "inline_internal.h"

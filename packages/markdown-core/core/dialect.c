@@ -24,9 +24,7 @@
  * its hooks without asking, on whichever element owns it, so an element that
  * declares part of it would have the engine call through a NULL the moment it
  * became the owner: it declares all of them or none.
- *
- * What a mark keeps of an element's parse record is its front (element.h,
- * `kept_size`), so a front larger than the record is refused.
+
  *
  * A flanking-transparent byte is ASCII. Flanking tests a decoded scalar
  * against these bytes, and only a scalar below 0x80 is its own byte. Its walk
@@ -91,9 +89,6 @@ static inline const markdown_core_line_ops *S_lines_of(const markdown_core_eleme
 
 static bool S_element_refused(const markdown_core_element *element) {
     const markdown_core_finish_ops *finish = S_finish_of(element);
-    if (element->kept_size > element->state_size) {
-        return true;
-    }
     /* Kinds to ask a finish step at, without a finish step. */
     if ((finish->exits || finish->scopes) && !finish->step) {
         return true;
@@ -588,9 +583,7 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         instance->lines = S_lines_of(element);
         instance->state = element->state_size ? state + state_at : NULL;
         instance->run_offset = dialect->run_state_size;
-        instance->kept_offset = dialect->kept_size;
         state_at += markdown_core_state_align(element->state_size);
-        dialect->kept_size += markdown_core_state_align(element->kept_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
         instance->bracket_offset = dialect->bracket_size;
         dialect->bracket_size += markdown_core_state_align(element->bracket_size);
@@ -697,7 +690,6 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         sizes->steps += S_count_finish_keys(elements[i], sizes->finish_key_counts);
         sizes->state_bytes += markdown_core_state_align(elements[i]->state_size);
         sizes->run_state_bytes += markdown_core_state_align(elements[i]->run_state_size);
-        sizes->pointers += elements[i]->kept_size != 0;
         sizes->pointers += elements[i]->names != NULL;
         sizes->pointers += elements[i]->stages != NULL;
         for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
@@ -844,13 +836,6 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
             if (S_inlines_implement(S_inlines_of(instances[i].element), (markdown_core_inline_hook)hook)) {
                 entries[at++] = &instances[i];
             }
-        }
-    }
-    dialect->kept_instances = entries + at;
-    for (size_t i = 0; i < count; i++) {
-        if (instances[i].element->kept_size) {
-            entries[at++] = &instances[i];
-            dialect->kept_count++;
         }
     }
     dialect->namers = entries + at;

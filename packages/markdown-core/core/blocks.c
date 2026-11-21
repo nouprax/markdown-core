@@ -479,8 +479,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
      * nodes they own, the committed definitions and the records of the
      * lookups that found nothing. Every parse streams: a one-shot parse is
      * a stream whose first commit is its whole text, and its finalize. */
-    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream) + parser->dialect->candidate_state_size +
-                                                parser->dialect->kept_size);
+    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream) + parser->dialect->candidate_state_size);
     if (parser->stream) {
         markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
         markdown_core_strbuf_init(&parser->stream->settled.labels, 0);
@@ -7836,9 +7835,7 @@ size_t markdown_core_parser_line_looked(const markdown_core_parser *parser, size
  * THE MARK: what a reading so far says, which a reading put back to the
  * mark finds as the mark found it -- where the reading stands, the input's
  * index, the content map's last mark, the roster, the completion queue,
- * the cell inputs, and what each element's parse record keeps (element.h,
- * `kept_size`), in the dialect's `kept_size` bytes at `kept`, which its
- * taker owns. */
+ * the names and the cell inputs. */
 typedef struct markdown_core_parser_mark {
     markdown_core_parser_at at;
     bool mapped;
@@ -7854,7 +7851,6 @@ typedef struct markdown_core_parser_mark {
     /* The look of the line in hand that waits for its line's end. */
     markdown_core_place look;
     int look_line;
-    unsigned char *kept;
 } S_snapshot_mark;
 
 /* A snapshot takes a mark and rolls back to it on every append, so the
@@ -7862,11 +7858,6 @@ typedef struct markdown_core_parser_mark {
  * making and undo share them. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdown_core_parser *parser,
                                                                    S_snapshot_mark *mark) {
-    const markdown_core_dialect *dialect = parser->dialect;
-    for (size_t i = 0; i < dialect->kept_count; i++) {
-        const markdown_core_element_instance *instance = dialect->kept_instances[i];
-        memcpy(mark->kept + instance->kept_offset, instance->state, instance->element->kept_size);
-    }
     *mark = (S_snapshot_mark){
         .at = parser->at,
         .mapped = parser->input.mapped,
@@ -7885,7 +7876,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
         .ran = parser->stream && parser->stream->edit ? parser->stream->edit->ran : 0,
         .cut_count = parser->stream && parser->stream->edit ? parser->stream->edit->cuts.count : 0,
         .cut_low = parser->stream && parser->stream->edit ? parser->stream->edit->cut_low : 0,
-        .kept = mark->kept,
     };
     if (parser->line_marks.count) {
         mark->last_mark = parser->line_marks.values[parser->line_marks.count - 1];
@@ -7897,15 +7887,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
 }
 
 /* Puts back the parser's state as `mark` found it: where the reading stood,
- * the content map, the roster, the completion queue, the cell inputs and
- * what the elements' parse records keep. */
+ * the content map, the roster, the names, the completion queue and the
+ * cell inputs. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_core_parser *parser,
                                                                       const S_snapshot_mark *mark) {
-    const markdown_core_dialect *dialect = parser->dialect;
-    for (size_t i = 0; i < dialect->kept_count; i++) {
-        const markdown_core_element_instance *instance = dialect->kept_instances[i];
-        memcpy(instance->state, mark->kept + instance->kept_offset, instance->element->kept_size);
-    }
     parser->at = mark->at;
     parser->input.last_line_ready = false;
     markdown_core_array_truncate(&parser->line_marks, mark->line_mark_count);
@@ -8431,7 +8416,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
         return NULL;
     }
     markdown_core_stream *const stream = parser->stream;
-    S_snapshot_mark mark = {.kept = (unsigned char *)stream->candidate_room + parser->dialect->candidate_state_size};
+    S_snapshot_mark mark = {0};
     S_look_begin(parser, &mark);
     markdown_core_node *result = NULL;
     /* A SNAPSHOT SEES A CANDIDATE END (THE CANDIDATES): the commit puts
@@ -8623,7 +8608,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
     root->flags |= MARKDOWN_CORE_NODE__OPEN;
     parser->root = root;
 
-    S_snapshot_mark mark = {.kept = (unsigned char *)stream->candidate_room + parser->dialect->candidate_state_size};
+    S_snapshot_mark mark = {0};
     S_look_begin(parser, &mark);
     stream->snapshot_mark = &mark;
     /* Every block held open is lent, the root last: the reading ends with
@@ -10434,10 +10419,9 @@ struct markdown_core_candidate {
 /* A LINE'S MARK: the state, the misses and the lent blocks, the root first,
  * the pending block last, so a block's lend stands at its depth; the path;
  * the calls, the first that waits and how many wait; and in `states`, bytes
- * the mark owns, what the elements' parse records keep (`state.kept`, the
- * dialect's `kept_size` bytes) and after it the record each call keeps
- * (markdown_core_candidate_ops, `size`), the call's at its index in room for
- * the dialect's largest; `state_capacity` counts bytes. */
+ * the mark owns, the record each call keeps (markdown_core_candidate_ops,
+ * `size`), the call's at its index in room for the dialect's largest;
+ * `state_capacity` counts bytes. */
 struct markdown_core_candidate_mark {
     S_snapshot_mark state;
     size_t miss_count, miss_label_size, miss_root_count;
@@ -10451,15 +10435,6 @@ struct markdown_core_candidate_mark {
     size_t state_capacity;
 };
 
-const void *markdown_core_parser_kept(const markdown_core_parser *parser, const markdown_core_element_instance *self,
-                                      size_t *records) {
-    const markdown_core_stream *stream = parser->stream;
-    assert(parser->snapshot && stream->snapshot_mark);
-    const S_snapshot_mark *mark = stream->mark_count ? &stream->marks[0].state : stream->snapshot_mark;
-    *records = mark->roster.count;
-    return mark->kept + self->kept_offset;
-}
-
 size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_t *records) {
     const markdown_core_stream *stream = parser->stream;
     assert(parser->snapshot && stream->snapshot_mark);
@@ -10472,7 +10447,7 @@ size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_
 static inline void *S_call_state(const markdown_core_parser *parser, const struct markdown_core_candidate_mark *mark,
                                  size_t index) {
     const size_t size = parser->dialect->candidate_state_size;
-    return size ? mark->states + parser->dialect->kept_size + index * size : NULL;
+    return size ? mark->states + index * size : NULL;
 }
 
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
@@ -10741,15 +10716,15 @@ static struct markdown_core_candidate_mark *S_mark_make(markdown_core_parser *pa
         memset(&marks[stream->mark_made++], 0, sizeof(*marks));
     }
     struct markdown_core_candidate_mark *mark = &marks[stream->mark_count];
-    /* Room for what the records keep and the call the mark is made for. */
-    const size_t room = parser->dialect->kept_size + parser->dialect->candidate_state_size;
+    /* Room for the record of the call the mark is made for. */
+    const size_t room = parser->dialect->candidate_state_size;
     if (room) {
         unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity, room, 1);
         if (!states) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
-        mark->states = mark->state.kept = states;
+        mark->states = states;
     }
     stream->mark_count++;
     mark->miss_count = stream->miss_count;
@@ -10797,13 +10772,13 @@ static void S_candidate_make(markdown_core_parser *parser) {
     mark->calls = calls;
     const size_t size = parser->dialect->candidate_state_size;
     if (size) {
-        unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity,
-                                                      parser->dialect->kept_size + (mark->call_count + 1) * size, 1);
+        unsigned char *states =
+            markdown_core_reserve(mark->states, &mark->state_capacity, (mark->call_count + 1) * size, 1);
         if (!states) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
-        mark->states = mark->state.kept = states;
+        mark->states = states;
         memcpy(S_call_state(parser, mark, mark->call_count), stream->candidate_room, size);
     }
     const size_t index = mark->call_count++;
