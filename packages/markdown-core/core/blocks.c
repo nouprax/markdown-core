@@ -9198,9 +9198,7 @@ void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count,
             }
         }
     }
-    if (reader->offset + 1 >= reader->line.len) {
-        reader->last = true;
-    }
+    reader->far = reader->offset + 1 > reader->far ? reader->offset + 1 : reader->far;
 }
 
 bool markdown_core_reader_indented(markdown_core_reader *reader, int continuation, bool blank) {
@@ -9545,7 +9543,9 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, const markd
 /* Whether the step just taken on the line a session holds read only bytes
  * the line already has (THE LINE A SESSION HOLDS): none past the last the
  * line has, and nothing past the line. */
-static inline bool S_step_decided(const markdown_core_reader *reader) { return !reader->last && !reader->past; }
+static inline bool S_step_decided(const markdown_core_reader *reader) {
+    return reader->far < reader->line.len && !reader->past;
+}
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     markdown_core_parser *parser, const markdown_core_kind_record *kind, markdown_core_node *container,
@@ -9953,7 +9953,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         input.alloc = 0;
         markdown_core_reader *const reader = &parser->at.read;
         reader->line = input;
-        reader->last = false;
+        reader->far = 0;
         lookahead->cursor = next;
         lookahead->line = this_line + 1;
 
@@ -10522,7 +10522,7 @@ markdown_core_reader *markdown_core_parser_candidate_start(markdown_core_parser 
     parser->at.read.start = (bufsize_t)found->start;
     parser->at.read.end = (bufsize_t)found->end;
     parser->at.read.line = (markdown_core_chunk){.data = parser->curline.ptr, .len = parser->curline.size, .alloc = 0};
-    parser->at.read.last = false;
+    parser->at.read.far = 0;
     markdown_core_reader_find(&parser->at.read);
     *container = candidate->stop.container;
     return &parser->at.read;
@@ -11269,7 +11269,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
         if (hold && start.open && start.reads) {
             markdown_core_reader probe = *reader;
             start.reads(start.owner, &probe, &start);
-            reader->last = probe.last;
+            reader->far = probe.far;
         }
         if (before && (!start.open || !S_step_decided(reader))) {
             *reader = *before;
@@ -11563,7 +11563,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     parser->at.read.split = false;
 
     reader->line = (markdown_core_chunk){parser->curline.ptr, parser->curline.size, 0};
-    reader->last = false;
+    reader->far = 0;
 
     parser->at.asks = parser->at.step_asks = from ? from->asks : 0;
     if (from) {
