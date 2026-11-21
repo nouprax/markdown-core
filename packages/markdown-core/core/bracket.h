@@ -42,7 +42,8 @@ typedef struct bracket {
     delimiter *delim_end;
     bufsize_t close_position;
     bool pending_no_link_openers;
-    unsigned char records[];
+    /* Aligned as every element record begins (dialect.h). */
+    markdown_core_state_alignment records[];
 } bracket;
 MARKDOWN_CORE_STACK_OF(bracket, bracket)
 
@@ -58,7 +59,7 @@ static inline bracket *markdown_core_open_bracket(const markdown_core_inline_sta
 
 /* The record of `self`'s element in `b` (element.h, `bracket_size`). */
 static inline void *markdown_core_bracket_record(const bracket *b, const markdown_core_element_instance *self) {
-    return (void *)(b->records + self->bracket_offset);
+    return (void *)((unsigned char *)b->records + self->bracket_offset);
 }
 
 /* `owner` opens a bracket spelled `kind` whose opener is `text`, which

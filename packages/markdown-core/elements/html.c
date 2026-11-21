@@ -20,8 +20,13 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
         int c = inline_state->input.data[pos];
         if (c == '!' && (*flags & FLAG_SKIP_HTML_COMMENT) == 0) {
             c = inline_state->input.data[pos + 1];
-            if (markdown_core_comment_scan_html(inline_state, pos, flags, &matchlen)) {
+            if (markdown_core_comment_scan_html(inline_state, pos, &matchlen)) {
+                /* No closer through the end of the input: later scans
+                 * would not find one either. */
                 comment = matchlen > 0;
+                if (!comment) {
+                    *flags |= FLAG_SKIP_HTML_COMMENT;
+                }
             } else if (c == '[') {
                 if ((*flags & FLAG_SKIP_HTML_CDATA) == 0) {
                     matchlen = scan_html_cdata(inline_state->input.data, inline_state->input.len, pos + 2);

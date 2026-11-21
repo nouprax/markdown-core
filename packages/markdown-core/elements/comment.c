@@ -1,5 +1,4 @@
 #include "comment_scanners.h"
-#include "html.h"
 #include "comment.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -484,8 +483,7 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
     return true;
 }
 
-bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, unsigned *flags,
-                                     bufsize_t *length) {
+bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t *length) {
     if (inline_state->input.data[pos] != '!' || inline_state->input.data[pos + 1] != '-' ||
         inline_state->input.data[pos + 2] != '-') {
         return false;
@@ -496,11 +494,9 @@ bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, b
         *length = 5;
     } else {
         *length = scan_html_comment(inline_state->input.data, inline_state->input.len, pos + 1);
+        /* 0 when no closer follows through the end of the input. */
         if (*length > 0) {
             *length += 1; // prefix "<"
-        } else {          // no match through end of input: set a flag so
-                          // we don't reparse looking for -->:
-            *flags |= FLAG_SKIP_HTML_COMMENT;
         }
     }
     return true;
