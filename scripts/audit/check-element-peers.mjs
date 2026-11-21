@@ -81,7 +81,7 @@ function declared(source) {
     const names = new Set();
     for (const [, name] of s.matchAll(/^\s*#\s*define\s+(\w+)/gm)) names.add(name);
     const top = s.replace(/^\s*#[^\n]*$/gm, " ");
-    for (const [, name] of top.matchAll(/^[A-Za-z_][\w\s\*]*?\b(\w+)\s*\(/gm)) names.add(name);
+    for (const [, name] of top.matchAll(/^[A-Za-z_][\w\s*]*?\b(\w+)\s*\(/gm)) names.add(name);
     for (const [, name] of top.matchAll(/\}\s*(\w+)\s*;/g)) names.add(name);
     for (const [, name] of top.matchAll(/\btypedef\b[^;{}]*?\b(\w+)\s*;/g)) names.add(name);
     for (const [, body] of top.matchAll(/\benum\b[^{;]*\{([^}]*)\}/g)) {
