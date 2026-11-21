@@ -3,6 +3,12 @@
 
 #include "block_identifier.h"
 #include "heading.h"
+
+/* The elements whose syntax this element asks, as `self->peers` holds
+ * them. */
+enum { PARAGRAPH_HEADING };
+static const markdown_core_element *const PARAGRAPH_PEERS[] = {[PARAGRAPH_HEADING] = &MARKDOWN_CORE_ELEMENT_HEADING,
+                                                               NULL};
 /* A paragraph closing inside `parent`, past the items its text opened with
  * (`cuts`, blocks.c, THE FRONT CUT), yields itself less a block identifier
  * at the back of its text. */
@@ -49,14 +55,14 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
 }
 
 /* A paragraph a setext underline may yet follow is a heading, whose tail
- * its last line may hold: a context run reports the tails it may, which
- * stand only where the document finishes the heading. */
+ * its last line may hold, where the dialect holds headings: a context run
+ * asks the heading element for the tails it may, which stand only where the
+ * document finishes the heading. */
 static void begin_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_inline_state *inline_state, markdown_core_node *parent) {
-    (void)self;
     (void)parser;
     (void)parent;
-    if (inline_state->context) {
+    if (inline_state->context && self->peers[PARAGRAPH_HEADING]) {
         markdown_core_heading_report_tail(inline_state, true);
     }
 }
@@ -97,6 +103,7 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
+    .peers = PARAGRAPH_PEERS,
     .edit = &PARAGRAPH_EDIT,
     .content = &PARAGRAPH_CONTENT,
     .inlines = &PARAGRAPH_INLINES,
