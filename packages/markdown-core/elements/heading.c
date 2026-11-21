@@ -2682,7 +2682,17 @@ static const markdown_core_facet HEADING_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* The headings name themselves in the parse's stages (element.h). */
+static const markdown_core_stage_ops HEADING_STAGES = {
+    .prepare = markdown_core_headings_prepare,
+    .finish = markdown_core_headings_finish,
+    .release = markdown_core_headings_dispose,
+    .reopen = markdown_core_headings_reopen,
+    .splice = markdown_core_headings_splice,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
+    .stages = &HEADING_STAGES,
     .facets = HEADING_FACETS,
     .peers = HEADING_PEERS,
     .name = "heading",

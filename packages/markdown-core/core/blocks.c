@@ -288,6 +288,55 @@ static void S_release_walk(markdown_core_parser *parser) {
     parser->content_place_capacity = 0;
 }
 
+/* THE STAGES (element.h, markdown_core_stage_ops): each element of the
+ * dialect that takes part in one, in descriptor order. */
+typedef enum { STAGE_PREPARE, STAGE_FINISH, STAGE_RELEASE } markdown_core_stage;
+
+static void S_stage(markdown_core_parser *parser, markdown_core_stage stage) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const markdown_core_element_instance *instance = &dialect->instances[i];
+        const markdown_core_stage_ops *stages = instance->element->stages;
+        if (!stages) {
+            continue;
+        }
+        if (stage == STAGE_PREPARE && stages->prepare) {
+            stages->prepare(instance, parser);
+        } else if (stage == STAGE_FINISH && stages->finish && !parser->error) {
+            stages->finish(instance, parser);
+        } else if (stage == STAGE_RELEASE && stages->release) {
+            stages->release(instance);
+        }
+    }
+}
+
+/* An edit's stage, `reopen` at `start` or `splice` at `point`: false when
+ * storage could not be had. */
+static bool S_stage_edit(markdown_core_parser *parser, bool splice, uint32_t at) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const markdown_core_element_instance *instance = &dialect->instances[i];
+        const markdown_core_stage_ops *stages = instance->element->stages;
+        if (stages && !(splice ? !stages->splice || stages->splice(instance, parser, at)
+                               : !stages->reopen || stages->reopen(instance, parser, at))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* A flush finishes the tree: the stages finish, and a flush that is the
+ * parse's last lets what they keep go. */
+static void S_stage_flush(markdown_core_parser *parser) {
+    if (parser->error) {
+        return;
+    }
+    S_stage(parser, STAGE_FINISH);
+    if (!parser->snapshot && !markdown_core_parser_takes_edits(parser)) {
+        S_stage(parser, STAGE_RELEASE);
+    }
+}
+
 static void S_tail_leave(markdown_core_parser *parser, const markdown_core_node *root);
 
 static void S_parser_dispose(markdown_core_parser *parser) {
@@ -302,7 +351,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
             instance->element->dispose_parser(instance, parser);
         }
     }
-    dialect->document_structure->element->document->dispose(dialect->document_structure, parser);
+    S_stage(parser, STAGE_RELEASE);
     markdown_core_roster_free(&parser->roster);
     markdown_core_source_order_dispose(&parser->source_order);
     S_release_walk(parser);
@@ -5982,7 +6031,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         !S_edit_keep(parser, root, child, line, prior, start, own + (prose ? stream->edit->leap->seam.source : 0),
                      past > to ? past : to, delta) ||
         !document->element->document->reopen(document, parser, root, child, (uint32_t)own) ||
-        !markdown_core_roster_reopen(&parser->roster, (uint32_t)own)) {
+        !S_stage_edit(parser, false, (uint32_t)own) || !markdown_core_roster_reopen(&parser->roster, (uint32_t)own)) {
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -6310,7 +6359,8 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
         return false;
     }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (!document->element->document->splice(document, parser, root, first, (uint32_t)point)) {
+    if (!S_stage_edit(parser, true, (uint32_t)point) ||
+        !document->element->document->splice(document, parser, root, first, (uint32_t)point)) {
         /* The children taken back are the tail's again, which the failed
          * parse lets go with those no record took. */
         memcpy(edit->children + first, root->children + tail, (edit->root.held - first) * sizeof(*edit->children));
@@ -8390,9 +8440,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
     if (lent) {
         S_look_read(parser, source, length);
         const markdown_core_element_instance *document = parser->dialect->document_structure;
-        if (!parser->error) {
-            document->element->document->finish(document, parser);
-        }
+        S_stage_flush(parser);
         if (!parser->error) {
             document->element->document->publish(document, parser);
         }
@@ -11767,8 +11815,7 @@ static void S_complete_queue(markdown_core_parser *parser) {
  * document prepares the headings that settled (heading.c), and the queue is
  * completed. */
 static void S_complete_settled(markdown_core_parser *parser) {
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    document->element->document->prepare(document, parser);
+    S_stage(parser, STAGE_PREPARE);
     if (!parser->error) {
         S_complete_queue(parser);
     }
@@ -12324,10 +12371,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     /* The document's finalization reads the finished tree: the headings take
      * their anchors once every explicit anchor has been reserved, which
      * completion did at each node's ENTER. */
-    if (!parser->error) {
-        const markdown_core_element_instance *document = parser->dialect->document_structure;
-        document->element->document->finish(document, parser);
-    }
+    S_stage_flush(parser);
 
     /* Last, the finished tree is published: nothing changes it after this.
      * The children an edit took back stand as their publish left them, and
@@ -12434,7 +12478,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
 failed:
     S_tail_leave(parser, parser->root);
-    parser->dialect->document_structure->element->document->dispose(parser->dialect->document_structure, parser);
+    S_stage(parser, STAGE_RELEASE);
     markdown_core_parser_release_node(parser, parser->root);
     parser->root = NULL;
     return NULL;

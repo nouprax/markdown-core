@@ -125,16 +125,32 @@ typedef struct markdown_core_opaque_ops {
     markdown_core_visit_owned_subtrees_func visit;
 } markdown_core_opaque_ops;
 
+/* THE PARSE'S STAGES, which any element may take part in (blocks.c): the
+ * engine asks every element of the dialect that declares one, in
+ * descriptor order. `prepare` comes before completion, `finish` at a
+ * snapshot's end and at the flush, once the tree is complete and before it
+ * is published, when the parse has not failed; `release` lets what the
+ * element keeps of the parse go -- at the parse's release, and at a flush
+ * that is its last; an edit's `reopen`, after the document's, keeps what
+ * starts before `start`, and its `splice`, before the document's, takes
+ * back what the old text kept from `point` of the new one. A false
+ * `reopen` or `splice` is storage that could not be had. */
+typedef struct markdown_core_stage_ops {
+    void (*prepare)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*finish)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*release)(const markdown_core_element_instance *);
+    bool (*reopen)(const markdown_core_element_instance *, markdown_core_parser *, uint32_t);
+    bool (*splice)(const markdown_core_element_instance *, markdown_core_parser *, uint32_t);
+} markdown_core_stage_ops;
+
 /* THE DOCUMENT'S LIFECYCLE: what the parse asks of the one element of a
  * dialect that owns the document, at each of its steps: `init` as the
- * parse opens and `dispose` as it goes, `read` before the first line,
- * `prepare` before completion, `finish` and `publish` at a flush,
+ * parse opens, `read` before the first line, `publish` at a flush,
  * `candidate` for a candidate completed again, and an edit's `reopen` and
- * `splice`. Every one is required: registration refuses an owner that
- * leaves out one. */
+ * `splice` of the published tree. Every one is required: registration
+ * refuses an owner that leaves out one. */
 typedef struct markdown_core_document_ops {
     void (*init)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*dispose)(const markdown_core_element_instance *, markdown_core_parser *);
     /* Reads what the document's input opens with, before its first line,
      * through the reader, which stands at the input's start with no line in
      * hand. In a commit more text may follow, a call whose reading read the
@@ -143,8 +159,6 @@ typedef struct markdown_core_document_ops {
      * answers the bytes it took, whole lines through the last one's line
      * ending, or 0: the engine reads on at the line after them. */
     size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_reader *);
-    void (*prepare)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*finish)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -771,6 +785,9 @@ struct markdown_core_element {
     /* Frees what the parse record holds as its parser is freed, or NULL
      * when it holds nothing of its own. */
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* The parse's stages it takes part in (markdown_core_stage_ops), or
+     * NULL. */
+    const markdown_core_stage_ops *stages;
 
     /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
      * that asks it, in the order a line meets them. A NULL table says the

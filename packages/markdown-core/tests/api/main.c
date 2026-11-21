@@ -756,12 +756,13 @@ static bool attach_document_owner(markdown_core_dialect_builder *builder, docume
 }
 
 /* A test reads the finished parse the same way: as the document-lifecycle
- * owner, whose `finish` -- given here -- runs the core one on its own
- * instance before it reads anything; its other hooks are the core's. */
+ * owner, whose `publish` -- given here -- reads the parse the stages
+ * finished and then runs the core one on its own instance; its other hooks
+ * are the core's. */
 static bool attach_document_finisher(markdown_core_dialect_builder *builder, document_owner *owner, const char *name,
-                                     void (*finish)(const markdown_core_element_instance *, markdown_core_parser *)) {
+                                     void (*publish)(const markdown_core_element_instance *, markdown_core_parser *)) {
     copy_owner(owner, name);
-    owner->document.finish = finish;
+    owner->document.publish = publish;
     return markdown_core_dialect_builder_attach(builder, &owner->element);
 }
 
@@ -4684,8 +4685,8 @@ static void table_values(test_batch_runner *runner) {
  * source map, rather than copying every unconsumed suffix for each link. */
 static int observed_source_marks;
 static void observe_source_marks(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->finish(self, parser);
     observed_source_marks = (int)parser->line_marks.count;
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->publish(self, parser);
 }
 static bool attach_source_mark_observer(markdown_core_dialect_builder *builder, void *context) {
     static document_owner observer;
@@ -4989,8 +4990,8 @@ static void peers_resolve_at_seal(test_batch_runner *runner) {
 static size_t properties_decoded_bytes;
 /* The owner's own instance read the Properties, so its record holds the work. */
 static void observe_properties(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->finish(self, parser);
     properties_decoded_bytes = ((const markdown_core_properties_work *)self->state)->decoded_bytes;
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->publish(self, parser);
 }
 static bool attach_properties_observer(markdown_core_dialect_builder *builder, void *context) {
     static document_owner observer;
@@ -5301,8 +5302,8 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
 static void record_inline_work(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->finish(self, parser);
     record_work(self, parser);
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.document->publish(self, parser);
 }
 static bool attach_work_recorder(markdown_core_dialect_builder *builder) {
     static document_owner recorder;

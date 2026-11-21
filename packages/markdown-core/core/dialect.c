@@ -48,8 +48,8 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     const markdown_core_document_ops *document = element->document;
-    return document && document->init && document->dispose && document->read && document->prepare && document->finish &&
-           document->publish && document->candidate && document->reopen && document->splice;
+    return document && document->init && document->read && document->publish && document->candidate &&
+           document->reopen && document->splice;
 }
 
 /* The completion's hooks of an element that declares none (the Null Object
