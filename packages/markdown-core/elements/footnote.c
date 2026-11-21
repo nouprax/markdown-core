@@ -342,14 +342,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * consumer's single map went with the association -- a
      * `Footnote` and a resolved `Link` are different values now. */
     markdown_core_node *footnote = *container;
-    markdown_core_chunk normal;
-    if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &c, &normal) || !normal.len) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_chunk_free(&c);
-        return false;
-    }
-    footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
-
+    markdown_core_chunk normal = {0};
     /* The document defines this label from here on.
      *
      * Registered where the label is READ, which is here. Whether it is
@@ -363,8 +356,12 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    if (!markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, normal.data, normal.len,
-                                      footnote->place.start)) {
+    const bool declared =
+        markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &c, footnote->place.start, &normal);
+    if (normal.len) {
+        footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
+    }
+    if (!declared || !normal.len) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;

@@ -371,10 +371,6 @@ static bufsize_t S_cut_reference(const markdown_core_element_instance *self, mar
     int lost = 0;
     markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
     markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
-    markdown_core_chunk label;
-    if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &definition.label, &label)) {
-        lost = 1;
-    }
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
     markdown_core_node *reference =
         resource
@@ -387,15 +383,11 @@ static bufsize_t S_cut_reference(const markdown_core_element_instance *self, mar
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
         }
-        if (label.len) {
-            markdown_core_node_pool_bytes_free(parser->pool, label.data);
-        }
         markdown_core_attributes_free(&definition.value);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return length;
     }
     reference->as.reference->resource = resource;
-    reference->as.reference->label = label;
     reference->attributes = definition.value;
     reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
     /* It spans its definition, through the end of its last line's content:
@@ -409,9 +401,9 @@ static bufsize_t S_cut_reference(const markdown_core_element_instance *self, mar
     const bufsize_t start = (bufsize_t)reference->place.start;
     cut->made = reference;
     /* The document defines the label from where the definition starts. */
-    if (!parser->error &&
-        !markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_REFERENCE, label.data, label.len, start)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    if (!parser->error) {
+        markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_REFERENCE, &definition.label, start,
+                                     &reference->as.reference->label);
     }
     return length;
 }

@@ -4512,6 +4512,22 @@ static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count) {
     edit->uses_from = edit->uses_from >= at + count ? edit->uses_from - count : at;
 }
 
+bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
+                                  const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal) {
+    if (kind == MARKDOWN_CORE_ROSTER_REFERENCE || kind == MARKDOWN_CORE_ROSTER_FOOTNOTE) {
+        if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, label, normal)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return false;
+        }
+        label = normal;
+    }
+    if (!markdown_core_roster_declare(&parser->roster, kind, label->data, label->len, start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    return true;
+}
+
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label, uint32_t at) {
     /* A committed root's commit noted its uses, which its completion

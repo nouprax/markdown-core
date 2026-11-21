@@ -2251,11 +2251,8 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
         markdown_core_chunk *declared = &heading->node->as.heading->label;
         if (!declared->len && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &label, declared) ||
-                !markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_REFERENCE, declared->data,
-                                              declared->len, heading->node->place.start)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
+            markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_REFERENCE, &label, heading->node->place.start,
+                                         declared);
         }
     }
     markdown_core_inline_clear_inlines(&inline_state);

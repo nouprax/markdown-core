@@ -2073,6 +2073,14 @@ const markdown_core_roster_record *markdown_core_parser_find_at_snapshot(markdow
  * when storage could not be had. */
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label, uint32_t at);
+/* THE DECLARATION (roster.h): the document defines `label` in `kind`'s
+ * space from `start` on, in the space's form, as the lookup above reads it:
+ * a reference or footnote label normalized into `*normal`, in storage the
+ * node that holds it owns, a specimen label or an anchor as written, when
+ * `normal` may be NULL. False, with the parse failed, when storage could
+ * not be had. */
+bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
+                                  const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal);
 static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
                                                                                       markdown_core_roster_kind kind,
                                                                                       const markdown_core_chunk *label,
