@@ -31,7 +31,8 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
  * begins with "---", which takes in every fence. */
 bool markdown_core_properties_stops(const markdown_core_element_instance *self, const unsigned char *line,
                                     size_t length);
-size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t fence);
+size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
+                                      markdown_core_reader *reader, size_t fence);
 int markdown_core_properties_fence(const unsigned char *data);
 
 /* A PLACE of an envelope's payload, as the places' reader finds it: a

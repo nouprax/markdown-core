@@ -145,7 +145,9 @@ typedef struct markdown_core_document_ops {
      * through the reader, which stands at the input's start with no line in
      * hand. In a commit more text may follow, a call whose reading read the
      * end asks to be a candidate (blocks.c, THE CANDIDATES): it stops in the
-     * root at line 0, and its candidate is fed the lines from line 1. */
+     * root at line 0, and its candidate is fed the lines from line 1. It
+     * answers the bytes it took, whole lines through the last one's line
+     * ending, or 0: the engine reads on at the line after them. */
     size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_reader *);
     void (*prepare)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish)(const markdown_core_element_instance *, markdown_core_parser *);

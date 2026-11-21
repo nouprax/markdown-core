@@ -9025,6 +9025,22 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_hold_next_line(markdown_core_p
     return false;
 }
 
+/* THE PREFIX'S LINES: the document's read before line 1 took `taken`
+ * bytes, whole lines through its last one's line ending, and the reading
+ * goes on at the line after them, as if the driver had read them. */
+static void S_read_taken(markdown_core_parser *parser, size_t taken) {
+    int number = 1;
+    const markdown_core_input_line *line;
+    while ((line = markdown_core_parser_source_line(parser, number)) &&
+           markdown_core_input_line_next(parser, line) < taken) {
+        number++;
+    }
+    if (line) {
+        parser->at.read.number = number;
+        parser->at.last_line_end = (bufsize_t)line->end;
+    }
+}
+
 /* THE DRIVER: reads the lines of `source` as the active input. A cell's
  * content is an input of its own, installed and read whole. The document's
  * text is installed at its first commit and grows at its end from one commit
@@ -9084,7 +9100,10 @@ read:
         parser->at.asks = parser->at.step_asks = 0;
         /* The reader stands at the input's start, before line 1. */
         parser->at.read.start = parser->at.read.end = parser->at.read.offset = 0;
-        document->element->document->read(document, parser, &parser->at.read);
+        const size_t taken = document->element->document->read(document, parser, &parser->at.read);
+        if (taken) {
+            S_read_taken(parser, taken);
+        }
         S_reader_close(parser);
         if (stream && stream->requested) {
             S_stop_at_root(parser);

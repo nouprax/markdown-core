@@ -1693,6 +1693,15 @@ static inline int markdown_core_reader_byte(markdown_core_reader *reader, markdo
     return markdown_core_parser_input_ends(parser, parser->input.source + place) ? -1 : parser->input.source[place];
 }
 
+/* The active input's bytes from its start up to `to`, which it holds: the
+ * reader notes it read through them. */
+static inline const unsigned char *markdown_core_reader_text(markdown_core_reader *reader, markdown_core_parser *parser,
+                                                             size_t to) {
+    assert(to == 0 || !markdown_core_parser_input_ends(parser, parser->input.source + to - 1));
+    reader->past = to > reader->past ? to : reader->past;
+    return parser->input.source;
+}
+
 static inline size_t markdown_core_reader_after(const markdown_core_reader *reader,
                                                 const markdown_core_parser *parser) {
     (void)reader;

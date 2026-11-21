@@ -101,7 +101,7 @@ static size_t read_document_prefix(const markdown_core_element_instance *self, m
         }
         return 0;
     }
-    return closed ? markdown_core_properties_parse(self->state, parser, fence) : 0;
+    return closed ? markdown_core_properties_parse(self->state, parser, reader, fence) : 0;
 }
 
 /* THE FEED of the prefix's candidate: the first line opens the envelope

@@ -43,15 +43,6 @@ typedef struct {
      * `end`: each search resumes past the last one's hit, so the lines'
      * ends cost one pass over the payload for each byte. */
     size_t feed, ret;
-    /* The parse's lines, as the engine measured them (parser.h), and the
-     * one `line` is, from the opening fence's; the places' reader, which
-     * has the text alone, has none and finds the lines' ends itself. */
-    const markdown_core_parser_input *lines;
-    size_t index;
-    /* Line `index`, and how many lines from it on lie in place after it
-     * (markdown_core_tree_run); none until a probe finds it. */
-    const markdown_core_input_line *at;
-    size_t run;
 } properties;
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -401,25 +392,13 @@ static void classify_line(properties *p, size_t line) {
     if (p->classified && p->line == line) {
         return;
     }
-    size_t stop;
-    if (p->lines) {
-        if (!p->run) {
-            p->at = markdown_core_tree_run(&p->lines->lines, p->index, sizeof(*p->at), &p->run);
-        }
-        while (p->at->start < line) {
-            p->index++;
-            p->at = --p->run ? p->at + 1 : markdown_core_tree_run(&p->lines->lines, p->index, sizeof(*p->at), &p->run);
-        }
-        stop = p->at->end;
-    } else {
-        if (!p->classified || p->feed < line) {
-            p->feed = next_byte(p->text, line, p->end, '\n');
-        }
-        if (!p->classified || p->ret < line) {
-            p->ret = next_byte(p->text, line, p->end, '\r');
-        }
-        stop = p->feed < p->ret ? p->feed : p->ret;
+    if (!p->classified || p->feed < line) {
+        p->feed = next_byte(p->text, line, p->end, '\n');
     }
+    if (!p->classified || p->ret < line) {
+        p->ret = next_byte(p->text, line, p->end, '\r');
+    }
+    const size_t stop = p->feed < p->ret ? p->feed : p->ret;
     p->classified = true;
     p->line = line;
     p->stop = stop;
@@ -645,32 +624,21 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     return closed;
 }
 
-size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t close) {
-    size_t length;
-    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-    int number = 1;
-    markdown_core_input_line *line;
-    do {
-        line = markdown_core_parser_source_line(parser, number++);
-    } while (line && line->start < close);
-    if (!line) {
-        return 0;
-    }
-    const size_t count = (size_t)number - 3;
+size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
+                                      markdown_core_reader *reader, size_t close) {
+    /* The envelope is its lines through the closing fence's line ending. */
+    const int end = markdown_core_reader_byte(reader, parser, close + 3);
+    const size_t consumed =
+        close + 3 + (end >= 0) + (end == '\r' && markdown_core_reader_byte(reader, parser, close + 4) == '\n');
+    const unsigned char *source = markdown_core_reader_text(reader, parser, consumed);
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
-    size_t consumed = next_line(source, close + 3, length);
-    properties p = {.text = source,
-                    .end = close,
-                    .work = work,
-                    .metadata = node->as.metadata,
-                    .lines = &parser->input,
-                    .index = (size_t)(1 - parser->input.first_line)};
+    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
-    payload(&p, next_line(source, 3, length));
+    payload(&p, next_line(source, 3, consumed));
     properties_close(&p);
     if (p.failed) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -681,8 +649,6 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     parser->root->as.document->metadata = node;
     markdown_core_parser_settle_field(parser, node);
-    parser->at.read.number = (int)(count + 2);
-    parser->at.last_line_end = (bufsize_t)(close + 3);
     return consumed;
 }
 
