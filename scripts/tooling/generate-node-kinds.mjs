@@ -367,10 +367,6 @@ function facadeTables({ kinds, block, inline }) {
 
 function structureTables({ block, inline }) {
     const element = (type) => (type.structure === null ? null : `&MARKDOWN_CORE_ELEMENT_${type.structure}`);
-    const classOf = new Map([
-        ...block.types.map((type) => [type.name, "block"]),
-        ...inline.types.map((type) => [type.name, "inline"])
-    ]);
     /* The schema's rule, resolved to a mask per class: a child is held when it
      * is no root and the parent names it among its members, or it is no
      * member type, the parent holds its whole class and, for a flat parent,

@@ -931,8 +931,14 @@ append:
             return 0;
         }
         markdown_core_scaffold_append(parent, new_inl);
+        /* Almost no token holds a field root: one flag of its kind's record
+         * (dialect.h, MARKDOWN_CORE_KIND_FIELDS) and one NULL test say so. */
         bool has_fields = false;
-        markdown_core_visit_inline_subtrees(parser->dialect, new_inl, has_inline_field, &has_fields);
+        if ((markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)new_inl->kind)->flags &
+             MARKDOWN_CORE_KIND_FIELDS) ||
+            new_inl->element) {
+            markdown_core_visit_inline_subtrees(parser->dialect, new_inl, has_inline_field, &has_fields);
+        }
         if (has_fields) {
             delimiter *entry =
                 markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_FIELD, inline_state->pos);
