@@ -1270,3 +1270,42 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .name = "link",
     .inlines = &LINK_INLINES,
 };
+
+/* A link's or an image's record (markdown_core_record_ops): its resource,
+ * from the pool's resource slabs, and the label it was written with, in the
+ * pool's storage. An extended autolink's destination views its text until
+ * it settles. */
+static void free_link(markdown_core_node_pool *pool, markdown_core_node *node) {
+    markdown_core_resource_free(pool ? &pool->resources : NULL, node->as.link->resource);
+    node->as.link->resource = NULL;
+    if (node->as.link->label.len) {
+        markdown_core_node_pool_bytes_free(pool, node->as.link->label.data);
+    }
+}
+
+static bool viewed_link(markdown_core_node *node) {
+    markdown_core_resource *resource = node->as.link->resource;
+    return !resource || (markdown_core_chunk_own_viewed(&resource->url) &&
+                         (!resource->title.has_value || markdown_core_chunk_own_viewed(&resource->title.value)));
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_LINK = {
+    .size = sizeof(markdown_core_link),
+    .free = free_link,
+    .viewed = viewed_link,
+};
+
+/* A link reference definition's record: its resource and its label, as a
+ * link's. */
+static void free_reference(markdown_core_node_pool *pool, markdown_core_node *node) {
+    markdown_core_resource_free(pool ? &pool->resources : NULL, node->as.reference->resource);
+    node->as.reference->resource = NULL;
+    if (node->as.reference->label.len) {
+        markdown_core_node_pool_bytes_free(pool, node->as.reference->label.data);
+    }
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_REFERENCE = {
+    .size = sizeof(markdown_core_reference_value),
+    .free = free_reference,
+};

@@ -127,3 +127,51 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .document = &DOCUMENT_OPS,
     .candidate = &DOCUMENT_CANDIDATE,
 };
+
+/* A document's definition tables, but a snapshot's, which it borrows (ast.c,
+ * A SNAPSHOT'S TABLES). Out of line, so that the free of every other kind
+ * keeps its own registers. */
+MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown_core_document_value *document) {
+    if (document->committed) {
+        return;
+    }
+    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
+    for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
+        markdown_core_free((void *)tables[i]->all.nodes);
+        markdown_core_free(tables[i]->all.places);
+        markdown_core_free((void *)tables[i]->labeled);
+    }
+    markdown_core_free((void *)document->reference_targets.nodes);
+    markdown_core_free(document->reference_targets.places);
+}
+
+/* The document's record (markdown_core_record_ops): its definition tables,
+ * which its publish makes -- no block the block phase writes, so no view,
+ * has them --, and its metadata, a node-valued field the document holds
+ * once its prefix is read. */
+static void free_document(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_node_free_tables(node->as.document);
+}
+
+static int visit_document(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    return !node->as.document->metadata || visitor(&node->as.document->metadata, context);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_DOCUMENT = {
+    .size = sizeof(markdown_core_document_value),
+    .free = free_document,
+    .visit = visit_document,
+};
+
+/* The metadata's record, which the document's prefix reader fills
+ * (properties.c). */
+static void free_metadata(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_metadata_fields_free(node->as.metadata);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_METADATA = {
+    .size = sizeof(markdown_core_metadata_fields),
+    .free = free_metadata,
+};

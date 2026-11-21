@@ -1,3 +1,4 @@
+#include "cross_link.h"
 #include "alloc.h"
 #include "claim.h"
 #include "heading_scanners.h"
@@ -13,13 +14,16 @@
 #include "ast_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { HEADING_CITATION, HEADING_LINK, HEADING_DIRECTIVE, HEADING_TOPIC, HEADING_ATTRIBUTES };
+enum { HEADING_CITATION, HEADING_LINK, HEADING_DIRECTIVE, HEADING_TOPIC, HEADING_ATTRIBUTES, HEADING_CROSS_LINK };
 /* A heading whose inline content is parsed (markdown_core_headings_prepare). */
 enum { MARKDOWN_CORE_NODE__HEADING_PARSED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
-static const markdown_core_element *const HEADING_PEERS[] = {
-    [HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,     [HEADING_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
-    [HEADING_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE,   [HEADING_TOPIC] = &MARKDOWN_CORE_ELEMENT_TOPIC,
-    [HEADING_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
+                                                             [HEADING_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
+                                                             [HEADING_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
+                                                             [HEADING_TOPIC] = &MARKDOWN_CORE_ELEMENT_TOPIC,
+                                                             [HEADING_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
+                                                             [HEADING_CROSS_LINK] = &MARKDOWN_CORE_ELEMENT_CROSS_LINK,
+                                                             NULL};
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
 typedef struct {
     markdown_core_node *node;
@@ -734,4 +738,74 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .lines = &HEADING_LINES,
     .edit = &HEADING_EDIT,
     .follows = HEADING_FOLLOWS,
+};
+
+/* A heading's record (markdown_core_record_ops): level 1 until its marker
+ * says otherwise; the label it declares, in the pool's storage; its name,
+ * whose base it may borrow and whose shown form is its own. A view copies
+ * the label, drops the shown form and borrows the base. */
+static void init_heading(markdown_core_node *node) {
+    node->as.heading->level = 1;
+    markdown_core_strbuf_init_zeroed(&node->as.heading->name.base);
+}
+
+static void free_heading(markdown_core_node_pool *pool, markdown_core_node *node) {
+    markdown_core_heading *heading = node->as.heading;
+    if (heading->label.len) {
+        markdown_core_node_pool_bytes_free(pool, heading->label.data);
+    }
+    if (heading->name.shown) {
+        markdown_core_free(heading->name.shown);
+        heading->name.shown = NULL;
+    }
+    if (!markdown_core_strbuf_borrows(&heading->name.base)) {
+        markdown_core_strbuf_free(&heading->name.base);
+    }
+}
+
+static bool view_heading(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                         bool failed) {
+    (void)node;
+    markdown_core_heading *heading = copy->as.heading;
+    bool copied = true;
+    if (heading->label.len && (failed || !(copied = markdown_core_node_label_copy(pool, &heading->label)))) {
+        heading->label = (markdown_core_chunk){0};
+    }
+    heading->name.shown = NULL;
+    if (markdown_core_strbuf_owns(&heading->name.base)) {
+        markdown_core_strbuf_borrow(&heading->name.base);
+    }
+    return copied;
+}
+
+static bool own_heading(markdown_core_node *copy, const markdown_core_node *node) {
+    markdown_core_strbuf *base = &copy->as.heading->name.base;
+    if (!markdown_core_strbuf_borrows(base) || base->ptr != node->as.heading->name.base.ptr) {
+        return true;
+    }
+    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_set(&own, base->ptr, base->size);
+    if (own.oom) {
+        markdown_core_strbuf_free(&own);
+        return false;
+    }
+    *base = own;
+    return true;
+}
+
+static void adopt_heading(markdown_core_node *view, markdown_core_node *node) {
+    if (markdown_core_strbuf_borrows(&view->as.heading->name.base) &&
+        view->as.heading->name.base.ptr == node->as.heading->name.base.ptr) {
+        view->as.heading->name.base = node->as.heading->name.base;
+        markdown_core_strbuf_borrow(&node->as.heading->name.base);
+    }
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_HEADING = {
+    .size = sizeof(markdown_core_heading),
+    .init = init_heading,
+    .free = free_heading,
+    .view = view_heading,
+    .own = own_heading,
+    .adopt = adopt_heading,
 };

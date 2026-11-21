@@ -14,6 +14,7 @@
         "audit:ci": "scripts/audit/check-ci-policy.sh",
         "audit:element-attach-order": "node scripts/audit/check-element-attach-order.mjs",
         "audit:construction-assertions": "node scripts/audit/check-construction-assertions.mjs",
+        "audit:core-kinds": "node scripts/audit/check-core-kinds.mjs",
         "audit:parser-kind-record": "node scripts/audit/check-parser-kind-record.mjs",
         "audit:allocator-seam": "node scripts/audit/check-allocator-seam.mjs",
         "audit:element-peers": "node scripts/audit/check-element-peers.mjs",

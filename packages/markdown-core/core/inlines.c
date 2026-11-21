@@ -932,7 +932,7 @@ append:
         }
         markdown_core_scaffold_append(parent, new_inl);
         bool has_fields = false;
-        markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
+        markdown_core_visit_inline_subtrees(parser->dialect, new_inl, has_inline_field, &has_fields);
         if (has_fields) {
             delimiter *entry =
                 markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_FIELD, inline_state->pos);

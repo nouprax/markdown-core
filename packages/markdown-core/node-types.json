@@ -1,10 +1,10 @@
 {
-    "purpose": "The native node types, the one source for the internal markdown_core_node_type enum and every per-type table in core/ and elements/. Each class is numbered in list order from 1, so append a type to the end of its class. `kind` names the canonical AST kind (docs/specs/canonical-ast.json) the facade reports, or null for a private type; `record` is the C type of the payload the node allocates inline, or null; `structure` names the MARKDOWN_CORE_ELEMENT_* descriptor that defines the type's block or inline structure, or null. `contain` says what a node of the type may hold as children, or null for nothing: `blocks` and `inlines` hold any type of that class, `members` names the types it holds besides; a `member` type is held only where a type names it, a `root` type never as a child, an `owned` type holds children only when its node's own element declares containment (markdown_core_contain_ops), and a `flat` type never holds its own type. The type string is the lowercased name. Run scripts/tooling/generate-node-kinds.mjs after editing.",
+    "purpose": "The native node types, the one source for the internal markdown_core_node_type enum and every per-type table in core/ and elements/. Each class is numbered in list order from 1, so append a type to the end of its class. `kind` names the canonical AST kind (docs/specs/canonical-ast.json) the facade reports, or null for a private type; `ops` names the MARKDOWN_CORE_RECORD_* ops (element.h, markdown_core_record_ops) of the record the node holds, which give its size and its lifecycle, or null for none; `structure` names the MARKDOWN_CORE_ELEMENT_* descriptor that defines the type's block or inline structure, or null. `contain` says what a node of the type may hold as children, or null for nothing: `blocks` and `inlines` hold any type of that class, `members` names the types it holds besides; a `member` type is held only where a type names it, a `root` type never as a child, an `owned` type holds children only when its node's own element declares containment (markdown_core_contain_ops), and a `flat` type never holds its own type. The type string is the lowercased name. Run scripts/tooling/generate-node-kinds.mjs after editing.",
     "block": [
         {
             "name": "DOCUMENT",
             "kind": "Document",
-            "record": "markdown_core_document_value",
+            "ops": "DOCUMENT",
             "structure": "DOCUMENT",
             "contain": {
                 "blocks": true,
@@ -14,7 +14,7 @@
         {
             "name": "CALLOUT",
             "kind": "Callout",
-            "record": "markdown_core_callout",
+            "ops": "CALLOUT",
             "structure": "CALLOUT",
             "contain": {
                 "blocks": true
@@ -23,7 +23,7 @@
         {
             "name": "LIST",
             "kind": "List",
-            "record": "markdown_core_list",
+            "ops": "LIST",
             "structure": "LIST",
             "contain": {
                 "members": ["LIST_ITEM"]
@@ -32,7 +32,7 @@
         {
             "name": "LIST_ITEM",
             "kind": "ListItem",
-            "record": "markdown_core_list",
+            "ops": "LIST_ITEM",
             "structure": "LIST",
             "contain": {
                 "blocks": true,
@@ -42,21 +42,21 @@
         {
             "name": "CODE_BLOCK",
             "kind": "CodeBlock",
-            "record": "markdown_core_code",
+            "ops": "CODE_BLOCK",
             "structure": "CODE_BLOCK",
             "contain": null
         },
         {
             "name": "HTML_BLOCK",
             "kind": "HTMLBlock",
-            "record": "markdown_core_html_block",
+            "ops": "HTML_BLOCK",
             "structure": "HTML_BLOCK",
             "contain": null
         },
         {
             "name": "PARAGRAPH",
             "kind": "Paragraph",
-            "record": null,
+            "ops": null,
             "structure": "PARAGRAPH",
             "contain": {
                 "inlines": true
@@ -65,7 +65,7 @@
         {
             "name": "HEADING",
             "kind": "Heading",
-            "record": "markdown_core_heading",
+            "ops": "HEADING",
             "structure": "HEADING",
             "contain": {
                 "inlines": true
@@ -74,14 +74,14 @@
         {
             "name": "THEMATIC_BREAK",
             "kind": "ThematicBreak",
-            "record": null,
+            "ops": null,
             "structure": "THEMATIC_BREAK",
             "contain": null
         },
         {
             "name": "FOOTNOTE",
             "kind": "Footnote",
-            "record": "markdown_core_footnote_value",
+            "ops": "FOOTNOTE",
             "structure": "FOOTNOTE",
             "contain": {
                 "blocks": true,
@@ -92,18 +92,18 @@
         {
             "name": "TABLE",
             "kind": "Table",
-            "record": null,
+            "ops": null,
             "structure": "TABLE",
             "contain": {
                 "members": ["TABLE_ROW"],
                 "owned": true
             },
-            "note": "Its payload comes from the table element's `alloc` (markdown_core_opaque_ops)."
+            "note": "Its payload comes from the table element's `payload` (markdown_core_record_ops)."
         },
         {
             "name": "TABLE_ROW",
             "kind": "TableRow",
-            "record": null,
+            "ops": null,
             "structure": "TABLE",
             "contain": {
                 "members": ["TABLE_CELL"],
@@ -113,7 +113,7 @@
         {
             "name": "TABLE_CELL",
             "kind": "TableCell",
-            "record": null,
+            "ops": null,
             "structure": "TABLE",
             "contain": {
                 "inlines": true,
@@ -123,26 +123,26 @@
         {
             "name": "FORMULA_BLOCK",
             "kind": "FormulaBlock",
-            "record": null,
+            "ops": null,
             "structure": "FORMULA",
             "contain": null,
-            "note": "Its payload comes from the formula element's `alloc` (markdown_core_opaque_ops)."
+            "note": "Its payload comes from the formula element's `payload` (markdown_core_record_ops)."
         },
         {
             "name": "DIRECTIVE_BLOCK",
             "kind": "DirectiveBlock",
-            "record": null,
+            "ops": null,
             "structure": "DIRECTIVE",
             "contain": {
                 "blocks": true,
                 "owned": true
             },
-            "note": "Its payload comes from the directive element's `alloc` (markdown_core_opaque_ops)."
+            "note": "Its payload comes from the directive element's `payload` (markdown_core_record_ops)."
         },
         {
             "name": "COMMENT_BLOCK",
             "kind": "Comment",
-            "record": "markdown_core_chunk",
+            "ops": "LITERAL",
             "structure": "COMMENT",
             "contain": null,
             "note": "A block comment: an HTML block that opened with <!-- and whose end line held only whitespace after the first -->. One public kind, Comment, stands for this and for the inline COMMENT; the two internal types record which content the node sits in, which is what containment checks and the inline parser ask."
@@ -150,7 +150,7 @@
         {
             "name": "SPECIMEN",
             "kind": "Specimen",
-            "record": "markdown_core_specimen_value",
+            "ops": "SPECIMEN",
             "structure": "SPECIMEN",
             "contain": {
                 "blocks": true
@@ -160,7 +160,7 @@
         {
             "name": "DEFINITION_LIST",
             "kind": "DefinitionList",
-            "record": null,
+            "ops": null,
             "structure": "DEFINITION_LIST",
             "contain": {
                 "members": ["DEFINITION"]
@@ -169,7 +169,7 @@
         {
             "name": "DEFINITION",
             "kind": "Definition",
-            "record": "markdown_core_definition",
+            "ops": "DEFINITION",
             "structure": "DEFINITION_LIST",
             "contain": {
                 "members": ["DEFINITION_BODY"],
@@ -179,7 +179,7 @@
         {
             "name": "DEFINITION_BODY",
             "kind": null,
-            "record": "markdown_core_definition_body_value",
+            "ops": "DEFINITION_BODY",
             "structure": "DEFINITION_LIST",
             "contain": {
                 "blocks": true,
@@ -190,7 +190,7 @@
         {
             "name": "METADATA",
             "kind": "Metadata",
-            "record": "markdown_core_metadata_fields",
+            "ops": "METADATA",
             "structure": null,
             "contain": {
                 "root": true
@@ -200,7 +200,7 @@
         {
             "name": "REFERENCE",
             "kind": "Reference",
-            "record": "markdown_core_reference_value",
+            "ops": "REFERENCE",
             "structure": null,
             "contain": null,
             "note": "A link reference definition: a leaf block the close of the paragraph that held it makes whole, so it is never open on the spine and no element defines its structure."
@@ -210,42 +210,42 @@
         {
             "name": "TEXT",
             "kind": "Text",
-            "record": "markdown_core_chunk",
+            "ops": "LITERAL",
             "structure": "TEXT",
             "contain": null
         },
         {
             "name": "SOFT_BREAK",
             "kind": "SoftBreak",
-            "record": null,
+            "ops": null,
             "structure": "LINE_BREAK",
             "contain": null
         },
         {
             "name": "LINE_BREAK",
             "kind": "LineBreak",
-            "record": null,
+            "ops": null,
             "structure": "LINE_BREAK",
             "contain": null
         },
         {
             "name": "CODE",
             "kind": "Code",
-            "record": "markdown_core_chunk",
+            "ops": "LITERAL",
             "structure": "CODE",
             "contain": null
         },
         {
             "name": "HTML",
             "kind": "HTML",
-            "record": "markdown_core_chunk",
+            "ops": "LITERAL",
             "structure": "HTML",
             "contain": null
         },
         {
             "name": "EMPHASIS",
             "kind": "Emphasis",
-            "record": null,
+            "ops": null,
             "structure": "EMPHASIS",
             "contain": {
                 "inlines": true
@@ -254,7 +254,7 @@
         {
             "name": "STRONG",
             "kind": "Strong",
-            "record": null,
+            "ops": null,
             "structure": "EMPHASIS",
             "contain": {
                 "inlines": true
@@ -263,7 +263,7 @@
         {
             "name": "LINK",
             "kind": "Link",
-            "record": "markdown_core_link",
+            "ops": "LINK",
             "structure": "LINK",
             "contain": {
                 "inlines": true
@@ -272,7 +272,7 @@
         {
             "name": "EMBEDDED",
             "kind": "Embedded",
-            "record": "markdown_core_link",
+            "ops": "LINK",
             "structure": "EMBEDDED",
             "contain": {
                 "inlines": true
@@ -281,7 +281,7 @@
         {
             "name": "CITE",
             "kind": "Cite",
-            "record": null,
+            "ops": null,
             "structure": "CITATION",
             "contain": {
                 "members": ["CITATION"]
@@ -291,7 +291,7 @@
         {
             "name": "STRIKETHROUGH",
             "kind": "Strikethrough",
-            "record": null,
+            "ops": null,
             "structure": "STRIKETHROUGH",
             "contain": {
                 "inlines": true,
@@ -301,23 +301,23 @@
         {
             "name": "FORMULA",
             "kind": "Formula",
-            "record": null,
+            "ops": null,
             "structure": "FORMULA",
             "contain": null,
-            "note": "Its payload comes from the formula element's `alloc` (markdown_core_opaque_ops)."
+            "note": "Its payload comes from the formula element's `payload` (markdown_core_record_ops)."
         },
         {
             "name": "DIRECTIVE",
             "kind": "Directive",
-            "record": null,
+            "ops": null,
             "structure": "DIRECTIVE",
             "contain": null,
-            "note": "Its payload comes from the directive element's `alloc` (markdown_core_opaque_ops)."
+            "note": "Its payload comes from the directive element's `payload` (markdown_core_record_ops)."
         },
         {
             "name": "DIRECTIVE_LABEL",
             "kind": "DirectiveLabel",
-            "record": null,
+            "ops": null,
             "structure": "DIRECTIVE",
             "contain": {
                 "inlines": true,
@@ -328,7 +328,7 @@
         {
             "name": "COMMENT",
             "kind": "Comment",
-            "record": "markdown_core_chunk",
+            "ops": "LITERAL",
             "structure": "COMMENT",
             "contain": null,
             "note": "An inline HTML comment token: <!-- ... -->, <!--> or <!--->."
@@ -336,7 +336,7 @@
         {
             "name": "CITATION",
             "kind": "Citation",
-            "record": "markdown_core_citation_item",
+            "ops": "CITATION",
             "structure": "CITATION",
             "contain": null,
             "note": "One item of a Cite: a scoped value held in its Cite's children, never Markup, owning a prefix and a suffix of inline nodes beside its referent. Inline-classed because it lives in inline content."
@@ -344,14 +344,14 @@
         {
             "name": "CROSS_LINK",
             "kind": "CrossLink",
-            "record": "markdown_core_cross_reference",
+            "ops": "CROSS_LINK",
             "structure": "CROSS_LINK",
             "contain": null
         },
         {
             "name": "MARK",
             "kind": "Mark",
-            "record": null,
+            "ops": null,
             "structure": "MARK",
             "contain": {
                 "inlines": true
@@ -360,14 +360,14 @@
         {
             "name": "CROSS_EMBEDDED",
             "kind": "CrossEmbedded",
-            "record": "markdown_core_cross_embedded",
+            "ops": "CROSS_EMBEDDED",
             "structure": "CROSS_LINK",
             "contain": null
         },
         {
             "name": "INSERTION",
             "kind": "Insertion",
-            "record": null,
+            "ops": null,
             "structure": "INSERTION",
             "contain": {
                 "inlines": true
@@ -376,7 +376,7 @@
         {
             "name": "SPAN",
             "kind": "Span",
-            "record": null,
+            "ops": null,
             "structure": null,
             "contain": {
                 "inlines": true
@@ -386,7 +386,7 @@
         {
             "name": "SUPERSCRIPT",
             "kind": "Superscript",
-            "record": null,
+            "ops": null,
             "structure": "SUPERSCRIPT",
             "contain": {
                 "inlines": true
@@ -395,7 +395,7 @@
         {
             "name": "SUBSCRIPT",
             "kind": "Subscript",
-            "record": null,
+            "ops": null,
             "structure": "SUBSCRIPT",
             "contain": {
                 "inlines": true
@@ -404,7 +404,7 @@
         {
             "name": "TOPIC",
             "kind": "Topic",
-            "record": "markdown_core_chunk",
+            "ops": "LITERAL",
             "structure": "TOPIC",
             "contain": null
         }

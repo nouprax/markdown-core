@@ -240,3 +240,46 @@ void markdown_core_cross_link_parts(markdown_core_parts *parts) {
     }
     markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, label, end);
 }
+
+/* A cross reference's parts (markdown_core_record_ops), which view its text
+ * until it settles: both cross kinds hold one, a CrossEmbedded's beside its
+ * dimensions. */
+static void free_reference_parts(markdown_core_cross_reference *cross) {
+    markdown_core_chunk_free(&cross->path);
+    markdown_core_optional_chunk_free(&cross->anchor);
+    markdown_core_optional_chunk_free(&cross->label);
+}
+
+static bool own_reference_parts(markdown_core_cross_reference *cross) {
+    return markdown_core_chunk_own_viewed(&cross->path) &&
+           (!cross->anchor.has_value || markdown_core_chunk_own_viewed(&cross->anchor.value)) &&
+           (!cross->label.has_value || markdown_core_chunk_own_viewed(&cross->label.value));
+}
+
+static void free_cross_link(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    free_reference_parts(node->as.cross_link);
+}
+
+static bool viewed_cross_link(markdown_core_node *node) { return own_reference_parts(node->as.cross_link); }
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_CROSS_LINK = {
+    .size = sizeof(markdown_core_cross_reference),
+    .free = free_cross_link,
+    .viewed = viewed_cross_link,
+};
+
+static void free_cross_embedded(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    free_reference_parts(&node->as.cross_embedded->reference);
+}
+
+static bool viewed_cross_embedded(markdown_core_node *node) {
+    return own_reference_parts(&node->as.cross_embedded->reference);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_CROSS_EMBEDDED = {
+    .size = sizeof(markdown_core_cross_embedded),
+    .free = free_cross_embedded,
+    .viewed = viewed_cross_embedded,
+};

@@ -60,6 +60,7 @@ jobs:
                   pnpm audit:surface
                   pnpm check:element-inventory
                   pnpm audit:element-peers
+                  pnpm audit:core-kinds
                   pnpm audit:element-special-chars
                   pnpm audit:element-attach-order
                   pnpm audit:parser-kind-record

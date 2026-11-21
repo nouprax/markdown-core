@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cross_link.h"
 #include "alloc.h"
 #include "../include/markdown_core.h"
 

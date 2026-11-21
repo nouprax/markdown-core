@@ -4071,20 +4071,17 @@ typedef struct {
 } owned_field_probe;
 static size_t owned_field_releases, owned_field_uncleared;
 
-static void owned_field_alloc(const markdown_core_element *element, markdown_core_node *node) {
-    (void)element;
+static void owned_field_alloc(markdown_core_node *node) {
     node->opaque = markdown_core_alloc(1, sizeof(owned_field_probe));
 }
 
-static int owned_field_visit(const markdown_core_element *element, markdown_core_node *node,
-                             markdown_core_owned_subtree_visitor visitor, void *context) {
-    (void)element;
+static int owned_field_visit(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     owned_field_probe *fields = node->opaque;
     return !fields || (visitor(&fields->first, context) && visitor(&fields->second, context));
 }
 
-static void owned_field_free(const markdown_core_element *element, markdown_core_node *node) {
-    (void)element;
+static void owned_field_free(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
     owned_field_probe *fields = node->opaque;
     owned_field_releases++;
     owned_field_uncleared += fields->first != NULL || fields->second != NULL;
@@ -4099,15 +4096,15 @@ static void owned_field_free(const markdown_core_element *element, markdown_core
     node->opaque = NULL;
 }
 
-static const markdown_core_opaque_ops OWNED_FIELD_PROBE_OPAQUE = {
-    .alloc = owned_field_alloc,
+static const markdown_core_record_ops OWNED_FIELD_PROBE_PAYLOAD = {
+    .init = owned_field_alloc,
     .free = owned_field_free,
     .visit = owned_field_visit,
 };
 
 static const markdown_core_element OWNED_FIELD_PROBE = {
     .name = "owned-field-lifetime-probe",
-    .opaque = &OWNED_FIELD_PROBE_OPAQUE,
+    .payload = &OWNED_FIELD_PROBE_PAYLOAD,
 };
 
 static void element_owned_field_lifecycle(test_batch_runner *runner) {
@@ -9222,6 +9219,16 @@ static int census_owned_root(markdown_core_node **slot, void *context) {
     return 1;
 }
 
+/* The field roots of a published node (dialect.h,
+ * markdown_core_visit_inline_subtrees, which asks the dialect): the root's
+ * record holds the document's state, not inline roots. */
+static int census_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    const markdown_core_record_ops *record = markdown_core_record_for_kind((markdown_core_node_type)node->kind);
+    return (node->kind == MARKDOWN_CORE_NODE_DOCUMENT || !record || !record->visit ||
+            record->visit(node, visitor, context)) &&
+           markdown_core_visit_element_subtrees(node, visitor, context);
+}
+
 static void census_mailto_links(markdown_core_node *root, mailto_census *census) {
     tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
@@ -9231,7 +9238,7 @@ static void census_mailto_links(markdown_core_node *root, mailto_census *census)
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
-        markdown_core_visit_inline_subtrees(node, census_owned_root, census);
+        census_fields(node, census_owned_root, census);
         if (node->kind != MARKDOWN_CORE_NODE_LINK || !node->as.link->resource) {
             continue;
         }
@@ -9855,7 +9862,7 @@ static size_t owned_node_census(markdown_core_node *root) {
         if (event == MARKDOWN_CORE_EVENT_ENTER) {
             markdown_core_node *node = tree_iter_get_node(iter);
             count++;
-            markdown_core_visit_inline_subtrees(node, census_owned_nodes, &count);
+            census_fields(node, census_owned_nodes, &count);
         }
     }
     tree_iter_free(iter);

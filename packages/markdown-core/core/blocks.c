@@ -2118,7 +2118,7 @@ static int parse_inline_field(markdown_core_node **root_slot, void *context) {
 
 bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node) {
     inline_parse_context context = {parser, false};
-    if (!markdown_core_visit_inline_subtrees(node, parse_inline_field, &context)) {
+    if (!markdown_core_visit_inline_subtrees(parser->dialect, node, parse_inline_field, &context)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     return context.whitespace;
@@ -2579,7 +2579,8 @@ static int S_settled_push(markdown_core_node **slot, void *context) {
  * of its inline nodes included: each owns the bytes its record views, and
  * one that holds an explicit anchor is listed with the settled ones, after
  * the first `*anchored`. False when storage could not be had. */
-static bool S_settled_own(markdown_core_settled *settled, markdown_core_node *node, size_t *anchored) {
+static bool S_settled_own(const markdown_core_dialect *dialect, markdown_core_settled *settled,
+                          markdown_core_node *node, size_t *anchored) {
     markdown_core_node *stack = node;
     bool owned = true;
     while (stack) {
@@ -2600,7 +2601,7 @@ static bool S_settled_own(markdown_core_settled *settled, markdown_core_node *no
             }
         }
         if (owned) {
-            markdown_core_visit_inline_subtrees(below, S_settled_push, &stack);
+            markdown_core_visit_inline_subtrees(dialect, below, S_settled_push, &stack);
             for (uint32_t i = 0; i < below->child_count; i++) {
                 S_settled_push(&below->children[i], &stack);
             }
@@ -3653,7 +3654,7 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
             if (!owned || !(owned = markdown_core_node_own_viewed(below))) {
                 continue;
             }
-            markdown_core_visit_inline_subtrees(below, S_settled_push, &stack);
+            markdown_core_visit_inline_subtrees(parser->dialect, below, S_settled_push, &stack);
             for (uint32_t k = 0; k < below->child_count; k++) {
                 S_settled_push(&below->children[k], &stack);
             }
@@ -3831,7 +3832,7 @@ static bool S_settle_more(markdown_core_parser *parser, markdown_core_node *node
         size_t anchored = settled->anchored_count;
         for (uint32_t i = held; i < at; i++) {
             node->children[i]->flags |= MARKDOWN_CORE_NODE__COMMITTED;
-            if (!S_settled_own(settled, node->children[i], &anchored)) {
+            if (!S_settled_own(parser->dialect, settled, node->children[i], &anchored)) {
                 return false;
             }
         }
@@ -11832,9 +11833,9 @@ static int S_take_field(markdown_core_node **slot, void *context) {
 /* The slot of the field root `block` holds, or NULL when it holds none: a
  * block holds one at most, its opener's or its caption
  * (markdown_core_block_settle_field). */
-static markdown_core_node **S_field_slot(markdown_core_node *block) {
+static markdown_core_node **S_field_slot(const markdown_core_dialect *dialect, markdown_core_node *block) {
     markdown_core_node **slot = NULL;
-    markdown_core_visit_inline_subtrees(block, S_take_field, &slot);
+    markdown_core_visit_inline_subtrees(dialect, block, S_take_field, &slot);
     return slot;
 }
 
@@ -11847,7 +11848,7 @@ static markdown_core_node **S_field_slot(markdown_core_node *block) {
 static bool S_miss_root(markdown_core_parser *parser, markdown_core_node *root) {
     assert(S_kind_contains_inlines(markdown_core_parser_kind(parser, root), root));
     markdown_core_node *holder = markdown_core_scaffold_parent(root);
-    markdown_core_node **slot = holder ? S_field_slot(holder) : NULL;
+    markdown_core_node **slot = holder ? S_field_slot(parser->dialect, holder) : NULL;
     const bool field = slot && *slot == root;
     markdown_core_miss_root *roots =
         markdown_core_reserve(parser->stream->miss_roots, &parser->stream->miss_root_capacity,
@@ -11960,7 +11961,7 @@ static void S_withdraw_completion(markdown_core_parser *parser, markdown_core_no
     while (withdrawn && collect.count) {
         markdown_core_node *node = ((markdown_core_node **)parser->walk_stack)[--collect.count];
         withdrawn = S_withdraw_anchor(parser, node, start) &&
-                    markdown_core_visit_inline_subtrees(node, S_collect_completed, &collect);
+                    markdown_core_visit_inline_subtrees(parser->dialect, node, S_collect_completed, &collect);
         for (uint32_t i = 0; withdrawn && i < node->child_count; i++) {
             withdrawn = S_collect_completed(&node->children[i], &collect);
         }
@@ -11977,8 +11978,8 @@ typedef struct {
 } S_completion_anew;
 
 /* The root `record` names. */
-static markdown_core_node *S_record_root(const markdown_core_miss_root *record) {
-    return record->field ? *S_field_slot(record->node) : record->node;
+static markdown_core_node *S_record_root(const markdown_core_dialect *dialect, const markdown_core_miss_root *record) {
+    return record->field ? *S_field_slot(dialect, record->node) : record->node;
 }
 
 /* The candidate of the root `record` names (markdown_core_node_candidate),
@@ -11988,7 +11989,7 @@ static markdown_core_node *S_record_root(const markdown_core_miss_root *record) 
  * inline content is parsed before the walk parses it first. NULL, with the
  * parse failed, when no candidate could be made. */
 static markdown_core_node *S_complete_anew(markdown_core_parser *parser, markdown_core_miss_root *record) {
-    markdown_core_node *root = S_record_root(record);
+    markdown_core_node *root = S_record_root(parser->dialect, record);
     S_withdraw_completion(parser, root, record->position.place.start);
     const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, root);
     markdown_core_node *candidate = parser->error ? NULL : markdown_core_node_candidate(parser->pool, root);
@@ -12048,7 +12049,7 @@ static void S_keep_defined(markdown_core_parser *parser) {
 static void S_complete_place(markdown_core_parser *parser, const S_completion_anew *anew, bool published) {
     markdown_core_node *candidate = anew->candidate;
     const markdown_core_miss_root *record = anew->record;
-    markdown_core_node *root = S_record_root(record);
+    markdown_core_node *root = S_record_root(parser->dialect, record);
     S_withdraw_defined(parser, record, root);
     if (published) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
@@ -12059,7 +12060,7 @@ static void S_complete_place(markdown_core_parser *parser, const S_completion_an
         return;
     }
     if (record->field) {
-        *S_field_slot(record->node) = candidate;
+        *S_field_slot(parser->dialect, record->node) = candidate;
         markdown_core_node_take_borrowed(candidate, root);
         markdown_core_node_pool_release(parser->pool, root);
         return;

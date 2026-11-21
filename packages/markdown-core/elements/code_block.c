@@ -438,3 +438,39 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .opens = &CODE_BLOCK_OPENS,
     .lines = &CODE_BLOCK_LINES,
 };
+
+/* A code block's record (markdown_core_record_ops): its info string and its
+ * literal, which may be pending (markdown_core_literal_set). */
+static void free_code(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_optional_chunk_free(&node->as.code->info);
+    markdown_core_chunk_free(&node->as.code->literal);
+}
+
+static bool view_code(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                      bool failed) {
+    (void)pool;
+    (void)node;
+    (void)failed;
+    markdown_core_chunk_view(&copy->as.code->info.value);
+    markdown_core_literal_view(&copy->as.code->literal);
+    return true;
+}
+
+static bool own_code(markdown_core_node *copy, const markdown_core_node *node) {
+    return markdown_core_chunk_own(&copy->as.code->info.value, &node->as.code->info.value) &&
+           markdown_core_chunk_own(&copy->as.code->literal, &node->as.code->literal);
+}
+
+static void adopt_code(markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_chunk_adopt(&view->as.code->info.value, &node->as.code->info.value);
+    markdown_core_chunk_adopt(&view->as.code->literal, &node->as.code->literal);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_CODE_BLOCK = {
+    .size = sizeof(markdown_core_code),
+    .free = free_code,
+    .view = view_code,
+    .own = own_code,
+    .adopt = adopt_code,
+};

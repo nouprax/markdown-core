@@ -11,7 +11,7 @@
  *   MCB3 kind ordinal every binding decoder reads (Kotlin and ES).
  * - `packages/markdown-core/node-types.json` is the native representation: the
  *   internal `markdown_core_node_type` of each class, the public kind it
- *   reports, the payload record it allocates, the element that defines its
+ *   reports, the ops of the record it holds, the element that defines its
  *   structure and what its nodes may hold. Each class is numbered in list
  *   order from 1.
  *
@@ -71,9 +71,9 @@ export function buildModel(contract, native) {
         }
         const types = native[name].map((type, index) => {
             const where = `${NATIVE}: ${name} type ${type.name ?? String(index)}`;
-            const allowed = new Set(["name", "kind", "record", "structure", "contain", "note"]);
+            const allowed = new Set(["name", "kind", "ops", "structure", "contain", "note"]);
             for (const key of Object.keys(type)) if (!allowed.has(key)) errors.push(`${where}: unknown key ${key}`);
-            for (const key of ["kind", "record", "structure", "contain"]) {
+            for (const key of ["kind", "ops", "structure", "contain"]) {
                 if (!(key in type)) errors.push(`${where}: ${key} must be given, as null when there is none`);
             }
             if (!/^[A-Z][A-Z0-9_]*$/.test(type.name ?? "")) errors.push(`${where}: name must be SCREAMING_SNAKE`);
@@ -82,7 +82,7 @@ export function buildModel(contract, native) {
             if (type.kind !== null && !kindNames.has(type.kind)) {
                 errors.push(`${where}: kind ${String(type.kind)} is not a kind of ${CONTRACT}`);
             }
-            for (const key of ["record", "structure"]) {
+            for (const key of ["ops", "structure"]) {
                 if (type[key] !== null && !identifier.test(type[key] ?? "")) {
                     errors.push(`${where}: ${key} must be a C identifier or null`);
                 }
@@ -326,17 +326,6 @@ function testKindCount({ kinds }) {
     return `#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_${screaming(kinds.at(-1).name)} + 1)\n`;
 }
 
-function nodeTables({ block, inline }) {
-    const record = (type) => (type.record === null ? null : `sizeof(${type.record})`);
-    return (
-        "/* A type without a record is absent and reads as 0: no inline record, and\n" +
-        " * `as.data` left NULL. An element-owned payload comes from its opaque `alloc`. */\n" +
-        classTable("static const size_t S_block_payload_size", block, record) +
-        "\n" +
-        classTable("static const size_t S_inline_payload_size", inline, record)
-    );
-}
-
 function facadeTables({ kinds, block, inline }) {
     const kind = (type) => (type.kind === null ? null : `MARKDOWN_CORE_KIND_${screaming(type.kind)}`);
     const names = ["None", ...kinds.map((entry) => entry.name)].map((name) => `    "${name}",`).join("\n");
@@ -382,6 +371,8 @@ function structureTables({ block, inline }) {
         return `{${parts.join(", ")}}`;
     };
     const typeString = (type) => `"${type.name.toLowerCase()}"`;
+    const ops = (type) => (type.ops === null ? null : `&MARKDOWN_CORE_RECORD_${type.ops}`);
+    const named = [...new Set([...block.types, ...inline.types].map((type) => type.ops).filter((name) => name))];
     return (
         "/* Explicitly sized, so a kind whose value index outgrows the projection is a\n" +
         " * compile error here rather than a silent NULL at every lookup. */\n" +
@@ -396,6 +387,14 @@ function structureTables({ block, inline }) {
         "\n" +
         classTable("const markdown_core_hold markdown_core_inline_holds", inline, hold) +
         "/* clang-format on */\n" +
+        "\n" +
+        "/* The ops of each type's record (element.h, markdown_core_record_ops), NULL\n" +
+        " * for a type that holds none; each is defined by the element whose record it is. */\n" +
+        named.map((name) => `extern const markdown_core_record_ops MARKDOWN_CORE_RECORD_${name};\n`).join("") +
+        "\n" +
+        classTable("const markdown_core_record_ops *const markdown_core_block_records", block, ops) +
+        "\n" +
+        classTable("const markdown_core_record_ops *const markdown_core_inline_records", inline, ops) +
         "\n" +
         classTable("static const char *const S_block_type_string", block, typeString) +
         "\n" +
@@ -559,7 +558,6 @@ export function outputs(model, readSource) {
             "node kinds": publicEnum(model),
             "slot kinds": publicSlotEnum(model)
         }),
-        edit(`${PACKAGE}/core/node.c`, { "node kinds": nodeTables(model) }),
         edit(`${PACKAGE}/elements/ast.c`, { "node kinds": facadeTables(model), "slot kinds": slotTables(model) }),
         edit(`${PACKAGE}/elements/core-elements.c`, { "node kinds": structureTables(model) }),
         edit(`${PACKAGE}/tests/support/test_support.h`, { "node kinds": testKindCount(model) }),

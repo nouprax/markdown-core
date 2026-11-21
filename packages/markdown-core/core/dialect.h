@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "node.h"
+#include "element.h"
 #include "follow.h"
 
 #ifdef __cplusplus
@@ -171,9 +172,10 @@ typedef struct markdown_core_finish_step_entry {
  *   (the lines' `blank_spreads`): what a blank line means inside it;
  * - FOLDS: the kind is one of its fold's `kinds`, and its `child` is asked as a
  *   child settles into a block of it;
- * - FIELDS: the kind can own a field root through its own record
- *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
- *   is found through the node's `element`, which the walk tests beside this).
+ * - FIELDS: the kind's record visits field roots (markdown_core_record_ops,
+ *   `visit`), and the kind is not the root, whose record holds the
+ *   document's state -- a subtree an element owns is found through the
+ *   node's `element`, which the walk tests beside this.
  *
  * `complete` is the structure's `complete`, NULL when it declares
  * none, which the walk calls at every ENTER. The out-of-table index answers
@@ -444,6 +446,17 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
 
 /* Release whatever the builder owns. */
 void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builder);
+
+/* Every field root `node` holds (element.h, THE FIELD ROOTS OF A NODE): its
+ * kind's, which the dialect marks FIELDS, then its element's. Completion,
+ * which holds the kind's record, asks the two halves itself. */
+static inline int markdown_core_visit_inline_subtrees(const markdown_core_dialect *dialect, markdown_core_node *node,
+                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
+    return (!(markdown_core_dialect_kind(dialect, (markdown_core_node_type)node->kind)->flags &
+              MARKDOWN_CORE_KIND_FIELDS) ||
+            markdown_core_visit_kind_fields(node, visitor, context)) &&
+           markdown_core_visit_element_subtrees(node, visitor, context);
+}
 
 #ifdef __cplusplus
 }

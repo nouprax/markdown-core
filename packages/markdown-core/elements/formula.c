@@ -77,11 +77,12 @@ void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_
 
 /* Every node of this element is a formula. A payload that could not be
  * allocated is the constructor's allocation failure. */
-static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_node *node) {
+static void formula_opaque_alloc(markdown_core_node *node) {
     node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 }
 
-static void formula_opaque_free(const markdown_core_element *element, markdown_core_node *node) {
+static void formula_opaque_free(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
     node_formula *formula = (node_formula *)node->opaque;
     if (!formula) {
         return;
@@ -91,9 +92,10 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     markdown_core_free(formula);
 }
 
-static bool formula_opaque_view(const markdown_core_element *element, markdown_core_node *copy,
-                                const markdown_core_node *node) {
-    node_formula *made = markdown_core_realloc(NULL, sizeof(*made));
+static bool formula_opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                                bool failed) {
+    (void)pool;
+    node_formula *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
     if (!made) {
         copy->opaque = NULL;
         return false;
@@ -108,13 +110,9 @@ static bool formula_opaque_view(const markdown_core_element *element, markdown_c
     return true;
 }
 
-static void formula_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
-                                 markdown_core_node *node) {
+static void formula_opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
     node_formula *made = view->opaque, *formula = node->opaque;
-    if (made->literal.data == formula->literal.data && !made->literal.alloc) {
-        made->literal.alloc = formula->literal.alloc;
-        formula->literal.alloc = 0;
-    }
+    markdown_core_chunk_adopt(&made->literal, &formula->literal);
 }
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
@@ -774,14 +772,14 @@ static bool formula_revert(const markdown_core_element_instance *self, markdown_
     }
     *node->as.code = fence;
     node->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
-    formula_opaque_free(self->element, node);
+    formula_opaque_free(NULL, node);
     node->opaque = NULL;
     markdown_core_node_set_element(node, NULL);
     return true;
 }
 
-static const markdown_core_opaque_ops FORMULA_OPAQUE = {
-    .alloc = formula_opaque_alloc,
+static const markdown_core_record_ops FORMULA_PAYLOAD = {
+    .init = formula_opaque_alloc,
     .free = formula_opaque_free,
     .view = formula_opaque_view,
     .adopt = formula_opaque_adopt,
@@ -855,7 +853,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .facets = MARKDOWN_CORE_FORMULA_FACETS,
     .name = "formula",
     .follows = FORMULA_FOLLOWS,
-    .opaque = &FORMULA_OPAQUE,
+    .payload = &FORMULA_PAYLOAD,
     .contain = &FORMULA_CONTAIN,
     .content = &FORMULA_CONTENT,
     .inlines = &FORMULA_INLINES,

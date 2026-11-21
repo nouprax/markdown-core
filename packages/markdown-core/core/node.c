@@ -98,73 +98,28 @@ static void *S_bytes_take(markdown_core_node_pool *pool, size_t bytes) {
     return pool ? markdown_core_node_pool_bytes(pool, bytes) : markdown_core_bytes_own(bytes);
 }
 
-/* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
- *
- * This was a 24-branch switch on the kind, compiled as a decision tree and
- * entered once per node -- 26.4% of `markdown_core_node_new_with_ext` on the
- * same-job corpus, at about 891,000 nodes. The kind already indexes two other
- * tables this way (`markdown_core_block_structure` and its inline twin, in
- * core/element.h), and the encoding is what makes that work: the low bits of
- * a kind are a dense ordinal within its class, and the class is one bit test.
- * The tables, and the type-string tables beside them, are generated from
- * packages/markdown-core/node-types.json. */
-/* BEGIN GENERATED node kinds by scripts/tooling/generate-node-kinds.mjs; edit the node-kind schemas instead. */
-/* A type without a record is absent and reads as 0: no inline record, and
- * `as.data` left NULL. An element-owned payload comes from its opaque `alloc`. */
-static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
-    [MARKDOWN_CORE_NODE_DOCUMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_document_value),
-    [MARKDOWN_CORE_NODE_CALLOUT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_callout),
-    [MARKDOWN_CORE_NODE_LIST & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_list),
-    [MARKDOWN_CORE_NODE_LIST_ITEM & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_list),
-    [MARKDOWN_CORE_NODE_CODE_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_code),
-    [MARKDOWN_CORE_NODE_HTML_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_html_block),
-    [MARKDOWN_CORE_NODE_HEADING & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_heading),
-    [MARKDOWN_CORE_NODE_FOOTNOTE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_footnote_value),
-    [MARKDOWN_CORE_NODE_COMMENT_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-    [MARKDOWN_CORE_NODE_SPECIMEN & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_specimen_value),
-    [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition),
-    [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition_body_value),
-    [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_metadata_fields),
-    [MARKDOWN_CORE_NODE_REFERENCE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_reference_value),
-};
-
-static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
-    [MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-    [MARKDOWN_CORE_NODE_CODE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-    [MARKDOWN_CORE_NODE_HTML & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-    [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
-    [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
-    [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-    [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_citation_item),
-    [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_reference),
-    [MARKDOWN_CORE_NODE_CROSS_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_embedded),
-    [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-};
-/* END GENERATED */
-
-static size_t S_node_payload_size(markdown_core_node_type type) {
-    unsigned index = (unsigned)type & MARKDOWN_CORE_NODE_VALUE_MASK;
-
-    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return 0;
-    }
-    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(type) ? S_inline_payload_size[index] : S_block_payload_size[index];
+/* A NODE'S RECORDS AND THEIR OPS: the kind's record (`node->as`), whose ops
+ * the kind's schema names (element.h, markdown_core_record_for_kind), and
+ * the payload of the node's element (`node->opaque`), whose ops are its
+ * element's `payload`. Every walk below asks both through the one interface
+ * (markdown_core_record_ops) and names no kind. */
+static inline const markdown_core_record_ops *S_record_of(const markdown_core_node *node) {
+    return markdown_core_record_for_kind((markdown_core_node_type)node->kind);
 }
 
-/* Establish defaults over zero-initialized storage. */
-static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data *as) {
-    switch ((uint16_t)type) {
-    case MARKDOWN_CORE_NODE_HEADING:
-        as->heading->level = 1;
-        markdown_core_strbuf_init_zeroed(&as->heading->name.base);
-        break;
-    case MARKDOWN_CORE_NODE_LIST:
-        as->list->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
-        as->list->variant.kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
-        break;
-    default:
-        break;
-    }
+static inline const markdown_core_record_ops *S_payload_of(const markdown_core_node *node) {
+    return node->element ? node->element->payload : NULL;
+}
+
+/* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index: the kind
+ * indexes its record's ops (the low bits of a kind are a dense ordinal within
+ * its class, and the class is one bit test), which give it. A switch on the
+ * kind here was 26.4% of `markdown_core_node_new_with_ext` on the same-job
+ * corpus. A kind without a record reads as 0: no inline record, and
+ * `as.data` left NULL. */
+static size_t S_node_payload_size(markdown_core_node_type type) {
+    const markdown_core_record_ops *record = markdown_core_record_for_kind(type);
+    return record ? record->size : 0;
 }
 
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
@@ -195,10 +150,13 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
     markdown_core_strbuf_init_zeroed(&node->content);
     node->kind = (uint16_t)type;
     node->element = element;
-    S_init_node_as(type, &node->as);
-
-    if (node->element && node->element->opaque && node->element->opaque->alloc) {
-        node->element->opaque->alloc(node->element, node);
+    const markdown_core_record_ops *record = markdown_core_record_for_kind(type);
+    if (record && record->init) {
+        record->init(node);
+    }
+    const markdown_core_record_ops *payload = S_payload_of(node);
+    if (payload && payload->init) {
+        payload->init(node);
     }
 
     return node;
@@ -213,105 +171,10 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
-/* A document's definition tables, but a snapshot's, which it borrows (ast.c,
- * A SNAPSHOT'S TABLES). Out of line, so that the free of every other kind
- * keeps its own registers. */
-MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown_core_document_value *document) {
-    if (document->committed) {
-        return;
-    }
-    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
-    for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
-        markdown_core_free((void *)tables[i]->all.nodes);
-        markdown_core_free(tables[i]->all.places);
-        markdown_core_free((void *)tables[i]->labeled);
-    }
-    markdown_core_free((void *)document->reference_targets.nodes);
-    markdown_core_free(document->reference_targets.places);
-}
-
 static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
-    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
-    switch (node->kind) {
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        markdown_core_optional_chunk_free(&node->as.callout->variant);
-        break;
-    case MARKDOWN_CORE_NODE_METADATA:
-        markdown_core_metadata_fields_free(node->as.metadata);
-        break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        markdown_core_optional_chunk_free(&node->as.list->task_marker);
-        break;
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        markdown_core_optional_chunk_free(&node->as.code->info);
-        markdown_core_chunk_free(&node->as.code->literal);
-        break;
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_HTML:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_COMMENT:
-    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-    case MARKDOWN_CORE_NODE_TOPIC:
-        markdown_core_chunk_free(node->as.literal);
-        break;
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        markdown_core_chunk_free(&node->as.html_block->literal);
-        break;
-    case MARKDOWN_CORE_NODE_CROSS_LINK:
-    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
-        markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
-        markdown_core_chunk_free(&cross->path);
-        markdown_core_optional_chunk_free(&cross->anchor);
-        markdown_core_optional_chunk_free(&cross->label);
-        break;
-    }
-    case MARKDOWN_CORE_NODE_CITATION:
-        /* The note and the affixes are freed by the walk in `S_free_nodes`,
-         * pushed beside the children; only the referent's bytes are the
-         * arm's. */
-        markdown_core_chunk_free(&node->as.citation->value);
-        break;
-
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        markdown_core_node_free_tables(node->as.document);
-        break;
-    case MARKDOWN_CORE_NODE_HEADING:
-        if (node->as.heading->label.len) {
-            markdown_core_node_pool_bytes_free(pool, node->as.heading->label.data);
-        }
-        if (node->as.heading->name.shown) {
-            markdown_core_free(node->as.heading->name.shown);
-            node->as.heading->name.shown = NULL;
-        }
-        if (!markdown_core_strbuf_borrows(&node->as.heading->name.base)) {
-            markdown_core_strbuf_free(&node->as.heading->name.base);
-        }
-        break;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        markdown_core_optional_chunk_free(&node->as.specimen->label);
-        break;
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
-        if (node->as.footnote->label.has_value) {
-            markdown_core_node_pool_bytes_free(pool, node->as.footnote->label.value.data);
-        }
-        break;
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_EMBEDDED:
-        markdown_core_resource_free(resources, node->as.link->resource);
-        node->as.link->resource = NULL;
-        if (node->as.link->label.len) {
-            markdown_core_node_pool_bytes_free(pool, node->as.link->label.data);
-        }
-        break;
-    case MARKDOWN_CORE_NODE_REFERENCE:
-        markdown_core_resource_free(resources, node->as.reference->resource);
-        node->as.reference->resource = NULL;
-        if (node->as.reference->label.len) {
-            markdown_core_node_pool_bytes_free(pool, node->as.reference->label.data);
-        }
-        break;
-    default:
-        break;
+    const markdown_core_record_ops *record = S_record_of(node);
+    if (record && record->free) {
+        record->free(pool, node);
     }
     /* Give back only a record too large for the slot, whether construction,
      * a copy or a kind change installed it, as storage the node owns.
@@ -341,32 +204,19 @@ static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* THE NODE-VALUED FIELDS OF A NODE'S RECORD, each slot visited whether or
- * not it holds a node. An element's own are visited by its
- * `visit` (markdown_core_opaque_ops); `S_visit_fields` visits both. */
+/* THE NODE-VALUED FIELDS OF A NODE'S RECORDS (markdown_core_record_ops,
+ * `visit`): its kind record's, then its element payload's. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_record_fields(
     markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
-    switch (node->kind) {
-    case MARKDOWN_CORE_NODE_DEFINITION:
-        return visitor(&node->as.definition->term, context);
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        return visitor(&node->as.callout->title, context);
-    case MARKDOWN_CORE_NODE_CITATION:
-        return visitor(&node->as.citation->note, context) && visitor(&node->as.citation->prefix, context) &&
-               visitor(&node->as.citation->suffix, context);
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        return visitor(&node->as.document->metadata, context);
-    default:
-        return 1;
-    }
+    const markdown_core_record_ops *record = S_record_of(node);
+    return !record || !record->visit || record->visit(node, visitor, context);
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdown_core_node *node,
                                                                           markdown_core_owned_subtree_visitor visitor,
                                                                           void *context) {
     return S_visit_record_fields(node, visitor, context) &&
-           (!node->element || !node->element->opaque || !node->element->opaque->visit ||
-            node->element->opaque->visit(node->element, node, visitor, context));
+           markdown_core_visit_element_subtrees(node, visitor, context);
 }
 
 /* A CANDIDATE LETS GO of the content buffer it borrows
@@ -404,8 +254,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
          * scaffold links until `e` leaves it. */
         S_visit_fields(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
         stack = markdown_core_scaffold_next(e);
-        if (e->opaque && e->element && e->element->opaque && e->element->opaque->free) {
-            e->element->opaque->free(e->element, e);
+        if (e->opaque) {
+            const markdown_core_record_ops *payload = S_payload_of(e);
+            if (payload && payload->free) {
+                payload->free(pool, e);
+            }
         }
         free_node_as(pool, e);
 
@@ -495,133 +348,26 @@ typedef struct {
     bool failed;
 } S_copy_state;
 
-/* The bytes `view` still reads of what `chunk` owns, copied. */
-static void S_chunk_own(S_copy_state *state, markdown_core_chunk *view, const markdown_core_chunk *chunk) {
-    if (!state->failed && !markdown_core_chunk_own(view, chunk)) {
+/* The parts of the record the kind owns, as its `free` releases them,
+ * viewed and its labels copied (markdown_core_record_ops, `view`). A view is
+ * of a block a snapshot lends (markdown_core_node_view), and a candidate of
+ * an inline root (markdown_core_node_candidate) -- a block's own, or a field
+ * root: a paragraph, a caption or a directive's label, whose record owns
+ * nothing --: of no kind made whole as it settles -- a Reference -- or held
+ * only by the document, which holds its metadata committed once its prefix
+ * is read, and of no kind whose record owns an inline's storage. */
+static void S_view_node_as(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
+    const markdown_core_record_ops *record = S_record_of(copy);
+    if (record && record->view && !record->view(state->pool, copy, node, state->failed)) {
         state->failed = true;
-    }
-}
-
-/* A label in storage of the pool's, `length` bytes and a NUL, copied: false
- * when it could not be. */
-static bool S_label_own(S_copy_state *state, markdown_core_chunk *label) {
-    if (state->failed) {
-        return false;
-    }
-    unsigned char *bytes = markdown_core_node_pool_bytes(state->pool, (size_t)label->len + 1);
-    if (!bytes) {
-        state->failed = true;
-        return false;
-    }
-    memcpy(bytes, label->data, (size_t)label->len + 1);
-    label->data = bytes;
-    return true;
-}
-
-/* The parts of the record the kind owns, as free_node_as releases them: its
- * strings viewed and its labels copied. A view is of a block a snapshot
- * lends (markdown_core_node_view), and a candidate of an inline root
- * (markdown_core_node_candidate) -- a block's own, or a field root: a
- * paragraph, a caption or a directive's label, whose record owns nothing --:
- * of no kind made whole as it settles -- a Reference -- or held only by the
- * document, which holds its metadata committed once its prefix is read, and
- * of no kind whose record owns an inline's storage. */
-/* A literal block's literal viewed: a pending one (markdown_core_literal_set)
- * stays pending, joined of the content the view reads, its own when it is. */
-static void S_literal_view(markdown_core_chunk *literal) {
-    if (literal->data) {
-        markdown_core_chunk_view(literal);
-    }
-}
-
-static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
-    switch (copy->kind) {
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        markdown_core_chunk_view(&copy->as.callout->variant.value);
-        break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        markdown_core_chunk_view(&copy->as.list->task_marker.value);
-        break;
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        markdown_core_chunk_view(&copy->as.code->info.value);
-        S_literal_view(&copy->as.code->literal);
-        break;
-    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        S_literal_view(copy->as.literal);
-        break;
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        S_literal_view(&copy->as.html_block->literal);
-        break;
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        /* Its lookup tables are made as it is published, which no block the
-         * block phase writes has been. */
-        break;
-    case MARKDOWN_CORE_NODE_HEADING:
-        if (copy->as.heading->label.len && !S_label_own(state, &copy->as.heading->label)) {
-            copy->as.heading->label = (markdown_core_chunk){0};
-        }
-        copy->as.heading->name.shown = NULL;
-        if (markdown_core_strbuf_owns(&copy->as.heading->name.base)) {
-            markdown_core_strbuf_borrow(&copy->as.heading->name.base);
-        }
-        break;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        markdown_core_chunk_view(&copy->as.specimen->label.value);
-        break;
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
-        if (copy->as.footnote->label.has_value && !S_label_own(state, &copy->as.footnote->label.value)) {
-            copy->as.footnote->label = markdown_core_optional_chunk_absent();
-        }
-        break;
-    default:
-        assert(copy->kind != MARKDOWN_CORE_NODE_METADATA && copy->kind != MARKDOWN_CORE_NODE_REFERENCE &&
-               copy->kind != MARKDOWN_CORE_NODE_TEXT && copy->kind != MARKDOWN_CORE_NODE_HTML &&
-               copy->kind != MARKDOWN_CORE_NODE_CODE && copy->kind != MARKDOWN_CORE_NODE_COMMENT &&
-               copy->kind != MARKDOWN_CORE_NODE_TOPIC && copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK &&
-               copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED && copy->kind != MARKDOWN_CORE_NODE_CITATION &&
-               copy->kind != MARKDOWN_CORE_NODE_LINK && copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
-        break;
     }
 }
 
 /* The strings the record of `copy` still views of `node`'s record, copied. */
 static void S_own_node_as(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
-    switch (copy->kind) {
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        S_chunk_own(state, &copy->as.callout->variant.value, &node->as.callout->variant.value);
-        break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        S_chunk_own(state, &copy->as.list->task_marker.value, &node->as.list->task_marker.value);
-        break;
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        S_chunk_own(state, &copy->as.code->info.value, &node->as.code->info.value);
-        S_chunk_own(state, &copy->as.code->literal, &node->as.code->literal);
-        break;
-    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        S_chunk_own(state, copy->as.literal, node->as.literal);
-        break;
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        S_chunk_own(state, &copy->as.html_block->literal, &node->as.html_block->literal);
-        break;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        S_chunk_own(state, &copy->as.specimen->label.value, &node->as.specimen->label.value);
-        break;
-    case MARKDOWN_CORE_NODE_HEADING: {
-        markdown_core_strbuf *base = &copy->as.heading->name.base;
-        if (!state->failed && markdown_core_strbuf_borrows(base) && base->ptr == node->as.heading->name.base.ptr) {
-            markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT();
-            markdown_core_strbuf_set(&own, base->ptr, base->size);
-            if (own.oom) {
-                markdown_core_strbuf_free(&own);
-                state->failed = true;
-            } else {
-                *base = own;
-            }
-        }
-        break;
-    }
-    default:
-        break;
+    const markdown_core_record_ops *record = S_record_of(copy);
+    if (!state->failed && record && record->own && !record->own(copy, node)) {
+        state->failed = true;
     }
 }
 
@@ -657,13 +403,11 @@ static markdown_core_node *S_copy_slot(markdown_core_node_pool *pool, const mark
  * and what its record owns, viewed, and its labels copied. */
 static void S_view_owned(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
     markdown_core_attributes_view(&copy->attributes);
-    if (copy->opaque) {
-        if (state->failed || !copy->element->opaque->view(copy->element, copy, node)) {
-            copy->opaque = NULL;
-            state->failed = true;
-        }
+    if (copy->opaque && !S_payload_of(copy)->view(state->pool, copy, node, state->failed)) {
+        copy->opaque = NULL;
+        state->failed = true;
     }
-    S_view_node_as(state, copy);
+    S_view_node_as(state, copy, node);
 }
 
 /* A visit of a view's fields that lets each go, the field node of the node
@@ -693,10 +437,8 @@ void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core
     markdown_core_strbuf_init_zeroed(&view->content);
     S_field_pair pair = {pool, view->as.data, node->as.data};
     S_visit_record_fields(view, S_let_go_field, &pair);
-    if (view->element && view->element->opaque && view->element->opaque->visit) {
-        pair = (S_field_pair){pool, view->opaque, node->opaque};
-        view->element->opaque->visit(view->element, view, S_let_go_field, &pair);
-    }
+    pair = (S_field_pair){pool, view->opaque, node->opaque};
+    markdown_core_visit_element_subtrees(view, S_let_go_field, &pair);
 }
 
 /* A visit of a view's fields that hands each it took since to a taker. */
@@ -720,11 +462,9 @@ void markdown_core_node_view_taken(markdown_core_node *view, const markdown_core
                                    markdown_core_owned_subtree_visitor take, void *context) {
     S_field_taker taker = {take, context, view->as.data, view->kind == node->kind ? node->as.data : NULL};
     S_visit_record_fields(view, S_take_field, &taker);
-    if (view->element && view->element->opaque && view->element->opaque->visit) {
-        taker.storage = view->opaque;
-        taker.original = view->element == node->element ? node->opaque : NULL;
-        view->element->opaque->visit(view->element, view, S_take_field, &taker);
-    }
+    taker.storage = view->opaque;
+    taker.original = view->element == node->element ? node->opaque : NULL;
+    markdown_core_visit_element_subtrees(view, S_take_field, &taker);
 }
 
 static int S_field_other(markdown_core_node **slot, void *context) { return *slot != context; }
@@ -734,45 +474,12 @@ bool markdown_core_node_holds_field(const markdown_core_node *node, const markdo
     return !S_visit_fields(holder, S_field_other, (void *)field);
 }
 
-/* The strings of `node`'s record that `view`'s still reads, the view's: the
- * kinds of S_view_node_as, whose views hold the bytes and own none. */
-static void S_chunk_adopt(markdown_core_chunk *view, markdown_core_chunk *chunk) {
-    if (view->data == chunk->data && !view->alloc) {
-        view->alloc = chunk->alloc;
-        chunk->alloc = 0;
-    }
-}
-
+/* The strings of `node`'s record that `view`'s still reads, the view's
+ * (markdown_core_record_ops, `adopt`). */
 static void S_adopt_node_as(markdown_core_node *view, markdown_core_node *node) {
-    switch (view->kind) {
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        S_chunk_adopt(&view->as.callout->variant.value, &node->as.callout->variant.value);
-        break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        S_chunk_adopt(&view->as.list->task_marker.value, &node->as.list->task_marker.value);
-        break;
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        S_chunk_adopt(&view->as.code->info.value, &node->as.code->info.value);
-        S_chunk_adopt(&view->as.code->literal, &node->as.code->literal);
-        break;
-    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        S_chunk_adopt(view->as.literal, node->as.literal);
-        break;
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        S_chunk_adopt(&view->as.html_block->literal, &node->as.html_block->literal);
-        break;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        S_chunk_adopt(&view->as.specimen->label.value, &node->as.specimen->label.value);
-        break;
-    case MARKDOWN_CORE_NODE_HEADING:
-        if (markdown_core_strbuf_borrows(&view->as.heading->name.base) &&
-            view->as.heading->name.base.ptr == node->as.heading->name.base.ptr) {
-            view->as.heading->name.base = node->as.heading->name.base;
-            markdown_core_strbuf_borrow(&node->as.heading->name.base);
-        }
-        break;
-    default:
-        break;
+    const markdown_core_record_ops *record = S_record_of(view);
+    if (record && record->adopt) {
+        record->adopt(view, node);
     }
 }
 
@@ -784,17 +491,15 @@ void markdown_core_node_view_adopt(markdown_core_node_pool *pool, markdown_core_
     }
     const bool element = view->element == node->element && view->opaque && node->opaque;
     if (element) {
-        view->element->opaque->adopt(view->element, view, node);
+        S_payload_of(view)->adopt(view, node);
     }
     node->children = NULL;
     node->child_count = 0;
     markdown_core_strbuf_init_zeroed(&node->content);
     S_field_pair pair = {pool, node->as.data, kind ? view->as.data : NULL};
     S_visit_record_fields(node, S_let_go_field, &pair);
-    if (node->element && node->element->opaque && node->element->opaque->visit) {
-        pair = (S_field_pair){pool, node->opaque, element ? view->opaque : NULL};
-        node->element->opaque->visit(node->element, node, S_let_go_field, &pair);
-    }
+    pair = (S_field_pair){pool, node->opaque, element ? view->opaque : NULL};
+    markdown_core_visit_element_subtrees(node, S_let_go_field, &pair);
 }
 
 markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const markdown_core_node *node) {
@@ -841,7 +546,7 @@ markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, 
     }
     S_copy_state state = {pool, false};
     markdown_core_attributes_view(&copy->attributes);
-    S_view_node_as(&state, copy);
+    S_view_node_as(&state, copy, root);
     if (!state.failed && !markdown_core_attributes_own(&copy->attributes, &root->attributes)) {
         state.failed = true;
     }
@@ -859,43 +564,13 @@ void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_n
     lender->flags |= borrowed;
 }
 
-/* A chunk that views bytes, made to own a copy of them. An empty one reads
- * none. */
-static bool S_chunk_own_viewed(markdown_core_chunk *chunk) {
-    return chunk->alloc || !chunk->len || markdown_core_chunk_to_cstr(chunk);
-}
-
-/* The inline kinds whose records view the content they were read from,
- * and a link's resource, whose destination may: every other inline record
- * owns its bytes, its labels in the pool's storage, an element's payload
- * its own. */
+/* The record of an inline that views the content it was read from takes
+ * its bytes (markdown_core_record_ops, `viewed`): every other inline record
+ * owns its bytes, its labels in the pool's storage, an element's payload its
+ * own. */
 bool markdown_core_node_own_viewed(markdown_core_node *node) {
-    switch (node->kind) {
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_HTML:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_COMMENT:
-    case MARKDOWN_CORE_NODE_TOPIC:
-        return S_chunk_own_viewed(node->as.literal);
-    case MARKDOWN_CORE_NODE_CROSS_LINK:
-    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
-        markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
-        return S_chunk_own_viewed(&cross->path) &&
-               (!cross->anchor.has_value || S_chunk_own_viewed(&cross->anchor.value)) &&
-               (!cross->label.has_value || S_chunk_own_viewed(&cross->label.value));
-    }
-    case MARKDOWN_CORE_NODE_CITATION:
-        return S_chunk_own_viewed(&node->as.citation->value);
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_EMBEDDED: {
-        /* An extended autolink's destination views its text. */
-        markdown_core_resource *resource = node->as.link->resource;
-        return !resource || (S_chunk_own_viewed(&resource->url) &&
-                             (!resource->title.has_value || S_chunk_own_viewed(&resource->title.value)));
-    }
-    default:
-        return true;
-    }
+    const markdown_core_record_ops *record = S_record_of(node);
+    return !record || !record->viewed || record->viewed(node);
 }
 
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,
@@ -928,8 +603,11 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     if (size) {
         memset(node->as.data, 0, size);
     }
-    S_init_node_as(kind, &node->as);
     node->kind = (uint16_t)kind;
+    const markdown_core_record_ops *record = S_record_of(node);
+    if (record && record->init) {
+        record->init(node);
+    }
     /* An id names a node while its kind holds: a publish gives the node of
      * its new kind an id of its own. A snapshot's view of a block it lent is
      * a node the snapshot made once its kind changes (blocks.c, THE

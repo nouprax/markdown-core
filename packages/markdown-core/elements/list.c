@@ -416,3 +416,46 @@ int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int ma
     }
     return marker_width + padding;
 }
+
+/* A list's record (markdown_core_record_ops): a bullet list of decimal
+ * numbers until its first item says otherwise. */
+static void init_list(markdown_core_node *node) {
+    node->as.list->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    node->as.list->variant.kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST = {
+    .size = sizeof(markdown_core_list),
+    .init = init_list,
+};
+
+/* An item's record, a list's, which owns its task marker. */
+static void free_item(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_optional_chunk_free(&node->as.list->task_marker);
+}
+
+static bool view_item(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                      bool failed) {
+    (void)pool;
+    (void)node;
+    (void)failed;
+    markdown_core_chunk_view(&copy->as.list->task_marker.value);
+    return true;
+}
+
+static bool own_item(markdown_core_node *copy, const markdown_core_node *node) {
+    return markdown_core_chunk_own(&copy->as.list->task_marker.value, &node->as.list->task_marker.value);
+}
+
+static void adopt_item(markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_chunk_adopt(&view->as.list->task_marker.value, &node->as.list->task_marker.value);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST_ITEM = {
+    .size = sizeof(markdown_core_list),
+    .free = free_item,
+    .view = view_item,
+    .own = own_item,
+    .adopt = adopt_item,
+};

@@ -347,7 +347,8 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                            (lines->blank_spreads ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = S_finish_of(structure)->complete;
         }
-        if (markdown_core_kind_owns_fields(kind)) {
+        const markdown_core_record_ops *fields = markdown_core_record_for_kind(kind);
+        if (fields && fields->visit && kind != dialect->root) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
         }
         dialect->kinds[index] = record;

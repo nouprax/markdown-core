@@ -150,13 +150,14 @@ int markdown_core_elements_set_directive_name(markdown_core_node *node, const ch
     return markdown_core_chunk_set_cstr(&((node_directive *)node->opaque)->name, name);
 }
 
-static void directive_opaque_alloc(const markdown_core_element *element, markdown_core_node *node) {
+static void directive_opaque_alloc(markdown_core_node *node) {
     if (is_directive_node(node)) {
         node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     }
 }
 
-static void directive_opaque_free(const markdown_core_element *element, markdown_core_node *node) {
+static void directive_opaque_free(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
     node_directive *directive = (node_directive *)node->opaque;
     if (!directive) {
         return;
@@ -168,9 +169,10 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     node->opaque = NULL;
 }
 
-static bool directive_opaque_view(const markdown_core_element *element, markdown_core_node *copy,
-                                  const markdown_core_node *node) {
-    node_directive *made = markdown_core_realloc(NULL, sizeof(*made));
+static bool directive_opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy,
+                                  const markdown_core_node *node, bool failed) {
+    (void)pool;
+    node_directive *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
     if (!made) {
         copy->opaque = NULL;
         return false;
@@ -181,13 +183,9 @@ static bool directive_opaque_view(const markdown_core_element *element, markdown
     return true;
 }
 
-static void directive_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
-                                   markdown_core_node *node) {
+static void directive_opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
     node_directive *made = view->opaque, *directive = node->opaque;
-    if (made->name.data == directive->name.data && !made->name.alloc) {
-        made->name.alloc = directive->name.alloc;
-        directive->name.alloc = 0;
-    }
+    markdown_core_chunk_adopt(&made->name, &directive->name);
 }
 
 /* Where the attribute block at `*pos` closes is the attribute element's
@@ -732,12 +730,10 @@ static int accepts_lines(const markdown_core_element *element, markdown_core_nod
     return directive->fence_length == 2 || directive->consume_line;
 }
 
-static int visit_owned_subtrees(const markdown_core_element *element, markdown_core_node *node,
-                                markdown_core_owned_subtree_visitor visitor, void *context) {
+static int visit_owned_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     /* The element payload survives kind conversion. Its ownership slots
      * remain live even when the new kind is no longer a directive. */
     node_directive *directive = node->opaque;
-    (void)element;
     if (!directive || !directive->label) {
         return 1;
     }
@@ -751,8 +747,8 @@ static const markdown_core_edit_ops DIRECTIVE_EDIT = {
     .reopens = true,
 };
 
-static const markdown_core_opaque_ops DIRECTIVE_OPAQUE = {
-    .alloc = directive_opaque_alloc,
+static const markdown_core_record_ops DIRECTIVE_PAYLOAD = {
+    .init = directive_opaque_alloc,
     .free = directive_opaque_free,
     .view = directive_opaque_view,
     .adopt = directive_opaque_adopt,
@@ -810,7 +806,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .facets = MARKDOWN_CORE_DIRECTIVE_FACETS,
     .edit = &DIRECTIVE_EDIT,
     .name = "directive",
-    .opaque = &DIRECTIVE_OPAQUE,
+    .payload = &DIRECTIVE_PAYLOAD,
     .contain = &DIRECTIVE_CONTAIN,
     .content = &DIRECTIVE_CONTENT,
     .inlines = &DIRECTIVE_INLINES,

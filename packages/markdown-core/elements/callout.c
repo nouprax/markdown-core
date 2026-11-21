@@ -268,3 +268,40 @@ void markdown_core_callout_parts(markdown_core_parts *parts) {
     }
     markdown_core_block_identifier_parts(parts);
 }
+
+/* A callout's record (markdown_core_record_ops): its variant, and its title,
+ * a field root. */
+static void free_callout(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_optional_chunk_free(&node->as.callout->variant);
+}
+
+static bool view_callout(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                         bool failed) {
+    (void)pool;
+    (void)node;
+    (void)failed;
+    markdown_core_chunk_view(&copy->as.callout->variant.value);
+    return true;
+}
+
+static bool own_callout(markdown_core_node *copy, const markdown_core_node *node) {
+    return markdown_core_chunk_own(&copy->as.callout->variant.value, &node->as.callout->variant.value);
+}
+
+static void adopt_callout(markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_chunk_adopt(&view->as.callout->variant.value, &node->as.callout->variant.value);
+}
+
+static int visit_callout(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    return !node->as.callout->title || visitor(&node->as.callout->title, context);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_CALLOUT = {
+    .size = sizeof(markdown_core_callout),
+    .free = free_callout,
+    .view = view_callout,
+    .own = own_callout,
+    .adopt = adopt_callout,
+    .visit = visit_callout,
+};

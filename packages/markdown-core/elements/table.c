@@ -565,7 +565,7 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
     return node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && markdown_core_node_text(node).len > 0;
 }
 
-static void opaque_alloc(const markdown_core_element *self, markdown_core_node *node) {
+static void opaque_alloc(markdown_core_node *node) {
     /* A payload that could not be allocated fails the parse: no incomplete
      * table is returned by a successful parse. */
     if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
@@ -573,10 +573,15 @@ static void opaque_alloc(const markdown_core_element *self, markdown_core_node *
     }
 }
 
-static void opaque_free(const markdown_core_element *self, markdown_core_node *node) { free_node_table(node->opaque); }
+static void opaque_free(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    free_node_table(node->opaque);
+}
 
-static bool opaque_view(const markdown_core_element *self, markdown_core_node *copy, const markdown_core_node *node) {
-    markdown_core_table *made = markdown_core_realloc(NULL, sizeof(*made));
+static bool opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                        bool failed) {
+    (void)pool;
+    markdown_core_table *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
     if (!made) {
         copy->opaque = NULL;
         return false;
@@ -587,7 +592,7 @@ static bool opaque_view(const markdown_core_element *self, markdown_core_node *c
     return true;
 }
 
-static void opaque_adopt(const markdown_core_element *self, markdown_core_node *view, markdown_core_node *node) {
+static void opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
     markdown_core_table *made = view->opaque, *table = node->opaque;
     if (made->views_columns && made->columns == table->columns && !table->views_columns) {
         made->views_columns = false;
@@ -638,8 +643,8 @@ static const markdown_core_edit_ops TABLE_EDIT = {
     .reopens = true, .reopen_block = reopen_block, .resumes = resumes, .abuts = TABLE_KINDS, .headed = true,
 };
 
-static const markdown_core_opaque_ops TABLE_OPAQUE = {
-    .alloc = opaque_alloc,
+static const markdown_core_record_ops TABLE_PAYLOAD = {
+    .init = opaque_alloc,
     .free = opaque_free,
     .view = opaque_view,
     .adopt = opaque_adopt,
@@ -676,7 +681,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .edit = &TABLE_EDIT,
     .follows = TABLE_FOLLOWS,
     .name = "table",
-    .opaque = &TABLE_OPAQUE,
+    .payload = &TABLE_PAYLOAD,
     .contain = &TABLE_CONTAIN,
     .content = &TABLE_CONTENT,
     .opens = &TABLE_OPENS,

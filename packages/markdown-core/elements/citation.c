@@ -1072,3 +1072,29 @@ void markdown_core_citation_parts(markdown_core_parts *parts) {
     }
     markdown_core_parts_add(parts, slot, at, end);
 }
+
+/* A citation's record (markdown_core_record_ops): its referent's bytes,
+ * which view its text until it settles, and its note, prefix and suffix,
+ * field roots the walk frees beside its children. */
+static void free_citation(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_chunk_free(&node->as.citation->value);
+}
+
+static bool viewed_citation(markdown_core_node *node) {
+    return markdown_core_chunk_own_viewed(&node->as.citation->value);
+}
+
+static int visit_citation(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    markdown_core_citation_item *citation = node->as.citation;
+    return (!citation->note || visitor(&citation->note, context)) &&
+           (!citation->prefix || visitor(&citation->prefix, context)) &&
+           (!citation->suffix || visitor(&citation->suffix, context));
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_CITATION = {
+    .size = sizeof(markdown_core_citation_item),
+    .free = free_citation,
+    .viewed = viewed_citation,
+    .visit = visit_citation,
+};

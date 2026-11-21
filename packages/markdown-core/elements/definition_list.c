@@ -452,3 +452,18 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .opens = &DEFINITION_LIST_OPENS,
     .lines = &DEFINITION_LIST_LINES,
 };
+
+/* A definition's record (markdown_core_record_ops): its term, a field root. */
+static int visit_definition(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    return !node->as.definition->term || visitor(&node->as.definition->term, context);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_DEFINITION = {
+    .size = sizeof(markdown_core_definition),
+    .visit = visit_definition,
+};
+
+/* A definition body's record, which owns nothing. */
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_DEFINITION_BODY = {
+    .size = sizeof(markdown_core_definition_body_value),
+};

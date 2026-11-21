@@ -12,17 +12,6 @@
 #include "measure.h"
 #include "follow.h"
 
-/* Node-valued fields are independent child-tree roots. This internal hook
- * exposes their owning slots only to parser phases; it does not change a
- * node's public children or make a field a parent/child edge. Destruction
- * transfers these roots to the shared iterative walk and clears their slots
- * before the element's `free` (markdown_core_opaque_ops) releases its payload. That callback must
- * not recursively destroy node-valued fields. The slots are in the element
- * payload (`node->opaque`), and kind conversion preserves the payload and
- * these roots. */
-typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_element *element, markdown_core_node *node,
-                                                       markdown_core_owned_subtree_visitor visitor, void *context);
-
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
 
@@ -153,21 +142,70 @@ typedef struct markdown_core_block_gate {
  * dialect as it was, rather than the projection wrapping a byte. */
 #define MARKDOWN_CORE_ELEMENT_LIMIT 255
 
-/* THE ELEMENT'S PAYLOAD: what the node walks ask of an element whose nodes
- * hold a payload of its own (`node->opaque`, node.c): `alloc` makes it and
- * `free` releases it; `view` and `adopt` make and settle a node's view of
- * another's (markdown_core_node_view), `view` requiring `adopt`; `visit`
- * names the node-valued fields the payload holds (owned subtrees above).
- * They are class methods: a node knows its element and not the parse that
- * made it, so each takes the element, not an instance. Each may be NULL,
- * for no payload work there. */
-typedef struct markdown_core_opaque_ops {
-    markdown_core_opaque_alloc_func alloc;
-    markdown_core_opaque_free_func free;
-    markdown_core_opaque_view_func view;
-    markdown_core_opaque_adopt_func adopt;
-    markdown_core_visit_owned_subtrees_func visit;
-} markdown_core_opaque_ops;
+/* THE RECORD: what the node walks (node.c) ask of a record a node holds --
+ * its kind's record (`node->as`), whose ops its kind's schema names
+ * (node-types.json `ops`, generated into markdown_core_block_records), and
+ * an element's payload (`node->opaque`), whose ops its element names
+ * (`payload`). ONE interface for both; each hook may be NULL, for no work
+ * there. They are class methods: a node knows its kind and its element, not
+ * the parse that made it.
+ *
+ * - `size`: the kind record's bytes, which the node's slot or its pool holds
+ *   zeroed before `init`. A payload has none: its `init` makes it.
+ * - `init`: a kind record's defaults; a payload's `init` makes `node->opaque`,
+ *   or leaves it NULL when storage could not be had.
+ * - `free`: releases what the record owns. Its node-valued fields were taken
+ *   by the walk first (`visit`), and it must not destroy them.
+ * - `view`: `copy`'s record, a byte copy of `node`'s, becomes a VIEW of it
+ *   (markdown_core_node_view): it views each part whose holder marks what it
+ *   owns and owns none of it, and copies what has no mark (a label in the
+ *   pool's storage, at most a label's length). With `failed` it copies
+ *   nothing, leaving those parts empty, so releasing the view gives back
+ *   exactly what it took. False when a copy could not be had; a payload's
+ *   leaves `copy->opaque` NULL.
+ * - `own`: a candidate's record, a view of `node`'s, takes copies of the
+ *   bytes it still views. False, the rest left viewed, when storage could
+ *   not be had.
+ * - `adopt`: `view`'s record, a view of `node`'s, takes the storage of
+ *   `node`'s it still reads; `node`'s then owns none of it. Required with
+ *   `view` of a payload.
+ * - `viewed`: the record of an inline that views the content it was read
+ *   from takes copies of those bytes. False when storage could not be had.
+ * - `visit`: the node-valued fields the record holds, each an independent
+ *   child-tree root and not a child edge, the non-NULL ones in source order.
+ *   The visitor's slot is the field, in the record's storage, so a walk can
+ *   pair it with the same field of another node's record. A payload's fields
+ *   survive kind conversion with it. */
+typedef struct markdown_core_record_ops {
+    size_t size;
+    void (*init)(markdown_core_node *node);
+    void (*free)(markdown_core_node_pool *pool, markdown_core_node *node);
+    bool (*view)(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node, bool failed);
+    bool (*own)(markdown_core_node *copy, const markdown_core_node *node);
+    void (*adopt)(markdown_core_node *view, markdown_core_node *node);
+    bool (*viewed)(markdown_core_node *node);
+    int (*visit)(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context);
+} markdown_core_record_ops;
+
+extern const markdown_core_record_ops *const markdown_core_block_records[MARKDOWN_CORE_NODE_KIND_COUNT];
+extern const markdown_core_record_ops *const markdown_core_inline_records[MARKDOWN_CORE_NODE_KIND_COUNT];
+
+/* The record ops of `kind`, or NULL for a kind with no record or a value
+ * outside the kind table. */
+static inline const markdown_core_record_ops *markdown_core_record_for_kind(markdown_core_node_type kind) {
+    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
+        return NULL;
+    }
+    switch ((unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK) {
+    case MARKDOWN_CORE_NODE_TYPE_BLOCK:
+        return markdown_core_block_records[index];
+    case MARKDOWN_CORE_NODE_TYPE_INLINE:
+        return markdown_core_inline_records[index];
+    default:
+        return NULL;
+    }
+}
 
 /* THE PARSE'S STAGES, which any element may take part in (blocks.c): the
  * engine asks every element of the dialect that declares one, in
@@ -895,9 +933,9 @@ struct markdown_core_element {
     /* The document's lifecycle (markdown_core_document_ops), for the one
      * element of a dialect that owns it, or NULL. */
     const markdown_core_document_ops *document;
-    /* The element's payload on its nodes (markdown_core_opaque_ops), or
-     * NULL when its nodes hold none. */
-    const markdown_core_opaque_ops *opaque;
+    /* The element's payload on its nodes (`node->opaque`,
+     * markdown_core_record_ops), or NULL when its nodes hold none. */
+    const markdown_core_record_ops *payload;
     /* What an edit's reading asks of the element (markdown_core_edit_ops),
      * or NULL when it asks nothing. */
     const markdown_core_edit_ops *edit;
@@ -913,63 +951,24 @@ static inline markdown_core_can_contain_func markdown_core_node_allows(const mar
     return node->element && node->element->contain ? node->element->contain->allows : NULL;
 }
 
-/* Defined here rather than in node.c because the ANSWER IS NO for almost every
- * node, and the question was costing a cross-translation-unit call to find that
- * out. `walk_owned_trees` asks it once per node of every tree it walks --
- * 2,981,851 times over the 65 same-job benchmark documents, of which 136,500
- * reach an element hook and about 26,800 visit anything at all. Inlined, the
- * common answer is a compare against `kind` and a NULL test on a pointer.
- *
- * It lives in element.h, not beside its declaration in node.h, because it
- * reads through `markdown_core_element`, which node.h only forward-declares.
- *
- * Kept as ONE definition rather than a cheap predicate placed beside the real
- * one: a second copy of "which kinds can own a subtree" drifts from the list
- * below the first time a kind is added to it. */
-/* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
- * read by the visitor below and projected into completion's per-kind
- * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the walk asks it
- * once per parse per kind rather than three compares per node. An element
- * that owns subtrees through its `visit` (markdown_core_opaque_ops) is found through
- * the node's `element`, which the walk tests beside the flag. */
-static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
-    return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
-           kind == MARKDOWN_CORE_NODE_CITATION;
-}
-
-/* The subtrees `node`, of a kind that owns them through its record, holds,
- * in source order. */
+/* THE FIELD ROOTS OF A NODE: the node-valued fields its kind's record and
+ * its element's payload hold (markdown_core_record_ops, `visit`), the
+ * kind's first, each in source order. The answer is no for almost every
+ * node, so the kind's half is asked through its projected record
+ * (dialect.h, MARKDOWN_CORE_KIND_FIELDS) -- one load and one flag -- and
+ * the element's half through a NULL test. The root's record holds the
+ * document's own state (its metadata), not inline roots, so the dialect
+ * never marks the root kind (dialect.c). */
 static inline int markdown_core_visit_kind_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                                   void *context) {
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
-        !visitor(&node->as.definition->term, context)) {
-        return 0;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
-        !visitor(&node->as.callout->title, context)) {
-        return 0;
-    }
-    return node->kind != MARKDOWN_CORE_NODE_CITATION ||
-           ((!node->as.citation->note || visitor(&node->as.citation->note, context)) &&
-            (!node->as.citation->prefix || visitor(&node->as.citation->prefix, context)) &&
-            (!node->as.citation->suffix || visitor(&node->as.citation->suffix, context)));
+    return markdown_core_record_for_kind((markdown_core_node_type)node->kind)->visit(node, visitor, context);
 }
 
-/* The subtrees the element of `node` owns through its hook. */
+/* The subtrees the element of `node` owns through its payload. */
 static inline int markdown_core_visit_element_subtrees(markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context) {
     const markdown_core_element *element = node->element;
-    return !element || !element->opaque || !element->opaque->visit ||
-           element->opaque->visit(element, node, visitor, context);
-}
-
-/* Every subtree `node` owns: its kind's, then its element's. Completion, which
- * holds the kind's answer in its record, asks the two halves itself. */
-static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
-                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
-    return (!markdown_core_kind_owns_fields((markdown_core_node_type)node->kind) ||
-            markdown_core_visit_kind_fields(node, visitor, context)) &&
-           markdown_core_visit_element_subtrees(node, visitor, context);
+    return !element || !element->payload || !element->payload->visit || element->payload->visit(node, visitor, context);
 }
 
 #endif
