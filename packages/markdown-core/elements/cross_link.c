@@ -7,6 +7,12 @@
 #include "inline_internal.h"
 #include "parts.h"
 
+/* The elements whose syntax this element asks, as `self->peers` holds
+ * them. */
+enum { CROSS_LINK_EMBEDDED };
+static const markdown_core_element *const CROSS_LINK_PEERS[] = {[CROSS_LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
+                                                                NULL};
+
 /* How a cross link's target goes on past a cursor: its path up to the `#`
  * that starts its anchor, and its anchor, which may hold more parts, up to
  * the separator or the closer. Neither crosses a bracket or a line. */
@@ -155,7 +161,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (label >= 0) {
         cross->label = markdown_core_optional_chunk_present(markdown_core_chunk_dup(input, label, i - label));
         bufsize_t suffix = dimension_separator >= 0 ? dimension_separator - label : 0;
-        if (embedded &&
+        if (embedded && self->peers[CROSS_LINK_EMBEDDED] &&
             markdown_core_parse_dimensions(cross->label.value, suffix, dimension_separator_length,
                                            &node->as.cross_embedded->dimensions.value, &counts->dimensions)) {
             node->as.cross_embedded->dimensions.has_value = true;
@@ -186,6 +192,7 @@ static const markdown_core_partition CROSS_LINK_PARTS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
+    .peers = CROSS_LINK_PEERS,
     .parts = CROSS_LINK_PARTS,
     .name = "cross_link",
     .state_size = sizeof(markdown_core_cross_link_work),

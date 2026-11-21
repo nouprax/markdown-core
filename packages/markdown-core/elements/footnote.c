@@ -2,16 +2,14 @@
 #include "link.h"
 #include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
-#include "citation.h"
 #include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { FOOTNOTE_LINK, FOOTNOTE_CITATION };
-static const markdown_core_element *const FOOTNOTE_PEERS[] = {
-    [FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [FOOTNOTE_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION, NULL};
+enum { FOOTNOTE_LINK };
+static const markdown_core_element *const FOOTNOTE_PEERS[] = {[FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
 
 static const markdown_core_roster_record *
 markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
@@ -47,8 +45,13 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close) {
-    markdown_core_node *cite = markdown_core_inline_new_cite(inline_state);
-    markdown_core_node *citation = cite ? markdown_core_inline_new_citation(inline_state, cite) : NULL;
+    /* A call is a Cite of one Citation whose referent is a footnote. */
+    markdown_core_node *cite = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITE);
+    markdown_core_node *citation =
+        cite ? markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITATION) : NULL;
+    if (citation) {
+        markdown_core_scaffold_append(cite, citation);
+    }
     if (!citation) {
         if (cite) {
             markdown_core_parser_release_node(inline_state->owner_parser, cite);

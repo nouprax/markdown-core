@@ -13,6 +13,11 @@
 
 #include "table.h"
 #include "directive.h"
+
+/* The elements whose syntax this element asks, as `self->peers` holds
+ * them. */
+enum { TABLE_DIRECTIVE };
+static const markdown_core_element *const TABLE_PEERS[] = {[TABLE_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE, NULL};
 #include "block_internal.h"
 #include "markdown-core-elements.h"
 
@@ -337,7 +342,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     /* A delimiter row that opens with `:` is one only while the input's
      * end leaves it be: written on, it may be a directive's name. */
     const int first = reader->nonspace;
-    if (parser->sink && markdown_core_reader_peek(reader, first) == ':' &&
+    if (parser->sink && self->peers[TABLE_DIRECTIVE] && markdown_core_reader_peek(reader, first) == ':' &&
         !markdown_core_reader_ends(reader, first + 1) &&
         !markdown_core_is_whitespace(markdown_core_reader_peek(reader, first + 1))) {
         int end = first;
@@ -663,6 +668,7 @@ static const markdown_core_partition TABLE_PARTS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
+    .peers = TABLE_PEERS,
     .parts = TABLE_PARTS,
     .edit = &TABLE_EDIT,
     .name = "table",

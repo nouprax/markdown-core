@@ -4,6 +4,12 @@
 #include "block_internal.h"
 #include "directive.h"
 
+/* The elements whose syntax this element asks, as `self->peers` holds
+ * them. */
+enum { DEFINITION_LINK, DEFINITION_DIRECTIVE };
+static const markdown_core_element *const DEFINITION_PEERS[] = {
+    [DEFINITION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [DEFINITION_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE, NULL};
+
 static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
@@ -172,7 +178,7 @@ static bool definition_term_reads(const markdown_core_element_instance *self, ma
     markdown_core_definition_list_work *counts = self->state;
     markdown_core_chunk term = {(unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
                                 markdown_core_reader_length(reader) - reader->nonspace, 0};
-    if (term.data[0] == '[') {
+    if (term.data[0] == '[' && self->peers[DEFINITION_LINK]) {
         counts->work += term.len;
         markdown_core_attribute_parser attributes = {
             .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
@@ -276,7 +282,7 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
         return false;
     }
-    if (parser->sink && markdown_core_reader_peek(reader, first) == ':' &&
+    if (parser->sink && self->peers[DEFINITION_DIRECTIVE] && markdown_core_reader_peek(reader, first) == ':' &&
         markdown_core_is_line_end(markdown_core_reader_peek(reader, first + 1))) {
         markdown_core_directive_report_line(parser, first);
     }
@@ -435,6 +441,7 @@ static const markdown_core_line_ops DEFINITION_LIST_LINES = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
+    .peers = DEFINITION_PEERS,
     .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
     .name = "definition_list",

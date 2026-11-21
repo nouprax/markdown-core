@@ -1,5 +1,5 @@
 #include "alloc.h"
-#include "link.h"
+#include "bracket.h"
 #include "autolink_scanners.h"
 #include "html.h"
 #include "citation.h"
@@ -8,9 +8,9 @@
 #include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { CITATION_LINK, CITATION_CODE };
+enum { CITATION_CODE, CITATION_HTML };
 static const markdown_core_element *const CITATION_PEERS[] = {
-    [CITATION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE, NULL};
+    [CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE, [CITATION_HTML] = &MARKDOWN_CORE_ELEMENT_HTML, NULL};
 
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos);
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at);
@@ -126,7 +126,9 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
                 }
             }
         } else if (c == '<' && !escaped) {
-            bufsize_t width = markdown_core_inline_scan_inline_html(inline_state, at + 1, &html_flags, NULL);
+            bufsize_t width = self->peers[CITATION_HTML]
+                                  ? markdown_core_inline_scan_inline_html(inline_state, at + 1, &html_flags, NULL)
+                                  : 0;
             if (!width) {
                 width = scan_autolink_uri(inline_state->input.data, inline_state->input.len, at + 1);
             }

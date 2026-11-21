@@ -1,7 +1,5 @@
 #include "alloc.h"
 #include "link_scanners.h"
-#include "citation.h"
-#include "footnote.h"
 #include "span.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 #include "attributes.h"
@@ -13,11 +11,8 @@
 #include "block_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { LINK_EMBEDDED, LINK_FOOTNOTE, LINK_CITATION };
-static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
-                                                          [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE,
-                                                          [LINK_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
-                                                          NULL};
+enum { LINK_EMBEDDED };
+static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, NULL};
 
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);

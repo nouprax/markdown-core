@@ -13,10 +13,13 @@
 #include "ast_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { HEADING_CITATION };
+enum { HEADING_CITATION, HEADING_LINK, HEADING_DIRECTIVE, HEADING_TOPIC };
 /* A heading whose inline content is parsed (heading_state.h). */
 enum { MARKDOWN_CORE_NODE__HEADING_PARSED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
 static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
+                                                             [HEADING_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
+                                                             [HEADING_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
+                                                             [HEADING_TOPIC] = &MARKDOWN_CORE_ELEMENT_TOPIC,
                                                              NULL};
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
 typedef struct {
@@ -2249,7 +2252,7 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
          * when no Reference declares it. It declares it once: a heading
          * parsed again has. */
         markdown_core_chunk *declared = &heading->node->as.heading->label;
-        if (!declared->len && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
+        if (!declared->len && self->peers[HEADING_LINK] && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
             markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_REFERENCE, &label, heading->node->place.start,
                                          declared);
@@ -2465,7 +2468,7 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
              scan_atx_heading_start(markdown_core_reader_rest(context->reader, 0),
                                     markdown_core_reader_length(context->reader), context->reader->nonspace))) {
         start->open = open_atx;
-        if (parser->sink) {
+        if (parser->sink && self->peers[HEADING_TOPIC]) {
             const unsigned char *data = markdown_core_reader_rest(context->reader, 0);
             bufsize_t end = context->reader->nonspace, last = markdown_core_reader_length(context->reader);
             while (end < last && data[end] == '#') {

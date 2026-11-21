@@ -5,6 +5,12 @@
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 #include "comment.h"
+
+/* The elements whose syntax this element asks, as `self->peers` holds
+ * them. */
+enum { HTML_COMMENT };
+static const markdown_core_element *const HTML_PEERS[] = {[HTML_COMMENT] = &MARKDOWN_CORE_ELEMENT_COMMENT, NULL};
+
 bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inline_state, bufsize_t pos,
                                                 unsigned *flags, bool *is_comment) {
     bufsize_t matchlen = 0;
@@ -72,7 +78,8 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
     return matchlen;
 }
 
-static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inline_state) {
+static markdown_core_node *handle_pointy_brace(const markdown_core_element_instance *self,
+                                               markdown_core_inline_state *inline_state) {
     bufsize_t matchlen = 0;
     bool comment = false;
     markdown_core_chunk contents;
@@ -81,7 +88,7 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
 
     matchlen = markdown_core_inline_scan_inline_html(inline_state, inline_state->pos, &inline_state->flags, &comment);
     if (matchlen > 0) {
-        if (comment) {
+        if (comment && self->peers[HTML_COMMENT]) {
             return markdown_core_comment_make_html(inline_state, inline_state->pos, matchlen);
         }
         contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, matchlen + 1);
@@ -99,7 +106,7 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
-    return character == '<' ? handle_pointy_brace(inline_state) : NULL;
+    return character == '<' ? handle_pointy_brace(self, inline_state) : NULL;
 }
 static const markdown_core_inline_ops HTML_INLINES = {
     .match = match,
@@ -115,5 +122,6 @@ static const markdown_core_partition HTML_PARTS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
     .parts = HTML_PARTS,
     .name = "html",
+    .peers = HTML_PEERS,
     .inlines = &HTML_INLINES,
 };
