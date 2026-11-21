@@ -79,7 +79,7 @@ static const markdown_core_edit_ops PARAGRAPH_EDIT = {
 
 static const markdown_core_candidate_ops PARAGRAPH_CANDIDATE = {
     .feed = markdown_core_block_feed_identifier_line,
-    .decide = markdown_core_block_decide_identifier_line,
+    .reads = markdown_core_block_identifier_reads,
 };
 
 static const markdown_core_open_ops PARAGRAPH_OPENS = {

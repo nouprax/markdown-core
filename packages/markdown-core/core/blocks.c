@@ -10289,7 +10289,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_line_take(markdown
  * before the construct does, reads it so. Every later line the commit reads
  * is the candidate's to see first: each one its holder's prefixes carry is
  * FED to its owner (markdown_core_candidate_ops, `feed`), until one ends the
- * construct, and the owner DECIDES (the candidate's `decide`). An ACCEPT puts the
+ * construct, and the engine DECIDES, asking the call's reading again (the candidate's `reads`). An ACCEPT puts the
  * commit back at the call, where the call reads the lines anew and claims
  * them. A REJECT keeps what the commit read. A decision that read where the
  * text ends WAITS for more text, which it reads once each commit.
@@ -10410,6 +10410,25 @@ void markdown_core_parser_request_candidate(markdown_core_parser *parser, const 
         memcpy(stream->candidate_room, state, owner->element->candidate->size);
     }
     stream->request_ends = ends;
+}
+
+markdown_core_candidate_decision markdown_core_parser_call(markdown_core_parser *parser,
+                                                           const markdown_core_element_instance *owner,
+                                                           markdown_core_node *container, markdown_core_reader *reader,
+                                                           markdown_core_node_type child, void *record, bool ends) {
+    if (markdown_core_parser_candidate_meets(parser, owner, container)) {
+        return MARKDOWN_CORE_CANDIDATE_REJECT;
+    }
+    markdown_core_parser_clear_end_read(parser);
+    const bool claims = owner->element->candidate->reads(owner, parser, container, reader, record);
+    if (parser->error) {
+        return MARKDOWN_CORE_CANDIDATE_REJECT;
+    }
+    if (markdown_core_parser_end_read(parser)) {
+        markdown_core_parser_request_candidate(parser, owner, container, child, record, ends);
+        return MARKDOWN_CORE_CANDIDATE_WAIT;
+    }
+    return claims ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 /* The call of `mark` after the one at `index` that waits, or the mark's call
@@ -10816,8 +10835,16 @@ static markdown_core_candidate_decision S_candidate_decide(markdown_core_parser 
     markdown_core_parser_clear_end_read(parser);
     stream->deciding = candidate;
     stream->decision_mark = &stream->marks[m];
-    markdown_core_candidate_decision decision =
-        owner->element->candidate->decide(owner, parser, S_call_state(parser, &stream->marks[m], index));
+    markdown_core_node *container;
+    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
+    markdown_core_candidate_decision decision = MARKDOWN_CORE_CANDIDATE_REJECT;
+    if (reader) {
+        decision = owner->element->candidate->reads(owner, parser, container, reader,
+                                                    S_call_state(parser, &stream->marks[m], index))
+                       ? MARKDOWN_CORE_CANDIDATE_ACCEPT
+                       : MARKDOWN_CORE_CANDIDATE_REJECT;
+        markdown_core_parser_candidate_end(parser);
+    }
     stream->deciding = NULL;
     stream->decision_mark = NULL;
     if (markdown_core_parser_end_read(parser)) {

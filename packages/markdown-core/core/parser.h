@@ -1820,6 +1820,9 @@ static inline void markdown_core_parser_lookahead_opener(markdown_core_block_loo
  * the input's end and wait there, reading a line the text has not finished
  * only as far as its bytes decide (`limit` and `waits`). */
 static inline void markdown_core_parser_lookahead_wait(markdown_core_block_lookahead *lookahead) {
+    if (markdown_core_parser_candidate_final(lookahead->parser)) {
+        return;
+    }
     lookahead->limit = lookahead->parser->input.source + lookahead->parser->input.size;
     lookahead->waits = true;
 }
@@ -1997,6 +2000,26 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                             struct markdown_core_node *container, markdown_core_node_type child,
                                             const void *state, bool ends);
+/* What a call, or a candidate's decision, comes to (blocks.c, THE
+ * CANDIDATES). */
+typedef enum {
+    MARKDOWN_CORE_CANDIDATE_REJECT,
+    MARKDOWN_CORE_CANDIDATE_ACCEPT,
+    MARKDOWN_CORE_CANDIDATE_WAIT
+} markdown_core_candidate_decision;
+
+/* THE CALL: `owner`'s call in `container` on the reader's line, which would
+ * open a block of `child`, read by its element's `reads`
+ * (markdown_core_candidate_ops) with `record`. A call that meets its
+ * candidate declines (REJECT); one whose reading read the end where more
+ * text may follow asks to be a candidate, with the record and `ends`, and
+ * WAITs; any other claims (ACCEPT) or not (REJECT) as its reading says. A
+ * failed parse is a REJECT. */
+markdown_core_candidate_decision markdown_core_parser_call(markdown_core_parser *parser,
+                                                           const markdown_core_element_instance *owner,
+                                                           struct markdown_core_node *container,
+                                                           markdown_core_reader *reader, markdown_core_node_type child,
+                                                           void *record, bool ends);
 bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                      struct markdown_core_node *container, size_t ask);
 /* Every opener asks, so the parse reads whether a mark is left to meet
@@ -2008,7 +2031,7 @@ static inline bool markdown_core_parser_candidate_meets(markdown_core_parser *pa
     const size_t ask = parser->at.asks++;
     return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container, ask);
 }
-/* The decision of the candidate being decided (markdown_core_candidate_ops, `decide`)
+/* The decision of the candidate being decided (markdown_core_candidate_ops, `reads`)
  * reads its line as its call did: `start` puts the reader at the call on
  * a line and returns it, and gives the container the call was asked in;
  * `end` puts the reader back. NULL, with the parse failed, when storage

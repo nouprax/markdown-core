@@ -80,28 +80,31 @@ static void publish_candidate(const markdown_core_element_instance *self, markdo
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-/* THE PREFIX, the call before line 1: an envelope that closes is read as
- * the document's properties. The call asks whether its reading read the end
- * (parser.h, markdown_core_parser_end_read): one that read it where more
- * text may follow decides nothing, and asks to be a candidate (blocks.c, THE
- * CANDIDATES); a call that meets its candidate declines. */
+/* The prefix's candidate: whether its envelope opened, as its feed read,
+ * and the fence its reading found closing it. */
+typedef struct {
+    bool opened;
+    size_t fence;
+} document_call;
+
+/* THE CALL'S READING (element.h, `reads`): an envelope that closes. */
+static bool document_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *container, markdown_core_reader *reader, void *record) {
+    (void)container;
+    document_call *call = record;
+    return markdown_core_properties_closed(self->state, parser, reader, self, &call->fence);
+}
+
+/* THE PREFIX, the call before line 1 (markdown_core_parser_call): an
+ * envelope that closes is read as the document's properties. */
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_reader *reader) {
-    if (markdown_core_parser_candidate_meets(parser, self, parser->root)) {
+    document_call call = {false, 0};
+    if (markdown_core_parser_call(parser, self, parser->root, reader, MARKDOWN_CORE_NODE_METADATA, &call, false) !=
+        MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return 0;
     }
-    markdown_core_parser_clear_end_read(parser);
-    size_t fence;
-    const bool closed = markdown_core_properties_closed(self->state, parser, reader, self, &fence);
-    if (markdown_core_parser_end_read(parser)) {
-        if (!parser->error) {
-            const bool opened = false;
-            markdown_core_parser_request_candidate(parser, self, parser->root, MARKDOWN_CORE_NODE_METADATA, &opened,
-                                                   false);
-        }
-        return 0;
-    }
-    return closed ? markdown_core_properties_parse(self->state, parser, reader, fence) : 0;
+    return markdown_core_properties_parse(self->state, parser, reader, call.fence);
 }
 
 /* THE FEED of the prefix's candidate: the first line opens the envelope
@@ -115,7 +118,7 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
                                                    const markdown_core_candidate_line *line, bool *ends) {
     (void)self;
     (void)parser;
-    bool *opened = state;
+    bool *opened = &((document_call *)state)->opened;
     const int fence = line->reader ? markdown_core_properties_fence(markdown_core_reader_rest(line->reader, 0)) : -1;
     if (line->unfinished && fence > 0) {
         return MARKDOWN_CORE_CANDIDATE_WAITS;
@@ -126,22 +129,6 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     *opened = true;
     *ends = false;
     return MARKDOWN_CORE_CANDIDATE_CONTINUES;
-}
-
-/* The prefix's call decided as it would read now: the envelope closes at
- * the fence that ended the construct. */
-static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const void *state) {
-    (void)state;
-    markdown_core_node *container;
-    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
-    if (!reader) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
-    }
-    size_t fence;
-    const bool closed = markdown_core_properties_closed(self->state, parser, reader, self, &fence);
-    markdown_core_parser_candidate_end(parser);
-    return closed ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 static const markdown_core_edit_ops DOCUMENT_EDIT = {
@@ -162,8 +149,8 @@ static const markdown_core_document_ops DOCUMENT_OPS = {
 
 static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .feed = feed_candidate,
-    .decide = decide_candidate,
-    .size = sizeof(bool),
+    .reads = document_reads,
+    .size = sizeof(document_call),
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {

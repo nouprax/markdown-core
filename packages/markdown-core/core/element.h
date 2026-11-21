@@ -42,19 +42,13 @@ typedef struct {
     bool unfinished;
 } markdown_core_candidate_line;
 
-/* What a line tells a candidate (blocks.c, THE CANDIDATES;
- * the candidate's `feed`), and what its decision is (the candidate's `decide`). */
+/* What a line tells a candidate (blocks.c, THE CANDIDATES; the
+ * candidate's `feed`). */
 typedef enum {
     MARKDOWN_CORE_CANDIDATE_CONTINUES,
     MARKDOWN_CORE_CANDIDATE_ENDS,
     MARKDOWN_CORE_CANDIDATE_WAITS
 } markdown_core_candidate_step;
-
-typedef enum {
-    MARKDOWN_CORE_CANDIDATE_REJECT,
-    MARKDOWN_CORE_CANDIDATE_ACCEPT,
-    MARKDOWN_CORE_CANDIDATE_WAIT
-} markdown_core_candidate_decision;
 
 typedef enum {
     MARKDOWN_CORE_CONTENT_CONTAINER,
@@ -425,16 +419,19 @@ typedef struct markdown_core_candidate_ops {
      * it; that the construct ended before it; or that the unfinished line
      * does not tell yet. It keeps what it read in the candidate's record
      * (`size`), which it writes only for a line it answers
-     * goes on. `decide` decides as the call would read now
-     * (markdown_core_parser_candidate_start): ACCEPT when it would claim
-     * lines, REJECT when it would not, and WAIT when more text may follow
-     * and the decision read where the text ends. */
+     * goes on. `reads` is THE CALL'S READING (markdown_core_parser_call):
+     * whether the call in `container` on the reader's line claims, read
+     * with the record, into which it may write what it read. The engine
+     * asks it as the call reads and, to decide a candidate, again as the
+     * call would read now; a reading that read the end where more text may
+     * follow (markdown_core_parser_see_end) decides nothing, whatever it
+     * answers. */
     markdown_core_candidate_step (*feed)(const markdown_core_element_instance *, markdown_core_parser *, void *,
                                          const markdown_core_candidate_line *, bool *);
-    markdown_core_candidate_decision (*decide)(const markdown_core_element_instance *, markdown_core_parser *,
-                                               const void *);
+    bool (*reads)(const markdown_core_element_instance *, markdown_core_parser *, struct markdown_core_node *,
+                  markdown_core_reader *, void *);
     /* The bytes of the record each of its candidates keeps, which its
-     * call's request gives and `feed` writes; zero declares none. */
+     * call gives and `feed` writes; zero declares none. */
     size_t size;
 } markdown_core_candidate_ops;
 

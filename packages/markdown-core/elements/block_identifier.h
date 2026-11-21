@@ -27,7 +27,6 @@ markdown_core_candidate_step markdown_core_block_feed_identifier_line(const mark
                                                                       markdown_core_parser *parser, void *state,
                                                                       const markdown_core_candidate_line *line,
                                                                       bool *ends);
-markdown_core_candidate_decision markdown_core_block_decide_identifier_line(const markdown_core_element_instance *self,
-                                                                            markdown_core_parser *parser,
-                                                                            const void *state);
+bool markdown_core_block_identifier_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                          markdown_core_node *container, markdown_core_reader *reader, void *record);
 #endif

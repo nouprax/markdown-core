@@ -16,6 +16,10 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
 enum { DEFINITION_TERM, DEFINITION_BLANK };
 typedef struct {
     int call, continuation;
+    /* What the call read: the body's next line, and whether the term's
+     * list is compact. */
+    int line;
+    bool compact;
 } definition_candidate;
 
 /* THE BODY'S READING of a blank line in `parent`: whether the next line that
@@ -35,10 +39,7 @@ static bool definition_body_continues(markdown_core_parser *parser, markdown_cor
     return continues;
 }
 
-/* A BODY TAKES A BLANK LINE its reading admits. The call asks whether its
- * reading read the end (parser.h, markdown_core_parser_end_read): one that
- * read it where more text may follow decides nothing, and asks to be a
- * candidate; a call that meets its candidate declines the line. */
+/* A BODY TAKES A BLANK LINE its reading admits (markdown_core_parser_call). */
 static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *body, markdown_core_reader *reader) {
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
@@ -49,25 +50,13 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
-    if (markdown_core_parser_candidate_meets(parser, self, parent)) {
+    definition_candidate call = {DEFINITION_BLANK, body->as.definition_body->continuation, 0, false};
+    if (markdown_core_parser_call(parser, self, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, &call, false) !=
+        MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return false;
     }
-    const int continuation = body->as.definition_body->continuation;
-    markdown_core_parser_clear_end_read(parser);
-    int line;
-    const bool continues = definition_body_continues(parser, parent, continuation, &line);
-    if (markdown_core_parser_end_read(parser)) {
-        if (!parser->error) {
-            const definition_candidate candidate = {DEFINITION_BLANK, continuation};
-            markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &candidate,
-                                                   false);
-        }
-        return false;
-    }
-    if (continues) {
-        body->as.definition_body->continuation_line = line;
-    }
-    return continues;
+    body->as.definition_body->continuation_line = call.line;
+    return true;
 }
 
 /* Whether the reader's line holds a definition marker at its first
@@ -302,34 +291,18 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
     return markdown_core_reader_indented(reader, container->as.definition_body->continuation, true);
 }
 
-/* THE TERM, the paragraph opener's call: a line its reading admits opens a
- * definition, with the line as its term. The call asks whether its reading
- * read the end: one that read it where more text may follow decides
- * nothing, and asks to be a candidate; a call that meets its candidate
- * declines. */
+/* THE TERM, the paragraph opener's call (markdown_core_parser_call): a
+ * line its reading admits opens a definition, with the line as its term. */
 static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
                                          markdown_core_parser *parser, markdown_core_node *parent,
                                          markdown_core_reader *reader) {
     (void)indented;
-    if (markdown_core_parser_candidate_meets(parser, self, parent)) {
+    definition_candidate call = {DEFINITION_TERM, 0, 0, false};
+    if (markdown_core_parser_call(parser, self, parent, reader, MARKDOWN_CORE_NODE_DEFINITION_LIST, &call, false) !=
+        MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return NULL;
     }
-    bool compact = false;
-    markdown_core_parser_clear_end_read(parser);
-    const bool term = definition_term_admits(self, parser, parent, reader) &&
-                      definition_term_reads(self, parser, parent, reader, &compact);
-    if (markdown_core_parser_end_read(parser)) {
-        if (!parser->error) {
-            const definition_candidate candidate = {DEFINITION_TERM, 0};
-            markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &candidate,
-                                                   false);
-        }
-        return NULL;
-    }
-    if (!term) {
-        return NULL;
-    }
-    return markdown_core_block_open_definition(self->state, parser, parent, reader, compact);
+    return markdown_core_block_open_definition(self->state, parser, parent, reader, call.compact);
 }
 
 /* THE FEED of the element's candidates (element.h). The term's reading is
@@ -354,27 +327,17 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
                                                                   : MARKDOWN_CORE_CANDIDATE_ENDS;
 }
 
-/* The call decided as it would read now (element.h): a body's from the
+/* THE CALL'S READING (element.h, `reads`): the term's of the reader's
+ * line, and a body's of the next line that is not blank, from the
  * continuation it had, which nothing after the call writes. */
-static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const void *state) {
-    const definition_candidate *candidate = state;
-    markdown_core_node *container;
-    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
-    if (!reader) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
+static bool definition_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                             markdown_core_node *container, markdown_core_reader *reader, void *record) {
+    definition_candidate *call = record;
+    if (call->call == DEFINITION_TERM) {
+        return definition_term_admits(self, parser, container, reader) &&
+               definition_term_reads(self, parser, container, reader, &call->compact);
     }
-    bool claims;
-    if (candidate->call == DEFINITION_TERM) {
-        bool compact = false;
-        claims = definition_term_admits(self, parser, container, reader) &&
-                 definition_term_reads(self, parser, container, reader, &compact);
-    } else {
-        int next;
-        claims = definition_body_continues(parser, container, candidate->continuation, &next);
-    }
-    markdown_core_parser_candidate_end(parser);
-    return claims ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
+    return definition_body_continues(parser, container, call->continuation, &call->line);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -454,7 +417,7 @@ static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
 
 static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
     .feed = feed_candidate,
-    .decide = decide_candidate,
+    .reads = definition_reads,
     .size = sizeof(definition_candidate),
 };
 
