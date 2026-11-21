@@ -1954,8 +1954,10 @@ int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdow
 static inline markdown_core_place markdown_core_reader_span(const markdown_core_reader *reader,
                                                             markdown_core_parser *parser, bufsize_t from,
                                                             bufsize_t to) {
-    return (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, reader->number, (int)from + 1),
-                                 (uint32_t)markdown_core_parser_source_end(parser, reader->number, (int)to)};
+    markdown_core_place place;
+    place.start = (uint32_t)markdown_core_parser_source_offset(parser, reader->number, (int)from + 1);
+    place.end = (uint32_t)markdown_core_parser_source_end(parser, reader->number, (int)to);
+    return place;
 }
 /* `node`'s text, from its byte `offset`, holds the line's `length` bytes
  * from `from`: its map places them where they were written. 0, with the
