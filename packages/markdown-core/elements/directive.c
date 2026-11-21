@@ -796,7 +796,7 @@ static markdown_core_node **S_label(const markdown_core_node *node) {
     return &((markdown_core_directive_value *)node->opaque)->label;
 }
 
-static const markdown_core_facet DIRECTIVE_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_DIRECTIVE,
      .parts = markdown_core_directive_parts,
      .name = markdown_core_elements_get_directive_name,
@@ -809,7 +809,7 @@ static const markdown_core_facet DIRECTIVE_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
-    .facets = DIRECTIVE_FACETS,
+    .facets = MARKDOWN_CORE_DIRECTIVE_FACETS,
     .edit = &DIRECTIVE_EDIT,
     .name = "directive",
     .opaque = &DIRECTIVE_OPAQUE,

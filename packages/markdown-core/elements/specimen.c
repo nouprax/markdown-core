@@ -166,13 +166,13 @@ static const markdown_core_line_ops SPECIMEN_LINES = {
     .prefix = continue_container,
 };
 
-static const markdown_core_facet SPECIMEN_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_SPECIMEN_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_SPECIMEN, .parts = markdown_core_specimen_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
-    .facets = SPECIMEN_FACETS,
+    .facets = MARKDOWN_CORE_SPECIMEN_FACETS,
     .edit = &SPECIMEN_EDIT,
     .name = "specimen",
     .state_size = sizeof(markdown_core_specimen_state),

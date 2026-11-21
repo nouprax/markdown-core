@@ -1213,7 +1213,7 @@ static const markdown_core_open_ops LINK_OPENS = {
     .cut_needs = {.bytes = "["},
 };
 
-static const markdown_core_facet LINK_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts},
     {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts},
     {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
@@ -1222,7 +1222,7 @@ static const markdown_core_facet LINK_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
-    .facets = LINK_FACETS,
+    .facets = MARKDOWN_CORE_LINK_FACETS,
     .peers = LINK_PEERS,
     .bracket_size = sizeof(S_tail),
     .opens = &LINK_OPENS,

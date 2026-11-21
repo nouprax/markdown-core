@@ -176,13 +176,13 @@ static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
 };
 
-static const markdown_core_facet FOOTNOTE_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_FOOTNOTE, .parts = markdown_core_footnote_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
-    .facets = FOOTNOTE_FACETS,
+    .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
     .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",

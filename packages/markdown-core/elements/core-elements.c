@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "document.h"
 #include "attributes.h"
 #include "code_block.h"
@@ -82,6 +83,65 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     return CORE_ELEMENTS;
 }
 
+/* The facets each element of the core dialect declares (element.h,
+ * `facets`), which the table below reads by kind. */
+extern const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_DOCUMENT_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_HEADING_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_HTML_BLOCK_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_LIST_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_PARAGRAPH_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_SPECIMEN_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[];
+
+/* THE FACETS BY KIND (markdown-core-elements.h): the facets the elements
+ * of the core dialect declare (element.h, `facets`), each at its kind. A
+ * debug build checks the table against the declarations as the first
+ * parser is made. */
+const markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM] = {
+    [MARKDOWN_CORE_KIND_CALLOUT] = &MARKDOWN_CORE_CALLOUT_FACETS[0],
+    [MARKDOWN_CORE_KIND_CITATION] = &MARKDOWN_CORE_CITATION_FACETS[0],
+    [MARKDOWN_CORE_KIND_CODE] = &MARKDOWN_CORE_CODE_FACETS[0],
+    [MARKDOWN_CORE_KIND_CODE_BLOCK] = &MARKDOWN_CORE_CODE_BLOCK_FACETS[0],
+    [MARKDOWN_CORE_KIND_COMMENT] = &MARKDOWN_CORE_COMMENT_FACETS[0],
+    [MARKDOWN_CORE_KIND_CROSS_LINK] = &MARKDOWN_CORE_CROSS_LINK_FACETS[0],
+    [MARKDOWN_CORE_KIND_CROSS_EMBEDDED] = &MARKDOWN_CORE_CROSS_LINK_FACETS[1],
+    [MARKDOWN_CORE_KIND_DIRECTIVE] = &MARKDOWN_CORE_DIRECTIVE_FACETS[0],
+    [MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK] = &MARKDOWN_CORE_DIRECTIVE_FACETS[1],
+    [MARKDOWN_CORE_KIND_METADATA] = &MARKDOWN_CORE_DOCUMENT_FACETS[0],
+    [MARKDOWN_CORE_KIND_FOOTNOTE] = &MARKDOWN_CORE_FOOTNOTE_FACETS[0],
+    [MARKDOWN_CORE_KIND_FORMULA] = &MARKDOWN_CORE_FORMULA_FACETS[0],
+    [MARKDOWN_CORE_KIND_FORMULA_BLOCK] = &MARKDOWN_CORE_FORMULA_FACETS[1],
+    [MARKDOWN_CORE_KIND_HEADING] = &MARKDOWN_CORE_HEADING_FACETS[0],
+    [MARKDOWN_CORE_KIND_HTML] = &MARKDOWN_CORE_HTML_FACETS[0],
+    [MARKDOWN_CORE_KIND_HTML_BLOCK] = &MARKDOWN_CORE_HTML_BLOCK_FACETS[0],
+    [MARKDOWN_CORE_KIND_LINK] = &MARKDOWN_CORE_LINK_FACETS[0],
+    [MARKDOWN_CORE_KIND_EMBEDDED] = &MARKDOWN_CORE_LINK_FACETS[1],
+    [MARKDOWN_CORE_KIND_REFERENCE] = &MARKDOWN_CORE_LINK_FACETS[2],
+    [MARKDOWN_CORE_KIND_SPAN] = &MARKDOWN_CORE_LINK_FACETS[3],
+    [MARKDOWN_CORE_KIND_LIST_ITEM] = &MARKDOWN_CORE_LIST_FACETS[0],
+    [MARKDOWN_CORE_KIND_PARAGRAPH] = &MARKDOWN_CORE_PARAGRAPH_FACETS[0],
+    [MARKDOWN_CORE_KIND_LIST] = &MARKDOWN_CORE_PARAGRAPH_FACETS[1],
+    [MARKDOWN_CORE_KIND_TABLE] = &MARKDOWN_CORE_PARAGRAPH_FACETS[2],
+    [MARKDOWN_CORE_KIND_SPECIMEN] = &MARKDOWN_CORE_SPECIMEN_FACETS[0],
+    [MARKDOWN_CORE_KIND_TABLE_ROW] = &MARKDOWN_CORE_TABLE_FACETS[0],
+    [MARKDOWN_CORE_KIND_TEXT] = &MARKDOWN_CORE_TEXT_FACETS[0],
+    [MARKDOWN_CORE_KIND_TOPIC] = &MARKDOWN_CORE_TOPIC_FACETS[0],
+};
+
+#ifndef NDEBUG
 /* The facet of `kind` among the elements' declarations, or NULL. */
 static const markdown_core_facet *S_facet_find(markdown_core_node_kind kind) {
     for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
@@ -94,22 +154,7 @@ static const markdown_core_facet *S_facet_find(markdown_core_node_kind kind) {
     }
     return NULL;
 }
-
-/* THE FACETS BY KIND (markdown-core-elements.h): found once, by whichever
- * reader asks first, and claimed (claim.h) so readers of documents on other
- * threads may ask at the same time. */
-const markdown_core_facet markdown_core_facet_bare = {.kind = MARKDOWN_CORE_KIND_NONE};
-void *markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM];
-
-const markdown_core_facet *markdown_core_core_facet_find(markdown_core_node_kind kind) {
-    const markdown_core_facet *found = S_facet_find(kind);
-    if ((size_t)kind >= MARKDOWN_CORE_FACET_ROOM) {
-        return found;
-    }
-    const markdown_core_facet *facet =
-        markdown_core_claim(&markdown_core_facet_table[kind], (void *)(found ? found : &markdown_core_facet_bare));
-    return facet == &markdown_core_facet_bare ? NULL : facet;
-}
+#endif
 
 bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chunk *anchor) {
     const markdown_core_facet *facet =
@@ -142,13 +187,11 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
 }
 
 markdown_core_parser *markdown_core_core_parser(markdown_core_parser_setup_func setup, void *context) {
-    /* Every kind's facet is found as the first parser is made, so no
-     * publish pays the search. */
-    if (!markdown_core_claim_read(&markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM - 1])) {
-        for (size_t kind = 0; kind < MARKDOWN_CORE_FACET_ROOM; kind++) {
-            (void)markdown_core_core_facet_find((markdown_core_node_kind)kind);
-        }
+#ifndef NDEBUG
+    for (size_t kind = 0; kind < MARKDOWN_CORE_FACET_ROOM; kind++) {
+        assert(markdown_core_facet_table[kind] == S_facet_find((markdown_core_node_kind)kind));
     }
+#endif
     size_t count;
     const markdown_core_element *const *elements = markdown_core_core_elements(&count);
     return markdown_core_parser_create(elements, count, setup, context);

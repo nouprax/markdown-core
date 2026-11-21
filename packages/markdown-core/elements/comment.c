@@ -304,13 +304,13 @@ static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t 
     return node->as.literal;
 }
 
-static const markdown_core_facet COMMENT_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_COMMENT, .parts = markdown_core_comment_parts, .literal = S_literal},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
-    .facets = COMMENT_FACETS,
+    .facets = MARKDOWN_CORE_COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),
     .takes = COMMENT_TAKES,
     .name = "comment",

@@ -1010,13 +1010,13 @@ static const markdown_core_inline_ops CITATION_INLINES = {
     .dispatch = "@-;",
 };
 
-static const markdown_core_facet CITATION_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_CITATION, .parts = markdown_core_citation_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
-    .facets = CITATION_FACETS,
+    .facets = MARKDOWN_CORE_CITATION_FACETS,
     .peers = CITATION_PEERS,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),

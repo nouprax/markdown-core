@@ -662,14 +662,14 @@ static const markdown_core_line_ops TABLE_LINES = {
     .uncut = true,
 };
 
-static const markdown_core_facet TABLE_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_TABLE_ROW, .parts = markdown_core_table_row_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .peers = TABLE_PEERS,
-    .facets = TABLE_FACETS,
+    .facets = MARKDOWN_CORE_TABLE_FACETS,
     .edit = &TABLE_EDIT,
     .name = "table",
     .opaque = &TABLE_OPAQUE,

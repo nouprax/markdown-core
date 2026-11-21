@@ -756,7 +756,7 @@ static const markdown_core_line_ops HEADING_LINES = {
 /* Where a heading keeps the name the names service computes for it. */
 static markdown_core_name *heading_name(const markdown_core_node *node) { return &node->as.heading->name; }
 
-static const markdown_core_facet HEADING_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_HEADING_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_HEADING, .parts = markdown_core_heading_parts, .named = heading_name},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
@@ -789,7 +789,7 @@ static const markdown_core_stage_ops HEADING_STAGES = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .stages = &HEADING_STAGES,
     .names = &HEADING_NAMES,
-    .facets = HEADING_FACETS,
+    .facets = MARKDOWN_CORE_HEADING_FACETS,
     .peers = HEADING_PEERS,
     .name = "heading",
     .state_size = sizeof(markdown_core_heading_state),

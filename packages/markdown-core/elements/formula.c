@@ -835,7 +835,7 @@ static markdown_core_placement S_placement(const markdown_core_node *node) {
                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
 }
 
-static const markdown_core_facet FORMULA_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_FORMULA,
      .parts = markdown_core_formula_parts,
      .literal = S_literal,
@@ -848,7 +848,7 @@ static const markdown_core_facet FORMULA_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
-    .facets = FORMULA_FACETS,
+    .facets = MARKDOWN_CORE_FORMULA_FACETS,
     .name = "formula",
     .takes = FORMULA_TAKES,
     .edit = &FORMULA_EDIT,

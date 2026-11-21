@@ -101,7 +101,7 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .cuts = true,
 };
 
-static const markdown_core_facet PARAGRAPH_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_PARAGRAPH_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_PARAGRAPH, .parts = markdown_core_block_identifier_parts},
     {.kind = MARKDOWN_CORE_KIND_LIST, .parts = markdown_core_block_identifier_parts},
     {.kind = MARKDOWN_CORE_KIND_TABLE, .parts = markdown_core_block_identifier_parts},
@@ -109,7 +109,7 @@ static const markdown_core_facet PARAGRAPH_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .facets = PARAGRAPH_FACETS,
+    .facets = MARKDOWN_CORE_PARAGRAPH_FACETS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
     .peers = PARAGRAPH_PEERS,

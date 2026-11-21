@@ -241,13 +241,13 @@ static const markdown_core_line_ops CALLOUT_LINES = {
     .blank_opaque = true,
 };
 
-static const markdown_core_facet CALLOUT_FACETS[] = {
+const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_CALLOUT, .parts = markdown_core_callout_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
-    .facets = CALLOUT_FACETS,
+    .facets = MARKDOWN_CORE_CALLOUT_FACETS,
     .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
     .name = "callout",
