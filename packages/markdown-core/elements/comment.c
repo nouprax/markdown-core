@@ -1,5 +1,4 @@
 #include "comment_scanners.h"
-#include "html.h"
 #include "comment.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -65,87 +64,56 @@ static bool comment_stops(const markdown_core_element_instance *self, const unsi
     return true;
 }
 
-static int probe_comment_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_chunk *input, int first, int indent, markdown_core_block_reader *reader) {
-    (void)self;
-    if (indent >= 4 || !is_fence_line(input->data, input->len, first)) {
-        return 0;
-    }
-    markdown_core_chunk line;
-    while (reader->next(reader->context, &line, &first, &indent)) {
-        if (indent < 4 && is_fence_line(line.data, line.len, first)) {
-            return !parser->error;
-        }
-    }
-    return 0;
-}
-
-/* THE LINES AFTER THE FENCE LINE, read for its closer. In a commit more
- * text may follow the reading waits where the text read so far ends
- * (markdown_core_parser_lookahead_wait) and stops at a line the text has not
- * finished, which does not tell yet: either leaves the call `undecided`, and
- * the call asks to be a candidate (blocks.c, THE CANDIDATES). */
-typedef struct {
-    markdown_core_block_lookahead lookahead;
-    bool undecided;
-} comment_lines;
-
-static int read_block_line(void *context, markdown_core_chunk *input, int *first, int *indent) {
-    comment_lines *lines = context;
-    int blanks;
-    if (!markdown_core_parser_lookahead_next(&lines->lookahead, input, first, indent, &blanks)) {
-        lines->undecided = lines->lookahead.exhausted || lines->lookahead.waited;
-        return 0;
-    }
-    if (lines->lookahead.limit && lines->lookahead.incomplete) {
-        lines->undecided = true;
-        return 0;
-    }
-    return 1;
-}
-
-/* The block's reading from the fence line `line` in `parent`: whether a
- * later line under the same prefixes closes it. */
+/* THE CALL'S READING (element.h, `reads`): whether the fence line on the
+ * reader opens a block a later line under the same prefixes in `container`
+ * closes. In a commit more text may follow the reading waits where the text
+ * read so far ends (markdown_core_parser_lookahead_wait), and a wait, or a
+ * line the text has not finished, reads the end. */
 static bool comment_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *parent, markdown_core_chunk *line, int first, bool *undecided) {
-    /* The lookahead's beginning writes the lookahead whole. */
-    comment_lines lines;
-    lines.undecided = false;
-    *undecided = false;
-    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_COMMENT_BLOCK, &lines.lookahead)) {
+                          markdown_core_node *container, markdown_core_reader *reader, void *record) {
+    (void)record;
+    if (reader->indent >= 4 ||
+        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
         return false;
     }
-    if (!markdown_core_parser_candidate_final(parser)) {
-        markdown_core_parser_lookahead_wait(&lines.lookahead);
+    /* The lookahead's beginning writes the lookahead whole. */
+    markdown_core_block_lookahead lookahead;
+    if (!markdown_core_parser_lookahead_begin(parser, container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, &lookahead)) {
+        return false;
     }
-    markdown_core_block_reader reader = {&lines, read_block_line};
-    const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
-    markdown_core_parser_lookahead_opener(&lines.lookahead, self, closed);
-    markdown_core_parser_lookahead_end(&lines.lookahead);
-    *undecided = !closed && lines.undecided;
+    markdown_core_parser_lookahead_wait(&lookahead);
+    bool closed = false;
+    int blanks;
+    markdown_core_reader *line;
+    while ((line = markdown_core_parser_lookahead_next(&lookahead, &blanks))) {
+        if (lookahead.limit && lookahead.incomplete) {
+            markdown_core_parser_see_end(parser);
+            break;
+        }
+        if (line->indent < 4 && is_fence_line(line->line.data, line->line.len, line->nonspace)) {
+            closed = !parser->error;
+            break;
+        }
+    }
+    if (!line && (lookahead.exhausted || lookahead.waited)) {
+        markdown_core_parser_see_end(parser);
+    }
+    markdown_core_parser_lookahead_opener(&lookahead, self, closed);
+    markdown_core_parser_lookahead_end(&lookahead);
     return closed && !parser->error;
 }
 
-/* THE OPENER. A call whose reading decides nothing asks to be a candidate;
- * a call that meets its candidate declines. */
+/* THE OPENER: a fence line whose call claims (markdown_core_parser_call). */
 static markdown_core_node *open_block(const markdown_core_element_instance *self, int indented,
                                       markdown_core_parser *parser, markdown_core_node *parent_container,
-                                      unsigned char *input, int len) {
-    int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
+                                      markdown_core_reader *reader) {
+    int first_nonspace = reader->nonspace;
     markdown_core_node *node;
 
-    if (indented || !is_fence_line(input, len, first_nonspace) ||
-        markdown_core_parser_candidate_meets(parser, self, parent_container)) {
-        return NULL;
-    }
-    markdown_core_chunk line = {input, len, 0};
-    bool undecided;
-    const bool closed = comment_reads(self, parser, parent_container, &line, first_nonspace, &undecided);
-    if (undecided && !parser->error) {
-        markdown_core_parser_request_candidate(parser, self, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, NULL,
-                                               false);
-    }
-    if (!closed) {
+    if (indented ||
+        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first_nonspace) ||
+        markdown_core_parser_call(parser, self, comment_reads, parent_container, reader,
+                                  MARKDOWN_CORE_NODE_COMMENT_BLOCK, NULL, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return NULL;
     }
 
@@ -158,8 +126,7 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     /* The rest of the fence line, spaces and its ending, is the first line
      * of the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP), and no part of its literal. */
-    markdown_core_parser_advance_offset(parser, (char *)input,
-                                        first_nonspace + 2 - markdown_core_parser_get_offset(parser), false);
+    markdown_core_reader_advance(reader, first_nonspace + 2 - reader->offset, false);
     return node;
 }
 
@@ -173,15 +140,16 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     (void)self;
     (void)parser;
     (void)state;
-    const markdown_core_chunk *input = line->content;
-    if (input && line->indent < 4) {
-        const int first = line->first;
-        const bool fence = is_fence_line(input->data, input->len, first);
+    markdown_core_reader *reader = line->reader;
+    if (reader && reader->indent < 4) {
+        const int first = reader->nonspace;
+        const bool fence =
+            is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first);
         if (fence && !line->unfinished) {
             return MARKDOWN_CORE_CANDIDATE_ENDS;
         }
-        if (line->unfinished &&
-            (fence || (input->data[first] == '%' && markdown_core_is_line_end(input->data[first + 1])))) {
+        if (line->unfinished && (fence || (markdown_core_reader_peek(reader, first) == '%' &&
+                                           markdown_core_is_line_end(markdown_core_reader_peek(reader, first + 1))))) {
             return MARKDOWN_CORE_CANDIDATE_WAITS;
         }
     }
@@ -189,33 +157,13 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     return MARKDOWN_CORE_CANDIDATE_CONTINUES;
 }
 
-/* The opener's call decided as it would read now (blocks.c, THE
- * CANDIDATES). */
-static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const void *state) {
-    (void)state;
-    markdown_core_chunk line;
-    markdown_core_node *container;
-    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
-    }
-    bool closed = false, undecided = false;
-    if (parser->at.indent < 4 && is_fence_line(line.data, line.len, parser->at.first_nonspace)) {
-        closed = comment_reads(self, parser, container, &line, parser->at.first_nonspace, &undecided);
-    }
-    markdown_core_parser_candidate_end(parser);
-    return undecided ? MARKDOWN_CORE_CANDIDATE_WAIT
-           : closed  ? MARKDOWN_CORE_CANDIDATE_ACCEPT
-                     : MARKDOWN_CORE_CANDIDATE_REJECT;
-}
-
 /* Every line reaches the open block until its closer; the closer line closes
  * it and is not added. The lookahead saw this closer before the block opened,
  * through the same container matchers, so an open block always finds it. */
-static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *input,
-                         int len, markdown_core_node *container) {
-    if (markdown_core_parser_get_indent(parser) <= 3 &&
-        is_fence_line(input, len, markdown_core_parser_get_first_nonspace(parser))) {
+static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_reader *reader, markdown_core_node *container) {
+    if (reader->indent <= 3 &&
+        is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
     return 1;
@@ -266,18 +214,14 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         return NULL;
     }
     /* The scope covers both delimiters and the body. */
-    int line;
-    bufsize_t first, last;
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, close + 1, &line, &last);
-    node->place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
+    markdown_core_inline_state_place(inline_state, node, start, close + 1);
     markdown_core_inline_state_set_offset(inline_state, close + 2);
     return node;
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
-                          markdown_core_node *);
+                          markdown_core_node *, markdown_core_reader *);
 
 /* An HTML block of type 2 that its own end condition closed and that
  * holds one comment became a CommentBlock as it closed
@@ -313,8 +257,6 @@ static bool comment_revert(const markdown_core_element_instance *self, markdown_
 static const markdown_core_edit_ops COMMENT_EDIT = {
     .stops = comment_stops,
     .shuts = true,
-    .former = comment_former,
-    .revert = comment_revert,
 };
 
 static const markdown_core_content_ops COMMENT_CONTENT = {
@@ -329,16 +271,14 @@ static const markdown_core_inline_ops COMMENT_INLINES = {
 
 static const markdown_core_candidate_ops COMMENT_CANDIDATE = {
     .feed = feed_candidate,
-    .decide = decide_candidate,
+    .reads = comment_reads,
 };
 
 static const markdown_core_open_ops COMMENT_OPENS = {
-    .interrupts = true,
     .indent = 3,
     .open = open_block,
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_needs = {.bytes = "%"},
-    .probe = probe_comment_block,
 };
 
 static const markdown_core_line_ops COMMENT_LINES = {
@@ -346,8 +286,36 @@ static const markdown_core_line_ops COMMENT_LINES = {
     .matches = block_matches,
 };
 
+static bufsize_t S_follow_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_lead *lead);
+static const markdown_core_node_type COMMENT_LEADERS[] = {MARKDOWN_CORE_NODE_HTML_BLOCK, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_follow COMMENT_FOLLOWS[] = {
+    {.at = MARKDOWN_CORE_FOLLOW_CLOSE,
+     .kinds = COMMENT_LEADERS,
+     .follow = S_follow_html,
+     .makes = MARKDOWN_CORE_NODE_COMMENT_BLOCK,
+     .former = comment_former,
+     .revert = comment_revert},
+    {0},
+};
+
+/* A comment's literal (element.h, markdown_core_facet): a block's body
+ * starts past its opener, which counts only while it is pending. */
+static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t *start) {
+    const bool held = markdown_core_claim_read((void *const *)&node->as.literal->data) != NULL;
+    *start = node->kind != MARKDOWN_CORE_NODE_COMMENT_BLOCK || held ? 0 : markdown_core_comment_block_start(node);
+    return node->as.literal;
+}
+
+const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_COMMENT, .parts = markdown_core_comment_parts, .literal = S_literal},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
+    .facets = MARKDOWN_CORE_COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),
+    .follows = COMMENT_FOLLOWS,
     .name = "comment",
     .edit = &COMMENT_EDIT,
     .content = &COMMENT_CONTENT,
@@ -477,17 +445,26 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_convert(markdown_c
     markdown_core_literal_set(b, b->as.literal, body_start, body_end);
 }
 
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
-                                               markdown_core_node *parent) {
+/* AN HTML BLOCK THAT IS ONE COMMENT becomes a CommentBlock as it closes
+ * (element.h, markdown_core_follow): a type-2 block its own end condition
+ * closed that holds one comment and nothing else. */
+static bufsize_t S_follow_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_lead *lead) {
+    (void)self;
+    markdown_core_node *b = lead->node, *parent = lead->parent;
+    if (b->as.html_block->block_type != 2 || !(b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION)) {
+        return 0;
+    }
     const markdown_core_strbuf *content = &b->content;
     if (!content->split) {
         S_convert(parser, b, parent, content->ptr, content->size, NULL, true);
-        return;
+        return 0;
     }
     const unsigned char *front, *back;
     bufsize_t front_size, back_size;
     markdown_core_strbuf_span(content, 0, content->size, &front, &front_size, &back, &back_size);
     S_convert(parser, b, parent, front, front_size, back, false);
+    return 0;
 }
 
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
@@ -496,7 +473,7 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
 }
 
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b, markdown_core_node *parent) {
+                          markdown_core_node *b, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;
@@ -512,8 +489,7 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
     return true;
 }
 
-bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, unsigned *flags,
-                                     bufsize_t *length) {
+bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t *length) {
     if (inline_state->input.data[pos] != '!' || inline_state->input.data[pos + 1] != '-' ||
         inline_state->input.data[pos + 2] != '-') {
         return false;
@@ -524,11 +500,9 @@ bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, b
         *length = 5;
     } else {
         *length = scan_html_comment(inline_state->input.data, inline_state->input.len, pos + 1);
+        /* 0 when no closer follows through the end of the input. */
         if (*length > 0) {
             *length += 1; // prefix "<"
-        } else {          // no match through end of input: set a flag so
-                          // we don't reparse looking for -->:
-            *flags |= FLAG_SKIP_HTML_COMMENT;
         }
     }
     return true;

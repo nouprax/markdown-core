@@ -3,40 +3,10 @@
 #include "inlines.h"
 #include "block_internal.h"
 #include "heading_state.h"
-/* The heading lifecycle the document element drives (document.c). */
+/* The headings' inline content, parsed in the parse's preparation
+ * (element.h, markdown_core_stage_ops). */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
-void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
-void markdown_core_headings_dispose(const markdown_core_element_instance *self);
-/* The headings of a flushed parse that start before `start`, which an edit
- * reopens there: the others go aside, and the next finish names them all
- * again. Each that stays is listed as committed (ast.c, A DOCUMENT REOPENED
- * FOR AN EDIT). False when storage could not be had. */
-bool markdown_core_headings_reopen(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   uint32_t start);
-/* The headings the reopen put aside that start at `point` or after in the
- * new text, back, and listed as committed; the others go (blocks.c, THE
- * SPLICE). False when storage could not be had. */
-bool markdown_core_headings_splice(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   uint32_t point);
-/* The attribute tails a heading's last line, which the content's end cuts
- * short, may hold, to the run's context sink; `declares` when the line is
- * a heading's only if the document finishes it as one. */
-void markdown_core_heading_report_tail(markdown_core_inline_state *inline_state, bool declares);
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                          markdown_core_inline_state *inline_state, markdown_core_node *parent);
-bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self,
-                                      markdown_core_inline_state *inline_state, markdown_core_node *parent);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING;
-/* The anchor the heading `node` shows, in `*anchor`: the one its attributes
- * write, or its name (heading.c, THE NAMES), its base itself when that is
- * whole and takes no suffix, joined at its first read otherwise. Any other
- * node's anchor is its own. False, `*anchor` untouched,
- * when storage could not be had for it. */
-bool markdown_core_heading_anchor(const markdown_core_node *node, markdown_core_chunk *anchor);
-
-void markdown_core_prepare_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_heading_parse *heading);
-void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading);
-void markdown_core_dispose_heading(markdown_core_heading_parse *heading);
-
 #endif

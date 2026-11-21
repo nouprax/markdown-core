@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "markdown-core-element-api.h"
+#include "../include/markdown_core.h"
 #include "chunk.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -27,6 +28,23 @@ typedef enum {
  * choose it.
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
+
+/** The facet of a published node's kind (element.h, markdown_core_facet)
+ *  that an element of the core dialect declares, or NULL when none does. */
+struct markdown_core_facet;
+/* THE FACETS BY KIND (core-elements.c): each kind's facet as its element
+ * declares it, NULL for a kind with none. */
+#define MARKDOWN_CORE_FACET_ROOM 64
+extern const struct markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM];
+static inline const struct markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind) {
+    return (size_t)kind < MARKDOWN_CORE_FACET_ROOM ? markdown_core_facet_table[kind] : NULL;
+}
+
+/** The anchor a published node shows, in `*anchor`: the one its attributes
+ *  write, else the name the names service computed for it (names.h,
+ *  markdown_core_name_anchor), as its kind's facet keeps it; empty when it
+ *  has neither. False, `*anchor` untouched, when storage could not be had. */
+bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chunk *anchor);
 
 /** A parser instance (parser.h) over the complete core dialect, extended by
  *  `setup` when present (see markdown_core_parser_setup_func). The product's

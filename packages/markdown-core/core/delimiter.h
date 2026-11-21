@@ -4,6 +4,7 @@
 #include "node_type.h"
 #include "buffer.h"
 #include "markdown-core-element-api.h"
+#include "stack.h"
 
 /* Private to the inline engine. Elements receive read-only marker views
  * and construct opaque AST values; stack ordering and reduction belong here. */
@@ -32,9 +33,9 @@ typedef struct {
     bool exact_run;
 } delimiter_rule_spec;
 
+/* An item of the run's delimiter stack (stack.h). */
 struct delimiter {
-    struct delimiter *previous;
-    struct delimiter *next;
+    markdown_core_stack_item item;
     /* Borrowed marker Text or field owner; NULL for a content boundary. */
     markdown_core_node *node;
     /** The instance of the element that pushed it, or NULL for a core rule.
@@ -47,5 +48,6 @@ struct delimiter {
     int can_open;
     int can_close;
 };
+MARKDOWN_CORE_STACK_OF(delimiter, delimiter)
 
 #endif

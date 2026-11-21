@@ -37,8 +37,8 @@ extern "C" {
  * one that starts where the withdrawal does: that declaration is withdrawn,
  * and a key is declared while one of its declarations stands.
  *
- * THE LOG is what a rollback pops back to a mark and what the headings read
- * (heading.c, THE COMMITTED NAMES); a record lives in it, where its label is
+ * THE LOG is what a rollback pops back to a mark and what the names read
+ * (names.c, THE COMMITTED NAMES); a record lives in it, where its label is
  * the roster's own copy, until a rollback pops it or the roster is
  * compacted. The log holds no node.
  *
@@ -350,7 +350,7 @@ bool markdown_core_roster_declared_outside(markdown_core_roster *roster, markdow
                                            bool *failed);
 /* The log holds only the declarations that stand, in storage of their
  * size, and each kind's places shrink to what they hold. A parse that keeps
- * snapshots, whose headings read the log by position (heading.c), never
+ * snapshots, whose names read the log by position (names.c), never
  * compacts. False, with the roster as it was, when storage could not be
  * had. */
 bool markdown_core_roster_compact(markdown_core_roster *roster);

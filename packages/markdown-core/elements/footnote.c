@@ -2,16 +2,14 @@
 #include "link.h"
 #include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
-#include "citation.h"
 #include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { FOOTNOTE_LINK, FOOTNOTE_CITATION };
-static const markdown_core_element *const FOOTNOTE_PEERS[] = {
-    [FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [FOOTNOTE_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION, NULL};
+enum { FOOTNOTE_LINK };
+static const markdown_core_element *const FOOTNOTE_PEERS[] = {[FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
 
 static const markdown_core_roster_record *
 markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
@@ -47,8 +45,13 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close) {
-    markdown_core_node *cite = markdown_core_inline_new_cite(inline_state);
-    markdown_core_node *citation = cite ? markdown_core_inline_new_citation(inline_state, cite) : NULL;
+    /* A call is a Cite of one Citation whose referent is a footnote. */
+    markdown_core_node *cite = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITE);
+    markdown_core_node *citation =
+        cite ? markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITATION) : NULL;
+    if (citation) {
+        markdown_core_scaffold_append(cite, citation);
+    }
     if (!citation) {
         if (cite) {
             markdown_core_parser_release_node(inline_state->owner_parser, cite);
@@ -63,19 +66,18 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
     return cite;
 }
 
-markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_core_element_instance *self,
-                                                               markdown_core_parser *parser,
-                                                               markdown_core_inline_state *inline_state,
-                                                               bracket *opener) {
+static markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_core_element_instance *self,
+                                                                      markdown_core_parser *parser,
+                                                                      markdown_core_inline_state *inline_state,
+                                                                      bracket *opener) {
     markdown_core_node *cite, *footnote;
     /* The consumed body is inspected once by markdown_core_inline_parse_inline, never once per
      * ancestor. Invalid openers keep their already parsed content as text. */
     if (inline_state->nonblank_end <= opener->position ||
         !markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
                                              MARKDOWN_CORE_NODE_CITE)) {
-        markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers =
-            opener->outer_no_link_openers;
-        markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+        markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
+        markdown_core_inline_pop_bracket(inline_state);
         return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
@@ -86,20 +88,20 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
             markdown_core_parser_release_node(parser, cite);
         }
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+        markdown_core_inline_pop_bracket(inline_state);
         return NULL;
     }
     markdown_core_inline_state_place(inline_state, footnote, opener->position - 2, inline_state->pos - 1);
-    markdown_core_inline_finish_citation_tokens(self->peers[FOOTNOTE_CITATION], inline_state, &opener->citations);
+    markdown_core_inline_settle_bracket(inline_state, opener);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-    markdown_core_inline_take_bracket_content(self->peers[FOOTNOTE_LINK], parser, opener, footnote);
+    markdown_core_inline_take_bracket_content(parser, inline_state, opener, footnote);
     markdown_core_scaffold_insert_before(opener->inl_text, cite);
     /* The note is its Citation's own field, as the affixes are. */
     markdown_core_scaffold_first(cite)->as.citation->note = footnote;
     markdown_core_inline_settle_note(parser, inline_state, footnote);
     markdown_core_parser_release_node(parser, opener->inl_text);
-    markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
-    markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+    markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
+    markdown_core_inline_pop_bracket(inline_state);
     return NULL;
 }
 
@@ -114,21 +116,51 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
                                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
     if (node) {
-        markdown_core_inline_push_bracket(self->peers[FOOTNOTE_LINK], inline_state, BRACKET_FOOTNOTE, node);
+        markdown_core_inline_push_bracket(self, inline_state, BRACKET_FOOTNOTE, node);
     }
     return node;
 }
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_node *node, markdown_core_reader *reader,
+                               const markdown_core_node *joining, bool *taken) {
     (void)self;
-    return markdown_core_footnote_continue(parser, node, input);
+    return markdown_core_footnote_continue(parser, node, reader);
 }
 static const markdown_core_edit_ops FOOTNOTE_EDIT = {
     .reopens = true,
 };
 
+static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser,
+                                                   markdown_core_inline_state *inline_state, bracket *opener);
+
+/* THE FOOTNOTE'S RULES FOR A `]` (element.h, markdown_core_close_rule): an
+ * inline note's `^[` closes by its own rule alone, always made, as text
+ * when its body is no note; a `[^label]` the document defines is a call,
+ * after every other rule. */
+static markdown_core_bracket_match S_close_note(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    *made = markdown_core_inline_close_inline_footnote(self, parser, inline_state, opener);
+    return BRACKET_MATCHED;
+}
+
+static markdown_core_bracket_match S_close_call(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    (void)made;
+    return markdown_core_footnote_close_reference(self, parser, inline_state, opener) ? BRACKET_MATCHED
+                                                                                      : BRACKET_UNMATCHED;
+}
+
+static const markdown_core_close_rule FOOTNOTE_CLOSES[] = {
+    {.precedence = 0, .mine = true, .close = S_close_note},
+    {.precedence = 20, .close = S_close_call},
+};
+
 static const markdown_core_inline_ops FOOTNOTE_INLINES = {
+    .closes = FOOTNOTE_CLOSES,
+    .close_count = sizeof(FOOTNOTE_CLOSES) / sizeof(FOOTNOTE_CLOSES[0]),
     .match = match,
     .terminates = "^",
     .dispatch = "^",
@@ -142,10 +174,15 @@ static const markdown_core_open_ops FOOTNOTE_OPENS = {
 
 static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
-    .reach = markdown_core_block_indent_reach,
+};
+
+const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_FOOTNOTE, .parts = markdown_core_footnote_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
     .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",
@@ -154,8 +191,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .lines = &FOOTNOTE_LINES,
 };
 
-bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_inline_state *inline_state, bracket *opener) {
+static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser,
+                                                   markdown_core_inline_state *inline_state, bracket *opener) {
     bufsize_t initial_pos = inline_state->pos;
     markdown_core_node *label = markdown_core_scaffold_next(opener->inl_text);
     if (label && label->kind == MARKDOWN_CORE_NODE_TEXT) {
@@ -221,7 +259,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
 
             markdown_core_node *fnref = markdown_core_inline_make_footnote_cite(inline_state, opener, initial_pos);
             if (!fnref) {
-                markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+                markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
             /* The call's label is its normal form: the key the lookup
@@ -231,7 +269,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_parser_release_node(parser, fnref);
-                markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+                markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
             memcpy(id, defined.data, (size_t)defined.len + 1);
@@ -269,7 +307,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             }
 
             markdown_core_inline_replace_bracket_opener(inline_state, opener, fnref);
-            markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+            markdown_core_inline_pop_bracket(inline_state);
             return true;
         }
     }
@@ -277,11 +315,11 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
 }
 
 static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        markdown_core_node **container, markdown_core_chunk *input,
+                                        markdown_core_node **container, markdown_core_reader *reader,
                                         block_start *start) {
     bufsize_t matched = start->matched;
 
-    markdown_core_chunk c = markdown_core_chunk_dup(input, parser->at.first_nonspace + 2, matched - 2);
+    markdown_core_chunk c = {(unsigned char *)markdown_core_reader_bytes(reader, reader->nonspace + 2), matched - 2, 0};
 
     while (c.data[c.len - 1] != ']') {
         --c.len;
@@ -294,7 +332,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         return false;
     }
 
-    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
+    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
     /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
      * where its OPENING BRACKET was written. It used to start at the
      * byte after `[^label]:`, which is a column that need not exist --
@@ -302,8 +340,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * began at column 13. Every other block in this engine starts at
      * its own first byte and the marker is inside it; a footnote
      * definition was the one that started after its own marker. */
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, parser->at.first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, reader->nonspace + 1);
     if (!*container) {
         markdown_core_chunk_free(&c);
         return false;
@@ -314,14 +351,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * consumer's single map went with the association -- a
      * `Footnote` and a resolved `Link` are different values now. */
     markdown_core_node *footnote = *container;
-    markdown_core_chunk normal;
-    if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, &c, &normal) || !normal.len) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_chunk_free(&c);
-        return false;
-    }
-    footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
-
+    markdown_core_chunk normal = {0};
     /* The document defines this label from here on.
      *
      * Registered where the label is READ, which is here. Whether it is
@@ -335,8 +365,12 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    if (!markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, normal.data, normal.len,
-                                      footnote->place.start)) {
+    const bool declared =
+        markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &c, footnote->place.start, &normal);
+    if (normal.len) {
+        footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
+    }
+    if (!declared || !normal.len) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;
@@ -350,10 +384,11 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start) {
     (void)self;
-    markdown_core_chunk *input = context->input;
-    int first = context->first;
+    markdown_core_reader *reader = context->reader;
+    int first = reader->nonspace;
     if (!(context->depth < MAX_FOOTNOTE_DEPTH &&
-          (start->matched = scan_footnote_definition(input->data, input->len, first)))) {
+          (start->matched = scan_footnote_definition(markdown_core_reader_rest(reader, 0),
+                                                     markdown_core_reader_length(reader), first)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_FOOTNOTE;
@@ -362,8 +397,8 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
 }
 
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                     markdown_core_chunk *input) {
-    return markdown_core_block_continue_indented(parser, input, 4, true);
+                                     markdown_core_reader *reader) {
+    return markdown_core_reader_indented(reader, 4, true);
 }
 
 /* A definition's part: its label, inside `[^` and the `]` before its `:`. An
@@ -382,3 +417,28 @@ void markdown_core_footnote_parts(markdown_core_parts *parts) {
         }
     }
 }
+
+/* A footnote definition's record (markdown_core_record_ops): the label it
+ * declares, in the pool's storage, which a view copies. */
+static void free_footnote(markdown_core_node_pool *pool, markdown_core_node *node) {
+    if (node->as.footnote->label.has_value) {
+        markdown_core_node_pool_bytes_free(pool, node->as.footnote->label.value.data);
+    }
+}
+
+static bool view_footnote(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                          bool failed) {
+    (void)node;
+    markdown_core_optional_chunk *label = &copy->as.footnote->label;
+    bool copied = true;
+    if (label->has_value && (failed || !(copied = markdown_core_node_label_copy(pool, &label->value)))) {
+        *label = markdown_core_optional_chunk_absent();
+    }
+    return copied;
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_FOOTNOTE = {
+    .size = sizeof(markdown_core_footnote_value),
+    .free = free_footnote,
+    .view = view_footnote,
+};

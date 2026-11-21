@@ -138,6 +138,29 @@ static MARKDOWN_CORE_INLINE bool markdown_core_chunk_own(markdown_core_chunk *vi
     return !chunk->alloc || view->alloc || view->data != chunk->data || markdown_core_chunk_to_cstr(view);
 }
 
+/* `view`, a view of `chunk`, takes the bytes it still reads: `chunk` then
+ * owns none of them. */
+static MARKDOWN_CORE_INLINE void markdown_core_chunk_adopt(markdown_core_chunk *view, markdown_core_chunk *chunk) {
+    if (view->data == chunk->data && !view->alloc) {
+        view->alloc = chunk->alloc;
+        chunk->alloc = 0;
+    }
+}
+
+/* A chunk that views bytes, made to own a copy of them: false when the copy
+ * could not be had. An empty one reads none. */
+static MARKDOWN_CORE_INLINE bool markdown_core_chunk_own_viewed(markdown_core_chunk *chunk) {
+    return chunk->alloc || !chunk->len || markdown_core_chunk_to_cstr(chunk);
+}
+
+/* A literal block's literal viewed: a pending one (markdown_core_literal_set)
+ * stays pending, joined of the content the view reads, its own when it is. */
+static MARKDOWN_CORE_INLINE void markdown_core_literal_view(markdown_core_chunk *literal) {
+    if (literal->data) {
+        markdown_core_chunk_view(literal);
+    }
+}
+
 /* Returns 0 when the copy could not be allocated; the chunk then keeps its
  * previous value. */
 static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_chunk *c, const char *str) {

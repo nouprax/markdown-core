@@ -63,6 +63,18 @@ test("a native type states every column, even when it is null", () => {
     assert.throws(() => buildModel(contract(), broken), /structure must be given, as null/);
 });
 
+test("a type's containment names known keys and existing member types", () => {
+    const unknown = native();
+    unknown.block[0].contain = { blocks: true, everything: true };
+    assert.throws(() => buildModel(contract(), unknown), /unknown contain key everything/);
+    const stranger = native();
+    stranger.block[0].contain = { members: ["NONEXISTENT"] };
+    assert.throws(() => buildModel(contract(), stranger), /no type NONEXISTENT/);
+    const flag = native();
+    flag.block[0].contain = { blocks: "yes" };
+    assert.throws(() => buildModel(contract(), flag), /contain\.blocks must be a boolean/);
+});
+
 test("a native type name is used once across both classes", () => {
     const broken = native();
     broken.inline.push({ ...broken.block[0] });

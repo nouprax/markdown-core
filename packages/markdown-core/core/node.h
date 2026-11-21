@@ -9,6 +9,7 @@ extern "C" {
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "node_type.h"
 #include "markdown-core-element-api.h"
@@ -52,21 +53,25 @@ typedef struct {
  * the one a reference occurrence names when no Reference declares it, in
  * storage the node owns (markdown_core_node_pool_bytes); empty when its text
  * declares none. */
+/* A NODE'S NAME, which the names service computes (names.c, THE NAMES)
+ * for a node whose attributes write no anchor: the `base` its text projects
+ * to, which an edit that reads it from a seam keeps in two parts (buffer.h,
+ * markdown_core_split), and the `suffix` it shows: the name is the base, or
+ * the base, a hyphen and the suffix. Empty when it holds none. `shown` is
+ * the anchor the name shows, once read, when it is not the base whole
+ * (markdown_core_name_anchor): a claim (claim.h), the node's storage. */
+typedef struct markdown_core_name {
+    markdown_core_strbuf base;
+    void *shown;
+    uint32_t suffix;
+} markdown_core_name;
+
+/* The record fits the node's slot (MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES). */
 typedef struct {
     int level;
     bool setext;
     markdown_core_chunk label;
-    /* THE NAME the headings computed for it (heading.c, THE NAMES), when its
-     * attributes write no anchor: the `base` its text projects to, which
-     * an edit that reads it from a seam keeps in two parts (buffer.h,
-     * markdown_core_split), and the `suffix` it shows: the name is the
-     * base, or the base, a hyphen and the suffix. Empty when it holds none.
-     * The record fits the node's slot (MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES). */
-    markdown_core_strbuf base;
-    /* The anchor its name shows, once read, when it is not the base whole
-     * (markdown_core_heading_anchor): a claim (claim.h), the node's storage. */
-    void *shown;
-    uint32_t suffix;
+    markdown_core_name name;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.
@@ -246,9 +251,12 @@ typedef struct markdown_core_extent {
 #endif
 
 /* An absolute byte range [start, end) of the document source. */
-typedef struct {
+#ifndef MARKDOWN_CORE_PLACE_TYPEDEF
+#define MARKDOWN_CORE_PLACE_TYPEDEF
+typedef struct markdown_core_place {
     uint32_t start, end;
 } markdown_core_place;
+#endif
 
 /* A run of a node's own source (markdown_core.h): a source range whose lead
  * is from the end of the previous run, or, for the first, from where the
@@ -438,8 +446,9 @@ struct markdown_core_node {
     markdown_core_node_source source;
 
     const markdown_core_element *element;
-    /* Element-owned data, allocated by its element's `alloc` and released by
-     * its `free` (markdown_core_opaque_ops). It survives kind changes independently of `as`. */
+    /* Element-owned data, made by its element's payload `init` and released
+     * by its `free` (element.h, markdown_core_record_ops). It survives kind
+     * changes independently of `as`. */
     void *opaque;
 
     /* Owns a record too large for the slot, whether installed at
@@ -590,12 +599,6 @@ static inline markdown_core_node *markdown_core_scaffold_first(const markdown_co
 }
 static inline markdown_core_node *markdown_core_scaffold_last(const markdown_core_node *node) {
     return markdown_core_scaffold_of(node)->last;
-}
-
-/* Both cross kinds own the same raw reference fields in one payload allocation.
- * Only CrossEmbedded allocates the dimension value beside those fields. */
-static inline markdown_core_cross_reference *markdown_core_node_cross_reference(const markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_CROSS_LINK ? node->as.cross_link : &node->as.cross_embedded->reference;
 }
 
 /* Takes ownership of `url` and `title` and answers a resource, or NULL
@@ -814,6 +817,20 @@ static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool,
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
+
+/* A label in storage of the pool's, `length` bytes and a NUL, copied into
+ * storage of `pool`'s, as a view's record copies the labels it holds
+ * (element.h, markdown_core_record_ops `view`): false when it could not be,
+ * the label then left as it was. */
+static inline bool markdown_core_node_label_copy(markdown_core_node_pool *pool, markdown_core_chunk *label) {
+    unsigned char *bytes = (unsigned char *)markdown_core_node_pool_bytes(pool, (size_t)label->len + 1);
+    if (!bytes) {
+        return false;
+    }
+    memcpy(bytes, label->data, (size_t)label->len + 1);
+    label->data = bytes;
+    return true;
+}
 
 /* `markdown_core_node_new_with_ext` from a pool's slots. A NULL pool is the
  * allocator's own slot, which is what the parser-less constructor takes. */

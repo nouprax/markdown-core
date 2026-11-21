@@ -1,4 +1,5 @@
 #include "heading.h"
+#include "markdown-core-elements.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -611,7 +612,7 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
             continue;
         }
         markdown_core_chunk anchor;
-        if (!markdown_core_heading_anchor(at_probe[i], &anchor)) {
+        if (!markdown_core_core_anchor(at_probe[i], &anchor)) {
             markdown_core_free((void *)at_probe);
             markdown_core_free((void *)at_first);
             return false;

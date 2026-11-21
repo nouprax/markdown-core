@@ -32,51 +32,6 @@ typedef struct markdown_core_attribute_value {
     void *storage;
 } markdown_core_attributes;
 
-/* THE WORKSPACE A CONTAINER IS READ INTO before it is laid out as a value
- * (`markdown_core_attributes_parse`): its decoded strings, each
- * NUL-terminated, and each class and record as offsets into them, in source
- * order. A parse call clears it, fills it and lays it out, and leaves nothing
- * in it that the next call reads; parse calls do not nest. So one workspace
- * serves every reader of a parse transaction, nested extents included: the
- * transaction owns it (parser.h), it grows to the largest container the
- * document holds, and the value's one allocation is made at its exact size.
- * Valid zeroed; what it needs is established on first use. */
-typedef struct markdown_core_attribute_scratch {
-    markdown_core_strbuf strings;
-    struct markdown_core_attribute_member {
-        bufsize_t name, name_length; /* name < 0 for a class */
-        bufsize_t value, value_length;
-    } *members;
-    size_t member_count, member_capacity;
-    /* The bytes every recogniser that borrowed this workspace examined, each
-     * added once as that recogniser is released, for the attribute grammar's
-     * complexity gate. */
-    size_t work;
-} markdown_core_attribute_scratch;
-
-/* A recogniser belongs to one immutable input extent. It walks forward from
- * each candidate brace it is asked about and memoises, by position, the
- * answer for every member boundary and every `=` it passes, so overlapping
- * candidates cannot repeatedly scan that extent (elements/attributes.c states
- * the memo's encoding and why its walks tile the extent). Values are decoded
- * only after recognition succeeds, into `scratch`, which the recogniser
- * borrows from whoever owns the parse: required by
- * `markdown_core_attributes_parse`, never touched by recognition. */
-typedef struct {
-    const unsigned char *data;
-    bufsize_t length;
-    struct markdown_core_attribute_suffix {
-        bufsize_t end;
-        bufsize_t assignment_end;
-    } *ends;
-    markdown_core_attribute_scratch *scratch;
-    size_t work;
-    int oom;
-    /* Whether a quote's lookahead met the extent's end with no closer: what
-     * the walks answered may change once the input goes on. */
-    int ran_out;
-} markdown_core_attribute_parser;
-
 /* Whether a value owns anything a release must free: its block, or an anchor
  * string of its own, so a value with neither owns nothing.
  * Almost every value is empty -- every node carries one and no Text has
@@ -111,18 +66,5 @@ void markdown_core_attributes_adopt(markdown_core_attributes *view, markdown_cor
  * empty. */
 int markdown_core_attributes_single_class(markdown_core_attributes *value, const unsigned char *bytes,
                                           bufsize_t length);
-void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
-void markdown_core_attribute_scratch_free(markdown_core_attribute_scratch *scratch);
-/* Recognition only: no values are decoded until the owner commits. Zero
- * denotes a malformed candidate. The memo is shared for the whole extent. */
-bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *parser, bufsize_t start);
-/* First complete container ending at `end`, outside escaped punctuation.
- * The caller selects the permitted line/extent. Returns -1 on failure. */
-bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *parser, bufsize_t start, bufsize_t end);
-/* The caller supplies an empty result. Success transfers its allocations and
- * advances end; failure leaves both outputs untouched. Allocation failure is
- * sticky in parser->oom and never becomes a grammar fallback. */
-int markdown_core_attributes_parse(markdown_core_attribute_parser *parser, bufsize_t start,
-                                   markdown_core_attributes *result, bufsize_t *end);
 
 #endif

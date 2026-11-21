@@ -2,16 +2,14 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "sink.h"
-#include "attributes.h"
 #include "parts.h"
-#include "formula.h"
+#include "attributes.h"
 #include <string.h>
-#define peek_at(input, at) ((input)->data[(at)])
 
-/* The elements whose state this element reads, as `self->peers` holds them:
- * the formula element, which a fence naming a formula becomes. */
-enum { CODE_FORMULA };
-static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA, NULL};
+/* The elements whose syntax this element asks: where an attribute tail
+ * ends an info string's first word. */
+static const markdown_core_element *const CODE_BLOCK_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+#define peek_at(input, at) ((input)->data[(at)])
 
 /* The end of an indented code block's literal: past the line ending of its
  * last line that is not blank, or its start when every line is: a first
@@ -49,39 +47,39 @@ static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
     return 0;
 }
 
-static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
-                         int length, markdown_core_node *container) {
-    markdown_core_chunk input_chunk = {(unsigned char *)data, length, 0};
-    markdown_core_chunk *input = &input_chunk;
+static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_reader *reader, markdown_core_node *container) {
     bool res = false;
 
     if (!container->as.code->fenced) { // indented
-        if (parser->at.indent >= CODE_INDENT) {
-            markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
+        if (reader->indent >= CODE_INDENT) {
+            markdown_core_reader_advance(reader, CODE_INDENT, true);
             res = true;
-        } else if (parser->at.blank) {
-            markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace - parser->at.offset, false);
+        } else if (reader->blank) {
+            markdown_core_reader_skip(reader);
             res = true;
         }
     } else { // fenced
         bufsize_t matched = 0;
 
-        if (parser->at.indent <= 3 && (peek_at(input, parser->at.first_nonspace) == container->as.code->fence_char)) {
-            matched = scan_close_code_fence(input->data, input->len, parser->at.first_nonspace);
+        if (reader->indent <= 3 &&
+            (markdown_core_reader_peek(reader, reader->nonspace) == container->as.code->fence_char)) {
+            matched = scan_close_code_fence(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                            reader->nonspace);
         }
 
         if (matched >= container->as.code->fence_length) {
             // closing fence - and since we're at
-            // the end of a line, we can stop processing it:
-            container->as.code->fence_closed = true;
-            markdown_core_block_advance_offset(parser, input, matched, false);
+            // the end of a line, we can stop processing it; the close
+            // notes the fence closed it (close_code):
+            markdown_core_reader_advance(reader, matched, false);
             return MARKDOWN_CORE_BLOCK_CLOSED;
         } else {
-            // skip opt. spaces of fence parser->at.offset
+            // skip opt. spaces of fence reader->offset
             int i = container->as.code->fence_offset;
 
-            while (i > 0 && markdown_core_is_space_or_tab(peek_at(input, parser->at.offset))) {
-                markdown_core_block_advance_offset(parser, input, 1, true);
+            while (i > 0 && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
+                markdown_core_reader_advance(reader, 1, true);
                 i--;
             }
             res = true;
@@ -96,27 +94,18 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
  * line, which is the rest of the fence line and gave the info string as the
  * block opened. */
 static bool close_code(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
-                       markdown_core_node *parent) {
+                       markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;
+    /* The matcher only decides; what its fence closed is the close's to
+     * write. */
+    b->as.code->fence_closed = b->as.code->fenced && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
     const markdown_core_strbuf *content = &b->content;
     const bufsize_t start = b->as.code->literal_start;
     const bufsize_t end = b->as.code->fenced ? content->size : S_indented_literal_end(content);
     markdown_core_literal_set(b, &b->as.code->literal, start, end);
     return true;
-}
-/* A fence whose info string names a formula becomes a FormulaBlock as
- * completion reaches it, in a dialect that holds formulas, inside the block
- * it settled into: before its explicit anchor is reserved, so the anchor of
- * the fence, which the FormulaBlock does not hold, is never taken. */
-static void complete_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *node, int depth) {
-    (void)depth;
-    const markdown_core_element_instance *formula = self->peers[CODE_FORMULA];
-    if (formula && node->as.code->fenced) {
-        markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
-    }
 }
 /* The character reference at `at`, an `&`, when it spells whitespace, as
  * the info string's decoding reads it: its length; 0 when it spells
@@ -200,16 +189,16 @@ static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
     return info_word(data, length, &cut);
 }
 
-/* The fence line's fields the line's end cuts short, `rest` its `length`
- * bytes past the fence, to the parse's context sink: a member of an open
- * attribute tail, and the info string's first word, after the spaces and
+/* The fence line's field the line's end cuts short, `rest` its `length`
+ * bytes past the fence, to the parse's context sink (a member of an open
+ * attribute tail is the tail's taker's to report): the info string's first
+ * word, after the spaces and
  * the references that spell them before it. Both are candidates: what
  * follows the cursor decides whether the brace opens a tail or is a byte of
  * the word, so the query confirms one against the whole line. */
-static void S_report_info(markdown_core_parser *parser, const unsigned char *rest, bufsize_t length) {
-    const bufsize_t offset = parser->at.offset;
-    const unsigned char *line = rest - offset;
-    markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, line, offset, offset + length);
+static void S_report_info(markdown_core_parser *parser, markdown_core_reader *reader, const unsigned char *rest,
+                          bufsize_t length) {
+    const bufsize_t offset = reader->offset;
     bufsize_t start = 0, space;
     while (start < length) {
         if (markdown_core_is_space_or_tab(rest[start])) {
@@ -227,27 +216,31 @@ static void S_report_info(markdown_core_parser *parser, const unsigned char *res
     } else if (!cut && start + end == length) {
         const markdown_core_field info = {
             MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false, 0};
-        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, parser->at.first_nonspace, offset, &info, 1);
+        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, reader->nonspace, offset, &info, 1);
     }
 }
 
 /* THE FENCE LINE GIVES THE INFO STRING AS THE BLOCK OPENS, once: `rest`,
- * `length` bytes, is the line past the fence, which the block's content
+ * `length` bytes, is the line past the fence, the reader's offset, which the block's content
  * begins with, and the literal starts past it. The info string is the rest
  * of the fence line, less an attribute tail, trimmed of spaces and tabs as
  * written. References and escapes are decoded after the trim, so a space one
  * of them spells is the info string's own. */
-static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, const unsigned char *rest,
-                         bufsize_t length) {
+static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, markdown_core_reader *reader) {
+    const unsigned char *rest = markdown_core_reader_rest(reader, reader->offset);
+    const bufsize_t length = markdown_core_reader_length(reader) - reader->offset;
     const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
     assert(line_end);
     const bufsize_t pos = (bufsize_t)(line_end - rest);
+    /* The line's end is offered (element.h, markdown_core_follow): the
+     * info string ends where what is taken begins. */
+    const bufsize_t offset = reader->offset;
+    bufsize_t info_end = pos - markdown_core_parser_offer(parser, b, rest - offset, offset, offset + pos, true);
     if (parser->sink) {
-        S_report_info(parser, rest, pos);
+        S_report_info(parser, reader, rest, pos);
     }
     b->as.code->literal_start = pos + 1;
     markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
-    bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, rest, pos);
     bufsize_t info_start = 0;
     while (info_start < info_end && markdown_core_is_space_or_tab(rest[info_start])) {
         info_start++;
@@ -283,32 +276,31 @@ static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, co
     }
 }
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                        markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK,
-                                                parser->at.first_nonspace + 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, reader->nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->as.code->fenced = true;
-    (*container)->as.code->fence_char = peek_at(input, parser->at.first_nonspace);
+    (*container)->as.code->fence_char = markdown_core_reader_peek(reader, reader->nonspace);
     (*container)->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
-    (*container)->as.code->fence_offset = (int8_t)(parser->at.first_nonspace - parser->at.offset);
+    (*container)->as.code->fence_offset = (int8_t)(reader->nonspace - reader->offset);
     (*container)->as.code->fence_closed = false;
-    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
-    S_fence_info(parser, *container, input->data + parser->at.offset, input->len - parser->at.offset);
+    markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
+    S_fence_info(parser, *container, reader);
 
     return true;
 }
 static bool open_indented(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                          markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
 
-    markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->at.offset + 1);
+    markdown_core_reader_advance(reader, CODE_INDENT, true);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, reader->offset + 1);
     if (!*container) {
         return false;
     }
@@ -327,14 +319,16 @@ static bool open_indented(const markdown_core_element_instance *self, markdown_c
 static bool scan_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
                       block_start_context *context, block_start *start) {
     (void)self;
-    if (context->indent >= CODE_INDENT) {
+    if (context->reader->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
-        if (context->paragraph || context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
+        if (context->paragraph || context->lazy ||
+            markdown_core_is_line_end(markdown_core_reader_peek(context->reader, context->reader->nonspace))) {
             return false;
         }
         start->open = open_indented;
     } else {
-        start->matched = scan_open_code_fence(context->input->data, context->input->len, context->first);
+        start->matched = scan_open_code_fence(markdown_core_reader_rest(context->reader, 0),
+                                              markdown_core_reader_length(context->reader), context->reader->nonspace);
         if (!start->matched) {
             return false;
         }
@@ -344,7 +338,8 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node) {
+                       markdown_core_node *node, markdown_core_reader *reader) {
+    (void)reader;
     (void)self;
     return !node->as.code->fenced;
 }
@@ -412,10 +407,6 @@ static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
     .spliced = spliced_code,
 };
 
-static const markdown_core_finish_ops CODE_BLOCK_FINISH = {
-    .complete = complete_code,
-};
-
 static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
@@ -433,12 +424,53 @@ static const markdown_core_line_ops CODE_BLOCK_LINES = {
     .blank_last = blank_line,
 };
 
+const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_CODE_BLOCK, .parts = markdown_core_code_block_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
+    .peers = CODE_BLOCK_PEERS,
+    .facets = MARKDOWN_CORE_CODE_BLOCK_FACETS,
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
-    .peers = CODE_PEERS,
-    .finish = &CODE_BLOCK_FINISH,
     .content = &CODE_BLOCK_CONTENT,
     .opens = &CODE_BLOCK_OPENS,
     .lines = &CODE_BLOCK_LINES,
+};
+
+/* A code block's record (markdown_core_record_ops): its info string and its
+ * literal, which may be pending (markdown_core_literal_set). */
+static void free_code(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_optional_chunk_free(&node->as.code->info);
+    markdown_core_chunk_free(&node->as.code->literal);
+}
+
+static bool view_code(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                      bool failed) {
+    (void)pool;
+    (void)node;
+    (void)failed;
+    markdown_core_chunk_view(&copy->as.code->info.value);
+    markdown_core_literal_view(&copy->as.code->literal);
+    return true;
+}
+
+static bool own_code(markdown_core_node *copy, const markdown_core_node *node) {
+    return markdown_core_chunk_own(&copy->as.code->info.value, &node->as.code->info.value) &&
+           markdown_core_chunk_own(&copy->as.code->literal, &node->as.code->literal);
+}
+
+static void adopt_code(markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_chunk_adopt(&view->as.code->info.value, &node->as.code->info.value);
+    markdown_core_chunk_adopt(&view->as.code->literal, &node->as.code->literal);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_CODE_BLOCK = {
+    .size = sizeof(markdown_core_code),
+    .free = free_code,
+    .view = view_code,
+    .own = own_code,
+    .adopt = adopt_code,
 };

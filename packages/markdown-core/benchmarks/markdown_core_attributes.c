@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "attributes.h"
+#include "../elements/attributes.h"
 #include "chunk.h"
 
 #include "attribute_runner.h"

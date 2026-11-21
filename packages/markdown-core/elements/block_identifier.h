@@ -14,20 +14,19 @@ typedef struct {
  * identifier at its end names it, or the list item it opens. */
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                     markdown_core_node *parent);
+                                                     markdown_core_node *parent, markdown_core_reader *reader);
 /* A line that would open a paragraph in `parent`: an identifier alone on it
  * names the pending block, and true when the line opens nothing -- the
  * identifier attached, or the call asked to be a candidate. */
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
-                                                markdown_core_chunk *input);
+                                                markdown_core_reader *reader);
 /* The candidate of the identifier line (blocks.c, THE CANDIDATES), the
  * paragraph element's hooks (element.h). */
 markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,
                                                                       markdown_core_parser *parser, void *state,
                                                                       const markdown_core_candidate_line *line,
                                                                       bool *ends);
-markdown_core_candidate_decision markdown_core_block_decide_identifier_line(const markdown_core_element_instance *self,
-                                                                            markdown_core_parser *parser,
-                                                                            const void *state);
+bool markdown_core_block_identifier_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                          markdown_core_node *container, markdown_core_reader *reader, void *record);
 #endif

@@ -3,7 +3,7 @@
 #include "inlines.h"
 #include "block_internal.h"
 bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                     markdown_core_chunk *input);
+                                     markdown_core_reader *reader);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN;
 
 /* THE SPECIMENS OF ONE PARSE (the specimen element's parse record): the
