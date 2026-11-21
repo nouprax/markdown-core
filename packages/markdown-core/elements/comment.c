@@ -319,8 +319,16 @@ static const markdown_core_line_ops COMMENT_LINES = {
     .matches = block_matches,
 };
 
+static void S_take_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
+                        markdown_core_node *parent);
+static const markdown_core_takeover COMMENT_TAKES[] = {
+    {.kind = MARKDOWN_CORE_NODE_HTML_BLOCK, .closing = true, .take = S_take_html},
+    {.kind = MARKDOWN_CORE_NODE_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
+    .takes = COMMENT_TAKES,
     .name = "comment",
     .edit = &COMMENT_EDIT,
     .content = &COMMENT_CONTENT,
@@ -450,8 +458,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_convert(markdown_c
     markdown_core_literal_set(b, b->as.literal, body_start, body_end);
 }
 
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
-                                               markdown_core_node *parent) {
+/* AN HTML BLOCK THAT IS ONE COMMENT becomes a CommentBlock as it closes
+ * (element.h, markdown_core_takeover): a type-2 block its own end condition
+ * closed that holds one comment and nothing else. */
+static void S_take_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
+                        markdown_core_node *parent) {
+    (void)self;
+    if (b->as.html_block->block_type != 2 || !(b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION)) {
+        return;
+    }
     const markdown_core_strbuf *content = &b->content;
     if (!content->split) {
         S_convert(parser, b, parent, content->ptr, content->size, NULL, true);

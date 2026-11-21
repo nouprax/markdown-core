@@ -712,11 +712,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_promote(const mark
     node->opaque = payload;
 }
 
-void markdown_core_formula_promote_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
-                                         markdown_core_node *node, markdown_core_node *parent) {
-    /* Rewriting a valid block is optional: a parent that cannot hold a
-     * FormulaBlock keeps the code block. */
-    if (info_is_formula(&node->as.code->info) && parent &&
+/* A FENCE WHOSE INFO STRING NAMES A FORMULA becomes a FormulaBlock as
+ * completion completes it (element.h, markdown_core_takeover), inside the
+ * block it settled into: before its explicit anchor is reserved, so the
+ * anchor of the fence, which the FormulaBlock does not hold, is never
+ * taken. Rewriting a valid block is optional: a parent that cannot hold a
+ * FormulaBlock keeps the code block. */
+static void S_take_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
+                         markdown_core_node *node, markdown_core_node *parent) {
+    if (node->as.code->fenced && info_is_formula(&node->as.code->info) && parent &&
         markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         S_promote(formula, parser, node, parent);
     }
@@ -813,8 +817,14 @@ static const markdown_core_line_ops FORMULA_LINES = {
     .close = close_formula_block,
 };
 
+static const markdown_core_takeover FORMULA_TAKES[] = {
+    {.kind = MARKDOWN_CORE_NODE_CODE_BLOCK, .take = S_take_fence},
+    {.kind = MARKDOWN_CORE_NODE_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .name = "formula",
+    .takes = FORMULA_TAKES,
     .edit = &FORMULA_EDIT,
     .opaque = &FORMULA_OPAQUE,
     .contain = &FORMULA_CONTAIN,

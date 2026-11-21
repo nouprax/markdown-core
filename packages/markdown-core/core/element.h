@@ -714,6 +714,21 @@ typedef struct markdown_core_edit_ops {
                  markdown_core_node *parent, uint32_t kept);
 } markdown_core_edit_ops;
 
+/* A BLOCK AN ELEMENT TAKES OVER (docs/plans no-flush.md, 10.12, audit
+ * 5): a block of kind `kind`, of another element, may become one of this
+ * element's as it closes (`closing`) or as completion's walk completes it.
+ * The engine asks `take` there, after the block's own element: it changes
+ * the block's kind (markdown_core_parser_set_node_kind) and writes its own
+ * part when its grammar makes the block one of its own, and leaves it as it
+ * is otherwise. A list of them ends at kind MARKDOWN_CORE_NODE_NONE; a kind
+ * and a time is taken by one element, the last that declares it. */
+typedef struct markdown_core_takeover {
+    markdown_core_node_type kind;
+    bool closing;
+    void (*take)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                 markdown_core_node *parent);
+} markdown_core_takeover;
+
 struct markdown_core_element {
     /* WHO THE ELEMENT IS AND WHAT IT STORES. */
     const char *name;
@@ -734,6 +749,8 @@ struct markdown_core_element {
     /* A record in each bracket a run opens (bracket.h,
      * markdown_core_bracket_record), zeroed as it opens. */
     size_t bracket_size;
+    /* The blocks of other elements it takes over, or NULL. */
+    const markdown_core_takeover *takes;
     /* Frees what the parse record holds as its parser is freed, or NULL
      * when it holds nothing of its own. */
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);

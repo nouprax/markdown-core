@@ -1676,7 +1676,15 @@ static bool S_close_hook(markdown_core_parser *parser, const markdown_core_eleme
     if (structure->lines->cuts && !markdown_core_reader_cut_front(&parser->at.read, parser, b, parent)) {
         return false;
     }
-    return !structure->lines->close || structure->lines->close(structure, parser, b, parent, &parser->at.read);
+    if (structure->lines->close && !structure->lines->close(structure, parser, b, parent, &parser->at.read)) {
+        return false;
+    }
+    /* Another element may take the block over as it closes. */
+    const markdown_core_kind_record *kind = markdown_core_dialect_block_kind(parser->dialect, b->kind);
+    if (kind->take[0]) {
+        kind->take[0](kind->taker[0], parser, b, parent);
+    }
+    return true;
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_core_parser *parser, markdown_core_node *b,
@@ -3920,6 +3928,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     }
     if (facts->complete) {
         facts->complete(facts->structure, parser, node, frame->script_depth);
+    }
+    /* Another element may take the block over as it is completed. */
+    if (facts->take[1]) {
+        facts->take[1](facts->taker[1], parser, node, markdown_core_scaffold_parent(node));
     }
     /* An explicit anchor is reserved once the node is complete, as starting
      * where the queued root it is in starts. A FormulaBlock a fence became

@@ -211,6 +211,12 @@ typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
     void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
     uint16_t flags;
+    /* The element that takes a block of the kind over as it closes, [0],
+     * and as it is completed, [1], with its hook (element.h,
+     * markdown_core_takeover), or NULL. */
+    const markdown_core_element_instance *taker[2];
+    void (*take[2])(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *,
+                    markdown_core_node *);
 } markdown_core_kind_record;
 
 /* The keys a block-start family's gate lists are indexed by: each first

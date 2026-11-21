@@ -16,10 +16,6 @@ typedef struct {
 #ifdef __cplusplus
 }
 #endif
-/* `b`, an HTML block that is one HTML comment, closing inside `parent`,
- * becomes a CommentBlock in place. */
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
-                                               markdown_core_node *parent);
 /* Where a CommentBlock's literal starts in its content: of one an HTML
  * block became, past its `<!--`. Read only of a pending literal (node.h,
  * A LITERAL, LAZY), which only those are. */

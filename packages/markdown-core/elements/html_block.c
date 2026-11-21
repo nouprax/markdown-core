@@ -3,7 +3,6 @@
 #include "html_block.h"
 #include "block_internal.h"
 
-#include "comment.h"
 static int continue_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_reader *reader, markdown_core_node *container) {
     bool res = false;
@@ -34,12 +33,10 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
 static bool close_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
                        markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
-    const bool comment =
-        b->as.html_block->block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0;
+    (void)parser;
+    (void)parent;
+    (void)reader;
     markdown_core_literal_set(b, &b->as.html_block->literal, 0, b->content.size);
-    if (comment) {
-        markdown_core_block_convert_comment_block(parser, b, parent);
-    }
     return true;
 }
 static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,

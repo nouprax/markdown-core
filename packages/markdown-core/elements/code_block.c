@@ -4,14 +4,8 @@
 #include "sink.h"
 #include "attributes.h"
 #include "parts.h"
-#include "formula.h"
 #include <string.h>
 #define peek_at(input, at) ((input)->data[(at)])
-
-/* The elements whose state this element reads, as `self->peers` holds them:
- * the formula element, which a fence naming a formula becomes. */
-enum { CODE_FORMULA };
-static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA, NULL};
 
 /* The end of an indented code block's literal: past the line ending of its
  * last line that is not blank, or its start when every line is: a first
@@ -108,18 +102,6 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     const bufsize_t end = b->as.code->fenced ? content->size : S_indented_literal_end(content);
     markdown_core_literal_set(b, &b->as.code->literal, start, end);
     return true;
-}
-/* A fence whose info string names a formula becomes a FormulaBlock as
- * completion reaches it, in a dialect that holds formulas, inside the block
- * it settled into: before its explicit anchor is reserved, so the anchor of
- * the fence, which the FormulaBlock does not hold, is never taken. */
-static void complete_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *node, int depth) {
-    (void)depth;
-    const markdown_core_element_instance *formula = self->peers[CODE_FORMULA];
-    if (formula && node->as.code->fenced) {
-        markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
-    }
 }
 /* The character reference at `at`, an `&`, when it spells whitespace, as
  * the info string's decoding reads it: its length; 0 when it spells
@@ -419,10 +401,6 @@ static const markdown_core_edit_ops CODE_BLOCK_EDIT = {
     .spliced = spliced_code,
 };
 
-static const markdown_core_finish_ops CODE_BLOCK_FINISH = {
-    .complete = complete_code,
-};
-
 static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
@@ -443,8 +421,6 @@ static const markdown_core_line_ops CODE_BLOCK_LINES = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
-    .peers = CODE_PEERS,
-    .finish = &CODE_BLOCK_FINISH,
     .content = &CODE_BLOCK_CONTENT,
     .opens = &CODE_BLOCK_OPENS,
     .lines = &CODE_BLOCK_LINES,

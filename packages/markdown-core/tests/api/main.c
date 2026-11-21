@@ -8880,11 +8880,13 @@ static void formula_promotion_views_content(test_batch_runner *runner) {
         markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
         append_child(root, old);
         old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
+        old->as.code->fenced = 1;
         markdown_core_strbuf_puts(&old->content, written);
         old->as.code->literal = (markdown_core_chunk){old->content.ptr, old->content.size, 0};
         const unsigned char *bytes = old->content.ptr;
         payload_fail_at = fail ? payload_allocations + fail : 0;
-        markdown_core_formula_promote_fence(&formula_instance, &parser, old, root);
+        /* The formula element takes the fence over as it is completed. */
+        MARKDOWN_CORE_ELEMENT_FORMULA.takes[0].take(&formula_instance, &parser, old, root);
         payload_fail_at = 0;
         if (parser.error) {
             INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");

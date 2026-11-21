@@ -314,7 +314,7 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
  * projected after the instance table, which it resolves the structure in. */
 static void S_project_kinds(markdown_core_dialect *dialect) {
     for (size_t index = 0; index < MARKDOWN_CORE_FINISH_KIND_COUNT; index++) {
-        markdown_core_kind_record record = {NULL, NULL, 0};
+        markdown_core_kind_record record = {0};
         markdown_core_node_type kind =
             index < MARKDOWN_CORE_NODE_KIND_COUNT
                 ? (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | index)
@@ -345,6 +345,15 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
         }
         dialect->kinds[index] = record;
+    }
+    /* The blocks each element takes over (element.h, markdown_core_takeover). */
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const markdown_core_takeover *takes = dialect->instances[i].element->takes;
+        for (; takes && takes->kind != MARKDOWN_CORE_NODE_NONE; takes++) {
+            markdown_core_kind_record *record = &dialect->kinds[markdown_core_block_kind_index(takes->kind)];
+            record->taker[!takes->closing] = &dialect->instances[i];
+            record->take[!takes->closing] = takes->take;
+        }
     }
     /* A structure's fold hook is asked at the kinds it lists, each a block
      * kind it is the structure of (S_element_refused). */
