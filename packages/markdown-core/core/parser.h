@@ -1059,7 +1059,7 @@ struct markdown_core_parser {
      * engine only carries it to element hooks. */
     const markdown_core_dialect *dialect;
     void *context;
-    /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
+    /* The root node of the parser, of the dialect's root kind */
     struct markdown_core_node *root;
     /* WHERE THE READING STANDS (markdown_core_parser_at). */
     markdown_core_parser_at at;

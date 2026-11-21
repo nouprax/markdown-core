@@ -8,14 +8,17 @@
 #include "claim.h"
 #include "element.h"
 
-/* These kinds are owned roots/fields, never ordinary child edges, even under
- * a dynamic policy. Both decision paths share this structural boundary. */
+/* Whether `kind` may be a child at all: a ROOT kind (markdown_core_hold) is
+ * an owned root or field, never an ordinary child edge, even under a dynamic
+ * policy. Both decision paths share this structural boundary. */
 static inline bool S_child_kind_allowed(markdown_core_node_type kind) {
-    return kind != MARKDOWN_CORE_NODE_DOCUMENT && kind != MARKDOWN_CORE_NODE_METADATA;
+    const markdown_core_hold *hold = markdown_core_holds_for_kind(kind);
+    return hold && !(hold->flags & MARKDOWN_CORE_HOLD_ROOT);
 }
 
 bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type) {
-    if (!S_child_kind_allowed(child_type)) {
+    const markdown_core_hold *child = markdown_core_holds_for_kind(child_type);
+    if (!child || (child->flags & MARKDOWN_CORE_HOLD_ROOT)) {
         return false;
     }
 
@@ -30,62 +33,20 @@ bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, mark
         }
     }
 
-    switch (node->kind) {
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-    case MARKDOWN_CORE_NODE_CALLOUT:
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-    case MARKDOWN_CORE_NODE_DEFINITION_BODY:
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
-               child_type != MARKDOWN_CORE_NODE_DEFINITION && child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY;
-
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
-        return (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
-                child_type != MARKDOWN_CORE_NODE_DEFINITION && child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY) ||
-               MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
-
-    case MARKDOWN_CORE_NODE_DEFINITION_LIST:
-        return child_type == MARKDOWN_CORE_NODE_DEFINITION;
-    case MARKDOWN_CORE_NODE_CITE:
-        return child_type == MARKDOWN_CORE_NODE_CITATION;
-    case MARKDOWN_CORE_NODE_DEFINITION:
-        return child_type == MARKDOWN_CORE_NODE_DEFINITION_BODY;
-    case MARKDOWN_CORE_NODE_LIST:
-        return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
-
-    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
-        return markdown_core_node_contain_kinds(node) && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) &&
-               child_type != MARKDOWN_CORE_NODE_LIST_ITEM && child_type != MARKDOWN_CORE_NODE_DEFINITION &&
-               child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY;
-    case MARKDOWN_CORE_NODE_TABLE:
-        return markdown_core_node_contain_kinds(node) && child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
-    case MARKDOWN_CORE_NODE_TABLE_ROW:
-        return markdown_core_node_contain_kinds(node) && child_type == MARKDOWN_CORE_NODE_TABLE_CELL;
-    case MARKDOWN_CORE_NODE_TABLE_CELL:
-        return markdown_core_node_contain_kinds(node) && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
-    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
-        return markdown_core_node_contain_kinds(node) && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) &&
-               child_type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
-        return markdown_core_node_contain_kinds(node) && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
-    case MARKDOWN_CORE_NODE_PARAGRAPH:
-    case MARKDOWN_CORE_NODE_HEADING:
-    case MARKDOWN_CORE_NODE_EMPHASIS:
-    case MARKDOWN_CORE_NODE_STRONG:
-    case MARKDOWN_CORE_NODE_MARK:
-    case MARKDOWN_CORE_NODE_INSERTION:
-    case MARKDOWN_CORE_NODE_SPAN:
-    case MARKDOWN_CORE_NODE_SUPERSCRIPT:
-    case MARKDOWN_CORE_NODE_SUBSCRIPT:
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_EMBEDDED:
-        return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
-
-    default:
-        break;
+    /* The parent's holds, which its kind's schema declares. */
+    const markdown_core_hold *hold = markdown_core_holds_for_kind((markdown_core_node_type)node->kind);
+    if (!hold || ((hold->flags & MARKDOWN_CORE_HOLD_OWNED) && !kinds)) {
+        return false;
     }
-
-    return false;
+    const bool inline_child = MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
+    if ((inline_child ? hold->inlines : hold->blocks) & MARKDOWN_CORE_HOLD_BIT(child_type)) {
+        return true;
+    }
+    if ((child->flags & MARKDOWN_CORE_HOLD_MEMBER) ||
+        ((hold->flags & MARKDOWN_CORE_HOLD_FLAT) && child_type == node->kind)) {
+        return false;
+    }
+    return (hold->flags & (inline_child ? MARKDOWN_CORE_HOLD_INLINES : MARKDOWN_CORE_HOLD_BLOCKS)) != 0;
 }
 
 #ifndef NDEBUG
@@ -178,58 +139,6 @@ static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_reference),
     [MARKDOWN_CORE_NODE_CROSS_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_embedded),
     [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
-};
-
-static const char *const S_block_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
-    [MARKDOWN_CORE_NODE_DOCUMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = "document",
-    [MARKDOWN_CORE_NODE_CALLOUT & MARKDOWN_CORE_NODE_VALUE_MASK] = "callout",
-    [MARKDOWN_CORE_NODE_LIST & MARKDOWN_CORE_NODE_VALUE_MASK] = "list",
-    [MARKDOWN_CORE_NODE_LIST_ITEM & MARKDOWN_CORE_NODE_VALUE_MASK] = "list_item",
-    [MARKDOWN_CORE_NODE_CODE_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = "code_block",
-    [MARKDOWN_CORE_NODE_HTML_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = "html_block",
-    [MARKDOWN_CORE_NODE_PARAGRAPH & MARKDOWN_CORE_NODE_VALUE_MASK] = "paragraph",
-    [MARKDOWN_CORE_NODE_HEADING & MARKDOWN_CORE_NODE_VALUE_MASK] = "heading",
-    [MARKDOWN_CORE_NODE_THEMATIC_BREAK & MARKDOWN_CORE_NODE_VALUE_MASK] = "thematic_break",
-    [MARKDOWN_CORE_NODE_FOOTNOTE & MARKDOWN_CORE_NODE_VALUE_MASK] = "footnote",
-    [MARKDOWN_CORE_NODE_TABLE & MARKDOWN_CORE_NODE_VALUE_MASK] = "table",
-    [MARKDOWN_CORE_NODE_TABLE_ROW & MARKDOWN_CORE_NODE_VALUE_MASK] = "table_row",
-    [MARKDOWN_CORE_NODE_TABLE_CELL & MARKDOWN_CORE_NODE_VALUE_MASK] = "table_cell",
-    [MARKDOWN_CORE_NODE_FORMULA_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = "formula_block",
-    [MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = "directive_block",
-    [MARKDOWN_CORE_NODE_COMMENT_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = "comment_block",
-    [MARKDOWN_CORE_NODE_SPECIMEN & MARKDOWN_CORE_NODE_VALUE_MASK] = "specimen",
-    [MARKDOWN_CORE_NODE_DEFINITION_LIST & MARKDOWN_CORE_NODE_VALUE_MASK] = "definition_list",
-    [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = "definition",
-    [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = "definition_body",
-    [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = "metadata",
-    [MARKDOWN_CORE_NODE_REFERENCE & MARKDOWN_CORE_NODE_VALUE_MASK] = "reference",
-};
-
-static const char *const S_inline_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
-    [MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK] = "text",
-    [MARKDOWN_CORE_NODE_SOFT_BREAK & MARKDOWN_CORE_NODE_VALUE_MASK] = "soft_break",
-    [MARKDOWN_CORE_NODE_LINE_BREAK & MARKDOWN_CORE_NODE_VALUE_MASK] = "line_break",
-    [MARKDOWN_CORE_NODE_CODE & MARKDOWN_CORE_NODE_VALUE_MASK] = "code",
-    [MARKDOWN_CORE_NODE_HTML & MARKDOWN_CORE_NODE_VALUE_MASK] = "html",
-    [MARKDOWN_CORE_NODE_EMPHASIS & MARKDOWN_CORE_NODE_VALUE_MASK] = "emphasis",
-    [MARKDOWN_CORE_NODE_STRONG & MARKDOWN_CORE_NODE_VALUE_MASK] = "strong",
-    [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = "link",
-    [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = "embedded",
-    [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = "cite",
-    [MARKDOWN_CORE_NODE_STRIKETHROUGH & MARKDOWN_CORE_NODE_VALUE_MASK] = "strikethrough",
-    [MARKDOWN_CORE_NODE_FORMULA & MARKDOWN_CORE_NODE_VALUE_MASK] = "formula",
-    [MARKDOWN_CORE_NODE_DIRECTIVE & MARKDOWN_CORE_NODE_VALUE_MASK] = "directive",
-    [MARKDOWN_CORE_NODE_DIRECTIVE_LABEL & MARKDOWN_CORE_NODE_VALUE_MASK] = "directive_label",
-    [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = "comment",
-    [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = "citation",
-    [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = "cross_link",
-    [MARKDOWN_CORE_NODE_MARK & MARKDOWN_CORE_NODE_VALUE_MASK] = "mark",
-    [MARKDOWN_CORE_NODE_CROSS_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = "cross_embedded",
-    [MARKDOWN_CORE_NODE_INSERTION & MARKDOWN_CORE_NODE_VALUE_MASK] = "insertion",
-    [MARKDOWN_CORE_NODE_SPAN & MARKDOWN_CORE_NODE_VALUE_MASK] = "span",
-    [MARKDOWN_CORE_NODE_SUPERSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = "superscript",
-    [MARKDOWN_CORE_NODE_SUBSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = "subscript",
-    [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = "topic",
 };
 /* END GENERATED */
 
@@ -1031,32 +940,6 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     node->flags &=
         (markdown_core_node_internal_flags)((MARKDOWN_CORE_NODE__ELEMENT_FIRST - 1) & ~MARKDOWN_CORE_NODE__LENT);
     return MARKDOWN_CORE_NODE_SET_KIND_OK;
-}
-
-const char *markdown_core_node_get_type_string(markdown_core_node *node) {
-    if (node == NULL) {
-        return "NONE";
-    }
-
-    unsigned index = (unsigned)node->kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    const char *type_string = NULL;
-
-    if (node->kind == MARKDOWN_CORE_NODE_NONE) {
-        return "none";
-    }
-    if (index < MARKDOWN_CORE_NODE_KIND_COUNT) {
-        switch ((unsigned)node->kind & MARKDOWN_CORE_NODE_TYPE_MASK) {
-        case MARKDOWN_CORE_NODE_TYPE_BLOCK:
-            type_string = S_block_type_string[index];
-            break;
-        case MARKDOWN_CORE_NODE_TYPE_INLINE:
-            type_string = S_inline_type_string[index];
-            break;
-        default:
-            break;
-        }
-    }
-    return type_string ? type_string : "<unknown>";
 }
 
 #define MARKDOWN_CORE_RESOURCE_SLAB_BYTES ((size_t)8 * 1024)

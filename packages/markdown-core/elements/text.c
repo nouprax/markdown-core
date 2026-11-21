@@ -238,6 +238,7 @@ static const markdown_core_finish_ops TEXT_FINISH = {
 static const markdown_core_inline_ops TEXT_INLINES = {
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .text = markdown_core_text_parse,
+    .plain = MARKDOWN_CORE_NODE_TEXT,
     .match = match,
     .terminates = "\\&",
     .dispatch = "\\&",

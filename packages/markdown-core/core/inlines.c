@@ -55,7 +55,7 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
     if (span.has_end) {
         node->place.end = (uint32_t)span.end;
     }
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
+    if (node->kind == inline_state->dialect->plain && node->as.literal->len > 0) {
         /* A Text placed with an end unresolved keeps no map at all: the
          * writes stay inside the verbatim gate, and a partial span names no
          * slice to take. */
@@ -1304,7 +1304,7 @@ static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_stat
         return false;
     }
     const markdown_core_node *last = markdown_core_scaffold_of(inline_state->owner)->last;
-    if (!last || last->kind == MARKDOWN_CORE_NODE_TEXT ||
+    if (!last || last->kind == parser->dialect->plain ||
         (bufsize_t)last->place.end + (bufsize_t)stops->items[stops->count - 1].lead != pos) {
         return false;
     }
@@ -1553,7 +1553,7 @@ markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core
     if (from < 0 || to < from || to >= inline_state->input.len) {
         return NULL;
     }
-    node = markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, from, to,
+    node = markdown_core_inline_make_literal(inline_state, inline_state->dialect->plain, from, to,
                                              markdown_core_chunk_dup(&inline_state->input, from, to - from + 1));
     return node;
 }
@@ -1575,7 +1575,7 @@ static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {
     node = markdown_core_scaffold_last(node);
-    while (n > 0 && node && node->kind == MARKDOWN_CORE_NODE_TEXT) {
+    while (n > 0 && node && node->kind == parser->dialect->plain) {
         bufsize_t remove = node->as.literal->len < (bufsize_t)n ? node->as.literal->len : (bufsize_t)n;
         node->as.literal->len -= remove;
         n -= (int)remove;

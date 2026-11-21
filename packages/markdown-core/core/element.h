@@ -69,6 +69,49 @@ typedef enum {
 extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
 extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
 
+/* THE HOLDS: what a node of a kind may hold as a child, declared by the
+ * kind's schema (node-types.json, `contain`) and generated beside the
+ * structure tables, so the node tree asks a table and names no kind
+ * (node.c, markdown_core_node_can_contain_builtin). A child is held when the
+ * parent names it among `blocks` or `inlines` (one bit per kind value), or
+ * when the parent holds its whole class and the child is no MEMBER (held
+ * only where named) and, for a FLAT parent, not the parent's own kind. A
+ * ROOT kind is never a child; an OWNED kind holds children only when its
+ * node's own element declares containment (markdown_core_contain_ops). */
+enum {
+    MARKDOWN_CORE_HOLD_BLOCKS = 1u << 0,
+    MARKDOWN_CORE_HOLD_INLINES = 1u << 1,
+    MARKDOWN_CORE_HOLD_MEMBER = 1u << 2,
+    MARKDOWN_CORE_HOLD_ROOT = 1u << 3,
+    MARKDOWN_CORE_HOLD_OWNED = 1u << 4,
+    MARKDOWN_CORE_HOLD_FLAT = 1u << 5,
+};
+#define MARKDOWN_CORE_HOLD_BIT(kind) (UINT32_C(1) << ((unsigned)(kind) & MARKDOWN_CORE_NODE_VALUE_MASK))
+
+typedef struct markdown_core_hold {
+    unsigned flags;
+    uint32_t blocks, inlines;
+} markdown_core_hold;
+
+extern const markdown_core_hold markdown_core_block_holds[MARKDOWN_CORE_NODE_KIND_COUNT];
+extern const markdown_core_hold markdown_core_inline_holds[MARKDOWN_CORE_NODE_KIND_COUNT];
+
+/* The holds of `kind`, or NULL for a value outside the kind table. */
+static inline const markdown_core_hold *markdown_core_holds_for_kind(markdown_core_node_type kind) {
+    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
+        return NULL;
+    }
+    switch ((unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK) {
+    case MARKDOWN_CORE_NODE_TYPE_BLOCK:
+        return &markdown_core_block_holds[index];
+    case MARKDOWN_CORE_NODE_TYPE_INLINE:
+        return &markdown_core_inline_holds[index];
+    default:
+        return NULL;
+    }
+}
+
 static inline const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
     unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
     if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
@@ -151,6 +194,9 @@ typedef struct markdown_core_stage_ops {
  * `splice` of the published tree. Every one is required: registration
  * refuses an owner that leaves out one. */
 typedef struct markdown_core_document_ops {
+    /* The kind of the root node the document is: the engine's root role
+     * (the dialect's `root`), which it makes and never takes as a child. */
+    markdown_core_node_type kind;
     void (*init)(const markdown_core_element_instance *, markdown_core_parser *);
     /* Reads what the document's input opens with, before its first line,
      * through the reader, which stands at the input's start with no line in
@@ -364,6 +410,9 @@ typedef struct markdown_core_inline_ops {
     markdown_core_inline_precedence precedence;
     markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *,
                                 markdown_core_inline_state *, bufsize_t);
+    /* The kind of the plain text nodes `text` makes: the engine's plain role
+     * (the dialect's `plain`), the one kind it merges, maps and trims. */
+    markdown_core_node_type plain;
     void (*init)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*enter)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
                   markdown_core_node *);

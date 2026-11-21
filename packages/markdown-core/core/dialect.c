@@ -47,7 +47,8 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     const markdown_core_document_ops *document = element->document;
     return document && document->init && document->read && document->publish && document->candidate &&
-           document->reopen && document->splice;
+           document->reopen && document->splice && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) &&
+           S_finish_kind_indexable(document->kind);
 }
 
 /* The completion's hooks of an element that declares none (the Null Object
@@ -137,6 +138,12 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Only part of the document lifecycle. */
     if (element->document && !S_owns_document_lifecycle(element)) {
+        return true;
+    }
+    /* Plain text made of a kind that is not an inline kind of the table. */
+    const markdown_core_inline_ops *inlines = S_inlines_of(element);
+    if (inlines->text &&
+        !(MARKDOWN_CORE_NODE_TYPE_INLINE_P(inlines->plain) && S_finish_kind_indexable(inlines->plain))) {
         return true;
     }
     /* A flanking-transparent byte outside ASCII. */
@@ -300,6 +307,10 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         }
     }
     assert(dialect->document_structure && dialect->text_structure && dialect->text_block_structure);
+    dialect->root = dialect->document_structure->element->document->kind;
+    dialect->plain = S_inlines_of(dialect->text_structure->element)->plain;
+    dialect->plain_index = markdown_core_finish_kind_index(dialect->plain);
+    assert(MARKDOWN_CORE_NODE_TYPE_BLOCK_P(dialect->root) && MARKDOWN_CORE_NODE_TYPE_INLINE_P(dialect->plain));
 }
 
 /* THE PER-KIND RECORD (dialect.h, markdown_core_kind_record): one record

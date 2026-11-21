@@ -89,7 +89,7 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
 
 // Create a root document node.
 static markdown_core_node *make_document(markdown_core_parser *parser) {
-    markdown_core_node *e = make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 0);
+    markdown_core_node *e = make_block(parser, parser->dialect->root, 0);
     return e;
 }
 
@@ -2218,8 +2218,8 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
  * sibling consolidation absorbs at a Text's EXIT, whose ENTER is stepped
  * over, so consolidation completes it first. */
 static void complete_consolidated_text(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
-    const markdown_core_kind_record *plan = &parser->dialect->kinds[MARKDOWN_CORE_FINISH_TEXT_INDEX];
-    assert(node->kind == MARKDOWN_CORE_NODE_TEXT);
+    const markdown_core_kind_record *plan = &parser->dialect->kinds[parser->dialect->plain_index];
+    assert(node->kind == parser->dialect->plain);
     if (plan->complete) {
         plan->complete(plan->structure, parser, node, script_depth);
     }
@@ -2229,7 +2229,7 @@ static void complete_consolidated_text(markdown_core_parser *parser, markdown_co
  * to absorb, or no bytes of its own to keep. */
 static inline bool S_text_needs_consolidation(const markdown_core_node *text) {
     const markdown_core_node *next = markdown_core_scaffold_next(text);
-    return (next && next->kind == MARKDOWN_CORE_NODE_TEXT) || text->as.literal->len == 0;
+    return (next && next->kind == text->kind) || text->as.literal->len == 0;
 }
 
 /* TEXT CONSOLIDATION IS ONE STEP OF THE WALK, not a walk of its own.
@@ -2249,9 +2249,9 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
                                                       markdown_core_node *cur, int depth) {
     markdown_core_node *tmp, *next;
 
-    assert(walk->node == cur && cur->kind == MARKDOWN_CORE_NODE_TEXT);
+    assert(walk->node == cur && cur->kind == parser->dialect->plain);
     tmp = markdown_core_scaffold_next(cur);
-    if (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
+    if (tmp && tmp->kind == cur->kind) {
         /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE. A Text that
          * is a verbatim copy of its source holds a slice of its container's
          * runs (markdown_core_inline_map_text), and the siblings absorbed
@@ -2273,7 +2273,7 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
          * taken here, and each operand is copied to its place: no buffer
          * grows, and none is handed over and grown again for the next run. */
         size_t length = (size_t)cur->as.literal->len;
-        for (; tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = markdown_core_scaffold_next(tmp)) {
+        for (; tmp && tmp->kind == cur->kind; tmp = markdown_core_scaffold_next(tmp)) {
             length += (size_t)tmp->as.literal->len;
             if (!view) {
                 continue;
@@ -2303,7 +2303,7 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
             memcpy(merged, cur->as.literal->data, (size_t)at);
         }
         tmp = markdown_core_scaffold_next(cur);
-        while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
+        while (tmp && tmp->kind == cur->kind) {
             complete_consolidated_text(parser, tmp, depth);
             if (!view &&
                 !markdown_core_text_append(parser, &tmp->content_map, &combined_map, 0, tmp->as.literal->len, at)) {
@@ -3584,7 +3584,7 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
         uint32_t hit = made;
         if (!last) {
             hit = S_child_at(node, at, made, start);
-            if (hit == made || !hit || node->children[hit - 1]->kind == MARKDOWN_CORE_NODE_TEXT) {
+            if (hit == made || !hit || node->children[hit - 1]->kind == parser->dialect->plain) {
                 continue;
             }
         }
@@ -3814,7 +3814,7 @@ static bool S_settle_more(markdown_core_parser *parser, markdown_core_node *node
             continue;
         }
         const uint32_t at = S_child_at(node, held, node->child_count, start->start);
-        if (at == node->child_count || (at && node->children[at - 1]->kind == MARKDOWN_CORE_NODE_TEXT)) {
+        if (at == node->child_count || (at && node->children[at - 1]->kind == parser->dialect->plain)) {
             continue;
         }
         /* The point the read began at: nothing more settles. */
@@ -4139,7 +4139,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                      * absorbed nodes are gone -- they were never delivered to
                      * anything else, which is what makes freeing them safe. */
                     markdown_core_finish_result result = MARKDOWN_CORE_FINISH_CONTINUE;
-                    if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && S_text_needs_consolidation(node)) {
+                    if (index == parser->dialect->plain_index && S_text_needs_consolidation(node)) {
                         result = S_consolidate_text(parser, tree, node, frame->script_depth);
                     }
                     if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {

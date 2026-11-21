@@ -564,7 +564,7 @@ struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_i
 
 /** Remove the last n characters from the last child of the given node.
  * This only works where all n characters are in the single last child, and the last
- * child is MARKDOWN_CORE_NODE_TEXT.
+ * child is plain text (the dialect's `plain` kind).
  */
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
 

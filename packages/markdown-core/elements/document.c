@@ -99,6 +99,7 @@ static const markdown_core_edit_ops DOCUMENT_EDIT = {
 };
 
 static const markdown_core_document_ops DOCUMENT_OPS = {
+    .kind = MARKDOWN_CORE_NODE_DOCUMENT,
     .init = init_document,
     .read = read_document_prefix,
     .reopen = reopen_document,

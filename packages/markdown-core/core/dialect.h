@@ -126,11 +126,6 @@ static inline size_t markdown_core_finish_key(markdown_core_event_type event, ma
     return 2 * markdown_core_finish_kind_index(kind) + (event == MARKDOWN_CORE_EVENT_EXIT);
 }
 
-/* The kind index of the one kind the engine's own step, text consolidation,
- * acts at. A constant, so the walk compares the index it computed anyway. */
-#define MARKDOWN_CORE_FINISH_TEXT_INDEX                                                                                \
-    (MARKDOWN_CORE_NODE_KIND_COUNT + ((size_t)MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK))
-
 /* One projected step: the element, and which of the walk's per-root state
  * words is its own. An element that declared several kinds appears under each
  * of them with the same slot, so its state is one fact per root. A list ends
@@ -292,6 +287,14 @@ typedef struct markdown_core_dialect {
     const markdown_core_element_instance *instances;
     size_t element_count;
     const markdown_core_element_instance *document_structure, *text_structure, *text_block_structure;
+    /* The ROLE KINDS: the kind of the root, as `document_structure`
+     * declares it, and of plain text, as `text_structure` declares it --
+     * the kinds the engine acts on by role (text consolidation, the literal
+     * runs, the root it makes) without naming them. `plain_index` is the
+     * plain kind's finish index, the one kind index the engine's own step,
+     * text consolidation, acts at. */
+    markdown_core_node_type root, plain;
+    size_t plain_index;
     const markdown_core_element_instance *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
     markdown_core_delimiter_rule delimiter_chars[256];
     /* Each block-start hook family, in descriptor order. Order inside a

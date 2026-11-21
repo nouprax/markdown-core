@@ -185,7 +185,7 @@ static inline void *markdown_core_run_state(const markdown_core_inline_state *in
 }
 
 #define make_str(inline_state, sc, ec, s)                                                                              \
-    markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
+    markdown_core_inline_make_literal(inline_state, (inline_state)->dialect->plain, sc, ec, s)
 
 /* Read the cursor's run into the frame (inline_internal.h, `mark_run_start`
  * and the fields after it). Called wherever the cursor is written: seeded on
@@ -272,7 +272,7 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
     node->place.end =
         (uint32_t)(inline_state->mark_source + (to_offset - inline_state->mark_run_start) * inline_state->mark_step +
                    inline_state->mark_width);
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
+    if (node->kind == inline_state->dialect->plain && node->as.literal->len > 0) {
         markdown_core_inline_map_text(inline_state, node, from, to, inline_state->mark_cursor,
                                       inline_state->mark_cursor);
     }
