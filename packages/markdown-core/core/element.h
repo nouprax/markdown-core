@@ -86,18 +86,18 @@ typedef struct markdown_core_hold {
  * every node they make, free and visit. */
 #define MARKDOWN_CORE_KIND_TABLE_CLASS 32
 #define MARKDOWN_CORE_KIND_TABLE_COUNT (2 * MARKDOWN_CORE_KIND_TABLE_CLASS)
+/* The table bit of a kind's class: set for an inline kind, clear for a block. */
+#define MARKDOWN_CORE_KIND_TABLE_BIT(kind) (((size_t)(kind) >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS)
 /* A class that outgrows the tables, or a class bit the index does not read
  * where it is, is a compile error here. */
-typedef char
-    markdown_core_kind_table_fits[MARKDOWN_CORE_NODE_KIND_COUNT <= MARKDOWN_CORE_KIND_TABLE_CLASS &&
-                                          ((MARKDOWN_CORE_NODE_TYPE_INLINE >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS) &&
-                                          !((MARKDOWN_CORE_NODE_TYPE_BLOCK >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS)
-                                      ? 1
-                                      : -1];
+typedef char markdown_core_kind_table_fits[MARKDOWN_CORE_NODE_KIND_COUNT <= MARKDOWN_CORE_KIND_TABLE_CLASS ? 1 : -1];
+typedef char markdown_core_kind_table_reads
+    [MARKDOWN_CORE_KIND_TABLE_BIT(MARKDOWN_CORE_NODE_TYPE_INLINE) == MARKDOWN_CORE_KIND_TABLE_CLASS ? 1 : -1];
+typedef char markdown_core_kind_table_blocks[MARKDOWN_CORE_KIND_TABLE_BIT(MARKDOWN_CORE_NODE_TYPE_BLOCK) == 0 ? 1 : -1];
 
 static inline size_t markdown_core_kind_table_index(markdown_core_node_type kind) {
     const size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    return ordinal < MARKDOWN_CORE_NODE_KIND_COUNT ? (ordinal | (((size_t)kind >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS))
+    return ordinal < MARKDOWN_CORE_NODE_KIND_COUNT ? (ordinal | MARKDOWN_CORE_KIND_TABLE_BIT(kind))
                                                    : MARKDOWN_CORE_KIND_TABLE_COUNT - 1;
 }
 
