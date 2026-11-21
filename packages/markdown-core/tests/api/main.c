@@ -5257,7 +5257,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->content_mark_probes = parser->content_mark_probes;
     work->line_marks = parser->line_marks.count;
     work->pooled_delimiters = 0;
-    for (const delimiter *entry = parser->free_delimiters; entry; entry = entry->next) {
+    for (const markdown_core_stack_item *entry = parser->delimiter_pool.free; entry; entry = entry->next) {
         work->pooled_delimiters++;
     }
     work->whitespace = ELEMENT_STATE(parser, markdown_core_text_work, MARKDOWN_CORE_ELEMENT_TEXT)->whitespace;

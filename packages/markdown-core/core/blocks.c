@@ -375,11 +375,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
      * nothing else does, so it is released here rather than with the node. */
     markdown_core_array_free(&parser->line_marks);
 
-    while (parser->free_delimiters) {
-        delimiter *entry = parser->free_delimiters;
-        parser->free_delimiters = entry->next;
-        markdown_core_free(entry);
-    }
+    markdown_core_pool_release(&parser->delimiter_pool);
+    markdown_core_pool_release(&parser->bracket_pool);
     markdown_core_inline_release_records(parser);
     markdown_core_attribute_scratch_free(&parser->attribute_scratch);
 
@@ -1720,19 +1717,26 @@ static inline void S_shut(markdown_core_parser *parser, markdown_core_node *bloc
 /* THE CLOSE OF A BLOCK's element: the items its text opens with cut first
  * when the element's blocks cut them (THE FRONT CUT), then its close hook.
  * False when the block yields no node of its own. */
-static bool S_close_hook(markdown_core_parser *parser, const markdown_core_element_instance *structure,
-                         markdown_core_node *b, markdown_core_node *parent) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close_hook(markdown_core_parser *parser,
+                                                                         const markdown_core_kind_record *kind,
+                                                                         markdown_core_node *b,
+                                                                         markdown_core_node *parent) {
+    const markdown_core_element_instance *structure = kind->structure;
     if (!structure) {
         return true;
     }
+    const markdown_core_node_type was = (markdown_core_node_type)b->kind;
     if (structure->lines->cuts && !markdown_core_reader_cut_front(&parser->at.read, parser, b, parent)) {
         return false;
     }
     if (structure->lines->close && !structure->lines->close(structure, parser, b, parent, &parser->at.read)) {
         return false;
     }
-    /* Another element may take the block over as it closes. */
-    const markdown_core_kind_record *kind = markdown_core_dialect_block_kind(parser->dialect, b->kind);
+    /* Another element may take the block over as it closes, by the kind
+     * the close left it. */
+    if (b->kind != was) {
+        kind = markdown_core_parser_block_kind(parser, b);
+    }
     if (kind->take[0]) {
         kind->take[0](kind->taker[0], parser, b, parent);
     }
@@ -1746,8 +1750,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
      * source on each of its lines, whatever its close hook makes of it; one
      * of the document itself lies on whole lines, its own source its range. */
     const bool lines = parent && parent != parser->root && S_kind_takes_text(kind, b);
-    const markdown_core_element_instance *structure = kind->structure;
-    if (structure && !S_close_hook(parser, structure, b, parent)) {
+    if (!S_close_hook(parser, kind, b, parent)) {
         return false;
     }
     if (lines) {
@@ -7211,7 +7214,7 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
         S_room_up(parser);
     }
     const markdown_core_element_instance *structure = kind->structure;
-    const bool kept = nested ? S_close_hook(parser, structure, block, parent) : S_close(parser, block, kind, parent);
+    const bool kept = nested ? S_close_hook(parser, kind, block, parent) : S_close(parser, block, kind, parent);
     assert(kept);
     if (!kept || parser->error) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -8374,8 +8377,7 @@ static void S_close_tail(markdown_core_parser *parser) {
     for (markdown_core_node *node = boundary;;) {
         markdown_core_node *const below = markdown_core_scaffold_parent(node);
         node->place.end = end;
-        const markdown_core_element_instance *structure = kind->structure;
-        (void)S_close_hook(parser, structure, node, below);
+        (void)S_close_hook(parser, kind, node, below);
         if (parser->error || !S_reserve_anchor(parser, node, node->place.start)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
@@ -10490,25 +10492,6 @@ void markdown_core_parser_request_candidate(markdown_core_parser *parser, const 
         memcpy(stream->candidate_room, state, owner->element->candidate->size);
     }
     stream->request_ends = ends;
-}
-
-markdown_core_candidate_decision markdown_core_parser_call(markdown_core_parser *parser,
-                                                           const markdown_core_element_instance *owner,
-                                                           markdown_core_node *container, markdown_core_reader *reader,
-                                                           markdown_core_node_type child, void *record, bool ends) {
-    if (markdown_core_parser_candidate_meets(parser, owner, container)) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
-    }
-    markdown_core_parser_clear_end_read(parser);
-    const bool claims = owner->element->candidate->reads(owner, parser, container, reader, record);
-    if (parser->error) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
-    }
-    if (markdown_core_parser_end_read(parser)) {
-        markdown_core_parser_request_candidate(parser, owner, container, child, record, ends);
-        return MARKDOWN_CORE_CANDIDATE_WAIT;
-    }
-    return claims ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 /* The call of `mark` after the one at `index` that waits, or the mark's call

@@ -63,8 +63,8 @@ static bool document_reads(const markdown_core_element_instance *self, markdown_
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_reader *reader) {
     document_call call = {false, 0};
-    if (markdown_core_parser_call(parser, self, parser->root, reader, MARKDOWN_CORE_NODE_METADATA, &call, false) !=
-        MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+    if (markdown_core_parser_call(parser, self, document_reads, parser->root, reader, MARKDOWN_CORE_NODE_METADATA,
+                                  &call, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return 0;
     }
     return markdown_core_properties_parse(self->state, parser, reader, call.fence);

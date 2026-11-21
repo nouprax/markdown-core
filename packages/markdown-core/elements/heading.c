@@ -369,7 +369,7 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
          * cursor as every inline. A live bracket makes this declaration
          * unwritable as a reference label; only its remaining inlines depend
          * on the document's completed symbol table. */
-        if ((inline_state.last_delim && inline_state.last_delim->kind == DELIMITER_FIELD) ||
+        if ((inline_state.delims.last && delimiter_last(&inline_state.delims)->kind == DELIMITER_FIELD) ||
             (inline_state.pos != inline_state.text_end && inline_state.pos >= inline_state.opaque_end &&
              (c == '[' || c == ']' ||
               ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {

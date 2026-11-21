@@ -1022,7 +1022,7 @@ static markdown_core_node *match_bracket(const markdown_core_element_instance *s
  * definition's; any other `[` there reads a reference definition's label. A
  * definition is one only where the document finishes it. */
 static void report_open(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
-    for (const bracket *b = markdown_core_brackets(inline_state)->last; b; b = b->previous) {
+    for (const bracket *b = markdown_core_open_bracket(inline_state); b; b = bracket_previous(b)) {
         const bool wide = b->kind != BRACKET_LINK;
         const bufsize_t start = b->position - (wide ? 2 : 1);
         markdown_core_field fields[2];

@@ -19,16 +19,17 @@
  * rule about links inside links is restored when it closes. */
 typedef enum { BRACKET_LINK, BRACKET_IMAGE, BRACKET_FOOTNOTE } bracket_kind;
 
-/* An open bracket: the bracket around it, the element that opened it, the
+/* An open bracket, an item of the run's stack of open brackets (stack.h),
+ * the bracket around it before it: the element that opened it, the
  * opener's text node and the position after the opener; whether a bracket
  * opened after it, and whether it is inside a `[` or a `![` body; the rule
- * about links as it opened. A suspended bracket (markdown_core_bracket_wait)
- * also keeps where its `]` was read and the node it made there, the
- * delimiter its body ends at and the rule as it was suspended, in the list
- * of suspended brackets. Then the dialect's elements' records
+ * about links as it opened. A suspended bracket (markdown_core_inline_suspend_bracket)
+ * is an item of the stack of suspended ones instead, and keeps where its
+ * `]` was read and the node it made there, the delimiter its body ends at
+ * and the rule as it was suspended. Then the dialect's elements' records
  * (markdown_core_bracket_record), zeroed as it opens. */
 typedef struct bracket {
-    struct bracket *previous;
+    markdown_core_stack_item item;
     const markdown_core_element_instance *owner;
     markdown_core_node *inl_text;
     bufsize_t position;
@@ -41,9 +42,9 @@ typedef struct bracket {
     delimiter *delim_end;
     bufsize_t close_position;
     bool pending_no_link_openers;
-    struct bracket *pending_previous, *pending_next;
     unsigned char records[];
 } bracket;
+MARKDOWN_CORE_STACK_OF(bracket, bracket)
 
 /* The run's brackets. */
 static inline markdown_core_bracket_scope *markdown_core_brackets(markdown_core_inline_state *inline_state) {
@@ -52,7 +53,7 @@ static inline markdown_core_bracket_scope *markdown_core_brackets(markdown_core_
 
 /* The innermost open bracket, or NULL outside every bracket. */
 static inline bracket *markdown_core_open_bracket(const markdown_core_inline_state *inline_state) {
-    return inline_state->brackets.last;
+    return bracket_last(&inline_state->brackets.open);
 }
 
 /* The record of `self`'s element in `b` (element.h, `bracket_size`). */

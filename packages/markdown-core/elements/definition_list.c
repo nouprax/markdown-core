@@ -31,6 +31,11 @@ typedef struct {
 /* THE BODY'S READING of a blank line in `parent`: whether the next line that
  * is not blank is indented to `continuation`, which line that is in
  * `*line`. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_reads(const markdown_core_element_instance *self,
+                                                                             markdown_core_parser *parser,
+                                                                             markdown_core_node *container,
+                                                                             markdown_core_reader *reader,
+                                                                             void *record);
 static bool definition_body_continues(markdown_core_parser *parser, markdown_core_node *parent, int continuation,
                                       int *line) {
     markdown_core_block_lookahead lookahead;
@@ -57,8 +62,8 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
     definition_candidate call = {DEFINITION_BLANK, body->as.definition_body->continuation, 0, false};
-    if (markdown_core_parser_call(parser, self, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, &call, false) !=
-        MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+    if (markdown_core_parser_call(parser, self, definition_reads, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, &call,
+                                  false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return false;
     }
     body->as.definition_body->continuation_line = call.line;
@@ -173,8 +178,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
 /* THE TERM'S READING of the reader's line in `parent` its admission admits:
  * whether a definition marker line follows it, after one blank line at
  * most. */
-static bool definition_term_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                  markdown_core_node *parent, markdown_core_reader *reader, bool *compact) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool definition_term_reads(const markdown_core_element_instance *self,
+                                                                      markdown_core_parser *parser,
+                                                                      markdown_core_node *parent,
+                                                                      markdown_core_reader *reader, bool *compact) {
     markdown_core_definition_list_work *counts = self->state;
     markdown_core_chunk term = {(unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
                                 markdown_core_reader_length(reader) - reader->nonspace, 0};
@@ -304,8 +311,8 @@ static markdown_core_node *try_paragraph(const markdown_core_element_instance *s
                                          markdown_core_reader *reader) {
     (void)indented;
     definition_candidate call = {DEFINITION_TERM, 0, 0, false};
-    if (markdown_core_parser_call(parser, self, parent, reader, MARKDOWN_CORE_NODE_DEFINITION_LIST, &call, false) !=
-        MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+    if (markdown_core_parser_call(parser, self, definition_reads, parent, reader, MARKDOWN_CORE_NODE_DEFINITION_LIST,
+                                  &call, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return NULL;
     }
     return markdown_core_block_open_definition(self->state, parser, parent, reader, call.compact);
@@ -336,8 +343,11 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
 /* THE CALL'S READING (element.h, `reads`): the term's of the reader's
  * line, and a body's of the next line that is not blank, from the
  * continuation it had, which nothing after the call writes. */
-static bool definition_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                             markdown_core_node *container, markdown_core_reader *reader, void *record) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_reads(const markdown_core_element_instance *self,
+                                                                             markdown_core_parser *parser,
+                                                                             markdown_core_node *container,
+                                                                             markdown_core_reader *reader,
+                                                                             void *record) {
     definition_candidate *call = record;
     if (call->call == DEFINITION_TERM) {
         return definition_term_admits(self, parser, container, reader) &&

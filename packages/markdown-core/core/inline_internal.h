@@ -21,12 +21,12 @@ typedef struct {
     bool can_open, can_close;
 } delimiter_run;
 
-/* ONE RUN'S BRACKETS (bracket.h): the open ones, innermost first; the
- * suspended ones; and whether a link may open here, which a link's own text
- * forbids until a new opener. */
+/* ONE RUN'S BRACKETS (bracket.h): two instances of the engine's stack
+ * (stack.h), the open ones, the innermost last, and the suspended ones; and
+ * whether a link may open here, which a link's own text forbids until a new
+ * opener. */
 typedef struct markdown_core_bracket_scope {
-    struct bracket *last;
-    struct bracket *pending;
+    markdown_core_stack open, suspended;
     bool no_link_openers;
 } markdown_core_bracket_scope;
 
@@ -73,7 +73,8 @@ struct markdown_core_inline_state {
     int mark_line, mark_step, mark_width;
     bufsize_t mark_source;
     bool mapped;
-    delimiter *last_delim;
+    /* The run's delimiters (stack.h), from the parser's pool. */
+    markdown_core_stack delims;
     delimiter_run cached_run;
     /* How many delimiters of each rule on the stack can open, and how many
      * can close, kept at every push and removal so a scanner can ask whether

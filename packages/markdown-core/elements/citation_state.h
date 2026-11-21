@@ -7,7 +7,7 @@
 /* Citation candidates borrow token nodes until the enclosing bracket chooses
  * their owner. They retain source coordinates, never a second inline tree. */
 typedef struct citation_token {
-    struct citation_token *next;
+    markdown_core_stack_item item;
     markdown_core_node *node;
     delimiter *boundary;
     struct bracket *tail;
@@ -15,9 +15,11 @@ typedef struct citation_token {
     bool key, suppress;
 } citation_token;
 
-typedef struct {
-    citation_token *first, *last;
-} citation_tokens;
+MARKDOWN_CORE_STACK_OF(citation_token, citation_token)
+
+/* The tokens read in a body, in source order: an instance of the engine's
+ * stack (stack.h). */
+typedef markdown_core_stack citation_tokens;
 
 /* WHAT A BRACKET HOLDS OF CITATIONS (the citation element's bracket
  * record, bracket.h): the tokens read in its body, and the author key a

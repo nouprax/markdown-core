@@ -180,8 +180,8 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         !markdown_core_block_ends_with_blank_line(owner)) {
         return false;
     }
-    const markdown_core_candidate_decision decision =
-        markdown_core_parser_call(parser, self, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, NULL, true);
+    const markdown_core_candidate_decision decision = markdown_core_parser_call(
+        parser, self, markdown_core_block_identifier_reads, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, NULL, true);
     if (decision == MARKDOWN_CORE_CANDIDATE_WAIT) {
         return true;
     }

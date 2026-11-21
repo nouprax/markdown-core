@@ -8,6 +8,7 @@
 #include "tree.h"
 #include "roster.h"
 #include "names.h"
+#include "stack.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
@@ -1169,10 +1170,10 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_path;
     struct markdown_core_lookahead_container *lookahead_containers;
     size_t lookahead_capacity;
-    /* Delimiter entries removed from an inline parse, kept for the next push
-     * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
-     * and released with the parser. */
-    struct delimiter *free_delimiters;
+    /* The items of the inline parse's stacks (stack.h) its runs let go of,
+     * kept for the next push: delimiters (markdown_core_inline_push_delimiter_entry)
+     * and brackets (bracket.h), each of one size; released with the parser. */
+    markdown_core_pool delimiter_pool, bracket_pool;
     /* The workspace every attribute value of the parse is read into before
      * it is laid out (core/attributes.h); released with the parser. */
     markdown_core_attribute_scratch attribute_scratch;
@@ -2024,11 +2025,6 @@ typedef enum {
  * text may follow asks to be a candidate, with the record and `ends`, and
  * WAITs; any other claims (ACCEPT) or not (REJECT) as its reading says. A
  * failed parse is a REJECT. */
-markdown_core_candidate_decision markdown_core_parser_call(markdown_core_parser *parser,
-                                                           const markdown_core_element_instance *owner,
-                                                           struct markdown_core_node *container,
-                                                           markdown_core_reader *reader, markdown_core_node_type child,
-                                                           void *record, bool ends);
 bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                      struct markdown_core_node *container, size_t ask);
 /* Every opener asks, so the parse reads whether a mark is left to meet

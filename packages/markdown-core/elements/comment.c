@@ -113,8 +113,8 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
 
     if (indented ||
         !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first_nonspace) ||
-        markdown_core_parser_call(parser, self, parent_container, reader, MARKDOWN_CORE_NODE_COMMENT_BLOCK, NULL,
-                                  false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+        markdown_core_parser_call(parser, self, comment_reads, parent_container, reader,
+                                  MARKDOWN_CORE_NODE_COMMENT_BLOCK, NULL, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return NULL;
     }
 
