@@ -9224,8 +9224,7 @@ static int census_owned_root(markdown_core_node **slot, void *context) {
  * record holds the document's state, not inline roots. */
 static int census_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     const markdown_core_record_ops *record = markdown_core_record_for_kind((markdown_core_node_type)node->kind);
-    return (node->kind == MARKDOWN_CORE_NODE_DOCUMENT || !record || !record->visit ||
-            record->visit(node, visitor, context)) &&
+    return (node->kind == MARKDOWN_CORE_NODE_DOCUMENT || !record->visit || record->visit(node, visitor, context)) &&
            markdown_core_visit_element_subtrees(node, visitor, context);
 }
 

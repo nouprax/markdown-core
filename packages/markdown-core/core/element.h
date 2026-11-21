@@ -59,46 +59,53 @@ extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN
 extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
 
 /* THE HOLDS: what a node of a kind may hold as a child, declared by the
- * kind's schema (node-types.json, `contain`) and generated beside the
- * structure tables, so the node tree asks a table and names no kind
- * (node.c, markdown_core_node_can_contain_builtin). A child is held when the
- * parent names it among `blocks` or `inlines` (one bit per kind value), or
- * when the parent holds its whole class and the child is no MEMBER (held
- * only where named) and, for a FLAT parent, not the parent's own kind. A
- * ROOT kind is never a child; an OWNED kind holds children only when its
- * node's own element declares containment (markdown_core_contain_ops). */
+ * kind's schema (node-types.json, `contain`) and resolved by its generator
+ * into one bit per kind value of each class (`blocks`, `inlines`), so the
+ * node tree tests a bit and names no kind (node.c,
+ * markdown_core_node_can_contain_builtin). A ROOT kind is never a child, so
+ * no mask holds it, and the dynamic policies (markdown_core_contain_ops
+ * `allows`) are refused it too; an OWNED kind holds children only when its
+ * node's own element declares containment. */
 enum {
-    MARKDOWN_CORE_HOLD_BLOCKS = 1u << 0,
-    MARKDOWN_CORE_HOLD_INLINES = 1u << 1,
-    MARKDOWN_CORE_HOLD_MEMBER = 1u << 2,
-    MARKDOWN_CORE_HOLD_ROOT = 1u << 3,
-    MARKDOWN_CORE_HOLD_OWNED = 1u << 4,
-    MARKDOWN_CORE_HOLD_FLAT = 1u << 5,
+    MARKDOWN_CORE_HOLD_ROOT = 1u << 0,
+    MARKDOWN_CORE_HOLD_OWNED = 1u << 1,
 };
-#define MARKDOWN_CORE_HOLD_BIT(kind) (UINT32_C(1) << ((unsigned)(kind) & MARKDOWN_CORE_NODE_VALUE_MASK))
 
 typedef struct markdown_core_hold {
     unsigned flags;
     uint32_t blocks, inlines;
 } markdown_core_hold;
 
-extern const markdown_core_hold markdown_core_block_holds[MARKDOWN_CORE_NODE_KIND_COUNT];
-extern const markdown_core_hold markdown_core_inline_holds[MARKDOWN_CORE_NODE_KIND_COUNT];
+/* THE KIND TABLES -- the holds and the record ops below -- are indexed by
+ * class then ordinal: a block kind at its ordinal, an inline kind at 32 past
+ * it, and a value outside the table at the last index. No class numbers a
+ * kind 0, and each class numbers fewer than 32 (the generator refuses more),
+ * so every index that numbers no kind -- NONE's among them -- is an entry of
+ * no kind: it holds nothing, is never a child and has no record. A mask, a
+ * shift and one compare, with no branch on the class: the walks ask it of
+ * every node they make, free and visit. */
+#define MARKDOWN_CORE_KIND_TABLE_CLASS 32
+#define MARKDOWN_CORE_KIND_TABLE_COUNT (2 * MARKDOWN_CORE_KIND_TABLE_CLASS)
+/* A class that outgrows the tables, or a class bit the index does not read
+ * where it is, is a compile error here. */
+typedef char
+    markdown_core_kind_table_fits[MARKDOWN_CORE_NODE_KIND_COUNT <= MARKDOWN_CORE_KIND_TABLE_CLASS &&
+                                          ((MARKDOWN_CORE_NODE_TYPE_INLINE >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS) &&
+                                          !((MARKDOWN_CORE_NODE_TYPE_BLOCK >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS)
+                                      ? 1
+                                      : -1];
 
-/* The holds of `kind`, or NULL for a value outside the kind table. */
+static inline size_t markdown_core_kind_table_index(markdown_core_node_type kind) {
+    const size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    return ordinal < MARKDOWN_CORE_NODE_KIND_COUNT ? (ordinal | (((size_t)kind >> 9) & MARKDOWN_CORE_KIND_TABLE_CLASS))
+                                                   : MARKDOWN_CORE_KIND_TABLE_COUNT - 1;
+}
+
+extern const markdown_core_hold markdown_core_holds[MARKDOWN_CORE_KIND_TABLE_COUNT];
+
+/* The holds of `kind`. */
 static inline const markdown_core_hold *markdown_core_holds_for_kind(markdown_core_node_type kind) {
-    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return NULL;
-    }
-    switch ((unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK) {
-    case MARKDOWN_CORE_NODE_TYPE_BLOCK:
-        return &markdown_core_block_holds[index];
-    case MARKDOWN_CORE_NODE_TYPE_INLINE:
-        return &markdown_core_inline_holds[index];
-    default:
-        return NULL;
-    }
+    return &markdown_core_holds[markdown_core_kind_table_index(kind)];
 }
 
 static inline const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
@@ -144,7 +151,7 @@ typedef struct markdown_core_block_gate {
 
 /* THE RECORD: what the node walks (node.c) ask of a record a node holds --
  * its kind's record (`node->as`), whose ops its kind's schema names
- * (node-types.json `ops`, generated into markdown_core_block_records), and
+ * (node-types.json `ops`, generated into markdown_core_records), and
  * an element's payload (`node->opaque`), whose ops its element names
  * (`payload`). ONE interface for both; each hook may be NULL, for no work
  * there. They are class methods: a node knows its kind and its element, not
@@ -187,24 +194,12 @@ typedef struct markdown_core_record_ops {
     int (*visit)(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context);
 } markdown_core_record_ops;
 
-extern const markdown_core_record_ops *const markdown_core_block_records[MARKDOWN_CORE_NODE_KIND_COUNT];
-extern const markdown_core_record_ops *const markdown_core_inline_records[MARKDOWN_CORE_NODE_KIND_COUNT];
+extern const markdown_core_record_ops *const markdown_core_records[MARKDOWN_CORE_KIND_TABLE_COUNT];
 
-/* The record ops of `kind`, or NULL for a kind with no record or a value
- * outside the kind table. */
+/* The record ops of `kind`: for a kind with no record, or a value outside
+ * the kind table, the record of nothing, whose hooks are all NULL. */
 static inline const markdown_core_record_ops *markdown_core_record_for_kind(markdown_core_node_type kind) {
-    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return NULL;
-    }
-    switch ((unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK) {
-    case MARKDOWN_CORE_NODE_TYPE_BLOCK:
-        return markdown_core_block_records[index];
-    case MARKDOWN_CORE_NODE_TYPE_INLINE:
-        return markdown_core_inline_records[index];
-    default:
-        return NULL;
-    }
+    return markdown_core_records[markdown_core_kind_table_index(kind)];
 }
 
 /* THE PARSE'S STAGES, which any element may take part in (blocks.c): the

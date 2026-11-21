@@ -257,6 +257,30 @@ function classTable(declaration, klass, entry) {
     return `${declaration}[MARKDOWN_CORE_NODE_KIND_COUNT] = {\n${rows.join("\n")}\n};\n`;
 }
 
+/** One table over both classes, indexed as element.h's markdown_core_kind_table_index:
+ * a block type at its value, an inline type 32 past it, and every entry of no
+ * kind -- each class's values that number no type, the last among them --
+ * reading as `none`. */
+function kindTable(declaration, { block, inline }, entry, none) {
+    const rows = [];
+    for (const [offset, klass] of [
+        ["", block],
+        ["MARKDOWN_CORE_KIND_TABLE_CLASS + ", inline]
+    ]) {
+        const byValue = new Map(klass.types.map((type) => [type.value, type]));
+        for (let value = 0; value < 32; value++) {
+            const type = byValue.get(value);
+            const row = type ? entry(type) : none;
+            if (row === null) continue;
+            const index = type
+                ? `${offset}(MARKDOWN_CORE_NODE_${type.name} & MARKDOWN_CORE_NODE_VALUE_MASK)`
+                : `${offset}${String(value)}`;
+            rows.push(`    [${index}] = ${row},`);
+        }
+    }
+    return `${declaration}[MARKDOWN_CORE_KIND_TABLE_COUNT] = {\n${rows.join("\n")}\n};\n`;
+}
+
 function comment(note, indent) {
     if (!note) return "";
     const words = note.split(/\s+/);
@@ -347,31 +371,44 @@ function structureTables({ block, inline }) {
         ...block.types.map((type) => [type.name, "block"]),
         ...inline.types.map((type) => [type.name, "inline"])
     ]);
-    const flags = [
-        ["blocks", "BLOCKS"],
-        ["inlines", "INLINES"],
-        ["member", "MEMBER"],
-        ["root", "ROOT"],
-        ["owned", "OWNED"],
-        ["flat", "FLAT"]
+    /* The schema's rule, resolved to a mask per class: a child is held when it
+     * is no root and the parent names it among its members, or it is no
+     * member type, the parent holds its whole class and, for a flat parent,
+     * it is not the parent's own type. */
+    const all = [
+        ...block.types.map((type) => ({ type, klass: "block" })),
+        ...inline.types.map((type) => ({ type, klass: "inline" }))
     ];
+    const holds = (parent, { type: child, klass }) => {
+        const contain = parent.contain ?? {};
+        if (child.contain?.root) return false;
+        if ((contain.members ?? []).includes(child.name)) return true;
+        if (child.contain?.member || (contain.flat && child.name === parent.name)) return false;
+        return Boolean(contain[`${klass}s`]);
+    };
+    const mask = (parent, klass) =>
+        all
+            .filter((entry) => entry.klass === klass && holds(parent, entry))
+            .reduce((bits, { type }) => bits | (1 << type.value), 0) >>> 0;
     const hold = (type) => {
         const contain = type.contain;
         if (contain === null) return null;
         const parts = [];
-        const named = flags.filter(([key]) => contain[key]).map(([, flag]) => `MARKDOWN_CORE_HOLD_${flag}`);
+        const named = [
+            ["root", "ROOT"],
+            ["owned", "OWNED"]
+        ]
+            .filter(([key]) => contain[key])
+            .map(([, flag]) => `MARKDOWN_CORE_HOLD_${flag}`);
         if (named.length) parts.push(`.flags = ${named.join(" | ")}`);
         for (const klass of ["block", "inline"]) {
-            const members = (contain.members ?? []).filter((member) => classOf.get(member) === klass);
-            if (members.length) {
-                const bits = members.map((member) => `MARKDOWN_CORE_HOLD_BIT(MARKDOWN_CORE_NODE_${member})`);
-                parts.push(`.${klass}s = ${bits.join(" | ")}`);
-            }
+            const bits = mask(type, klass);
+            if (bits) parts.push(`.${klass}s = 0x${bits.toString(16).padStart(8, "0")}u`);
         }
         return `{${parts.join(", ")}}`;
     };
     const typeString = (type) => `"${type.name.toLowerCase()}"`;
-    const ops = (type) => (type.ops === null ? null : `&MARKDOWN_CORE_RECORD_${type.ops}`);
+    const ops = (type) => `&MARKDOWN_CORE_RECORD_${type.ops ?? "NONE"}`;
     const named = [...new Set([...block.types, ...inline.types].map((type) => type.ops).filter((name) => name))];
     return (
         "/* Explicitly sized, so a kind whose value index outgrows the projection is a\n" +
@@ -380,21 +417,32 @@ function structureTables({ block, inline }) {
         "\n" +
         classTable("const markdown_core_element *const markdown_core_inline_structure", inline, element) +
         "\n" +
-        "/* What a node of each type may hold (element.h, markdown_core_hold); a type\n" +
-        " * that holds nothing and has no rule as a child reads as all zero. */\n" +
+        "/* What a node of each type may hold (element.h, markdown_core_hold), one bit\n" +
+        " * per held type's value, resolved from node-types.json `contain`; a type that\n" +
+        " * holds nothing and has no rule as a child reads as all zero. */\n" +
         "/* clang-format off */\n" +
-        classTable("const markdown_core_hold markdown_core_block_holds", block, hold) +
-        "\n" +
-        classTable("const markdown_core_hold markdown_core_inline_holds", inline, hold) +
+        kindTable(
+            "const markdown_core_hold markdown_core_holds",
+            { block, inline },
+            hold,
+            "{.flags = MARKDOWN_CORE_HOLD_ROOT}"
+        ) +
         "/* clang-format on */\n" +
         "\n" +
-        "/* The ops of each type's record (element.h, markdown_core_record_ops), NULL\n" +
-        " * for a type that holds none; each is defined by the element whose record it is. */\n" +
+        "/* The ops of each type's record (element.h, markdown_core_record_ops), each\n" +
+        " * defined by the element whose record it is; a type that holds none reads as\n" +
+        " * the record of nothing, whose hooks are all NULL. */\n" +
         named.map((name) => `extern const markdown_core_record_ops MARKDOWN_CORE_RECORD_${name};\n`).join("") +
+        "static const markdown_core_record_ops MARKDOWN_CORE_RECORD_NONE = {0};\n" +
         "\n" +
-        classTable("const markdown_core_record_ops *const markdown_core_block_records", block, ops) +
-        "\n" +
-        classTable("const markdown_core_record_ops *const markdown_core_inline_records", inline, ops) +
+        "/* clang-format off */\n" +
+        kindTable(
+            "const markdown_core_record_ops *const markdown_core_records",
+            { block, inline },
+            ops,
+            "&MARKDOWN_CORE_RECORD_NONE"
+        ) +
+        "/* clang-format on */\n" +
         "\n" +
         classTable("static const char *const S_block_type_string", block, typeString) +
         "\n" +

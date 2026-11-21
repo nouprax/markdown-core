@@ -12,13 +12,12 @@
  * an owned root or field, never an ordinary child edge, even under a dynamic
  * policy. Both decision paths share this structural boundary. */
 static inline bool S_child_kind_allowed(markdown_core_node_type kind) {
-    const markdown_core_hold *hold = markdown_core_holds_for_kind(kind);
-    return hold && !(hold->flags & MARKDOWN_CORE_HOLD_ROOT);
+    return !(markdown_core_holds_for_kind(kind)->flags & MARKDOWN_CORE_HOLD_ROOT);
 }
 
 bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type) {
-    const markdown_core_hold *child = markdown_core_holds_for_kind(child_type);
-    if (!child || (child->flags & MARKDOWN_CORE_HOLD_ROOT)) {
+    const unsigned ordinal = (unsigned)child_type & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (ordinal >= MARKDOWN_CORE_NODE_KIND_COUNT) {
         return false;
     }
 
@@ -35,18 +34,13 @@ bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, mark
 
     /* The parent's holds, which its kind's schema declares. */
     const markdown_core_hold *hold = markdown_core_holds_for_kind((markdown_core_node_type)node->kind);
-    if (!hold || ((hold->flags & MARKDOWN_CORE_HOLD_OWNED) && !kinds)) {
+    if ((hold->flags & MARKDOWN_CORE_HOLD_OWNED) && !kinds) {
         return false;
     }
-    const bool inline_child = MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
-    if ((inline_child ? hold->inlines : hold->blocks) & MARKDOWN_CORE_HOLD_BIT(child_type)) {
-        return true;
-    }
-    if ((child->flags & MARKDOWN_CORE_HOLD_MEMBER) ||
-        ((hold->flags & MARKDOWN_CORE_HOLD_FLAT) && child_type == node->kind)) {
-        return false;
-    }
-    return (hold->flags & (inline_child ? MARKDOWN_CORE_HOLD_INLINES : MARKDOWN_CORE_HOLD_BLOCKS)) != 0;
+    const uint32_t held = MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type)  ? hold->inlines
+                          : MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) ? hold->blocks
+                                                                        : 0;
+    return (held >> ordinal) & 1u;
 }
 
 #ifndef NDEBUG
@@ -117,10 +111,7 @@ static inline const markdown_core_record_ops *S_payload_of(const markdown_core_n
  * kind here was 26.4% of `markdown_core_node_new_with_ext` on the same-job
  * corpus. A kind without a record reads as 0: no inline record, and
  * `as.data` left NULL. */
-static size_t S_node_payload_size(markdown_core_node_type type) {
-    const markdown_core_record_ops *record = markdown_core_record_for_kind(type);
-    return record ? record->size : 0;
-}
+static size_t S_node_payload_size(markdown_core_node_type type) { return markdown_core_record_for_kind(type)->size; }
 
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element) {
@@ -128,7 +119,8 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
      * scaffold and the node, including any alignment gap, whether the slot is
      * fresh or reused. An external record is initialized by its own
      * allocation below. */
-    size_t payload_size = S_node_payload_size(type);
+    const markdown_core_record_ops *record = markdown_core_record_for_kind(type);
+    const size_t payload_size = record->size;
     markdown_core_node_slot *slot = S_slot_take(pool);
     if (!slot) {
         return NULL;
@@ -150,13 +142,11 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
     markdown_core_strbuf_init_zeroed(&node->content);
     node->kind = (uint16_t)type;
     node->element = element;
-    const markdown_core_record_ops *record = markdown_core_record_for_kind(type);
-    if (record && record->init) {
+    if (record->init) {
         record->init(node);
     }
-    const markdown_core_record_ops *payload = S_payload_of(node);
-    if (payload && payload->init) {
-        payload->init(node);
+    if (element && element->payload && element->payload->init) {
+        element->payload->init(node);
     }
 
     return node;
@@ -171,9 +161,9 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
-static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
-    const markdown_core_record_ops *record = S_record_of(node);
-    if (record && record->free) {
+static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node,
+                         const markdown_core_record_ops *record) {
+    if (record->free) {
         record->free(pool, node);
     }
     /* Give back only a record too large for the slot, whether construction,
@@ -209,7 +199,7 @@ static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_record_fields(
     markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     const markdown_core_record_ops *record = S_record_of(node);
-    return !record || !record->visit || record->visit(node, visitor, context);
+    return !record->visit || record->visit(node, visitor, context);
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdown_core_node *node,
@@ -252,7 +242,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
         /* The node-valued fields join the same iterative free walk as
          * content: they are pushed onto the rest of the stack, which `e`'s
          * scaffold links until `e` leaves it. */
-        S_visit_fields(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
+        const markdown_core_record_ops *record = S_record_of(e);
+        if (record->visit) {
+            record->visit(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
+        }
+        markdown_core_visit_element_subtrees(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
         stack = markdown_core_scaffold_next(e);
         if (e->opaque) {
             const markdown_core_record_ops *payload = S_payload_of(e);
@@ -260,7 +254,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
                 payload->free(pool, e);
             }
         }
-        free_node_as(pool, e);
+        free_node_as(pool, e, record);
 
         /* Its children: those of its array, and those an inline parse still
          * links through its scaffold. */
@@ -358,7 +352,7 @@ typedef struct {
  * is read, and of no kind whose record owns an inline's storage. */
 static void S_view_node_as(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
     const markdown_core_record_ops *record = S_record_of(copy);
-    if (record && record->view && !record->view(state->pool, copy, node, state->failed)) {
+    if (record->view && !record->view(state->pool, copy, node, state->failed)) {
         state->failed = true;
     }
 }
@@ -366,7 +360,7 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy, const 
 /* The strings the record of `copy` still views of `node`'s record, copied. */
 static void S_own_node_as(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
     const markdown_core_record_ops *record = S_record_of(copy);
-    if (!state->failed && record && record->own && !record->own(copy, node)) {
+    if (!state->failed && record->own && !record->own(copy, node)) {
         state->failed = true;
     }
 }
@@ -478,7 +472,7 @@ bool markdown_core_node_holds_field(const markdown_core_node *node, const markdo
  * (markdown_core_record_ops, `adopt`). */
 static void S_adopt_node_as(markdown_core_node *view, markdown_core_node *node) {
     const markdown_core_record_ops *record = S_record_of(view);
-    if (record && record->adopt) {
+    if (record->adopt) {
         record->adopt(view, node);
     }
 }
@@ -570,7 +564,7 @@ void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_n
  * own. */
 bool markdown_core_node_own_viewed(markdown_core_node *node) {
     const markdown_core_record_ops *record = S_record_of(node);
-    return !record || !record->viewed || record->viewed(node);
+    return !record->viewed || record->viewed(node);
 }
 
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,
@@ -597,7 +591,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     markdown_core_node *fields = NULL;
     S_visit_record_fields(node, S_release_owned_subtree, &fields);
     S_free_stack(NULL, fields);
-    free_node_as(NULL, node);
+    free_node_as(NULL, node, S_record_of(node));
     node->as.data = allocation ? allocation : size ? S_slot_of(node)->record : NULL;
     node->node_data_allocation = allocation;
     if (size) {
@@ -605,7 +599,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     }
     node->kind = (uint16_t)kind;
     const markdown_core_record_ops *record = S_record_of(node);
-    if (record && record->init) {
+    if (record->init) {
         record->init(node);
     }
     /* An id names a node while its kind holds: a publish gives the node of

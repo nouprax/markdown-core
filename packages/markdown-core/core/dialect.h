@@ -448,13 +448,12 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
 void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builder);
 
 /* Every field root `node` holds (element.h, THE FIELD ROOTS OF A NODE): its
- * kind's, which the dialect marks FIELDS, then its element's. Completion,
+ * kind's record's, the root's excepted, then its element's. Completion,
  * which holds the kind's record, asks the two halves itself. */
 static inline int markdown_core_visit_inline_subtrees(const markdown_core_dialect *dialect, markdown_core_node *node,
                                                       markdown_core_owned_subtree_visitor visitor, void *context) {
-    return (!(markdown_core_dialect_kind(dialect, (markdown_core_node_type)node->kind)->flags &
-              MARKDOWN_CORE_KIND_FIELDS) ||
-            markdown_core_visit_kind_fields(node, visitor, context)) &&
+    const markdown_core_record_ops *record = markdown_core_record_for_kind((markdown_core_node_type)node->kind);
+    return (!record->visit || node->kind == dialect->root || record->visit(node, visitor, context)) &&
            markdown_core_visit_element_subtrees(node, visitor, context);
 }
 
