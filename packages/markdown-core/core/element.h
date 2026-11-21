@@ -726,6 +726,15 @@ typedef struct markdown_core_takeover {
                  markdown_core_node *parent);
 } markdown_core_takeover;
 
+/* THE PARTS (parts.h): how a published node of `kind` splits its text into
+ * fields and markers, which a scope query asks of the kind by the element
+ * that declares it. A list of them ends at MARKDOWN_CORE_KIND_NONE. */
+struct markdown_core_parts;
+typedef struct markdown_core_partition {
+    markdown_core_node_kind kind;
+    void (*read)(struct markdown_core_parts *);
+} markdown_core_partition;
+
 struct markdown_core_element {
     /* WHO THE ELEMENT IS AND WHAT IT STORES. */
     const char *name;
@@ -748,6 +757,8 @@ struct markdown_core_element {
     size_t bracket_size;
     /* The blocks of other elements it takes over, or NULL. */
     const markdown_core_takeover *takes;
+    /* The kinds whose parts it reads (markdown_core_partition), or NULL. */
+    const markdown_core_partition *parts;
     /* Frees what the parse record holds as its parser is freed, or NULL
      * when it holds nothing of its own. */
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);

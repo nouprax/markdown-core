@@ -1012,7 +1012,13 @@ static const markdown_core_inline_ops CITATION_INLINES = {
     .dispatch = "@-;",
 };
 
+static const markdown_core_partition CITATION_PARTS[] = {
+    {MARKDOWN_CORE_KIND_CITATION, markdown_core_citation_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
+    .parts = CITATION_PARTS,
     .peers = CITATION_PEERS,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),

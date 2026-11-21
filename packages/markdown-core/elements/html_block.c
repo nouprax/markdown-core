@@ -1,4 +1,5 @@
 #include "comment_scanners.h"
+#include "parts.h"
 #include "html_scanners.h"
 #include "html_block.h"
 #include "block_internal.h"
@@ -118,7 +119,13 @@ static const markdown_core_line_ops HTML_BLOCK_LINES = {
     .ends = ends_html,
 };
 
+static const markdown_core_partition HTML_BLOCK_PARTS[] = {
+    {MARKDOWN_CORE_KIND_HTML_BLOCK, markdown_core_literal_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
+    .parts = HTML_BLOCK_PARTS,
     .name = "html_block",
     .content = &HTML_BLOCK_CONTENT,
     .opens = &HTML_BLOCK_OPENS,

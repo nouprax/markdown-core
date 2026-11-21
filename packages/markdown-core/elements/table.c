@@ -658,7 +658,13 @@ static const markdown_core_line_ops TABLE_LINES = {
     .uncut = true,
 };
 
+static const markdown_core_partition TABLE_PARTS[] = {
+    {MARKDOWN_CORE_KIND_TABLE_ROW, markdown_core_table_row_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
+    .parts = TABLE_PARTS,
     .edit = &TABLE_EDIT,
     .name = "table",
     .opaque = &TABLE_OPAQUE,

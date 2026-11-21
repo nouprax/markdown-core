@@ -173,7 +173,13 @@ static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
 };
 
+static const markdown_core_partition FOOTNOTE_PARTS[] = {
+    {MARKDOWN_CORE_KIND_FOOTNOTE, markdown_core_footnote_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .parts = FOOTNOTE_PARTS,
     .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",

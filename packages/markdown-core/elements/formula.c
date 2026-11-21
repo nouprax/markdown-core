@@ -822,7 +822,14 @@ static const markdown_core_takeover FORMULA_TAKES[] = {
     {.kind = MARKDOWN_CORE_NODE_NONE},
 };
 
+static const markdown_core_partition FORMULA_PARTS[] = {
+    {MARKDOWN_CORE_KIND_FORMULA, markdown_core_formula_parts},
+    {MARKDOWN_CORE_KIND_FORMULA_BLOCK, markdown_core_formula_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
+    .parts = FORMULA_PARTS,
     .name = "formula",
     .takes = FORMULA_TAKES,
     .edit = &FORMULA_EDIT,

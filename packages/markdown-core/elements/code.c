@@ -232,7 +232,13 @@ static const markdown_core_inline_ops CODE_INLINES = {
     .dispatch = "`",
 };
 
+static const markdown_core_partition CODE_PARTS[] = {
+    {MARKDOWN_CORE_KIND_CODE, markdown_core_code_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
+    .parts = CODE_PARTS,
     .run_state_size = sizeof(markdown_core_backticks),
     .name = "code",
     .inlines = &CODE_INLINES,

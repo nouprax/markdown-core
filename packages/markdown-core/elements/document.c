@@ -1,4 +1,5 @@
 #include "alloc.h"
+#include "parts.h"
 #include "document.h"
 #include "block_internal.h"
 #include "properties.h"
@@ -153,7 +154,13 @@ static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .size = sizeof(document_call),
 };
 
+static const markdown_core_partition DOCUMENT_PARTS[] = {
+    {MARKDOWN_CORE_KIND_METADATA, markdown_core_metadata_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
+    .parts = DOCUMENT_PARTS,
     .peers = DOCUMENT_PEERS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",

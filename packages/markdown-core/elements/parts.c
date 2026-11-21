@@ -5,6 +5,8 @@
 
 #include "ast_internal.h"
 #include "parts.h"
+#include "element.h"
+#include "markdown-core-elements.h"
 #include "markdown_core_ctype.h"
 
 /* FIELDS AND MARKERS (docs/plans/2026-10-23-lsp-completion-engine.md, 3.3).
@@ -162,61 +164,20 @@ void markdown_core_literal_parts(markdown_core_parts *parts) {
     markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, 0, parts->length);
 }
 
-/* The reader of a node's kind, or NULL for a kind whose own source is all
- * markers. */
+/* The reader of a node's kind, which the element that declares the kind's
+ * parts gives (element.h, markdown_core_partition), or NULL for a kind
+ * whose own source is all markers. */
 static void (*reader(markdown_core_node_kind kind))(markdown_core_parts *) {
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_TEXT:
-    case MARKDOWN_CORE_KIND_HTML:
-    case MARKDOWN_CORE_KIND_HTML_BLOCK:
-        return markdown_core_literal_parts;
-    case MARKDOWN_CORE_KIND_PARAGRAPH:
-    case MARKDOWN_CORE_KIND_LIST:
-    case MARKDOWN_CORE_KIND_TABLE:
-        return markdown_core_block_identifier_parts;
-    case MARKDOWN_CORE_KIND_LIST_ITEM:
-        return markdown_core_list_item_parts;
-    case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_EMBEDDED:
-        return markdown_core_link_parts;
-    case MARKDOWN_CORE_KIND_REFERENCE:
-        return markdown_core_reference_parts;
-    case MARKDOWN_CORE_KIND_CROSS_LINK:
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
-        return markdown_core_cross_link_parts;
-    case MARKDOWN_CORE_KIND_CODE:
-        return markdown_core_code_parts;
-    case MARKDOWN_CORE_KIND_CODE_BLOCK:
-        return markdown_core_code_block_parts;
-    case MARKDOWN_CORE_KIND_FORMULA:
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-        return markdown_core_formula_parts;
-    case MARKDOWN_CORE_KIND_COMMENT:
-        return markdown_core_comment_parts;
-    case MARKDOWN_CORE_KIND_HEADING:
-        return markdown_core_heading_parts;
-    case MARKDOWN_CORE_KIND_CALLOUT:
-        return markdown_core_callout_parts;
-    case MARKDOWN_CORE_KIND_DIRECTIVE:
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        return markdown_core_directive_parts;
-    case MARKDOWN_CORE_KIND_TOPIC:
-        return markdown_core_topic_parts;
-    case MARKDOWN_CORE_KIND_CITATION:
-        return markdown_core_citation_parts;
-    case MARKDOWN_CORE_KIND_FOOTNOTE:
-        return markdown_core_footnote_parts;
-    case MARKDOWN_CORE_KIND_SPECIMEN:
-        return markdown_core_specimen_parts;
-    case MARKDOWN_CORE_KIND_SPAN:
-        return markdown_core_span_parts;
-    case MARKDOWN_CORE_KIND_TABLE_ROW:
-        return markdown_core_table_row_parts;
-    case MARKDOWN_CORE_KIND_METADATA:
-        return markdown_core_metadata_parts;
-    default:
-        return NULL;
+    size_t count;
+    const markdown_core_element *const *elements = markdown_core_core_elements(&count);
+    for (size_t i = 0; i < count; i++) {
+        for (const markdown_core_partition *p = elements[i]->parts; p && p->kind != MARKDOWN_CORE_KIND_NONE; p++) {
+            if (p->kind == kind) {
+                return p->read;
+            }
+        }
     }
+    return NULL;
 }
 
 /* A NODE AS ITS READER READS IT: its runs, the source they hold joined as

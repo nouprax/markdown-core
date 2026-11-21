@@ -166,7 +166,13 @@ static const markdown_core_line_ops SPECIMEN_LINES = {
     .prefix = continue_container,
 };
 
+static const markdown_core_partition SPECIMEN_PARTS[] = {
+    {MARKDOWN_CORE_KIND_SPECIMEN, markdown_core_specimen_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
+    .parts = SPECIMEN_PARTS,
     .edit = &SPECIMEN_EDIT,
     .name = "specimen",
     .state_size = sizeof(markdown_core_specimen_state),

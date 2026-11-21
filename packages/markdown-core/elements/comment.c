@@ -296,7 +296,13 @@ static const markdown_core_takeover COMMENT_TAKES[] = {
     {.kind = MARKDOWN_CORE_NODE_NONE},
 };
 
+static const markdown_core_partition COMMENT_PARTS[] = {
+    {MARKDOWN_CORE_KIND_COMMENT, markdown_core_comment_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
+    .parts = COMMENT_PARTS,
     .state_size = sizeof(markdown_core_comment_work),
     .takes = COMMENT_TAKES,
     .name = "comment",

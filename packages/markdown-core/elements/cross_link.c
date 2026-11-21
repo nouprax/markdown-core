@@ -179,7 +179,14 @@ static const markdown_core_inline_ops CROSS_LINK_INLINES = {
     .dispatch = "[!",
 };
 
+static const markdown_core_partition CROSS_LINK_PARTS[] = {
+    {MARKDOWN_CORE_KIND_CROSS_LINK, markdown_core_cross_link_parts},
+    {MARKDOWN_CORE_KIND_CROSS_EMBEDDED, markdown_core_cross_link_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
+    .parts = CROSS_LINK_PARTS,
     .name = "cross_link",
     .state_size = sizeof(markdown_core_cross_link_work),
     .inlines = &CROSS_LINK_INLINES,

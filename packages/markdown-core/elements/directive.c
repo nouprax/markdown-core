@@ -791,7 +791,14 @@ static const markdown_core_line_ops DIRECTIVE_LINES = {
     .continues = directive_block_continues,
 };
 
+static const markdown_core_partition DIRECTIVE_PARTS[] = {
+    {MARKDOWN_CORE_KIND_DIRECTIVE, markdown_core_directive_parts},
+    {MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, markdown_core_directive_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .parts = DIRECTIVE_PARTS,
     .edit = &DIRECTIVE_EDIT,
     .name = "directive",
     .opaque = &DIRECTIVE_OPAQUE,

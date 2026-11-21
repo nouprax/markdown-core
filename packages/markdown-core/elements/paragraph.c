@@ -1,4 +1,5 @@
 #include "paragraph.h"
+#include "parts.h"
 #include "block_internal.h"
 
 #include "block_identifier.h"
@@ -100,7 +101,15 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .cuts = true,
 };
 
+static const markdown_core_partition PARAGRAPH_PARTS[] = {
+    {MARKDOWN_CORE_KIND_PARAGRAPH, markdown_core_block_identifier_parts},
+    {MARKDOWN_CORE_KIND_LIST, markdown_core_block_identifier_parts},
+    {MARKDOWN_CORE_KIND_TABLE, markdown_core_block_identifier_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
+    .parts = PARAGRAPH_PARTS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
     .peers = PARAGRAPH_PEERS,

@@ -268,7 +268,13 @@ static const markdown_core_inline_ops TOPIC_INLINES = {
     .dispatch = "#",
 };
 
+static const markdown_core_partition TOPIC_PARTS[] = {
+    {MARKDOWN_CORE_KIND_TOPIC, markdown_core_topic_parts},
+    {MARKDOWN_CORE_KIND_NONE, NULL},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
+    .parts = TOPIC_PARTS,
     .name = "topic",
     .run_state_size = sizeof(topic_run),
     .inlines = &TOPIC_INLINES,
