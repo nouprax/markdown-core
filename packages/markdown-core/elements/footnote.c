@@ -73,9 +73,8 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
     if (inline_state->nonblank_end <= opener->position ||
         !markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
                                              MARKDOWN_CORE_NODE_CITE)) {
-        markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers =
-            opener->outer_no_link_openers;
-        markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+        markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
+        markdown_core_inline_pop_bracket(inline_state);
         return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
@@ -86,20 +85,20 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
             markdown_core_parser_release_node(parser, cite);
         }
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+        markdown_core_inline_pop_bracket(inline_state);
         return NULL;
     }
     markdown_core_inline_state_place(inline_state, footnote, opener->position - 2, inline_state->pos - 1);
-    markdown_core_inline_finish_citation_tokens(self->peers[FOOTNOTE_CITATION], inline_state, &opener->citations);
+    markdown_core_inline_settle_bracket(inline_state, opener);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-    markdown_core_inline_take_bracket_content(self->peers[FOOTNOTE_LINK], parser, opener, footnote);
+    markdown_core_inline_take_bracket_content(parser, inline_state, opener, footnote);
     markdown_core_scaffold_insert_before(opener->inl_text, cite);
     /* The note is its Citation's own field, as the affixes are. */
     markdown_core_scaffold_first(cite)->as.citation->note = footnote;
     markdown_core_inline_settle_note(parser, inline_state, footnote);
     markdown_core_parser_release_node(parser, opener->inl_text);
-    markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
-    markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+    markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
+    markdown_core_inline_pop_bracket(inline_state);
     return NULL;
 }
 
@@ -114,7 +113,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
                                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
     if (node) {
-        markdown_core_inline_push_bracket(self->peers[FOOTNOTE_LINK], inline_state, BRACKET_FOOTNOTE, node);
+        markdown_core_inline_push_bracket(self, inline_state, BRACKET_FOOTNOTE, node);
     }
     return node;
 }
@@ -220,7 +219,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
 
             markdown_core_node *fnref = markdown_core_inline_make_footnote_cite(inline_state, opener, initial_pos);
             if (!fnref) {
-                markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+                markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
             /* The call's label is its normal form: the key the lookup
@@ -230,7 +229,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_parser_release_node(parser, fnref);
-                markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+                markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
             memcpy(id, defined.data, (size_t)defined.len + 1);
@@ -268,7 +267,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             }
 
             markdown_core_inline_replace_bracket_opener(inline_state, opener, fnref);
-            markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+            markdown_core_inline_pop_bracket(inline_state);
             return true;
         }
     }

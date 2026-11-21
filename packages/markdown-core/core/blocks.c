@@ -688,8 +688,8 @@ int markdown_core_text_share(markdown_core_parser *parser, const markdown_core_c
     return 1;
 }
 
-int markdown_core_text_copy(markdown_core_parser *parser, const markdown_core_content_map *owner,
-                            markdown_core_content_map *map, bufsize_t from, bufsize_t length, bufsize_t offset) {
+int markdown_core_text_append(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                              markdown_core_content_map *map, bufsize_t from, bufsize_t length, bufsize_t offset) {
     if (length <= 0) {
         return 1;
     }
@@ -1066,8 +1066,8 @@ static inline int S_append_input_marks(markdown_core_parser *parser, markdown_co
     if (markdown_core_parser_block_root(parser) == parser->root) {
         return S_append_nul_line_marks(parser, node, line, line_start, column, length, offset);
     }
-    return markdown_core_text_copy(parser, &markdown_core_parser_block_root(parser)->content_map, &node->content_map,
-                                   line_start + column - 1, length, offset);
+    return markdown_core_text_append(parser, &markdown_core_parser_block_root(parser)->content_map, &node->content_map,
+                                     line_start + column - 1, length, offset);
 }
 
 int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -2218,7 +2218,7 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
             combined_map.first = cur->content_map.first;
             combined_map.count = view_end - cur->content_map.first;
             combined_map.offset = cur->content_map.offset;
-        } else if (!markdown_core_text_copy(parser, &cur->content_map, &combined_map, 0, cur->as.literal->len, 0)) {
+        } else if (!markdown_core_text_append(parser, &cur->content_map, &combined_map, 0, cur->as.literal->len, 0)) {
             return MARKDOWN_CORE_FINISH_FAILED;
         }
         unsigned char *merged = markdown_core_realloc(NULL, length + 1);
@@ -2233,7 +2233,7 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
         while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
             complete_consolidated_text(parser, tmp, depth);
             if (!view &&
-                !markdown_core_text_copy(parser, &tmp->content_map, &combined_map, 0, tmp->as.literal->len, at)) {
+                !markdown_core_text_append(parser, &tmp->content_map, &combined_map, 0, tmp->as.literal->len, at)) {
                 markdown_core_free(merged);
                 return MARKDOWN_CORE_FINISH_FAILED;
             }

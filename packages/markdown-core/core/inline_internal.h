@@ -21,6 +21,15 @@ typedef struct {
     bool can_open, can_close;
 } delimiter_run;
 
+/* ONE RUN'S BRACKETS (bracket.h): the open ones, innermost first; the
+ * suspended ones; and whether a link may open here, which a link's own text
+ * forbids until a new opener. */
+typedef struct markdown_core_bracket_scope {
+    struct bracket *last;
+    struct bracket *pending;
+    bool no_link_openers;
+} markdown_core_bracket_scope;
+
 struct markdown_core_inline_state {
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
@@ -77,6 +86,8 @@ struct markdown_core_inline_state {
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
+    /* The run's brackets (bracket.h). */
+    markdown_core_bracket_scope brackets;
     /* This run's block of the elements' run records (markdown_core_run_state):
      * taken from the parser when the run starts and given back when it is
      * cleared. NULL for a run with no parser, and for one whose records could

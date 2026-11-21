@@ -47,6 +47,24 @@ bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix,
     return true;
 }
 
+/* WHAT A BRACKET HOLDS OF AN IMAGE (the embedded element's bracket record,
+ * bracket.h): the last pipe its body read as ordinary text at its own
+ * depth, or -1. Opaque tokens, escapes and nested brackets never update the
+ * enclosing image's. */
+typedef struct {
+    bufsize_t pipe;
+} S_picture;
+
+static S_picture *S_bracket(const markdown_core_element_instance *self, const bracket *b) {
+    return markdown_core_bracket_record(b, self);
+}
+
+/* A bracket opens and has read no pipe. */
+static void S_opened(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b) {
+    (void)inline_state;
+    S_bracket(self, b)->pipe = -1;
+}
+
 void markdown_core_inline_apply_image_dimensions(const markdown_core_element_instance *self,
                                                  markdown_core_inline_state *inline_state, const bracket *opener,
                                                  markdown_core_node *image, bufsize_t end) {
@@ -55,10 +73,11 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     if (inline_state->error || inline_state->owner_parser->error) {
         return;
     }
-    bufsize_t suffix = opener->image_pipe >= 0 ? opener->image_pipe : opener->position;
+    const bufsize_t pipe = S_bracket(self, opener)->pipe;
+    bufsize_t suffix = pipe >= 0 ? pipe : opener->position;
     markdown_core_dimensions dimensions;
     markdown_core_chunk label = markdown_core_chunk_dup(&inline_state->input, opener->position, end - opener->position);
-    if (!markdown_core_parse_dimensions(label, suffix - opener->position, opener->image_pipe >= 0 ? 1 : 0, &dimensions,
+    if (!markdown_core_parse_dimensions(label, suffix - opener->position, pipe >= 0 ? 1 : 0, &dimensions,
                                         &((markdown_core_embedded_work *)self->state)->dimensions)) {
         return;
     }
@@ -82,13 +101,13 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
 void markdown_core_embedded_record_text(const markdown_core_element_instance *self,
                                         markdown_core_inline_state *inline_state, bufsize_t endpos) {
     const markdown_core_element_instance *link = self->peers[EMBEDDED_LINK];
-    bracket *image = link ? markdown_core_brackets(link, inline_state)->last : NULL;
+    bracket *image = link ? markdown_core_brackets(inline_state)->last : NULL;
     if (image && image->kind == BRACKET_IMAGE) {
         markdown_core_embedded_work *counts = self->state;
         for (bufsize_t i = inline_state->pos; i < endpos; i++) {
             counts->dimensions++;
             if (inline_state->input.data[i] == '|') {
-                image->image_pipe = i;
+                S_bracket(self, image)->pipe = i;
             }
         }
     }
@@ -108,7 +127,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         markdown_core_node *text = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
                                             markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
         if (text) {
-            markdown_core_inline_push_bracket(self->peers[EMBEDDED_LINK], inline_state, BRACKET_IMAGE, text);
+            markdown_core_inline_push_bracket(self, inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
@@ -118,6 +137,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 
 static const markdown_core_inline_ops EMBEDDED_INLINES = {
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+    .opened = S_opened,
     .match = match,
     .terminates = "!",
     .dispatch = "!",
@@ -126,6 +146,7 @@ static const markdown_core_inline_ops EMBEDDED_INLINES = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
     .peers = EMBEDDED_PEERS,
     .state_size = sizeof(markdown_core_embedded_work),
+    .bracket_size = sizeof(S_picture),
     .name = "embedded",
     .inlines = &EMBEDDED_INLINES,
 };

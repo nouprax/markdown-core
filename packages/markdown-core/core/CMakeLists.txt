@@ -31,6 +31,7 @@ set(HEADERS
     markdown_core_ctype.h
     element.h
     delimiter.h
+    bracket.h
     ahead.h
     array.h
     seam.h
@@ -45,6 +46,7 @@ set(LIBRARY_SOURCES
     dialect.c
     blocks.c
     inlines.c
+    bracket.c
     utf8.c
     buffer.c
     roster.c

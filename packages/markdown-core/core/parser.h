@@ -1141,6 +1141,9 @@ struct markdown_core_parser {
      * scanning every attached element would build the identical tree. So the
      * invariant is asserted on this counter rather than on output. */
     size_t inline_hook_work;
+    /* The brackets' work: `]` read and nodes moved into a bracket's
+     * construct (bracket.h), for their gate. */
+    size_t bracket_work;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
      * definition, a link or a heading's implicit reference states is a slot

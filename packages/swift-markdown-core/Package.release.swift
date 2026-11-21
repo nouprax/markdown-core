@@ -37,6 +37,7 @@ let package = Package(
                 "core/node.c",
                 "core/dialect.c",
                 "core/blocks.c",
+                "core/bracket.c",
                 "core/inlines.c",
                 "core/utf8.c",
                 "core/buffer.c",

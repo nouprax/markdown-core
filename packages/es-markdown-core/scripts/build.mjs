@@ -13,6 +13,7 @@ const core = [
     "node.c",
     "dialect.c",
     "blocks.c",
+    "bracket.c",
     "inlines.c",
     "utf8.c",
     "buffer.c",

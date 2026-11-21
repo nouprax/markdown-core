@@ -347,7 +347,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
  * is visited once, including tokens that end at a footnote's closing ]. */
 static size_t autolink_extent(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                               uint8_t *data, size_t size, size_t offset) {
-    unsigned char closer = markdown_core_inline_state_closing_bracket(self->peers[AUTOLINK_LINK], inline_state);
+    unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
     while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
         if (data[offset] == closer) {
             break;
@@ -373,7 +373,7 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
 
     size_t link_end;
 
-    if (max_rewind > (size_t)markdown_core_inline_state_context_start(self->peers[AUTOLINK_LINK], inline_state) &&
+    if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
         strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
         return 0;
     }
@@ -576,8 +576,8 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         return match_angle(inline_state);
     }
 
-    int in_bracket = markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, false) ||
-                     markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, true);
+    int in_bracket = markdown_core_inline_state_in_bracket(inline_state, false) ||
+                     markdown_core_inline_state_in_bracket(inline_state, true);
 
     if (c == ':') {
         /* No link forms inside a bracket, but the colon is still fenced off

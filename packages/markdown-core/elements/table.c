@@ -109,8 +109,8 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_reader 
             } while (to < cell->content.len && !(cell->content.data[to] == '\\' && to + 1 < cell->content.len &&
                                                  cell->content.data[to + 1] == '|'));
             if (source) {
-                markdown_core_text_copy(parser, &source->content_map, &node->content_map, offset + from, to - from,
-                                        node->content.size);
+                markdown_core_text_append(parser, &source->content_map, &node->content_map, offset + from, to - from,
+                                          node->content.size);
             } else {
                 markdown_core_reader_marks(reader, parser, node, offset + from, to - from, node->content.size);
             }

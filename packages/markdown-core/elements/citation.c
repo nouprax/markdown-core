@@ -34,6 +34,10 @@ static markdown_core_citation_run *citation_run(const markdown_core_element_inst
                                                 const markdown_core_inline_state *inline_state) {
     return markdown_core_run_state(inline_state, self);
 }
+/* The citation element's record in bracket `b`. */
+static markdown_core_citation_bracket *S_bracket(const markdown_core_element_instance *self, const bracket *b) {
+    return markdown_core_bracket_record(b, self);
+}
 
 void markdown_core_inline_free_citation_tokens(markdown_core_inline_state *inline_state, citation_tokens *tokens) {
     while (tokens->first) {
@@ -301,7 +305,7 @@ static void S_report_key(const markdown_core_element_instance *self, markdown_co
                                                                            : key_end;
     fields[count++] =
         (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
-    if (!braced && !markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state)) {
+    if (!braced && !markdown_core_open_bracket(inline_state)) {
         fields[count++] = (markdown_core_field){
             MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
         const unsigned char *data = inline_state->input.data;
@@ -413,8 +417,8 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
 
 static citation_tokens *markdown_core_inline_current_citation_tokens(const markdown_core_element_instance *self,
                                                                      markdown_core_inline_state *inline_state) {
-    bracket *open = markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state);
-    return open ? &open->citations : &citation_run(self, inline_state)->tokens;
+    bracket *open = markdown_core_open_bracket(inline_state);
+    return open ? &S_bracket(self, open)->citations : &citation_run(self, inline_state)->tokens;
 }
 
 static markdown_core_node *markdown_core_inline_read_citation_token(const markdown_core_element_instance *self,
@@ -695,16 +699,17 @@ static bool markdown_core_inline_citation_group_valid(const citation_tokens *tok
 
 bool markdown_core_inline_close_bibliography(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                              markdown_core_inline_state *inline_state, bracket *opener) {
-    bool tail = opener->author && markdown_core_inline_peek_char(inline_state) != '(' &&
+    bool tail = S_bracket(self, opener)->author && markdown_core_inline_peek_char(inline_state) != '(' &&
                 markdown_core_inline_peek_char(inline_state) != '[';
     if (markdown_core_inline_peek_at(inline_state, opener->position) == '^' ||
-        !markdown_core_inline_citation_group_valid(&opener->citations, tail) ||
+        !markdown_core_inline_citation_group_valid(&S_bracket(self, opener)->citations, tail) ||
         !markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
                                              MARKDOWN_CORE_NODE_CITE)) {
         return false;
     }
     bool first = true;
-    for (citation_token *token = opener->citations.first; token && !inline_state->error; token = token->next) {
+    for (citation_token *token = S_bracket(self, opener)->citations.first; token && !inline_state->error;
+         token = token->next) {
         if (!token->key) {
             citation_boundary(inline_state, token, true);
             first = true;
@@ -719,38 +724,39 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
         }
     }
     if (inline_state->error) {
-        markdown_core_inline_pop_bracket(self->peers[CITATION_LINK], inline_state);
+        markdown_core_inline_pop_bracket(inline_state);
         return true;
     }
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_node *cite = markdown_core_inline_new_cite(inline_state);
     if (!cite) {
-        markdown_core_inline_pop_bracket(self->peers[CITATION_LINK], inline_state);
+        markdown_core_inline_pop_bracket(inline_state);
         return true;
     }
-    markdown_core_inline_state_place(inline_state, cite, tail ? opener->author->start : opener->position - 1,
+    markdown_core_inline_state_place(inline_state, cite,
+                                     tail ? S_bracket(self, opener)->author->start : opener->position - 1,
                                      inline_state->pos - 1);
     markdown_core_node *content = markdown_core_scaffold_next(opener->inl_text);
     if (tail) {
-        markdown_core_node *old = opener->author->node;
+        markdown_core_node *old = S_bracket(self, opener)->author->node;
         markdown_core_scaffold_insert_before(old, cite);
         while (old != content) {
             markdown_core_node *next = markdown_core_scaffold_next(old);
             markdown_core_parser_release_node(parser, old);
             old = next;
         }
-        opener->author->node = cite;
+        S_bracket(self, opener)->author->node = cite;
     } else {
         markdown_core_inline_replace_bracket_opener(inline_state, opener, cite);
     }
     bufsize_t item_start = opener->position;
-    citation_token *token = opener->citations.first;
+    citation_token *token = S_bracket(self, opener)->citations.first;
     bool author_item = tail;
     /* A key in the first tail section gives that section to a normal item.
      * Only a key-free section contributes a suffix to the external author. */
     bool tail_starts_item = tail && token && token->key;
     while ((author_item || token) && !inline_state->error) {
-        citation_token *key = author_item ? opener->author : token;
+        citation_token *key = author_item ? S_bracket(self, opener)->author : token;
         assert(key->key);
         citation_token *separator = author_item ? token : key->next;
         while (separator && separator->key) {
@@ -789,9 +795,9 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
         }
     }
     if (tail) {
-        opener->author->end = inline_state->pos;
+        S_bracket(self, opener)->author->end = inline_state->pos;
     }
-    markdown_core_inline_pop_bracket(self->peers[CITATION_LINK], inline_state);
+    markdown_core_inline_pop_bracket(inline_state);
     return true;
 }
 
@@ -802,13 +808,13 @@ static void resume_citation_tail(const markdown_core_element_instance *self, mar
         return;
     }
     token->tail = NULL;
-    markdown_core_bracket_scope *brackets = markdown_core_brackets(self->peers[CITATION_LINK], inline_state);
+    markdown_core_bracket_scope *brackets = markdown_core_brackets(inline_state);
     bracket *saved_bracket = brackets->last;
     bufsize_t saved_pos = inline_state->pos;
     bool saved_no_links = brackets->no_link_openers;
     markdown_core_node *close = pending->close_text;
     pending->previous = saved_bracket;
-    pending->author = ordinary ? token : NULL;
+    S_bracket(self, pending)->author = ordinary ? token : NULL;
     brackets->last = pending;
     inline_state->pos = pending->close_position;
     brackets->no_link_openers = pending->pending_no_link_openers;
@@ -824,10 +830,11 @@ static void resume_citation_tail(const markdown_core_element_instance *self, mar
     brackets->no_link_openers |= saved_no_links;
 }
 
-static citation_resolution citation_resolution_for(citation_token *key, bool ordinary) {
+static citation_resolution citation_resolution_for(const markdown_core_element_instance *self, citation_token *key,
+                                                   bool ordinary) {
     bracket *pending = key->tail;
-    bool group = !ordinary && markdown_core_inline_citation_group_valid(&pending->citations, false);
-    return (citation_resolution){key, pending->citations.first, ordinary, ordinary || group, true};
+    bool group = !ordinary && markdown_core_inline_citation_group_valid(&S_bracket(self, pending)->citations, false);
+    return (citation_resolution){key, S_bracket(self, pending)->citations.first, ordinary, ordinary || group, true};
 }
 
 static void resolve_citation_tail(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
@@ -838,7 +845,7 @@ static void resolve_citation_tail(const markdown_core_element_instance *self, ma
     markdown_core_citation_work *counts = citation_work(self);
     citation_resolution *stack = NULL;
     size_t count = 0, capacity = 0;
-    citation_resolution next = citation_resolution_for(token, ordinary);
+    citation_resolution next = citation_resolution_for(self, token, ordinary);
     for (;;) {
         if (count == capacity) {
             size_t grown = capacity ? capacity * 2 : 8;
@@ -874,7 +881,7 @@ static void resolve_citation_tail(const markdown_core_element_instance *self, ma
                 child_ordinary = true;
             }
             if (child->tail) {
-                next = citation_resolution_for(child, child_ordinary);
+                next = citation_resolution_for(self, child, child_ordinary);
                 descend = true;
                 break;
             }
@@ -890,9 +897,9 @@ bool markdown_core_citation_defer_tail(const markdown_core_element_instance *sel
                                        markdown_core_inline_state *inline_state, bracket *opener,
                                        markdown_core_node **result) {
     bufsize_t initial_pos = inline_state->pos;
-    if (opener->author && !opener->close_text && markdown_core_inline_peek_char(inline_state) != '(' &&
+    if (S_bracket(self, opener)->author && !opener->close_text && markdown_core_inline_peek_char(inline_state) != '(' &&
         markdown_core_inline_peek_char(inline_state) != '[' &&
-        markdown_core_inline_citation_group_valid(&opener->citations, true)) {
+        markdown_core_inline_citation_group_valid(&S_bracket(self, opener)->citations, true)) {
         markdown_core_node *close = make_str(inline_state, initial_pos - 1, initial_pos - 1,
                                              markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
         delimiter *end =
@@ -905,12 +912,12 @@ bool markdown_core_citation_defer_tail(const markdown_core_element_instance *sel
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return true;
         }
-        markdown_core_bracket_scope *brackets = markdown_core_brackets(self->peers[CITATION_LINK], inline_state);
+        markdown_core_bracket_scope *brackets = markdown_core_brackets(inline_state);
         opener->close_text = close;
         opener->close_position = initial_pos - 1;
         opener->delim_end = end;
         opener->pending_no_link_openers = brackets->no_link_openers;
-        opener->author->tail = opener;
+        S_bracket(self, opener)->author->tail = opener;
         opener->pending_next = brackets->pending;
         if (brackets->pending) {
             brackets->pending->pending_previous = opener;
@@ -934,7 +941,7 @@ static bool is_inline_start(const markdown_core_element_instance *self, markdown
         return markdown_core_inline_peek_at(inline_state, at + 1) == '@';
     }
     if (c == ';') {
-        return markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state) != NULL;
+        return markdown_core_open_bracket(inline_state) != NULL;
     }
     if (!markdown_core_inline_citation_opener(inline_state, at)) {
         if (inline_state->context && c == '@') {
@@ -953,7 +960,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (character == '@' || character == '-') {
         return markdown_core_inline_read_citation_token(self, inline_state, true);
     }
-    if (character == ';' && markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state)) {
+    if (character == ';' && markdown_core_open_bracket(inline_state)) {
         return markdown_core_inline_read_citation_token(self, inline_state, false);
     }
     return NULL;
@@ -963,9 +970,8 @@ void markdown_core_citation_finish_run_tokens(const markdown_core_element_instan
     markdown_core_inline_finish_citation_tokens(self, inline_state, &citation_run(self, inline_state)->tokens);
 }
 static void finish_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
-    for (bracket *open = markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state); open;
-         open = open->previous) {
-        markdown_core_inline_finish_citation_tokens(self, inline_state, &open->citations);
+    for (bracket *open = markdown_core_open_bracket(inline_state); open; open = open->previous) {
+        markdown_core_inline_finish_citation_tokens(self, inline_state, &S_bracket(self, open)->citations);
     }
     markdown_core_inline_finish_citation_tokens(
         self, inline_state, &((markdown_core_citation_run *)markdown_core_run_state(inline_state, self))->tokens);
@@ -984,10 +990,24 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     run->braces = (citation_brace_index){0};
 }
 
+static void S_opened(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b);
+/* A bracket's body is decided: the tokens read in it find their owners. */
+static void S_settled(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                      bracket *b) {
+    markdown_core_inline_finish_citation_tokens(self, inline_state, &S_bracket(self, b)->citations);
+}
+/* A bracket is freed, and the tokens it kept. */
+static void S_freed(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b) {
+    markdown_core_inline_free_citation_tokens(inline_state, &S_bracket(self, b)->citations);
+}
+
 static const markdown_core_inline_ops CITATION_INLINES = {
     .finish = finish_inline,
     .dispose = dispose_inline,
     .holds = holds_open,
+    .opened = S_opened,
+    .settled = S_settled,
+    .freed = S_freed,
     .match = match,
     .starts = is_inline_start,
     .terminates = "@-;",
@@ -998,15 +1018,16 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .peers = CITATION_PEERS,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),
+    .bracket_size = sizeof(markdown_core_citation_bracket),
     .name = "citation",
     .inlines = &CITATION_INLINES,
 };
 
-void markdown_core_citation_open_bracket(const markdown_core_element_instance *self,
-                                         markdown_core_inline_state *inline_state, bracket *b) {
+/* A bracket opens: a `[` right after an author key is the key's tail. */
+static void S_opened(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b) {
     citation_token *author = markdown_core_inline_current_citation_tokens(self, inline_state)->last;
     if (b->kind == BRACKET_LINK && author && author->key && author->tail_start == inline_state->pos - 1) {
-        b->author = author;
+        S_bracket(self, b)->author = author;
     }
 }
 

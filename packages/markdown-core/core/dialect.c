@@ -269,6 +269,12 @@ static bool S_inlines_implement(const markdown_core_inline_ops *inlines, markdow
         return inlines->holds != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_REPORT:
         return inlines->report != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_OPENED:
+        return inlines->opened != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_SETTLED:
+        return inlines->settled != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_FREED:
+        return inlines->freed != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }
@@ -577,6 +583,8 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         state_at += markdown_core_state_align(element->state_size);
         dialect->kept_size += markdown_core_state_align(element->kept_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
+        instance->bracket_offset = dialect->bracket_size;
+        dialect->bracket_size += markdown_core_state_align(element->bracket_size);
         const size_t candidate = element->candidate ? markdown_core_state_align(element->candidate->size) : 0;
         if (dialect->candidate_state_size < candidate) {
             dialect->candidate_state_size = candidate;

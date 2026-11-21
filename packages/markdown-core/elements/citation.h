@@ -23,6 +23,5 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
 bool markdown_core_citation_defer_tail(const markdown_core_element_instance *citation,
                                        markdown_core_inline_state *inline_state, struct bracket *opener,
                                        markdown_core_node **result);
-void markdown_core_citation_open_bracket(const markdown_core_element_instance *citation,
-                                         markdown_core_inline_state *inline_state, struct bracket *b);
+
 #endif

@@ -77,6 +77,9 @@ typedef enum {
     MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
     MARKDOWN_CORE_INLINE_HOOK_OPEN,
     MARKDOWN_CORE_INLINE_HOOK_REPORT,
+    MARKDOWN_CORE_INLINE_HOOK_OPENED,
+    MARKDOWN_CORE_INLINE_HOOK_SETTLED,
+    MARKDOWN_CORE_INLINE_HOOK_FREED,
     MARKDOWN_CORE_INLINE_HOOK_COUNT
 } markdown_core_inline_hook;
 
@@ -338,7 +341,7 @@ typedef struct markdown_core_dialect {
      * a mark keeps of them all, each part at its instance's `kept_offset`. */
     const markdown_core_element_instance *const *instance_table;
     unsigned instance_bits;
-    size_t run_state_size, candidate_state_size;
+    size_t run_state_size, candidate_state_size, bracket_size;
     const markdown_core_element_instance *const *kept_instances;
     size_t kept_count, kept_size;
 } markdown_core_dialect;

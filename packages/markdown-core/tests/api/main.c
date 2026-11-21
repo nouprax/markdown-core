@@ -5275,7 +5275,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     }
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
-    work->brackets = ELEMENT_STATE(parser, markdown_core_bracket_work, MARKDOWN_CORE_ELEMENT_LINK)->work;
+    work->brackets = parser->bracket_work;
     work->citations = ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->work;
     work->citation_brace_bytes =
         ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->brace_bytes;

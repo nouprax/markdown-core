@@ -329,6 +329,7 @@ typedef struct markdown_core_content_ops {
  * `finish`, `dispose`, `holds`, `report`), and, of the block whose inline
  * content runs (its structure), `enter` and `claim`. Each may be NULL; the
  * dialect projects who answers what by byte and by hook as it is sealed. */
+struct bracket;
 typedef struct markdown_core_inline_ops {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm.
@@ -354,6 +355,12 @@ typedef struct markdown_core_inline_ops {
      * the text before a cursor (sink.h). Asked only of a run that has a
      * sink, before the run finishes. */
     void (*report)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* THE BRACKETS (bracket.h) a run opens, of any element: one opened,
+     * its record zeroed; one whose body is decided, its construct made or
+     * not, before the body's delimiters are processed; one freed. */
+    void (*opened)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
+    void (*settled)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
+    void (*freed)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
     /* Parsed delimiter semantics are declared by their element. Pairing,
      * run classification and node construction stay in the shared engine. */
     markdown_core_delimiter_rule rule;
@@ -704,6 +711,9 @@ struct markdown_core_element {
      * it; the rest of the record says nothing a reading put back takes
      * back. */
     size_t state_size, run_state_size, kept_size;
+    /* A record in each bracket a run opens (bracket.h,
+     * markdown_core_bracket_record), zeroed as it opens. */
+    size_t bracket_size;
     /* Frees what the parse record holds as its parser is freed, or NULL
      * when it holds nothing of its own. */
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);

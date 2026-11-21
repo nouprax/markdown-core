@@ -14,6 +14,7 @@
 #include "utf8.h"
 #include "delimiter.h"
 #include "inlines.h"
+#include "bracket.h"
 #include "element.h"
 
 static markdown_core_delimiter_rule delimiter_rule_for_byte(markdown_core_inline_state *inline_state, unsigned char c) {
@@ -153,6 +154,8 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     inline_state->input = *chunk;
     inline_state->owner_parser = parser;
     inline_state->text_end = -1;
+    /* No link opens before a bracket does (bracket.h). */
+    inline_state->brackets.no_link_openers = true;
     /* A run that lists no settle starts holds everything it reads
      * undecided (`undecided` 0): nothing asks it where its end reads
      * began. */
@@ -1125,6 +1128,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
     if (S_inline_run_began(inline_state)) {
+        markdown_core_inline_clear_brackets(inline_state);
         const markdown_core_element_instance *const *owners =
             parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_DISPOSE];
         size_t dispose_count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_DISPOSE];
@@ -1148,7 +1152,7 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
 /* Whether no element's run record holds anything open at the token start
  * the run reads next, and no opaque body runs past it. */
 static bool S_holds_none_open(markdown_core_parser *parser, const markdown_core_inline_state *inline_state) {
-    if (inline_state->pos < inline_state->opaque_end) {
+    if (inline_state->pos < inline_state->opaque_end || inline_state->brackets.last || inline_state->brackets.pending) {
         return false;
     }
     const markdown_core_element_instance *const *owners = parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_OPEN];

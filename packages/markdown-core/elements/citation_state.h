@@ -19,6 +19,14 @@ typedef struct {
     citation_token *first, *last;
 } citation_tokens;
 
+/* WHAT A BRACKET HOLDS OF CITATIONS (the citation element's bracket
+ * record, bracket.h): the tokens read in its body, and the author key a
+ * `[` right after it makes the bracket the key's tail. */
+typedef struct {
+    citation_tokens citations;
+    citation_token *author;
+} markdown_core_citation_bracket;
+
 /* A brace of a run: where it starts, where it closes, the brace around it,
  * whether it may be a key and holds anything, and whether a code span or a
  * comment in it is cut short, which may close past its `}` once the input

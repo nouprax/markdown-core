@@ -383,8 +383,9 @@ struct markdown_core_element_instance {
     void *state;
     /* Where the element's record lies in a run's block of records, and
      * where what a mark keeps of its parse record (element.h, `kept_size`)
-     * lies in a mark's. */
-    size_t run_offset, kept_offset;
+     * lies in a mark's, and where its record lies in a bracket's
+     * (bracket.h, `bracket_size`). */
+    size_t run_offset, kept_offset, bracket_offset;
     /* The instances of the descriptor's `peers`, in its order. */
     const markdown_core_element_instance *const *peers;
 };
@@ -441,8 +442,8 @@ int markdown_core_text_share(markdown_core_parser *parser, const markdown_core_c
  * where `owner`'s bytes `from` up to `from + length` were written, copying
  * the marks: for a text built of slices with other bytes between them. 0,
  * with the parse failed, when storage could not be had. */
-int markdown_core_text_copy(markdown_core_parser *parser, const markdown_core_content_map *owner,
-                            markdown_core_content_map *map, bufsize_t from, bufsize_t length, bufsize_t offset);
+int markdown_core_text_append(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                              markdown_core_content_map *map, bufsize_t from, bufsize_t length, bufsize_t offset);
 
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line,
                                       bufsize_t source);
