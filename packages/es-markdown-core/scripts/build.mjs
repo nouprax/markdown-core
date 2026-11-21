@@ -17,6 +17,7 @@ const core = [
     "inlines.c",
     "utf8.c",
     "buffer.c",
+    "names.c",
     "roster.c",
     "map.c",
     "tree.c",

@@ -698,12 +698,15 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         sizes->state_bytes += markdown_core_state_align(elements[i]->state_size);
         sizes->run_state_bytes += markdown_core_state_align(elements[i]->run_state_size);
         sizes->pointers += elements[i]->kept_size != 0;
+        sizes->pointers += elements[i]->names != NULL;
+        sizes->pointers += elements[i]->stages != NULL;
         for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
             sizes->peers++;
         }
         sizes->closers += inlines->close_count;
     }
     sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
+    sizes->pointers += 2; /* the name owners' and the staged instances' terminators */
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
     }
@@ -728,19 +731,38 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
 /* THE RULES FOR CLOSING A BRACKET (element.h, markdown_core_close_rule):
  * every element's, by precedence and then descriptor order, a stable
  * insertion into the `count` entries at `closers`. */
-static void S_project_closers(markdown_core_dialect *dialect, markdown_core_closer *closers, size_t count) {
+/* The rules of the instance `i` whose `mine` is `mine`, put in precedence
+ * order after the `at` rules `closers` holds: how many it holds then. */
+static size_t S_place_closers(markdown_core_dialect *dialect, markdown_core_closer *closers, size_t at, size_t from,
+                              size_t i, bool mine) {
+    const markdown_core_inline_ops *inlines = S_inlines_of(dialect->instances[i].element);
+    for (size_t r = 0; r < inlines->close_count; r++) {
+        const markdown_core_close_rule *rule = &inlines->closes[r];
+        if (rule->mine != mine) {
+            continue;
+        }
+        size_t to = at++;
+        while (to > from && closers[to - 1].rule->precedence > rule->precedence) {
+            closers[to] = closers[to - 1];
+            to--;
+        }
+        closers[to] = (markdown_core_closer){&dialect->instances[i], rule};
+    }
+    return at;
+}
+
+static void S_project_closers(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
+                              markdown_core_closer *closers, size_t count) {
     size_t at = 0;
     for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_inline_ops *inlines = S_inlines_of(dialect->instances[i].element);
-        for (size_t r = 0; r < inlines->close_count; r++) {
-            const markdown_core_close_rule *rule = &inlines->closes[r];
-            size_t to = at++;
-            while (to > 0 && closers[to - 1].rule->precedence > rule->precedence) {
-                closers[to] = closers[to - 1];
-                to--;
-            }
-            closers[to] = (markdown_core_closer){&dialect->instances[i], rule};
-        }
+        at = S_place_closers(dialect, closers, at, 0, i, false);
+    }
+    dialect->shared = at;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const size_t first = at;
+        at = S_place_closers(dialect, closers, at, first, i, true);
+        instances[i].mine_first = (uint32_t)first;
+        instances[i].mine_count = (uint32_t)(at - first);
     }
     assert(at == count);
     dialect->closers = closers;
@@ -831,12 +853,26 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
             dialect->kept_count++;
         }
     }
+    dialect->namers = entries + at;
+    for (size_t i = 0; i < count; i++) {
+        if (instances[i].element->names) {
+            entries[at++] = &instances[i];
+        }
+    }
+    entries[at++] = NULL;
+    dialect->staged = entries + at;
+    for (size_t i = 0; i < count; i++) {
+        if (instances[i].element->stages) {
+            entries[at++] = &instances[i];
+        }
+    }
+    entries[at++] = NULL;
     memcpy(dialect->inline_dispatch_offsets, sizes->inline_dispatch_offsets, sizeof(dialect->inline_dispatch_offsets));
     S_project_inline_dispatch(dialect, entries + at);
     at += dialect->inline_dispatch_offsets[256];
     assert(at == sizes->pointers);
 
-    S_project_closers(dialect, closers, sizes->closers);
+    S_project_closers(dialect, instances, closers, sizes->closers);
     S_project_finish_steps(dialect, sizes->finish_key_counts, step_entries);
     S_project_gate_lists(dialect, sizes, tables);
 }

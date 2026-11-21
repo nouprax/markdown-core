@@ -745,7 +745,8 @@ typedef struct markdown_core_takeover {
  * declares it -- how its text splits into fields and markers (`parts`,
  * parts.h), and, for a payload of the element's own, its literal and where
  * its published text starts in it, a formula's placement, a directive's
- * name and where its label is. Each may be NULL, for what the kind does
+ * name and where its label is, and the name the names service computes
+ * for it. Each may be NULL, for what the kind does
  * not show or shows from the node itself. A list of them ends at
  * MARKDOWN_CORE_KIND_NONE. */
 struct markdown_core_parts;
@@ -756,6 +757,9 @@ typedef struct markdown_core_facet {
     markdown_core_placement (*placement)(const markdown_core_node *);
     const char *(*name)(const markdown_core_node *);
     markdown_core_node **(*label)(const markdown_core_node *);
+    /* Where a node of the kind keeps the name the names service computes
+     * for it (node.h, A NODE'S NAME; names.h), when the element names it. */
+    struct markdown_core_name *(*named)(const markdown_core_node *);
 } markdown_core_facet;
 
 struct markdown_core_element {
@@ -788,6 +792,9 @@ struct markdown_core_element {
     /* The parse's stages it takes part in (markdown_core_stage_ops), or
      * NULL. */
     const markdown_core_stage_ops *stages;
+    /* What the element tells the names service of the nodes it asks names
+     * for (names.h, markdown_core_name_ops), or NULL when it asks none. */
+    const struct markdown_core_name_ops *names;
 
     /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
      * that asks it, in the order a line meets them. A NULL table says the

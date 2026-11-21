@@ -7,6 +7,7 @@
 #include "array.h"
 #include "tree.h"
 #include "roster.h"
+#include "names.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
@@ -1015,6 +1016,8 @@ struct markdown_core_parser {
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_roster roster;
+    /* The nodes that ask for names and the names they take (names.h). */
+    markdown_core_names names;
     /* The root being completed: the queued block or field root the
      * completion walk is in (blocks.c, COMPLETION), or the heading whose
      * inline content the document's preparation parses. */
@@ -1412,6 +1415,10 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
  * the reading made before it. */
 const void *markdown_core_parser_kept(const markdown_core_parser *parser, const markdown_core_element_instance *self,
                                       size_t *records);
+/* How many entries of the names (names.h) were read by their owners, as
+ * the earliest mark the reading can go back to found them, and the roster's
+ * records then in `*records`. */
+size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_t *records);
 
 static inline bool markdown_core_parser_settled(const markdown_core_parser *parser, const markdown_core_node *node) {
     return node != parser->at.pending;

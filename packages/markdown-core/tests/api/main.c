@@ -3022,7 +3022,7 @@ static void heading_reference_resolves_to_the_heading(test_batch_runner *runner)
        slug.has_value && slug.value.length == strlen("straße-and-more") &&
            !memcmp(slug.value.data, "straße-and-more", slug.value.length),
        "the anchor is the slug");
-    OK(runner, !heading->attributes.anchor.len && heading->as.heading->base.ptr == slug.value.data,
+    OK(runner, !heading->attributes.anchor.len && heading->as.heading->name.base.ptr == slug.value.data,
        "the heading's anchor is its base, which it owns");
     INT_EQ(runner, markdown_core_document_reference_label_count(document), 1,
            "only the label a heading's text declares resolves");
@@ -5247,8 +5247,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         return;
     }
     const markdown_core_properties_work *properties = self->state;
-    const markdown_core_heading_state *headings =
-        ELEMENT_STATE(parser, markdown_core_heading_state, MARKDOWN_CORE_ELEMENT_HEADING);
     work->cross_link = ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->scan;
     work->autolink_domains =
         ELEMENT_STATE(parser, markdown_core_autolink_work, MARKDOWN_CORE_ELEMENT_AUTOLINK)->domains;
@@ -5291,12 +5289,12 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_embedded_work, MARKDOWN_CORE_ELEMENT_EMBEDDED)->dimensions +
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = parser->attribute_scratch.work;
-    work->anchors = headings->anchor_work;
+    work->anchors = parser->names.work;
     work->definitions = 0;
     for (size_t i = 0; i < parser->roster.count; i++) {
         work->definitions += parser->roster.records[i]->key[0] == MARKDOWN_CORE_ROSTER_REFERENCE;
     }
-    work->heading_collection_disposed = headings->headings.root == NULL && headings->count == 0;
+    work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
@@ -10838,7 +10836,7 @@ static void session_edits_nested_notes(test_batch_runner *runner) {
 
 /* A heading whose text holds more before its last line than a label may
  * hold parses from its seams as a paragraph does, and an edit that leaps in
- * it projects only the children it made (heading.c, THE NEW BASES): an edit
+ * it projects only the children it made (names.c, THE NEW BASES): an edit
  * in one of two such headings that project to one base reads as a parse
  * does, and each shows its anchor whole, the second the first's with -1. */
 static void session_edits_long_headings(test_batch_runner *runner) {
@@ -10880,7 +10878,7 @@ static void session_edits_long_headings(test_batch_runner *runner) {
     markdown_core_strbuf_free(&text);
 }
 
-/* A NAME IS ITS BYTES (heading.c, THE NAMES): two bases that measure the
+/* A NAME IS ITS BYTES (names.c, THE NAMES): two bases that measure the
  * same but differ are two names, each its own anchor, while a heading of
  * the same bytes as one before takes the next suffix; and an authored
  * anchor of a long name reserves it as a short one does. */
@@ -11105,7 +11103,7 @@ static void session_edits_compaction(test_batch_runner *runner) {
 /* An edit after the flush: refused while the session streams and at a cursor
  * that stands nowhere, and otherwise the parse of the new text, keeping the
  * ids of what it did not change (plan 12.3). */
-/* THE NAMES AN EDIT MOVES (heading.c): an edit names again only the groups
+/* THE NAMES AN EDIT MOVES (names.c): an edit names again only the groups
  * of the stems it touched, and the anchors every heading then shows are a
  * fresh parse's. The text holds bases that are each other's parent
  * (`section`, `section-1`, `section-1-1`), a run of one base (`notes`),

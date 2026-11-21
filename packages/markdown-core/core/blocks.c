@@ -293,13 +293,9 @@ static void S_release_walk(markdown_core_parser *parser) {
 typedef enum { STAGE_PREPARE, STAGE_FINISH, STAGE_RELEASE } markdown_core_stage;
 
 static void S_stage(markdown_core_parser *parser, markdown_core_stage stage) {
-    const markdown_core_dialect *dialect = parser->dialect;
-    for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_element_instance *instance = &dialect->instances[i];
+    for (const markdown_core_element_instance *const *at = parser->dialect->staged; *at; at++) {
+        const markdown_core_element_instance *instance = *at;
         const markdown_core_stage_ops *stages = instance->element->stages;
-        if (!stages) {
-            continue;
-        }
         if (stage == STAGE_PREPARE && stages->prepare) {
             stages->prepare(instance, parser);
         } else if (stage == STAGE_FINISH && stages->finish && !parser->error) {
@@ -308,21 +304,27 @@ static void S_stage(markdown_core_parser *parser, markdown_core_stage stage) {
             stages->release(instance);
         }
     }
+    /* The names service follows the elements: it names what their stages
+     * made (names.h). */
+    if (stage == STAGE_FINISH && !parser->error) {
+        markdown_core_names_finish(parser);
+    } else if (stage == STAGE_RELEASE) {
+        markdown_core_names_release(&parser->names);
+    }
 }
 
 /* An edit's stage, `reopen` at `start` or `splice` at `point`: false when
  * storage could not be had. */
 static bool S_stage_edit(markdown_core_parser *parser, bool splice, uint32_t at) {
-    const markdown_core_dialect *dialect = parser->dialect;
-    for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_element_instance *instance = &dialect->instances[i];
+    for (const markdown_core_element_instance *const *each = parser->dialect->staged; *each; each++) {
+        const markdown_core_element_instance *instance = *each;
         const markdown_core_stage_ops *stages = instance->element->stages;
-        if (stages && !(splice ? !stages->splice || stages->splice(instance, parser, at)
-                               : !stages->reopen || stages->reopen(instance, parser, at))) {
+        if (!(splice ? !stages->splice || stages->splice(instance, parser, at)
+                     : !stages->reopen || stages->reopen(instance, parser, at))) {
             return false;
         }
     }
-    return true;
+    return splice ? markdown_core_names_splice(parser, at) : markdown_core_names_reopen(parser, at);
 }
 
 /* A flush finishes the tree: the stages finish, and a flush that is the
@@ -459,6 +461,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
     markdown_core_roster_init(&parser->roster);
+    markdown_core_names_init(&parser->names, parser->dialect->namers);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
      * ownership. */
@@ -7841,6 +7844,7 @@ typedef struct markdown_core_parser_mark {
     size_t line_mark_count;
     markdown_core_line_mark last_mark;
     markdown_core_roster_mark roster;
+    size_t names_count, names_parsed;
     markdown_core_node *completion_first, *completion_last;
     size_t block_input_count, block_input_cursor;
     size_t ran, cut_count, cut_low;
@@ -7869,6 +7873,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
         .normalized = parser->input.normalized,
         .line_mark_count = parser->line_marks.count,
         .roster = markdown_core_roster_mark_now(&parser->roster),
+        .names_count = parser->names.count,
+        .names_parsed = parser->names.parsed,
         .completion_first = parser->completion_first,
         .completion_last = parser->completion_last,
         .block_input_count = parser->block_input_count,
@@ -7904,6 +7910,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_c
         *markdown_core_array_write(&parser->line_marks, mark->line_mark_count - 1) = mark->last_mark;
     }
     markdown_core_roster_rollback(&parser->roster, mark->roster);
+    parser->names.count = mark->names_count;
+    parser->names.parsed = mark->names_parsed;
     parser->completion_first = mark->completion_first;
     parser->completion_last = mark->completion_last;
     if (mark->completion_last) {
@@ -10450,6 +10458,14 @@ const void *markdown_core_parser_kept(const markdown_core_parser *parser, const 
     return mark->kept + self->kept_offset;
 }
 
+size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_t *records) {
+    const markdown_core_stream *stream = parser->stream;
+    assert(parser->snapshot && stream->snapshot_mark);
+    const S_snapshot_mark *mark = stream->mark_count ? &stream->marks[0].state : stream->snapshot_mark;
+    *records = mark->roster.count;
+    return mark->names_parsed;
+}
+
 /* The record the call at `index` of `mark` keeps. */
 static inline void *S_call_state(const markdown_core_parser *parser, const struct markdown_core_candidate_mark *mark,
                                  size_t index) {
@@ -11812,8 +11828,8 @@ static void S_complete_queue(markdown_core_parser *parser) {
 
 /* The blocks that have settled are completed, once the cells of the tables
  * that closed are read as blocks of their own (S_parse_block_inputs): the
- * document prepares the headings that settled (heading.c), and the queue is
- * completed. */
+ * elements' stages prepare what settled (the headings' inline content,
+ * heading.c), and the queue is completed. */
 static void S_complete_settled(markdown_core_parser *parser) {
     S_stage(parser, STAGE_PREPARE);
     if (!parser->error) {

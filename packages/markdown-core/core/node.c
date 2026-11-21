@@ -247,7 +247,7 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
     switch ((uint16_t)type) {
     case MARKDOWN_CORE_NODE_HEADING:
         as->heading->level = 1;
-        markdown_core_strbuf_init_zeroed(&as->heading->base);
+        markdown_core_strbuf_init_zeroed(&as->heading->name.base);
         break;
     case MARKDOWN_CORE_NODE_LIST:
         as->list->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
@@ -370,12 +370,12 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         if (node->as.heading->label.len) {
             markdown_core_node_pool_bytes_free(pool, node->as.heading->label.data);
         }
-        if (node->as.heading->shown) {
-            markdown_core_free(node->as.heading->shown);
-            node->as.heading->shown = NULL;
+        if (node->as.heading->name.shown) {
+            markdown_core_free(node->as.heading->name.shown);
+            node->as.heading->name.shown = NULL;
         }
-        if (!markdown_core_strbuf_borrows(&node->as.heading->base)) {
-            markdown_core_strbuf_free(&node->as.heading->base);
+        if (!markdown_core_strbuf_borrows(&node->as.heading->name.base)) {
+            markdown_core_strbuf_free(&node->as.heading->name.base);
         }
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
@@ -651,9 +651,9 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         if (copy->as.heading->label.len && !S_label_own(state, &copy->as.heading->label)) {
             copy->as.heading->label = (markdown_core_chunk){0};
         }
-        copy->as.heading->shown = NULL;
-        if (markdown_core_strbuf_owns(&copy->as.heading->base)) {
-            markdown_core_strbuf_borrow(&copy->as.heading->base);
+        copy->as.heading->name.shown = NULL;
+        if (markdown_core_strbuf_owns(&copy->as.heading->name.base)) {
+            markdown_core_strbuf_borrow(&copy->as.heading->name.base);
         }
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
@@ -698,8 +698,8 @@ static void S_own_node_as(S_copy_state *state, markdown_core_node *copy, const m
         S_chunk_own(state, &copy->as.specimen->label.value, &node->as.specimen->label.value);
         break;
     case MARKDOWN_CORE_NODE_HEADING: {
-        markdown_core_strbuf *base = &copy->as.heading->base;
-        if (!state->failed && markdown_core_strbuf_borrows(base) && base->ptr == node->as.heading->base.ptr) {
+        markdown_core_strbuf *base = &copy->as.heading->name.base;
+        if (!state->failed && markdown_core_strbuf_borrows(base) && base->ptr == node->as.heading->name.base.ptr) {
             markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_set(&own, base->ptr, base->size);
             if (own.oom) {
@@ -856,10 +856,10 @@ static void S_adopt_node_as(markdown_core_node *view, markdown_core_node *node) 
         S_chunk_adopt(&view->as.specimen->label.value, &node->as.specimen->label.value);
         break;
     case MARKDOWN_CORE_NODE_HEADING:
-        if (markdown_core_strbuf_borrows(&view->as.heading->base) &&
-            view->as.heading->base.ptr == node->as.heading->base.ptr) {
-            view->as.heading->base = node->as.heading->base;
-            markdown_core_strbuf_borrow(&node->as.heading->base);
+        if (markdown_core_strbuf_borrows(&view->as.heading->name.base) &&
+            view->as.heading->name.base.ptr == node->as.heading->name.base.ptr) {
+            view->as.heading->name.base = node->as.heading->name.base;
+            markdown_core_strbuf_borrow(&node->as.heading->name.base);
         }
         break;
     default:

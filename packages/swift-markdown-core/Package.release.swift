@@ -41,6 +41,7 @@ let package = Package(
                 "core/inlines.c",
                 "core/utf8.c",
                 "core/buffer.c",
+                "core/names.c",
                 "core/roster.c",
                 "core/map.c",
                 "core/tree.c",

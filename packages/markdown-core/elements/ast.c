@@ -4796,11 +4796,11 @@ const markdown_core_attribute_value *markdown_core_node_attributes(const markdow
 markdown_core_status markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes,
                                                           markdown_core_optional_string *anchor) {
     /* The attributes are a node's (markdown_core_node_attributes), whose
-     * anchor a long heading name shows as it reads it (heading.c). */
+     * anchor a long heading name shows as it reads it (names.c). */
     const markdown_core_node *node =
         (const markdown_core_node *)(const void *)((const char *)attributes - offsetof(markdown_core_node, attributes));
     markdown_core_chunk shown;
-    if (!markdown_core_heading_anchor(node, &shown)) {
+    if (!markdown_core_core_anchor(node, &shown)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     *anchor = (markdown_core_optional_string){shown.len > 0, chunk_string(shown)};

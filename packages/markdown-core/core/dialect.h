@@ -349,11 +349,20 @@ typedef struct markdown_core_dialect {
     unsigned instance_bits;
     size_t run_state_size, candidate_state_size, bracket_size;
     /* The dialect's rules for closing a bracket (element.h,
-     * markdown_core_close_rule), by precedence and then descriptor order. */
+     * markdown_core_close_rule): first the `shared` rules every bracket no
+     * `mine` rule claims meets, by precedence and then descriptor order,
+     * then each element's `mine` rules, in its range (the instance's
+     * `mine_first`, `mine_count`), by precedence. */
     const struct markdown_core_closer *closers;
-    size_t closer_count;
+    size_t closer_count, shared;
     const markdown_core_element_instance *const *kept_instances;
     size_t kept_count, kept_size;
+    /* The instances whose elements ask the names service for names
+     * (element.h, `names`), in element order, ending at NULL. */
+    const markdown_core_element_instance *const *namers;
+    /* The instances whose elements take part in the parse's stages
+     * (element.h, `stages`), in element order, ending at NULL. */
+    const markdown_core_element_instance *const *staged;
 } markdown_core_dialect;
 
 /* A rule for closing a bracket and the instance whose rule it is. */

@@ -4,7 +4,8 @@
 #include "parser.h"
 
 /* Each element of the dialect with a `family` hook is told of `b`. */
-static void S_tell(markdown_core_inline_state *inline_state, markdown_core_inline_hook family, bracket *b) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_tell(markdown_core_inline_state *inline_state,
+                                                                   markdown_core_inline_hook family, bracket *b) {
     const markdown_core_dialect *dialect = inline_state->dialect;
     const markdown_core_element_instance *const *owners = dialect->inline_hooks[family];
     const size_t count = dialect->inline_hook_counts[family];
@@ -142,30 +143,20 @@ void markdown_core_inline_clear_brackets(markdown_core_inline_state *inline_stat
     }
 }
 
-/* Whether `owner` closes the brackets it opens by rules of its own alone
- * (element.h, markdown_core_close_rule, `mine`). */
-static bool S_mine(const markdown_core_dialect *dialect, const markdown_core_element_instance *owner) {
-    for (size_t i = 0; i < dialect->closer_count; i++) {
-        if (dialect->closers[i].rule->mine && dialect->closers[i].owner == owner) {
-            return true;
-        }
-    }
-    return false;
-}
-
 markdown_core_node *markdown_core_inline_close_bracket(markdown_core_parser *parser,
                                                        markdown_core_inline_state *inline_state) {
     parser->bracket_work++;
     const bufsize_t after = ++inline_state->pos;
     bracket *opener = inline_state->brackets.last;
     if (opener) {
+        /* A bracket whose element closes its own by `mine` rules meets
+         * those alone (element.h, markdown_core_close_rule); any other, the
+         * shared rules (dialect.h, `closers`). */
         const markdown_core_dialect *dialect = inline_state->dialect;
-        const bool mine = S_mine(dialect, opener->owner);
-        for (size_t i = 0; i < dialect->closer_count; i++) {
-            const markdown_core_closer *closer = &dialect->closers[i];
-            if (closer->rule->mine != mine || (mine && closer->owner != opener->owner)) {
-                continue;
-            }
+        const markdown_core_element_instance *owner = opener->owner;
+        const markdown_core_closer *closer = dialect->closers + (owner->mine_count ? owner->mine_first : 0);
+        const markdown_core_closer *const end = closer + (owner->mine_count ? owner->mine_count : dialect->shared);
+        for (; closer < end; closer++) {
             inline_state->pos = after;
             markdown_core_node *made = NULL;
             const markdown_core_bracket_match match =

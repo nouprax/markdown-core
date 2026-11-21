@@ -49,6 +49,7 @@ set(LIBRARY_SOURCES
     bracket.c
     utf8.c
     buffer.c
+    names.c
     roster.c
     map.c
     tree.c

@@ -94,6 +94,16 @@ const markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind
     return NULL;
 }
 
+bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chunk *anchor) {
+    const markdown_core_facet *facet =
+        node->attributes.anchor.len ? NULL : markdown_core_core_facet(markdown_core_node_get_kind(node));
+    if (!facet || !facet->named) {
+        *anchor = node->attributes.anchor;
+        return true;
+    }
+    return markdown_core_name_anchor(facet->named(node), anchor);
+}
+
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len) {
     return markdown_core_parse_document_with_setup(buffer, len, NULL, NULL);
 }
