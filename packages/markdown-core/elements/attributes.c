@@ -1334,13 +1334,18 @@ static bufsize_t S_follow_tail(const markdown_core_element_instance *self, markd
     if (end == from || line[end - 1] != '}') {
         return 0;
     }
+    /* A tail is on the last line of what is offered. */
+    bufsize_t first = end;
+    while (first > from && !markdown_core_is_line_end(line[first - 1])) {
+        first--;
+    }
     markdown_core_attribute_parser attributes = {
         .data = line, .length = end, .scratch = markdown_core_attributes_scratch(self)};
-    const bufsize_t start = markdown_core_attributes_tail(&attributes, from, end);
+    const bufsize_t start = markdown_core_attributes_tail(&attributes, first, end);
     bufsize_t taken = 0, stop;
     if (start >= 0 && markdown_core_attributes_parse(&attributes, start, &node->attributes, &stop)) {
         bufsize_t at = start;
-        while (at > from && markdown_core_is_space_or_tab(line[at - 1])) {
+        while (at > first && markdown_core_is_space_or_tab(line[at - 1])) {
             at--;
         }
         taken = to - at;

@@ -37,17 +37,10 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
                           markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)parent;
     (void)reader;
-    /* Its last text line's end is offered (element.h, markdown_core_follow):
-     * what is taken is cut from its text. */
+    /* The end of its text is offered (element.h, markdown_core_follow):
+     * what is taken is cut from it. */
     const markdown_core_chunk text = markdown_core_node_text(node);
-    bufsize_t line = text.len;
-    while (line > 0 && markdown_core_is_line_end(text.data[line - 1])) {
-        line--;
-    }
-    while (line > 0 && !markdown_core_is_line_end(text.data[line - 1])) {
-        line--;
-    }
-    node->cut_back += markdown_core_parser_offer(parser, node, text.data, line, text.len, false);
+    node->cut_back += markdown_core_parser_offer(parser, node, text.data, 0, text.len, false);
     markdown_core_parser_name(parser, self, node);
     return true;
 }
