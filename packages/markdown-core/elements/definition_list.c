@@ -242,11 +242,9 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
         end--;
     }
     counts->work += end - begin;
-    term->place = (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, reader->number, begin + 1),
-                                        (uint32_t)markdown_core_parser_source_end(parser, reader->number, end)};
+    term->place = markdown_core_reader_span(reader, parser, begin, end);
     markdown_core_strbuf_put(&term->content, markdown_core_reader_bytes(reader, begin), end - begin);
-    if (term->content.oom ||
-        !markdown_core_parser_append_source_marks(parser, term, reader->number, begin + 1, term->content.size, 0)) {
+    if (term->content.oom || !markdown_core_reader_marks(reader, parser, term, begin, term->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_block_settle_field(parser, term, definition);
@@ -266,8 +264,8 @@ static bool markdown_core_definition_list_open(const markdown_core_element_insta
         return false;
     }
     (*container)->as.definition_body->continuation = continuation;
-    (*container)->internal_offset =
-        (int)markdown_core_parser_source_end(parser, reader->number, (int)markdown_core_reader_length(reader) - 1);
+    const bufsize_t length = markdown_core_reader_length(reader);
+    (*container)->internal_offset = (int)markdown_core_reader_span(reader, parser, length - 1, length - 1).end;
     return true;
 }
 

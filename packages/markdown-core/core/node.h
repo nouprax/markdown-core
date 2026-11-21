@@ -246,9 +246,12 @@ typedef struct markdown_core_extent {
 #endif
 
 /* An absolute byte range [start, end) of the document source. */
-typedef struct {
+#ifndef MARKDOWN_CORE_PLACE_TYPEDEF
+#define MARKDOWN_CORE_PLACE_TYPEDEF
+typedef struct markdown_core_place {
     uint32_t start, end;
 } markdown_core_place;
+#endif
 
 /* A run of a node's own source (markdown_core.h): a source range whose lead
  * is from the end of the previous run, or, for the first, from where the

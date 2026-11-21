@@ -404,11 +404,9 @@ static bufsize_t S_cut_reference(const markdown_core_element_instance *self, mar
     while (end > 0 && (input->data[end - 1] == '\n' || input->data[end - 1] == '\r')) {
         end--;
     }
-    int ignored;
-    bufsize_t start = b->place.start, stop = b->place.start;
-    markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
-    markdown_core_parser_content_end_place(parser, &b->content_map, before + end - 1, &ignored, &stop);
-    reference->place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
+    reference->place = (markdown_core_place){b->place.start, b->place.start};
+    markdown_core_text_place(parser, &b->content_map, before, before + end, &reference->place);
+    const bufsize_t start = (bufsize_t)reference->place.start;
     cut->made = reference;
     /* The document defines the label from where the definition starts. */
     if (!parser->error &&
@@ -570,13 +568,12 @@ static void S_report_destination_field(markdown_core_parser *parser, markdown_co
     if (S_reference_cut(input->data, path, hash, len)) {
         return;
     }
-    int ignored;
     uint32_t place[4];
     const bufsize_t at[3] = {0, path, hash};
     for (size_t i = 0; i < 3; i++) {
-        bufsize_t source = 0;
-        markdown_core_parser_content_place(parser, &b->content_map, before + at[i], &ignored, &source);
-        place[i] = (uint32_t)source;
+        markdown_core_place span = {0, 0};
+        markdown_core_text_place(parser, &b->content_map, before + at[i], before + at[i], &span);
+        place[i] = span.start;
     }
     /* The fragment starts past the `#`, a byte of the source, which may
      * end the content, where no byte of it has a place. */
@@ -702,13 +699,12 @@ static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, m
         !markdown_core_attributes_open_member(input->data, S_content_length(input), brace, &member, NULL)) {
         return;
     }
-    int ignored;
     bufsize_t at[5] = {brace, member.start, member.prefix[0][0], member.prefix[0][1], 0};
     uint32_t place[5];
     for (size_t i = 0; i < 4; i++) {
-        bufsize_t source = 0;
-        markdown_core_parser_content_place(parser, &b->content_map, before + at[i], &ignored, &source);
-        place[i] = (uint32_t)source;
+        markdown_core_place span = {0, 0};
+        markdown_core_text_place(parser, &b->content_map, before + at[i], before + at[i], &span);
+        place[i] = span.start;
     }
     const int32_t opener = markdown_core_context_opener_add(parser->sink, MARKDOWN_CORE_KIND_NONE,
                                                             (markdown_core_place){place[0], place[0] + 1}, true);

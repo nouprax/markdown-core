@@ -169,11 +169,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
-    int line;
-    bufsize_t first, last;
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, i + 1, &line, &last);
-    node->place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
+    markdown_core_inline_state_place(inline_state, node, (int)start, (int)i + 1);
     markdown_core_inline_state_set_offset(inline_state, i + 2);
     return node;
 }

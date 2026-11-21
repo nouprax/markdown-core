@@ -81,7 +81,7 @@ typedef struct {
  *
  * Placing an inline node and slicing its owner's map for it are the SAME two
  * queries -- `content_place(from)` and `content_end_place(to)` locate exactly
- * the runs `adopt_content_marks(from, to - from + 1)` then searched for again.
+ * the runs `markdown_core_text_share(from, to - from + 1)` then searched for again.
  * Every inline node paid for four binary searches to ask two questions.
  *
  * `has_end` is separate from `has_start` because the two offsets are checked
@@ -1253,6 +1253,15 @@ static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(const markdo
     return markdown_core_block_content_mark_near(parser, map, offset, map->first, &probes);
 }
 
+/* The engine's places of a text (markdown-core-element-api.h, THE PLACES
+ * OF A TEXT): the source line, counted from 1, and the source offset where
+ * byte `offset` of the text `map` places begins, or, `end_place`, ends; 0,
+ * leaving both outputs untouched, when the map places no byte. */
+int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                       bufsize_t offset, int *line, bufsize_t *source);
+int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                           bufsize_t offset, int *line, bufsize_t *end);
+
 /* Resolve both ends of [from, to] against `node`'s map, each found from the
  * run before it: `cursor`, when given, is the run the caller last resolved
  * and is left on the run that answers `to`; a cursor outside the node's run,
@@ -1922,6 +1931,26 @@ static inline bufsize_t markdown_core_parser_line_start(const markdown_core_pars
  * active input. */
 int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                            bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
+
+/* PLACES ON THE LINE IN HAND (reader.h): where the line's bytes `from` up
+ * to `to` were written -- the document's bytes, or, on a line of a cell's
+ * content, the bytes of the cell they copy. Placing is no read: it notes
+ * nothing. */
+static inline markdown_core_place markdown_core_reader_span(const markdown_core_reader *reader,
+                                                            markdown_core_parser *parser, bufsize_t from,
+                                                            bufsize_t to) {
+    return (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, reader->number, (int)from + 1),
+                                 (uint32_t)markdown_core_parser_source_end(parser, reader->number, (int)to)};
+}
+/* `node`'s text, from its byte `offset`, holds the line's `length` bytes
+ * from `from`: its map places them where they were written. 0, with the
+ * parse failed, when storage could not be had. */
+static inline int markdown_core_reader_marks(const markdown_core_reader *reader, markdown_core_parser *parser,
+                                             markdown_core_node *node, bufsize_t from, bufsize_t length,
+                                             bufsize_t offset) {
+    return markdown_core_parser_append_line_marks(parser, node, reader->number, reader->start, (int)from + 1, length,
+                                                  offset);
+}
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);

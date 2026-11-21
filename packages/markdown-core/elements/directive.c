@@ -266,8 +266,8 @@ static int attach_label_node(const markdown_core_element *element, markdown_core
 }
 
 static int apply_parsed_directive(const markdown_core_element *element, markdown_core_parser *parser,
-                                  markdown_core_node *node, const unsigned char *data, parsed_directive *parsed,
-                                  int start_line) {
+                                  markdown_core_node *node, markdown_core_reader *reader, parsed_directive *parsed) {
+    const unsigned char *data = markdown_core_reader_bytes(reader, 0);
     node_directive *directive = get_directive(node);
 
     if (!directive) {
@@ -311,15 +311,12 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
          * content is the bytes between them, and its map is that slice of
          * the line's source map, as a callout title's is: in a cell a tab is
          * several bytes of the input but one byte of the source. */
-        const int open_column = (int)parsed->label_start;
-        const int close_column = open_column + (int)parsed->label_len + 1;
-        if (!attach_label_node(element, parser, node, data + parsed->label_start, parsed->label_len,
-                               markdown_core_parser_source_offset(parser, start_line, open_column),
-                               markdown_core_parser_source_end(parser, start_line, close_column))) {
+        const bufsize_t from = parsed->label_start, to = from + parsed->label_len;
+        const markdown_core_place place = markdown_core_reader_span(reader, parser, from - 1, to + 1);
+        if (!attach_label_node(element, parser, node, data + from, parsed->label_len, place.start, place.end)) {
             return 0;
         }
-        if (!markdown_core_parser_append_source_marks(parser, directive->label, start_line, open_column + 1,
-                                                      (bufsize_t)parsed->label_len, 0)) {
+        if (!markdown_core_reader_marks(reader, parser, directive->label, from, (bufsize_t)parsed->label_len, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return 0;
         }
@@ -496,8 +493,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         directive->label = label_node;
         /* The field is a view of these source bytes, including line breaks
          * and stripped block prefixes. Do not rebuild its map from one column. */
-        markdown_core_parser_adopt_content_marks(parser, &parent->content_map, &label_node->content_map, label_start,
-                                                 label_len);
+        markdown_core_text_share(parser, &parent->content_map, &label_node->content_map, label_start, label_len);
     }
 
     markdown_core_inline_state_set_offset(inline_state, (int)pos);
@@ -647,8 +643,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque || !apply_parsed_directive(self->element, parser, node, markdown_core_reader_bytes(reader, 0),
-                                                 &parsed, reader->number)) {
+    if (!node->opaque || !apply_parsed_directive(self->element, parser, node, reader, &parsed)) {
         /* The suffix already validated; failure here is allocation loss.
          * The block is the parse's builder from its opening and goes with
          * the parse. */

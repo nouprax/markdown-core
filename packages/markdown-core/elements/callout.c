@@ -131,12 +131,9 @@ static void S_callout_build(markdown_core_parser *parser, markdown_core_node *no
             return;
         }
         node->as.callout->title = title;
-        title->place =
-            (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, reader->number, pos + 1),
-                                  (uint32_t)markdown_core_parser_source_end(parser, reader->number, end)};
+        title->place = markdown_core_reader_span(reader, parser, pos, end);
         markdown_core_strbuf_put(&title->content, markdown_core_reader_bytes(reader, pos), end - pos);
-        if (title->content.oom ||
-            !markdown_core_parser_append_source_marks(parser, title, reader->number, pos + 1, title->content.size, 0)) {
+        if (title->content.oom || !markdown_core_reader_marks(reader, parser, title, pos, title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         markdown_core_block_settle_field(parser, title, node);

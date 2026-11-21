@@ -657,7 +657,7 @@ void markdown_core_block_add_line(markdown_core_parser *parser, markdown_core_no
 
 /* Seed a map for one unchanged source line assembled by a producer rather
  * than fed through add_line. Transformed content appends its own source runs;
- * slices share their owner's runs through adopt_content_marks. A failed map
+ * slices share their owner's runs through markdown_core_text_share. A failed map
  * allocation loses the parse transaction, just like a failed content buffer. */
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line,
                                       bufsize_t source) {
@@ -672,9 +672,11 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
 /* Find the immutable run containing an offset, shared by slice and lookup. */
 /* A map slice is a view into parser-owned immutable runs. Neither the source
  * nor the slice owns the vector; both end with the parse transaction. */
-int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
-                                             markdown_core_content_map *map, bufsize_t from, bufsize_t length) {
-    if (!parser || !owner || !map || !owner->count || length <= 0) {
+int markdown_core_text_share(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                             markdown_core_content_map *map, bufsize_t from, bufsize_t length) {
+    if (!owner->count || length <= 0) {
+        map->count = 0;
+        map->offset = 0;
         return 0;
     }
     from += owner->offset;
@@ -686,9 +688,8 @@ int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const
     return 1;
 }
 
-int markdown_core_parser_append_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
-                                              markdown_core_content_map *map, bufsize_t from, bufsize_t length,
-                                              bufsize_t offset) {
+int markdown_core_text_copy(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                            markdown_core_content_map *map, bufsize_t from, bufsize_t length, bufsize_t offset) {
     if (length <= 0) {
         return 1;
     }
@@ -1065,8 +1066,8 @@ static inline int S_append_input_marks(markdown_core_parser *parser, markdown_co
     if (markdown_core_parser_block_root(parser) == parser->root) {
         return S_append_nul_line_marks(parser, node, line, line_start, column, length, offset);
     }
-    return markdown_core_parser_append_content_marks(parser, &markdown_core_parser_block_root(parser)->content_map,
-                                                     &node->content_map, line_start + column - 1, length, offset);
+    return markdown_core_text_copy(parser, &markdown_core_parser_block_root(parser)->content_map, &node->content_map,
+                                   line_start + column - 1, length, offset);
 }
 
 int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -1201,8 +1202,30 @@ int markdown_core_parser_content_end_place(markdown_core_parser *parser, const m
     return S_content_place(parser, map, offset, true, line, end);
 }
 
-int markdown_core_parser_content_indent(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                        bufsize_t offset) {
+bool markdown_core_text_place(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t from,
+                              bufsize_t to, markdown_core_place *place) {
+    int line;
+    bufsize_t start, end;
+    if (!S_content_place(parser, map, from, false, &line, &start)) {
+        return false;
+    }
+    if (to > from) {
+        S_content_place(parser, map, to - 1, true, &line, &end);
+    } else {
+        end = start;
+    }
+    *place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+    return true;
+}
+
+int markdown_core_text_line(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at) {
+    int line = 0;
+    bufsize_t source;
+    S_content_place(parser, map, at, false, &line, &source);
+    return line;
+}
+
+int markdown_core_text_indent(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t offset) {
     if (!map->count) {
         return 0;
     }
@@ -1432,12 +1455,7 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
     if (node->content_map.count <= 0 || cut <= 0) {
         return;
     }
-    if (remaining <= 0) {
-        node->content_map.count = 0;
-        node->content_map.offset = 0;
-        return;
-    }
-    markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, cut, remaining);
+    markdown_core_text_share(parser, &node->content_map, &node->content_map, cut, remaining);
 }
 
 /* ENDS_BLANK when a closed block whose flags are `flags` ends with a blank
@@ -2200,8 +2218,7 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
             combined_map.first = cur->content_map.first;
             combined_map.count = view_end - cur->content_map.first;
             combined_map.offset = cur->content_map.offset;
-        } else if (!markdown_core_parser_append_content_marks(parser, &cur->content_map, &combined_map, 0,
-                                                              cur->as.literal->len, 0)) {
+        } else if (!markdown_core_text_copy(parser, &cur->content_map, &combined_map, 0, cur->as.literal->len, 0)) {
             return MARKDOWN_CORE_FINISH_FAILED;
         }
         unsigned char *merged = markdown_core_realloc(NULL, length + 1);
@@ -2215,8 +2232,8 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
         tmp = markdown_core_scaffold_next(cur);
         while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
             complete_consolidated_text(parser, tmp, depth);
-            if (!view && !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
-                                                                    tmp->as.literal->len, at)) {
+            if (!view &&
+                !markdown_core_text_copy(parser, &tmp->content_map, &combined_map, 0, tmp->as.literal->len, at)) {
                 markdown_core_free(merged);
                 return MARKDOWN_CORE_FINISH_FAILED;
             }

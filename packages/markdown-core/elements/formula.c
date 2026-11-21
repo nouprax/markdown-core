@@ -615,11 +615,7 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    int line;
-    bufsize_t first, last;
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &line, &last);
-    formula->place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
+    markdown_core_inline_state_place(inline_state, formula, (int)start, (int)end - 1);
     return formula;
 }
 

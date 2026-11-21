@@ -336,13 +336,9 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     if (!len) {
         return;
     }
-    int line;
-    bufsize_t from, to;
-    markdown_core_parser_content_place(parser, source, (bufsize_t)start, &line, &from);
-    markdown_core_parser_content_end_place(parser, source, (bufsize_t)(start + len - 1), &line, &to);
-    node->place = (markdown_core_place){(uint32_t)from, (uint32_t)to};
+    markdown_core_text_place(parser, source, (bufsize_t)start, (bufsize_t)(start + len), &node->place);
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
-        markdown_core_parser_adopt_content_marks(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
+        markdown_core_text_share(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
     }
 }
 

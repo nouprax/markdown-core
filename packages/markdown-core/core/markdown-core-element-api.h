@@ -32,6 +32,14 @@ typedef struct {
     int first, count, offset;
 } markdown_core_content_map;
 
+/* An absolute byte range [start, end) of the document source (node.h). */
+#ifndef MARKDOWN_CORE_PLACE_TYPEDEF
+#define MARKDOWN_CORE_PLACE_TYPEDEF
+typedef struct markdown_core_place {
+    uint32_t start, end;
+} markdown_core_place;
+#endif
+
 /** Internal element parsing API.
  *
  * Every parse attaches the complete immutable element table. Elements own
@@ -402,36 +410,42 @@ const markdown_core_element_instance *markdown_core_parser_instance(const markdo
  * is the whole answer for content that is one line long, which is what all of
  * those are.
  */
-/** Share the immutable marks covering [from, from + length) of 'owner''s
- * content with 'node', with its content origin at 'from'. Returns 1, or 0
- * when there is nothing to map. This does not allocate.
+/* THE PLACES OF A TEXT: a block's content, a cell's, a Text's literal --
+ * bytes whose map places each of them in the source. An offset in a text
+ * is NOT a column: `"> foo\nbar"` strips two bytes from the first line and
+ * none from the second, and the two lines of one paragraph's content then
+ * start at different distances from their line starts. The map knows
+ * which; an element asks it here and never reads its runs. A map is live
+ * for as long as the parse is: an element may ask while the block is open,
+ * and the inline phase after every block has closed.
  *
- * For content that is a SLICE of another block's content and more than one line
- * long -- the paragraph a table was split out of -- where one mark would put
- * every line of it on the first line's row.
- */
-int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
-                                             markdown_core_content_map *map, bufsize_t from, bufsize_t length);
+ * Where the bytes `from` up to `to` of the text `map` places were written,
+ * into `*place`: from where byte `from` begins to where byte `to - 1` ends,
+ * or, when `to` is not past `from`, the empty place where byte `from`
+ * begins. False, leaving `*place` as it is, when the map places no byte. */
+bool markdown_core_text_place(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t from,
+                              bufsize_t to, markdown_core_place *place);
+/* The input line, counted from 1, byte `at` of the text `map` places was
+ * read from: 0 when the map places no byte. */
+int markdown_core_text_line(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at);
+/* The indentation of the line byte `at` of the text was read from, after
+ * its container prefixes: 0 when the map places no byte. */
+int markdown_core_text_indent(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at);
+/* `*map` comes to place a slice of the text `owner` places, its bytes
+ * `from` up to `from + length`, sharing the owner's marks: it allocates
+ * nothing. A slice of no bytes, or of a text placed nowhere, places none:
+ * 0 then, and 1 otherwise. */
+int markdown_core_text_share(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                             markdown_core_content_map *map, bufsize_t from, bufsize_t length);
+/* `*map`, the map of a text being written, places its bytes from `offset`
+ * where `owner`'s bytes `from` up to `from + length` were written, copying
+ * the marks: for a text built of slices with other bytes between them. 0,
+ * with the parse failed, when storage could not be had. */
+int markdown_core_text_copy(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                            markdown_core_content_map *map, bufsize_t from, bufsize_t length, bufsize_t offset);
 
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line,
                                       bufsize_t source);
-
-/** Name the source line, counted from 1, and the source byte offset of the
- * byte at 'content_offset' in 'node''s content buffer, and return 1. Returns 0,
- * leaving both outputs untouched, for a node that never took a line.
- *
- * A block's content is the concatenation of the line slices the parser copied
- * into it with the container prefix stripped, so an offset in it is NOT a
- * column: `"> foo\nbar"` strips two bytes from the first line and none from
- * the second, and the two lines of one paragraph's content then start at
- * different distances from their line starts. This is the only thing that knows which.
- *
- * The map is live for as long as the parse is: an element may ask while the
- * block is open, and the inline phase may ask after every block has closed.
- * the parse transaction releases it with the rest of the parse state.
- */
-int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                       bufsize_t content_offset, int *line, bufsize_t *source);
 
 /** Append a source run for content already assembled by a producer. Runs
  * must be contiguous in the parser vector and have increasing content offsets.
@@ -439,24 +453,9 @@ int markdown_core_parser_content_place(markdown_core_parser *parser, const markd
  * source_step is the source-byte stride. Allocation failure marks the parse lost. */
 int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
                                              int line, bufsize_t source, int source_width, int source_step);
-/** Append the source runs covering a literal slice to a growing result map.
- * Each source run is copied once; producers use adopt_content_marks for a
- * read-only slice that needs no allocation. */
-int markdown_core_parser_append_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
-                                              markdown_core_content_map *map, bufsize_t from, bufsize_t length,
-                                              bufsize_t offset);
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);
-/** The exclusive source end of the authored bytes represented by a content
- * byte. Uses the same run lookup as content_place, which returns its start. */
-int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                           bufsize_t offset, int *line, bufsize_t *end);
-/** The indentation of the line a content byte was read from, after its
- * container prefixes (the run's `indent`): 0 for a map with no runs. Uses
- * the same run lookup as content_place. */
-int markdown_core_parser_content_indent(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                        bufsize_t offset);
 
 /** Return the source offset just after the previously processed line's last
  * byte, excluding its line ending: the line's start for an empty line. In a

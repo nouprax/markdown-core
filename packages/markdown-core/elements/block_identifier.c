@@ -77,12 +77,11 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
  * before the cursor but for spaces and line endings. */
 static bool S_ends_text(markdown_core_parser *parser, markdown_core_node *paragraph, bufsize_t length) {
     const markdown_core_context_sink *sink = parser->sink;
-    int line;
-    bufsize_t end = 0;
-    if (!length || !markdown_core_parser_content_end_place(parser, &paragraph->content_map, length - 1, &line, &end)) {
+    markdown_core_place span;
+    if (!length || !markdown_core_text_place(parser, &paragraph->content_map, length - 1, length, &span)) {
         return false;
     }
-    size_t at = (size_t)end;
+    size_t at = span.end;
     while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t' || sink->source[at] == '\n' ||
                                  sink->source[at] == '\r')) {
         at++;
@@ -104,19 +103,17 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
         return;
     }
     markdown_core_node *owner = paragraph;
+    const bufsize_t at = (bufsize_t)(candidate.identifier.data - text.data);
     int line;
-    bufsize_t source;
     /* The last of the parent's children is the paragraph, or the block it
      * was split from, which it settles before: no block comes before it
      * when that is the only one. */
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 1 &&
-        markdown_core_parser_content_place(parser, &paragraph->content_map,
-                                           (bufsize_t)(candidate.identifier.data - text.data), &line, &source) &&
+        (line = markdown_core_text_line(parser, &paragraph->content_map, at)) &&
         markdown_core_reader_starts(reader, parser, parent, line)) {
         owner = parent;
     }
-    const int indent = markdown_core_parser_content_indent(parser, &paragraph->content_map,
-                                                           (bufsize_t)(candidate.identifier.data - text.data));
+    const int indent = markdown_core_text_indent(parser, &paragraph->content_map, at);
     if (candidate.own_line && ((indent >= CODE_INDENT) || (!candidate.content_end && owner == paragraph))) {
         return;
     }

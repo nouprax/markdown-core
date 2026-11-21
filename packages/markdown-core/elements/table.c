@@ -52,8 +52,7 @@ static void free_node_table(markdown_core_table *table) {
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table_child(markdown_core_parser *parser,
                                                                                        markdown_core_node_type kind,
-                                                                                       int first_line, int first_column,
-                                                                                       int last_line, int last_column) {
+                                                                                       markdown_core_place place) {
     markdown_core_node *node = markdown_core_parser_make_node(parser, kind);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -62,8 +61,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table
     if (kind == MARKDOWN_CORE_NODE_TABLE_ROW || kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
     }
-    node->place.start = (uint32_t)markdown_core_parser_source_offset(parser, first_line, first_column);
-    node->place.end = (uint32_t)markdown_core_parser_source_end(parser, last_line, last_column);
+    node->place = place;
     return node;
 }
 
@@ -74,8 +72,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table
  * each once it is whole: a cell into its row once its line is read, a row
  * made whole into its table after its cells, and a pipe body row, an open
  * block, as the table takes its next row or closes. */
-static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_reader *reader, int column) {
-    return table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, reader->number, column, reader->number, column);
+static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_reader *reader, bufsize_t at) {
+    return table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, markdown_core_reader_span(reader, parser, at, at + 1));
 }
 
 /* A PIPE CELL HOLDS ITS BYTES, whichever path found its row: trimmed of the
@@ -84,26 +82,25 @@ static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_
  * A logical pipe represents both authored bytes of its escape. There is no
  * alternate inline parser and no position repair after parsing. `offset`
  * indexes the content of `source`, whose map places it, when the row was
- * recovered from a paragraph, and otherwise the input of physical `line`. */
-static void set_cell_content(markdown_core_parser *parser, markdown_core_node *node, const node_cell *cell,
-                             markdown_core_node *source, int line, bufsize_t line_start, bufsize_t offset) {
+ * recovered from a paragraph, and otherwise the reader's line. */
+static void set_cell_content(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_node *node,
+                             const node_cell *cell, markdown_core_node *source, bufsize_t offset) {
     node->internal_offset = cell->internal_offset;
     for (bufsize_t from = 0; from < cell->content.len && !parser->error;) {
         bufsize_t to = from;
         bool escaped =
             cell->content.data[from] == '\\' && from + 1 < cell->content.len && cell->content.data[from + 1] == '|';
         if (escaped) {
-            int place = line;
-            bufsize_t first, end;
+            int line = reader->number;
+            markdown_core_place place;
             if (source) {
-                markdown_core_parser_content_place(parser, &source->content_map, offset + from, &place, &first);
-                markdown_core_parser_content_end_place(parser, &source->content_map, offset + from + 1, &place, &end);
+                line = markdown_core_text_line(parser, &source->content_map, offset + from);
+                markdown_core_text_place(parser, &source->content_map, offset + from, offset + from + 2, &place);
             } else {
-                first = markdown_core_parser_source_offset(parser, line, offset + from + 1);
-                end = markdown_core_parser_source_end(parser, line, offset + from + 2);
+                place = markdown_core_reader_span(reader, parser, offset + from, offset + from + 2);
             }
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, place, first, (int)(end - first),
-                                                     (int)(end - first));
+            const int width = (int)(place.end - place.start);
+            markdown_core_parser_append_content_mark(parser, node, node->content.size, line, place.start, width, width);
             markdown_core_strbuf_putc(&node->content, '|');
             to = from + 2;
         } else {
@@ -112,11 +109,10 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
             } while (to < cell->content.len && !(cell->content.data[to] == '\\' && to + 1 < cell->content.len &&
                                                  cell->content.data[to + 1] == '|'));
             if (source) {
-                markdown_core_parser_append_content_marks(parser, &source->content_map, &node->content_map,
-                                                          offset + from, to - from, node->content.size);
+                markdown_core_text_copy(parser, &source->content_map, &node->content_map, offset + from, to - from,
+                                        node->content.size);
             } else {
-                markdown_core_parser_append_line_marks(parser, node, line, line_start, offset + from + 1, to - from,
-                                                       node->content.size);
+                markdown_core_reader_marks(reader, parser, node, offset + from, to - from, node->content.size);
             }
             markdown_core_strbuf_put(&node->content, cell->content.data + from, to - from);
         }
@@ -211,14 +207,12 @@ static pipe_row_cursor pipe_row_cells(const pipe_row *row) {
  * here, so there is one place that knows a content offset is not a column. */
 static void S_place_content_span(markdown_core_parser *parser, markdown_core_node *owner, markdown_core_node *node,
                                  bufsize_t start_offset, bufsize_t end_offset) {
-    int line;
-    bufsize_t source;
-
-    if (markdown_core_parser_content_place(parser, &owner->content_map, start_offset, &line, &source)) {
-        node->place.start = (uint32_t)source;
+    markdown_core_place place;
+    if (markdown_core_text_place(parser, &owner->content_map, start_offset, start_offset, &place)) {
+        node->place.start = place.start;
     }
-    if (markdown_core_parser_content_end_place(parser, &owner->content_map, end_offset, &line, &source)) {
-        node->place.end = (uint32_t)source;
+    if (markdown_core_text_place(parser, &owner->content_map, end_offset, end_offset + 1, &place)) {
+        node->place.end = place.end;
     }
 }
 
@@ -235,8 +229,7 @@ static void S_close_lead(markdown_core_parser *parser, markdown_core_node *parag
                          bufsize_t lead) {
     bufsize_t first = 0;
     bufsize_t scope_end = lead;
-    int line;
-    bufsize_t source;
+    markdown_core_place place;
 
     assert(parser->at.current == paragraph);
     while (first < lead && markdown_core_is_whitespace(text.data[first])) {
@@ -248,18 +241,12 @@ static void S_close_lead(markdown_core_parser *parser, markdown_core_node *parag
         scope_end--;
     }
     if (scope_end > first &&
-        markdown_core_parser_content_end_place(parser, &paragraph->content_map, scope_end - 1, &line, &source)) {
-        paragraph->place.end = (uint32_t)source;
+        markdown_core_text_place(parser, &paragraph->content_map, scope_end - 1, scope_end, &place)) {
+        paragraph->place.end = place.end;
     }
     /* What is cut from the front moves the paragraph's start, which its
      * close reads from the map. */
-    if (lead > first) {
-        markdown_core_parser_adopt_content_marks(parser, &paragraph->content_map, &paragraph->content_map, first,
-                                                 lead - first);
-    } else {
-        paragraph->content_map.count = 0;
-        paragraph->content_map.offset = 0;
-    }
+    markdown_core_text_share(parser, &paragraph->content_map, &paragraph->content_map, first, lead - first);
     paragraph->cut_front += first;
     paragraph->cut_back += text.len - lead;
     markdown_core_block_close_current(parser);
@@ -271,8 +258,6 @@ static void S_close_lead(markdown_core_parser *parser, markdown_core_node *parag
  * written. NULL, with the parse failed, when an allocation failed. */
 static markdown_core_node *S_header_table(markdown_core_parser *parser, const markdown_core_node *paragraph,
                                           markdown_core_chunk text, bufsize_t header) {
-    int line;
-    bufsize_t source;
     markdown_core_node *table = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TABLE);
     if (!table) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -284,11 +269,8 @@ static markdown_core_node *S_header_table(markdown_core_parser *parser, const ma
         markdown_core_parser_release_node(parser, table);
         return NULL;
     }
-    markdown_core_parser_adopt_content_marks(parser, &paragraph->content_map, &table->content_map, header,
-                                             text.len - header);
-    if (markdown_core_parser_content_place(parser, &paragraph->content_map, header, &line, &source)) {
-        table->place = (markdown_core_place){(uint32_t)source, (uint32_t)source};
-    }
+    markdown_core_text_share(parser, &paragraph->content_map, &table->content_map, header, text.len - header);
+    markdown_core_text_place(parser, &paragraph->content_map, header, header, &table->place);
     return table;
 }
 
@@ -427,7 +409,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
     /* The header row is made whole from the table's content, as its cells
      * are: it is never an open block. */
-    table_header = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, reader->number, 1, reader->number, 1);
+    table_header = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, markdown_core_reader_span(reader, parser, 0, 1));
     if (!table_header) {
 
         return node;
@@ -439,13 +421,12 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     pipe_row_cursor header = pipe_row_cells(&header_row);
     while (pipe_row_next(&header, &geometry)) {
         const node_cell *cell = &geometry;
-        markdown_core_node *header_cell = new_cell(parser, reader, 1);
+        markdown_core_node *header_cell = new_cell(parser, reader, 0);
         if (!header_cell) {
             break;
         }
         S_place_content_span(parser, node, header_cell, cell->start_offset, cell->end_offset);
-        set_cell_content(parser, header_cell, cell, node, reader->number, reader->start,
-                         (bufsize_t)(cell->content.data - header_row.source));
+        set_cell_content(parser, reader, header_cell, cell, node, (bufsize_t)(cell->content.data - header_row.source));
         markdown_core_block_settle(parser, header_cell, table_header);
     }
     markdown_core_block_settle(parser, table_header, node);
@@ -485,8 +466,8 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
                                 markdown_core_reader_peek(reader, completed_at - 1) == '\r')) {
         completed_at--;
     }
-    table_row_block = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, reader->number, reader->nonspace + 1,
-                                  reader->number, (int)completed_at);
+    table_row_block = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW,
+                                  markdown_core_reader_span(reader, parser, reader->nonspace, completed_at));
     if (!table_row_block) {
         return NULL;
     }
@@ -502,13 +483,13 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         node_cell geometry;
         for (i = 0; i < table_columns && pipe_row_next(&cells, &geometry); ++i) {
             const node_cell *cell = &geometry;
-            markdown_core_node *node = new_cell(parser, reader, reader->nonspace + 1 + cell->start_offset);
+            const bufsize_t from = reader->nonspace + cell->start_offset, to = reader->nonspace + cell->end_offset;
+            markdown_core_node *node = table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL,
+                                                   markdown_core_reader_span(reader, parser, from, to + 1));
             if (!node) {
                 break;
             }
-            node->place.end = (uint32_t)markdown_core_parser_source_end(parser, reader->number,
-                                                                        reader->nonspace + 1 + cell->end_offset);
-            set_cell_content(parser, node, cell, NULL, reader->number, reader->start,
+            set_cell_content(parser, reader, node, cell, NULL,
                              (bufsize_t)(cell->content.data - markdown_core_reader_bytes(reader, 0)));
             markdown_core_block_settle(parser, node, table_row_block);
         }
@@ -529,11 +510,10 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
          * than at nothing, and it is registered in
          * specs/positions/containment.json rather than hidden. */
         for (; i < table_columns; ++i) {
-            markdown_core_node *node = new_cell(parser, reader, (int)completed_at);
+            markdown_core_node *node = new_cell(parser, reader, completed_at - 1);
             if (!node) {
                 break;
             }
-            node->place.end = (uint32_t)markdown_core_parser_source_end(parser, reader->number, (int)completed_at);
             markdown_core_block_settle(parser, node, table_row_block);
         }
     }

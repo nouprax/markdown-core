@@ -532,15 +532,12 @@ static void trim_citation_source(const markdown_core_element_instance *self, mar
 
 static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_core_node *node, bufsize_t start,
                             bufsize_t end) {
-    int line;
-    bufsize_t first_byte, end_byte;
+    markdown_core_place span = {0, 0};
     if (start == end) {
         return false;
     }
-    markdown_core_parser_content_place(inline_state->owner_parser, &inline_state->owner->content_map, start, &line,
-                                       &first_byte);
-    markdown_core_parser_content_end_place(inline_state->owner_parser, &inline_state->owner->content_map, end - 1,
-                                           &line, &end_byte);
+    markdown_core_text_place(inline_state->owner_parser, &inline_state->owner->content_map, start, end, &span);
+    const bufsize_t first_byte = (bufsize_t)span.start, end_byte = (bufsize_t)span.end;
     const markdown_core_place place = node->place;
     if (place.end <= (uint32_t)first_byte || place.start >= (uint32_t)end_byte) {
         return false;
@@ -601,23 +598,21 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
         return;
     }
     if (first) {
-        int line;
-        bufsize_t start;
-        markdown_core_parser_content_place(inline_state->owner_parser, &text->content_map, 1, &line, &start);
-        text->place.start = (uint32_t)start;
-        markdown_core_parser_adopt_content_marks(inline_state->owner_parser, &text->content_map, &text->content_map, 1,
-                                                 literal->len - 1);
+        markdown_core_place span = text->place;
+        markdown_core_text_place(inline_state->owner_parser, &text->content_map, 1, 1, &span);
+        text->place.start = span.start;
+        markdown_core_text_share(inline_state->owner_parser, &text->content_map, &text->content_map, 1,
+                                 literal->len - 1);
         if (literal->alloc) {
             memmove(literal->data, literal->data + 1, (size_t)literal->len - 1);
         } else {
             literal->data++;
         }
     } else {
-        int line;
-        bufsize_t end;
-        markdown_core_parser_content_end_place(inline_state->owner_parser, &text->content_map, literal->len - 2, &line,
-                                               &end);
-        text->place.end = (uint32_t)end;
+        markdown_core_place span = text->place;
+        markdown_core_text_place(inline_state->owner_parser, &text->content_map, literal->len - 2, literal->len - 1,
+                                 &span);
+        text->place.end = span.end;
     }
     literal->len--;
 }
