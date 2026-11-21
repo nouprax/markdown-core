@@ -3,6 +3,8 @@
 #include "alloc.h"
 #include "attributes.h"
 #include "parts.h"
+#include "bracket.h"
+#include "inline_internal.h"
 #include "../core/attributes.h"
 #include "houdini.h"
 #include "node.h"
@@ -1068,16 +1070,46 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_saw_end(markdown_core_inline_s
     }
 }
 
-int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_state, bufsize_t start,
-                                          markdown_core_node_kind owner, markdown_core_attributes *value,
-                                          bufsize_t *end) {
-    /* The run owner's tail is its own: a heading's trailing attributes are
-     * claimed there, so no inline construct takes an attribute block that
-     * begins in it. One the input's end leaves open is the tail only once
-     * the line ends after it: until then it may be the construct's. */
-    if (inline_state->text_end >= 0 && start >= inline_state->text_end) {
-        if (inline_state->context && start < inline_state->input.len && inline_state->input.data[start] == '{' &&
-            markdown_core_inline_tracks_end(inline_state)) {
+/* The attribute block at `start`, read as markdown_core_inline_state_attributes
+ * reads it, with `value` NULL for recognition alone. */
+/* WHAT A RUN HOLDS OF THE ATTRIBUTE ELEMENT: the recognizer of its input,
+ * made at the first block read, and one plus the start of the last block a
+ * peer asked about (markdown_core_attributes_closes), whose end reads that
+ * question already reported, or 0. */
+typedef struct {
+    markdown_core_attribute_parser parser;
+    bufsize_t asked;
+} S_run;
+
+static S_run *S_run_of(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
+    return markdown_core_run_state(inline_state, self);
+}
+
+/* WHAT A PARSE HOLDS OF IT: the workspace every value of the parse is read
+ * into before it is laid out, which every recognizer of the parse borrows. */
+typedef struct {
+    markdown_core_attribute_scratch scratch;
+} S_state;
+
+markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self) {
+    return &((S_state *)self->state)->scratch;
+}
+
+static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    (void)parser;
+    markdown_core_attribute_scratch_free(markdown_core_attributes_scratch(self));
+}
+
+static int S_read(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bufsize_t start,
+                  markdown_core_node_kind owner, markdown_core_attributes *value, bufsize_t *end, bool report) {
+    markdown_core_attribute_parser *recognizer = &S_run_of(self, inline_state)->parser;
+    /* A cut is the take's: no inline construct takes an attribute block that
+     * begins in it (core/element.h, markdown_core_follow). One the input's
+     * end leaves open is the tail only once the line ends after it: until
+     * then it may be the construct's. */
+    if (inline_state->cut >= 0 && start >= inline_state->cut) {
+        if (report && inline_state->context && start < inline_state->input.len &&
+            inline_state->input.data[start] == '{' && markdown_core_inline_tracks_end(inline_state)) {
             S_saw_end(inline_state, start, owner);
         }
         return 0;
@@ -1094,41 +1126,171 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (inline_state->input.data[start] != '{') {
         return 0;
     }
-    if (!inline_state->attributes.data) {
-        inline_state->attributes = (markdown_core_attribute_parser){
+    if (!recognizer->data) {
+        *recognizer = (markdown_core_attribute_parser){
             .data = inline_state->input.data,
             .length = inline_state->input.len,
-            .scratch = &inline_state->owner_parser->attribute_scratch,
+            .scratch = markdown_core_attributes_scratch(self),
         };
     }
-    int matched = markdown_core_attributes_parse(&inline_state->attributes, start, value, end);
-    if (inline_state->attributes.oom) {
+    int matched;
+    if (value) {
+        matched = markdown_core_attributes_parse(recognizer, start, value, end);
+    } else {
+        *end = markdown_core_attributes_end(recognizer, start);
+        matched = *end != 0;
+    }
+    if (recognizer->oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     /* A block that does not close may close once the input goes on, and
      * one that closes inside a quote the input's end leaves open, which
      * reads it as text of a bare value, may close past it. */
-    if ((!matched || inline_state->context || inline_state->attributes.ran_out) &&
+    if (report && (!matched || inline_state->context || recognizer->ran_out) &&
         markdown_core_inline_tracks_end(inline_state)) {
         S_saw_end(inline_state, start, owner);
     }
     return matched;
 }
 
-void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
-                                                   bufsize_t from) {
+bufsize_t markdown_core_attributes_closes(const markdown_core_element_instance *self,
+                                          markdown_core_inline_state *inline_state, bufsize_t start,
+                                          markdown_core_node_kind owner) {
+    bufsize_t end = 0;
+    S_run_of(self, inline_state)->asked = start + 1;
+    return S_read(self, inline_state, start, owner, NULL, &end, true) ? end : 0;
+}
+
+/* AN ATTRIBUTE BLOCK FOLLOWS THE NODE BEFORE IT (element.h,
+ * MARKDOWN_CORE_FOLLOW_TOKEN): a `{` where the token before made a node a
+ * later token may follow is that node's attribute block when one closes,
+ * and the node then reaches to its `}`. Its start stays where its own
+ * syntax put it. */
+static bufsize_t S_follow_token(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                markdown_core_lead *lead) {
+    (void)parser;
+    markdown_core_inline_state *inline_state = lead->inline_state;
+    markdown_core_node *node = lead->node;
+    if (inline_state->pos >= inline_state->input.len || inline_state->input.data[inline_state->pos] != '{') {
+        return 0;
+    }
     bufsize_t end;
     /* Only a context query reads the owner's kind. */
     const markdown_core_node_kind owner =
         inline_state->context ? markdown_core_node_get_kind(node) : MARKDOWN_CORE_KIND_NONE;
-    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, owner, &node->attributes, &end)) {
-        inline_state->pos = end;
-        markdown_core_inline_state_place(inline_state, node, from, end - 1);
+    const bool asked = S_run_of(self, inline_state)->asked == inline_state->pos + 1;
+    const bufsize_t start = inline_state->pos;
+    if (!S_read(self, inline_state, start, owner, &node->attributes, &end, !asked)) {
+        return 0;
+    }
+    const uint32_t place = node->place.start;
+    inline_state->pos = end;
+    markdown_core_inline_state_place(inline_state, node, end - 1, end - 1);
+    node->place.start = place;
+    return end - start;
+}
+
+/* A node that may be updated where the run stands is open when a `{`
+ * follows it: the block may yet close as the input goes on. */
+static bool holds(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
+    (void)self;
+    return markdown_core_inline_made_node(inline_state) && inline_state->pos < inline_state->input.len &&
+           inline_state->input.data[inline_state->pos] == '{';
+}
+
+/* A run whose last token made a node that may be updated at the input's end:
+ * an attribute block may yet begin there, once the input goes on. */
+static void finish(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    (void)self;
+    if (inline_state->made && inline_state->made_end >= inline_state->input.len && inline_state->cut < 0 &&
+        markdown_core_inline_tracks_end(inline_state)) {
+        markdown_core_inline_saw_end(inline_state);
     }
 }
 
-bool markdown_core_attributes_report_tail(markdown_core_parser *parser, markdown_core_node_kind owner,
-                                          const unsigned char *line, bufsize_t from, bufsize_t end) {
+/* A BRACKETED SPAN (element.h, markdown_core_close_rule): a bracket no
+ * explicit link closes, whose `]` an attribute block follows, is a span of
+ * its body, before a shortcut link may take it. */
+static markdown_core_bracket_match S_close_span(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    (void)made;
+    markdown_core_attributes attributes = {0};
+    bufsize_t end;
+    if (!S_read(self, inline_state, inline_state->pos, MARKDOWN_CORE_KIND_SPAN, &attributes, &end, true)) {
+        return BRACKET_UNMATCHED;
+    }
+    if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
+                                             MARKDOWN_CORE_NODE_SPAN)) {
+        markdown_core_attributes_free(&attributes);
+        return BRACKET_REJECTED;
+    }
+    markdown_core_node *inl = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_SPAN);
+    if (!inl) {
+        markdown_core_attributes_free(&attributes);
+        markdown_core_inline_pop_bracket(inline_state);
+        return BRACKET_MATCHED;
+    }
+    inl->attributes = attributes;
+    inline_state->pos = end;
+    markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
+    markdown_core_inline_settle_bracket(inline_state, opener);
+    markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
+    markdown_core_inline_take_bracket_content(parser, inline_state, opener, inl);
+    markdown_core_inline_replace_bracket_opener(inline_state, opener, inl);
+    markdown_core_inline_pop_bracket(inline_state);
+    return BRACKET_MATCHED;
+}
+
+/* THE PARTS OF A BRACKETED SPAN (parts.h): the attribute container after
+ * the `]` that closes its text. */
+static void S_span_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t close = markdown_core_parts_last(parts, 1);
+    while (close < n && s[close] != ']') {
+        close += s[close] == '\\' && close + 1 < n ? 2 : 1;
+    }
+    if (close + 1 < n && s[close + 1] == '{') {
+        markdown_core_attributes_parts(parts, close + 1);
+    }
+}
+
+bufsize_t markdown_core_attributes_close_at(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                            markdown_core_attribute_parser *held, const unsigned char *data,
+                                            bufsize_t length, bufsize_t start) {
+    (void)self;
+    held->data = data;
+    held->length = length;
+    held->scratch = markdown_core_attributes_scratch(self);
+    const bufsize_t end = markdown_core_attributes_end(held, start);
+    if (held->oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return end;
+}
+
+bool markdown_core_attributes_write(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                    markdown_core_attribute_parser *held, bufsize_t start, markdown_core_node *node) {
+    (void)self;
+    bufsize_t end;
+    const bool written = markdown_core_attributes_parse(held, start, &node->attributes, &end);
+    if (held->oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return written;
+}
+
+void markdown_core_attributes_release(const markdown_core_element_instance *self,
+                                      markdown_core_attribute_parser *held) {
+    (void)self;
+    markdown_core_attribute_parser_free(held);
+}
+
+bool markdown_core_attributes_report(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                     markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
+                                     bufsize_t end) {
+    (void)self;
     if (!parser->sink) {
         return false;
     }
@@ -1148,37 +1310,149 @@ bool markdown_core_attributes_report_tail(markdown_core_parser *parser, markdown
     return open;
 }
 
-bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
-                                               const unsigned char *source, bufsize_t length) {
-    bufsize_t info_end = length, attribute_end;
-    while (info_end > 0 && markdown_core_is_space_or_tab(source[info_end - 1])) {
-        info_end--;
+static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    markdown_core_attribute_parser *recognizer = &S_run_of(self, inline_state)->parser;
+    if (recognizer->data) {
+        markdown_core_attribute_parser_free(recognizer);
+    }
+}
+/* A LINE'S ATTRIBUTE TAIL (element.h, MARKDOWN_CORE_FOLLOW_TAIL): an
+ * attribute block that ends the line, after the spaces and tabs before it,
+ * is the block's, taken with those spaces. */
+static bufsize_t S_follow_tail(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_lead *lead) {
+    markdown_core_node *node = lead->node;
+    const unsigned char *line = lead->line;
+    const bufsize_t from = lead->from, to = lead->to;
+    bufsize_t end = to;
+    while (end > from && markdown_core_is_whitespace(line[end - 1])) {
+        end--;
+    }
+    if (lead->live) {
+        markdown_core_attributes_report(self, parser, markdown_core_node_get_kind(node), line, from, end);
+    }
+    if (end == from || line[end - 1] != '}') {
+        return 0;
     }
     markdown_core_attribute_parser attributes = {
-        .data = source, .length = length, .scratch = &parser->attribute_scratch};
-    bufsize_t attribute_start = markdown_core_attributes_tail(&attributes, 0, info_end);
-    if (attribute_start >= 0 &&
-        markdown_core_attributes_parse(&attributes, attribute_start, &node->attributes, &attribute_end)) {
-        info_end = attribute_start;
+        .data = line, .length = end, .scratch = markdown_core_attributes_scratch(self)};
+    const bufsize_t start = markdown_core_attributes_tail(&attributes, from, end);
+    bufsize_t taken = 0, stop;
+    if (start >= 0 && markdown_core_attributes_parse(&attributes, start, &node->attributes, &stop)) {
+        bufsize_t at = start;
+        while (at > from && markdown_core_is_space_or_tab(line[at - 1])) {
+            at--;
+        }
+        taken = to - at;
     }
     if (attributes.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_attribute_parser_free(&attributes);
-    return info_end;
+    return taken;
 }
 
-static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+/* A token of the block's inlines crossed into the tail: it is text. */
+static void S_untake(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                     markdown_core_node *node) {
     (void)self;
-    if (inline_state->attributes.data) {
-        markdown_core_attribute_parser_free(&inline_state->attributes);
-    }
+    (void)parser;
+    markdown_core_attributes_free(&node->attributes);
+    memset(&node->attributes, 0, sizeof(node->attributes));
+    node->cut_back = 0;
 }
+
+/* The nodes an attribute block follows: inline, those of the tokens that
+ * say a later token may follow them (markdown_core_inline_made); at a
+ * line's end, the blocks that offer it. A heading's inline tokens win over
+ * its tail. */
+static const markdown_core_node_type ATTRIBUTES_TOKEN_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_LINK,
+                                                                 MARKDOWN_CORE_NODE_EMBEDDED,
+                                                                 MARKDOWN_CORE_NODE_DIRECTIVE, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type ATTRIBUTES_TAIL_KINDS[] = {MARKDOWN_CORE_NODE_HEADING,
+                                                                MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
+
+static const markdown_core_follow ATTRIBUTES_FOLLOWS[] = {
+    {.at = MARKDOWN_CORE_FOLLOW_TOKEN, .kinds = ATTRIBUTES_TOKEN_KINDS, .follow = S_follow_token},
+    {.at = MARKDOWN_CORE_FOLLOW_TAIL,
+     .kinds = ATTRIBUTES_TAIL_KINDS,
+     .follow = S_follow_tail,
+     .yields = true,
+     .undo = S_untake},
+    {0},
+};
+
+/* The attribute tails the run's end may leave open on the last line of a
+ * heading's text, or of a paragraph's that a setext underline may yet make a
+ * heading's, where the dialect holds headings, to the run's context sink:
+ * every brace that may be one, since which is the tail only the finished
+ * line tells. A heading whose tail closed has it taken from its text. */
+static void report(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    (void)self;
+    const markdown_core_node *owner = inline_state->owner;
+    const markdown_core_parser *parser = inline_state->owner_parser;
+    bool declares;
+    if (owner->kind == MARKDOWN_CORE_NODE_HEADING) {
+        if (owner->cut_back) {
+            return;
+        }
+        declares = false;
+    } else if (owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+               markdown_core_dialect_block_kind(parser->dialect, MARKDOWN_CORE_NODE_HEADING)->structure) {
+        declares = true;
+    } else {
+        return;
+    }
+    const unsigned char *data = inline_state->input.data;
+    const bufsize_t len = inline_state->input.len;
+    bufsize_t at = len;
+    while (at > 0 && !markdown_core_is_line_end(data[at - 1])) {
+        at--;
+    }
+    markdown_core_field field;
+    markdown_core_member_memo memo = {0};
+    for (; at < len; at++) {
+        if (data[at] == '\\' && at + 1 < len && markdown_core_ispunct(data[at + 1])) {
+            at++;
+        } else if (data[at] == '{' && markdown_core_attributes_open_member(data, len, at, &field, &memo)) {
+            field.owner = MARKDOWN_CORE_KIND_HEADING;
+            field.declares = declares;
+            if (declares) {
+                markdown_core_inline_open_line(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            } else {
+                markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            }
+        }
+    }
+    markdown_core_member_memo_free(&memo);
+}
+
+/* A span sits between a link whose destination, title or label follows the
+ * `]` (precedence -20) and a shortcut link (10). */
+static const markdown_core_close_rule ATTRIBUTES_CLOSES[] = {
+    {.precedence = -10, .close = S_close_span},
+};
+
 static const markdown_core_inline_ops ATTRIBUTES_INLINES = {
+    .holds = holds,
+    .report = report,
+    .finish = finish,
     .dispose = dispose_inline,
+    .closes = ATTRIBUTES_CLOSES,
+    .close_count = sizeof(ATTRIBUTES_CLOSES) / sizeof(ATTRIBUTES_CLOSES[0]),
+};
+
+const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = S_span_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES = {
     .name = "attributes",
+    .state_size = sizeof(S_state),
+    .run_state_size = sizeof(S_run),
+    .dispose_parser = dispose_parser,
+    .follows = ATTRIBUTES_FOLLOWS,
+    .facets = MARKDOWN_CORE_ATTRIBUTES_FACETS,
     .inlines = &ATTRIBUTES_INLINES,
 };

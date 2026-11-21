@@ -25,7 +25,7 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *titl
 
 /* The length of the link reference definition at the front of `input`, 0
  * when there is none. */
-bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
-                                                    markdown_core_attribute_parser *attributes);
+bufsize_t markdown_core_reference_definition_length(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser, markdown_core_chunk *input);
 
 #endif

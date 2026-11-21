@@ -171,9 +171,8 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         !candidate.own_line || candidate.content_end) {
         return false;
     }
-    /* The line decides the block before it, which it names: one whose
-     * element says a later line may write it (element.h,
-     * `trailed_kinds`). */
+    /* The line decides the block before it, which it names: one of the
+     * kinds the paragraph's follows name (paragraph.c, PARAGRAPH_FOLLOWS). */
     markdown_core_node *owner = markdown_core_reader_last(reader, parser, parent);
     if (!owner || owner->attributes.anchor.len ||
         !(markdown_core_parser_block_kind(parser, owner)->flags & MARKDOWN_CORE_KIND_TRAILED) ||

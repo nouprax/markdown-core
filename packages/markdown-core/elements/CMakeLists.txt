@@ -42,7 +42,6 @@ set(LIBRARY_SOURCES
     paragraph.c
     properties.c
     yaml.c
-    span.c
     specimen.c
     strikethrough.c
     subscript.c

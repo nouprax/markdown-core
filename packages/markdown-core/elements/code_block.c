@@ -2,9 +2,13 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "sink.h"
-#include "attributes.h"
 #include "parts.h"
+#include "attributes.h"
 #include <string.h>
+
+/* The elements whose syntax this element asks: where an attribute tail
+ * ends an info string's first word. */
+static const markdown_core_element *const CODE_BLOCK_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
 #define peek_at(input, at) ((input)->data[(at)])
 
 /* The end of an indented code block's literal: past the line ending of its
@@ -185,17 +189,16 @@ static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
     return info_word(data, length, &cut);
 }
 
-/* The fence line's fields the line's end cuts short, `rest` its `length`
- * bytes past the fence, to the parse's context sink: a member of an open
- * attribute tail, and the info string's first word, after the spaces and
+/* The fence line's field the line's end cuts short, `rest` its `length`
+ * bytes past the fence, to the parse's context sink (a member of an open
+ * attribute tail is the tail's taker's to report): the info string's first
+ * word, after the spaces and
  * the references that spell them before it. Both are candidates: what
  * follows the cursor decides whether the brace opens a tail or is a byte of
  * the word, so the query confirms one against the whole line. */
 static void S_report_info(markdown_core_parser *parser, markdown_core_reader *reader, const unsigned char *rest,
                           bufsize_t length) {
     const bufsize_t offset = reader->offset;
-    const unsigned char *line = rest - offset;
-    markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, line, offset, offset + length);
     bufsize_t start = 0, space;
     while (start < length) {
         if (markdown_core_is_space_or_tab(rest[start])) {
@@ -229,12 +232,15 @@ static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, ma
     const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
     assert(line_end);
     const bufsize_t pos = (bufsize_t)(line_end - rest);
+    /* The line's end is offered (element.h, markdown_core_follow): the
+     * info string ends where what is taken begins. */
+    const bufsize_t offset = reader->offset;
+    bufsize_t info_end = pos - markdown_core_parser_offer(parser, b, rest - offset, offset, offset + pos, true);
     if (parser->sink) {
         S_report_info(parser, reader, rest, pos);
     }
     b->as.code->literal_start = pos + 1;
     markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
-    bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, rest, pos);
     bufsize_t info_start = 0;
     while (info_start < info_end && markdown_core_is_space_or_tab(rest[info_start])) {
         info_start++;
@@ -424,6 +430,7 @@ const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
+    .peers = CODE_BLOCK_PEERS,
     .facets = MARKDOWN_CORE_CODE_BLOCK_FACETS,
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",

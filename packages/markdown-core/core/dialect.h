@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "node.h"
+#include "follow.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -198,7 +199,7 @@ enum {
     MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11,
     MARKDOWN_CORE_KIND_FOLDS = 1u << 12,
     /* A later line may write a block of the kind once it closed
-     * (element.h, `trailed_kinds`). */
+     * (element.h, markdown_core_follow, `closed`). */
     MARKDOWN_CORE_KIND_TRAILED = 1u << 13,
     /* A block after one of the kind may still go on in it (element.h,
      * `awaits`). */
@@ -211,12 +212,14 @@ typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
     void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
     uint16_t flags;
-    /* The element that takes a block of the kind over as it closes, [0],
-     * and as it is completed, [1], with its hook (element.h,
-     * markdown_core_takeover), or NULL. */
-    const markdown_core_element_instance *taker[2];
-    void (*take[2])(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *,
-                    markdown_core_node *);
+    /* The element that follows a node of the kind at each time, with its
+     * declaration (element.h, markdown_core_follow), or NULL. */
+    const markdown_core_element_instance *follower[MARKDOWN_CORE_FOLLOW_TIMES];
+    const struct markdown_core_follow *follow[MARKDOWN_CORE_FOLLOW_TIMES];
+    /* The follower that makes a node of the kind of a leader of another, and
+     * its declaration (`makes`, THE FORMER KIND), or NULL. */
+    const markdown_core_element_instance *maker;
+    const struct markdown_core_follow *made;
 } markdown_core_kind_record;
 
 /* The keys a block-start family's gate lists are indexed by: each first

@@ -1174,9 +1174,6 @@ struct markdown_core_parser {
      * kept for the next push: delimiters (markdown_core_inline_push_delimiter_entry)
      * and brackets (bracket.h), each of one size; released with the parser. */
     markdown_core_pool delimiter_pool, bracket_pool;
-    /* The workspace every attribute value of the parse is read into before
-     * it is laid out (core/attributes.h); released with the parser. */
-    markdown_core_attribute_scratch attribute_scratch;
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes
@@ -1504,6 +1501,13 @@ static inline const markdown_core_kind_record *markdown_core_parser_block_kind(c
                                                                                const markdown_core_node *block) {
     return markdown_core_dialect_block_kind(parser->dialect, (markdown_core_node_type)block->kind);
 }
+
+/* A LINE'S TAIL OFFERED (element.h, MARKDOWN_CORE_FOLLOW_TAIL): bytes `from`
+ * to `to` of `line`, the end of a line of `block` its own grammar leaves
+ * open, to the element that takes the tails of its kind; how many bytes
+ * before `to` it took, 0 when none does. */
+bufsize_t markdown_core_parser_offer(markdown_core_parser *parser, markdown_core_node *block, const unsigned char *line,
+                                     bufsize_t from, bufsize_t to, bool live);
 
 /* Whether a block of `node`'s kind changing to `kind` keeps a block: one
  * whose element cuts the items its text opens with, becoming one of a kind

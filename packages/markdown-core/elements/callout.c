@@ -219,12 +219,8 @@ static markdown_core_node *open_lazy(const markdown_core_element_instance *self,
     return text_block->element->opens->text(text_block, parser, node, reader);
 }
 
-static const markdown_core_node_type CALLOUT_TRAILED[] = {MARKDOWN_CORE_NODE_CALLOUT, MARKDOWN_CORE_NODE_NONE};
-
 static const markdown_core_edit_ops CALLOUT_EDIT = {
     .reopens = true,
-    /* A block identifier line after it names it (block_identifier.c). */
-    .trailed_kinds = CALLOUT_TRAILED,
 };
 
 static const markdown_core_open_ops CALLOUT_OPENS = {

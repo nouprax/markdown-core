@@ -85,6 +85,7 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
 
 /* The facets each element of the core dialect declares (element.h,
  * `facets`), which the table below reads by kind. */
+extern const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[];
@@ -130,7 +131,7 @@ const markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_R
     [MARKDOWN_CORE_KIND_LINK] = &MARKDOWN_CORE_LINK_FACETS[0],
     [MARKDOWN_CORE_KIND_EMBEDDED] = &MARKDOWN_CORE_LINK_FACETS[1],
     [MARKDOWN_CORE_KIND_REFERENCE] = &MARKDOWN_CORE_LINK_FACETS[2],
-    [MARKDOWN_CORE_KIND_SPAN] = &MARKDOWN_CORE_LINK_FACETS[3],
+    [MARKDOWN_CORE_KIND_SPAN] = &MARKDOWN_CORE_ATTRIBUTES_FACETS[0],
     [MARKDOWN_CORE_KIND_LIST_ITEM] = &MARKDOWN_CORE_LIST_FACETS[0],
     [MARKDOWN_CORE_KIND_PARAGRAPH] = &MARKDOWN_CORE_PARAGRAPH_FACETS[0],
     [MARKDOWN_CORE_KIND_LIST] = &MARKDOWN_CORE_PARAGRAPH_FACETS[1],

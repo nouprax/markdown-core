@@ -308,6 +308,11 @@ static const char *facade_kind_name(markdown_core_node_kind kind) {
 
 /* The parse record of `element` in the parse `parser` runs, as `type`: how a
  * test reads an element's work, from outside the dialect. */
+/* The attribute grammar's recognition work in a parse (elements/attributes.h). */
+#define ATTRIBUTE_WORK(parser)                                                                                         \
+    (markdown_core_attributes_scratch(                                                                                 \
+         markdown_core_dialect_instance((parser)->dialect, &MARKDOWN_CORE_ELEMENT_ATTRIBUTES))                         \
+         ->work)
 #define ELEMENT_STATE(parser, type, element) ((type *)markdown_core_parser_instance((parser), &(element))->state)
 
 /* WHERE A NODE IS, as editor coordinates. A parsed tree is published: each
@@ -5288,7 +5293,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->dimensions =
         ELEMENT_STATE(parser, markdown_core_embedded_work, MARKDOWN_CORE_ELEMENT_EMBEDDED)->dimensions +
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
-    work->attributes = parser->attribute_scratch.work;
+    work->attributes = ATTRIBUTE_WORK(parser);
     work->anchors = parser->names.work;
     work->definitions = 0;
     for (size_t i = 0; i < parser->roster.count; i++) {
@@ -5833,14 +5838,14 @@ static void probe_directive_openers(const markdown_core_element_instance *self, 
      * line before it opens anything. */
     for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i += 2) {
         markdown_core_reader reader = {.line = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0}};
-        size_t work = parser->attribute_scratch.work;
+        size_t work = ATTRIBUTE_WORK(parser);
         text_allocation_calls = 0;
         markdown_core_node *opened =
             MARKDOWN_CORE_ELEMENT_DIRECTIVE.opens->open(directive, 0, parser, parser->root, &reader);
         OK(runner, opened == NULL, "the directive opener validates the complete opener");
         OK(runner, text_allocation_calls <= (i == 2 ? 0 : 1), "a refused opener allocates no semantic attributes");
         if (i != 2) {
-            OK(runner, parser->attribute_scratch.work > work, "opener attribute recognition work is accounted");
+            OK(runner, ATTRIBUTE_WORK(parser) > work, "opener attribute recognition work is accounted");
         }
     }
 }
@@ -8884,8 +8889,9 @@ static void formula_promotion_views_content(test_batch_runner *runner) {
         old->as.code->literal = (markdown_core_chunk){old->content.ptr, old->content.size, 0};
         const unsigned char *bytes = old->content.ptr;
         payload_fail_at = fail ? payload_allocations + fail : 0;
-        /* The formula element takes the fence over as it is completed. */
-        MARKDOWN_CORE_ELEMENT_FORMULA.takes[0].take(&formula_instance, &parser, old, root);
+        /* The formula element follows the fence as it is completed. */
+        markdown_core_lead lead = {.node = old, .parent = root};
+        MARKDOWN_CORE_ELEMENT_FORMULA.follows[0].follow(&formula_instance, &parser, &lead);
         payload_fail_at = 0;
         if (parser.error) {
             INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");

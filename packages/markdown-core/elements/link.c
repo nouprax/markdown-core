@@ -1,6 +1,5 @@
 #include "alloc.h"
 #include "link_scanners.h"
-#include "span.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 #include "attributes.h"
 #include "parts.h"
@@ -10,8 +9,21 @@
 #include "block_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { LINK_EMBEDDED };
-static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, NULL};
+enum { LINK_EMBEDDED, LINK_ATTRIBUTES };
+static const markdown_core_element *const LINK_PEERS[] = {
+    [LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+
+/* WHAT A PARSE HOLDS OF THE LINK ELEMENT: the recognizer of the attribute
+ * blocks of the text a front cut reads (element.h, markdown_core_cut), kept
+ * across its items, so that the many blocks of one text are read linearly. */
+typedef struct {
+    markdown_core_attribute_parser held;
+} S_state;
+
+static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    (void)parser;
+    markdown_core_attribute_parser_free(&((S_state *)self->state)->held);
+}
 
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);
@@ -207,6 +219,11 @@ static void spnl(markdown_core_inline_state *inline_state) {
 static bool reference_tail(markdown_core_inline_state *inline_state, markdown_core_attribute_parser *attributes,
                            markdown_core_attributes *value, bool *wide) {
     bufsize_t before = inline_state->pos;
+    if (!attributes) {
+        /* A dialect without attribute blocks reads none. */
+        markdown_core_inline_skip_spaces(inline_state);
+        return markdown_core_inline_skip_line_end(inline_state);
+    }
     spnl(inline_state);
     bufsize_t base = (bufsize_t)(inline_state->input.data - attributes->data);
     bufsize_t start = base + inline_state->pos;
@@ -307,13 +324,20 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     return inline_state.pos;
 }
 
-bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
-                                                    markdown_core_attribute_parser *attributes) {
+bufsize_t markdown_core_reference_definition_length(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser, markdown_core_chunk *input) {
+    const markdown_core_element_instance *peer = self->peers[LINK_ATTRIBUTES];
+    markdown_core_attribute_parser attributes = {
+        .data = input->data, .length = input->len, .scratch = peer ? markdown_core_attributes_scratch(peer) : NULL};
     reference_definition definition;
-    bufsize_t length = S_reference_definition(input, attributes, &definition);
+    bufsize_t length = S_reference_definition(input, peer ? &attributes : NULL, &definition);
     if (length) {
         markdown_core_attributes_free(&definition.value);
     }
+    if (attributes.oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_attribute_parser_free(&attributes);
     return length;
 }
 
@@ -328,15 +352,26 @@ static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, m
  * definition at the front of `cut->rest`, `cut->at` bytes into the block's
  * text, made a Reference node, which the engine settles before the block;
  * with `measure`, only its length. Its length, 0 when there is none. */
-static bufsize_t S_cut_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_reader *reader, markdown_core_cut *cut) {
-    (void)self;
+static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_reader *reader, markdown_core_cut *cut) {
     (void)reader;
     markdown_core_node *b = cut->block;
     markdown_core_chunk *input = &cut->rest;
     const bufsize_t before = cut->at;
+    /* A cut's first item begins a text: the recognizer of the last is let
+     * go, and the next reads this one. */
+    const markdown_core_element_instance *peer = self->peers[LINK_ATTRIBUTES];
+    markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
+    if (peer && (cut->at == 0 || held->data != cut->text.data || held->length != cut->text.len)) {
+        markdown_core_attribute_parser_free(held);
+        *held = (markdown_core_attribute_parser){
+            .data = cut->text.data, .length = cut->text.len, .scratch = markdown_core_attributes_scratch(peer)};
+    }
     reference_definition definition; /* S_reference_definition writes it whole. */
-    bufsize_t length = S_reference_definition(input, &cut->attributes, &definition);
+    bufsize_t length = S_reference_definition(input, peer ? held : NULL, &definition);
+    if (peer && held->oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     cut->wide = definition.wide;
     if (cut->measure) {
         if (length) {
@@ -398,6 +433,20 @@ static bufsize_t S_cut_reference(const markdown_core_element_instance *self, mar
     if (!parser->error) {
         markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_REFERENCE, &definition.label, start,
                                      &reference->as.reference->label);
+    }
+    return length;
+}
+
+/* (S_cut_item) A cut its item ends, with none or the last of the text, lets
+ * its recognizer go, which adds what it read to the parse's work. */
+static bufsize_t S_cut_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                 markdown_core_reader *reader, markdown_core_cut *cut) {
+    const bufsize_t rest = cut->rest.len;
+    const bufsize_t length = S_cut_item(self, parser, reader, cut);
+    if (!length || length == rest) {
+        markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
+        markdown_core_attribute_parser_free(held);
+        *held = (markdown_core_attribute_parser){0};
     }
     return length;
 }
@@ -897,13 +946,13 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // two need not be on the same line. Taking BOTH from inline_state->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
     // Text at 1:2 -- a node that begins after its own first child.
-    inl->place.start = opener->inl_text->place.start;
-    if (explicit_tail) {
-        markdown_core_inline_attach_inline_attributes(inline_state, inl, opener->position - 1);
-        inl->place.start = opener->inl_text->place.start;
-    }
     markdown_core_inline_state_place(inline_state, inl, opener->position - 1, inline_state->pos - 1);
     inl->place.start = opener->inl_text->place.start;
+    /* What follows a link whose destination, title or label follows its `]`
+     * may update it (no-flush.md 10.13). */
+    if (explicit_tail) {
+        markdown_core_inline_made(inline_state, inl);
+    }
     // And the destination and title are scanned by markdown_core_inline_manual_scan_link_url and
     // scan_link_title, which move inline_state->pos without ever passing through
     // handle_newline -- so a line ending inside `(...)` is invisible to the
@@ -972,14 +1021,6 @@ static markdown_core_bracket_match S_close_explicit(const markdown_core_element_
                                                                                                   : BRACKET_REJECTED;
 }
 
-static markdown_core_bracket_match S_close_span(const markdown_core_element_instance *self,
-                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                                bracket *opener, markdown_core_node **made) {
-    (void)self;
-    (void)made;
-    return markdown_core_span_close(parser, inline_state, opener);
-}
-
 static markdown_core_bracket_match S_close_shortcut(const markdown_core_element_instance *self,
                                                     markdown_core_parser *parser,
                                                     markdown_core_inline_state *inline_state, bracket *opener,
@@ -996,7 +1037,6 @@ static markdown_core_bracket_match S_close_shortcut(const markdown_core_element_
 
 static const markdown_core_close_rule LINK_CLOSES[] = {
     {.precedence = -20, .close = S_close_explicit},
-    {.precedence = -10, .close = S_close_span},
     {.precedence = 10, .close = S_close_shortcut},
 };
 
@@ -1217,13 +1257,14 @@ const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts},
     {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts},
     {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
-    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = markdown_core_span_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .facets = MARKDOWN_CORE_LINK_FACETS,
     .peers = LINK_PEERS,
+    .state_size = sizeof(S_state),
+    .dispose_parser = dispose_parser,
     .bracket_size = sizeof(S_tail),
     .opens = &LINK_OPENS,
     .name = "link",

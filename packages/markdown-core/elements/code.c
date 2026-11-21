@@ -1,8 +1,12 @@
 #include "alloc.h"
 #include "code.h"
 #include "inline_internal.h"
-#include "attributes.h"
 #include "parts.h"
+#include "attributes.h"
+
+/* The elements whose syntax this element asks: the attribute block a span
+ * may end with, whose parts its own are read with. */
+static const markdown_core_element *const CODE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 #define MAXBACKTICKS 80
@@ -162,7 +166,8 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
         if (!node) {
             return NULL;
         }
-        markdown_core_inline_attach_inline_attributes(inline_state, node, startpos - openticks.len);
+        /* What follows a code span may update it (no-flush.md 10.13). */
+        markdown_core_inline_made(inline_state, node);
         /* The ticks reach no literal and the bytes between them do. */
         return node;
     }
@@ -238,6 +243,7 @@ const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
+    .peers = CODE_PEERS,
     .facets = MARKDOWN_CORE_CODE_FACETS,
     .run_state_size = sizeof(markdown_core_backticks),
     .name = "code",

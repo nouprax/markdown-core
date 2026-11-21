@@ -1,5 +1,4 @@
 #include "definition_list.h"
-#include "attributes.h"
 #include "link.h"
 #include "block_internal.h"
 #include "directive.h"
@@ -187,13 +186,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool definition_term_reads(const mark
                                 markdown_core_reader_length(reader) - reader->nonspace, 0};
     if (term.data[0] == '[' && self->peers[DEFINITION_LINK]) {
         counts->work += term.len;
-        markdown_core_attribute_parser attributes = {
-            .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
-        bool reference = markdown_core_reference_definition_length(&term, &attributes) != 0;
-        if (attributes.oom) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-        markdown_core_attribute_parser_free(&attributes);
+        bool reference = markdown_core_reference_definition_length(self->peers[DEFINITION_LINK], parser, &term) != 0;
         if (reference || parser->error) {
             return false;
         }

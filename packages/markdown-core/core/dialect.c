@@ -341,13 +341,26 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         }
         dialect->kinds[index] = record;
     }
-    /* The blocks each element takes over (element.h, markdown_core_takeover). */
+    /* The nodes each element follows, and the kinds its following makes
+     * (element.h, markdown_core_follow). */
     for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_takeover *takes = dialect->instances[i].element->takes;
-        for (; takes && takes->kind != MARKDOWN_CORE_NODE_NONE; takes++) {
-            markdown_core_kind_record *record = &dialect->kinds[markdown_core_block_kind_index(takes->kind)];
-            record->taker[!takes->closing] = &dialect->instances[i];
-            record->take[!takes->closing] = takes->take;
+        for (const markdown_core_follow *follow = dialect->instances[i].element->follows; follow && follow->kinds;
+             follow++) {
+            for (const markdown_core_node_type *kind = follow->kinds; *kind != MARKDOWN_CORE_NODE_NONE; kind++) {
+                markdown_core_kind_record *record = &dialect->kinds[markdown_core_finish_kind_index(*kind)];
+                if (follow->closed) {
+                    record->flags |= MARKDOWN_CORE_KIND_TRAILED;
+                }
+                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE) {
+                    record->follower[follow->at] = &dialect->instances[i];
+                    record->follow[follow->at] = follow;
+                }
+            }
+            if (follow->makes != MARKDOWN_CORE_NODE_NONE) {
+                markdown_core_kind_record *record = &dialect->kinds[markdown_core_finish_kind_index(follow->makes)];
+                record->maker = &dialect->instances[i];
+                record->made = follow;
+            }
         }
     }
     /* A structure's fold hook is asked at the kinds it lists, each a block
@@ -358,9 +371,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
         }
         const markdown_core_edit_ops *edit = dialect->instances[i].element->edit;
-        for (const markdown_core_node_type *kind = edit ? edit->trailed_kinds : NULL; kind && *kind; kind++) {
-            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_TRAILED;
-        }
         for (const markdown_core_node_type *kind = edit ? edit->awaits : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
         }

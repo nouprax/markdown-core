@@ -378,7 +378,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_pool_release(&parser->delimiter_pool);
     markdown_core_pool_release(&parser->bracket_pool);
     markdown_core_inline_release_records(parser);
-    markdown_core_attribute_scratch_free(&parser->attribute_scratch);
 
     /* The block-start lookahead's path, flags and resume cache are parser
      * state of the same kind: indexed by open containers and source lines,
@@ -1731,15 +1730,27 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close_hook(markdow
     if (structure->lines->close && !structure->lines->close(structure, parser, b, parent, &parser->at.read)) {
         return false;
     }
-    /* Another element may take the block over as it closes, by the kind
-     * the close left it. */
+    /* Another element may follow the block as it closes, by the kind the
+     * close left it. */
     if (b->kind != was) {
         kind = markdown_core_parser_block_kind(parser, b);
     }
-    if (kind->take[0]) {
-        kind->take[0](kind->taker[0], parser, b, parent);
+    if (kind->follow[MARKDOWN_CORE_FOLLOW_CLOSE]) {
+        markdown_core_lead lead = {.node = b, .parent = parent};
+        kind->follow[MARKDOWN_CORE_FOLLOW_CLOSE]->follow(kind->follower[MARKDOWN_CORE_FOLLOW_CLOSE], parser, &lead);
     }
     return true;
+}
+
+/* (parser.h) */
+bufsize_t markdown_core_parser_offer(markdown_core_parser *parser, markdown_core_node *block, const unsigned char *line,
+                                     bufsize_t from, bufsize_t to, bool live) {
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    if (!kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]) {
+        return 0;
+    }
+    markdown_core_lead lead = {.node = block, .line = line, .from = from, .to = to, .live = live};
+    return kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]->follow(kind->follower[MARKDOWN_CORE_FOLLOW_TAIL], parser, &lead);
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_core_parser *parser, markdown_core_node *b,
@@ -3983,9 +3994,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     if (facts->complete) {
         facts->complete(facts->structure, parser, node, frame->script_depth);
     }
-    /* Another element may take the block over as it is completed. */
-    if (facts->take[1]) {
-        facts->take[1](facts->taker[1], parser, node, markdown_core_scaffold_parent(node));
+    /* Another element may follow the block as it is completed. */
+    if (facts->follow[MARKDOWN_CORE_FOLLOW_COMPLETE]) {
+        markdown_core_lead lead = {.node = node, .parent = markdown_core_scaffold_parent(node)};
+        facts->follow[MARKDOWN_CORE_FOLLOW_COMPLETE]->follow(facts->follower[MARKDOWN_CORE_FOLLOW_COMPLETE], parser,
+                                                             &lead);
     }
     /* An explicit anchor is reserved once the node is complete, as starting
      * where the queued root it is in starts. A FormulaBlock a fence became
@@ -4798,7 +4811,7 @@ static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) 
  * candidate live, and no reading of the old text that began past the rest
  * point read across the line from before it. What reads backwards across a
  * line -- a block identifier, a caption, writing the block before -- writes
- * only blocks of kinds their structures name (element.h, `trailed_kinds`), and a
+ * only leaders their follows declare `closed` (element.h, markdown_core_follow), and a
  * reading after one of those goes on as it is. The children taken back
  * stand as their publish left them, and so do their lines, what their
  * readings read (THE REACH), their roster records, their headings and
@@ -5084,9 +5097,9 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
  * FORMER KIND): that kind; NONE otherwise. */
 static markdown_core_node_type S_former(const markdown_core_parser *parser, const markdown_core_node *block,
                                         unsigned flags) {
-    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
-    const markdown_core_node_type former = ops && ops->former ? ops->former(structure, block) : MARKDOWN_CORE_NODE_NONE;
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    const markdown_core_node_type former =
+        kind->made && kind->made->former ? kind->made->former(kind->maker, block) : MARKDOWN_CORE_NODE_NONE;
     return former != MARKDOWN_CORE_NODE_NONE && (markdown_core_dialect_kind(parser->dialect, former)->flags & flags)
                ? former
                : MARKDOWN_CORE_NODE_NONE;
@@ -5127,9 +5140,9 @@ static bool S_revert(markdown_core_parser *parser, markdown_core_node *block, ma
         MARKDOWN_CORE_NODE_NONE) {
         return true;
     }
-    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
     if (!markdown_core_publish_let_go(parser, block) ||
-        !structure->element->edit->revert(structure, parser, block, parent, &revert->kept)) {
+        !kind->made->revert(kind->maker, parser, block, parent, &revert->kept)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -5149,10 +5162,9 @@ static bool S_redo(markdown_core_parser *parser, markdown_core_node *block, mark
     if (revert->node != block || block->kind == revert->kind) {
         return true;
     }
-    const markdown_core_element_instance *structure =
-        markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)revert->kind)->structure;
-    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
-    if (ops && ops->redo && !ops->redo(structure, parser, block, parent, revert->kept)) {
+    const markdown_core_kind_record *kind =
+        markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)revert->kind);
+    if (kind->made && kind->made->redo && !kind->made->redo(kind->maker, parser, block, parent, revert->kept)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -9450,12 +9462,7 @@ bool markdown_core_reader_cut_front(markdown_core_reader *reader, markdown_core_
     if (!(text.len && S_cut_fronts(parser->dialect, text.data[0])) && !b->cut_front) {
         return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
     }
-    markdown_core_cut cut = {
-        .block = b,
-        .parent = parent,
-        .text = text,
-        .rest = text,
-        .attributes = {.data = text.data, .length = text.len, .scratch = &parser->attribute_scratch}};
+    markdown_core_cut cut = {.block = b, .parent = parent, .text = text, .rest = text};
     /* The items follow each other down the block's lines. */
     int line = parser->at.read.number;
     /* Only a reading that notes reach notes what each item read. */
@@ -9485,10 +9492,6 @@ bool markdown_core_reader_cut_front(markdown_core_reader *reader, markdown_core_
         cut.rest.data += length;
         cut.rest.len -= length;
     }
-    if (cut.attributes.oom) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    markdown_core_attribute_parser_free(&cut.attributes);
     /* The items read are cut from the front of the block's text, and its
      * map follows the cut. */
     bufsize_t read = text.len - cut.rest.len;
@@ -9551,12 +9554,7 @@ bool markdown_core_parser_kind_cut(markdown_core_parser *parser, markdown_core_n
 bool markdown_core_reader_cuts_whole(markdown_core_reader *reader, markdown_core_parser *parser,
                                      const markdown_core_node *b) {
     const markdown_core_chunk text = markdown_core_node_text(b);
-    markdown_core_cut cut = {
-        .block = (markdown_core_node *)b,
-        .text = text,
-        .rest = text,
-        .measure = true,
-        .attributes = {.data = text.data, .length = text.len, .scratch = &parser->attribute_scratch}};
+    markdown_core_cut cut = {.block = (markdown_core_node *)b, .text = text, .rest = text, .measure = true};
     bool whole = text.len > 0;
     while (whole && cut.rest.len) {
         cut.at = (bufsize_t)(cut.rest.data - text.data);
@@ -9565,9 +9563,7 @@ bool markdown_core_reader_cuts_whole(markdown_core_reader *reader, markdown_core
         cut.rest.data += length;
         cut.rest.len -= length;
     }
-    whole = whole && !cut.attributes.oom;
-    markdown_core_attribute_parser_free(&cut.attributes);
-    return whole;
+    return whole && !parser->error;
 }
 
 /* THE READER CLOSES. What a step's reading read beyond the line in hand is

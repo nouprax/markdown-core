@@ -257,8 +257,6 @@ static bool comment_revert(const markdown_core_element_instance *self, markdown_
 static const markdown_core_edit_ops COMMENT_EDIT = {
     .stops = comment_stops,
     .shuts = true,
-    .former = comment_former,
-    .revert = comment_revert,
 };
 
 static const markdown_core_content_ops COMMENT_CONTENT = {
@@ -288,11 +286,17 @@ static const markdown_core_line_ops COMMENT_LINES = {
     .matches = block_matches,
 };
 
-static void S_take_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
-                        markdown_core_node *parent);
-static const markdown_core_takeover COMMENT_TAKES[] = {
-    {.kind = MARKDOWN_CORE_NODE_HTML_BLOCK, .closing = true, .take = S_take_html},
-    {.kind = MARKDOWN_CORE_NODE_NONE},
+static bufsize_t S_follow_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_lead *lead);
+static const markdown_core_node_type COMMENT_LEADERS[] = {MARKDOWN_CORE_NODE_HTML_BLOCK, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_follow COMMENT_FOLLOWS[] = {
+    {.at = MARKDOWN_CORE_FOLLOW_CLOSE,
+     .kinds = COMMENT_LEADERS,
+     .follow = S_follow_html,
+     .makes = MARKDOWN_CORE_NODE_COMMENT_BLOCK,
+     .former = comment_former,
+     .revert = comment_revert},
+    {0},
 };
 
 /* A comment's literal (element.h, markdown_core_facet): a block's body
@@ -311,7 +315,7 @@ const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .facets = MARKDOWN_CORE_COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),
-    .takes = COMMENT_TAKES,
+    .follows = COMMENT_FOLLOWS,
     .name = "comment",
     .edit = &COMMENT_EDIT,
     .content = &COMMENT_CONTENT,
@@ -442,23 +446,25 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_convert(markdown_c
 }
 
 /* AN HTML BLOCK THAT IS ONE COMMENT becomes a CommentBlock as it closes
- * (element.h, markdown_core_takeover): a type-2 block its own end condition
+ * (element.h, markdown_core_follow): a type-2 block its own end condition
  * closed that holds one comment and nothing else. */
-static void S_take_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
-                        markdown_core_node *parent) {
+static bufsize_t S_follow_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_lead *lead) {
     (void)self;
+    markdown_core_node *b = lead->node, *parent = lead->parent;
     if (b->as.html_block->block_type != 2 || !(b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION)) {
-        return;
+        return 0;
     }
     const markdown_core_strbuf *content = &b->content;
     if (!content->split) {
         S_convert(parser, b, parent, content->ptr, content->size, NULL, true);
-        return;
+        return 0;
     }
     const unsigned char *front, *back;
     bufsize_t front_size, back_size;
     markdown_core_strbuf_span(content, 0, content->size, &front, &front_size, &back, &back_size);
     S_convert(parser, b, parent, front, front_size, back, false);
+    return 0;
 }
 
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,

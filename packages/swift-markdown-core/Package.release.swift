@@ -93,7 +93,6 @@ let package = Package(
                 "elements/session.c",
                 "elements/context.c",
                 "elements/parts.c",
-                "elements/span.c",
                 "elements/specimen.c",
                 "elements/strikethrough.c",
                 "elements/subscript.c",

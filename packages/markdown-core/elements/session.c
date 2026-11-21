@@ -467,7 +467,7 @@ static bool session_rest_in(markdown_core_session *session, markdown_core_node *
         }
         /* A child before that the child's line may still have gone on in
          * (element.h, `awaits`), or that a later line may write when the
-         * edit writes the child's first line (`trailed_kinds`). */
+         * edit writes the child's first line (markdown_core_follow, `closed`). */
         const unsigned before = child ? markdown_core_parser_block_kind(parser, block->children[child - 1])->flags : 0;
         if ((before & MARKDOWN_CORE_KIND_AWAITS) || ((before & MARKDOWN_CORE_KIND_TRAILED) && line == edited)) {
             child--;
@@ -556,7 +556,7 @@ static void session_rest_root(const markdown_core_session *session, size_t start
                    ((before & MARKDOWN_CORE_KIND_TRAILED) && from == edited)) {
             /* A child that starts on the line the one before ends on, or
              * one whose first line the edit writes after a block a later
-             * line may write (element.h, `trailed_kinds`). */
+             * line may write (element.h, markdown_core_follow, `closed`). */
             at--;
         } else {
             break;
@@ -896,11 +896,12 @@ static bool session_shut(const markdown_core_session *session, const session_res
     if (!block || !rest->last) {
         return false;
     }
-    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    const markdown_core_edit_ops *ops = kind->structure ? kind->structure->element->edit : NULL;
     /* A block another opener read (element.h, THE FORMER KIND) found no
      * closer of the element's. */
-    if (!ops || !ops->shuts || (ops->former && ops->former(structure, block) != MARKDOWN_CORE_NODE_NONE)) {
+    if (!ops || !ops->shuts ||
+        (kind->made && kind->made->former && kind->made->former(kind->maker, block) != MARKDOWN_CORE_NODE_NONE)) {
         return false;
     }
     if (to >= session_line_start(session, markdown_core_parser_line_of(parser, rest->last - 1))) {

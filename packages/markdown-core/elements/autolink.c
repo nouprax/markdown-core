@@ -1,6 +1,5 @@
 #include "autolink_scanners.h"
 #include "inline_internal.h"
-#include "attributes.h"
 #include "autolink.h"
 #include "link.h"
 #include "element.h"
@@ -89,7 +88,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     if (text) {
         markdown_core_scaffold_append(link, text);
     }
-    markdown_core_inline_attach_inline_attributes(inline_state, link, start_column);
+    /* What follows an autolink may update it (no-flush.md 10.13). */
+    markdown_core_inline_made(inline_state, link);
     /* The pointy braces are the syntax; what they enclose is the text. */
     return link;
 }

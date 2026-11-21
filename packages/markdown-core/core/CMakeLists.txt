@@ -17,6 +17,7 @@ set(HEADERS
     chunk.h
     reader.h
     attributes.h
+    follow.h
     slab.h
     metadata.h
     roster.h

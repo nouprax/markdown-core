@@ -353,8 +353,6 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
 }
 
 static const markdown_core_edit_ops LIST_EDIT = {
-    /* A block identifier line after it names it (block_identifier.c). */
-    .trailed_kinds = LIST_KINDS,
     .reopens = true,
     .reopen_block = reopen_block,
     .abuts = LIST_KINDS,

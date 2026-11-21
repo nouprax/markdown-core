@@ -152,8 +152,8 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
                                          markdown_core_chunk *chunk) {
     memset(inline_state, 0, sizeof(*inline_state));
     inline_state->input = *chunk;
+    inline_state->cut = -1;
     inline_state->owner_parser = parser;
-    inline_state->text_end = -1;
     /* No link opens before a bracket does (bracket.h). */
     inline_state->brackets.no_link_openers = true;
     /* A run that lists no settle starts holds everything it reads
@@ -782,14 +782,22 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     return closer;
 }
 
+/* A token crossed into the owner's cut (element.h, markdown_core_follow,
+ * `yields`): the follower gives it back. */
+static void S_cut_crossed(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, inline_state->owner);
+    inline_state->cut = -1;
+    kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]->undo(kind->follower[MARKDOWN_CORE_FOLLOW_TAIL], parser,
+                                                  inline_state->owner);
+}
+
 static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inline_state) {
     // The caller has already established that the first byte is literal.
     // The dialect is sealed, so its tables are read through one local.
     const markdown_core_dialect *const dialect = inline_state->dialect;
     const unsigned char *const data = inline_state->input.data;
-    /* Text before the run owner's tail ends at it, so no byte of the tail
-     * is asked whether a token starts there. */
-    const bufsize_t len = inline_state->pos < inline_state->text_end ? inline_state->text_end : inline_state->input.len;
+    /* Text before a cut ends at it (inline_internal.h, `cut`). */
+    const bufsize_t len = inline_state->pos < inline_state->cut ? inline_state->cut : inline_state->input.len;
     bufsize_t n = inline_state->pos;
     while (n < len) {
         /* Text runs to the next byte an inline element terminates it at. */
@@ -865,6 +873,11 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
     if (c == 0) {
         return 0;
     }
+    if (inline_state->pos == inline_state->cut) {
+        /* The rest is the cut's. */
+        inline_state->pos = inline_state->input.len;
+        return 0;
+    }
     if (inline_state->pos < inline_state->opaque_end) {
         startpos = inline_state->pos;
         inline_state->pos = inline_state->opaque_end;
@@ -872,10 +885,19 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
                            markdown_core_chunk_dup(&inline_state->input, startpos, inline_state->pos - startpos));
         goto append;
     }
-    const markdown_core_element_instance *structure = inline_state->owner_structure;
-    if (structure && structure->element->inlines && structure->element->inlines->claim &&
-        structure->element->inlines->claim(structure, inline_state, parent)) {
-        return 0;
+    /* A token that made a node a later token may follow ended here: its
+     * follower reads on (element.h, MARKDOWN_CORE_FOLLOW_TOKEN). */
+    markdown_core_node *made = markdown_core_inline_made_node(inline_state);
+    if (made) {
+        const markdown_core_kind_record *kind =
+            markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)made->kind);
+        if (kind->follow[MARKDOWN_CORE_FOLLOW_TOKEN]) {
+            markdown_core_lead lead = {.node = made, .parent = parent, .inline_state = inline_state};
+            if (kind->follow[MARKDOWN_CORE_FOLLOW_TOKEN]->follow(kind->follower[MARKDOWN_CORE_FOLLOW_TOKEN], parser,
+                                                                 &lead)) {
+                goto append;
+            }
+        }
     }
     /* A `]` closes a bracket by the dialect's rules (bracket.h). */
     new_inl = c == ']' && parser->dialect->closer_count ? markdown_core_inline_close_bracket(parser, inline_state)
@@ -918,6 +940,9 @@ append:
                 entry->node = new_inl;
             }
         }
+    }
+    if (inline_state->cut >= 0 && inline_state->pos > inline_state->cut) {
+        S_cut_crossed(parser, inline_state);
     }
     return 1;
 }
@@ -1079,11 +1104,26 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     if (parent->content_map.count == 0) {
         markdown_core_parser_mark_content(parser, parent, 0, parent->place.start + parent->internal_offset);
     }
+    /* A cut its inlines may give back (element.h, markdown_core_follow,
+     * `yields`) is read with the rest of the text. */
+    const markdown_core_follow *tail =
+        root && parent->cut_back ? markdown_core_parser_block_kind(parser, parent)->follow[MARKDOWN_CORE_FOLLOW_TAIL]
+                                 : NULL;
+    const bool held = tail && tail->yields;
+    bufsize_t text = content.len;
+    if (held) {
+        content.len += parent->cut_back;
+    }
     markdown_core_inline_state_from_buf(parser, inline_state, &content);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
         markdown_core_chunk_rtrim(&inline_state->input);
+    }
+    if (held) {
+        markdown_core_chunk front = {content.data, text, 0};
+        markdown_core_chunk_rtrim(&front);
+        text = front.len;
     }
     /* A root's nodes are placed in its content: the bytes this parse reads
      * keep their map to the source as the root's runs. A field's nodes are
@@ -1103,7 +1143,18 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     const markdown_core_element_instance *structure = inline_state->owner_structure;
     if (structure && structure->element->inlines && structure->element->inlines->enter &&
         S_inline_run_began(inline_state)) {
+        const bufsize_t len = inline_state->input.len;
+        if (held) {
+            inline_state->input.len = text;
+        }
         structure->element->inlines->enter(structure, parser, inline_state, parent);
+        if (held) {
+            text = inline_state->input.len;
+            inline_state->input.len = len;
+        }
+    }
+    if (held) {
+        inline_state->cut = text;
     }
 }
 

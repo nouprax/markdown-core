@@ -713,17 +713,19 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_promote(const mark
 }
 
 /* A FENCE WHOSE INFO STRING NAMES A FORMULA becomes a FormulaBlock as
- * completion completes it (element.h, markdown_core_takeover), inside the
+ * completion completes it (element.h, markdown_core_follow), inside the
  * block it settled into: before its explicit anchor is reserved, so the
  * anchor of the fence, which the FormulaBlock does not hold, is never
  * taken. Rewriting a valid block is optional: a parent that cannot hold a
  * FormulaBlock keeps the code block. */
-static void S_take_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
-                         markdown_core_node *node, markdown_core_node *parent) {
+static bufsize_t S_follow_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
+                                markdown_core_lead *lead) {
+    markdown_core_node *node = lead->node, *parent = lead->parent;
     if (node->as.code->fenced && info_is_formula(&node->as.code->info) && parent &&
         markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         S_promote(formula, parser, node, parent);
     }
+    return 0;
 }
 
 /* A FormulaBlock's literal is the trimmed view of the lines it read. A
@@ -778,11 +780,6 @@ static bool formula_revert(const markdown_core_element_instance *self, markdown_
     return true;
 }
 
-static const markdown_core_edit_ops FORMULA_EDIT = {
-    .former = formula_former,
-    .revert = formula_revert,
-};
-
 static const markdown_core_opaque_ops FORMULA_OPAQUE = {
     .alloc = formula_opaque_alloc,
     .free = formula_opaque_free,
@@ -817,9 +814,16 @@ static const markdown_core_line_ops FORMULA_LINES = {
     .close = close_formula_block,
 };
 
-static const markdown_core_takeover FORMULA_TAKES[] = {
-    {.kind = MARKDOWN_CORE_NODE_CODE_BLOCK, .take = S_take_fence},
-    {.kind = MARKDOWN_CORE_NODE_NONE},
+static const markdown_core_node_type FORMULA_LEADERS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
+
+static const markdown_core_follow FORMULA_FOLLOWS[] = {
+    {.at = MARKDOWN_CORE_FOLLOW_COMPLETE,
+     .kinds = FORMULA_LEADERS,
+     .follow = S_follow_fence,
+     .makes = MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+     .former = formula_former,
+     .revert = formula_revert},
+    {0},
 };
 
 /* A formula's literal and placement (element.h, markdown_core_facet). */
@@ -850,8 +854,7 @@ const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .facets = MARKDOWN_CORE_FORMULA_FACETS,
     .name = "formula",
-    .takes = FORMULA_TAKES,
-    .edit = &FORMULA_EDIT,
+    .follows = FORMULA_FOLLOWS,
     .opaque = &FORMULA_OPAQUE,
     .contain = &FORMULA_CONTAIN,
     .content = &FORMULA_CONTENT,

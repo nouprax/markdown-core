@@ -622,17 +622,20 @@ static bool resumes(const markdown_core_element_instance *self, const markdown_c
 
 static const markdown_core_node_type TABLE_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
 
+/* A DELIMITER ROW FOLLOWS A PARAGRAPH (element.h, markdown_core_follow):
+ * the paragraph's last line heads a table (S_open_table), the paragraph
+ * itself when that line was all of it. An edit reads the table's lines as
+ * its own, so it names no former kind. */
+static const markdown_core_node_type TABLE_LEADERS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_follow TABLE_FOLLOWS[] = {
+    {.at = MARKDOWN_CORE_FOLLOW_LINE, .kinds = TABLE_LEADERS, .makes = MARKDOWN_CORE_NODE_TABLE},
+    {0},
+};
+
 static const markdown_core_edit_ops TABLE_EDIT = {
-    /* A block identifier on the line after it writes it
-     * (block_identifier.c). */
-    .trailed_kinds = TABLE_KINDS,
     /* An edit reads again from a row, the rows before it kept: each is one
      * line, and none takes the next. */
-    .reopens = true,
-    .reopen_block = reopen_block,
-    .resumes = resumes,
-    .abuts = TABLE_KINDS,
-    .headed = true,
+    .reopens = true, .reopen_block = reopen_block, .resumes = resumes, .abuts = TABLE_KINDS, .headed = true,
 };
 
 static const markdown_core_opaque_ops TABLE_OPAQUE = {
@@ -671,6 +674,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .peers = TABLE_PEERS,
     .facets = MARKDOWN_CORE_TABLE_FACETS,
     .edit = &TABLE_EDIT,
+    .follows = TABLE_FOLLOWS,
     .name = "table",
     .opaque = &TABLE_OPAQUE,
     .contain = &TABLE_CONTAIN,

@@ -71,7 +71,6 @@ const elements = [
     "session.c",
     "context.c",
     "parts.c",
-    "span.c",
     "specimen.c",
     "strikethrough.c",
     "subscript.c",

@@ -25,11 +25,10 @@ typedef struct {
     markdown_core_strbuf scratch;
 } markdown_core_heading_state;
 
-/* ONE HEADING'S INLINE RUN (the heading element's run record): where
- * its trailing attributes begin, -1 when it has none, and where the text a
- * reference label is taken from ends. Zero in every other run. */
+/* ONE HEADING'S INLINE RUN (the heading element's run record): where the
+ * text a reference label is taken from ends. Zero in every other run. */
 typedef struct {
-    bufsize_t attributes_start, label_end;
+    bufsize_t label_end;
 } markdown_core_heading_run;
 
 #endif

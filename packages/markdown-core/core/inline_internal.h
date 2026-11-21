@@ -32,11 +32,17 @@ typedef struct markdown_core_bracket_scope {
 
 struct markdown_core_inline_state {
     markdown_core_chunk input;
-    markdown_core_attribute_parser attributes;
-    /* Where the run owner's tail begins, or -1 for none: inline text yields
-     * there to the owner's `claim_tail`, and no inline attribute block begins
-     * in it. */
-    bufsize_t text_end;
+    /* Where a cut the owner's text gave a take that its inlines may yet give
+     * back begins (element.h, markdown_core_follow, `yields`), or -1: text yields
+     * there, a token that starts there ends the run, and one that crosses it
+     * gives the cut back. */
+    bufsize_t cut;
+    /* THE NODE A TOKEN MADE THAT A LATER TOKEN MAY UPDATE (no-flush.md
+     * 10.13): a token whose node another grammar may go on to update at the
+     * byte after it says so as it ends (markdown_core_inline_made), and the
+     * token read next finds it there (markdown_core_inline_made_node). */
+    markdown_core_node *made;
+    bufsize_t made_end;
     unsigned flags;
     bufsize_t opaque_end;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
@@ -119,6 +125,19 @@ struct markdown_core_inline_state {
      * the text's end (sink.h). */
     markdown_core_context_sink *context;
 };
+
+/* The token being read made `node`, which ends here: the token read next
+ * may update it (markdown_core_inline_made_node). */
+static inline void markdown_core_inline_made(markdown_core_inline_state *inline_state, markdown_core_node *node) {
+    inline_state->made = node;
+    inline_state->made_end = inline_state->pos;
+}
+
+/* The node the token before made, when it ends where the run stands and
+ * may be updated there, or NULL. */
+static inline markdown_core_node *markdown_core_inline_made_node(const markdown_core_inline_state *inline_state) {
+    return inline_state->made && inline_state->made_end == inline_state->pos ? inline_state->made : NULL;
+}
 
 /* Each rule takes one bit of `asked`. */
 typedef char markdown_core_asked_fits[MARKDOWN_CORE_DELIM_RULE_COUNT <= 32 ? 1 : -1];
