@@ -791,14 +791,25 @@ static const markdown_core_line_ops DIRECTIVE_LINES = {
     .continues = directive_block_continues,
 };
 
-static const markdown_core_partition DIRECTIVE_PARTS[] = {
-    {MARKDOWN_CORE_KIND_DIRECTIVE, markdown_core_directive_parts},
-    {MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, markdown_core_directive_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+/* Where a directive's label is (element.h, markdown_core_facet). */
+static markdown_core_node **S_label(const markdown_core_node *node) {
+    return &((markdown_core_directive_value *)node->opaque)->label;
+}
+
+static const markdown_core_facet DIRECTIVE_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE,
+     .parts = markdown_core_directive_parts,
+     .name = markdown_core_elements_get_directive_name,
+     .label = S_label},
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
+     .parts = markdown_core_directive_parts,
+     .name = markdown_core_elements_get_directive_name,
+     .label = S_label},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
-    .parts = DIRECTIVE_PARTS,
+    .facets = DIRECTIVE_FACETS,
     .edit = &DIRECTIVE_EDIT,
     .name = "directive",
     .opaque = &DIRECTIVE_OPAQUE,

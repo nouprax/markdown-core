@@ -726,14 +726,23 @@ typedef struct markdown_core_takeover {
                  markdown_core_node *parent);
 } markdown_core_takeover;
 
-/* THE PARTS (parts.h): how a published node of `kind` splits its text into
- * fields and markers, which a scope query asks of the kind by the element
- * that declares it. A list of them ends at MARKDOWN_CORE_KIND_NONE. */
+/* THE FACET OF A KIND: what a published node of `kind` shows of itself,
+ * which the public node readers ask of the kind by the element that
+ * declares it -- how its text splits into fields and markers (`parts`,
+ * parts.h), and, for a payload of the element's own, its literal and where
+ * its published text starts in it, a formula's placement, a directive's
+ * name and where its label is. Each may be NULL, for what the kind does
+ * not show or shows from the node itself. A list of them ends at
+ * MARKDOWN_CORE_KIND_NONE. */
 struct markdown_core_parts;
-typedef struct markdown_core_partition {
+typedef struct markdown_core_facet {
     markdown_core_node_kind kind;
-    void (*read)(struct markdown_core_parts *);
-} markdown_core_partition;
+    void (*parts)(struct markdown_core_parts *);
+    markdown_core_chunk *(*literal)(const markdown_core_node *, bufsize_t *start);
+    markdown_core_placement (*placement)(const markdown_core_node *);
+    const char *(*name)(const markdown_core_node *);
+    markdown_core_node **(*label)(const markdown_core_node *);
+} markdown_core_facet;
 
 struct markdown_core_element {
     /* WHO THE ELEMENT IS AND WHAT IT STORES. */
@@ -757,8 +766,8 @@ struct markdown_core_element {
     size_t bracket_size;
     /* The blocks of other elements it takes over, or NULL. */
     const markdown_core_takeover *takes;
-    /* The kinds whose parts it reads (markdown_core_partition), or NULL. */
-    const markdown_core_partition *parts;
+    /* The facets of the kinds it shows (markdown_core_facet), or NULL. */
+    const markdown_core_facet *facets;
     /* Frees what the parse record holds as its parser is freed, or NULL
      * when it holds nothing of its own. */
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);

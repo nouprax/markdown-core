@@ -7,8 +7,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
-#include "comment.h"
-#include "directive.h"
+#include "markdown-core-elements.h"
 #include "heading.h"
 #include "markdown-core-elements.h"
 #include "table.h"
@@ -317,7 +316,7 @@ static bool fields_empty(const markdown_core_node *node, relation_shape shape) {
     case SHAPE_CITE:
         return !node->child_count;
     case SHAPE_DIRECTIVE:
-        return !node->child_count && !markdown_core_directive_label(node);
+        return !node->child_count && !*markdown_core_core_facet(markdown_core_node_get_kind(node))->label(node);
     case SHAPE_CALLOUT:
         return !node->child_count && !node->as.callout->title;
     case SHAPE_DOCUMENT:
@@ -371,10 +370,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
     }
     case SHAPE_DIRECTIVE:
         if (step == 0) {
-            markdown_core_directive_value *directive = node->opaque;
-            if (directive->label) {
+            markdown_core_node **label = markdown_core_core_facet(markdown_core_node_get_kind(node))->label(node);
+            if (*label) {
                 *more = true;
-                return relation_one(relation, &directive->label);
+                return relation_one(relation, label);
             }
             step = cursor->step++;
         }
@@ -4519,10 +4518,11 @@ static bool literal_of(const markdown_core_node *node, markdown_core_string *lit
     if (node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return literal_string(node, &node->as.html_block->literal, 0, literal);
     }
-    if (node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
-        /* Where its body starts counts only while it is pending. */
-        const bool held = markdown_core_claim_read((void *const *)&node->as.literal->data) != NULL;
-        return literal_string(node, node->as.literal, held ? 0 : markdown_core_comment_block_start(node), literal);
+    const markdown_core_facet *facet = markdown_core_core_facet(markdown_core_node_get_kind(node));
+    if (facet && facet->literal) {
+        bufsize_t start;
+        markdown_core_chunk *chunk = facet->literal(node, &start);
+        return literal_string(node, chunk, start, literal);
     }
     *literal = chunk_string(*node->as.literal);
     return true;
@@ -4532,20 +4532,17 @@ static bool literal_of(const markdown_core_node *node, markdown_core_string *lit
  * joined. */
 static bool formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                markdown_core_string *literal) {
-    *mode = markdown_core_elements_get_formula_mode((markdown_core_node *)node) == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED
-                ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
-                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    const unsigned char *data;
-    bufsize_t size;
-    const bool read = markdown_core_elements_formula_read(node, &data, &size);
-    *literal = read ? (markdown_core_string){data, (size_t)size} : (markdown_core_string){NULL, 0};
-    return read;
+    const markdown_core_facet *facet = markdown_core_core_facet(markdown_core_node_get_kind(node));
+    *mode = facet->placement(node);
+    bufsize_t start;
+    markdown_core_chunk *chunk = facet->literal(node, &start);
+    return literal_string(node, chunk, start, literal);
 }
 
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }
 
 static markdown_core_optional_string directive_name(const markdown_core_node *node) {
-    const char *value = markdown_core_elements_get_directive_name(node);
+    const char *value = markdown_core_core_facet(markdown_core_node_get_kind(node))->name(node);
     return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
 }
 
@@ -4986,7 +4983,7 @@ markdown_core_status markdown_core_metadata_value_item_at(const markdown_core_me
 markdown_core_status markdown_core_node_directive_label(const markdown_core_node *node,
                                                         const markdown_core_node **label) {
     REQUIRE_KIND(node, DIRECTIVE_KINDS);
-    *label = markdown_core_directive_label(node);
+    *label = *markdown_core_core_facet(markdown_core_node_get_kind(node))->label(node);
     return MARKDOWN_CORE_OK;
 }
 

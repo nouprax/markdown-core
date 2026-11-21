@@ -1214,16 +1214,16 @@ static const markdown_core_open_ops LINK_OPENS = {
     .cut_needs = {.bytes = "["},
 };
 
-static const markdown_core_partition LINK_PARTS[] = {
-    {MARKDOWN_CORE_KIND_LINK, markdown_core_link_parts},
-    {MARKDOWN_CORE_KIND_EMBEDDED, markdown_core_link_parts},
-    {MARKDOWN_CORE_KIND_REFERENCE, markdown_core_reference_parts},
-    {MARKDOWN_CORE_KIND_SPAN, markdown_core_span_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet LINK_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts},
+    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts},
+    {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
+    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = markdown_core_span_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
-    .parts = LINK_PARTS,
+    .facets = LINK_FACETS,
     .peers = LINK_PEERS,
     .bracket_size = sizeof(S_tail),
     .opens = &LINK_OPENS,

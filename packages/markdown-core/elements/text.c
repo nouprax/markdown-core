@@ -243,13 +243,13 @@ static const markdown_core_inline_ops TEXT_INLINES = {
     .dispatch = "\\&",
 };
 
-static const markdown_core_partition TEXT_PARTS[] = {
-    {MARKDOWN_CORE_KIND_TEXT, markdown_core_literal_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet TEXT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
-    .parts = TEXT_PARTS,
+    .facets = TEXT_FACETS,
     .peers = TEXT_PEERS,
     .state_size = sizeof(markdown_core_text_work),
     .name = "text",

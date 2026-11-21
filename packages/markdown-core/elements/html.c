@@ -114,13 +114,13 @@ static const markdown_core_inline_ops HTML_INLINES = {
     .dispatch = "<",
 };
 
-static const markdown_core_partition HTML_PARTS[] = {
-    {MARKDOWN_CORE_KIND_HTML, markdown_core_literal_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet HTML_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_HTML, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
-    .parts = HTML_PARTS,
+    .facets = HTML_FACETS,
     .name = "html",
     .peers = HTML_PEERS,
     .inlines = &HTML_INLINES,

@@ -296,13 +296,21 @@ static const markdown_core_takeover COMMENT_TAKES[] = {
     {.kind = MARKDOWN_CORE_NODE_NONE},
 };
 
-static const markdown_core_partition COMMENT_PARTS[] = {
-    {MARKDOWN_CORE_KIND_COMMENT, markdown_core_comment_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+/* A comment's literal (element.h, markdown_core_facet): a block's body
+ * starts past its opener, which counts only while it is pending. */
+static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t *start) {
+    const bool held = markdown_core_claim_read((void *const *)&node->as.literal->data) != NULL;
+    *start = node->kind != MARKDOWN_CORE_NODE_COMMENT_BLOCK || held ? 0 : markdown_core_comment_block_start(node);
+    return node->as.literal;
+}
+
+static const markdown_core_facet COMMENT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_COMMENT, .parts = markdown_core_comment_parts, .literal = S_literal},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
-    .parts = COMMENT_PARTS,
+    .facets = COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),
     .takes = COMMENT_TAKES,
     .name = "comment",

@@ -119,13 +119,13 @@ static const markdown_core_line_ops HTML_BLOCK_LINES = {
     .ends = ends_html,
 };
 
-static const markdown_core_partition HTML_BLOCK_PARTS[] = {
-    {MARKDOWN_CORE_KIND_HTML_BLOCK, markdown_core_literal_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet HTML_BLOCK_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_HTML_BLOCK, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
-    .parts = HTML_BLOCK_PARTS,
+    .facets = HTML_BLOCK_FACETS,
     .name = "html_block",
     .content = &HTML_BLOCK_CONTENT,
     .opens = &HTML_BLOCK_OPENS,

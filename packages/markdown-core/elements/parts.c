@@ -164,20 +164,12 @@ void markdown_core_literal_parts(markdown_core_parts *parts) {
     markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, 0, parts->length);
 }
 
-/* The reader of a node's kind, which the element that declares the kind's
- * parts gives (element.h, markdown_core_partition), or NULL for a kind
- * whose own source is all markers. */
+/* The reader of a node's kind, which its facet gives (element.h,
+ * markdown_core_facet), or NULL for a kind whose own source is all
+ * markers. */
 static void (*reader(markdown_core_node_kind kind))(markdown_core_parts *) {
-    size_t count;
-    const markdown_core_element *const *elements = markdown_core_core_elements(&count);
-    for (size_t i = 0; i < count; i++) {
-        for (const markdown_core_partition *p = elements[i]->parts; p && p->kind != MARKDOWN_CORE_KIND_NONE; p++) {
-            if (p->kind == kind) {
-                return p->read;
-            }
-        }
-    }
-    return NULL;
+    const markdown_core_facet *facet = markdown_core_core_facet(kind);
+    return facet ? facet->parts : NULL;
 }
 
 /* A NODE AS ITS READER READS IT: its runs, the source they hold joined as

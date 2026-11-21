@@ -2677,13 +2677,13 @@ static const markdown_core_line_ops HEADING_LINES = {
     .blank_opaque = true,
 };
 
-static const markdown_core_partition HEADING_PARTS[] = {
-    {MARKDOWN_CORE_KIND_HEADING, markdown_core_heading_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet HEADING_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_HEADING, .parts = markdown_core_heading_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
-    .parts = HEADING_PARTS,
+    .facets = HEADING_FACETS,
     .peers = HEADING_PEERS,
     .name = "heading",
     .state_size = sizeof(markdown_core_heading_state),

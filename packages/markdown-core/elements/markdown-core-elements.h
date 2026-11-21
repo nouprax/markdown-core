@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "markdown-core-element-api.h"
+#include "../include/markdown_core.h"
 #include "chunk.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -27,6 +28,11 @@ typedef enum {
  * choose it.
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
+
+/** The facet of a published node's kind (element.h, markdown_core_facet)
+ *  that an element of the core dialect declares, or NULL when none does. */
+struct markdown_core_facet;
+const struct markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind);
 
 /** A parser instance (parser.h) over the complete core dialect, extended by
  *  `setup` when present (see markdown_core_parser_setup_func). The product's

@@ -82,6 +82,18 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     return CORE_ELEMENTS;
 }
 
+const markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind) {
+    for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
+        for (const markdown_core_facet *facet = CORE_ELEMENTS[i]->facets;
+             facet && facet->kind != MARKDOWN_CORE_KIND_NONE; facet++) {
+            if (facet->kind == kind) {
+                return facet;
+            }
+        }
+    }
+    return NULL;
+}
+
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len) {
     return markdown_core_parse_document_with_setup(buffer, len, NULL, NULL);
 }

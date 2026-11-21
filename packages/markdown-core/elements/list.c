@@ -385,13 +385,13 @@ static const markdown_core_line_ops LIST_LINES = {
     .blank_runs = true,
 };
 
-static const markdown_core_partition LIST_PARTS[] = {
-    {MARKDOWN_CORE_KIND_LIST_ITEM, markdown_core_list_item_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet LIST_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_LIST_ITEM, .parts = markdown_core_list_item_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
-    .parts = LIST_PARTS,
+    .facets = LIST_FACETS,
     .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
     .name = "list",

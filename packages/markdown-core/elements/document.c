@@ -153,13 +153,13 @@ static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .size = sizeof(document_call),
 };
 
-static const markdown_core_partition DOCUMENT_PARTS[] = {
-    {MARKDOWN_CORE_KIND_METADATA, markdown_core_metadata_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet DOCUMENT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_METADATA, .parts = markdown_core_metadata_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
-    .parts = DOCUMENT_PARTS,
+    .facets = DOCUMENT_FACETS,
     .peers = DOCUMENT_PEERS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",

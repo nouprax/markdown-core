@@ -418,13 +418,13 @@ static const markdown_core_line_ops CODE_BLOCK_LINES = {
     .blank_last = blank_line,
 };
 
-static const markdown_core_partition CODE_BLOCK_PARTS[] = {
-    {MARKDOWN_CORE_KIND_CODE_BLOCK, markdown_core_code_block_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+static const markdown_core_facet CODE_BLOCK_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_CODE_BLOCK, .parts = markdown_core_code_block_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
-    .parts = CODE_BLOCK_PARTS,
+    .facets = CODE_BLOCK_FACETS,
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",
     .content = &CODE_BLOCK_CONTENT,

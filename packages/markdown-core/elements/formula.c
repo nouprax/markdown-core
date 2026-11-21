@@ -822,14 +822,33 @@ static const markdown_core_takeover FORMULA_TAKES[] = {
     {.kind = MARKDOWN_CORE_NODE_NONE},
 };
 
-static const markdown_core_partition FORMULA_PARTS[] = {
-    {MARKDOWN_CORE_KIND_FORMULA, markdown_core_formula_parts},
-    {MARKDOWN_CORE_KIND_FORMULA_BLOCK, markdown_core_formula_parts},
-    {MARKDOWN_CORE_KIND_NONE, NULL},
+/* A formula's literal and placement (element.h, markdown_core_facet). */
+static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t *start) {
+    node_formula *formula = node->opaque;
+    *start = formula->start;
+    return &formula->literal;
+}
+
+static markdown_core_placement S_placement(const markdown_core_node *node) {
+    return ((const node_formula *)node->opaque)->mode == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED
+               ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
+               : MARKDOWN_CORE_PLACEMENT_STANDALONE;
+}
+
+static const markdown_core_facet FORMULA_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_FORMULA,
+     .parts = markdown_core_formula_parts,
+     .literal = S_literal,
+     .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+     .parts = markdown_core_formula_parts,
+     .literal = S_literal,
+     .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
-    .parts = FORMULA_PARTS,
+    .facets = FORMULA_FACETS,
     .name = "formula",
     .takes = FORMULA_TAKES,
     .edit = &FORMULA_EDIT,
