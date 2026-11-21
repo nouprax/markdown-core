@@ -9,10 +9,8 @@
 #include "ast_internal.h"
 #include "comment.h"
 #include "directive.h"
-#include "formula.h"
 #include "heading.h"
 #include "markdown-core-elements.h"
-#include "strikethrough.h"
 #include "table.h"
 
 #include <node_type.h>

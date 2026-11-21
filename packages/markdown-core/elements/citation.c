@@ -1,7 +1,6 @@
 #include "alloc.h"
 #include "link.h"
 #include "autolink_scanners.h"
-#include "code.h"
 #include "html.h"
 #include "citation.h"
 #include "inline_internal.h"

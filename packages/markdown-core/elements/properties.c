@@ -5,7 +5,6 @@
 #include "node.h"
 #include "parts.h"
 #include "buffer.h"
-#include "yaml.h"
 #include <string.h>
 #include <limits.h>
 

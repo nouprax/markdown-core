@@ -11,7 +11,6 @@
 #include "utf8.h"
 #include "parts.h"
 
-#include "strikethrough.h"
 #include "table.h"
 #include "directive.h"
 #include "block_internal.h"

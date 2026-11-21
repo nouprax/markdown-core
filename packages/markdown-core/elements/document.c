@@ -2,7 +2,6 @@
 #include "parts.h"
 #include "document.h"
 #include "block_internal.h"
-#include "properties.h"
 #include "heading.h"
 #include "ast_internal.h"
 

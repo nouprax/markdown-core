@@ -1,7 +1,5 @@
-#include "link.h"
 #include "inline_internal.h"
 #include "attributes.h"
-#include "citation.h"
 #include "span.h"
 #include "parts.h"
 markdown_core_bracket_match markdown_core_span_close(markdown_core_parser *parser,
