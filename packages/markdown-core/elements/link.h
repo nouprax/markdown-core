@@ -28,8 +28,4 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *titl
 bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
                                                     markdown_core_attribute_parser *attributes);
 
-markdown_core_node *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
-                                                              markdown_core_parser *parser,
-                                                              markdown_core_inline_state *inline_state);
-
 #endif

@@ -697,8 +697,9 @@ static bool markdown_core_inline_citation_group_valid(const citation_tokens *tok
     return key;
 }
 
-bool markdown_core_inline_close_bibliography(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                             markdown_core_inline_state *inline_state, bracket *opener) {
+static bool markdown_core_inline_close_bibliography(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser,
+                                                    markdown_core_inline_state *inline_state, bracket *opener) {
     bool tail = S_bracket(self, opener)->author && markdown_core_inline_peek_char(inline_state) != '(' &&
                 markdown_core_inline_peek_char(inline_state) != '[';
     if (markdown_core_inline_peek_at(inline_state, opener->position) == '^' ||
@@ -808,26 +809,8 @@ static void resume_citation_tail(const markdown_core_element_instance *self, mar
         return;
     }
     token->tail = NULL;
-    markdown_core_bracket_scope *brackets = markdown_core_brackets(inline_state);
-    bracket *saved_bracket = brackets->last;
-    bufsize_t saved_pos = inline_state->pos;
-    bool saved_no_links = brackets->no_link_openers;
-    markdown_core_node *close = pending->close_text;
-    pending->previous = saved_bracket;
     S_bracket(self, pending)->author = ordinary ? token : NULL;
-    brackets->last = pending;
-    inline_state->pos = pending->close_position;
-    brackets->no_link_openers = pending->pending_no_link_openers;
-    markdown_core_node *literal =
-        markdown_core_inline_handle_close_bracket(self->peers[CITATION_LINK], inline_state->owner_parser, inline_state);
-    if (literal) {
-        markdown_core_parser_release_node(inline_state->owner_parser, literal);
-    } else if (!inline_state->error && !inline_state->owner_parser->error) {
-        markdown_core_parser_release_node(inline_state->owner_parser, close);
-    }
-    inline_state->pos = saved_pos;
-    brackets->last = saved_bracket;
-    brackets->no_link_openers |= saved_no_links;
+    markdown_core_inline_resume_bracket(inline_state->owner_parser, inline_state, pending);
 }
 
 static citation_resolution citation_resolution_for(const markdown_core_element_instance *self, citation_token *key,
@@ -893,9 +876,9 @@ static void resolve_citation_tail(const markdown_core_element_instance *self, ma
     markdown_core_free(stack);
 }
 
-bool markdown_core_citation_defer_tail(const markdown_core_element_instance *self,
-                                       markdown_core_inline_state *inline_state, bracket *opener,
-                                       markdown_core_node **result) {
+static bool markdown_core_citation_defer_tail(const markdown_core_element_instance *self,
+                                              markdown_core_inline_state *inline_state, bracket *opener,
+                                              markdown_core_node **result) {
     bufsize_t initial_pos = inline_state->pos;
     if (S_bracket(self, opener)->author && !opener->close_text && markdown_core_inline_peek_char(inline_state) != '(' &&
         markdown_core_inline_peek_char(inline_state) != '[' &&
@@ -912,18 +895,8 @@ bool markdown_core_citation_defer_tail(const markdown_core_element_instance *sel
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return true;
         }
-        markdown_core_bracket_scope *brackets = markdown_core_brackets(inline_state);
-        opener->close_text = close;
-        opener->close_position = initial_pos - 1;
-        opener->delim_end = end;
-        opener->pending_no_link_openers = brackets->no_link_openers;
         S_bracket(self, opener)->author->tail = opener;
-        opener->pending_next = brackets->pending;
-        if (brackets->pending) {
-            brackets->pending->pending_previous = opener;
-        }
-        brackets->pending = opener;
-        brackets->last = opener->previous;
+        markdown_core_inline_suspend_bracket(inline_state, opener, close, end);
         *result = close;
         return true;
     }
@@ -1001,6 +974,29 @@ static void S_freed(const markdown_core_element_instance *self, markdown_core_in
     markdown_core_inline_free_citation_tokens(inline_state, &S_bracket(self, b)->citations);
 }
 
+/* THE CITATION'S RULES FOR A `]` (element.h, markdown_core_close_rule),
+ * between the link's explicit and shortcut rules: a key's tail waits for
+ * its key's owner, and a bracket of citations is a group. */
+static markdown_core_bracket_match S_close_tail(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    (void)parser;
+    return markdown_core_citation_defer_tail(self, inline_state, opener, made) ? BRACKET_MATCHED : BRACKET_UNMATCHED;
+}
+
+static markdown_core_bracket_match S_close_group(const markdown_core_element_instance *self,
+                                                 markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                 bracket *opener, markdown_core_node **made) {
+    (void)made;
+    return markdown_core_inline_close_bibliography(self, parser, inline_state, opener) ? BRACKET_MATCHED
+                                                                                       : BRACKET_UNMATCHED;
+}
+
+static const markdown_core_close_rule CITATION_CLOSES[] = {
+    {.precedence = 0, .close = S_close_tail},
+    {.precedence = 5, .close = S_close_group},
+};
+
 static const markdown_core_inline_ops CITATION_INLINES = {
     .finish = finish_inline,
     .dispose = dispose_inline,
@@ -1008,6 +1004,8 @@ static const markdown_core_inline_ops CITATION_INLINES = {
     .opened = S_opened,
     .settled = S_settled,
     .freed = S_freed,
+    .closes = CITATION_CLOSES,
+    .close_count = sizeof(CITATION_CLOSES) / sizeof(CITATION_CLOSES[0]),
     .match = match,
     .starts = is_inline_start,
     .terminates = "@-;",

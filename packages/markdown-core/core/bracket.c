@@ -141,3 +141,85 @@ void markdown_core_inline_clear_brackets(markdown_core_inline_state *inline_stat
         brackets->pending = next;
     }
 }
+
+/* Whether `owner` closes the brackets it opens by rules of its own alone
+ * (element.h, markdown_core_close_rule, `mine`). */
+static bool S_mine(const markdown_core_dialect *dialect, const markdown_core_element_instance *owner) {
+    for (size_t i = 0; i < dialect->closer_count; i++) {
+        if (dialect->closers[i].rule->mine && dialect->closers[i].owner == owner) {
+            return true;
+        }
+    }
+    return false;
+}
+
+markdown_core_node *markdown_core_inline_close_bracket(markdown_core_parser *parser,
+                                                       markdown_core_inline_state *inline_state) {
+    parser->bracket_work++;
+    const bufsize_t after = ++inline_state->pos;
+    bracket *opener = inline_state->brackets.last;
+    if (opener) {
+        const markdown_core_dialect *dialect = inline_state->dialect;
+        const bool mine = S_mine(dialect, opener->owner);
+        for (size_t i = 0; i < dialect->closer_count; i++) {
+            const markdown_core_closer *closer = &dialect->closers[i];
+            if (closer->rule->mine != mine || (mine && closer->owner != opener->owner)) {
+                continue;
+            }
+            inline_state->pos = after;
+            markdown_core_node *made = NULL;
+            const markdown_core_bracket_match match =
+                closer->rule->close(closer->owner, parser, inline_state, opener, &made);
+            if (match == BRACKET_MATCHED) {
+                return made;
+            }
+            if (match == BRACKET_REJECTED) {
+                break;
+            }
+        }
+        /* No construct: the body stays as it was read, and the `]` is
+         * text. */
+        markdown_core_inline_settle_bracket(inline_state, opener);
+        markdown_core_inline_pop_bracket(inline_state);
+        inline_state->pos = after;
+    }
+    return make_str(inline_state, after - 1, after - 1, markdown_core_chunk_dup(&inline_state->input, after - 1, 1));
+}
+
+void markdown_core_inline_suspend_bracket(markdown_core_inline_state *inline_state, bracket *opener,
+                                          markdown_core_node *close, delimiter *end) {
+    markdown_core_bracket_scope *brackets = &inline_state->brackets;
+    assert(brackets->last == opener);
+    opener->close_text = close;
+    opener->close_position = inline_state->pos - 1;
+    opener->delim_end = end;
+    opener->pending_no_link_openers = brackets->no_link_openers;
+    opener->pending_next = brackets->pending;
+    if (brackets->pending) {
+        brackets->pending->pending_previous = opener;
+    }
+    brackets->pending = opener;
+    brackets->last = opener->previous;
+}
+
+void markdown_core_inline_resume_bracket(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                         bracket *opener) {
+    markdown_core_bracket_scope *brackets = &inline_state->brackets;
+    bracket *saved_bracket = brackets->last;
+    const bufsize_t saved_pos = inline_state->pos;
+    const bool saved_no_links = brackets->no_link_openers;
+    markdown_core_node *close = opener->close_text;
+    opener->previous = saved_bracket;
+    brackets->last = opener;
+    inline_state->pos = opener->close_position;
+    brackets->no_link_openers = opener->pending_no_link_openers;
+    markdown_core_node *literal = markdown_core_inline_close_bracket(parser, inline_state);
+    if (literal) {
+        markdown_core_parser_release_node(parser, literal);
+    } else if (!inline_state->error && !parser->error) {
+        markdown_core_parser_release_node(parser, close);
+    }
+    inline_state->pos = saved_pos;
+    brackets->last = saved_bracket;
+    brackets->no_link_openers |= saved_no_links;
+}

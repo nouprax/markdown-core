@@ -330,6 +330,23 @@ typedef struct markdown_core_content_ops {
  * content runs (its structure), `enter` and `claim`. Each may be NULL; the
  * dialect projects who answers what by byte and by hook as it is sealed. */
 struct bracket;
+/* What a rule makes of a bracket at a `]` (below). */
+typedef enum { BRACKET_UNMATCHED, BRACKET_MATCHED, BRACKET_REJECTED } markdown_core_bracket_match;
+/* A RULE BY WHICH AN ELEMENT CLOSES A BRACKET at a `]` (bracket.h): the
+ * engine asks the dialect's rules in ascending `precedence`, equal ones in
+ * descriptor order, each with the run standing after the `]`. `close`
+ * answers MATCHED when it made its construct -- and then in `*made` the
+ * node the `]` leaves, or NULL -- REJECTED when no construct is made of the
+ * bracket at all, and UNMATCHED to leave it to the next rule; with neither
+ * MATCHED, the `]` is text. A `mine` rule closes only the brackets its
+ * element opened, and those close only by its element's `mine` rules. */
+typedef struct markdown_core_close_rule {
+    int precedence;
+    bool mine;
+    markdown_core_bracket_match (*close)(const markdown_core_element_instance *, markdown_core_parser *,
+                                         markdown_core_inline_state *, struct bracket *, markdown_core_node **made);
+} markdown_core_close_rule;
+
 typedef struct markdown_core_inline_ops {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm.
@@ -361,6 +378,9 @@ typedef struct markdown_core_inline_ops {
     void (*opened)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
     void (*settled)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
     void (*freed)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
+    /* The element's rules for closing a bracket, `close_count` of them. */
+    const markdown_core_close_rule *closes;
+    size_t close_count;
     /* Parsed delimiter semantics are declared by their element. Pairing,
      * run classification and node construction stay in the shared engine. */
     markdown_core_delimiter_rule rule;

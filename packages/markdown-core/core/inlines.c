@@ -897,7 +897,9 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         structure->element->inlines->claim(structure, inline_state, parent)) {
         return 0;
     }
-    new_inl = try_elements(parser, parent, c, inline_state);
+    /* A `]` closes a bracket by the dialect's rules (bracket.h). */
+    new_inl = c == ']' && parser->dialect->closer_count ? markdown_core_inline_close_bracket(parser, inline_state)
+                                                        : try_elements(parser, parent, c, inline_state);
     if (inline_state->pos == token_start && !new_inl && !parser->error && !inline_state->error) {
         endpos = inline_state_find_special_char(inline_state);
         const markdown_core_element_instance *text = parser->dialect->text_structure;

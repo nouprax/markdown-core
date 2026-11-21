@@ -63,10 +63,10 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
     return cite;
 }
 
-markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_core_element_instance *self,
-                                                               markdown_core_parser *parser,
-                                                               markdown_core_inline_state *inline_state,
-                                                               bracket *opener) {
+static markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_core_element_instance *self,
+                                                                      markdown_core_parser *parser,
+                                                                      markdown_core_inline_state *inline_state,
+                                                                      bracket *opener) {
     markdown_core_node *cite, *footnote;
     /* The consumed body is inspected once by markdown_core_inline_parse_inline, never once per
      * ancestor. Invalid openers keep their already parsed content as text. */
@@ -127,7 +127,37 @@ static const markdown_core_edit_ops FOOTNOTE_EDIT = {
     .reopens = true,
 };
 
+static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser,
+                                                   markdown_core_inline_state *inline_state, bracket *opener);
+
+/* THE FOOTNOTE'S RULES FOR A `]` (element.h, markdown_core_close_rule): an
+ * inline note's `^[` closes by its own rule alone, always made, as text
+ * when its body is no note; a `[^label]` the document defines is a call,
+ * after every other rule. */
+static markdown_core_bracket_match S_close_note(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    *made = markdown_core_inline_close_inline_footnote(self, parser, inline_state, opener);
+    return BRACKET_MATCHED;
+}
+
+static markdown_core_bracket_match S_close_call(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    (void)made;
+    return markdown_core_footnote_close_reference(self, parser, inline_state, opener) ? BRACKET_MATCHED
+                                                                                      : BRACKET_UNMATCHED;
+}
+
+static const markdown_core_close_rule FOOTNOTE_CLOSES[] = {
+    {.precedence = 0, .mine = true, .close = S_close_note},
+    {.precedence = 20, .close = S_close_call},
+};
+
 static const markdown_core_inline_ops FOOTNOTE_INLINES = {
+    .closes = FOOTNOTE_CLOSES,
+    .close_count = sizeof(FOOTNOTE_CLOSES) / sizeof(FOOTNOTE_CLOSES[0]),
     .match = match,
     .terminates = "^",
     .dispatch = "^",
@@ -152,8 +182,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .lines = &FOOTNOTE_LINES,
 };
 
-bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_inline_state *inline_state, bracket *opener) {
+static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser,
+                                                   markdown_core_inline_state *inline_state, bracket *opener) {
     bufsize_t initial_pos = inline_state->pos;
     markdown_core_node *label = markdown_core_scaffold_next(opener->inl_text);
     if (label && label->kind == MARKDOWN_CORE_NODE_TEXT) {

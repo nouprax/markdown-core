@@ -342,9 +342,19 @@ typedef struct markdown_core_dialect {
     const markdown_core_element_instance *const *instance_table;
     unsigned instance_bits;
     size_t run_state_size, candidate_state_size, bracket_size;
+    /* The dialect's rules for closing a bracket (element.h,
+     * markdown_core_close_rule), by precedence and then descriptor order. */
+    const struct markdown_core_closer *closers;
+    size_t closer_count;
     const markdown_core_element_instance *const *kept_instances;
     size_t kept_count, kept_size;
 } markdown_core_dialect;
+
+/* A rule for closing a bracket and the instance whose rule it is. */
+typedef struct markdown_core_closer {
+    const markdown_core_element_instance *owner;
+    const struct markdown_core_close_rule *rule;
+} markdown_core_closer;
 
 /* The record of `kind`, and the instance of the structure element of a node's
  * kind -- NULL for no node, as for a kind with none. */
@@ -394,8 +404,9 @@ typedef struct markdown_core_dialect_sizes {
     unsigned instance_bits;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
-    /* The peers the elements declare, all together. */
-    size_t peers;
+    /* The peers the elements declare, all together, and their rules for
+     * closing a bracket. */
+    size_t peers, closers;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */

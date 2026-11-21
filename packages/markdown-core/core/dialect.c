@@ -692,6 +692,7 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
             sizes->peers++;
         }
+        sizes->closers += inlines->close_count;
     }
     sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
@@ -709,14 +710,43 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         }
     }
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
+           sizes->closers * sizeof(markdown_core_closer) +
            (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
                sizeof(const markdown_core_element_instance *) +
            sizes->gate_bytes;
 }
 
+/* THE RULES FOR CLOSING A BRACKET (element.h, markdown_core_close_rule):
+ * every element's, by precedence and then descriptor order, a stable
+ * insertion into the `count` entries at `closers`. */
+static void S_project_closers(markdown_core_dialect *dialect, markdown_core_closer *closers, size_t count) {
+    size_t at = 0;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const markdown_core_inline_ops *inlines = S_inlines_of(dialect->instances[i].element);
+        for (size_t r = 0; r < inlines->close_count; r++) {
+            const markdown_core_close_rule *rule = &inlines->closes[r];
+            size_t to = at++;
+            while (to > 0 && closers[to - 1].rule->precedence > rule->precedence) {
+                closers[to] = closers[to - 1];
+                to--;
+            }
+            closers[to] = (markdown_core_closer){&dialect->instances[i], rule};
+        }
+    }
+    assert(at == count);
+    dialect->closers = closers;
+    dialect->closer_count = count;
+    /* The engine reads a `]` whenever a rule may close a bracket at it, so
+     * the byte ends a text run unconditionally. */
+    if (count > 0) {
+        dialect->special_chars[']'] = MARKDOWN_CORE_TEXT_END;
+        dialect->inline_start_owners[']'] = NULL;
+    }
+}
+
 /* SEAL: every table the dialect decides, projected once, into the storage
  * `sizes` was measured for. The tail after the struct holds the finish step
- * entries, then the instances, then the instance-pointer lists (the block
+ * entries, then the instances, then the rules for closing a bracket, then the instance-pointer lists (the block
  * families, the inline-content families, the inline dispatch), the
  * instance table and the resolved peers, then the gate tables. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
@@ -727,7 +757,9 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     size_t count = builder->element_count;
     markdown_core_finish_step_entry *step_entries = (markdown_core_finish_step_entry *)(dialect + 1);
     markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
-    const markdown_core_element_instance **entries = (const markdown_core_element_instance **)(instances + count);
+    markdown_core_closer *closers = (markdown_core_closer *)(instances + count);
+    const markdown_core_element_instance **entries =
+        (const markdown_core_element_instance **)(closers + sizes->closers);
     const markdown_core_element_instance **table = entries + sizes->pointers;
     const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
     uint8_t *tables = (uint8_t *)(peers + sizes->peers);
@@ -795,6 +827,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     at += dialect->inline_dispatch_offsets[256];
     assert(at == sizes->pointers);
 
+    S_project_closers(dialect, closers, sizes->closers);
     S_project_finish_steps(dialect, sizes->finish_key_counts, step_entries);
     S_project_gate_lists(dialect, sizes, tables);
 }

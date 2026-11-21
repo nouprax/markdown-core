@@ -953,73 +953,71 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     return true;
 }
 
-markdown_core_node *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
-                                                              markdown_core_parser *parser,
-                                                              markdown_core_inline_state *inline_state) {
-    const markdown_core_element_instance *citation = link->peers[LINK_CITATION];
-    const markdown_core_element_instance *footnote = link->peers[LINK_FOOTNOTE];
-    parser->bracket_work++;
-    advance(inline_state);
-    bufsize_t initial_pos = inline_state->pos;
-    bracket *opener = markdown_core_brackets(inline_state)->last;
-    if (!opener) {
-        return make_str(inline_state, initial_pos - 1, initial_pos - 1,
-                        markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
-    }
-    /* Only the footnote element opens a footnote bracket. */
-    if (opener->kind == BRACKET_FOOTNOTE) {
-        return markdown_core_inline_close_inline_footnote(footnote, parser, inline_state, opener);
-    }
+/* WHAT A BRACKET HOLDS OF A LINK (the link element's bracket record,
+ * bracket.h): what its `]` read after it, which the explicit rule reads
+ * and the shortcut rule commits. */
+typedef struct {
+    markdown_core_link_match match;
+    markdown_core_link_candidate candidate;
+} S_tail;
 
-    /* One bracket owns its parsed children. Alternatives only claim that
-     * existing range, in syntax precedence order; none reparses its body. */
-    markdown_core_link_candidate candidate = {0};
-    markdown_core_link_match match = markdown_core_link_recognize(link, inline_state, opener, &candidate);
-    if (match == LINK_EXPLICIT) {
-        if (markdown_core_link_commit(link, parser, inline_state, opener, &candidate, initial_pos)) {
-            return NULL;
-        }
-        goto no_match;
-    }
-    inline_state->pos = initial_pos;
-    markdown_core_bracket_match span = markdown_core_span_close(link, citation, parser, inline_state, opener);
-    if (span == BRACKET_MATCHED) {
-        return NULL;
-    }
-    if (span == BRACKET_REJECTED) {
-        goto no_match;
-    }
-    markdown_core_node *close = NULL;
-    if (citation && markdown_core_citation_defer_tail(citation, inline_state, opener, &close)) {
-        return close;
-    }
-    if (citation && markdown_core_inline_close_bibliography(citation, parser, inline_state, opener)) {
-        return NULL;
-    }
-    if (match == LINK_SHORTCUT) {
-        if (markdown_core_link_commit(link, parser, inline_state, opener, &candidate, initial_pos)) {
-            return NULL;
-        }
-        goto no_match;
-    }
-    if (footnote && markdown_core_footnote_close_reference(footnote, parser, inline_state, opener)) {
-        return NULL;
-    }
-
-no_match:
-    markdown_core_inline_settle_bracket(inline_state, opener);
-    markdown_core_inline_pop_bracket(inline_state);
-    inline_state->pos = initial_pos;
-    return make_str(inline_state, initial_pos - 1, initial_pos - 1,
-                    markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
+static S_tail *S_bracket(const markdown_core_element_instance *self, const bracket *b) {
+    return markdown_core_bracket_record(b, self);
 }
+
+/* THE LINK'S RULES FOR A `]` (element.h, markdown_core_close_rule). One
+ * bracket owns its parsed children; alternatives only claim that existing
+ * range, in syntax precedence order, and none reparses its body. A link
+ * whose destination, title or label follows the `]` is made first; a
+ * shortcut, whose `]` is all of its tail, after the other rules. */
+static markdown_core_bracket_match S_close_explicit(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser,
+                                                    markdown_core_inline_state *inline_state, bracket *opener,
+                                                    markdown_core_node **made) {
+    (void)made;
+    S_tail *tail = S_bracket(self, opener);
+    const bufsize_t after = inline_state->pos;
+    tail->candidate = (markdown_core_link_candidate){0};
+    tail->match = markdown_core_link_recognize(self, inline_state, opener, &tail->candidate);
+    if (tail->match != LINK_EXPLICIT) {
+        return BRACKET_UNMATCHED;
+    }
+    return markdown_core_link_commit(self, parser, inline_state, opener, &tail->candidate, after) ? BRACKET_MATCHED
+                                                                                                  : BRACKET_REJECTED;
+}
+
+static markdown_core_bracket_match S_close_span(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                bracket *opener, markdown_core_node **made) {
+    (void)self;
+    (void)made;
+    return markdown_core_span_close(parser, inline_state, opener);
+}
+
+static markdown_core_bracket_match S_close_shortcut(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser,
+                                                    markdown_core_inline_state *inline_state, bracket *opener,
+                                                    markdown_core_node **made) {
+    (void)made;
+    S_tail *tail = S_bracket(self, opener);
+    if (tail->match != LINK_SHORTCUT) {
+        return BRACKET_UNMATCHED;
+    }
+    return markdown_core_link_commit(self, parser, inline_state, opener, &tail->candidate, inline_state->pos)
+               ? BRACKET_MATCHED
+               : BRACKET_REJECTED;
+}
+
+static const markdown_core_close_rule LINK_CLOSES[] = {
+    {.precedence = -20, .close = S_close_explicit},
+    {.precedence = -10, .close = S_close_span},
+    {.precedence = 10, .close = S_close_shortcut},
+};
 
 static markdown_core_node *match_bracket(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                          markdown_core_node *parent, unsigned char character,
                                          markdown_core_inline_state *inline_state) {
-    if (character == ']') {
-        return markdown_core_inline_handle_close_bracket(self, parser, inline_state);
-    }
+    (void)parser;
     if (character == '[') {
         advance(inline_state);
         markdown_core_node *text = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
@@ -1216,8 +1214,10 @@ static const markdown_core_inline_ops LINK_INLINES = {
     .report = report_open,
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .match = match_bracket,
-    .terminates = "[]",
-    .dispatch = "[]",
+    .closes = LINK_CLOSES,
+    .close_count = sizeof(LINK_CLOSES) / sizeof(LINK_CLOSES[0]),
+    .terminates = "[",
+    .dispatch = "[",
 };
 
 /* A paragraph's text opens with its link reference definitions, which the
@@ -1229,6 +1229,7 @@ static const markdown_core_open_ops LINK_OPENS = {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
+    .bracket_size = sizeof(S_tail),
     .opens = &LINK_OPENS,
     .name = "link",
     .inlines = &LINK_INLINES,

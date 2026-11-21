@@ -4,9 +4,7 @@
 #include "citation.h"
 #include "span.h"
 #include "parts.h"
-markdown_core_bracket_match markdown_core_span_close(const markdown_core_element_instance *link,
-                                                     const markdown_core_element_instance *citation,
-                                                     markdown_core_parser *parser,
+markdown_core_bracket_match markdown_core_span_close(markdown_core_parser *parser,
                                                      markdown_core_inline_state *inline_state, bracket *opener) {
     bufsize_t initial_pos = inline_state->pos;
     {
