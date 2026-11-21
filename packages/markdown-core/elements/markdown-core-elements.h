@@ -8,6 +8,7 @@ extern "C" {
 #include "markdown-core-element-api.h"
 #include "../include/markdown_core.h"
 #include "chunk.h"
+#include "claim.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -32,7 +33,23 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 /** The facet of a published node's kind (element.h, markdown_core_facet)
  *  that an element of the core dialect declares, or NULL when none does. */
 struct markdown_core_facet;
-const struct markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind);
+const struct markdown_core_facet *markdown_core_core_facet_find(markdown_core_node_kind kind);
+/* THE FACETS BY KIND (core-elements.c): each kind's slot holds its facet
+ * once a reader has found it, `markdown_core_facet_bare` for a kind with
+ * none; a kind past the table is found each time. */
+#define MARKDOWN_CORE_FACET_ROOM 64
+extern void *markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM];
+extern const struct markdown_core_facet markdown_core_facet_bare;
+static inline const struct markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind) {
+    if ((size_t)kind < MARKDOWN_CORE_FACET_ROOM) {
+        const struct markdown_core_facet *facet =
+            (const struct markdown_core_facet *)markdown_core_claim_read(&markdown_core_facet_table[kind]);
+        if (facet) {
+            return facet == &markdown_core_facet_bare ? NULL : facet;
+        }
+    }
+    return markdown_core_core_facet_find(kind);
+}
 
 /** The anchor a published node shows, in `*anchor`: the one its attributes
  *  write, else the name the names service computed for it (names.h,

@@ -302,6 +302,7 @@ static inline relation_shape shape_of(const markdown_core_node *node) {
  * line, read from its fields: a kind whose relations are all optional or
  * ungrouped, with nothing in them. A group the dump always draws keeps its
  * owner's relations open. */
+static inline markdown_core_node_kind public_kind(const markdown_core_node *node);
 static bool fields_empty(const markdown_core_node *node, relation_shape shape);
 
 static inline bool relations_empty(const markdown_core_node *node) {
@@ -316,7 +317,7 @@ static bool fields_empty(const markdown_core_node *node, relation_shape shape) {
     case SHAPE_CITE:
         return !node->child_count;
     case SHAPE_DIRECTIVE:
-        return !node->child_count && !*markdown_core_core_facet(markdown_core_node_get_kind(node))->label(node);
+        return !node->child_count && !*markdown_core_core_facet(public_kind(node))->label(node);
     case SHAPE_CALLOUT:
         return !node->child_count && !node->as.callout->title;
     case SHAPE_DOCUMENT:
@@ -370,7 +371,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool relations_next(markd
     }
     case SHAPE_DIRECTIVE:
         if (step == 0) {
-            markdown_core_node **label = markdown_core_core_facet(markdown_core_node_get_kind(node))->label(node);
+            markdown_core_node **label = markdown_core_core_facet(public_kind(node))->label(node);
             if (*label) {
                 *more = true;
                 return relation_one(relation, label);
@@ -4518,7 +4519,7 @@ static bool literal_of(const markdown_core_node *node, markdown_core_string *lit
     if (node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return literal_string(node, &node->as.html_block->literal, 0, literal);
     }
-    const markdown_core_facet *facet = markdown_core_core_facet(markdown_core_node_get_kind(node));
+    const markdown_core_facet *facet = markdown_core_core_facet(public_kind(node));
     if (facet && facet->literal) {
         bufsize_t start;
         markdown_core_chunk *chunk = facet->literal(node, &start);
@@ -4532,7 +4533,7 @@ static bool literal_of(const markdown_core_node *node, markdown_core_string *lit
  * joined. */
 static bool formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                markdown_core_string *literal) {
-    const markdown_core_facet *facet = markdown_core_core_facet(markdown_core_node_get_kind(node));
+    const markdown_core_facet *facet = markdown_core_core_facet(public_kind(node));
     *mode = facet->placement(node);
     bufsize_t start;
     markdown_core_chunk *chunk = facet->literal(node, &start);
@@ -4542,7 +4543,7 @@ static bool formula_properties(const markdown_core_node *node, markdown_core_pla
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }
 
 static markdown_core_optional_string directive_name(const markdown_core_node *node) {
-    const char *value = markdown_core_core_facet(markdown_core_node_get_kind(node))->name(node);
+    const char *value = markdown_core_core_facet(public_kind(node))->name(node);
     return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
 }
 
@@ -4983,7 +4984,7 @@ markdown_core_status markdown_core_metadata_value_item_at(const markdown_core_me
 markdown_core_status markdown_core_node_directive_label(const markdown_core_node *node,
                                                         const markdown_core_node **label) {
     REQUIRE_KIND(node, DIRECTIVE_KINDS);
-    *label = *markdown_core_core_facet(markdown_core_node_get_kind(node))->label(node);
+    *label = *markdown_core_core_facet(public_kind(node))->label(node);
     return MARKDOWN_CORE_OK;
 }
 

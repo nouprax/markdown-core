@@ -82,7 +82,8 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     return CORE_ELEMENTS;
 }
 
-const markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind) {
+/* The facet of `kind` among the elements' declarations, or NULL. */
+static const markdown_core_facet *S_facet_find(markdown_core_node_kind kind) {
     for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
         for (const markdown_core_facet *facet = CORE_ELEMENTS[i]->facets;
              facet && facet->kind != MARKDOWN_CORE_KIND_NONE; facet++) {
@@ -92,6 +93,22 @@ const markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind
         }
     }
     return NULL;
+}
+
+/* THE FACETS BY KIND (markdown-core-elements.h): found once, by whichever
+ * reader asks first, and claimed (claim.h) so readers of documents on other
+ * threads may ask at the same time. */
+const markdown_core_facet markdown_core_facet_bare = {.kind = MARKDOWN_CORE_KIND_NONE};
+void *markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM];
+
+const markdown_core_facet *markdown_core_core_facet_find(markdown_core_node_kind kind) {
+    const markdown_core_facet *found = S_facet_find(kind);
+    if ((size_t)kind >= MARKDOWN_CORE_FACET_ROOM) {
+        return found;
+    }
+    const markdown_core_facet *facet =
+        markdown_core_claim(&markdown_core_facet_table[kind], (void *)(found ? found : &markdown_core_facet_bare));
+    return facet == &markdown_core_facet_bare ? NULL : facet;
 }
 
 bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chunk *anchor) {
@@ -125,6 +142,13 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
 }
 
 markdown_core_parser *markdown_core_core_parser(markdown_core_parser_setup_func setup, void *context) {
+    /* Every kind's facet is found as the first parser is made, so no
+     * publish pays the search. */
+    if (!markdown_core_claim_read(&markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM - 1])) {
+        for (size_t kind = 0; kind < MARKDOWN_CORE_FACET_ROOM; kind++) {
+            (void)markdown_core_core_facet_find((markdown_core_node_kind)kind);
+        }
+    }
     size_t count;
     const markdown_core_element *const *elements = markdown_core_core_elements(&count);
     return markdown_core_parser_create(elements, count, setup, context);
