@@ -10724,6 +10724,28 @@ static void session_locates_after_looked_edit(test_batch_runner *runner) {
        at.column);
 }
 
+/* A nested opener a candidate rejected as the text ended read the end: a
+ * closer appended after it, past the paragraph it continued, makes the
+ * opener a block of its own, as a parse does (blocks.c, S_candidates_end). */
+static void session_edits_after_nested_opener(test_batch_runner *runner) {
+    static const char *const sources[] = {":::note\nx\n%%\n", "> x\n> %%\n"};
+    static const char *const closers[] = {"%%\n", "> %%\n"};
+    static const markdown_core_position ends[] = {{4, 1}, {3, 1}};
+    bool same = true;
+    for (size_t i = 0; same && i < 2; i++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        same = markdown_core_session_new((const uint8_t *)sources[i], strlen(sources[i]), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                         &session) == MARKDOWN_CORE_OK &&
+               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+               markdown_core_session_edit(session, ends[i], ends[i], (const uint8_t *)closers[i], strlen(closers[i]),
+                                          &document) == MARKDOWN_CORE_OK &&
+               session_as_parsed(session);
+        markdown_core_session_close(session);
+    }
+    OK(runner, same, "a closer appended after a nested opener rejected at the text's end reads as a parse");
+}
+
 /* A long list, and a long one nested in one of its items, find the rest
  * point of a line by the widths of their items and fold the items kept
  * from the marks of the chunks before (session.c, THE NESTS): a locate at
@@ -12967,6 +12989,7 @@ int main(void) {
     session_locates_table_rows(runner);
     session_locates_unclosed_openers(runner);
     session_locates_after_looked_edit(runner);
+    session_edits_after_nested_opener(runner);
     session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);

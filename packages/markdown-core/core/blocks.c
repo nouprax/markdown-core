@@ -11356,9 +11356,11 @@ static bool S_candidates_end(markdown_core_parser *parser) {
             S_candidate_undo(parser, 0, first);
             return true;
         }
+        /* The call decided as the text ends read its end: text after it
+         * may decide it again. */
         size_t end;
         markdown_core_parser_input_text(parser, &end);
-        S_candidate_drop(parser, 0, first, end, true);
+        S_candidate_drop(parser, 0, first, end + 1, true);
     }
     return false;
 }
