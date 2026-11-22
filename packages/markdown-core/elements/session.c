@@ -246,10 +246,6 @@ static inline size_t widths_end(const markdown_core_widths *widths, const markdo
     return markdown_core_widths_window(widths, root, (uint32_t)root->extent.lead, child).end;
 }
 
-static inline uint32_t widths_child(const markdown_core_widths *widths, const markdown_core_node *root, size_t offset) {
-    return markdown_core_widths_child(widths, root, root->extent.lead, offset);
-}
-
 #ifndef NDEBUG
 /* Each of the root's children stands where the walk finds it. */
 static void session_walk_check(const markdown_core_widths *widths, const markdown_core_node *root) {
