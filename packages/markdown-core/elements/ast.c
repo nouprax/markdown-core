@@ -8,6 +8,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
+#include "utf8.h"
 #include "markdown-core-elements.h"
 #include "heading.h"
 #include "markdown-core-elements.h"
@@ -4186,15 +4187,7 @@ static size_t source_line_of(const markdown_core_source_lines *lines, size_t off
 /* The columns between two offsets of one line, in `unit`. A UTF-8 byte that
  * begins a four-byte scalar is two UTF-16 units; a continuation byte is none. */
 static size_t source_columns(const uint8_t *source, size_t from, size_t to, markdown_core_text_unit unit) {
-    if (unit == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
-        return to - from;
-    }
-    size_t units = 0;
-    for (size_t i = from; i < to; i++) {
-        uint8_t byte = source[i];
-        units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
-    }
-    return units;
+    return markdown_core_utf8_columns(source, from, to, unit != MARKDOWN_CORE_TEXT_UNIT_UTF8);
 }
 
 /* A byte range as editor coordinates: the start is the position of its first
@@ -4310,22 +4303,8 @@ bool markdown_core_position_offset(const markdown_core_source_lines *lines, cons
 
 bool markdown_core_column_offset(const uint8_t *source, size_t at, size_t end, int32_t column,
                                  markdown_core_text_unit unit, bool cursor, size_t *offset) {
-    if (cursor) {
-        while (end > at && (source[end - 1] == '\n' || source[end - 1] == '\r')) {
-            end--;
-        }
-    }
-    int64_t walked = 1;
-    while (walked < column && at < end) {
-        size_t next = at + 1;
-        while (next < end && (source[next] & 0xC0) == 0x80) {
-            next++;
-        }
-        walked += (int64_t)source_columns(source, at, next, unit);
-        at = next;
-    }
-    *offset = at;
-    return walked == column && (cursor ? at <= end : at < end);
+    return markdown_core_utf8_column_offset(source, at, end, column, unit != MARKDOWN_CORE_TEXT_UNIT_UTF8, cursor,
+                                            offset);
 }
 
 /* THE NODES THAT HOLD A BYTE: every node one of whose source ranges holds

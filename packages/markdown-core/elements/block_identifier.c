@@ -3,6 +3,7 @@
 #include "markdown-core-elements.h"
 #include "sink.h"
 #include "parts.h"
+#include <string.h>
 
 typedef struct {
     markdown_core_chunk identifier;
@@ -189,6 +190,12 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
     return true;
+}
+
+bool markdown_core_block_identifier_writes(const markdown_core_element_instance *self, const unsigned char *line,
+                                           size_t length) {
+    (void)self;
+    return length && memchr(line, '#', length) != NULL;
 }
 
 /* THE FEED of the identifier line's candidate (element.h): the first line

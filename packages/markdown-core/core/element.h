@@ -814,6 +814,11 @@ typedef struct markdown_core_follow {
      * closed before it -- a block identifier its anchor -- so an edit's
      * reading takes no old blocks back after one (blocks.c, THE SPLICE). */
     bool closed;
+    /* Of such a follower, whether a line, as written and without its line
+     * ending, may be one that writes such a leader: an edit that writes no
+     * such line, nor replaces one, leaves the leader before it as it was
+     * (index.h, THE REST). NULL when any line may. */
+    bool (*writes)(const markdown_core_element_instance *, const unsigned char *line, size_t length);
     /* A TAIL CUT FROM ITS LEADER'S TEXT THAT THE LEADER'S INLINES MAY GIVE
      * BACK: `yields` declares that a token of the leader's inline content
      * that crosses into the bytes the follower took from the back of its

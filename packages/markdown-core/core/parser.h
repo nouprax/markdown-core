@@ -2199,6 +2199,10 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
  * the storage the input and the reading hold past what the text needs, as
  * the most text before left it. */
 void markdown_core_parser_compact(markdown_core_parser *parser);
+/* Whether `block` is a leaf a rest point may be in: a paragraph or a block
+ * of literal lines, or one that read its lines as such a kind (blocks.c,
+ * THE LEAP, THE FORMER KIND). */
+bool markdown_core_parser_leaf(const markdown_core_parser *parser, const struct markdown_core_node *block);
 /* Whether an edit of a later line of `block`, a leaf, may rest at that line
  * and leap past its old lines (blocks.c, THE LEAP). */
 bool markdown_core_parser_leaps(const markdown_core_parser *parser, const struct markdown_core_node *block);

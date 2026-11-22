@@ -363,7 +363,10 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                 if (follow->closed) {
                     record->flags |= MARKDOWN_CORE_KIND_TRAILED;
                 }
-                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE) {
+                /* At a line, which the engine asks no one at, the record keeps
+                 * the follower of a closed leader: an edit asks it which lines
+                 * write one (`writes`). */
+                if (follow->at != MARKDOWN_CORE_FOLLOW_LINE || follow->closed) {
                     record->follower[follow->at] = &dialect->instances[i];
                     record->follow[follow->at] = follow;
                 }

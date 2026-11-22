@@ -5123,6 +5123,10 @@ static inline bool S_leaf(const markdown_core_parser *parser, const markdown_cor
                MARKDOWN_CORE_NODE_NONE;
 }
 
+bool markdown_core_parser_leaf(const markdown_core_parser *parser, const markdown_core_node *block) {
+    return S_leaf(parser, block);
+}
+
 bool markdown_core_parser_reads_lines(const markdown_core_parser *parser, const markdown_core_node *block) {
     return (markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
            S_former(parser, block, MARKDOWN_CORE_KIND_LINES) != MARKDOWN_CORE_NODE_NONE;
@@ -6221,7 +6225,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         markdown_core_array_truncate(&parser->line_marks, MARKDOWN_CORE_IDENTITY_MARK + 1);
     }
     if (lines && !S_leap_ready(parser, line, delta)) {
+        /* The caller lets the root go, which the parse holds no more. */
         S_tail_leave(parser, root);
+        parser->root = NULL;
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }

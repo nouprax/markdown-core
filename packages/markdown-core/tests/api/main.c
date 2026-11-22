@@ -12134,6 +12134,14 @@ static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runne
         LINES "a [use][label] here *x* and\nmore *y* words\n\n[label]: /url\n",
         LINES LINES "- item *one*\n- item *two*\n",
         LINES "with trailing *spaces*   \nand *more*\r\nlines *crlf*\r\n",
+        /* After a block that holds blocks, the line after its last and the
+         * line after blank lines past it may go on in it. */
+        "- one *a*\n\n- two *b*\n\n\n- three\n  - four *c*\n\n  - five\n\nafter *d*\n",
+        "1) one\n2) two\n\n   more *x*\n3) three\n\n\nnot *in*\n- y\n",
+        "> quote *a*\n> more\n\n> again\nlazy *b*\n\nout\n",
+        "- a\n  > q\n\n  > r\n- b\n\n  ```\n  code\n\n  ```\n\ntail\n",
+        /* Columns of scalars of two, three and four bytes. */
+        "\xc3\xa9t\xc3\xa9 *\xe2\x82\xac* \xf0\x9f\x98\x80 x\n- \xc3\xa9 *y*\n\n- \xe2\x82\xac\n",
     };
     static const size_t steps[] = {1, 3, 2, 5, 1, 4, 7, 2};
     for (size_t s = 0; s < sizeof(sources) / sizeof(*sources); s++) {

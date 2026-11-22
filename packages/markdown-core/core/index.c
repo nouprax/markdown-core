@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "alloc.h"
+#include "element.h"
 #include "index.h"
 #include "node_type.h"
 #include "parser.h"
@@ -407,6 +408,19 @@ static inline bool past_own(const index_past *past, const markdown_core_node *no
            (node->look && start + node->look > past->look);
 }
 
+/* Whether the close of `child`, which starts at `at`, is that of a block
+ * the reading reopens, one of `opens`, each once: its reopen notes it
+ * again. */
+static inline bool past_exempt(index_past *past, const markdown_core_node *child, size_t at) {
+    for (size_t k = 0; k < past->count; k++) {
+        if (!(past->used >> k & 1) && (past->opens[k] == at || past->opens[k] == at - child->opened)) {
+            past->used |= UINT64_C(1) << k;
+            return true;
+        }
+    }
+    return false;
+}
+
 /* The readings below `holder`, which starts at `start`, of its children
  * from `low` up to `high`, which start before the point and are before
  * it whole, and below them, to any depth. */
@@ -450,7 +464,7 @@ static void past_children(index_past *past, const markdown_core_node *holder, si
             count--;
             continue;
         }
-        if (past_own(past, child, from, false)) {
+        if (past_own(past, child, from, past_exempt(past, child, from))) {
             past_found(past, from - child->opened);
             continue;
         }
@@ -562,16 +576,7 @@ bool markdown_core_index_crossed(markdown_core_index *index, size_t from, size_t
         const markdown_core_node *child = holder->children[held];
         const size_t at = (size_t)(base + width_tree_at(tree, held)->start);
         /* The block's own close, when the reading reopens it. */
-        bool exempt = false;
-        for (size_t k = 0; k < count && !exempt; k++) {
-            if (!(past.used >> k & 1) && (opens[k] == at || opens[k] == at - child->opened)) {
-                past.used |= UINT64_C(1) << k;
-                exempt = true;
-            }
-        }
-        if (past_own(&past, child, at, exempt)) {
-            if (at - child->opened < past.start) {
-            }
+        if (past_own(&past, child, at, past_exempt(&past, child, at))) {
             past_found(&past, at - child->opened);
         }
         holder = child;
@@ -579,6 +584,445 @@ bool markdown_core_index_crossed(markdown_core_index *index, size_t from, size_t
     }
     *start = past.start;
     return past.start != SIZE_MAX;
+}
+
+/* THE REST (index.h). The search tries a line after line, each earlier
+ * than the one before, back to the text's start; at each it finds the
+ * position and asks whether it stands (rest_at). */
+#define REST_STANDS SIZE_MAX
+#define REST_FAILED (SIZE_MAX - 1)
+
+typedef struct {
+    markdown_core_index *index;
+    const markdown_core_parser *parser;
+    const char *source;
+    size_t size;
+    const markdown_core_rest_edit *edit;
+    markdown_core_rest *rest;
+    /* The first line the reading reads otherwise: the edit's, or the line
+     * of the opener whose closer, or stop line, it writes, which reads
+     * otherwise then. */
+    size_t edited;
+} rest_search;
+
+static inline size_t rest_line(const rest_search *search, size_t offset) {
+    return markdown_core_parser_line_of(search->parser, offset);
+}
+
+static inline const markdown_core_edit_ops *rest_ops(const markdown_core_parser *parser,
+                                                     const markdown_core_node *block) {
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
+    return structure ? structure->element->edit : NULL;
+}
+
+/* The widths of the children of the holder at `level` of the chain, the
+ * root's or the block's before it, and where they are measured from; NULL
+ * when storage could not be had. A nest made moves the nests: the widths
+ * hold until the next is made. */
+static const markdown_core_widths *rest_widths(const rest_search *search, size_t level,
+                                               const markdown_core_node **holder, int64_t *base) {
+    markdown_core_index *index = search->index;
+    if (!level) {
+        *holder = index->root;
+        *base = (int64_t)index->root->extent.lead;
+        return &index->widths;
+    }
+    *holder = search->rest->chain[level - 1];
+    *base = (int64_t)markdown_core_holder_base(*holder, search->rest->starts[level - 1]);
+    return markdown_core_index_nest(index, *holder);
+}
+
+/* Whether a line of the `length` bytes at `lines` passes `test` of
+ * `self`'s element. */
+static bool rest_line_in(const markdown_core_element_instance *self,
+                         bool (*test)(const markdown_core_element_instance *, const unsigned char *, size_t),
+                         const uint8_t *lines, size_t length) {
+    size_t from = 0;
+    for (size_t i = 0; i <= length; i++) {
+        if (i == length || lines[i] == '\n' || lines[i] == '\r') {
+            if (test(self, lines + from, i - from)) {
+                return true;
+            }
+            from = i + 1;
+        }
+    }
+    return false;
+}
+
+/* THE LINES AN EDIT WRITES: the edited line's bytes before it, what it
+ * writes, and the last edited line's after it, or none for a look, whose
+ * text ends at its cursor, in `*lines`, which is `room` when they fit its
+ * `capacity` bytes and the caller frees otherwise, and in `*size`; and the
+ * old lines they replace, from `*old` on. False when storage could not be
+ * had. */
+static bool rest_written(const rest_search *search, uint8_t *room, size_t capacity, uint8_t **lines, size_t *size,
+                         size_t *old, size_t *old_end) {
+    const markdown_core_rest_edit *edit = search->edit;
+    const uint8_t *source = (const uint8_t *)search->source;
+    const size_t line_start = index_line_start(search->parser, edit->line);
+    size_t line_end = edit->to;
+    while (!edit->look && line_end < search->size && source[line_end] != '\n' && source[line_end] != '\r') {
+        line_end++;
+    }
+    *old = line_start;
+    *old_end = line_end;
+    *size = (edit->from - line_start) + edit->length + (line_end - edit->to);
+    *lines = *size <= capacity ? room : markdown_core_alloc(*size, 1);
+    if (!*lines) {
+        return false;
+    }
+    memcpy(*lines, source + line_start, edit->from - line_start);
+    if (edit->length) {
+        memcpy(*lines + (edit->from - line_start), edit->text, edit->length);
+    }
+    memcpy(*lines + (edit->from - line_start) + edit->length, source + edit->to, line_end - edit->to);
+    return true;
+}
+
+/* THE OPENERS AN EDIT MAY CLOSE (blocks.c, AN OPENER READ TO THE END): of
+ * the openers read to the end that start before `before`, the first whose
+ * element has a stop line among the lines the edit writes, in `*start`.
+ * False when none has. */
+static bool rest_stops(const rest_search *search, size_t before, size_t *start) {
+    size_t count;
+    const markdown_core_unclosed *openers = markdown_core_parser_openers(search->parser, &count);
+    size_t first = SIZE_MAX;
+    for (size_t i = 0; i < count; i++) {
+        if (!openers[i].aside && openers[i].start < before && openers[i].start < first) {
+            first = openers[i].start;
+        }
+    }
+    if (first == SIZE_MAX) {
+        return false;
+    }
+    uint8_t room[256], *lines;
+    size_t size, old, old_end;
+    if (!rest_written(search, room, sizeof(room), &lines, &size, &old, &old_end)) {
+        /* What the edit writes is not looked at: it reads from before the
+         * first. */
+        *start = first;
+        return true;
+    }
+    bool found = false;
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_unclosed *opener = &openers[i];
+        if (!opener->aside && opener->start < before && (!found || opener->start < *start) &&
+            rest_line_in(opener->owner, opener->owner->element->edit->stops, lines, size)) {
+            *start = opener->start;
+            found = true;
+        }
+    }
+    if (lines != room) {
+        markdown_core_free(lines);
+    }
+    return found;
+}
+
+/* Whether the edit writes, or replaces, a line that may write `prior`, a
+ * block of a kind a later line may write once it closed (element.h, the
+ * follow's `closed` and `writes`). */
+static bool rest_trails(const rest_search *search, const markdown_core_kind_record *prior) {
+    const markdown_core_follow *follow = prior->follow[MARKDOWN_CORE_FOLLOW_LINE];
+    const markdown_core_element_instance *follower = prior->follower[MARKDOWN_CORE_FOLLOW_LINE];
+    if (!follow || !follow->writes) {
+        return true;
+    }
+    uint8_t room[256], *lines;
+    size_t size, old, old_end;
+    if (!rest_written(search, room, sizeof(room), &lines, &size, &old, &old_end)) {
+        return true;
+    }
+    const bool writes = rest_line_in(follower, follow->writes, lines, size) ||
+                        rest_line_in(follower, follow->writes, (const uint8_t *)search->source + old, old_end - old);
+    if (lines != room) {
+        markdown_core_free(lines);
+    }
+    return writes;
+}
+
+/* THE CLOSER AN EDIT WRITES (element.h, the edit's `shuts`): the leaf the
+ * chain ends in, whose opener found its closer, its last line, decided only
+ * that it found one, which an edit that writes on or past the start of that
+ * line may undo, and so may a look, whose text ends before it. Below the
+ * root, the closer was one under the same prefixes (blocks.c,
+ * markdown_core_parser_lookahead_end): an edit that writes a line's
+ * prefixes, or a line end, which the prefixes of a new line follow, may
+ * undo it too. */
+static bool rest_shut(const rest_search *search) {
+    const markdown_core_parser *parser = search->parser;
+    const markdown_core_rest *rest = search->rest;
+    const markdown_core_rest_edit *edit = search->edit;
+    const markdown_core_node *block = rest->chain[rest->depth - 1];
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
+    const markdown_core_edit_ops *ops = kind->structure ? kind->structure->element->edit : NULL;
+    /* A block another opener read (element.h, THE FORMER KIND) found no
+     * closer of the element's. */
+    if (!ops || !ops->shuts ||
+        (kind->made && kind->made->former && kind->made->former(kind->maker, block) != MARKDOWN_CORE_NODE_NONE)) {
+        return false;
+    }
+    if (edit->look || edit->to >= index_line_start(parser, markdown_core_parser_line_of(parser, rest->last - 1))) {
+        return true;
+    }
+    if (rest->depth == 1) {
+        return false;
+    }
+    const size_t line = markdown_core_parser_line_of(parser, edit->from);
+    size_t start, end;
+    markdown_core_parser_line_span(parser, line, &start, &end);
+    size_t past = end;
+    past -= past > start && search->source[past - 1] == '\n';
+    past -= past > start && search->source[past - 1] == '\r';
+    if (edit->from < markdown_core_parser_line_own(parser, line) || edit->to > past) {
+        return true;
+    }
+    for (size_t i = 0; i < edit->length; i++) {
+        if (edit->text[i] == '\n' || edit->text[i] == '\r') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Whether the line that starts at `start` holds only spaces, tabs and
+ * container prefix bytes. */
+static bool rest_blank_line(const rest_search *search, size_t start) {
+    const markdown_core_dialect *dialect = search->parser->dialect;
+    for (size_t at = start; at < search->size && search->source[at] != '\n' && search->source[at] != '\r'; at++) {
+        const unsigned char c = (unsigned char)search->source[at];
+        if (c != ' ' && c != '\t' && !dialect->container_prefix[c]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The position at line `line` in `search->rest`, and REST_STANDS when it
+ * stands; otherwise the earlier line the search tries next, or REST_FAILED
+ * when storage could not be had. */
+static size_t rest_at(rest_search *search, size_t line) {
+    markdown_core_index *index = search->index;
+    const markdown_core_parser *parser = search->parser;
+    const markdown_core_rest_edit *edit = search->edit;
+    markdown_core_rest *rest = search->rest;
+    const size_t start = index_line_start(parser, line);
+    /* A reading that read no further than the line decided the same when
+     * the edit begins on a later line: the line reads as it did. On the
+     * text's last line, the close the text's end makes of a block begun
+     * before it read past it all the same. */
+    size_t past = start;
+    if (line < search->edited) {
+        const size_t next = index_line_start(parser, line + 1);
+        past = next < search->size ? next : start;
+    }
+    rest->line = line;
+    rest->depth = 0;
+    rest->last = 0;
+    /* Down the blocks open at the line's start: of each holder, its child
+     * before the first that starts at or past it, when that child holds
+     * the line or its close read past what the line decides. */
+    size_t level = 0;
+    uint32_t first = 0, count = 0;
+    int64_t base = 0;
+    /* Where the child before the first at or past the line starts and ends,
+     * and where that first starts. */
+    size_t prior = 0, before = 0, next = SIZE_MAX, next_end = 0;
+    bool leaf = false;
+    /* Whether a child at some level of the chain starts on the line. */
+    bool starts = false;
+    for (;;) {
+        const markdown_core_node *holder;
+        const markdown_core_widths *widths = rest_widths(search, level, &holder, &base);
+        if (!widths) {
+            return REST_FAILED;
+        }
+        /* A holder whose children have no source of their own to measure
+         * (a definition's body that holds no node) is read again whole. */
+        if (level && widths->bare && holder->child_count) {
+            return rest_line(search, rest->starts[level - 1]);
+        }
+        markdown_core_tree *tree = (markdown_core_tree *)&widths->tree;
+        count = holder->child_count;
+        first = count && (int64_t)start > base
+                    ? (uint32_t)markdown_core_tree_from(tree, (size_t)((int64_t)start - base), 0, count)
+                    : 0;
+        before = first ? (size_t)(base + width_tree_at(tree, first - 1)->end) : (size_t)base;
+        prior = first ? (size_t)(base + width_tree_at(tree, first - 1)->start) : (size_t)base;
+        next = first < count ? (size_t)(base + width_tree_at(tree, first)->start) : SIZE_MAX;
+        next_end = first < count ? (size_t)(base + width_tree_at(tree, first)->end) : 0;
+        starts = starts || (next != SIZE_MAX && rest_line(search, next) == line);
+        if (level) {
+            rest->priors[level - 1] = (uint32_t)before;
+        }
+        if (!first) {
+            break;
+        }
+        const markdown_core_width *width = width_tree_at(tree, first - 1);
+        const size_t at = (size_t)(base + width->start), end = (size_t)(base + width->end);
+        markdown_core_node *child = holder->children[first - 1];
+        if (end <= start && at + child->closed <= past) {
+            break;
+        }
+        if (level == MARKDOWN_CORE_REST_DEPTH) {
+            return rest_line(search, at);
+        }
+        rest->chain[level] = child;
+        rest->path[level] = first - 1;
+        rest->starts[level] = (uint32_t)at;
+        if (level) {
+            rest->priors[level - 1] =
+                (uint32_t)(first > 1 ? (size_t)(base + width_tree_at(tree, first - 2)->end) : (size_t)base);
+        }
+        rest->depth = level + 1;
+        if (markdown_core_parser_leaf(parser, child)) {
+            /* A leaf the reading leaps in (blocks.c, THE LEAP): one of
+             * literal lines, or a paragraph when the reading may rest in
+             * one. */
+            if (!markdown_core_parser_leaps(parser, child) ||
+                (!edit->prose && !markdown_core_parser_reads_lines(parser, child))) {
+                return rest_line(search, at);
+            }
+            rest->priors[level] = (uint32_t)at;
+            rest->path[level + 1] = 0;
+            rest->last = end;
+            leaf = true;
+            break;
+        }
+        const markdown_core_edit_ops *ops = rest_ops(parser, child);
+        if (!ops || !ops->reopens || !child->child_count) {
+            return rest_line(search, at);
+        }
+        level++;
+    }
+    if (!leaf) {
+        const markdown_core_node *holder = level ? rest->chain[level - 1] : index->root;
+        /* The first child of a block whose children abut starts the block's
+         * own first line: the block, reopened with none, reads it as a later
+         * child's (blocks.c, markdown_core_parser_abuts), when it starts on
+         * a later line than the block above it, and the edit is on a later
+         * line of it: what the line opens the block with is read again
+         * otherwise. */
+        bool abuts = false;
+        if (first < count && line < search->edited && level < MARKDOWN_CORE_REST_DEPTH &&
+            rest_line(search, next) == line && next_end > index_line_start(parser, search->edited) &&
+            (!level || rest_line(search, rest->starts[level - 1]) < line)) {
+            markdown_core_node *child = holder->children[first];
+            const markdown_core_edit_ops *ops = rest_ops(parser, child);
+            if (ops && ops->reopens && !ops->headed && child->child_count &&
+                markdown_core_parser_abuts(parser, child)) {
+                const markdown_core_widths *nest = markdown_core_index_nest(index, child);
+                if (!nest) {
+                    return REST_FAILED;
+                }
+                const uint32_t own = markdown_core_holder_base(child, next);
+                if (!nest->bare &&
+                    rest_line(search, own + width_tree_at((markdown_core_tree *)&nest->tree, 0)->start) == line) {
+                    rest->chain[level] = child;
+                    rest->path[level] = first;
+                    rest->starts[level] = (uint32_t)next;
+                    rest->priors[level] = own;
+                    rest->depth = level + 1;
+                    /* What the line opens the block with must not have read
+                     * the edited line, from anywhere on its line. */
+                    const size_t edited = index_line_start(parser, search->edited);
+                    size_t reached;
+                    abuts = !markdown_core_index_crossed(index, edit->from, edited, edited, rest->starts, rest->depth,
+                                                         &reached) ||
+                            rest_line(search, reached) != line;
+                    if (abuts) {
+                        first = 0;
+                    } else {
+                        rest->depth = level;
+                    }
+                }
+            }
+        }
+        if (!abuts && first) {
+            /* The child before, which a later line may go on in, or write
+             * when the edit writes the line (element.h, `awaits`;
+             * markdown_core_follow, `closed`). */
+            const unsigned kind = markdown_core_parser_block_kind(parser, holder->children[first - 1])->flags;
+            if ((kind & MARKDOWN_CORE_KIND_AWAITS) ||
+                ((kind & MARKDOWN_CORE_KIND_TRAILED) && line == search->edited &&
+                 rest_trails(search, markdown_core_parser_block_kind(parser, holder->children[first - 1])))) {
+                return rest_line(search, prior);
+            }
+        }
+        /* The line before reads to the chain as the reopen can tell: a block
+         * of the chain that holds the line before with no child before the
+         * line does not. And a line of the chain's that starts no child at
+         * any level of it and is not blank is one of the block's own (a
+         * table's delimiter row, a closing fence), which its element reads
+         * as the block's: the child before is read again. */
+        if (rest->depth && !abuts && !starts && !rest_blank_line(search, start)) {
+            return rest_line(search, first ? prior : rest->starts[rest->depth - 1]);
+        }
+        if (rest->depth && !abuts) {
+            /* With none, the line before is the block's first, its opener's,
+             * read with no child, as the reopen reads it. */
+            if (!first && rest_line(search, rest->starts[rest->depth - 1]) + 1 != line) {
+                return rest_line(search, rest->starts[rest->depth - 1]);
+            }
+            if (first && markdown_core_parser_rest_blank(parser, (const unsigned char *)search->source, rest->chain,
+                                                         rest->depth, line, before) == SIZE_MAX) {
+                return rest_line(search, prior);
+            }
+        }
+        rest->path[rest->depth] = first;
+    }
+    /* No reading the line's does not do again read past what it decides,
+     * but the closes of the chain's blocks, which their reopen notes
+     * again. */
+    size_t reached;
+    if (markdown_core_index_crossed(index, edit->from, start, past, rest->starts, rest->depth, &reached)) {
+        return rest_line(search, reached);
+    }
+    if (leaf && rest_shut(search)) {
+        search->edited = rest_line(search, rest->starts[rest->depth - 1]);
+        return search->edited;
+    }
+    size_t opened;
+    if (rest_stops(search, start, &opened)) {
+        search->edited = rest_line(search, opened);
+        return search->edited;
+    }
+    /* A root child on the line after one of a kind that joins it was read in
+     * one block with it, which the text before a look's cursor holds open
+     * from the first (element.h, `joins`). */
+    if (edit->look && !rest->depth && first && first < count) {
+        const markdown_core_widths *widths = &index->widths;
+        const markdown_core_node *root = index->root;
+        const markdown_core_width *later = width_tree_at((markdown_core_tree *)&widths->tree, first);
+        const markdown_core_width *earlier = width_tree_at((markdown_core_tree *)&widths->tree, first - 1);
+        if ((markdown_core_parser_block_kind(parser, root->children[first])->flags & MARKDOWN_CORE_KIND_JOINS) &&
+            (markdown_core_parser_block_kind(parser, root->children[first - 1])->flags & MARKDOWN_CORE_KIND_JOINS) &&
+            rest_line(search, (size_t)(base + later->start)) == rest_line(search, (size_t)(base + earlier->end)) + 1) {
+            return rest_line(search, (size_t)(base + earlier->start));
+        }
+    }
+    rest->child = rest->depth ? rest->path[0] + 1 : first;
+    /* Before the root's first child, the text's start. */
+    if (!rest->depth && !first) {
+        rest->line = 0;
+    }
+    return REST_STANDS;
+}
+
+bool markdown_core_index_rest(markdown_core_index *index, const char *source, size_t size,
+                              const markdown_core_rest_edit *edit, markdown_core_rest *rest) {
+    rest_search search = {index, index->parser, source, size, edit, rest, edit->line};
+    size_t line = edit->line;
+    for (;;) {
+        const size_t next = rest_at(&search, line);
+        if (next == REST_STANDS) {
+            return true;
+        }
+        if (next == REST_FAILED) {
+            return false;
+        }
+        assert(next < line);
+        line = next;
+    }
 }
 
 /* The table of the nests made again for those kept, or none of them. */

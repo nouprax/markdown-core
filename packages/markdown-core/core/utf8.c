@@ -245,3 +245,50 @@ void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *st
     }
     S_finish_image(dest, out);
 }
+
+size_t markdown_core_utf8_columns(const uint8_t *source, size_t from, size_t to, bool wide) {
+    if (!wide) {
+        return to - from;
+    }
+    size_t units = 0;
+    for (size_t i = from; i < to; i++) {
+        const uint8_t byte = source[i];
+        units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
+    }
+    return units;
+}
+
+bool markdown_core_utf8_column_offset(const uint8_t *source, size_t at, size_t end, int32_t column, bool wide,
+                                      bool cursor, size_t *offset) {
+    if (cursor) {
+        while (end > at && (source[end - 1] == '\n' || source[end - 1] == '\r')) {
+            end--;
+        }
+    }
+    /* A byte column names its byte at once, and the walk would only step
+     * over the scalar it lands inside, if it does. */
+    if (!wide && column >= 1) {
+        const size_t want = (size_t)column - 1;
+        if (want > end - at) {
+            *offset = end;
+            return false;
+        }
+        size_t named = at + want;
+        while (named < end && (source[named] & 0xC0) == 0x80) {
+            named++;
+        }
+        *offset = named;
+        return named == at + want && (cursor ? named <= end : named < end);
+    }
+    int64_t walked = 1;
+    while (walked < column && at < end) {
+        size_t next = at + 1;
+        while (next < end && (source[next] & 0xC0) == 0x80) {
+            next++;
+        }
+        walked += (int64_t)markdown_core_utf8_columns(source, at, next, wide);
+        at = next;
+    }
+    *offset = at;
+    return walked == column && (cursor ? at <= end : at < end);
+}

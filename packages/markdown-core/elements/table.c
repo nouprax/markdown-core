@@ -601,7 +601,8 @@ static void opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
 }
 
 /* A reopen at the old row `next` counts what the rows before it invented
- * again, as the row holds it. */
+ * again, as the row holds it; one past its last row, which its close
+ * counted, keeps the count it closed with. */
 static void reopen_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node, const markdown_core_node *next, bool blank) {
     (void)self;
@@ -610,8 +611,11 @@ static void reopen_block(const markdown_core_element_instance *self, markdown_co
     if (node->kind != MARKDOWN_CORE_NODE_TABLE) {
         return;
     }
-    assert(next && next->kind == MARKDOWN_CORE_NODE_TABLE_ROW);
-    ((markdown_core_table *)node->opaque)->autocompleted_cells = next ? (size_t)next->internal_offset : 0;
+    if (!next) {
+        return;
+    }
+    assert(next->kind == MARKDOWN_CORE_NODE_TABLE_ROW);
+    ((markdown_core_table *)node->opaque)->autocompleted_cells = (size_t)next->internal_offset;
 }
 
 /* A row read again stands as the old one did when the rows before it
