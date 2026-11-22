@@ -893,7 +893,7 @@ static int rest_inside(rest_search *search, size_t line, size_t start) {
          * when the edit begins in that text: its children start on later
          * lines, and the reading stands where the text starts, which is as
          * far from the block's start as when it was read. */
-        const markdown_core_node *text = ops && ops->text && opened == level ? ops->text(child) : NULL;
+        const markdown_core_node *text = ops && ops->text && opened == level ? *ops->text(child) : NULL;
         if (text && text->place.start >= child->place.start &&
             at + (text->place.start - child->place.start) <= edit->from) {
             rest->priors[level] = (uint32_t)at;

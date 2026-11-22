@@ -3577,7 +3577,7 @@ static bool record_nest(markdown_core_parser *parser) {
         uint32_t last = carried ? carried : level + 1 < edit->depth ? edit->owners[level + 1] : 0;
         /* The deepest block's records of a field its reading made again
          * come first, the field before its children (blocks.c,
-         * markdown_core_block_unsettle_field). */
+         * THE TEXT OF ITS LINE). */
         if (!last) {
             for (uint32_t at = records->items[edit->owners[level] - 1].held; at; at = records->items[at - 1].next) {
                 last = at;

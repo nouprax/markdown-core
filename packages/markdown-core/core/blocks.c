@@ -1677,8 +1677,12 @@ void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_cor
     S_complete_later(parser, field, holder);
 }
 
-void markdown_core_block_unsettle_field(markdown_core_parser *parser, markdown_core_node *field,
-                                        markdown_core_node *holder) {
+/* `field`, the field root `holder` held, goes, as a reading that stands
+ * inside the line that wrote it makes the field again (THE TEXT OF ITS
+ * LINE): what it holds goes to the records the publish names its
+ * content by, as a paragraph's children go when it reads its content
+ * again, and lives on until the publish lets it go (THE SEAMS). */
+static void S_unsettle_field(markdown_core_parser *parser, markdown_core_node *field, markdown_core_node *holder) {
     if (field->child_count && parser->stream && parser->stream->edit) {
         if (!markdown_core_publish_keep_left(parser, holder, field, field->children, field->child_count, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1688,6 +1692,20 @@ void markdown_core_block_unsettle_field(markdown_core_parser *parser, markdown_c
         field->child_count = 0;
     }
     markdown_core_parser_release_node(parser, field);
+}
+
+/* THE TEXT OF ITS LINE (element.h): the field an earlier reading of the
+ * line made goes before `structure`'s block `node` is given the text again,
+ * whatever element made it, and the element makes the field anew. */
+static bool S_text_of_line(const markdown_core_element_instance *structure, markdown_core_parser *parser,
+                           markdown_core_node *node, markdown_core_reader *reader) {
+    const markdown_core_edit_ops *edit = structure->element->edit;
+    markdown_core_node **slot = edit && edit->text ? edit->text(node) : NULL;
+    if (slot && *slot) {
+        S_unsettle_field(parser, *slot, node);
+        *slot = NULL;
+    }
+    return structure->lines->text(structure, parser, node, reader);
 }
 
 /* The pending block settles into `holder`, the current block of kind
@@ -11727,7 +11745,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
             markdown_core_reader_skip(reader);
             markdown_core_block_add_line(parser, container);
         } else if (container != last_matched_container && structure && structure->lines->text &&
-                   structure->lines->text(structure, parser, container, reader)) {
+                   S_text_of_line(structure, parser, container, reader)) {
             /* The block the line opened took the line's text (THE TEXT OF
              * ITS LINE). */
             if (parser->error) {

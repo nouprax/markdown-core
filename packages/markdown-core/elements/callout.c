@@ -125,16 +125,12 @@ static void S_callout_build(markdown_core_parser *parser, markdown_core_node *no
 /* THE TEXT OF ITS LINE (element.h, `text`): the text of the line a callout
  * with a variant opened on, past its header, is its title, to the line's
  * end and without the whitespace there. A callout the edit reopens inside
- * the line makes it anew. */
+ * the line makes it anew: the engine let the old one go. */
 static bool callout_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node, markdown_core_reader *reader) {
     markdown_core_callout_work *counts = self->state;
     if (!node->as.callout->variant.has_value) {
         return false;
-    }
-    if (node->as.callout->title) {
-        markdown_core_block_unsettle_field(parser, node->as.callout->title, node);
-        node->as.callout->title = NULL;
     }
     const bufsize_t pos = reader->offset;
     bufsize_t length;
@@ -161,8 +157,9 @@ static bool callout_text(const markdown_core_element_instance *self, markdown_co
     return true;
 }
 
-/* The title a callout's text made (element.h, markdown_core_edit_ops). */
-static const markdown_core_node *callout_title(const markdown_core_node *node) { return node->as.callout->title; }
+/* Where a callout holds the title its text made (element.h,
+ * markdown_core_edit_ops). */
+static markdown_core_node **callout_title(markdown_core_node *node) { return &node->as.callout->title; }
 
 /* A callout's open builds what its scan read: the marker's motion, the
  * report of a variant cut short, and the header, after which the line is

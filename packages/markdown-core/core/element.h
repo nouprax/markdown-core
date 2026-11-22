@@ -740,11 +740,13 @@ typedef struct markdown_core_edit_ops {
      * as a later child: no reopen rests at it, though the children abut (a
      * table's head row). */
     bool headed;
-    /* The field `text` (markdown_core_line_ops) made of the text of the
-     * first line of `node`, where that text starts: a rest inside the line
-     * may stand there (blocks.c, A REST INSIDE A LINE). NULL when the block
-     * made none, or for an element that has no `text`. */
-    const markdown_core_node *(*text)(const markdown_core_node *node);
+    /* Where `node` holds the field `text` (markdown_core_line_ops) made of
+     * the text of its first line, or holds NULL when it made none: a rest
+     * inside the line may stand where that text starts (blocks.c, A REST
+     * INSIDE A LINE), and the engine lets an old field go before the block
+     * is given the text again (blocks.c, THE TEXT OF ITS LINE), so the
+     * element only makes it. NULL for an element that has no `text`. */
+    markdown_core_node **(*text)(markdown_core_node *node);
     /* The block kinds of the element whose children each start a line of
      * their own with a marker that no line of the child before takes, not
      * even lazily -- a list's items: a reopen may rest at one on the line

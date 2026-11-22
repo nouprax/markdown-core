@@ -44,13 +44,6 @@ void markdown_core_block_settle_before(markdown_core_parser *parser, markdown_co
  * complete on its own (blocks.c, A BLOCK SETTLES). */
 void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_core_node *field,
                                       markdown_core_node *holder);
-/* `field`, the field root `holder` held, goes, as a reading that stands
- * inside the line that wrote it makes the field again (element.h, THE TEXT
- * OF ITS LINE): what it holds goes to the records the publish names its
- * content by, as a paragraph's children go when it reads its content
- * again, and lives on until the publish lets it go (blocks.c, THE SEAMS). */
-void markdown_core_block_unsettle_field(markdown_core_parser *parser, markdown_core_node *field,
-                                        markdown_core_node *holder);
 /* The current block, its range settled, closes and becomes the pending child
  * of the block below it. */
 void markdown_core_block_close_current(markdown_core_parser *parser);
