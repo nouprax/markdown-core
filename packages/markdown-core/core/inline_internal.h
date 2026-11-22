@@ -21,13 +21,28 @@ typedef struct {
     bool can_open, can_close;
 } delimiter_run;
 
+/* ONE RUN'S BRACKETS (bracket.h): two instances of the engine's stack
+ * (stack.h), the open ones, the innermost last, and the suspended ones; and
+ * whether a link may open here, which a link's own text forbids until a new
+ * opener. */
+typedef struct markdown_core_bracket_scope {
+    markdown_core_stack open, suspended;
+    bool no_link_openers;
+} markdown_core_bracket_scope;
+
 struct markdown_core_inline_state {
     markdown_core_chunk input;
-    markdown_core_attribute_parser attributes;
-    /* Where the run owner's tail begins, or -1 for none: inline text yields
-     * there to the owner's `claim_tail`, and no inline attribute block begins
-     * in it. */
-    bufsize_t text_end;
+    /* Where a cut the owner's text gave a take that its inlines may yet give
+     * back begins (element.h, markdown_core_follow, `yields`), or -1: text yields
+     * there, a token that starts there ends the run, and one that crosses it
+     * gives the cut back. */
+    bufsize_t cut;
+    /* THE NODE A TOKEN MADE THAT A LATER TOKEN MAY UPDATE (no-flush.md
+     * 10.13): a token whose node another grammar may go on to update at the
+     * byte after it says so as it ends (markdown_core_inline_made), and the
+     * token read next finds it there (markdown_core_inline_made_node). */
+    markdown_core_node *made;
+    bufsize_t made_end;
     unsigned flags;
     bufsize_t opaque_end;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
@@ -64,7 +79,8 @@ struct markdown_core_inline_state {
     int mark_line, mark_step, mark_width;
     bufsize_t mark_source;
     bool mapped;
-    delimiter *last_delim;
+    /* The run's delimiters (stack.h), from the parser's pool. */
+    markdown_core_stack delims;
     delimiter_run cached_run;
     /* How many delimiters of each rule on the stack can open, and how many
      * can close, kept at every push and removal so a scanner can ask whether
@@ -77,6 +93,8 @@ struct markdown_core_inline_state {
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
+    /* The run's brackets (bracket.h). */
+    markdown_core_bracket_scope brackets;
     /* This run's block of the elements' run records (markdown_core_run_state):
      * taken from the parser when the run starts and given back when it is
      * cleared. NULL for a run with no parser, and for one whose records could
@@ -107,6 +125,19 @@ struct markdown_core_inline_state {
      * the text's end (sink.h). */
     markdown_core_context_sink *context;
 };
+
+/* The token being read made `node`, which ends here: the token read next
+ * may update it (markdown_core_inline_made_node). */
+static inline void markdown_core_inline_made(markdown_core_inline_state *inline_state, markdown_core_node *node) {
+    inline_state->made = node;
+    inline_state->made_end = inline_state->pos;
+}
+
+/* The node the token before made, when it ends where the run stands and
+ * may be updated there, or NULL. */
+static inline markdown_core_node *markdown_core_inline_made_node(const markdown_core_inline_state *inline_state) {
+    return inline_state->made && inline_state->made_end == inline_state->pos ? inline_state->made : NULL;
+}
 
 /* Each rule takes one bit of `asked`. */
 typedef char markdown_core_asked_fits[MARKDOWN_CORE_DELIM_RULE_COUNT <= 32 ? 1 : -1];
@@ -154,7 +185,7 @@ static inline void *markdown_core_run_state(const markdown_core_inline_state *in
 }
 
 #define make_str(inline_state, sc, ec, s)                                                                              \
-    markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
+    markdown_core_inline_make_literal(inline_state, (inline_state)->dialect->plain, sc, ec, s)
 
 /* Read the cursor's run into the frame (inline_internal.h, `mark_run_start`
  * and the fields after it). Called wherever the cursor is written: seeded on
@@ -241,7 +272,7 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
     node->place.end =
         (uint32_t)(inline_state->mark_source + (to_offset - inline_state->mark_run_start) * inline_state->mark_step +
                    inline_state->mark_width);
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
+    if (node->kind == inline_state->dialect->plain && node->as.literal->len > 0) {
         markdown_core_inline_map_text(inline_state, node, from, to, inline_state->mark_cursor,
                                       inline_state->mark_cursor);
     }

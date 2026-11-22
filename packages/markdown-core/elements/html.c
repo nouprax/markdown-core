@@ -1,9 +1,16 @@
 #include "html_scanners.h"
+#include "parts.h"
 #include "html.h"
 #include "inline_internal.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 #include "comment.h"
+
+/* The elements whose syntax this element asks, as `self->peers` holds
+ * them. */
+enum { HTML_COMMENT };
+static const markdown_core_element *const HTML_PEERS[] = {[HTML_COMMENT] = &MARKDOWN_CORE_ELEMENT_COMMENT, NULL};
+
 bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inline_state, bufsize_t pos,
                                                 unsigned *flags, bool *is_comment) {
     bufsize_t matchlen = 0;
@@ -13,8 +20,13 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
         int c = inline_state->input.data[pos];
         if (c == '!' && (*flags & FLAG_SKIP_HTML_COMMENT) == 0) {
             c = inline_state->input.data[pos + 1];
-            if (markdown_core_comment_scan_html(inline_state, pos, flags, &matchlen)) {
+            if (markdown_core_comment_scan_html(inline_state, pos, &matchlen)) {
+                /* No closer through the end of the input: later scans
+                 * would not find one either. */
                 comment = matchlen > 0;
+                if (!comment) {
+                    *flags |= FLAG_SKIP_HTML_COMMENT;
+                }
             } else if (c == '[') {
                 if ((*flags & FLAG_SKIP_HTML_CDATA) == 0) {
                     matchlen = scan_html_cdata(inline_state->input.data, inline_state->input.len, pos + 2);
@@ -71,7 +83,8 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
     return matchlen;
 }
 
-static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inline_state) {
+static markdown_core_node *handle_pointy_brace(const markdown_core_element_instance *self,
+                                               markdown_core_inline_state *inline_state) {
     bufsize_t matchlen = 0;
     bool comment = false;
     markdown_core_chunk contents;
@@ -80,7 +93,7 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
 
     matchlen = markdown_core_inline_scan_inline_html(inline_state, inline_state->pos, &inline_state->flags, &comment);
     if (matchlen > 0) {
-        if (comment) {
+        if (comment && self->peers[HTML_COMMENT]) {
             return markdown_core_comment_make_html(inline_state, inline_state->pos, matchlen);
         }
         contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, matchlen + 1);
@@ -98,7 +111,7 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
-    return character == '<' ? handle_pointy_brace(inline_state) : NULL;
+    return character == '<' ? handle_pointy_brace(self, inline_state) : NULL;
 }
 static const markdown_core_inline_ops HTML_INLINES = {
     .match = match,
@@ -106,7 +119,14 @@ static const markdown_core_inline_ops HTML_INLINES = {
     .dispatch = "<",
 };
 
+const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_HTML, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
+    .facets = MARKDOWN_CORE_HTML_FACETS,
     .name = "html",
+    .peers = HTML_PEERS,
     .inlines = &HTML_INLINES,
 };

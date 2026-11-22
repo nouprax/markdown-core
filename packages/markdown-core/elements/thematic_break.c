@@ -1,20 +1,19 @@
 #include "thematic_break.h"
 #include "block_internal.h"
-#define peek_at(input, at) ((input)->data[(at)])
 
-static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, bufsize_t *kill_pos) {
+static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset, bufsize_t *kill_pos) {
     bufsize_t i;
     char c;
     char nextc = '\0';
     int count;
     i = offset;
-    c = peek_at(input, i);
+    c = markdown_core_reader_peek(reader, i);
     if (!(c == '*' || c == '_' || c == '-')) {
         *kill_pos = i;
         return 0;
     }
     count = 1;
-    while ((nextc = peek_at(input, ++i))) {
+    while ((nextc = markdown_core_reader_peek(reader, ++i))) {
         if (nextc == c) {
             count++;
         } else if (!markdown_core_is_space_or_tab(nextc)) {
@@ -30,16 +29,16 @@ static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, b
 }
 
 static bool open_thematic(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                          markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
 
     // it's only now that we know the line is not part of a setext heading:
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                                parser->at.first_nonspace + 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, reader->nonspace + 1);
     if (!*container) {
         return false;
     }
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
+    markdown_core_reader_end(reader);
 
     return true;
 }
@@ -49,8 +48,9 @@ static bool scan_thematic(const markdown_core_element_instance *self, markdown_c
     if (context->paragraph && !context->all_matched) {
         return false;
     }
-    if (context->thematic_kill > context->first ||
-        !(start->matched = S_scan_thematic_break(context->input, context->first, &context->thematic_kill))) {
+    if (context->thematic_kill > context->reader->nonspace ||
+        !(start->matched =
+              S_scan_thematic_break(context->reader, context->reader->nonspace, &context->thematic_kill))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;

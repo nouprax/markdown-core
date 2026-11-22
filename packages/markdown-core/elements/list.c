@@ -1,6 +1,6 @@
+#include "parts.h"
 #include "list.h"
 #include "tasklist.h"
-#define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
 
 /* The list element's flags, on a List. */
@@ -16,19 +16,30 @@ enum {
 
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item);
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_chunk *input, bufsize_t pos,
+                                                       markdown_core_reader *reader, bufsize_t pos,
                                                        markdown_core_node *container, int first_column,
                                                        bool interrupts_paragraph, markdown_core_list *data);
+/* What the open reads past the marker (block_start.reads): its padding,
+ * the item's first non-space byte and a task prefix there. */
+static void S_list_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
+                         const block_start *start) {
+    (void)self;
+    markdown_core_block_consume_item_marker(reader, start->matched);
+    markdown_core_reader_find(reader);
+    bufsize_t width;
+    (void)markdown_core_task_prefix_end(reader, &width);
+}
+
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start);
 /* The upper-case roman letters: the terms of ordered_numeral's roman variant. */
 static bool roman_letter(unsigned char c) { return c && strchr("MDCLXVI", c) != NULL; }
-static bool ordered_numeral(markdown_core_list_work *counts, markdown_core_chunk *input, bufsize_t begin, bufsize_t end,
+static bool ordered_numeral(markdown_core_list_work *counts, const unsigned char *input, bufsize_t begin, bufsize_t end,
                             markdown_core_ordered_list_variant variant, int *value) {
     int number = 0;
     // An automatic marker has value 1 in every variant, including the
     // variant inherited from a preceding authored marker.
-    if (end == begin + 1 && input->data[begin] == '#') {
+    if (end == begin + 1 && input[begin] == '#') {
         *value = 1;
         return true;
     }
@@ -37,10 +48,10 @@ static bool ordered_numeral(markdown_core_list_work *counts, markdown_core_chunk
     }
     if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA) {
         unsigned char first = variant.lowercased ? 'a' : 'A';
-        if (end != begin + 1 || input->data[begin] < first || input->data[begin] > first + 25) {
+        if (end != begin + 1 || input[begin] < first || input[begin] > first + 25) {
             return false;
         }
-        *value = input->data[begin] - first + 1;
+        *value = input[begin] - first + 1;
         return true;
     }
     if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL) {
@@ -49,10 +60,10 @@ static bool ordered_numeral(markdown_core_list_work *counts, markdown_core_chunk
         }
         for (bufsize_t at = begin; at < end; at++) {
             counts->markers++;
-            if (!markdown_core_isdigit(input->data[at])) {
+            if (!markdown_core_isdigit(input[at])) {
                 return false;
             }
-            number = number * 10 + input->data[at] - '0';
+            number = number * 10 + input[at] - '0';
         }
     } else {
         static const struct {
@@ -68,8 +79,8 @@ static bool ordered_numeral(markdown_core_list_work *counts, markdown_core_chunk
             unsigned char offset = variant.lowercased ? 'a' - 'A' : 0;
             while (at + width <= end) {
                 counts->markers++;
-                if (input->data[at] != terms[term].text[0] + offset ||
-                    (width == 2 && input->data[at + 1] != terms[term].text[1] + offset)) {
+                if (input[at] != terms[term].text[0] + offset ||
+                    (width == 2 && input[at + 1] != terms[term].text[1] + offset)) {
                     break;
                 }
                 if (number > 999999999 - terms[term].value) {
@@ -97,11 +108,11 @@ static bool markdown_core_block_list_facts_match(const markdown_core_list *list,
 }
 
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_chunk *input, bufsize_t pos,
+                                                       markdown_core_reader *reader, bufsize_t pos,
                                                        markdown_core_node *container, int first_column,
                                                        bool interrupts_paragraph, markdown_core_list *data) {
     bufsize_t startpos = pos;
-    unsigned char c = BLOCK_PEEK(input, pos);
+    unsigned char c = markdown_core_reader_peek(reader, pos);
     const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
     *data = (markdown_core_list){0};
     counts->markers++;
@@ -113,7 +124,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
         bool closed = c == '(';
         pos += closed;
         bufsize_t begin = pos;
-        c = BLOCK_PEEK(input, pos);
+        c = markdown_core_reader_peek(reader, pos);
         /* The numeral is scanned by the class its first byte names, which is
          * the set ordered_numeral accepts: one automatic marker, decimal
          * digits (ten fail there as surely as here), or letters -- ONE, or
@@ -125,7 +136,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
         if (c == '#') {
             pos++;
         } else if (markdown_core_isdigit(c)) {
-            while (markdown_core_isdigit(BLOCK_PEEK(input, pos)) && pos - begin < 10) {
+            while (markdown_core_isdigit(markdown_core_reader_peek(reader, pos)) && pos - begin < 10) {
                 counts->markers++;
                 pos++;
             }
@@ -135,13 +146,13 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
                 counts->markers++;
                 pos++;
             } while (roman_letter((unsigned char)(c - offset)) &&
-                     roman_letter((unsigned char)(BLOCK_PEEK(input, pos) - offset)));
+                     roman_letter((unsigned char)(markdown_core_reader_peek(reader, pos) - offset)));
         }
         if (pos == begin) {
             return 0;
         }
         bufsize_t end = pos;
-        unsigned char delim = BLOCK_PEEK(input, pos++);
+        unsigned char delim = markdown_core_reader_peek(reader, pos++);
         if (delim != ')' && (closed || delim != '.')) {
             return 0;
         }
@@ -156,9 +167,11 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
                              : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
                                                                         : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
         if (committed && committed->flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED &&
-            ordered_numeral(counts, input, begin, end, committed->variant, &data->start)) {
+            ordered_numeral(counts, markdown_core_reader_bytes(reader, 0), begin, end, committed->variant,
+                            &data->start)) {
             data->variant = committed->variant;
-        } else if (!ordered_numeral(counts, input, begin, end, data->variant, &data->start)) {
+        } else if (!ordered_numeral(counts, markdown_core_reader_bytes(reader, 0), begin, end, data->variant,
+                                    &data->start)) {
             return 0;
         }
         if (c == '#' && delim == '.' &&
@@ -180,28 +193,28 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
             int column = first_column + (pos - startpos);
             int initial_column = column;
             bufsize_t at = pos;
-            while (markdown_core_is_space_or_tab(BLOCK_PEEK(input, at))) {
+            while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, at))) {
                 counts->markers++;
-                column += input->data[at++] == '\t' ? 4 - column % 4 : 1;
+                column += markdown_core_reader_peek(reader, at++) == '\t' ? 4 - column % 4 : 1;
                 if (column - initial_column >= 2) {
                     break;
                 }
             }
-            if (column - initial_column < 2 && !markdown_core_is_line_end(BLOCK_PEEK(input, at))) {
+            if (column - initial_column < 2 && !markdown_core_is_line_end(markdown_core_reader_peek(reader, at))) {
                 return 0;
             }
         }
     }
-    if (!markdown_core_is_whitespace(BLOCK_PEEK(input, pos))) {
+    if (!markdown_core_is_whitespace(markdown_core_reader_peek(reader, pos))) {
         return 0;
     }
     if (interrupts_paragraph) {
         bufsize_t at = pos;
-        while (markdown_core_is_space_or_tab(BLOCK_PEEK(input, at))) {
+        while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, at))) {
             counts->markers++;
             at++;
         }
-        if (markdown_core_is_line_end(BLOCK_PEEK(input, at))) {
+        if (markdown_core_is_line_end(markdown_core_reader_peek(reader, at))) {
             return 0;
         }
     }
@@ -233,45 +246,41 @@ static markdown_core_node_internal_flags fold_child(const markdown_core_element_
 }
 
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                                    markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
     markdown_core_list *data = &start->list;
     markdown_core_node_type cont_type = (*container)->kind;
 
-    data->padding = markdown_core_block_consume_item_marker(parser, input, matched);
+    data->padding = markdown_core_block_consume_item_marker(reader, matched);
 
     // check container; if it's a list, see if this list item
     // can continue the list; otherwise, create a list container.
 
-    data->marker_offset = parser->at.indent;
+    data->marker_offset = reader->indent;
 
     if (cont_type != MARKDOWN_CORE_NODE_LIST || !markdown_core_block_list_facts_match((*container)->as.list, data)) {
-        const size_t open = cont_type == MARKDOWN_CORE_NODE_LIST ? (*container)->place.start : SIZE_MAX;
-        *container =
-            markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, parser->at.first_nonspace + 1);
+        /* The open list it does not continue gave it what its marker
+         * leaves open, as a variant: its opener reads that list. */
+        if (cont_type == MARKDOWN_CORE_NODE_LIST) {
+            markdown_core_reader_open(reader, *container);
+        }
+        *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, reader->nonspace + 1);
         if (!*container) {
             return false;
         }
 
         memcpy((*container)->as.list, data, sizeof(*data));
-        /* The open list it does not continue gave it what its marker
-         * leaves open, as a variant: its opener is that list's reading
-         * (THE REACH). */
-        if (open != SIZE_MAX) {
-            markdown_core_parser_reach(parser, *container, open, (*container)->place.start + (size_t)matched);
-        }
     }
 
     // add the list item
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, parser->at.first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, reader->nonspace + 1);
     if (!*container) {
         return false;
     }
     memcpy((*container)->as.list, data, sizeof(*data));
-    markdown_core_block_find_first_nonspace(parser, input);
-    markdown_core_parse_task_prefix(parser, *container, input->data, input->len);
+    markdown_core_reader_find(reader);
+    markdown_core_parse_task_prefix(parser, *container, reader);
     if (parser->error) {
         return false;
     }
@@ -280,27 +289,26 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
 
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start) {
-    markdown_core_chunk *input = context->input;
-    int first = context->first;
-    if (!((start->matched =
-               markdown_core_block_parse_list_marker(self->state, parser, input, first, context->container,
-                                                     context->column, context->paragraph, &start->list)))) {
+    if (!((start->matched = markdown_core_block_parse_list_marker(
+               self->state, parser, context->reader, context->reader->nonspace, context->container,
+               context->reader->nonspace_column, context->paragraph, &start->list)))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_LIST;
     start->open = markdown_core_list_open;
+    start->reads = S_list_reads;
     return true;
 }
 
 bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_node *container,
-                                 markdown_core_chunk *input, const markdown_core_node *joining, bool *taken) {
+                                 markdown_core_reader *reader, const markdown_core_node *joining, bool *taken) {
     if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
-        return markdown_core_block_continue_indented(
-            parser, input, container->as.list->marker_offset + container->as.list->padding,
-            markdown_core_parser_last_child(container) != NULL || joining == container);
+        return markdown_core_reader_indented(reader, container->as.list->marker_offset + container->as.list->padding,
+                                             markdown_core_parser_last_child(container) != NULL ||
+                                                 joining == container);
     }
-    if (parser->at.blank) {
-        if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->at.indent == 0) {
+    if (reader->blank) {
+        if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && reader->indent == 0) {
             *taken = true;
             return true;
         }
@@ -312,10 +320,10 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_nod
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_node *node, markdown_core_reader *reader,
+                               const markdown_core_node *joining, bool *taken) {
     (void)self;
-    return markdown_core_list_continue(parser, node, input, joining, taken);
+    return markdown_core_list_continue(parser, node, reader, joining, taken);
 }
 static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
 /* A list reopened at an item's line (blocks.c, THE NESTED REOPEN) is laid
@@ -338,15 +346,13 @@ static void reopen_block(const markdown_core_element_instance *self, markdown_co
     node->as.list->tight = false;
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node) {
+                       markdown_core_node *node, markdown_core_reader *reader) {
     (void)self;
     return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(node) &&
-             markdown_core_parser_starts_on_line(parser, node, parser->at.line_number));
+             markdown_core_reader_starts(reader, parser, node, reader->number));
 }
 
 static const markdown_core_edit_ops LIST_EDIT = {
-    /* A block identifier line after it names it (block_identifier.c). */
-    .trailed_kinds = LIST_KINDS,
     .reopens = true,
     .reopen_block = reopen_block,
     .abuts = LIST_KINDS,
@@ -374,11 +380,16 @@ static const markdown_core_line_ops LIST_LINES = {
     .speculative = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
     .prefix = continue_container,
     .blank_spreads = true,
-    .reach = markdown_core_block_indent_reach,
     .blank_runs = true,
 };
 
+const markdown_core_facet MARKDOWN_CORE_LIST_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_LIST_ITEM, .parts = markdown_core_list_item_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
+    .facets = MARKDOWN_CORE_LIST_FACETS,
     .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
     .name = "list",
@@ -387,24 +398,64 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .lines = &LIST_LINES,
 };
 
-int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,
-                                            int marker_width) {
-    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + marker_width - parser->at.offset,
-                                       false);
-    int offset = parser->at.offset, column = parser->at.column;
-    bool partial = parser->at.partially_consumed_tab;
-    while (parser->at.column - column < 5 && markdown_core_is_space_or_tab(input->data[parser->at.offset])) {
-        markdown_core_block_advance_offset(parser, input, 1, true);
+int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width) {
+    markdown_core_reader_advance(reader, reader->nonspace + marker_width - reader->offset, false);
+    const markdown_core_reader_mark mark = markdown_core_reader_tell(reader);
+    const bufsize_t column = reader->column;
+    while (reader->column - column < 5 &&
+           markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
+        markdown_core_reader_advance(reader, 1, true);
     }
-    int padding = parser->at.column - column;
-    if (padding < 1 || padding >= 5 || markdown_core_is_line_end(input->data[parser->at.offset])) {
-        parser->at.offset = offset;
-        parser->at.column = column;
-        parser->at.partially_consumed_tab = partial;
+    int padding = reader->column - column;
+    if (padding < 1 || padding >= 5 || markdown_core_is_line_end(markdown_core_reader_peek(reader, reader->offset))) {
+        markdown_core_reader_back(reader, mark);
         if (padding > 0) {
-            markdown_core_block_advance_offset(parser, input, 1, true);
+            markdown_core_reader_advance(reader, 1, true);
         }
         padding = 1;
     }
     return marker_width + padding;
 }
+
+/* A list's record (markdown_core_record_ops): a bullet list of decimal
+ * numbers until its first item says otherwise. */
+static void init_list(markdown_core_node *node) {
+    node->as.list->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    node->as.list->variant.kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST = {
+    .size = sizeof(markdown_core_list),
+    .init = init_list,
+};
+
+/* An item's record, a list's, which owns its task marker. */
+static void free_item(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_optional_chunk_free(&node->as.list->task_marker);
+}
+
+static bool view_item(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                      bool failed) {
+    (void)pool;
+    (void)node;
+    (void)failed;
+    markdown_core_chunk_view(&copy->as.list->task_marker.value);
+    return true;
+}
+
+static bool own_item(markdown_core_node *copy, const markdown_core_node *node) {
+    return markdown_core_chunk_own(&copy->as.list->task_marker.value, &node->as.list->task_marker.value);
+}
+
+static void adopt_item(markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_chunk_adopt(&view->as.list->task_marker.value, &node->as.list->task_marker.value);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST_ITEM = {
+    .size = sizeof(markdown_core_list),
+    .free = free_item,
+    .view = view_item,
+    .own = own_item,
+    .adopt = adopt_item,
+};

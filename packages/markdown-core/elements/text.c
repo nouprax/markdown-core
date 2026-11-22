@@ -1,4 +1,5 @@
 #include "alloc.h"
+#include "parts.h"
 #include "embedded.h"
 #include "text.h"
 #include "inline_internal.h"
@@ -237,15 +238,60 @@ static const markdown_core_finish_ops TEXT_FINISH = {
 static const markdown_core_inline_ops TEXT_INLINES = {
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .text = markdown_core_text_parse,
+    .plain = MARKDOWN_CORE_NODE_TEXT,
     .match = match,
     .terminates = "\\&",
     .dispatch = "\\&",
 };
 
+const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
+    .facets = MARKDOWN_CORE_TEXT_FACETS,
     .peers = TEXT_PEERS,
     .state_size = sizeof(markdown_core_text_work),
     .name = "text",
     .finish = &TEXT_FINISH,
     .inlines = &TEXT_INLINES,
+};
+
+/* THE LITERAL RECORD every literal kind holds -- a Text's, an inline code
+ * span's, raw HTML's, a comment's, a topic's, a block comment's: one chunk
+ * (markdown_core_record_ops). An inline literal views the content it was read
+ * from until it settles; a block comment's literal may be pending
+ * (markdown_core_literal_set). */
+static void free_literal(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_chunk_free(node->as.literal);
+}
+
+static bool view_literal(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                         bool failed) {
+    (void)pool;
+    (void)node;
+    (void)failed;
+    markdown_core_literal_view(copy->as.literal);
+    return true;
+}
+
+static bool own_literal(markdown_core_node *copy, const markdown_core_node *node) {
+    return markdown_core_chunk_own(copy->as.literal, node->as.literal);
+}
+
+static void adopt_literal(markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_chunk_adopt(view->as.literal, node->as.literal);
+}
+
+static bool viewed_literal(markdown_core_node *node) { return markdown_core_chunk_own_viewed(node->as.literal); }
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_LITERAL = {
+    .size = sizeof(markdown_core_chunk),
+    .free = free_literal,
+    .view = view_literal,
+    .own = own_literal,
+    .adopt = adopt_literal,
+    .viewed = viewed_literal,
 };

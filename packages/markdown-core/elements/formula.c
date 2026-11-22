@@ -77,11 +77,12 @@ void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_
 
 /* Every node of this element is a formula. A payload that could not be
  * allocated is the constructor's allocation failure. */
-static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_node *node) {
+static void formula_opaque_alloc(markdown_core_node *node) {
     node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 }
 
-static void formula_opaque_free(const markdown_core_element *element, markdown_core_node *node) {
+static void formula_opaque_free(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
     node_formula *formula = (node_formula *)node->opaque;
     if (!formula) {
         return;
@@ -91,9 +92,10 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     markdown_core_free(formula);
 }
 
-static bool formula_opaque_view(const markdown_core_element *element, markdown_core_node *copy,
-                                const markdown_core_node *node) {
-    node_formula *made = markdown_core_realloc(NULL, sizeof(*made));
+static bool formula_opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
+                                bool failed) {
+    (void)pool;
+    node_formula *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
     if (!made) {
         copy->opaque = NULL;
         return false;
@@ -108,13 +110,9 @@ static bool formula_opaque_view(const markdown_core_element *element, markdown_c
     return true;
 }
 
-static void formula_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
-                                 markdown_core_node *node) {
+static void formula_opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
     node_formula *made = view->opaque, *formula = node->opaque;
-    if (made->literal.data == formula->literal.data && !made->literal.alloc) {
-        made->literal.alloc = formula->literal.alloc;
-        formula->literal.alloc = 0;
-    }
+    markdown_core_chunk_adopt(&made->literal, &formula->literal);
 }
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
@@ -200,27 +198,20 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
-static int probe_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_chunk *input, int first, int indent, markdown_core_block_reader *reader) {
-    (void)self;
-    (void)parser;
-    (void)reader;
-    return indent < 4 && scan_formula_block_open(input->data, input->len, first) != FORMULA_BLOCK_DELIM_NONE;
-}
-
 static markdown_core_node *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
                                                      markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                     unsigned char *input, int len) {
+                                                     markdown_core_reader *reader) {
     int block_delim;
     markdown_core_node *node;
     node_formula *formula;
-    int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
+    int first_nonspace = reader->nonspace;
 
     if (indented) {
         return NULL;
     }
 
-    block_delim = scan_formula_block_open(input, (bufsize_t)len, (bufsize_t)first_nonspace);
+    block_delim = scan_formula_block_open(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                          (bufsize_t)first_nonspace);
     if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
         return NULL;
     }
@@ -245,23 +236,21 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     /* The rest of the line, spaces and its ending, is the first line of
      * the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP): the literal, trimmed, starts past it. */
-    markdown_core_parser_advance_offset(parser, (char *)input,
-                                        first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3) -
-                                            markdown_core_parser_get_offset(parser),
-                                        false);
+    markdown_core_reader_advance(
+        reader, first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3) - reader->offset, false);
     return node;
 }
 
 static int formula_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 unsigned char *input, int len, markdown_core_node *container) {
+                                 markdown_core_reader *reader, markdown_core_node *container) {
     node_formula *formula = get_formula(container);
-    int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
+    int first_nonspace = reader->nonspace;
 
     /* The closer is the block's end condition: its line closes it and is
      * no line of its content. */
-    if (scan_formula_block_close(input, (bufsize_t)len, (bufsize_t)first_nonspace, formula->block_delim)) {
-        markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
-                                            false);
+    if (scan_formula_block_close(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                 (bufsize_t)first_nonspace, formula->block_delim)) {
+        markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
         return MARKDOWN_CORE_BLOCK_CLOSED;
     }
 
@@ -624,11 +613,7 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    int line;
-    bufsize_t first, last;
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &line, &last);
-    formula->place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
+    markdown_core_inline_state_place(inline_state, formula, (int)start, (int)end - 1);
     return formula;
 }
 
@@ -725,21 +710,27 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_promote(const mark
     node->opaque = payload;
 }
 
-void markdown_core_formula_promote_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
-                                         markdown_core_node *node, markdown_core_node *parent) {
-    /* Rewriting a valid block is optional: a parent that cannot hold a
-     * FormulaBlock keeps the code block. */
-    if (info_is_formula(&node->as.code->info) && parent &&
+/* A FENCE WHOSE INFO STRING NAMES A FORMULA becomes a FormulaBlock as
+ * completion completes it (element.h, markdown_core_follow), inside the
+ * block it settled into: before its explicit anchor is reserved, so the
+ * anchor of the fence, which the FormulaBlock does not hold, is never
+ * taken. Rewriting a valid block is optional: a parent that cannot hold a
+ * FormulaBlock keeps the code block. */
+static bufsize_t S_follow_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
+                                markdown_core_lead *lead) {
+    markdown_core_node *node = lead->node, *parent = lead->parent;
+    if (node->as.code->fenced && info_is_formula(&node->as.code->info) && parent &&
         markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         S_promote(formula, parser, node, parent);
     }
+    return 0;
 }
 
 /* A FormulaBlock's literal is the trimmed view of the lines it read. A
  * paragraph whose only content is a standalone formula stays a paragraph that
  * holds that Formula. */
 static bool close_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                markdown_core_node *node, markdown_core_node *parent) {
+                                markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)self;
     (void)parser;
     (void)parent;
@@ -781,19 +772,14 @@ static bool formula_revert(const markdown_core_element_instance *self, markdown_
     }
     *node->as.code = fence;
     node->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
-    formula_opaque_free(self->element, node);
+    formula_opaque_free(NULL, node);
     node->opaque = NULL;
     markdown_core_node_set_element(node, NULL);
     return true;
 }
 
-static const markdown_core_edit_ops FORMULA_EDIT = {
-    .former = formula_former,
-    .revert = formula_revert,
-};
-
-static const markdown_core_opaque_ops FORMULA_OPAQUE = {
-    .alloc = formula_opaque_alloc,
+static const markdown_core_record_ops FORMULA_PAYLOAD = {
+    .init = formula_opaque_alloc,
     .free = formula_opaque_free,
     .view = formula_opaque_view,
     .adopt = formula_opaque_adopt,
@@ -815,12 +801,10 @@ static const markdown_core_inline_ops FORMULA_INLINES = {
 };
 
 static const markdown_core_open_ops FORMULA_OPENS = {
-    .interrupts = true,
     .indent = 3,
     .open = try_opening_formula_block,
     /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
     .open_needs = {.bytes = "$\\"},
-    .probe = probe_formula_block,
 };
 
 static const markdown_core_line_ops FORMULA_LINES = {
@@ -828,10 +812,48 @@ static const markdown_core_line_ops FORMULA_LINES = {
     .close = close_formula_block,
 };
 
+static const markdown_core_node_type FORMULA_LEADERS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
+
+static const markdown_core_follow FORMULA_FOLLOWS[] = {
+    {.at = MARKDOWN_CORE_FOLLOW_COMPLETE,
+     .kinds = FORMULA_LEADERS,
+     .follow = S_follow_fence,
+     .makes = MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+     .former = formula_former,
+     .revert = formula_revert},
+    {0},
+};
+
+/* A formula's literal and placement (element.h, markdown_core_facet). */
+static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t *start) {
+    node_formula *formula = node->opaque;
+    *start = formula->start;
+    return &formula->literal;
+}
+
+static markdown_core_placement S_placement(const markdown_core_node *node) {
+    return ((const node_formula *)node->opaque)->mode == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED
+               ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
+               : MARKDOWN_CORE_PLACEMENT_STANDALONE;
+}
+
+const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_FORMULA,
+     .parts = markdown_core_formula_parts,
+     .literal = S_literal,
+     .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+     .parts = markdown_core_formula_parts,
+     .literal = S_literal,
+     .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
+    .facets = MARKDOWN_CORE_FORMULA_FACETS,
     .name = "formula",
-    .edit = &FORMULA_EDIT,
-    .opaque = &FORMULA_OPAQUE,
+    .follows = FORMULA_FOLLOWS,
+    .payload = &FORMULA_PAYLOAD,
     .contain = &FORMULA_CONTAIN,
     .content = &FORMULA_CONTENT,
     .inlines = &FORMULA_INLINES,

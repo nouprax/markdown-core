@@ -5,7 +5,6 @@
 #include "node.h"
 #include "parts.h"
 #include "buffer.h"
-#include "yaml.h"
 #include <string.h>
 #include <limits.h>
 
@@ -43,15 +42,6 @@ typedef struct {
      * `end`: each search resumes past the last one's hit, so the lines'
      * ends cost one pass over the payload for each byte. */
     size_t feed, ret;
-    /* The parse's lines, as the engine measured them (parser.h), and the
-     * one `line` is, from the opening fence's; the places' reader, which
-     * has the text alone, has none and finds the lines' ends itself. */
-    const markdown_core_parser_input *lines;
-    size_t index;
-    /* Line `index`, and how many lines from it on lie in place after it
-     * (markdown_core_tree_run); none until a probe finds it. */
-    const markdown_core_input_line *at;
-    size_t run;
 } properties;
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -401,25 +391,13 @@ static void classify_line(properties *p, size_t line) {
     if (p->classified && p->line == line) {
         return;
     }
-    size_t stop;
-    if (p->lines) {
-        if (!p->run) {
-            p->at = markdown_core_tree_run(&p->lines->lines, p->index, sizeof(*p->at), &p->run);
-        }
-        while (p->at->start < line) {
-            p->index++;
-            p->at = --p->run ? p->at + 1 : markdown_core_tree_run(&p->lines->lines, p->index, sizeof(*p->at), &p->run);
-        }
-        stop = p->at->end;
-    } else {
-        if (!p->classified || p->feed < line) {
-            p->feed = next_byte(p->text, line, p->end, '\n');
-        }
-        if (!p->classified || p->ret < line) {
-            p->ret = next_byte(p->text, line, p->end, '\r');
-        }
-        stop = p->feed < p->ret ? p->feed : p->ret;
+    if (!p->classified || p->feed < line) {
+        p->feed = next_byte(p->text, line, p->end, '\n');
     }
+    if (!p->classified || p->ret < line) {
+        p->ret = next_byte(p->text, line, p->end, '\r');
+    }
+    const size_t stop = p->feed < p->ret ? p->feed : p->ret;
     p->classified = true;
     p->line = line;
     p->stop = stop;
@@ -563,15 +541,21 @@ static void payload(properties *p, size_t start) {
 
 static void properties_close(properties *p) { markdown_core_yaml_close(&p->yaml); }
 
-/* Whether the input holds the fence's three dashes at `at`. Each byte asks
- * whether the input goes on there (markdown_core_parser_input_ends). */
-static bool properties_dashes_at(markdown_core_parser *parser, const unsigned char *source, size_t at) {
+/* Whether the input holds the fence's three dashes at `at`, each read
+ * through the reader. */
+static bool properties_dashes_at(markdown_core_reader *reader, markdown_core_parser *parser, size_t at) {
     for (size_t i = at; i < at + 3; i++) {
-        if (markdown_core_parser_input_ends(parser, source + i) || source[i] != '-') {
+        if (markdown_core_reader_byte(reader, parser, i) != '-') {
             return false;
         }
     }
     return true;
+}
+
+/* Whether the byte at `at` ends a line, or the text ends there. */
+static bool properties_ends_at(markdown_core_reader *reader, markdown_core_parser *parser, size_t at) {
+    const int c = markdown_core_reader_byte(reader, parser, at);
+    return c < 0 || markdown_core_is_line_end((unsigned char)c);
 }
 
 int markdown_core_properties_fence(const unsigned char *data) {
@@ -589,35 +573,37 @@ bool markdown_core_properties_stops(const markdown_core_element_instance *self, 
 }
 
 bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                     const markdown_core_element_instance *owner, size_t *fence) {
-    size_t length;
-    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+                                     markdown_core_reader *reader, const markdown_core_element_instance *owner,
+                                     size_t *fence) {
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
-    if (!properties_dashes_at(parser, source, 0) || markdown_core_parser_input_ends(parser, source + 3) ||
-        !markdown_core_is_line_end(source[3])) {
+    if (!properties_dashes_at(reader, parser, 0)) {
         return false;
     }
-    size_t close = next_line(source, 3, length);
+    const int end = markdown_core_reader_byte(reader, parser, 3);
+    if (end < 0 || !markdown_core_is_line_end((unsigned char)end)) {
+        return false;
+    }
+    size_t close = 4 + (end == '\r' && markdown_core_reader_byte(reader, parser, 4) == '\n');
     /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
-     * so the search for it is one `memchr` pass over the dashes, checked at
-     * each hit for the line start before it and the line end after it, and
-     * it allocates nothing: a document that opens with a thematic break and
-     * never closes an envelope -- ordinary Markdown -- costs one pass and
-     * one byte of state. The shared input index is extended through the
-     * closing fence afterwards; the block driver later reuses those entries. */
+     * so the search for it is one pass over the dashes through the reader,
+     * checked at each hit for the line start before it and the line end
+     * after it, and it allocates nothing: a document that opens with a
+     * thematic break and never closes an envelope -- ordinary Markdown --
+     * costs one pass and one byte of state. The shared input index is
+     * extended through the closing fence afterwards; the block driver later
+     * reuses those entries. */
     bool closed = false;
     size_t fence_work = 0;
-    while (!markdown_core_parser_input_ends(parser, source + close)) {
-        const unsigned char *hit = memchr(source + close, '-', length - close);
-        if (!hit) {
-            fence_work += length - close;
-            close = length;
-            continue;
-        }
-        size_t at = (size_t)(hit - source);
+    for (;;) {
+        const size_t at = markdown_core_reader_seek(reader, parser, close, '-');
         fence_work += at - close + 1;
-        if (markdown_core_is_line_end(source[at - 1]) && properties_dashes_at(parser, source, at) &&
-            (markdown_core_parser_input_ends(parser, source + at + 3) || markdown_core_is_line_end(source[at + 3]))) {
+        if (markdown_core_reader_byte(reader, parser, at) < 0) {
+            close = at;
+            fence_work--;
+            break;
+        }
+        if (markdown_core_is_line_end((unsigned char)markdown_core_reader_byte(reader, parser, at - 1)) &&
+            properties_dashes_at(reader, parser, at) && properties_ends_at(reader, parser, at + 3)) {
             close = at;
             closed = true;
             break;
@@ -626,44 +612,32 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
     }
     work->line_work += fence_work;
     /* The envelope's reading decides the document's start from every line
-     * up to its fence and the byte after it (blocks.c, THE REACH), or, when it found none, from
-     * where its first fence would be (AN OPENER READ TO THE END). */
+     * up to its fence and the byte after it (blocks.c, THE REACH), or, when
+     * it found none, from where its first fence would be (AN OPENER READ TO
+     * THE END): the reader notes it as it closes. */
     if (closed) {
-        markdown_core_parser_reach_shut(parser, owner, 0);
-        markdown_core_parser_reach(parser, parser->root, 0, close + 4);
-    } else {
-        markdown_core_parser_reach_open(parser, owner, 0);
+        markdown_core_reader_open(reader, parser->root);
     }
+    markdown_core_reader_opens(reader, owner, closed);
     *fence = close;
     return closed;
 }
 
-size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t close) {
-    size_t length;
-    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-    int number = 1;
-    markdown_core_input_line *line;
-    do {
-        line = markdown_core_parser_source_line(parser, number++);
-    } while (line && line->start < close);
-    if (!line) {
-        return 0;
-    }
-    const size_t count = (size_t)number - 3;
+size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
+                                      markdown_core_reader *reader, size_t close) {
+    /* The envelope is its lines through the closing fence's line ending. */
+    const int end = markdown_core_reader_byte(reader, parser, close + 3);
+    const size_t consumed =
+        close + 3 + (end >= 0) + (end == '\r' && markdown_core_reader_byte(reader, parser, close + 4) == '\n');
+    const unsigned char *source = markdown_core_reader_text(reader, parser, consumed);
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
-    size_t consumed = next_line(source, close + 3, length);
-    properties p = {.text = source,
-                    .end = close,
-                    .work = work,
-                    .metadata = node->as.metadata,
-                    .lines = &parser->input,
-                    .index = (size_t)(1 - parser->input.first_line)};
+    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
-    payload(&p, next_line(source, 3, length));
+    payload(&p, next_line(source, 3, consumed));
     properties_close(&p);
     if (p.failed) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -674,8 +648,6 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     parser->root->as.document->metadata = node;
     markdown_core_parser_settle_field(parser, node);
-    parser->at.line_number = (int)(count + 2);
-    parser->at.last_line_end = (bufsize_t)(close + 3);
     return consumed;
 }
 

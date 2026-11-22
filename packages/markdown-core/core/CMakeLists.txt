@@ -15,7 +15,9 @@ set(HEADERS
     node.h
     node_type.h
     chunk.h
+    reader.h
     attributes.h
+    follow.h
     slab.h
     metadata.h
     roster.h
@@ -30,6 +32,7 @@ set(HEADERS
     markdown_core_ctype.h
     element.h
     delimiter.h
+    bracket.h
     ahead.h
     array.h
     seam.h
@@ -44,8 +47,10 @@ set(LIBRARY_SOURCES
     dialect.c
     blocks.c
     inlines.c
+    bracket.c
     utf8.c
     buffer.c
+    names.c
     roster.c
     map.c
     tree.c

@@ -1,71 +1,34 @@
 #include "alloc.h"
+#include "parts.h"
 #include "document.h"
 #include "block_internal.h"
-#include "properties.h"
-#include "heading.h"
 #include "ast_internal.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { DOCUMENT_HEADING };
-static const markdown_core_element *const DOCUMENT_PEERS[] = {[DOCUMENT_HEADING] = &MARKDOWN_CORE_ELEMENT_HEADING,
-                                                              NULL};
-
-/* THE DOCUMENT LIFECYCLE. The document element drives it and owns only the
- * properties grammar's work, its parse record; the definitions the parse
- * declares are the parse's roster (roster.h), and the headings it
- * finalizes are the heading element's state, its peer, which it asks through
- * their lifecycle calls. An element the dialect does not hold has nothing to
- * finalize. */
+/* THE DOCUMENT LIFECYCLE. The document element owns the properties
+ * grammar's work, its parse record, and publishes the tree; the
+ * definitions the parse declares are the parse's roster (roster.h), and
+ * the headings name themselves in the parse's stages (element.h,
+ * markdown_core_stage_ops). */
 static void init_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     (void)parser;
 }
-static void dispose_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    (void)parser;
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_dispose(headings);
-    }
-}
-static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_prepare(headings, parser);
-    }
-}
-/* The headings take their anchors at each snapshot and at the flush, and
- * a snapshot's commit keeps them for the next: the flush of a parse that
- * takes edits keeps them for its edits, which reopen them, and the parse's
- * release lets them go (dispose_document); any other flush, the parse's
- * last, lets them go. */
-static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (!parser->error && headings) {
-        markdown_core_headings_finish(headings, parser);
-    }
-    if (headings && !parser->snapshot && !markdown_core_parser_takes_edits(parser)) {
-        markdown_core_headings_dispose(headings);
-    }
-}
 /* AN EDIT REOPENS THE DOCUMENT (blocks.c, THE REOPEN): the published tree
- * keeps the children before `child`, and the headings those that start
- * before `start`; what goes is matched against what the edit reads (ast.c,
+ * keeps the children before `child`; what goes is matched against what the edit reads (ast.c,
  * A DOCUMENT REOPENED FOR AN EDIT). */
 static bool reopen_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *root, uint32_t child, uint32_t start) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    return markdown_core_publish_reopen(parser, root, child, start) &&
-           (!headings || markdown_core_headings_reopen(headings, parser, start));
+    (void)self;
+    return markdown_core_publish_reopen(parser, root, child, start);
 }
 /* THE EDIT TAKES THE OLD CHILDREN BACK (blocks.c, THE SPLICE): the
- * headings take theirs back first, and the publish's records let the
- * children go last, once nothing else can fail. */
+ * publish's records let the children go last, once nothing else can
+ * fail. */
 static bool splice_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *root, uint32_t child, uint32_t point) {
+    (void)self;
     (void)root;
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    return (!headings || markdown_core_headings_splice(headings, parser, point)) &&
-           markdown_core_publish_splice(parser, child, point);
+    return markdown_core_publish_splice(parser, child, point);
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
@@ -80,27 +43,31 @@ static void publish_candidate(const markdown_core_element_instance *self, markdo
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-/* THE PREFIX, the call before line 1: an envelope that closes is read as
- * the document's properties. The call asks whether its reading read the end
- * (parser.h, markdown_core_parser_end_read): one that read it where more
- * text may follow decides nothing, and asks to be a candidate (blocks.c, THE
- * CANDIDATES); a call that meets its candidate declines. */
-static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    if (markdown_core_parser_candidate_meets(parser, self, parser->root)) {
-        return 0;
-    }
-    markdown_core_parser_clear_end_read(parser);
+/* The prefix's candidate: whether its envelope opened, as its feed read,
+ * and the fence its reading found closing it. */
+typedef struct {
+    bool opened;
     size_t fence;
-    const bool closed = markdown_core_properties_closed(self->state, parser, self, &fence);
-    if (markdown_core_parser_end_read(parser)) {
-        if (!parser->error) {
-            const bool opened = false;
-            markdown_core_parser_request_candidate(parser, self, parser->root, MARKDOWN_CORE_NODE_METADATA, &opened,
-                                                   false);
-        }
+} document_call;
+
+/* THE CALL'S READING (element.h, `reads`): an envelope that closes. */
+static bool document_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *container, markdown_core_reader *reader, void *record) {
+    (void)container;
+    document_call *call = record;
+    return markdown_core_properties_closed(self->state, parser, reader, self, &call->fence);
+}
+
+/* THE PREFIX, the call before line 1 (markdown_core_parser_call): an
+ * envelope that closes is read as the document's properties. */
+static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_reader *reader) {
+    document_call call = {false, 0};
+    if (markdown_core_parser_call(parser, self, document_reads, parser->root, reader, MARKDOWN_CORE_NODE_METADATA,
+                                  &call, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
         return 0;
     }
-    return closed ? markdown_core_properties_parse(self->state, parser, fence) : 0;
+    return markdown_core_properties_parse(self->state, parser, reader, call.fence);
 }
 
 /* THE FEED of the prefix's candidate: the first line opens the envelope
@@ -114,8 +81,8 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
                                                    const markdown_core_candidate_line *line, bool *ends) {
     (void)self;
     (void)parser;
-    bool *opened = state;
-    const int fence = line->content ? markdown_core_properties_fence(line->content->data) : -1;
+    bool *opened = &((document_call *)state)->opened;
+    const int fence = line->reader ? markdown_core_properties_fence(markdown_core_reader_rest(line->reader, 0)) : -1;
     if (line->unfinished && fence > 0) {
         return MARKDOWN_CORE_CANDIDATE_WAITS;
     }
@@ -127,26 +94,14 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     return MARKDOWN_CORE_CANDIDATE_CONTINUES;
 }
 
-/* The prefix's call decided as it would read now: the envelope closes at
- * the fence that ended the construct. */
-static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const void *state) {
-    (void)state;
-    size_t fence;
-    return markdown_core_properties_closed(self->state, parser, self, &fence) ? MARKDOWN_CORE_CANDIDATE_ACCEPT
-                                                                              : MARKDOWN_CORE_CANDIDATE_REJECT;
-}
-
 static const markdown_core_edit_ops DOCUMENT_EDIT = {
     .stops = markdown_core_properties_stops,
 };
 
 static const markdown_core_document_ops DOCUMENT_OPS = {
+    .kind = MARKDOWN_CORE_NODE_DOCUMENT,
     .init = init_document,
-    .dispose = dispose_document,
     .read = read_document_prefix,
-    .prepare = prepare_document,
-    .finish = finish_document,
     .reopen = reopen_document,
     .splice = splice_document,
     .publish = publish_document,
@@ -155,15 +110,68 @@ static const markdown_core_document_ops DOCUMENT_OPS = {
 
 static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .feed = feed_candidate,
-    .decide = decide_candidate,
-    .size = sizeof(bool),
+    .reads = document_reads,
+    .size = sizeof(document_call),
+};
+
+const markdown_core_facet MARKDOWN_CORE_DOCUMENT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_METADATA, .parts = markdown_core_metadata_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
-    .peers = DOCUMENT_PEERS,
+    .facets = MARKDOWN_CORE_DOCUMENT_FACETS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",
     .edit = &DOCUMENT_EDIT,
     .document = &DOCUMENT_OPS,
     .candidate = &DOCUMENT_CANDIDATE,
+};
+
+/* A document's definition tables, but a snapshot's, which it borrows (ast.c,
+ * A SNAPSHOT'S TABLES). Out of line, so that the free of every other kind
+ * keeps its own registers. */
+MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown_core_document_value *document) {
+    if (document->committed) {
+        return;
+    }
+    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
+    for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
+        markdown_core_free((void *)tables[i]->all.nodes);
+        markdown_core_free(tables[i]->all.places);
+        markdown_core_free((void *)tables[i]->labeled);
+    }
+    markdown_core_free((void *)document->reference_targets.nodes);
+    markdown_core_free(document->reference_targets.places);
+}
+
+/* The document's record (markdown_core_record_ops): its definition tables,
+ * which its publish makes -- no block the block phase writes, so no view,
+ * has them --, and its metadata, a node-valued field the document holds
+ * once its prefix is read. */
+static void free_document(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_node_free_tables(node->as.document);
+}
+
+static int visit_document(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    return !node->as.document->metadata || visitor(&node->as.document->metadata, context);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_DOCUMENT = {
+    .size = sizeof(markdown_core_document_value),
+    .free = free_document,
+    .visit = visit_document,
+};
+
+/* The metadata's record, which the document's prefix reader fills
+ * (properties.c). */
+static void free_metadata(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
+    markdown_core_metadata_fields_free(node->as.metadata);
+}
+
+const markdown_core_record_ops MARKDOWN_CORE_RECORD_METADATA = {
+    .size = sizeof(markdown_core_metadata_fields),
+    .free = free_metadata,
 };

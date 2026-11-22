@@ -1,6 +1,5 @@
 #include "autolink_scanners.h"
 #include "inline_internal.h"
-#include "attributes.h"
 #include "autolink.h"
 #include "link.h"
 #include "element.h"
@@ -89,7 +88,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     if (text) {
         markdown_core_scaffold_append(link, text);
     }
-    markdown_core_inline_attach_inline_attributes(inline_state, link, start_column);
+    /* What follows an autolink may update it (no-flush.md 10.13). */
+    markdown_core_inline_made(inline_state, link);
     /* The pointy braces are the syntax; what they enclose is the text. */
     return link;
 }
@@ -336,13 +336,9 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     if (!len) {
         return;
     }
-    int line;
-    bufsize_t from, to;
-    markdown_core_parser_content_place(parser, source, (bufsize_t)start, &line, &from);
-    markdown_core_parser_content_end_place(parser, source, (bufsize_t)(start + len - 1), &line, &to);
-    node->place = (markdown_core_place){(uint32_t)from, (uint32_t)to};
+    markdown_core_text_place(parser, source, (bufsize_t)start, (bufsize_t)(start + len), &node->place);
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
-        markdown_core_parser_adopt_content_marks(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
+        markdown_core_text_share(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
     }
 }
 
@@ -351,7 +347,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
  * is visited once, including tokens that end at a footnote's closing ]. */
 static size_t autolink_extent(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                               uint8_t *data, size_t size, size_t offset) {
-    unsigned char closer = markdown_core_inline_state_closing_bracket(self->peers[AUTOLINK_LINK], inline_state);
+    unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
     while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
         if (data[offset] == closer) {
             break;
@@ -377,7 +373,7 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
 
     size_t link_end;
 
-    if (max_rewind > (size_t)markdown_core_inline_state_context_start(self->peers[AUTOLINK_LINK], inline_state) &&
+    if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
         strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
         return 0;
     }
@@ -580,8 +576,8 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         return match_angle(inline_state);
     }
 
-    int in_bracket = markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, false) ||
-                     markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, true);
+    int in_bracket = markdown_core_inline_state_in_bracket(inline_state, false) ||
+                     markdown_core_inline_state_in_bracket(inline_state, true);
 
     if (c == ':') {
         /* No link forms inside a bracket, but the colon is still fenced off

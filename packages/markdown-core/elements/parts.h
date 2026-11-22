@@ -89,13 +89,6 @@ markdown_core_status markdown_core_parts_fields(const markdown_core_node *root,
  * none has none, and its whole own source is markers (an emphasis's
  * delimiters). */
 void markdown_core_literal_parts(markdown_core_parts *parts);
-/* The parts of the attribute container whose `{` is at `brace`: one past
- * its `}`, or `brace` when none closes there. */
-bufsize_t markdown_core_attributes_parts(markdown_core_parts *parts, bufsize_t brace);
-/* The parts of the container that ends a block's line at `end`, but for
- * spaces and tabs, read after `from` as the block read it: its `{`, or the
- * end of the line's other bytes when it has none. */
-bufsize_t markdown_core_attributes_tail_parts(markdown_core_parts *parts, bufsize_t from, bufsize_t end);
 void markdown_core_link_parts(markdown_core_parts *parts);
 void markdown_core_reference_parts(markdown_core_parts *parts);
 void markdown_core_cross_link_parts(markdown_core_parts *parts);

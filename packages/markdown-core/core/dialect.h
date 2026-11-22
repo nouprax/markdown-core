@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "node.h"
+#include "element.h"
+#include "follow.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,7 +51,7 @@ typedef enum {
     MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
     MARKDOWN_CORE_BLOCK_HOOK_OPEN,
     MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH,
-    MARKDOWN_CORE_BLOCK_HOOK_PROBE,
+    MARKDOWN_CORE_BLOCK_HOOK_CUT,
     MARKDOWN_CORE_BLOCK_HOOK_COUNT
 } markdown_core_block_hook;
 
@@ -77,6 +79,9 @@ typedef enum {
     MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
     MARKDOWN_CORE_INLINE_HOOK_OPEN,
     MARKDOWN_CORE_INLINE_HOOK_REPORT,
+    MARKDOWN_CORE_INLINE_HOOK_OPENED,
+    MARKDOWN_CORE_INLINE_HOOK_SETTLED,
+    MARKDOWN_CORE_INLINE_HOOK_FREED,
     MARKDOWN_CORE_INLINE_HOOK_COUNT
 } markdown_core_inline_hook;
 
@@ -121,11 +126,6 @@ static inline size_t markdown_core_finish_kind_index(markdown_core_node_type kin
 static inline size_t markdown_core_finish_key(markdown_core_event_type event, markdown_core_node_type kind) {
     return 2 * markdown_core_finish_kind_index(kind) + (event == MARKDOWN_CORE_EVENT_EXIT);
 }
-
-/* The kind index of the one kind the engine's own step, text consolidation,
- * acts at. A constant, so the walk compares the index it computed anyway. */
-#define MARKDOWN_CORE_FINISH_TEXT_INDEX                                                                                \
-    (MARKDOWN_CORE_NODE_KIND_COUNT + ((size_t)MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK))
 
 /* One projected step: the element, and which of the walk's per-root state
  * words is its own. An element that declared several kinds appears under each
@@ -172,9 +172,10 @@ typedef struct markdown_core_finish_step_entry {
  *   (the lines' `blank_spreads`): what a blank line means inside it;
  * - FOLDS: the kind is one of its fold's `kinds`, and its `child` is asked as a
  *   child settles into a block of it;
- * - FIELDS: the kind can own a field root through its own record
- *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
- *   is found through the node's `element`, which the walk tests beside this).
+ * - FIELDS: the kind's record visits field roots (markdown_core_record_ops,
+ *   `visit`), and the kind is not the root, whose record holds the
+ *   document's state -- a subtree an element owns is found through the
+ *   node's `element`, which the walk tests beside this.
  *
  * `complete` is the structure's `complete`, NULL when it declares
  * none, which the walk calls at every ENTER. The out-of-table index answers
@@ -195,7 +196,7 @@ enum {
     MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11,
     MARKDOWN_CORE_KIND_FOLDS = 1u << 12,
     /* A later line may write a block of the kind once it closed
-     * (element.h, `trailed_kinds`). */
+     * (element.h, markdown_core_follow, `closed`). */
     MARKDOWN_CORE_KIND_TRAILED = 1u << 13,
     /* A block after one of the kind may still go on in it (element.h,
      * `awaits`). */
@@ -208,6 +209,14 @@ typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
     void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
     uint16_t flags;
+    /* The element that follows a node of the kind at each time, with its
+     * declaration (element.h, markdown_core_follow), or NULL. */
+    const markdown_core_element_instance *follower[MARKDOWN_CORE_FOLLOW_TIMES];
+    const struct markdown_core_follow *follow[MARKDOWN_CORE_FOLLOW_TIMES];
+    /* The follower that makes a node of the kind of a leader of another, and
+     * its declaration (`makes`, THE FORMER KIND), or NULL. */
+    const markdown_core_element_instance *maker;
+    const struct markdown_core_follow *made;
 } markdown_core_kind_record;
 
 /* The keys a block-start family's gate lists are indexed by: each first
@@ -280,6 +289,14 @@ typedef struct markdown_core_dialect {
     const markdown_core_element_instance *instances;
     size_t element_count;
     const markdown_core_element_instance *document_structure, *text_structure, *text_block_structure;
+    /* The ROLE KINDS: the kind of the root, as `document_structure`
+     * declares it, and of plain text, as `text_structure` declares it --
+     * the kinds the engine acts on by role (text consolidation, the literal
+     * runs, the root it makes) without naming them. `plain_index` is the
+     * plain kind's finish index, the one kind index the engine's own step,
+     * text consolidation, acts at. */
+    markdown_core_node_type root, plain;
+    size_t plain_index;
     const markdown_core_element_instance *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
     markdown_core_delimiter_rule delimiter_chars[256];
     /* Each block-start hook family, in descriptor order. Order inside a
@@ -303,6 +320,10 @@ typedef struct markdown_core_dialect {
     bool container_prefix[256];
     /* Every byte an element's `claims` declares. */
     bool claims[256];
+    /* Every first byte a cut owner reads an item from (element.h,
+     * `cut_needs`), one bit each: a block whose text starts with no such
+     * byte keeps its front. */
+    uint8_t fronts[32];
     /* The inline-content families, in descriptor order. */
     const markdown_core_element_instance *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
@@ -329,15 +350,30 @@ typedef struct markdown_core_dialect {
     /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
      * of records, and of the largest record a candidate keeps (element.h,
-     * markdown_core_candidate_ops, `size`). The instances whose parse records keep part
-     * with a mark (element.h, `kept_size`), in element order, and the bytes
-     * a mark keeps of them all, each part at its instance's `kept_offset`. */
+     * markdown_core_candidate_ops, `size`). */
     const markdown_core_element_instance *const *instance_table;
     unsigned instance_bits;
-    size_t run_state_size, candidate_state_size;
-    const markdown_core_element_instance *const *kept_instances;
-    size_t kept_count, kept_size;
+    size_t run_state_size, candidate_state_size, bracket_size;
+    /* The dialect's rules for closing a bracket (element.h,
+     * markdown_core_close_rule): first the `shared` rules every bracket no
+     * `mine` rule claims meets, by precedence and then descriptor order,
+     * then each element's `mine` rules, in its range (the instance's
+     * `mine_first`, `mine_count`), by precedence. */
+    const struct markdown_core_closer *closers;
+    size_t closer_count, shared;
+    /* The instances whose elements ask the names service for names
+     * (element.h, `names`), in element order, ending at NULL. */
+    const markdown_core_element_instance *const *namers;
+    /* The instances whose elements take part in the parse's stages
+     * (element.h, `stages`), in element order, ending at NULL. */
+    const markdown_core_element_instance *const *staged;
 } markdown_core_dialect;
+
+/* A rule for closing a bracket and the instance whose rule it is. */
+typedef struct markdown_core_closer {
+    const markdown_core_element_instance *owner;
+    const struct markdown_core_close_rule *rule;
+} markdown_core_closer;
 
 /* The record of `kind`, and the instance of the structure element of a node's
  * kind -- NULL for no node, as for a kind with none. */
@@ -387,8 +423,9 @@ typedef struct markdown_core_dialect_sizes {
     unsigned instance_bits;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
-    /* The peers the elements declare, all together. */
-    size_t peers;
+    /* The peers the elements declare, all together, and their rules for
+     * closing a bracket. */
+    size_t peers, closers;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */
@@ -409,6 +446,16 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
 
 /* Release whatever the builder owns. */
 void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builder);
+
+/* Every field root `node` holds (element.h, THE FIELD ROOTS OF A NODE): its
+ * kind's record's, the root's excepted, then its element's. Completion,
+ * which holds the kind's record, asks the two halves itself. */
+static inline int markdown_core_visit_inline_subtrees(const markdown_core_dialect *dialect, markdown_core_node *node,
+                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
+    const markdown_core_record_ops *record = markdown_core_record_for_kind((markdown_core_node_type)node->kind);
+    return (!record->visit || node->kind == dialect->root || record->visit(node, visitor, context)) &&
+           markdown_core_visit_element_subtrees(node, visitor, context);
+}
 
 #ifdef __cplusplus
 }

@@ -268,7 +268,13 @@ static const markdown_core_inline_ops TOPIC_INLINES = {
     .dispatch = "#",
 };
 
+const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_TOPIC, .parts = markdown_core_topic_parts},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
+    .facets = MARKDOWN_CORE_TOPIC_FACETS,
     .name = "topic",
     .run_state_size = sizeof(topic_run),
     .inlines = &TOPIC_INLINES,
