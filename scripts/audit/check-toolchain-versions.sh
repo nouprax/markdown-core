@@ -153,6 +153,18 @@ for declaration in \
     grep -Fq "$value" "$file" || fail "$file does not match the version catalog"
 done
 
+# The Android minSdk floor lives once in the version catalog; the consumer
+# sample, the README support statement and a CI emulator leg must follow it,
+# so the floor is both declared and tested.
+android_min_sdk=$(toml_value android-min-sdk)
+[ -n "$android_min_sdk" ] || fail "gradle/libs.versions.toml has no android-min-sdk"
+grep -Fq "minSdk = $android_min_sdk" packages/kotlin-markdown-core/consumers/android/build.gradle.kts \
+    || fail "the Android consumer sample does not use minSdk $android_min_sdk"
+grep -Fq "Android API $android_min_sdk " README.md \
+    || fail "README does not state the Android API $android_min_sdk floor"
+grep -Eq "^[[:space:]]+- api: $android_min_sdk\$" .github/workflows/ci.yml \
+    || fail "CI has no Android emulator leg at the API $android_min_sdk floor"
+
 for file in \
     Package.swift \
     packages/swift-markdown-core/Package.release.swift \

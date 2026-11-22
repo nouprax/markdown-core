@@ -127,6 +127,10 @@ API 36 Google APIs images with 4 KB and 16 KB page sizes. Correctness and
 conformance use mutually exclusive native selection and run the two devices
 sequentially through separate Gradle invocations. Gradle owns provisioning,
 startup, snapshots, and shutdown; existing developer AVDs are not selected.
+Gradle Managed Devices do not support API 26 or lower, so the minSdk floor
+(API 24, `android-min-sdk` in the version catalog) runs only in CI, through
+`scripts/shared/run-kotlin-android-test-artifact.sh` with its API argument; the
+toolchain audit requires a CI leg at that level.
 
 Reusable managed-device caches remain after tests. Use
 `pnpm clean:kotlin-android-emulator` explicitly to delegate cleanup to

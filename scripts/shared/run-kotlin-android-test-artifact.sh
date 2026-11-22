@@ -5,6 +5,9 @@ set -euo pipefail
 artifact_dir=${1:-}
 suite=${2:-}
 page_size=${3:-}
+# The API level defaults to the newest platform; the minSdk floor leg passes
+# its own level (16 KB page images exist only at the newest level).
+api=${4:-36}
 
 case "$suite" in
     correctness)
@@ -14,7 +17,7 @@ case "$suite" in
         runner_arguments=(-e class com.nouprax.markdown.core.AstTest)
         ;;
     *)
-        echo "usage: $0 <artifact-dir> correctness|conformance 4k|16k" >&2
+        echo "usage: $0 <artifact-dir> correctness|conformance 4k|16k [api]" >&2
         exit 2
         ;;
 esac
@@ -23,10 +26,21 @@ case "$page_size" in
     4k) system_image_source=google_apis ;;
     16k) system_image_source=google_apis_ps16k ;;
     *)
-        echo "usage: $0 <artifact-dir> correctness|conformance 4k|16k" >&2
+        echo "usage: $0 <artifact-dir> correctness|conformance 4k|16k [api]" >&2
         exit 2
         ;;
 esac
+
+case "$api" in
+    '' | *[!0-9]*)
+        echo "usage: $0 <artifact-dir> correctness|conformance 4k|16k [api]" >&2
+        exit 2
+        ;;
+esac
+if [ "$page_size" = 16k ] && [ "$api" != 36 ]; then
+    echo "16 KB page images are only pinned at API 36" >&2
+    exit 2
+fi
 
 artifact_verify "$artifact_dir" android-instrumentation-apk
 
@@ -41,10 +55,10 @@ for tool in "$avdmanager" "$emulator" "$adb"; do
     test -x "$tool"
 done
 
-avd_name="markdown-core-api36-${page_size}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
-system_image="system-images;android-36;${system_image_source};x86_64"
+avd_name="markdown-core-api${api}-${page_size}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+system_image="system-images;android-${api};${system_image_source};x86_64"
 serial="emulator-5554"
-diagnostic_dir=${RUNNER_TEMP:-/tmp}/android-test-${page_size}-${suite}
+diagnostic_dir=${RUNNER_TEMP:-/tmp}/android-test-api${api}-${page_size}-${suite}
 mkdir -p "$diagnostic_dir"
 export ANDROID_AVD_HOME="$diagnostic_dir/avd"
 mkdir -p "$ANDROID_AVD_HOME"

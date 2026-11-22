@@ -541,8 +541,8 @@ for forbidden in \
         exit 1
     fi
 done
-if [ "$(grep -c -E '^[[:space:]]*suite:' <<<"$android_test_job")" -ne 4 ]; then
-    echo "Android correctness/conformance and 4K/16K must be four independent consumers" >&2
+if [ "$(grep -c -E '^[[:space:]]*suite:' <<<"$android_test_job")" -ne 6 ]; then
+    echo "Android correctness/conformance at API 36 4K/16K and at the API 24 floor must be six independent consumers" >&2
     exit 1
 fi
 for consumer in \

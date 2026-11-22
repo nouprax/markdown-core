@@ -79,7 +79,7 @@ val document = Document.parse(source)
 println(document.dump(source))
 ```
 
-Supported targets are Android API 21 or later, JVM 17, macOS arm64, and Linux
+Supported targets are Android API 24 (Android 7.0) or later, JVM 17, macOS arm64, and Linux
 x64. Native runtime dependencies are included. On JDK 26 or later, launch JVM
 applications with `--enable-native-access=ALL-UNNAMED` to avoid the native-access
 warning from the JNI loader.

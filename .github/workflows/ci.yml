@@ -660,26 +660,43 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - page-size: 4k
+                    - api: 36
+                      page-size: 4k
                       page-size-label: 4 KB
                       system-image: google_apis
                       suite: correctness
                       label: 4 KB · x86_64 · Correctness
-                    - page-size: 16k
+                    - api: 36
+                      page-size: 16k
                       page-size-label: 16 KB
                       system-image: google_apis_ps16k
                       suite: correctness
                       label: 16 KB · x86_64 · Correctness
-                    - page-size: 4k
+                    - api: 36
+                      page-size: 4k
                       page-size-label: 4 KB
                       system-image: google_apis
                       suite: conformance
                       label: 4 KB · x86_64 · Conformance
-                    - page-size: 16k
+                    - api: 36
+                      page-size: 16k
                       page-size-label: 16 KB
                       system-image: google_apis_ps16k
                       suite: conformance
                       label: 16 KB · x86_64 · Conformance
+                    # The minSdk floor (gradle/libs.versions.toml android-min-sdk).
+                    - api: 24
+                      page-size: 4k
+                      page-size-label: 4 KB
+                      system-image: google_apis
+                      suite: correctness
+                      label: API 24 · 4 KB · x86_64 · Correctness
+                    - api: 24
+                      page-size: 4k
+                      page-size-label: 4 KB
+                      system-image: google_apis
+                      suite: conformance
+                      label: API 24 · 4 KB · x86_64 · Conformance
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
@@ -691,14 +708,14 @@ jobs:
               with:
                   path: |
                       ${{ env.ANDROID_HOME }}/emulator
-                      ${{ env.ANDROID_HOME }}/system-images/android-36/${{ matrix.system-image }}
-                  key: android-emulator-api36-${{ matrix.system-image }}-x86_64-r1
+                      ${{ env.ANDROID_HOME }}/system-images/android-${{ matrix.api }}/${{ matrix.system-image }}
+                  key: android-emulator-api${{ matrix.api }}-${{ matrix.system-image }}-x86_64-r1
             - name: Install one Android runtime image
               if: steps.emulator-cache.outputs.cache-hit != 'true'
               run: |
                   sdkmanager \
                       "emulator" \
-                      "system-images;android-36;${{ matrix.system-image }};x86_64"
+                      "system-images;android-${{ matrix.api }};${{ matrix.system-image }};x86_64"
             # Saved before the tests run, not in a post step: the combined
             # cache action only saves on job success, so a cold cache plus
             # one flaky failure would re-download moving bytes on every
@@ -711,8 +728,8 @@ jobs:
               with:
                   path: |
                       ${{ env.ANDROID_HOME }}/emulator
-                      ${{ env.ANDROID_HOME }}/system-images/android-36/${{ matrix.system-image }}
-                  key: android-emulator-api36-${{ matrix.system-image }}-x86_64-r1
+                      ${{ env.ANDROID_HOME }}/system-images/android-${{ matrix.api }}/${{ matrix.system-image }}
+                  key: android-emulator-api${{ matrix.api }}-${{ matrix.system-image }}-x86_64-r1
             - name: Enable KVM
               run: |
                   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -739,7 +756,8 @@ jobs:
                       if scripts/shared/run-kotlin-android-test-artifact.sh \
                           build/ci-artifacts/kotlin-android-x86_64 \
                           "${{ matrix.suite }}" \
-                          "${{ matrix.page-size }}"; then
+                          "${{ matrix.page-size }}" \
+                          "${{ matrix.api }}"; then
                           exit 0
                       fi
                       echo "::warning::Android ${{ matrix.label }} attempt ${attempt} failed"
@@ -751,10 +769,10 @@ jobs:
               if: failure() || cancelled()
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
-                  name: android-${{ matrix.page-size }}-${{ matrix.suite }}-failure-${{ github.run_attempt }}
+                  name: android-api${{ matrix.api }}-${{ matrix.page-size }}-${{ matrix.suite }}-failure-${{ github.run_attempt }}
                   if-no-files-found: warn
                   retention-days: 14
-                  path: ${{ runner.temp }}/android-test-${{ matrix.page-size }}-${{ matrix.suite }}
+                  path: ${{ runner.temp }}/android-test-api${{ matrix.api }}-${{ matrix.page-size }}-${{ matrix.suite }}
 
     es-test-build:
         name: Build Test - ES / Test Bundle
