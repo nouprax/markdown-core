@@ -10746,6 +10746,28 @@ static void session_edits_after_nested_opener(test_batch_runner *runner) {
     OK(runner, same, "a closer appended after a nested opener rejected at the text's end reads as a parse");
 }
 
+/* A line whose first reading looked past its end, a term at the next line's
+ * marker, keeps that it did through an edit that reads on inside it (blocks.c,
+ * A REST INSIDE A LINE): a later edit that ends the line elsewhere reads it
+ * again from its start, as a parse does. */
+static void session_edits_keep_term_look(test_batch_runner *runner) {
+    static const char source[] = "abcdef\nx\n::\n\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    const bool same =
+        markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+            MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_edit(session, (markdown_core_position){1, 5}, (markdown_core_position){1, 6},
+                                   (const uint8_t *)"d", 1, &document) == MARKDOWN_CORE_OK &&
+        session_as_parsed(session) &&
+        markdown_core_session_edit(session, (markdown_core_position){1, 4}, (markdown_core_position){3, 2},
+                                   (const uint8_t *)"\n", 1, &document) == MARKDOWN_CORE_OK &&
+        session_as_parsed(session);
+    markdown_core_session_close(session);
+    OK(runner, same, "a term's look past its line holds through an edit inside the line");
+}
+
 /* A long list, and a long one nested in one of its items, find the rest
  * point of a line by the widths of their items and fold the items kept
  * from the marks of the chunks before (session.c, THE NESTS): a locate at
@@ -12990,6 +13012,7 @@ int main(void) {
     session_locates_unclosed_openers(runner);
     session_locates_after_looked_edit(runner);
     session_edits_after_nested_opener(runner);
+    session_edits_keep_term_look(runner);
     session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);

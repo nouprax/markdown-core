@@ -1682,7 +1682,9 @@ void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_cor
  * LINE): what it holds goes to the records the publish names its
  * content by, as a paragraph's children go when it reads its content
  * again, and lives on until the publish lets it go (THE SEAMS). */
-static void S_unsettle_field(markdown_core_parser *parser, markdown_core_node *field, markdown_core_node *holder) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_unsettle_field(markdown_core_parser *parser,
+                                                                 markdown_core_node *field,
+                                                                 markdown_core_node *holder) {
     if (field->child_count && parser->stream && parser->stream->edit) {
         if (!markdown_core_publish_keep_left(parser, holder, field, field->children, field->child_count, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1697,8 +1699,9 @@ static void S_unsettle_field(markdown_core_parser *parser, markdown_core_node *f
 /* THE TEXT OF ITS LINE (element.h): the field an earlier reading of the
  * line made goes before `structure`'s block `node` is given the text again,
  * whatever element made it, and the element makes the field anew. */
-static bool S_text_of_line(const markdown_core_element_instance *structure, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_reader *reader) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_text_of_line(
+    const markdown_core_element_instance *structure, markdown_core_parser *parser, markdown_core_node *node,
+    markdown_core_reader *reader) {
     const markdown_core_edit_ops *edit = structure->element->edit;
     markdown_core_node **slot = edit && edit->text ? edit->text(node) : NULL;
     if (slot && *slot) {
@@ -5638,7 +5641,9 @@ static bool S_leap_index(markdown_core_parser *parser, markdown_core_node *block
         }
         at = next == SIZE_MAX ? size : next;
     }
-    memmove(leap->marks + leap->mark_room - count, leap->marks, count * sizeof(*leap->marks));
+    if (count) {
+        memmove(leap->marks + leap->mark_room - count, leap->marks, count * sizeof(*leap->marks));
+    }
     leap->mark_count = count;
     return true;
 }
@@ -6100,7 +6105,8 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     const bool inside = mid != SIZE_MAX;
     assert(!inside || (depth && line < S_lines_count(&input->lines) && mid >= start));
     const size_t point = inside ? mid : start;
-    const size_t decided = inside ? markdown_core_parser_line_decided(parser, line, NULL) - start : 0;
+    bool looked = false;
+    const size_t decided = inside ? markdown_core_parser_line_decided(parser, line, &looked) - start : 0;
     const size_t line_own = inside ? markdown_core_parser_line_own(parser, line) - start : 0;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     stream->edit->depth = 0;
@@ -6216,8 +6222,20 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         root->look = 0;
     }
     for (size_t level = 0; level < depth; level++) {
-        if (stream->edit->places[level].start >= point) {
-            stream->edit->chain[level]->look = 0;
+        markdown_core_node *block = stream->edit->chain[level];
+        const size_t at = stream->edit->places[level].start;
+        if (at < point) {
+            continue;
+        }
+        /* Inside a line, what the line read before the point it read once,
+         * before the edit, and the reading does not read again: the look
+         * stays, past the edit where it read past it (A REST INSIDE A
+         * LINE). */
+        if (inside && block->look && at + block->look > from) {
+            const int64_t look = (int64_t)block->look + delta;
+            block->look = look > 0 ? (uint32_t)look : 0;
+        } else if (!inside) {
+            block->look = 0;
         }
     }
     if (depth) {
@@ -6278,6 +6296,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     input->last_line_ready = false;
 
     const markdown_core_input_line *last = line ? markdown_core_input_line_at(input, line - 1) : NULL;
+    const bool rests = parser->at.read.rests;
     parser->at = (markdown_core_parser_at){
         .block_root = root,
         .current = root,
@@ -6286,6 +6305,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
                 .number = (int)line + input->first_line - 1,
                 .start = last ? (bufsize_t)last->start : 0,
                 .end = last ? (bufsize_t)last->end : 0,
+                .rests = rests,
             },
         .last_line_end = last ? (bufsize_t)last->end : 0,
         .lookahead_cursor = (const unsigned char *)source + start,
@@ -6324,6 +6344,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
             .column = S_line_column((const unsigned char *)source + start, mid - start),
             .far = (bufsize_t)decided,
             .own = (uint32_t)line_own,
+            .past = looked,
             .step = MARKDOWN_CORE_LINE_AT_TEXT,
             .all_matched = true,
             .opened = true,
@@ -7738,6 +7759,7 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     edit->spare = UINT32_MAX;
     edit->point = SIZE_MAX;
     stream->edit = edit;
+    parser->at.read.rests = true;
     /* Room for the cuts up front: the reopen keeps one in it (THE CUTS). */
     return markdown_core_array_reserve(&edit->cuts, 4);
 }
@@ -8750,6 +8772,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
     input->epoch = ++parser->epochs;
     input->last_line_ready = false;
     const markdown_core_input_line *last = line ? markdown_core_input_line_at(input, line - 1) : NULL;
+    const bool rests = parser->at.read.rests;
     parser->at = (markdown_core_parser_at){
         .block_root = root,
         .current = deepest,
@@ -8758,6 +8781,7 @@ bool markdown_core_parser_look(markdown_core_parser *parser, markdown_core_node 
                 .number = (int)line + input->first_line - 1,
                 .start = last ? (bufsize_t)last->start : 0,
                 .end = last ? (bufsize_t)last->end : 0,
+                .rests = rests,
             },
         .last_line_end = last ? (bufsize_t)last->end : 0,
         .lookahead_cursor = (const unsigned char *)source + start,
@@ -10763,7 +10787,8 @@ markdown_core_reader *markdown_core_parser_candidate_start(markdown_core_parser 
     if (candidate->line < parser->input.first_line) {
         static const unsigned char none[1] = {0};
         parser->reading = true;
-        parser->at.read = (markdown_core_reader){.line = {(unsigned char *)none, 0, 0}, .blank = true};
+        parser->at.read = (markdown_core_reader){
+            .line = {(unsigned char *)none, 0, 0}, .blank = true, .rests = parser->at.read.rests};
         parser->at.lookahead_cursor = parser->input.source;
         *container = candidate->stop.container;
         return &parser->at.read;
@@ -11920,14 +11945,16 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
         held = true;
         container = markdown_core_parser_current(parser);
         S_hold(parser, MARKDOWN_CORE_LINE_AT_TEXT, container, all_matched, container != last_matched_container, opens);
-    } else if (!parser->claimed_cursor && !parser->error) {
+    } else if (reader->rests && !parser->claimed_cursor && !parser->error) {
         /* How far the line's reading read as it gave its text away (A REST
          * INSIDE A LINE), and whether it looked past the line's end, as a
          * term does at the next line's marker: what it read there an edit
          * of the line moves, and leaves as it was only while the line ends
-         * where it did. */
-        const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
-        const bool looked = edit && edit->look.end && edit->look_line == parser->at.read.number;
+         * where it did. A reading that goes on inside the line looked
+         * where the line's first reading did, which it does not do again. */
+        const markdown_core_edit *edit = parser->stream->edit;
+        const bool looked = (edit->look.end && edit->look_line == parser->at.read.number) ||
+                            (from && from->step == MARKDOWN_CORE_LINE_AT_TEXT && from->past);
         markdown_core_parser_rewritten_line(parser, line)->decided =
             (uint32_t)reader->far | (looked ? MARKDOWN_CORE_LINE_PAST : 0);
     }

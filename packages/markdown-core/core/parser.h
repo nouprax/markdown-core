@@ -371,7 +371,8 @@ typedef struct {
  * THE ASKS), the line's cursor there, how far the steps before it read
  * (reader.h, `far`) and where its own bytes begin, which the next reading
  * of the line starts from. An edit's reading stands at such a stop too,
- * one the reopen makes (blocks.c, A REST INSIDE A LINE). */
+ * one the reopen makes (blocks.c, A REST INSIDE A LINE), with `past`
+ * whether the line's first reading looked past its end. */
 typedef enum {
     MARKDOWN_CORE_LINE_AT_MATCH,
     MARKDOWN_CORE_LINE_AT_OPEN,
@@ -384,7 +385,7 @@ typedef struct markdown_core_line_stop {
     bufsize_t offset, column, far;
     uint32_t own;
     markdown_core_line_step step;
-    bool all_matched, opened, maybe_lazy, split;
+    bool all_matched, opened, maybe_lazy, split, past;
 } markdown_core_line_stop;
 
 /* WHAT A STREAMING PARSE KEEPS: every parse, which takes snapshots
@@ -1711,9 +1712,14 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
  * its bytes there, which `far` notes, up to its line ending: a read of that,
  * or of what follows, is a look past the line (blocks.c, A REST INSIDE A
  * LINE). Where a column of the input may stand elsewhere, it notes the
- * whole line. */
+ * whole line. Only a reader that `rests` notes them: a parse that takes no
+ * edits has no rest to find inside a line. */
 static inline void markdown_core_reader_reads(markdown_core_reader *reader, const markdown_core_parser *parser,
                                               size_t from, size_t to) {
+    reader->past = to > reader->past ? to : reader->past;
+    if (!reader->rests) {
+        return;
+    }
     const size_t start = (size_t)reader->start, own = (size_t)reader->line.len - 1;
     if (parser->input.mapped && to > start) {
         reader->far = reader->line.len + 1;
@@ -1721,7 +1727,6 @@ static inline void markdown_core_reader_reads(markdown_core_reader *reader, cons
         const size_t far = to - start < own ? to - start : own;
         reader->far = (bufsize_t)far > reader->far ? (bufsize_t)far : reader->far;
     }
-    reader->past = to > reader->past ? to : reader->past;
 }
 
 static inline int markdown_core_reader_byte(markdown_core_reader *reader, markdown_core_parser *parser, size_t place) {
