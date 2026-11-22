@@ -266,7 +266,8 @@ bool markdown_core_utf8_column_offset(const uint8_t *source, size_t at, size_t e
         }
     }
     /* A byte column names its byte at once, and the walk would only step
-     * over the scalar it lands inside, if it does. */
+     * over the scalar it lands inside, if it does: the walk starts at the
+     * line's first byte, whatever it is, a stray continuation byte too. */
     if (!wide && column >= 1) {
         const size_t want = (size_t)column - 1;
         if (want > end - at) {
@@ -274,7 +275,7 @@ bool markdown_core_utf8_column_offset(const uint8_t *source, size_t at, size_t e
             return false;
         }
         size_t named = at + want;
-        while (named < end && (source[named] & 0xC0) == 0x80) {
+        while (named > at && named < end && (source[named] & 0xC0) == 0x80) {
             named++;
         }
         *offset = named;

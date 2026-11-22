@@ -2386,6 +2386,30 @@ static void void_source_continues(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* A column names a place the walk over a line's scalars stops at
+ * (ast.c, markdown_core_column_offset): the line's first byte is one,
+ * whatever it is, a stray continuation byte too, so an edit there inserts
+ * before it, in either unit; a column inside a scalar names none. */
+static void stray_byte_columns(test_batch_runner *runner) {
+    static const char text[] = "\x80x\n\xc3\xa9";
+    const markdown_core_text_unit units[] = {MARKDOWN_CORE_TEXT_UNIT_UTF8, MARKDOWN_CORE_TEXT_UNIT_UTF16};
+    for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
+        markdown_core_session *session;
+        const markdown_core_document *document;
+        EXPECT_OK(markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, units[i], &session));
+        EXPECT_OK(markdown_core_session_flush(session, &document));
+        const markdown_core_position first = {1, 1};
+        INT_EQ(runner, markdown_core_session_edit(session, first, first, (const uint8_t *)"a", 1, &document),
+               MARKDOWN_CORE_OK, "an edit at a line's stray first byte inserts before it, unit %zu", i);
+        if (units[i] == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
+            const markdown_core_position inside = {2, 2};
+            INT_EQ(runner, markdown_core_session_edit(session, inside, inside, (const uint8_t *)"a", 1, &document),
+                   MARKDOWN_CORE_OUT_OF_BOUNDS, "a byte column inside a scalar names no place");
+        }
+        markdown_core_session_close(session);
+    }
+}
+
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -12863,6 +12887,7 @@ int main(void) {
     table_values(runner);
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
+    stray_byte_columns(runner);
     inline_hook_projection_ignores_non_owners(runner);
     properties_envelope_derives_each_line_once(runner);
     properties_rejected_members_borrow_source(runner);
