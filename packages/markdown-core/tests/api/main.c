@@ -10698,6 +10698,33 @@ static void session_locates_unclosed_openers(test_batch_runner *runner) {
        at.column);
 }
 
+/* An edit under an unclosed opener whose look for its closer read the
+ * lines to the text's end in leaps no old line of the leaf it reopened:
+ * the lines read in are the new text's, and a locate after the edit at
+ * each place of the text is the document query (THE LEAP). */
+static void session_locates_after_looked_edit(test_batch_runner *runner) {
+    static const char source[] = "a\n%%\nb\ny\nm\n|\n- b\n\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                          &session) == MARKDOWN_CORE_OK &&
+                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+                markdown_core_session_edit(session, (markdown_core_position){3, 1}, (markdown_core_position){4, 1},
+                                           (const uint8_t *)"|", 1, &document) == MARKDOWN_CORE_OK;
+    markdown_core_position at = {1, 1};
+    for (const char *c = "a\n%%\n|y\nm\n|\n- b\n\n"; same && *c; c++) {
+        same = markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK && session_as_queried(session, at);
+        if (*c == '\n') {
+            at = (markdown_core_position){at.line + 1, 1};
+        } else {
+            at.column++;
+        }
+    }
+    markdown_core_session_close(session);
+    OK(runner, same, "a locate after an edit under an unclosed opener is the document query, at %d:%d", at.line,
+       at.column);
+}
+
 /* A long list, and a long one nested in one of its items, find the rest
  * point of a line by the widths of their items and fold the items kept
  * from the marks of the chunks before (session.c, THE NESTS): a locate at
@@ -12940,6 +12967,7 @@ int main(void) {
     session_edits_nested_identifier(runner);
     session_locates_table_rows(runner);
     session_locates_unclosed_openers(runner);
+    session_locates_after_looked_edit(runner);
     session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);

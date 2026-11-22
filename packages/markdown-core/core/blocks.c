@@ -7333,9 +7333,11 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
     leap->at = SIZE_MAX;
     /* The block the reading lands in is still the leaf it reopened: a
      * paragraph a line made another block, as a table, takes no old line
-     * back. */
+     * back. Nor does a reading that a look ahead read lines in past the
+     * line for: those are the new text's already, and the back's before
+     * the splice go there (THE SPLICE). */
     if (parser->at.current == block && S_leaf(parser, block) && !parser->at.pending && !stream->mark_count &&
-        !stream->requested && !stream->held) {
+        !stream->requested && !stream->held && input->scanned == start) {
         const size_t old = (size_t)((int64_t)start - edit->delta);
         const size_t k = S_lines_back_from(lines, old);
         const bool here = k < leap->last && S_lines_back_start(lines, k) == old;
