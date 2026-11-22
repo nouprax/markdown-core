@@ -11508,7 +11508,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
         bool paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
         /* Not cleared: the dispatcher writes the three fields it reads, and
          * the payload is the claiming owner's, written before its `open`
-         * reads it (scan_element_start). Clearing the 120 bytes here was
+         * reads it (scan_element_start). Clearing its bytes here was
          * paid by every line, the ones a code block or a properties block
          * takes without a round of this loop included. */
         block_start start;

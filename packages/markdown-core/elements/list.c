@@ -3,6 +3,8 @@
 #include "tasklist.h"
 #include "block_internal.h"
 
+MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_list, list_marker_fits);
+
 /* The list element's flags, on a List. */
 enum {
     /* The list's last line was blank: a second blank line ends it. */
@@ -249,7 +251,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
                                     markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
-    markdown_core_list *data = &start->list;
+    markdown_core_list *data = MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_list);
     markdown_core_node_type cont_type = (*container)->kind;
 
     data->padding = markdown_core_block_consume_item_marker(reader, matched);
@@ -291,7 +293,8 @@ static bool markdown_core_list_scan(const markdown_core_element_instance *self, 
                                     block_start_context *context, block_start *start) {
     if (!((start->matched = markdown_core_block_parse_list_marker(
                self->state, parser, context->reader, context->reader->nonspace, context->container,
-               context->reader->nonspace_column, context->paragraph, &start->list)))) {
+               context->reader->nonspace_column, context->paragraph,
+               MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_list))))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_LIST;

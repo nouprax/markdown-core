@@ -3,6 +3,18 @@
 #include "parts.h"
 #include "sink.h"
 
+/* What a callout's scan found after its marker (WHAT THE SCAN FOUND,
+ * block_internal.h): a header `[!variant]`, its fold and where its title
+ * starts, and where a variant the line's end cuts short stands, -1 for
+ * none, which its open reports. */
+typedef struct {
+    bufsize_t variant, variant_end, title, report;
+    bool metadata, fold, collapsed;
+    /* Where the marker's motion leaves the reader. */
+    markdown_core_reader_mark after;
+} markdown_core_callout_header;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_callout_header, callout_header_fits);
+
 static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        block_start_context *context, block_start *start);
 bool markdown_core_block_parse_callout_prefix(markdown_core_reader *reader) {
@@ -168,7 +180,7 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
                                        markdown_core_node **container, markdown_core_reader *reader,
                                        block_start *start) {
     (void)self;
-    const markdown_core_callout_header *header = &start->callout;
+    const markdown_core_callout_header *header = MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header);
     bufsize_t blockquote_startpos = reader->nonspace;
     markdown_core_reader_back(reader, header->after);
     *container =
@@ -207,8 +219,8 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
     const markdown_core_reader_mark mark = markdown_core_reader_tell(reader);
     S_callout_marker(reader);
     const markdown_core_reader_mark after = markdown_core_reader_tell(reader);
-    S_callout_header(self->state, parser, reader, &start->callout);
-    start->callout.after = after;
+    S_callout_header(self->state, parser, reader, MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header));
+    MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header)->after = after;
     markdown_core_reader_back(reader, mark);
     start->kind = MARKDOWN_CORE_NODE_CALLOUT;
     start->open = markdown_core_callout_open;
