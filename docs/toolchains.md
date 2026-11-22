@@ -3,14 +3,14 @@
 This is the normative toolchain contract for Markdown Core. The exact pins live
 in `scripts/tooling/setup-environment.sh`; `scripts/audit/check-toolchain-versions.sh` checks
 that workflows, wrappers, manifests, consumers, and the cloud image agree with
-that source of truth. The versions below were reviewed on 2026-09-02.
+that source of truth. The versions below were reviewed on 2026-11-22.
 
 ## Version contract
 
 | Area | Supported version | Contract |
 | --- | --- | --- |
-| Gradle | 9.7.1 | Distribution/JAR SHA-256 and the release signing subkey are pinned |
-| AGP | 9.4.1 | Stable patch line; compile/target SDK 36, min SDK 21 |
+| Gradle | 9.9.2 | Distribution/JAR SHA-256 and the release signing subkey are pinned |
+| AGP | 9.5.2 | Stable patch line; compile/target SDK 36, min SDK 24 (the Google Play services and AndroidX floor) |
 | Kotlin Gradle plugin | 2.4.21 | Stable bug-fix release |
 | Kotlin source/API and stdlib | 2.2 / 2.2.21 | Deliberate consumer compatibility floor; independent of the build plugin |
 | Gradle daemon JDK / JVM bytecode | 26 / 17 | JDK 26 runs the build; published JVM code remains Java 17 compatible |
@@ -30,13 +30,14 @@ reproducible SDK package used by the JNI build; the host CMake requirement
 remains the lower compatibility floor declared by the CMake project.
 
 Kotlin 2.4.21's published compatibility table does not yet classify Gradle
-9.7.1 and AGP 9.4.1 as fully supported. This repository treats that as an
+9.9.2 and AGP 9.5.2 as fully supported. This repository treats that as an
 explicit compatibility edge: Gradle model checks, Android/KMP/JVM consumers,
 dependency verification, publications, and package audits must all pass. A
 future version bump must not weaken those gates to suppress an incompatibility.
 Gradle 9.7.1 rotated release signing to subkey
-`F3FF33E96F18AA62DD580F9651FBF517CE6D6B80`; dependency verification scopes
-that key to the synthetic `gradle:gradle:9.7.1` IDE sources module rather than
+`F3FF33E96F18AA62DD580F9651FBF517CE6D6B80`, which still signs 9.9.2;
+dependency verification scopes that key to the synthetic `gradle:gradle:9.9.2`
+IDE sources module rather than
 granting it repository-wide trust.
 
 ## Maintenance policy
