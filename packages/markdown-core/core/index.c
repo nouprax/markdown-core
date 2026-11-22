@@ -507,10 +507,6 @@ bool markdown_core_index_crossed(markdown_core_index *index, size_t from, size_t
     if (looked < lines) {
         past.start = index_line_start(index->parser, looked);
     }
-#ifndef NDEBUG
-    else {
-    }
-#endif
     const markdown_core_node *holder = index->root;
     if (holder->look && holder->look > past.look) {
         past.start = 0;
@@ -718,22 +714,21 @@ static bool rest_stops(const rest_search *search, size_t before, size_t *start) 
     return found;
 }
 
-/* Whether the edit writes, or replaces, a line that may write `prior`, a
- * block of a kind a later line may write once it closed (element.h, the
- * follow's `closed` and `writes`). */
-static bool rest_trails(const rest_search *search, const markdown_core_kind_record *prior) {
-    const markdown_core_follow *follow = prior->follow[MARKDOWN_CORE_FOLLOW_LINE];
-    const markdown_core_element_instance *follower = prior->follower[MARKDOWN_CORE_FOLLOW_LINE];
-    if (!follow || !follow->writes) {
-        return true;
+/* Whether the edit writes, or replaces, a line that may write `prior`
+ * (markdown_core_parser_writes). */
+static bool rest_trails(const rest_search *search, const markdown_core_node *prior) {
+    const markdown_core_parser *parser = search->parser;
+    if (!(markdown_core_parser_block_kind(parser, prior)->flags & MARKDOWN_CORE_KIND_TRAILED)) {
+        return false;
     }
     uint8_t room[256], *lines;
     size_t size, old, old_end;
     if (!rest_written(search, room, sizeof(room), &lines, &size, &old, &old_end)) {
         return true;
     }
-    const bool writes = rest_line_in(follower, follow->writes, lines, size) ||
-                        rest_line_in(follower, follow->writes, (const uint8_t *)search->source + old, old_end - old);
+    const bool writes =
+        markdown_core_parser_writes(parser, prior, lines, size) ||
+        markdown_core_parser_writes(parser, prior, (const unsigned char *)search->source + old, old_end - old);
     if (lines != room) {
         markdown_core_free(lines);
     }
@@ -941,10 +936,9 @@ static size_t rest_at(rest_search *search, size_t line) {
             /* The child before, which a later line may go on in, or write
              * when the edit writes the line (element.h, `awaits`;
              * markdown_core_follow, `closed`). */
-            const unsigned kind = markdown_core_parser_block_kind(parser, holder->children[first - 1])->flags;
-            if ((kind & MARKDOWN_CORE_KIND_AWAITS) ||
-                ((kind & MARKDOWN_CORE_KIND_TRAILED) && line == search->edited &&
-                 rest_trails(search, markdown_core_parser_block_kind(parser, holder->children[first - 1])))) {
+            const markdown_core_node *child = holder->children[first - 1];
+            if ((markdown_core_parser_block_kind(parser, child)->flags & MARKDOWN_CORE_KIND_AWAITS) ||
+                (line == search->edited && rest_trails(search, child))) {
                 return rest_line(search, prior);
             }
         }

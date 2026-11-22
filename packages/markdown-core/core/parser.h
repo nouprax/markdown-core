@@ -2203,6 +2203,13 @@ void markdown_core_parser_compact(markdown_core_parser *parser);
  * of literal lines, or one that read its lines as such a kind (blocks.c,
  * THE LEAP, THE FORMER KIND). */
 bool markdown_core_parser_leaf(const markdown_core_parser *parser, const struct markdown_core_node *block);
+/* THE BLOCK BEFORE (index.h, THE REST; blocks.c, THE SPLICE): whether a
+ * line of the `length` bytes at `lines`, read after `prior`, may write it:
+ * a block of a kind a later line may write once it closed (element.h, the
+ * follow's `closed`), when the follow's element says the line may
+ * (`writes`), or any line when it says nothing. */
+bool markdown_core_parser_writes(const markdown_core_parser *parser, const struct markdown_core_node *prior,
+                                 const unsigned char *lines, size_t length);
 /* Whether an edit of a later line of `block`, a leaf, may rest at that line
  * and leap past its old lines (blocks.c, THE LEAP). */
 bool markdown_core_parser_leaps(const markdown_core_parser *parser, const struct markdown_core_node *block);

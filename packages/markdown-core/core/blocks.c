@@ -5127,6 +5127,29 @@ bool markdown_core_parser_leaf(const markdown_core_parser *parser, const markdow
     return S_leaf(parser, block);
 }
 
+bool markdown_core_parser_writes(const markdown_core_parser *parser, const markdown_core_node *prior,
+                                 const unsigned char *lines, size_t length) {
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, prior);
+    if (!(kind->flags & MARKDOWN_CORE_KIND_TRAILED)) {
+        return false;
+    }
+    const markdown_core_follow *follow = kind->follow[MARKDOWN_CORE_FOLLOW_LINE];
+    const markdown_core_element_instance *follower = kind->follower[MARKDOWN_CORE_FOLLOW_LINE];
+    if (!follow || !follow->writes) {
+        return true;
+    }
+    size_t from = 0;
+    for (size_t i = 0; i <= length; i++) {
+        if (i == length || lines[i] == '\n' || lines[i] == '\r') {
+            if (follow->writes(follower, lines + from, i - from)) {
+                return true;
+            }
+            from = i + 1;
+        }
+    }
+    return false;
+}
+
 bool markdown_core_parser_reads_lines(const markdown_core_parser *parser, const markdown_core_node *block) {
     return (markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_LINES) ||
            S_former(parser, block, MARKDOWN_CORE_KIND_LINES) != MARKDOWN_CORE_NODE_NONE;
@@ -6254,36 +6277,6 @@ static bool S_joins(const markdown_core_edit_ops *ops, markdown_core_node_type k
 static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind,
                            size_t start);
 
-/* Whether the reading, at the start of the line at `start` of the new text,
- * where the old tail's child `next` starts its line, reads on as the old
- * reading did from there (THE SPLICE). A child of the root still open, as
- * a footnote that took the blank line before, closes first, as the line
- * would close it, when it would (S_close_inside): its close is noted as the
- * line's reading (S_reach_close), as the old child's before it was, which
- * the old tail then reads past no further than that. */
-static bool S_resumes(markdown_core_parser *parser, size_t start) {
-    const markdown_core_stream *stream = parser->stream;
-    const markdown_core_edit *edit = stream->edit;
-    markdown_core_node *root = parser->root;
-    if (stream->mark_count || stream->requested || stream->held) {
-        return false;
-    }
-    const size_t old = (size_t)((int64_t)start - edit->delta);
-    const size_t past = (size_t)((int64_t)S_line_past(parser, start) - edit->delta);
-    if (parser->at.current != root) {
-        if (edit->next >= edit->count || S_old_reads_into(parser, old, past) ||
-            !S_close_inside(parser, root, (markdown_core_node_type)markdown_core_edit_old(edit, root, edit->next)->kind,
-                            start)) {
-            return false;
-        }
-    }
-    const markdown_core_node *last = root->child_count ? root->children[root->child_count - 1] : NULL;
-    if (last && (markdown_core_parser_block_kind(parser, last)->flags & MARKDOWN_CORE_KIND_TRAILED)) {
-        return false;
-    }
-    return !S_old_reads_into(parser, old, past);
-}
-
 /* The root, which holds the children the reading gave it after those
  * before the old tail, takes the old tail back from its child `first` (THE
  * OLD TAIL IN PLACE, markdown_core_seam_mend); an old tail that keeps its
@@ -6487,7 +6480,7 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
     const markdown_core_element_instance *structure =
         open && open != block ? markdown_core_parser_block_kind(parser, open)->structure : NULL;
     const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
-    if (markdown_core_scaffold_parent(open) == block &&
+    if (open && markdown_core_scaffold_parent(open) == block &&
         ((ops && ops->yields && ops->yields(structure, parser, open, kind)) ||
          (structure && structure->lines->cuts && S_joins(ops, kind) &&
           markdown_core_reader_cuts_whole(&parser->at.read, parser, open)))) {
@@ -6521,58 +6514,87 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
     return !parser->error;
 }
 
-/* Whether the reading, at the start of the line at `start` of the new
- * text, line `index` of the input, where the child `back_next` a block of
- * the chain let go starts its line, stands in that block as the old
- * reading did (THE NESTED SPLICE). The blocks open inside the block close
- * first, as the line would close them, when it would. */
-static bool S_resumes_in(markdown_core_parser *parser, size_t start, size_t index) {
-    const markdown_core_stream *stream = parser->stream;
-    const markdown_core_edit *edit = stream->edit;
-    const markdown_core_node *back = markdown_core_edit_nested(edit, edit->nest_level, edit->nest_index);
-    markdown_core_node *block = edit->chain[edit->nest_level];
-    if (stream->mark_count || stream->requested || stream->held || !index || !block->child_count ||
-        (parser->at.current != block && !S_close_inside(parser, block, (markdown_core_node_type)back->kind, start))) {
-        return false;
-    }
-    const markdown_core_node *last = block->children[block->child_count - 1];
-    if (markdown_core_parser_block_kind(parser, last)->flags & MARKDOWN_CORE_KIND_TRAILED) {
-        return false;
-    }
-    /* The line before is the old text's, the line end before it too, and
-     * both children before ended before it. */
-    const size_t before = markdown_core_input_line_at(&parser->input, index - 1)[0].start;
-    const int64_t old_before = (int64_t)before - edit->delta;
-    const size_t old = (size_t)((int64_t)start - edit->delta);
-    if (last->place.end > before) {
-        /* The child before ends on the line before, in a block whose
-         * children abut, and did in the old text too. */
-        const markdown_core_tree *lines = &parser->input.lines;
-        const size_t line = S_edit_line(lines, old);
-        if (!markdown_core_parser_abuts(parser, block) || last->place.end > start || !line ||
-            S_lines_back_start(lines, line) != old || edit->nest_prior <= S_lines_back_start(lines, line - 1)) {
+/* THE BLOCK BEFORE AT A SPLICE: whether the old line at `start` of the new
+ * text, which the old reading read after another block than `prior`, or
+ * after it as it was, writes it no more (markdown_core_parser_writes), and what the element of
+ * `holder`, which takes its old children back from `back` on after
+ * `prior`, counted of its children before reads as the old reading's did
+ * (element.h, `resumes`). */
+static bool S_stands_after(const markdown_core_parser *parser, const markdown_core_node *holder,
+                           const markdown_core_node *prior, const markdown_core_node *back, size_t start) {
+    if (prior) {
+        size_t size;
+        const unsigned char *text = markdown_core_parser_input_text(parser, &size);
+        size_t end = start;
+        while (end < size && text[end] != '\n' && text[end] != '\r') {
+            end++;
+        }
+        if (markdown_core_parser_writes(parser, prior, text + start, end - start)) {
             return false;
         }
-    } else if (old_before <= (int64_t)edit->to || (int64_t)edit->nest_prior > old_before ||
-               markdown_core_parser_rest_blank(parser, parser->input.source, edit->chain, edit->nest_level + 1, index,
-                                               last->place.end) == SIZE_MAX) {
+    }
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, holder)->structure;
+    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
+    return !back || !ops || !ops->resumes || ops->resumes(structure, parser, holder, back);
+}
+
+/* THE SPLICE STANDS (index.h, THE REST), at the start of the line at
+ * `start` of the new text, line `index` of the input, where the old child
+ * the reading tries next starts its line: of the root, or of the block of
+ * the chain that let its old children go (THE NESTED SPLICE). The reading
+ * stands there as the old reading did when the reading is plain, no
+ * reading from before the line, old or new, read past it, the blocks open
+ * inside the holder close as the line closes them, the line before reads
+ * to the chain as it did, and the block before and the holder stand
+ * (S_stands_after). A block the line closes closes first (S_close_inside):
+ * its close is noted as the line's reading (S_reach_close), as the old
+ * child's before it was, which the old tail then reads past no further
+ * than that. */
+static bool S_stands(markdown_core_parser *parser, size_t start, size_t index) {
+    const markdown_core_stream *stream = parser->stream;
+    const markdown_core_edit *edit = stream->edit;
+    const bool nested = edit->nest_on;
+    markdown_core_node *holder = nested ? edit->chain[edit->nest_level] : parser->root;
+    const markdown_core_node *back = nested ? markdown_core_edit_nested(edit, edit->nest_level, edit->nest_index)
+                                     : edit->next < edit->count ? markdown_core_edit_old(edit, parser->root, edit->next)
+                                                                : NULL;
+    if (stream->mark_count || stream->requested || stream->held || (nested && (!index || !holder->child_count))) {
         return false;
     }
-    /* No reading from before the line read past it, as the close of a
-     * block on it does (S_reach_close): the line is old, and reads as it
-     * did. */
+    const size_t old = (size_t)((int64_t)start - edit->delta);
     const size_t past = S_line_past(parser, start);
     if (S_old_reads_into(parser, old, (size_t)((int64_t)past - edit->delta))) {
         return false;
     }
+    if (parser->at.current != holder &&
+        (!back || !S_close_inside(parser, holder, (markdown_core_node_type)back->kind, start))) {
+        return false;
+    }
+    const markdown_core_node *last = holder->child_count ? holder->children[holder->child_count - 1] : NULL;
+    if (nested) {
+        /* The line before is the old text's, the line end before it too,
+         * and both children before ended before it. */
+        const size_t before = markdown_core_input_line_at(&parser->input, index - 1)[0].start;
+        const int64_t old_before = (int64_t)before - edit->delta;
+        if (last->place.end > before) {
+            /* The child before ends on the line before, in a block whose
+             * children abut, and did in the old text too. */
+            const markdown_core_tree *lines = &parser->input.lines;
+            const size_t line = S_edit_line(lines, old);
+            if (!markdown_core_parser_abuts(parser, holder) || last->place.end > start || !line ||
+                S_lines_back_start(lines, line) != old || edit->nest_prior <= S_lines_back_start(lines, line - 1)) {
+                return false;
+            }
+        } else if (old_before <= (int64_t)edit->to || (int64_t)edit->nest_prior > old_before ||
+                   markdown_core_parser_rest_blank(parser, parser->input.source, edit->chain, edit->nest_level + 1,
+                                                   index, last->place.end) == SIZE_MAX) {
+            return false;
+        }
+    }
     if (S_new_reads_into(parser, start, past)) {
         return false;
     }
-    /* What the block's element counted of its children before reads as the
-     * old reading's did, last, as the block counts the old ones in. */
-    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, block)->structure;
-    const markdown_core_edit_ops *ops = structure->element->edit;
-    return !ops || !ops->resumes || ops->resumes(structure, parser, block, back);
+    return S_stands_after(parser, holder, last, back, start);
 }
 
 /* THE FOLD PASSES (parser.h, markdown_core_fold_pass): what the chunk
@@ -6920,16 +6942,23 @@ static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core
      * holder takes back is the block itself, which a later line does not
      * write, and what the holder's element counted of its children before
      * reads as the old reading's did (THE NESTED SPLICE). */
-    if (!(block->flags & MARKDOWN_CORE_NODE__PUBLISHED) ||
-        (markdown_core_parser_block_kind(parser, block)->flags & MARKDOWN_CORE_KIND_TRAILED)) {
+    if (!(block->flags & MARKDOWN_CORE_NODE__PUBLISHED)) {
         return false;
     }
+    /* The line after the block, where it ends as it did. */
+    size_t size;
+    const unsigned char *text = markdown_core_parser_input_text(parser, &size);
+    size_t after = (size_t)((int64_t)edit->ends[edit->depth - 1] + edit->delta);
+    if (after && text[after - 1] != '\n' && text[after - 1] != '\r') {
+        while (after < size && text[after] != '\n' && text[after] != '\r') {
+            after++;
+        }
+        after += after < size && text[after] == '\r';
+        after += after < size && text[after] == '\n';
+    }
     const size_t level = edit->depth - 2;
-    const markdown_core_node *holder = edit->chain[level];
-    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, holder)->structure;
-    const markdown_core_edit_ops *ops = structure ? structure->element->edit : NULL;
-    return !edit->levels[level].held || !ops || !ops->resumes ||
-           ops->resumes(structure, parser, holder, markdown_core_edit_nested(edit, level, 0));
+    return S_stands_after(parser, edit->chain[level], block,
+                          edit->levels[level].held ? markdown_core_edit_nested(edit, level, 0) : NULL, after);
 }
 
 /* THE BACK OF A PARAGRAPH, at the splice in the block `block`: its content
@@ -7357,7 +7386,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *p
     if (edit->point != start) {
         return false;
     }
-    const bool resumes = edit->nest_on ? S_resumes_in(parser, start, index) : S_resumes(parser, start);
+    const bool resumes = S_stands(parser, start, index);
     /* What the test read from the line that ended goes to that line. */
     if (edit->look.end) {
         S_line_look_settle(parser);
