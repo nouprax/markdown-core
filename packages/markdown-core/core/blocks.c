@@ -1677,6 +1677,19 @@ void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_cor
     S_complete_later(parser, field, holder);
 }
 
+void markdown_core_block_unsettle_field(markdown_core_parser *parser, markdown_core_node *field,
+                                        markdown_core_node *holder) {
+    if (field->child_count && parser->stream && parser->stream->edit) {
+        if (!markdown_core_publish_keep_left(parser, holder, field, field->children, field->child_count, 0)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        markdown_core_node_pool_bytes_free(parser->pool, field->children);
+        field->children = NULL;
+        field->child_count = 0;
+    }
+    markdown_core_parser_release_node(parser, field);
+}
+
 /* The pending block settles into `holder`, the current block of kind
  * `kind`, as it takes its next child or closes. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle_pending_as(markdown_core_parser *parser,
@@ -1771,7 +1784,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
 }
 
 /* A block of the document closes, at any depth: a reading from where it
- * starts read as far as the line in hand (markdown_core_parser_read_past).
+ * starts read as far as the line in hand (markdown_core_parser_read_past),
+ * or, as the line machine reads it, as far as the reader read of it, which
+ * is all that decided the close (reader.h, `far`; A REST INSIDE A LINE).
  * A block of a cell's input is no reading of the document's: its owner's
  * lines are read again. */
 size_t markdown_core_parser_read_past(const markdown_core_parser *parser) {
@@ -1784,6 +1799,11 @@ size_t markdown_core_parser_read_past(const markdown_core_parser *parser) {
     } else if (parser->reading && parser->at.lookahead_cursor) {
         end = (size_t)(parser->at.lookahead_cursor - parser->input.source);
         end += end == (size_t)parser->at.read.end;
+        const markdown_core_reader *reader = &parser->at.read;
+        if (!reader->past && !reader->seen && !parser->input.mapped) {
+            const size_t far = (size_t)reader->start + (size_t)reader->far;
+            end = far < end ? far : end;
+        }
     }
     return end;
 }
@@ -2540,7 +2560,8 @@ static void S_settled_release(markdown_core_parser *parser, markdown_core_settle
  * publish placed them (markdown_core_publish_keep_left). */
 static void S_settled_leave(markdown_core_parser *parser, markdown_core_settled *settled,
                             const markdown_core_node *node) {
-    if (!markdown_core_publish_keep_left(parser, node, settled->nodes.values, (uint32_t)settled->nodes.count, 0)) {
+    if (!markdown_core_publish_keep_left(parser, node, node, settled->nodes.values, (uint32_t)settled->nodes.count,
+                                         0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     S_settled_clear(settled);
@@ -2865,7 +2886,7 @@ static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) 
     markdown_core_leap *leap = edit->leap;
     const uint32_t count = leap->kept ? leap->count : node->child_count;
     if (count) {
-        if (!markdown_core_publish_keep_left(parser, node, node->children, count, 0)) {
+        if (!markdown_core_publish_keep_left(parser, node, node, node->children, count, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         markdown_core_node_pool_bytes_free(parser->pool, node->children);
@@ -2954,7 +2975,7 @@ static bool S_seam_stops(markdown_core_parser *parser, markdown_core_node *node)
     }
     /* None to meet: the old children past the seam and their uses go. */
     if (leap->count > leap->seam.index &&
-        !markdown_core_publish_keep_left(parser, node, node->children + leap->seam.index,
+        !markdown_core_publish_keep_left(parser, node, node, node->children + leap->seam.index,
                                          leap->count - leap->seam.index, leap->seam.index ? leap->seam.source : 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
@@ -3314,7 +3335,8 @@ static bool S_seam_shrink(markdown_core_parser *parser, markdown_core_node *node
     const markdown_core_seam seam = leap->seams[k - 1];
     const uint32_t count = leap->kept ? leap->count : leap->seam.index;
     node->children[leap->seam.index - 1]->flags &= (uint16_t)~MARKDOWN_CORE_NODE__FINAL;
-    if (!markdown_core_publish_keep_left(parser, node, node->children + seam.index, count - seam.index, seam.source)) {
+    if (!markdown_core_publish_keep_left(parser, node, node, node->children + seam.index, count - seam.index,
+                                         seam.source)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     node->children[seam.index - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
@@ -3905,7 +3927,7 @@ static markdown_core_node **S_seam_room(markdown_core_parser *parser, markdown_c
         leap->stops.met ? leap->ends.index - leap->stops.items[leap->stops.count - 1].index : leap->count;
     assert(held == leap->seam.index && tail >= held && tail <= leap->count);
     leap->kept = false;
-    if (tail > held && !markdown_core_publish_keep_left(parser, node, node->children + held, tail - held,
+    if (tail > held && !markdown_core_publish_keep_left(parser, node, node, node->children + held, tail - held,
                                                         held ? leap->seam.source : 0)) {
         S_seam_release(parser, node, tail, leap->count);
         return NULL;
@@ -5380,6 +5402,21 @@ static inline markdown_core_node_internal_flags S_folded_bits(const markdown_cor
                                                     : 0));
 }
 
+/* The column of the byte `offset` of the line at `line`: each Unicode
+ * scalar before it counts once and a tab goes to the next tab stop, as the
+ * reader counts (markdown_core_reader_advance). */
+static bufsize_t S_line_column(const unsigned char *line, size_t offset) {
+    bufsize_t column = 0;
+    for (size_t i = 0; i < offset; i++) {
+        if (line[i] == '\t') {
+            column += TAB_STOP - (column % TAB_STOP);
+        } else {
+            column += i + 1 == offset || (line[i + 1] & 0xC0) != 0x80;
+        }
+    }
+    return column;
+}
+
 /* The chain's block `node`, at `level`, open as the reading needs it at the
  * rest point, the first `kept` of its children its own, which a reading
  * of the line before reads blank to when `blank` says so; `deepest` when it
@@ -5439,15 +5476,17 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
 
 /* The chain stands open as the reading needs it at the rest point, whose
  * line before, which the deepest block took, reads blank to the blocks
- * from `blank` down (markdown_core_parser_rest_blank). */
-static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *root, size_t blank,
+ * from `blank` down to those before `opened`, which started on the line
+ * (markdown_core_parser_rest_blank, A REST INSIDE A LINE). */
+static void S_reopen_chain(markdown_core_parser *parser, markdown_core_node *root, size_t blank, size_t opened,
                            markdown_core_folds *const *folds) {
     const markdown_core_edit *edit = parser->stream->edit;
     markdown_core_node *holder = root;
     for (size_t level = 0; level < edit->depth; level++) {
         markdown_core_node *node = edit->chain[level];
         const bool deeper = level + 1 < edit->depth;
-        S_reopen_level(parser, node, deeper ? edit->path[level + 1] : edit->path[edit->depth], level >= blank, !deeper,
+        S_reopen_level(parser, node, deeper ? edit->path[level + 1] : edit->path[edit->depth],
+                       level >= blank && level < opened, !deeper,
                        !deeper && edit->levels[level].held ? markdown_core_edit_nested(edit, level, 0) : NULL,
                        folds ? folds[level] : NULL);
         markdown_core_scaffold_of(node)->parent = holder;
@@ -5957,7 +5996,11 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     }
     markdown_core_strbuf *content = &block->content;
     const size_t size = (size_t)content->size;
-    const size_t first = S_lines_front_from(&input->lines, (size_t)block->place.start + 1) - 1;
+    /* The block's first line: the line's own, when the line opened it (A
+     * REST INSIDE A LINE). */
+    const size_t first = (size_t)block->place.start >= input->scanned
+                             ? line
+                             : S_lines_front_from(&input->lines, (size_t)block->place.start + 1) - 1;
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
     const bool prose = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
     leap->prose = prose;
@@ -6024,7 +6067,7 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
 bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child, size_t line,
                                  uint32_t prior, size_t from, size_t to, int64_t delta, size_t past, const char *source,
                                  bool whole, const uint32_t *path, const markdown_core_chain_place *places,
-                                 size_t depth, markdown_core_folds *const *folds,
+                                 size_t depth, size_t mid, markdown_core_folds *const *folds,
                                  const struct markdown_core_index *index) {
     markdown_core_stream *stream = parser->stream;
     stream->edit->index = index;
@@ -6033,6 +6076,14 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
     assert(line <= S_lines_count(&input->lines));
     const size_t start = line < S_lines_count(&input->lines) ? S_lines_start(&input->lines, line) : input->scanned;
+    /* Where the reading stands: the line's start, or inside it, where the
+     * line's reading stood as it gave its text to the chain's last block,
+     * and had read to (A REST INSIDE A LINE). */
+    const bool inside = mid != SIZE_MAX;
+    assert(!inside || (depth && line < S_lines_count(&input->lines) && mid >= start));
+    const size_t point = inside ? mid : start;
+    const size_t decided = inside ? markdown_core_parser_line_decided(parser, line, NULL) - start : 0;
+    const size_t line_own = inside ? markdown_core_parser_line_own(parser, line) - start : 0;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     stream->edit->depth = 0;
     stream->edit->revert.node = NULL;
@@ -6094,7 +6145,18 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     /* The rest point's line before, as the deepest block's child before
      * the rest point, which the reopen placed, ends (THE NESTED REOPEN). */
     size_t blank = 0;
-    if (depth) {
+    /* The chain's blocks from `opened` on started on the line, before the
+     * point: none of them read the line before. */
+    size_t opened = depth;
+    if (inside) {
+        opened = 0;
+        while (opened < depth && places[opened].start < start) {
+            opened++;
+        }
+        /* The line read the chain's blocks up to the point as a line that
+         * is no blank one: none of them reads it blank. */
+        blank = opened;
+    } else if (depth) {
         const markdown_core_node *deepest = stream->edit->chain[depth - 1];
         /* At the first child of a block whose children abut, no block of
          * the chain was open on the line before (session_rest_in). */
@@ -6136,7 +6198,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         root->look = 0;
     }
     for (size_t level = 0; level < depth; level++) {
-        if (stream->edit->places[level].start >= start) {
+        if (stream->edit->places[level].start >= point) {
             stream->edit->chain[level]->look = 0;
         }
     }
@@ -6149,7 +6211,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         for (size_t level = 0; level < depth; level++) {
             markdown_core_node *block = edit->chain[level];
             const size_t closed = block->closed ? edit->places[level].start + block->closed : 0;
-            edit->closes[level] = closed > start ? (uint32_t)closed : 0;
+            edit->closes[level] = closed > point ? (uint32_t)closed : 0;
             block->closed = 0;
         }
     }
@@ -6215,7 +6277,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     root->flags |= MARKDOWN_CORE_NODE__OPEN;
     parser->root = root;
     if (depth) {
-        S_reopen_chain(parser, root, blank, folds);
+        S_reopen_chain(parser, root, blank, opened, folds);
         /* The deepest block of the chain takes the reading's children
          * first, the root last (THE OLD NESTED TAIL IN PLACE), and the old
          * children are tried from the deepest's first. */
@@ -6231,6 +6293,24 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         edit->nest_level = depth - 1;
         edit->nest_index = 0;
         edit->nest_prior = edit->places[depth - 1].prior;
+    }
+    if (inside) {
+        /* The line's reading stands where it gave its text to the chain's
+         * last block, which it opened: the reading goes on there, as from
+         * where a commit stopped in the line a session holds (A REST
+         * INSIDE A LINE). */
+        parser->at.read.number++;
+        stream->stop = (markdown_core_line_stop){
+            .container = stream->edit->chain[depth - 1],
+            .offset = (bufsize_t)(mid - start),
+            .column = S_line_column((const unsigned char *)source + start, mid - start),
+            .far = (bufsize_t)decided,
+            .own = (uint32_t)line_own,
+            .step = MARKDOWN_CORE_LINE_AT_TEXT,
+            .all_matched = true,
+            .opened = true,
+        };
+        stream->held = true;
     }
     if (whole) {
         stream->edit->count = 0;
@@ -7333,15 +7413,13 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
     leap->at = SIZE_MAX;
     /* The block the reading lands in is still the leaf it reopened: a
      * paragraph a line made another block, as a table, takes no old line
-     * back. Nor does a reading that a look ahead read lines in past the
-     * line for: those are the new text's already, and the back's before
-     * the splice go there (THE SPLICE). */
+     * back. */
     if (parser->at.current == block && S_leaf(parser, block) && !parser->at.pending && !stream->mark_count &&
-        !stream->requested && !stream->held && input->scanned == start) {
+        !stream->requested && !stream->held) {
         const size_t old = (size_t)((int64_t)start - edit->delta);
         const size_t k = S_lines_back_from(lines, old);
         const bool here = k < leap->last && S_lines_back_start(lines, k) == old;
-        const markdown_core_input_line *read = S_line(lines, lines->front - 1);
+        const markdown_core_input_line *read = S_line(lines, index - 1);
         if (here && (!leap->blanks || S_line_full(parser, input->source, read->start, read->end))) {
             size_t land = leap->last;
             while (leap->blanks && land > k &&
@@ -7349,6 +7427,13 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
                                 (size_t)((int64_t)S_lines_back_start(lines, land - 1) + edit->delta),
                                 (size_t)((int64_t)S_lines_back_start(lines, land) + edit->delta))) {
                 land--;
+            }
+            /* The lines a look read in past the line are the new text's
+             * of the old lines the leap takes, which come to the front in
+             * their place. */
+            if (land > k && input->scanned != start) {
+                S_lines_truncate(input, index);
+                input->scanned = start;
             }
             if (land == leap->last && land > k) {
                 /* Where the line is: its mark (THE PREFIX OF A PARAGRAPH,
@@ -7558,6 +7643,22 @@ size_t markdown_core_parser_line_own(const markdown_core_parser *parser, size_t 
     assert(line < S_lines_count(lines));
     const markdown_core_input_line at = S_lines_at(lines, line);
     return (size_t)at.start + at.own;
+}
+
+size_t markdown_core_parser_line_decided(const markdown_core_parser *parser, size_t line, bool *past) {
+    const markdown_core_tree *lines = &parser->input.lines;
+    if (past) {
+        *past = false;
+    }
+    if (line >= S_lines_count(lines)) {
+        return 0;
+    }
+    const markdown_core_input_line at = S_lines_at(lines, line);
+    const uint32_t decided = at.decided & ~MARKDOWN_CORE_LINE_PAST;
+    if (past) {
+        *past = at.decided & MARKDOWN_CORE_LINE_PAST;
+    }
+    return decided ? (size_t)at.start + decided : 0;
 }
 
 bool markdown_core_parser_line_span(const markdown_core_parser *parser, size_t line, size_t *start, size_t *end) {
@@ -9109,7 +9210,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_driver_step
     S_read_held_line(markdown_core_parser *parser, const unsigned char *source, size_t length, size_t limit) {
     markdown_core_stream *const stream = parser->stream;
     const size_t index = (size_t)(parser->at.read.number - parser->input.first_line);
-    markdown_core_input_line *found = markdown_core_input_line_at(&parser->input, index);
+    /* An edit's reading that stands inside the line has not read it in
+     * (A REST INSIDE A LINE). */
+    markdown_core_input_line *found = index < parser->input.lines.front
+                                          ? markdown_core_input_line_at(&parser->input, index)
+                                          : S_extend_source_lines(parser, index);
+    if (!found) {
+        return S_DRIVER_STOPS;
+    }
     bool hold = false;
     if (!parser->snapshot) {
         if (stream->mark_count &&
@@ -9206,7 +9314,8 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
         return;
     }
 bound:;
-    size_t limit = markdown_core_parser_candidate_final(parser) ? length : parser->input.complete;
+    const size_t final = markdown_core_parser_candidate_final(parser) ? length : parser->input.complete;
+    size_t limit = final;
     /* An edit's reading stops at the line of the old child it may take back
      * next (THE SPLICE). */
     if (stream && stream->edit && stream->edit->point < limit) {
@@ -9232,7 +9341,10 @@ read:
         }
     }
     if (stream && stream->held) {
-        const S_driver_step step = S_read_held_line(parser, source, length, limit);
+        /* The line held is read on whatever the edit's point is: that is a
+         * line's start, which the reading meets past the line (A REST
+         * INSIDE A LINE). */
+        const S_driver_step step = S_read_held_line(parser, source, length, final);
         if (step == S_DRIVER_RESTARTS) {
             goto read;
         }
@@ -9247,8 +9359,7 @@ read:
             index < parser->input.lines.front ? markdown_core_input_line_at(&parser->input, index) : NULL;
         const size_t start = found ? found->start : parser->input.scanned;
         if (start >= limit) {
-            if (stream && stream->edit && limit == stream->edit->point &&
-                limit < (markdown_core_parser_candidate_final(parser) ? length : parser->input.complete)) {
+            if (stream && stream->edit && limit == stream->edit->point && limit < final) {
                 if (S_resume(parser, start, index)) {
                     return;
                 }
@@ -9384,7 +9495,7 @@ size_t markdown_core_reader_seek(markdown_core_reader *reader, markdown_core_par
     if (!hit) {
         (void)markdown_core_parser_input_ends(parser, source + at);
     }
-    reader->past = at + 1 > reader->past ? at + 1 : reader->past;
+    markdown_core_reader_reads(reader, parser, place, at + 1);
     return at;
 }
 
@@ -11615,6 +11726,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
         } else if (kind->flags & MARKDOWN_CORE_KIND_PROSE) {
             markdown_core_reader_skip(reader);
             markdown_core_block_add_line(parser, container);
+        } else if (container != last_matched_container && structure && structure->lines->text &&
+                   structure->lines->text(structure, parser, container, reader)) {
+            /* The block the line opened took the line's text (THE TEXT OF
+             * ITS LINE). */
+            if (parser->error) {
+                return false;
+            }
         } else {
             const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
             container = text_block->element->opens->text(text_block, parser, container, reader);
@@ -11659,6 +11777,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_hold(markdown_core_parser *par
         .asks = parser->at.step_asks,
         .offset = parser->at.read.offset,
         .column = parser->at.read.column,
+        .far = parser->at.read.far,
         .own = markdown_core_parser_visited_line(parser, parser->at.read.number)->own,
         .step = step,
         .all_matched = all_matched,
@@ -11710,7 +11829,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     parser->at.read.split = false;
 
     reader->line = (markdown_core_chunk){parser->curline.ptr, parser->curline.size, 0};
-    reader->far = 0;
+    reader->far = from ? from->far : 0;
 
     parser->at.asks = parser->at.step_asks = from ? from->asks : 0;
     if (from) {
@@ -11781,6 +11900,16 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
         held = true;
         container = markdown_core_parser_current(parser);
         S_hold(parser, MARKDOWN_CORE_LINE_AT_TEXT, container, all_matched, container != last_matched_container, opens);
+    } else if (!parser->claimed_cursor && !parser->error) {
+        /* How far the line's reading read as it gave its text away (A REST
+         * INSIDE A LINE), and whether it looked past the line's end, as a
+         * term does at the next line's marker: what it read there an edit
+         * of the line moves, and leaves as it was only while the line ends
+         * where it did. */
+        const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+        const bool looked = edit && edit->look.end && edit->look_line == parser->at.read.number;
+        markdown_core_parser_rewritten_line(parser, line)->decided =
+            (uint32_t)reader->far | (looked ? MARKDOWN_CORE_LINE_PAST : 0);
     }
 
 finished:

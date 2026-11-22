@@ -306,20 +306,19 @@ static void session_chain_folds(session_edits *edits, const markdown_core_rest *
 }
 
 /* The flushed parse put back at the rest `rest` (index.h, THE REST), or
- * before the root's child `child`, at input line `line`, reads the text, in which an
+ * before the root's child `child`, at input line `line`, which started at
+ * `start` before the edit, reads the text, in which an
  * edit replaced the old text from `from` to `to` and moved what follows by
  * `delta`, and is flushed again: to its end, or to where it takes the old
  * children back, which is not before `past`, unless `whole` says to read
  * all of it. */
-static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t from,
-                                           size_t to, int64_t delta, size_t past, bool whole,
+static markdown_core_status session_reread(markdown_core_session *session, uint32_t child, size_t line, size_t start,
+                                           size_t from, size_t to, int64_t delta, size_t past, bool whole,
                                            const markdown_core_rest *rest) {
     markdown_core_node *root = session->document.root;
     session_edits *edits = session->edits;
     const size_t count = root->child_count;
     session->document.root = NULL;
-    size_t start, end;
-    markdown_core_parser_line_span(session->committed, line, &start, &end);
     const uint32_t prior =
         child ? (uint32_t)widths_end(&edits->index.widths, root, child - 1) : (uint32_t)root->extent.lead;
     /* The chain's blocks stay, and how many children each had. */
@@ -336,7 +335,8 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     }
     if (!markdown_core_parser_reopen(session->committed, root, child, line, prior, from, to, delta, past,
                                      session_source(session), whole, rest ? rest->path : NULL, places,
-                                     rest ? rest->depth : 0, depth ? folds : NULL, &edits->index)) {
+                                     rest ? rest->depth : 0, depth && rest->inside ? rest->mid : SIZE_MAX,
+                                     depth ? folds : NULL, &edits->index)) {
         markdown_core_node_pool_release(&session->pool, root);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -431,7 +431,8 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
             break;
         }
-        status = session_reread(session, rest.child, rest.line, inside, inside, 0, past, false, &rest);
+        status = session_reread(session, rest.child, rest.line, session_line_start(session, rest.line), inside, inside,
+                                0, past, false, &rest);
         reread_from = edits->reread_from < reread_from ? edits->reread_from : reread_from;
         reread_to = edits->reread_to > reread_to ? edits->reread_to : reread_to;
         /* The places the reading read past need no reading of their own. */
@@ -475,8 +476,10 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     }
     const uint32_t child = rest.child;
     const size_t line = rest.line;
-    size_t rest_start, rest_end;
-    markdown_core_parser_line_span(session->committed, line, &rest_start, &rest_end);
+    /* The text before the rest point stays, past the line's start when the
+     * reading stands inside the line (A REST INSIDE A LINE). */
+    const size_t line_start = session_line_start(session, line);
+    const size_t rest_start = rest.depth && rest.inside ? rest.mid : line_start;
     if (session->text.count > session->edits->peak) {
         session->edits->peak = session->text.count;
     }
@@ -494,8 +497,9 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (compact) {
         markdown_core_node_pool_dispose(&session->pool);
     }
-    markdown_core_status status = compact ? session_reread(session, 0, 0, from, to, delta, 0, true, NULL)
-                                          : session_reread(session, child, line, from, to, delta, 0, false, &rest);
+    markdown_core_status status =
+        compact ? session_reread(session, 0, 0, 0, from, to, delta, 0, true, NULL)
+                : session_reread(session, child, line, line_start, from, to, delta, 0, false, &rest);
     if (compact) {
         markdown_core_node_pool_dispose(&session->pool);
         if (status == MARKDOWN_CORE_OK) {

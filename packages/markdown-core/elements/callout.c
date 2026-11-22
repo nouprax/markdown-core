@@ -56,8 +56,9 @@ static void S_callout_marker(markdown_core_reader *reader) {
 }
 
 /* The header after the marker, from the reader's offset: up to three
- * spaces, then `[!variant]`, an optional fold and a title to the line's
- * end, which it reads. */
+ * spaces, then `[!variant]`, an optional fold, and where a title would
+ * start, which the line gives the callout as its text (THE TEXT OF ITS
+ * LINE). */
 static void S_callout_header(markdown_core_callout_work *counts, markdown_core_parser *parser,
                              markdown_core_reader *reader, markdown_core_callout_header *header) {
     *header = (markdown_core_callout_header){.report = -1};
@@ -102,17 +103,12 @@ static void S_callout_header(markdown_core_callout_work *counts, markdown_core_p
         pos++;
         counts->scan++;
     }
-    bufsize_t end = markdown_core_reader_length(reader);
-    while (end > pos && markdown_core_is_whitespace(markdown_core_reader_peek(reader, end - 1))) {
-        end--;
-        counts->scan++;
-    }
     header->title = pos;
-    header->title_end = end;
     header->metadata = true;
 }
 
-/* Builds the header the scan found on the callout `node`. */
+/* Builds the header the scan found on the callout `node`, up to where its
+ * title would start, where the reader goes. */
 static void S_callout_build(markdown_core_parser *parser, markdown_core_node *node, markdown_core_reader *reader,
                             const markdown_core_callout_header *header) {
     markdown_core_chunk variant = {(unsigned char *)markdown_core_reader_bytes(reader, header->variant),
@@ -123,23 +119,50 @@ static void S_callout_build(markdown_core_parser *parser, markdown_core_node *no
     }
     node->as.callout->variant = markdown_core_optional_chunk_present(variant);
     node->as.callout->collapsed = (markdown_core_optional_bool){header->fold, header->collapsed};
-    const bufsize_t pos = header->title, end = header->title_end;
-    if (end > pos) {
-        markdown_core_node *title = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
-        if (!title) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        node->as.callout->title = title;
-        title->place = markdown_core_reader_span(reader, parser, pos, end);
-        markdown_core_strbuf_put(&title->content, markdown_core_reader_bytes(reader, pos), end - pos);
-        if (title->content.oom || !markdown_core_reader_marks(reader, parser, title, pos, title->content.size, 0)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-        markdown_core_block_settle_field(parser, title, node);
-    }
-    markdown_core_reader_end(reader);
+    markdown_core_reader_advance(reader, header->title - reader->offset, false);
 }
+
+/* THE TEXT OF ITS LINE (element.h, `text`): the text of the line a callout
+ * with a variant opened on, past its header, is its title, to the line's
+ * end and without the whitespace there. A callout the edit reopens inside
+ * the line makes it anew. */
+static bool callout_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node, markdown_core_reader *reader) {
+    markdown_core_callout_work *counts = self->state;
+    if (!node->as.callout->variant.has_value) {
+        return false;
+    }
+    if (node->as.callout->title) {
+        markdown_core_block_unsettle_field(parser, node->as.callout->title, node);
+        node->as.callout->title = NULL;
+    }
+    const bufsize_t pos = reader->offset;
+    bufsize_t length;
+    const unsigned char *text = markdown_core_reader_handed(reader, pos, &length);
+    while (length && markdown_core_is_whitespace(text[length - 1])) {
+        length--;
+        counts->scan++;
+    }
+    if (!length) {
+        return true;
+    }
+    markdown_core_node *title = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
+    if (!title) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return true;
+    }
+    node->as.callout->title = title;
+    title->place = markdown_core_reader_span(reader, parser, pos, pos + length);
+    markdown_core_strbuf_put(&title->content, text, length);
+    if (title->content.oom || !markdown_core_reader_marks(reader, parser, title, pos, title->content.size, 0)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_block_settle_field(parser, title, node);
+    return true;
+}
+
+/* The title a callout's text made (element.h, markdown_core_edit_ops). */
+static const markdown_core_node *callout_title(const markdown_core_node *node) { return node->as.callout->title; }
 
 /* A callout's open builds what its scan read: the marker's motion, the
  * report of a variant cut short, and the header, after which the line is
@@ -221,6 +244,7 @@ static markdown_core_node *open_lazy(const markdown_core_element_instance *self,
 
 static const markdown_core_edit_ops CALLOUT_EDIT = {
     .reopens = true,
+    .text = callout_title,
 };
 
 static const markdown_core_open_ops CALLOUT_OPENS = {
@@ -235,6 +259,7 @@ static const markdown_core_line_ops CALLOUT_LINES = {
     .prefix = continue_container,
     .prefix_bytes = ">",
     .blank_opaque = true,
+    .text = callout_text,
 };
 
 const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[] = {

@@ -150,6 +150,12 @@ typedef struct {
     size_t depth, line;
     /* Where the chain's last block ends, when it is a leaf, or 0. */
     size_t last;
+    /* Whether the reading stands inside the line (A REST INSIDE A LINE),
+     * and where: where the text of the leaf the line opened begins, the
+     * chain's blocks from the first that starts on the line opened before
+     * it. */
+    bool inside;
+    size_t mid;
     /* The root's first child the reading reads again or takes back: the
      * one after the chain's, when there is a chain. */
     uint32_t child;

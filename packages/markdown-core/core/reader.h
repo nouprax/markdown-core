@@ -75,6 +75,14 @@ static inline const unsigned char *markdown_core_reader_bytes(const markdown_cor
     return reader->line.data + at;
 }
 
+/* The line's text from `at` to its end, given to a block at the line's TEXT
+ * step (element.h, `text`): no step of the line reads it. */
+static inline const unsigned char *markdown_core_reader_handed(const markdown_core_reader *reader, bufsize_t at,
+                                                               bufsize_t *length) {
+    *length = reader->line.len - at;
+    return reader->line.data + at;
+}
+
 /* The line's length, through its line ending: a reading that asks it reads
  * where the line ends. */
 static inline bufsize_t markdown_core_reader_length(markdown_core_reader *reader) {
@@ -90,6 +98,28 @@ static inline bufsize_t markdown_core_reader_scalar_end(markdown_core_reader *re
     }
     reader->far = at + 1 > reader->far ? at + 1 : reader->far;
     return at;
+}
+
+/* How many bytes `c` the line holds one after another from `at` on: the
+ * reader notes it read them and the byte after them. */
+static inline bufsize_t markdown_core_reader_run(markdown_core_reader *reader, bufsize_t at, unsigned char c) {
+    bufsize_t count = 0;
+    while (!markdown_core_reader_ends(reader, at + count) && markdown_core_reader_peek(reader, at + count) == c) {
+        count++;
+    }
+    return count;
+}
+
+/* Whether the line holds only spaces and tabs from `at` to its ending: the
+ * reader notes it read up to the first byte that is neither. */
+static inline bool markdown_core_reader_blank_from(markdown_core_reader *reader, bufsize_t at) {
+    for (; !markdown_core_reader_ends(reader, at); at++) {
+        const unsigned char c = markdown_core_reader_peek(reader, at);
+        if (c != ' ' && c != '\t') {
+            return c == '\n' || c == '\r';
+        }
+    }
+    return true;
 }
 
 /* WHERE THE READER STANDS on its line: the offset, its column and whether a

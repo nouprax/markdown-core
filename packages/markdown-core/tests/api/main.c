@@ -7890,7 +7890,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_html_block_end_5, "x]]>", -1},
                  {scan_link_title, "\"title\"", -1},
                  {scan_atx_heading_start, "## ", -1},
-                 {scan_setext_heading_line, "---\n", 2},
                  {scan_open_code_fence, "```lang\n", 3},
                  {scan_close_code_fence, "``` \n", 3},
                  {scan_entity, "&amp;", -1},
@@ -8519,8 +8518,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 20,
-           "ordinary physical geometry and the line look occupy twenty bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 24,
+           "ordinary physical geometry, the line look and how far the line decided occupy twenty-four bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();

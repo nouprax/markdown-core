@@ -680,6 +680,16 @@ struct markdown_core_line_ops {
                                      markdown_core_node *, markdown_core_reader *);
     bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                  markdown_core_reader *);
+    /* THE TEXT OF ITS LINE: the line's text from the reader's offset, at the
+     * line's TEXT step (blocks.c), given to `node`, a block the line opened,
+     * which makes a field of its own of it -- a callout's title -- and true;
+     * false when the block takes none, and a paragraph does. What the block
+     * reads of the text is no step of the line's: the line gave the text away
+     * there (blocks.c, A REST INSIDE A LINE), as it gives a paragraph its
+     * text. A block of the element that a rest inside that line reopens is
+     * given the text again, and makes the field anew. NULL for none. */
+    bool (*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                 markdown_core_reader *);
     /* The flags of the block that its container's prefix match sets line by
      * line, which a lookahead puts back. A line that holds a byte other
      * than spaces, tabs and container prefix bytes sets them as no line
@@ -730,6 +740,11 @@ typedef struct markdown_core_edit_ops {
      * as a later child: no reopen rests at it, though the children abut (a
      * table's head row). */
     bool headed;
+    /* The field `text` (markdown_core_line_ops) made of the text of the
+     * first line of `node`, where that text starts: a rest inside the line
+     * may stand there (blocks.c, A REST INSIDE A LINE). NULL when the block
+     * made none, or for an element that has no `text`. */
+    const markdown_core_node *(*text)(const markdown_core_node *node);
     /* The block kinds of the element whose children each start a line of
      * their own with a marker that no line of the child before takes, not
      * even lazily -- a list's items: a reopen may rest at one on the line

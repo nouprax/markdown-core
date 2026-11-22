@@ -532,9 +532,12 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
 static bool scan_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          block_start_context *context, block_start *start) {
     (void)self;
-    if ((start->matched =
-             scan_atx_heading_start(markdown_core_reader_rest(context->reader, 0),
-                                    markdown_core_reader_length(context->reader), context->reader->nonspace))) {
+    /* The line is read past its first byte only when that byte may begin
+     * the heading's line: a `#`, or an underline's `=` or `-`. */
+    const unsigned char first = markdown_core_reader_peek(context->reader, context->reader->nonspace);
+    if (first == '#' && (start->matched = scan_atx_heading_start(markdown_core_reader_rest(context->reader, 0),
+                                                                 markdown_core_reader_length(context->reader),
+                                                                 context->reader->nonspace))) {
         start->open = open_atx;
         if (parser->sink && self->peers[HEADING_TOPIC]) {
             const unsigned char *data = markdown_core_reader_rest(context->reader, 0);
@@ -549,9 +552,12 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
                 markdown_core_topic_report_line(parser, context->reader->nonspace, end);
             }
         }
-    } else if (context->paragraph && (start->matched = scan_setext_heading_line(
-                                          markdown_core_reader_rest(context->reader, 0),
-                                          markdown_core_reader_length(context->reader), context->reader->nonspace))) {
+    } else if (context->paragraph && (first == '=' || first == '-') &&
+               markdown_core_reader_blank_from(
+                   context->reader, context->reader->nonspace +
+                                        markdown_core_reader_run(context->reader, context->reader->nonspace, first))) {
+        /* An underline: a run of one of them, and only spaces after it. */
+        start->matched = first == '=' ? 1 : 2;
         start->open = open_setext;
     } else {
         return false;
