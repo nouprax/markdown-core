@@ -676,12 +676,23 @@ kotlin {
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment
                                 .FORCE_16KB_PAGES
                     }
+                    // The minSdk floor; 16 KB page images exist only at API 36.
+                    create("markdownCoreFloorPage4k") {
+                        device = "Pixel 10 Pro XL"
+                        apiLevel =
+                            libs.versions.android.min.sdk
+                                .get()
+                                .toInt()
+                        systemImageSource = "google"
+                        require64Bit = true
+                    }
                     configureEach { testedAbi = androidManagedDeviceTestAbi }
                 }
                 groups {
                     create("markdownCoreAndroidPageSizes") {
                         targetDevices.add(localDevices["markdownCoreApi36Page4k"])
                         targetDevices.add(localDevices["markdownCoreApi36Page16k"])
+                        targetDevices.add(localDevices["markdownCoreFloorPage4k"])
                     }
                 }
             }
