@@ -9,7 +9,7 @@ that source of truth. The versions below were reviewed on 2026-11-22.
 
 | Area | Supported version | Contract |
 | --- | --- | --- |
-| Gradle | 9.9.2 | Distribution/JAR SHA-256 and the release signing subkey are pinned |
+| Gradle | 9.7.1 | Distribution/JAR SHA-256 and the release signing subkey are pinned |
 | AGP | 9.5.2 | Stable patch line; compile/target SDK 36, min SDK 24 (the Google Play services and AndroidX floor) |
 | Kotlin Gradle plugin | 2.4.21 | Stable bug-fix release |
 | Kotlin source/API and stdlib | 2.2 / 2.2.21 | Deliberate consumer compatibility floor; independent of the build plugin |
@@ -30,14 +30,18 @@ reproducible SDK package used by the JNI build; the host CMake requirement
 remains the lower compatibility floor declared by the CMake project.
 
 Kotlin 2.4.21's published compatibility table does not yet classify Gradle
-9.9.2 and AGP 9.5.2 as fully supported. This repository treats that as an
+9.7.1 and AGP 9.5.2 as fully supported. This repository treats that as an
 explicit compatibility edge: Gradle model checks, Android/KMP/JVM consumers,
 dependency verification, publications, and package audits must all pass. A
 future version bump must not weaken those gates to suppress an incompatibility.
+Gradle stays on 9.7.1 for now: Gradle 9.8.0 deprecates the enum attribute
+type that Kotlin Gradle Plugin 2.4.x registers for Kotlin/Native bundles
+(`kgp_native_bundle_attribute_enum`), and the build runs with
+`--warning-mode=fail`. Move to Gradle 9.8 or later together with Kotlin
+Gradle Plugin 2.5.0 once it is stable.
 Gradle 9.7.1 rotated release signing to subkey
-`F3FF33E96F18AA62DD580F9651FBF517CE6D6B80`, which still signs 9.9.2;
-dependency verification scopes that key to the synthetic `gradle:gradle:9.9.2`
-IDE sources module rather than
+`F3FF33E96F18AA62DD580F9651FBF517CE6D6B80`; dependency verification scopes
+that key to the synthetic `gradle:gradle:9.7.1` IDE sources module rather than
 granting it repository-wide trust.
 
 ## Maintenance policy

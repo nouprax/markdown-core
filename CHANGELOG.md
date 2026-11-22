@@ -8,7 +8,7 @@ promised to remain compatible between releases.
 
 - Android requires API 24 (Android 7.0) or later, up from API 21, matching
   the Google Play services and AndroidX floor; CI tests it on an API 24
-  emulator. The build moves to AGP 9.5.2 and Gradle 9.9.2.
+  emulator. The build moves to AGP 9.5.2.
 
 - `markdown_core_node_anchor` and `markdown_core_attribute_value_anchor`
   return a `markdown_core_status` and give the anchor through an
