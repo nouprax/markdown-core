@@ -356,7 +356,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_roster_free(&parser->roster);
     markdown_core_free(parser->line_opens);
     parser->line_opens = NULL;
-    parser->line_open_count = parser->line_open_capacity = 0;
+    parser->line_open_count = 0;
+    parser->line_open_capacity = 0;
     markdown_core_source_order_dispose(&parser->source_order);
     S_release_walk(parser);
     markdown_core_free(parser->block_inputs);
@@ -1266,6 +1267,13 @@ static bool S_field_place(const markdown_core_field_to *to, bufsize_t from, bufs
     if (to->map) {
         return markdown_core_text_place(to->parser, to->map, from + to->base, end + to->base, place);
     }
+    if (to->reader && !to->run && !to->parser->input.mapped) {
+        /* A reader's line, written where it was read, places its bytes
+         * from where the line starts. */
+        const bufsize_t line = markdown_core_parser_line_start(to->parser, to->reader->number);
+        *place = (markdown_core_place){(uint32_t)(line + from + to->base), (uint32_t)(line + end + to->base)};
+        return true;
+    }
     if (to->reader) {
         *place = markdown_core_reader_span(to->reader, to->parser, from + to->base, end + to->base);
         return true;
@@ -1287,37 +1295,47 @@ void markdown_core_field_put(const markdown_core_field_to *to, int slot, int how
     }
 }
 
-/* Adds an entry read as `how` says, OPENER or OPEN, to `to`'s node. */
-static void S_open_add(const markdown_core_field_to *to, int how, int slot, markdown_core_node_kind owner,
-                       bufsize_t from, bufsize_t end) {
-    markdown_core_place place;
-    if (!S_field_place(to, from, end, &place)) {
-        return;
-    }
+/* Room for `count` entries on `to`'s node, or, with none, on the line in
+ * hand; NULL, with the parse failed, when storage could not be had. */
+static markdown_core_written *S_open_room(const markdown_core_field_to *to, size_t count) {
     markdown_core_parser *parser = to->parser;
     markdown_core_written *room;
     if (to->node) {
-        room = markdown_core_node_field_room(parser->pool, to->node, 1);
+        room = markdown_core_node_field_room(parser->pool, to->node, (uint32_t)count);
     } else {
-        room = markdown_core_reserve(parser->line_opens, &parser->line_open_capacity, parser->line_open_count + 1,
+        room = markdown_core_reserve(parser->line_opens, &parser->line_open_capacity, parser->line_open_count + count,
                                      sizeof(*room));
         parser->line_opens = room ? room : parser->line_opens;
         room = room ? room + parser->line_open_count : NULL;
     }
     if (!room) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
     }
-    *room = (markdown_core_written){.start = place.start,
-                                    .end = place.end,
-                                    .owner = (uint16_t)owner,
-                                    .slot = (uint8_t)slot,
-                                    .how = (uint8_t)how,
-                                    .raw = true};
+    return room;
+}
+
+/* Writes an entry read as `how` says at `*item`, which it moves past it,
+ * when its bytes have a place. */
+static void S_open_put(const markdown_core_field_to *to, markdown_core_written **item, int how, int slot,
+                       markdown_core_node_kind owner, bufsize_t from, bufsize_t end) {
+    markdown_core_place place;
+    if (S_field_place(to, from, end, &place)) {
+        *(*item)++ = (markdown_core_written){.start = place.start,
+                                             .end = place.end,
+                                             .owner = (uint16_t)owner,
+                                             .slot = (uint8_t)slot,
+                                             .how = (uint8_t)how,
+                                             .raw = true};
+    }
+}
+
+/* Counts the entries written from `room` up to `item` as held. */
+static void S_open_held(const markdown_core_field_to *to, const markdown_core_written *room,
+                        const markdown_core_written *item) {
     if (to->node) {
-        to->node->fields->count++;
+        to->node->fields->count += (uint32_t)(item - room);
     } else {
-        parser->line_open_count++;
+        to->parser->line_open_count += (uint32_t)(item - room);
     }
 }
 
@@ -1328,20 +1346,25 @@ static bool S_open_target(const markdown_core_field_to *to) {
 }
 
 void markdown_core_field_empty(const markdown_core_field_to *to, int slot, bufsize_t at) {
-    if (S_open_target(to)) {
-        S_open_add(to, MARKDOWN_CORE_FIELD, slot, MARKDOWN_CORE_KIND_NONE, at, at);
+    markdown_core_written *room = S_open_target(to) ? S_open_room(to, 1) : NULL, *item = room;
+    if (room) {
+        S_open_put(to, &item, MARKDOWN_CORE_FIELD, slot, MARKDOWN_CORE_KIND_NONE, at, at);
+        S_open_held(to, room, item);
     }
 }
 
 void markdown_core_field_opener(const markdown_core_field_to *to, markdown_core_node_kind opens, bool line,
                                 bufsize_t from, bufsize_t end, const markdown_core_field *fields, size_t count) {
-    if (!S_open_target(to)) {
+    markdown_core_written *room = S_open_target(to) ? S_open_room(to, 1 + count) : NULL, *item = room;
+    if (!room) {
         return;
     }
-    S_open_add(to, MARKDOWN_CORE_FIELD_OPENER, line, opens, from, end);
+    S_open_put(to, &item, MARKDOWN_CORE_FIELD_OPENER, line, opens, from, end);
     for (size_t i = 0; i < count; i++) {
-        S_open_add(to, MARKDOWN_CORE_FIELD_OPEN, fields[i].slot, fields[i].owner, fields[i].start, fields[i].stop);
+        S_open_put(to, &item, MARKDOWN_CORE_FIELD_OPEN, fields[i].slot, fields[i].owner, fields[i].start,
+                   fields[i].stop);
     }
+    S_open_held(to, room, item);
 }
 
 /* THE RUN A FIELD WAS PLACED ON, which places the next of a reading's
@@ -1382,20 +1405,22 @@ static bool S_run_place(const markdown_core_parser *parser, const markdown_core_
     return true;
 }
 
-void markdown_core_field_many(const markdown_core_field_to *to, const markdown_core_field_spot *spots, size_t count) {
-    size_t filled = 0;
-    for (size_t i = 0; i < count; i++) {
-        filled += spots[i].end > spots[i].from || spots[i].empty;
-    }
-    if (!filled || !to->node || !to->parser) {
-        return;
-    }
-    markdown_core_written *room = markdown_core_node_field_room(to->parser->pool, to->node, (uint32_t)filled);
+/* Takes room for the `left` spots from the first one written on. */
+static markdown_core_written *S_spots_room(const markdown_core_field_to *to, size_t left) {
+    markdown_core_written *room = markdown_core_node_field_room(to->parser->pool, to->node, (uint32_t)left);
     if (!room) {
         markdown_core_parser_fail(to->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return room;
+}
+
+void markdown_core_field_many(const markdown_core_field_to *to, const markdown_core_field_spot *spots, size_t count) {
+    if (!to->node || !to->parser) {
         return;
     }
-    markdown_core_fields *fields = to->node->fields;
+    /* The room is taken at the first spot written, for it and every one
+     * after it, and the count grows by what was written. */
+    markdown_core_written *room = NULL, *item = NULL;
     S_run run = {0};
     /* A reader's line, written where it was read, places its bytes from
      * where the line starts. */
@@ -1405,42 +1430,55 @@ void markdown_core_field_many(const markdown_core_field_to *to, const markdown_c
     for (size_t i = 0; i < count; i++) {
         const bufsize_t from = spots[i].from + to->base, end = spots[i].end + to->base;
         markdown_core_place place;
-        if (end <= from) {
-            if (spots[i].empty && S_field_place(to, spots[i].from, spots[i].from, &place)) {
-                fields->items[fields->count++] = (markdown_core_written){.start = place.start,
-                                                                         .end = place.start,
-                                                                         .slot = (uint8_t)spots[i].slot,
-                                                                         .how = MARKDOWN_CORE_FIELD,
-                                                                         .raw = true};
-            }
+        const uint8_t how = spots[i].how;
+        const bool anchor = how == MARKDOWN_CORE_FIELD_LINES || how == MARKDOWN_CORE_FIELD_FOUND;
+        /* An empty field or an anchor is a point, at `from`. */
+        const bool point = end <= from || anchor;
+        if (point && !(spots[i].empty || anchor)) {
             continue;
         }
-        if (to->run && markdown_core_inline_frame_place(to->run, from, end, &place)) {
+        const bufsize_t stop = point ? from : end;
+        if (to->run && markdown_core_inline_frame_place(to->run, from, stop, &place)) {
         } else if (to->map) {
-            if (!S_run_place(to->parser, to->map, from, end, &run, &place) &&
-                !markdown_core_text_place(to->parser, to->map, from, end, &place)) {
+            if ((point || !S_run_place(to->parser, to->map, from, stop, &run, &place)) &&
+                !markdown_core_text_place(to->parser, to->map, from, stop, &place)) {
                 continue;
             }
         } else if (line) {
-            place = (markdown_core_place){(uint32_t)(line_start + from), (uint32_t)(line_start + end)};
+            place = (markdown_core_place){(uint32_t)(line_start + from), (uint32_t)(line_start + stop)};
         } else if (to->reader) {
-            place = markdown_core_reader_span(to->reader, to->parser, from, end);
+            place = markdown_core_reader_span(to->reader, to->parser, from, stop);
         } else {
-            place = (markdown_core_place){(uint32_t)from, (uint32_t)end};
+            place = (markdown_core_place){(uint32_t)from, (uint32_t)stop};
         }
-        if (place.end > place.start) {
-            fields->items[fields->count++] = (markdown_core_written){.start = place.start,
-                                                                     .end = place.end,
-                                                                     .slot = (uint8_t)spots[i].slot,
-                                                                     .how = MARKDOWN_CORE_FIELD,
-                                                                     .raw = true};
+        if (point) {
+            place.end = place.start;
         }
+        if (place.end <= place.start && !point) {
+            continue;
+        }
+        if (!room && !(item = room = S_spots_room(to, count - i))) {
+            return;
+        }
+        *item++ = (markdown_core_written){
+            .start = place.start, .end = place.end, .slot = (uint8_t)spots[i].slot, .how = how, .raw = true};
+    }
+    if (room) {
+        to->node->fields->count += (uint32_t)(item - room);
     }
 }
 
 void markdown_core_field_add(const markdown_core_field_to *to, int slot, bufsize_t from, bufsize_t end) {
-    const markdown_core_field_spot spot = {from, end, slot, false};
-    markdown_core_field_many(to, &spot, 1);
+    markdown_core_place place;
+    if (end <= from || !to->node || !to->parser || !S_field_place(to, from, end, &place) || place.end <= place.start) {
+        return;
+    }
+    markdown_core_written *room = S_spots_room(to, 1);
+    if (room) {
+        *room = (markdown_core_written){
+            .start = place.start, .end = place.end, .slot = (uint8_t)slot, .how = MARKDOWN_CORE_FIELD, .raw = true};
+        to->node->fields->count++;
+    }
 }
 
 int markdown_core_text_line(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at) {

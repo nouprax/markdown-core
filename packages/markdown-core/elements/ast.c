@@ -1048,6 +1048,18 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void publish_fields(publish_walk *wal
                                                                bool content, bool root, uint32_t source,
                                                                const content_place *at) {
     markdown_core_fields *fields = node->fields;
+    if (!content && !root) {
+        /* A block's fields are in the source: measured from its start. */
+        for (uint32_t i = 0; i < fields->count; i++) {
+            markdown_core_written *field = &fields->items[i];
+            if (field->raw) {
+                field->start -= source;
+                field->end -= source;
+                field->raw = false;
+            }
+        }
+        return;
+    }
     bool run = false;
     for (uint32_t i = 0; i < fields->count; i++) {
         markdown_core_written *field = &fields->items[i];

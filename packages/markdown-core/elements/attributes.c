@@ -606,7 +606,8 @@ static inline bool S_field(markdown_core_attribute_parser *p, markdown_core_slot
         return false;
     }
     w->places = grown;
-    w->places[w->place_count++] = (markdown_core_field_spot){from, end, (int)slot, slot == MARKDOWN_CORE_SLOT_VALUE};
+    w->places[w->place_count++] =
+        (markdown_core_field_spot){from, end, (int)slot, slot == MARKDOWN_CORE_SLOT_VALUE, MARKDOWN_CORE_FIELD};
     return true;
 }
 
@@ -1172,20 +1173,33 @@ static markdown_core_bracket_match S_close_span(const markdown_core_element_inst
     return BRACKET_MATCHED;
 }
 
-bool markdown_core_attributes_report(const markdown_core_element_instance *self, const markdown_core_field_to *to,
-                                     markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
-                                     bufsize_t end) {
-    (void)self;
+/* The blocks of the line's bytes `from` up to `end` that do not close,
+ * of the braces before `last`. */
+static bool S_report_open(const markdown_core_field_to *to, markdown_core_node_kind owner, const unsigned char *line,
+                          bufsize_t from, bufsize_t last, bufsize_t end) {
     bool open = false;
     S_value_seen seen = {{-1, -1, -1}, {-1, -1, -1}};
-    for (bufsize_t at = from; at < end; at++) {
-        if (escaped(line, end, at)) {
-            at++;
-        } else if (line[at] == '{') {
+    /* Each brace a backslash does not escape: an odd run of them before
+     * it, from `from`, ends with one that does. */
+    for (const unsigned char *brace = memchr(line + from, '{', (size_t)(last - from)); brace;
+         brace = memchr(brace + 1, '{', (size_t)(line + last - brace - 1))) {
+        const bufsize_t at = (bufsize_t)(brace - line);
+        bufsize_t run = 0;
+        while (at - run > from && line[at - run - 1] == '\\') {
+            run++;
+        }
+        if (!(run & 1)) {
             open = S_members_open(to, owner, true, line, end, at, &seen) || open;
         }
     }
     return open;
+}
+
+bool markdown_core_attributes_report(const markdown_core_element_instance *self, const markdown_core_field_to *to,
+                                     markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
+                                     bufsize_t end) {
+    (void)self;
+    return S_report_open(to, owner, line, from, end, end);
 }
 
 static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
@@ -1206,8 +1220,9 @@ static bufsize_t S_follow_tail(const markdown_core_element_instance *self, markd
     while (end > from && markdown_core_is_whitespace(line[end - 1])) {
         end--;
     }
-    markdown_core_attributes_report(self, &lead->fields, markdown_core_node_get_kind(node), line, from, end);
+    const markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     if (end == from || line[end - 1] != '}') {
+        S_report_open(&lead->fields, kind, line, from, end, end);
         return 0;
     }
     /* A tail is on the last line of what is offered. */
@@ -1218,6 +1233,8 @@ static bufsize_t S_follow_tail(const markdown_core_element_instance *self, markd
     markdown_core_attribute_parser attributes = {
         .data = line, .length = end, .scratch = markdown_core_attributes_scratch(self)};
     const bufsize_t start = markdown_core_attributes_tail(&attributes, first, end);
+    /* The braces of the tail are its own, which closes. */
+    S_report_open(&lead->fields, kind, line, from, start >= 0 ? start : end, end);
     bufsize_t taken = 0, stop;
     if (start >= 0 && markdown_core_attributes_parse(&attributes, start, &node->attributes, &stop)) {
         markdown_core_attributes_fields(&attributes, &lead->fields);

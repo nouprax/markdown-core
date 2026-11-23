@@ -247,14 +247,9 @@ static bool node_inline(const markdown_core_node *node) {
     return (node->kind & MARKDOWN_CORE_NODE_TYPE_INLINE) == MARKDOWN_CORE_NODE_TYPE_INLINE;
 }
 
-/* Adds an inline opener of kind `kind` at `place`, once. */
+/* Adds an inline opener of kind `kind` at `place`; the same opener added
+ * twice is kept once when the openers are sorted (take_inlines). */
 static void gather_inline(context_gather *gather, markdown_core_node_kind kind, markdown_core_place place) {
-    for (size_t i = 0; i < gather->inline_count; i++) {
-        if (gather->inlines[i].kind == kind && gather->inlines[i].scope.start.line == (int32_t)place.start &&
-            gather->inlines[i].scope.end.line == (int32_t)place.end) {
-            return;
-        }
-    }
     markdown_core_opener *grown =
         markdown_core_reserve(gather->inlines, &gather->inline_capacity, gather->inline_count + 1, sizeof(*grown));
     if (!grown) {
@@ -328,7 +323,7 @@ static void gather_node(context_gather *gather, const context_query *query, cons
         const markdown_core_slot_kind before = prefix_of(at->slot);
         markdown_core_place prefix = {0, 0};
         bool prefixed = false;
-        for (uint32_t k = open ? group : 0; before && k < i; k++) {
+        for (uint32_t k = open ? (uint32_t)group : 0; before && k < i; k++) {
             const markdown_core_written *was = &fields->items[k];
             if (was->slot == before && was->how == at->how && (open || was->end > was->start)) {
                 prefix = (markdown_core_place){base + was->start, base + was->end};
@@ -345,7 +340,10 @@ static int opener_order(const void *left, const void *right) {
     if (a->scope.start.line != b->scope.start.line) {
         return a->scope.start.line < b->scope.start.line ? -1 : 1;
     }
-    return a->scope.end.line > b->scope.end.line ? -1 : a->scope.end.line < b->scope.end.line ? 1 : 0;
+    if (a->scope.end.line != b->scope.end.line) {
+        return a->scope.end.line > b->scope.end.line ? -1 : 1;
+    }
+    return a->kind < b->kind ? -1 : a->kind > b->kind ? 1 : 0;
 }
 
 /* Notes what `opener`, kept, leaves open at the start of the cursor's line
@@ -487,6 +485,14 @@ static bool take_inlines(markdown_core_context *context, const context_query *qu
     }
     if (gather->inline_count > 1) {
         qsort(gather->inlines, gather->inline_count, sizeof(*gather->inlines), opener_order);
+        /* Sorted, an opener added twice is next to itself. */
+        size_t kept = 1;
+        for (size_t i = 1; i < gather->inline_count; i++) {
+            if (opener_order(&gather->inlines[kept - 1], &gather->inlines[i])) {
+                gather->inlines[kept++] = gather->inlines[i];
+            }
+        }
+        gather->inline_count = kept;
     }
     for (size_t i = 0; i < gather->inline_count; i++) {
         markdown_core_opener *at = &gather->inlines[i];

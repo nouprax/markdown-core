@@ -643,10 +643,16 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     if (p.failed) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    /* Its fields, added a batch at a time. */
     const markdown_core_field_to to = {parser, node, NULL, NULL, 0, NULL};
-    for (size_t i = 0; i < places.count; i++) {
-        markdown_core_field_add(&to, places.items[i].slot, (bufsize_t)places.items[i].from,
-                                (bufsize_t)places.items[i].to);
+    markdown_core_field_spot spots[32];
+    for (size_t i = 0; i < places.count;) {
+        size_t count = 0;
+        for (; i < places.count && count < sizeof(spots) / sizeof(spots[0]); i++) {
+            spots[count++] = (markdown_core_field_spot){(bufsize_t)places.items[i].from, (bufsize_t)places.items[i].to,
+                                                        (int)places.items[i].slot, false, MARKDOWN_CORE_FIELD};
+        }
+        markdown_core_field_many(&to, spots, count);
     }
     markdown_core_free(places.items);
     if (parser->error) {

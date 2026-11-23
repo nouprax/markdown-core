@@ -849,24 +849,35 @@ static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_c
     const markdown_core_element_instance *const *end =
         dialect->inline_dispatch + dialect->inline_dispatch_offsets[c + 1];
 
+    if (owner == end) {
+        return NULL;
+    }
     /* What the root keeps of the attempts before the one that reads the
      * byte (node.h, OPENER): an element that reads it as a construct leaves
-     * none of the others' given up there. */
+     * none of the others' given up there. Each attempt given up moves
+     * `tried` to what the root holds after it. */
     const markdown_core_fields *fields = inline_state->owner->fields;
     const uint32_t kept = fields ? fields->count : 0;
-    for (; owner < end; owner++) {
-        const uint32_t tried = inline_state->owner->fields ? inline_state->owner->fields->count : 0;
+    uint32_t tried = kept;
+    for (;;) {
         res = (*owner)->element->inlines->match(*owner, parser, parent, c, inline_state);
 
         if (res || inline_state->pos != start || parser->error || inline_state->error) {
             /* A bracket's text that opens is still text, as the opener of
              * an attempt given up is: what closes it decides. */
-            const bracket *open = markdown_core_open_bracket(inline_state);
-            if (tried > kept && (res || inline_state->pos != start) && !(res && open && open->inl_text == res)) {
-                S_opens_void(inline_state->owner, kept, tried);
+            if (tried > kept && (res || inline_state->pos != start)) {
+                const bracket *open = markdown_core_open_bracket(inline_state);
+                if (!(res && open && open->inl_text == res)) {
+                    S_opens_void(inline_state->owner, kept, tried);
+                }
             }
             break;
         }
+        if (++owner == end) {
+            break;
+        }
+        fields = inline_state->owner->fields;
+        tried = fields ? fields->count : 0;
     }
 
     return res;

@@ -456,11 +456,14 @@ void markdown_core_field_add(const markdown_core_field_to *to, int slot, bufsize
 /* A field a reading noted, to be added with the others it read at once
  * (markdown_core_field_many): its bytes and its slot kind, and, for one
  * with none, whether it is kept as the empty field a reading found nothing
- * written in (markdown_core_field_empty): `k=`'s value. */
+ * written in (markdown_core_field_empty): `k=`'s value; and how it is
+ * read (node.h, markdown_core_fields), a plain field when left 0, or an
+ * anchor at `from` (markdown_core_field_put). */
 typedef struct markdown_core_field_spot {
     bufsize_t from, end;
     int slot;
     bool empty;
+    uint8_t how;
 } markdown_core_field_spot;
 /* Adds each of the `count` fields at `spots`, as markdown_core_field_add
  * would one by one. */

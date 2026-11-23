@@ -157,19 +157,20 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     size_t count = 0;
     /* A target with no path, `[[#t]]`, holds an empty one, as one with an
      * empty fragment holds an empty anchor. */
-    spots[count++] = (markdown_core_field_spot){body, hash >= 0 ? hash : target_end, MARKDOWN_CORE_SLOT_DEST, true};
+    spots[count++] = (markdown_core_field_spot){body, hash >= 0 ? hash : target_end, MARKDOWN_CORE_SLOT_DEST, true,
+                                                MARKDOWN_CORE_FIELD};
     if (hash >= 0) {
-        spots[count++] =
-            (markdown_core_field_spot){hash + (block_id ? 2 : 1), target_end, MARKDOWN_CORE_SLOT_ANCHOR, true};
+        spots[count++] = (markdown_core_field_spot){hash + (block_id ? 2 : 1), target_end, MARKDOWN_CORE_SLOT_ANCHOR,
+                                                    true, MARKDOWN_CORE_FIELD};
     }
     if (label >= 0) {
         const bool sized = embedded && node->as.cross_embedded->dimensions.has_value;
         const bufsize_t end = !sized ? i : dimension_separator >= 0 ? dimension_separator : label;
-        spots[count++] = (markdown_core_field_spot){label, end, MARKDOWN_CORE_SLOT_NONE, false};
+        spots[count++] = (markdown_core_field_spot){label, end, MARKDOWN_CORE_SLOT_NONE, false, MARKDOWN_CORE_FIELD};
         if (sized) {
             spots[count++] = (markdown_core_field_spot){
                 dimension_separator >= 0 ? dimension_separator + dimension_separator_length : label, i,
-                MARKDOWN_CORE_SLOT_NONE, false};
+                MARKDOWN_CORE_SLOT_NONE, false, MARKDOWN_CORE_FIELD};
         }
     }
     markdown_core_field_many(&fields, spots, count);

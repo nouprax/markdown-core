@@ -225,15 +225,12 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
     }
     bool cut;
     const bufsize_t language = word + info_word(rest + word, info_end - word, -1, &cut);
-    if (language > word) {
-        markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_INFO, offset + word, offset + language);
-    } else {
-        markdown_core_field_empty(&fields, MARKDOWN_CORE_SLOT_INFO, offset + word);
-    }
-    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, offset + info_start, offset + word);
-    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, offset + language, offset + info_end);
-    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_LINES, offset + pos, offset + pos,
-                            false);
+    const markdown_core_field_spot spots[] = {
+        {offset + word, offset + language, MARKDOWN_CORE_SLOT_INFO, true, MARKDOWN_CORE_FIELD},
+        {offset + info_start, offset + word, MARKDOWN_CORE_SLOT_NONE, false, MARKDOWN_CORE_FIELD},
+        {offset + language, offset + info_end, MARKDOWN_CORE_SLOT_NONE, false, MARKDOWN_CORE_FIELD},
+        {offset + pos, offset + pos, MARKDOWN_CORE_SLOT_NONE, false, MARKDOWN_CORE_FIELD_LINES}};
+    markdown_core_field_many(&fields, spots, sizeof(spots) / sizeof(spots[0]));
     markdown_core_decoder_write(self->needs[CODE_BLOCK_REFERENCES], &tmp, rest + info_start, info_end - info_start);
     markdown_core_decoder_strip(self->needs[CODE_BLOCK_ESCAPES], &tmp);
     /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
