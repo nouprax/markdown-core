@@ -730,7 +730,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
                                                       markdown_core_link_candidate *candidate) {
     bufsize_t initial_pos = markdown_core_inline_offset(inline_state), starturl = 0, endurl, starttitle, endtitle,
               endall, n = -1;
-    markdown_core_chunk url_chunk, title_chunk, raw_label;
+    markdown_core_chunk url_chunk = MARKDOWN_CORE_CHUNK_EMPTY, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
     const markdown_core_roster_record *record = NULL;
