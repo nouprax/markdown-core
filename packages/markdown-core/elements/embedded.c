@@ -98,9 +98,12 @@ static void S_record(const markdown_core_element_instance *self, markdown_core_i
     bracket *image = markdown_core_open_bracket(inline_state);
     if (image && image->owner == self) {
         markdown_core_embedded_work *counts = self->state;
+        /* The text run's bytes, before `endpos`: a window that never meets
+         * the run's end. */
+        const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
         for (bufsize_t i = markdown_core_inline_offset(inline_state); i < endpos; i++) {
             counts->dimensions++;
-            if (markdown_core_inline_char_at(inline_state, i) == '|') {
+            if (data[i] == '|') {
                 S_bracket(self, image)->pipe = i + 1;
             }
         }

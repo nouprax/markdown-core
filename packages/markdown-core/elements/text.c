@@ -22,10 +22,14 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
      * entry behind, at the position just past the LAST whitespace byte in
      * [pos, endpos). Whitespace is a space, a tab or a line ending, all of
      * them ASCII, so the walk back from `endpos` tests bytes and decodes
-     * nothing: no byte of a multi-byte character is whitespace. */
+     * nothing: no byte of a multi-byte character is whitespace. The walk
+     * stays before `endpos`, inside the run: it scans a window and never
+     * meets the run's end. */
+    const bufsize_t from = markdown_core_inline_offset(inline_state);
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
     bufsize_t boundary = -1, walked = endpos;
-    while (walked > markdown_core_inline_offset(inline_state)) {
-        if (markdown_core_is_whitespace(markdown_core_inline_char_at(inline_state, --walked))) {
+    while (walked > from) {
+        if (markdown_core_is_whitespace(data[--walked])) {
             boundary = walked + 1;
             break;
         }
