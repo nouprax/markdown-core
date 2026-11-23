@@ -8,9 +8,8 @@
 #include "ast_internal.h"
 
 /* The services this element asks, as `self->needs` holds them. */
-enum { HEADING_LABELS, HEADING_TOPIC_LINES };
-static const char *const HEADING_NEEDS[] = {
-    [HEADING_LABELS] = MARKDOWN_CORE_SERVICE_LABELS, [HEADING_TOPIC_LINES] = MARKDOWN_CORE_SERVICE_TOPIC_LINES, NULL};
+enum { HEADING_LABELS };
+static const char *const HEADING_NEEDS[] = {[HEADING_LABELS] = MARKDOWN_CORE_SERVICE_LABELS, NULL};
 /* A heading whose inline content is parsed (markdown_core_headings_prepare). */
 enum { MARKDOWN_CORE_NODE__HEADING_PARSED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
 /* The spaces this element files labels in, as `self->spaces` numbers them:
@@ -476,19 +475,6 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
                                                                  markdown_core_reader_length(context->reader),
                                                                  context->reader->nonspace))) {
         start->open = open_atx;
-        if (parser->sink && self->needs[HEADING_TOPIC_LINES].ops) {
-            const unsigned char *data = markdown_core_reader_rest(context->reader, 0);
-            bufsize_t end = context->reader->nonspace, last = markdown_core_reader_length(context->reader);
-            while (end < last && data[end] == '#') {
-                end++;
-            }
-            while (last > end && (data[last - 1] == '\n' || data[last - 1] == '\r')) {
-                last--;
-            }
-            if (end == last) {
-                markdown_core_line_report(self->needs[HEADING_TOPIC_LINES], parser, context->reader->nonspace, end);
-            }
-        }
     } else if (context->paragraph && (first == '=' || first == '-') &&
                markdown_core_reader_blank_from(
                    context->reader, context->reader->nonspace +

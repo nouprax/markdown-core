@@ -11,38 +11,17 @@
 enum { CROSS_LINK_DIMENSIONS };
 static const char *const CROSS_LINK_NEEDS[] = {[CROSS_LINK_DIMENSIONS] = MARKDOWN_CORE_SERVICE_DIMENSIONS, NULL};
 
-/* How a cross link's target goes on past a cursor: its path up to the `#`
- * that starts its anchor, and its anchor, which may hold more parts, up to
- * the separator or the closer. Neither crosses a bracket or a line. */
-static bufsize_t target_end(const unsigned char *data, bufsize_t length, bool anchor) {
-    bufsize_t i = 0;
-    while (i < length && data[i] != '[' && data[i] != ']' && data[i] != '|' && data[i] != '\n' && data[i] != '\r' &&
-           !(data[i] == '\\' && i + 1 < length && data[i + 1] == '|') && (anchor || data[i] != '#')) {
-        i++;
-    }
-    return i;
-}
-static bufsize_t path_end(const unsigned char *data, bufsize_t length) { return target_end(data, length, false); }
-static bufsize_t anchor_end(const unsigned char *data, bufsize_t length) { return target_end(data, length, true); }
-
-/* The field a body the content's end cuts short reads, to the run's context
- * sink: the anchor after the first `#`, with the path before it, or else the
- * path; a body past its separator reads the label, which is no slot. */
+/* The cross link whose opener runs from `start` to `body`, given up where
+ * its body's reading stopped, at `stop`, kept on the run's node
+ * (markdown_core_inline_open): its path, up to the first `#`, and the anchor
+ * after it, which keeps a leading `^`; a body past its separator reads a
+ * label, which is no slot, so the opener stands alone. */
 static void S_report(markdown_core_inline_state *inline_state, bool embedded, bufsize_t start, bufsize_t body,
-                     bufsize_t hash, bufsize_t label) {
+                     bufsize_t hash, bufsize_t label, bufsize_t stop) {
     const markdown_core_node_kind kind = embedded ? MARKDOWN_CORE_KIND_CROSS_EMBEDDED : MARKDOWN_CORE_KIND_CROSS_LINK;
-    if (label >= 0) {
-        markdown_core_inline_open(inline_state, kind, start, body, NULL, 0);
-    } else if (hash >= 0) {
-        /* The anchor keeps a leading `^`: whether it marks a block identifier
-         * or starts a heading depends on the anchor's whole text, cursor on. */
-        const markdown_core_field anchor = {
-            MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, anchor_end, {{body, hash}}, 1, false, 0};
-        markdown_core_inline_open(inline_state, kind, start, body, &anchor, 1);
-    } else {
-        const markdown_core_field path = {MARKDOWN_CORE_SLOT_DEST, kind, body, path_end, {{0}}, 0, false, 0};
-        markdown_core_inline_open(inline_state, kind, start, body, &path, 1);
-    }
+    const markdown_core_field fields[2] = {{MARKDOWN_CORE_SLOT_DEST, kind, body, hash >= 0 ? hash : stop},
+                                           {MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, stop}};
+    markdown_core_inline_open(inline_state, kind, start, body, fields, label >= 0 ? 0 : hash >= 0 ? 2 : 1);
 }
 
 /* No speculative allocation and no cursor movement until recognition succeeds.
@@ -78,18 +57,15 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         unsigned char c = s[i];
         counts->scan++;
         if (c == '[' || c == '\n' || c == '\r') {
+            S_report(inline_state, embedded, start, body, hash, label, separator >= 0 ? separator : i);
             return NULL;
         }
         if (c == ']') {
             if (i + 1 >= input->len) {
                 markdown_core_inline_state_saw_end(inline_state);
-                if (inline_state->context) {
-                    markdown_core_inline_open(
-                        inline_state, embedded ? MARKDOWN_CORE_KIND_CROSS_EMBEDDED : MARKDOWN_CORE_KIND_CROSS_LINK,
-                        start, body, NULL, 0);
-                }
             }
             if (i + 1 >= input->len || s[i + 1] != ']') {
+                S_report(inline_state, embedded, start, body, hash, label, separator >= 0 ? separator : i);
                 return NULL;
             }
             break;
@@ -113,6 +89,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         }
         if (c == '#') {
             if (part_empty) {
+                S_report(inline_state, embedded, start, body, hash, label, i);
                 return NULL;
             }
             if (hash < 0) {
@@ -134,11 +111,9 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     /* A body the end cuts short may close once the input goes on. */
     if (i == input->len) {
         markdown_core_inline_state_saw_end(inline_state);
-        if (inline_state->context) {
-            S_report(inline_state, embedded, start, body, hash, label);
-        }
     }
     if (i == input->len || target_end == body || part_empty) {
+        S_report(inline_state, embedded, start, body, hash, label, target_end);
         return NULL;
     }
     /* A lone ^ is an ordinary nonempty heading part, not a block identifier. */
@@ -180,18 +155,21 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
     markdown_core_field_spot spots[4];
     size_t count = 0;
-    spots[count++] = (markdown_core_field_spot){body, hash >= 0 ? hash : target_end, MARKDOWN_CORE_SLOT_DEST};
+    /* A target with no path, `[[#t]]`, holds an empty one, as one with an
+     * empty fragment holds an empty anchor. */
+    spots[count++] = (markdown_core_field_spot){body, hash >= 0 ? hash : target_end, MARKDOWN_CORE_SLOT_DEST, true};
     if (hash >= 0) {
-        spots[count++] = (markdown_core_field_spot){hash + (block_id ? 2 : 1), target_end, MARKDOWN_CORE_SLOT_ANCHOR};
+        spots[count++] =
+            (markdown_core_field_spot){hash + (block_id ? 2 : 1), target_end, MARKDOWN_CORE_SLOT_ANCHOR, true};
     }
     if (label >= 0) {
         const bool sized = embedded && node->as.cross_embedded->dimensions.has_value;
         const bufsize_t end = !sized ? i : dimension_separator >= 0 ? dimension_separator : label;
-        spots[count++] = (markdown_core_field_spot){label, end, MARKDOWN_CORE_SLOT_NONE};
+        spots[count++] = (markdown_core_field_spot){label, end, MARKDOWN_CORE_SLOT_NONE, false};
         if (sized) {
             spots[count++] = (markdown_core_field_spot){
                 dimension_separator >= 0 ? dimension_separator + dimension_separator_length : label, i,
-                MARKDOWN_CORE_SLOT_NONE};
+                MARKDOWN_CORE_SLOT_NONE, false};
         }
     }
     markdown_core_field_many(&fields, spots, count);
@@ -214,9 +192,23 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
            (!cross->anchor.has_value || words->text(words->context, cross->anchor.value.data, cross->anchor.value.len));
 }
 
+/* An anchor after `#^` is a block identifier: ASCII letters, digits and
+ * hyphens. Other fields stop only at a bracket, a separator or a line. */
+static bufsize_t S_field_end(int slot, uint8_t before, const unsigned char *data, bufsize_t length) {
+    if (slot != MARKDOWN_CORE_SLOT_ANCHOR || before != '^') {
+        return -1;
+    }
+    bufsize_t end = 0;
+    while (end < length && ((data[end] >= 'a' && data[end] <= 'z') || (data[end] >= 'A' && data[end] <= 'Z') ||
+                            (data[end] >= '0' && data[end] <= '9') || data[end] == '-')) {
+        end++;
+    }
+    return end;
+}
+
 const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CROSS_LINK, .words = S_words},
-    {.kind = MARKDOWN_CORE_KIND_CROSS_EMBEDDED, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_CROSS_LINK, .words = S_words, .field_end = S_field_end},
+    {.kind = MARKDOWN_CORE_KIND_CROSS_EMBEDDED, .words = S_words, .field_end = S_field_end},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

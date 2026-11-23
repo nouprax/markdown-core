@@ -646,8 +646,7 @@ static bool rest_line_in(const markdown_core_element_instance *self,
 }
 
 /* THE LINES AN EDIT WRITES: the edited line's bytes before it, what it
- * writes, and the last edited line's after it, or none for a look, whose
- * text ends at its cursor, in `*lines`, which is `room` when they fit its
+ * writes, and the last edited line's after it, in `*lines`, which is `room` when they fit its
  * `capacity` bytes and the caller frees otherwise, and in `*size`; and the
  * old lines they replace, from `*old` on. False when storage could not be
  * had. */
@@ -657,7 +656,7 @@ static bool rest_written(const rest_search *search, uint8_t *room, size_t capaci
     const uint8_t *source = (const uint8_t *)search->source;
     const size_t line_start = index_line_start(search->parser, edit->line);
     size_t line_end = edit->to;
-    while (!edit->look && line_end < search->size && source[line_end] != '\n' && source[line_end] != '\r') {
+    while (line_end < search->size && source[line_end] != '\n' && source[line_end] != '\r') {
         line_end++;
     }
     *old = line_start;
@@ -738,7 +737,7 @@ static bool rest_trails(const rest_search *search, const markdown_core_node *pri
 /* THE CLOSER AN EDIT WRITES (element.h, the edit's `shuts`): the leaf the
  * chain ends in, whose opener found its closer, its last line, decided only
  * that it found one, which an edit that writes on or past the start of that
- * line may undo, and so may a look, whose text ends before it. Below the
+ * line may undo. Below the
  * root, the closer was one under the same prefixes (blocks.c,
  * markdown_core_parser_lookahead_end): an edit that writes a line's
  * prefixes, or a line end, which the prefixes of a new line follow, may
@@ -756,7 +755,7 @@ static bool rest_shut(const rest_search *search) {
         (kind->made && kind->made->former && kind->made->former(kind->maker, block) != MARKDOWN_CORE_NODE_NONE)) {
         return false;
     }
-    if (edit->look || edit->to >= index_line_start(parser, markdown_core_parser_line_of(parser, rest->last - 1))) {
+    if (edit->to >= index_line_start(parser, markdown_core_parser_line_of(parser, rest->last - 1))) {
         return true;
     }
     if (rest->depth == 1) {
@@ -946,7 +945,7 @@ static size_t rest_at(rest_search *search, size_t line) {
     rest->last = 0;
     rest->mid = 0;
     rest->inside = false;
-    if (line == edit->line && line == search->edited && !edit->look && edit->prose) {
+    if (line == edit->line && line == search->edited && edit->prose) {
         const int inside = rest_inside(search, line, start);
         if (inside < 0) {
             return REST_FAILED;
@@ -1131,20 +1130,6 @@ static size_t rest_at(rest_search *search, size_t line) {
     if (rest_stops(search, start, &opened)) {
         search->edited = rest_line(search, opened);
         return search->edited;
-    }
-    /* A root child on the line after one of a kind that joins it was read in
-     * one block with it, which the text before a look's cursor holds open
-     * from the first (element.h, `joins`). */
-    if (edit->look && !rest->depth && first && first < count) {
-        const markdown_core_widths *widths = &index->widths;
-        const markdown_core_node *root = index->root;
-        const markdown_core_width *later = width_tree_at((markdown_core_tree *)&widths->tree, first);
-        const markdown_core_width *earlier = width_tree_at((markdown_core_tree *)&widths->tree, first - 1);
-        if ((markdown_core_parser_block_kind(parser, root->children[first])->flags & MARKDOWN_CORE_KIND_JOINS) &&
-            (markdown_core_parser_block_kind(parser, root->children[first - 1])->flags & MARKDOWN_CORE_KIND_JOINS) &&
-            rest_line(search, (size_t)(base + later->start)) == rest_line(search, (size_t)(base + earlier->end)) + 1) {
-            return rest_line(search, (size_t)(base + earlier->start));
-        }
     }
     rest->child = rest->depth ? rest->path[0] + 1 : first;
     /* Before the root's first child, the text's start. */

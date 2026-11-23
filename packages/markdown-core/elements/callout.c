@@ -1,13 +1,12 @@
 #include "callout.h"
 #include "block_internal.h"
-#include "sink.h"
 
 /* What a callout's scan found after its marker (WHAT THE SCAN FOUND,
  * block_internal.h): a header `[!variant]`, its fold and where its title
  * starts, and where a variant the line's end cuts short stands, -1 for
  * none, which its open reports. */
 typedef struct {
-    bufsize_t variant, variant_end, title, report;
+    bufsize_t variant, variant_end, title, report, stop;
     bool metadata, fold, collapsed;
     /* Where the marker's motion leaves the reader. */
     markdown_core_reader_mark after;
@@ -38,26 +37,6 @@ static bool variant_byte(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
-/* Where a variant goes on past a cursor. */
-static bufsize_t variant_end(const unsigned char *data, bufsize_t length) {
-    bufsize_t end = 0;
-    while (end < length && variant_byte(data[end])) {
-        end++;
-    }
-    return end;
-}
-
-/* Whether a `[!` at `open` has a variant the line's end cuts short. */
-static bool S_variant_cut(markdown_core_reader *reader, bufsize_t open) {
-    bufsize_t end = markdown_core_reader_length(reader);
-    while (end > open && markdown_core_is_line_end(markdown_core_reader_peek(reader, end - 1))) {
-        end--;
-    }
-    return end - open >= 2 && markdown_core_reader_peek(reader, open) == '[' &&
-           markdown_core_reader_peek(reader, open + 1) == '!' &&
-           open + 2 + variant_end(markdown_core_reader_bytes(reader, open + 2), end - open - 2) == end;
-}
-
 /* The marker's motion: past the `>` and the space or tab column after it. */
 static void S_callout_marker(markdown_core_reader *reader) {
     markdown_core_reader_advance(reader, reader->nonspace + 1 - reader->offset, false);
@@ -80,13 +59,13 @@ static void S_callout_header(markdown_core_callout_work *counts, markdown_core_p
         counts->scan++;
     }
     counts->scan++;
-    if (parser->sink && !reader->split && S_variant_cut(reader, pos)) {
-        header->report = pos;
-    }
     if (reader->split || markdown_core_reader_peek(reader, pos) != '[' ||
-        markdown_core_reader_peek(reader, pos + 1) != '!' || markdown_core_reader_ends(reader, pos + 2)) {
+        markdown_core_reader_peek(reader, pos + 1) != '!') {
         return;
     }
+    /* A header begun and given up keeps its variant as far as it is read
+     * (markdown_core_callout_open). */
+    header->report = pos;
     pos += 2;
     begin = pos;
     while (!markdown_core_reader_ends(reader, pos)) {
@@ -97,6 +76,7 @@ static void S_callout_header(markdown_core_callout_work *counts, markdown_core_p
         }
         pos++;
     }
+    header->stop = pos;
     if (pos == begin || markdown_core_reader_ends(reader, pos) || markdown_core_reader_peek(reader, pos) != ']') {
         return;
     }
@@ -116,6 +96,7 @@ static void S_callout_header(markdown_core_callout_work *counts, markdown_core_p
     }
     header->title = pos;
     header->metadata = true;
+    header->report = -1;
 }
 
 /* Builds the header the scan found on the callout `node`, up to where its
@@ -191,15 +172,11 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
         return false;
     }
     if (header->report >= 0) {
-        const markdown_core_field variant = {MARKDOWN_CORE_SLOT_VARIANT,
-                                             MARKDOWN_CORE_KIND_CALLOUT,
-                                             header->report + 2,
-                                             variant_end,
-                                             {{0}},
-                                             0,
-                                             false,
-                                             0};
-        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CALLOUT, header->report, header->report + 2, &variant, 1);
+        const markdown_core_field variant = {MARKDOWN_CORE_SLOT_VARIANT, MARKDOWN_CORE_KIND_CALLOUT, header->report + 2,
+                                             header->stop};
+        const markdown_core_field_to fields = {parser, *container, NULL, reader, 0, NULL};
+        markdown_core_field_opener(&fields, MARKDOWN_CORE_KIND_CALLOUT, true, header->report, header->report + 2,
+                                   &variant, 1);
     }
     if (header->metadata) {
         S_callout_build(parser, *container, reader, header);

@@ -249,6 +249,15 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
         const markdown_core_roster_record *definition =
             caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
                           : NULL;
+        if (caret_written && !definition) {
+            /* A call whose label names no definition, which a cursor in it
+             * may name (markdown_core_inline_open): no later rule reads its
+             * bracket. */
+            const markdown_core_field call = {MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_CITATION,
+                                              opener->position + 1, initial_pos - 1};
+            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, opener->position - opener->shape->width,
+                                      opener->position + 1, &call, 1);
+        }
         if (definition) {
             if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
                                                      MARKDOWN_CORE_NODE_CITE)) {

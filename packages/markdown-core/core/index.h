@@ -108,14 +108,14 @@ const markdown_core_widths *markdown_core_index_held(const markdown_core_index *
 /* The fold marks of the nest of `holder`, found, never made, or NULL. */
 markdown_core_folds *markdown_core_index_folds(markdown_core_index *index, const markdown_core_node *holder);
 /* Whether a reading that starts before `point` read past `past`, but a
- * look that ended no later than `from`, where the edit begins or the
- * look's cursor is, and the closes of the `count` blocks that start at
+ * look that ended no later than `from`, where the edit begins, and the
+ * closes of the `count` blocks that start at
  * `opens`, each once, as their reopen notes them again; where the first
  * began in `*start` (THE READS PAST). */
 bool markdown_core_index_crossed(markdown_core_index *index, size_t from, size_t point, size_t past,
                                  const uint32_t *opens, size_t count, size_t *start);
 /* THE REST (docs/plans/no-flush.md, 10.15): where a reading of the text
- * from before an edit, or before a look's cursor, reads as the old reading
+ * from before an edit reads as the old reading
  * did, so that it may begin there. It is a position: a line, and the
  * blocks the old reading held open at the line's start, from the root's
  * child down (the chain), each found from its node alone -- a block that
@@ -135,7 +135,7 @@ bool markdown_core_index_crossed(markdown_core_index *index, size_t from, size_t
  * an opener read to the end before it (`stops`). Where one does not stand,
  * an earlier line is tried, where the reading that read past began, or
  * where the block that does not reopen starts, and so on back to the
- * text's start, which stands. Edits and looks find their rest so alike. */
+ * text's start, which stands. */
 #define MARKDOWN_CORE_REST_DEPTH 32
 
 typedef struct {
@@ -163,15 +163,14 @@ typedef struct {
 
 /* What the reading from the rest reads again: an edit of the bytes from
  * `from` to `to`, which begins on line `line` and writes the `length`
- * bytes of `text`, or a look, whose text ends at its cursor, `from` and
- * `to`; `prose` when a paragraph may be the chain's leaf (THE LEAP): a look
- * reads the text of the paragraph it is in whole, and so does a reading of
- * an altered label's uses. */
+ * bytes of `text`; `prose` when a paragraph may be the chain's leaf (THE
+ * LEAP): a reading of an altered label's uses reads the text of the
+ * paragraph it is in whole. */
 typedef struct {
     size_t line, from, to;
     const uint8_t *text;
     size_t length;
-    bool prose, look;
+    bool prose;
 } markdown_core_rest_edit;
 
 /* The rest of `edit` in the text `source` of `size` bytes, the flushed

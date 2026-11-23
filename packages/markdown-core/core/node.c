@@ -187,7 +187,8 @@ bool markdown_core_node_add_field(markdown_core_node_pool *pool, markdown_core_n
         return true;
     }
     markdown_core_fields *fields = node->fields;
-    const markdown_core_written field = {start, anchor ? start : end, slot, how, true};
+    const markdown_core_written field = {
+        .start = start, .end = anchor ? start : end, .slot = slot, .how = how, .raw = true};
     if (fields && unique) {
         for (uint32_t i = 0; i < fields->count; i++) {
             if (fields->items[i].slot == slot && fields->items[i].how == how) {
@@ -218,6 +219,26 @@ void markdown_core_node_drop_slots(markdown_core_node *node, uint32_t slots) {
     for (uint32_t i = 0; fields && i < fields->count; i++) {
         if (!(slots & (1u << fields->items[i].slot)) || fields->items[i].how != MARKDOWN_CORE_FIELD) {
             fields->items[kept++] = fields->items[i];
+        }
+    }
+    if (fields) {
+        fields->count = kept;
+    }
+}
+
+void markdown_core_node_drop_opens(markdown_core_node *node, bool line, uint32_t raw, uint32_t published) {
+    markdown_core_fields *fields = node->fields;
+    uint32_t kept = 0;
+    bool drop = false;
+    for (uint32_t i = 0; fields && i < fields->count; i++) {
+        const markdown_core_written *field = &fields->items[i];
+        if (field->how == MARKDOWN_CORE_FIELD_OPENER) {
+            drop = (bool)(field->slot & 1) == line && field->start >= (field->raw ? raw : published);
+        } else if (field->how != MARKDOWN_CORE_FIELD_OPEN) {
+            drop = false;
+        }
+        if (!drop) {
+            fields->items[kept++] = *field;
         }
     }
     if (fields) {

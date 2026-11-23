@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include "../include/markdown_core.h"
 #include "node_type.h"
 #include "buffer.h"
 #include <stdbool.h>
@@ -453,10 +454,13 @@ typedef struct markdown_core_field_to {
  * not be had. */
 void markdown_core_field_add(const markdown_core_field_to *to, int slot, bufsize_t from, bufsize_t end);
 /* A field a reading noted, to be added with the others it read at once
- * (markdown_core_field_many): its bytes and its slot kind. */
+ * (markdown_core_field_many): its bytes and its slot kind, and, for one
+ * with none, whether it is kept as the empty field a reading found nothing
+ * written in (markdown_core_field_empty): `k=`'s value. */
 typedef struct markdown_core_field_spot {
     bufsize_t from, end;
     int slot;
+    bool empty;
 } markdown_core_field_spot;
 /* Adds each of the `count` fields at `spots`, as markdown_core_field_add
  * would one by one. */
@@ -467,6 +471,26 @@ void markdown_core_field_many(const markdown_core_field_to *to, const markdown_c
  * the node again reads it again. */
 void markdown_core_field_put(const markdown_core_field_to *to, int slot, int how, bufsize_t from, bufsize_t end,
                              bool unique);
+/* A FIELD OF A CONSTRUCT THE PARSE DID NOT FINISH (node.h, OPEN), as the
+ * reading that gave the construct up reports it: its slot kind, the kind of
+ * the construct that owns it, and the offsets, in the reading's input, it
+ * starts at and its reading stopped at. */
+typedef struct markdown_core_field {
+    markdown_core_slot_kind slot;
+    markdown_core_node_kind owner;
+    bufsize_t start, stop;
+} markdown_core_field;
+/* Adds the empty field of slot kind `slot` where byte `at` begins, which a
+ * reading found nothing written in: `[t]()`'s destination. A query of the
+ * node's fields leaves it out; a cursor there writes it. */
+void markdown_core_field_empty(const markdown_core_field_to *to, int slot, bufsize_t at);
+/* Keeps on `to`'s node a construct of kind `opens` the parse began and gave
+ * up (node.h, OPENER and OPEN), NONE when its kind is still open: its
+ * opening syntax, the bytes `from` up to `end`, read by a line of the block
+ * phase when `line`, and the `count` fields at `fields` it wrote, each from
+ * its start to where its reading stopped, an empty one at its start. */
+void markdown_core_field_opener(const markdown_core_field_to *to, markdown_core_node_kind opens, bool line,
+                                bufsize_t from, bufsize_t end, const markdown_core_field *fields, size_t count);
 /* The input line, counted from 1, byte `at` of the text `map` places was
  * read from: 0 when the map places no byte. */
 int markdown_core_text_line(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at);

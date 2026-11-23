@@ -9,8 +9,7 @@ typedef enum markdown_core_follow_at {
     MARKDOWN_CORE_FOLLOW_TOKEN,
     /* A block's element offers the end of a line of its own, bytes `from` to
      * `to` of `line`; `follow` answers how many bytes before `to` it took, 0
-     * for none, and `live` says the line is the one being read, whose fields
-     * the line's end leaves open it reports to the parse's context sink. */
+     * for none, and `live` says the line is the one being read. */
     MARKDOWN_CORE_FOLLOW_TAIL,
     /* A line after the block in its container (not asked yet: followers.md
      * F3); a follower that changes kinds there says how an edit undoes it. */

@@ -453,9 +453,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         for (const markdown_core_node_type *kind = edit ? edit->awaits : NULL; kind && *kind; kind++) {
             dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_AWAITS;
         }
-        for (const markdown_core_node_type *kind = edit ? edit->joins : NULL; kind && *kind; kind++) {
-            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_JOINS;
-        }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */
 }

@@ -115,7 +115,6 @@ static inline void markdown_core_word_space_note(markdown_core_need need, markdo
  * may change once the input goes on. */
 struct markdown_core_attribute_suffix;
 struct markdown_core_attribute_scratch;
-struct markdown_core_member_memo;
 struct markdown_core_field;
 typedef struct markdown_core_attribute_parser {
     const unsigned char *data;
@@ -137,15 +136,15 @@ typedef struct markdown_core_attribute_parser {
  * `closes`: where a block at content offset `start` of a construct of kind
  * `owner` of the run closes, one past its `}`, or 0; the block's value is
  * the attribute element's to write, on the node the construct makes.
- * `report`: the blocks a block of kind `owner` may open on the line `line`
- * being read, at or after `from`, that the line's end at `end` leaves open,
- * to the parse's context sink; whether there is one.
+ * `report`: the blocks a block of kind `owner` opens and does not close on
+ * its line `line`, at or after `from`, before `end`, kept on `to`'s node;
+ * whether there is one.
  * `fields`: the members the last `parse` of `p` read, as the fields of
  * the node `to` names, the parsed bytes' offsets placed as it places them.
- * `member`: the member a block that does not close is in at its end, the
- * block's `{` at `start` of the `size` bytes at `data`, into `field`;
- * false when it is no block whatever follows. `memo`, or NULL, is shared by
- * the braces asked about on the same bytes. */
+ * `open`: a block that does not close, the block's `{` at `start` of the
+ * `size` bytes at `data`, kept on `to`'s node with the members it read
+ * (attributes.h, markdown_core_attributes_open), a line's; false when it
+ * is no block whatever follows. */
 typedef struct markdown_core_attribute_ops {
     void (*begin)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
                   const unsigned char *data, bufsize_t size);
@@ -157,10 +156,10 @@ typedef struct markdown_core_attribute_ops {
                   markdown_core_attributes *value, bufsize_t *end);
     bufsize_t (*closes)(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                         bufsize_t start, markdown_core_node_kind owner);
-    bool (*report)(const markdown_core_element_instance *self, markdown_core_parser *parser,
+    bool (*report)(const markdown_core_element_instance *self, const markdown_core_field_to *to,
                    markdown_core_node_kind owner, const unsigned char *line, bufsize_t from, bufsize_t end);
-    bool (*member)(const markdown_core_element_instance *self, const unsigned char *data, bufsize_t size,
-                   bufsize_t start, struct markdown_core_field *field, struct markdown_core_member_memo *memo);
+    bool (*open)(const markdown_core_element_instance *self, const markdown_core_field_to *to,
+                 markdown_core_node_kind owner, const unsigned char *data, bufsize_t size, bufsize_t start);
     void (*fields)(const markdown_core_element_instance *self, const markdown_core_attribute_parser *p,
                    const markdown_core_field_to *to);
 } markdown_core_attribute_ops;
@@ -203,27 +202,6 @@ typedef struct markdown_core_label_ops {
 } markdown_core_label_ops;
 
 #define MARKDOWN_CORE_SERVICE_LABELS "labels"
-
-/* A LINE THE INPUT'S END CUTS SHORT that another element's block opens on:
- * `report` gives the parse's context sink the fields the line from `first`
- * to `end` leaves open, which only the provider's grammar knows -- a
- * directive's name after a definition body's `:`, a topic's after a
- * heading's `#` signs. */
-typedef struct markdown_core_report_ops {
-    void (*report)(const markdown_core_element_instance *self, markdown_core_parser *parser, bufsize_t first,
-                   bufsize_t end);
-} markdown_core_report_ops;
-
-#define MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES "directive lines"
-#define MARKDOWN_CORE_SERVICE_TOPIC_LINES "topic lines"
-
-static inline void markdown_core_line_report(markdown_core_need need, markdown_core_parser *parser, bufsize_t first,
-                                             bufsize_t end) {
-    const markdown_core_report_ops *lines = need.ops;
-    if (lines) {
-        lines->report(need.instance, parser, first, end);
-    }
-}
 
 /* AN OPAQUE SPAN another element's scan steps over whole, its bytes no
  * syntax of the asker's: a code span, an HTML tag. `skip`: where the span

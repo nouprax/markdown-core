@@ -32,8 +32,6 @@ static inline markdown_core_node *markdown_core_directive_label(const markdown_c
     return ((const markdown_core_directive_value *)node->opaque)->label;
 }
 
-/* It provides MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES (services.h). */
-
 #ifdef __cplusplus
 }
 #endif

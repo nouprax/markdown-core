@@ -89,7 +89,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(const markdown_cor
     // paragraph, produced a Link that did not contain its own Text.
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
     const markdown_core_field_to to = markdown_core_inline_fields(inline_state, link);
-    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_DEST, start_column + 1, end_column);
+    markdown_core_field_put(&to, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE, start_column + 1, end_column,
+                            false);
     text = make_str_with_entities(self, inline_state, start_column + 1, end_column - 1, &url);
     if (text) {
         markdown_core_scaffold_append(link, text);
@@ -100,16 +101,19 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(const markdown_cor
     return link;
 }
 
-/* A failed angle autolink at `from` read the end of the input unless the
- * byte there starts neither a scheme nor a local part; its `<` may then open
- * an autolink or HTML. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_inline_state *inline_state,
-                                                                bufsize_t from) {
+/* A failed angle autolink at `from`, unless the byte there starts neither a
+ * scheme nor a local part: its `<` opens an autolink or HTML once the text
+ * goes on (markdown_core_inline_open), and its scan read the end of the
+ * input, which a run that tracks its end notes. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_failed(markdown_core_inline_state *inline_state,
+                                                               bufsize_t from) {
     const unsigned char first =
         from < markdown_core_inline_size(inline_state) ? markdown_core_inline_char_at(inline_state, from) : 0;
     if (!first || markdown_core_isalnum((char)first) ||
         (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
-        markdown_core_inline_saw_end(inline_state);
+        if (markdown_core_inline_tracks_end(inline_state)) {
+            markdown_core_inline_saw_end(inline_state);
+        }
         markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, from - 1, from, NULL, 0);
     }
 }
@@ -127,11 +131,8 @@ static markdown_core_node *match_angle(const markdown_core_element_instance *sel
     }
     if (!length) {
         /* Either scan may still match once the input goes on, unless the
-         * byte after `<` starts neither a scheme nor a local part; a run
-         * that holds the token undecided already needs no answer. */
-        if (markdown_core_inline_tracks_end(inline_state)) {
-            S_angle_saw_end(inline_state, from);
-        }
+         * byte after `<` starts neither a scheme nor a local part. */
+        S_angle_failed(inline_state, from);
         return NULL;
     }
     markdown_core_chunk content = markdown_core_inline_take(inline_state, from, length - 1);
@@ -443,7 +444,8 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
     markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
     const markdown_core_field_to to = markdown_core_inline_fields(inline_state, node);
-    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_DEST, (bufsize_t)max_rewind, (bufsize_t)(max_rewind + link_end));
+    markdown_core_field_put(&to, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE, (bufsize_t)max_rewind,
+                            (bufsize_t)(max_rewind + link_end), false);
 
     return node;
 }
@@ -517,8 +519,8 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
     markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     const markdown_core_field_to to = markdown_core_inline_fields(inline_state, node);
-    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_DEST, (bufsize_t)(max_rewind - rewind),
-                            (bufsize_t)(max_rewind + link_end));
+    markdown_core_field_put(&to, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE, (bufsize_t)(max_rewind - rewind),
+                            (bufsize_t)(max_rewind + link_end), false);
 
     return node;
 }
@@ -803,7 +805,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         }
         set_sourcepos_from_range(parser, link_node, &source_map, link_start, link_len);
         /* All of the address is the link's destination. */
-        if (!markdown_core_node_add_field(parser->pool, link_node, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD,
+        if (!markdown_core_node_add_field(parser->pool, link_node, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE,
                                           link_node->place.start, link_node->place.end, false)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }

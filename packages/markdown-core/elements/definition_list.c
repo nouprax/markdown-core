@@ -3,10 +3,8 @@
 #include "block_internal.h"
 
 /* The services this element asks, as `self->needs` holds them. */
-enum { DEFINITION_LABELS, DEFINITION_DIRECTIVE_LINES };
-static const char *const DEFINITION_NEEDS[] = {[DEFINITION_LABELS] = MARKDOWN_CORE_SERVICE_LABELS,
-                                               [DEFINITION_DIRECTIVE_LINES] = MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES,
-                                               NULL};
+enum { DEFINITION_LABELS };
+static const char *const DEFINITION_NEEDS[] = {[DEFINITION_LABELS] = MARKDOWN_CORE_SERVICE_LABELS, NULL};
 
 static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
@@ -278,14 +276,8 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
                                                block_start_context *context, block_start *start) {
     (void)self;
     markdown_core_reader *reader = context->reader;
-    int first = reader->nonspace;
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
         return false;
-    }
-    if (parser->sink && self->needs[DEFINITION_DIRECTIVE_LINES].ops &&
-        markdown_core_reader_peek(reader, first) == ':' &&
-        markdown_core_is_line_end(markdown_core_reader_peek(reader, first + 1))) {
-        markdown_core_line_report(self->needs[DEFINITION_DIRECTIVE_LINES], parser, first, first + 1);
     }
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
     start->open = markdown_core_definition_list_open;

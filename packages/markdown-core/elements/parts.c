@@ -617,7 +617,9 @@ static bool recorded_places(const markdown_core_node *node, const view *r, markd
             return false;
         }
         for (uint32_t i = 0; i < count; i++) {
-            if (slots->items[i].slot == slot && slots->items[i].how == MARKDOWN_CORE_FIELD) {
+            if (slots->items[i].slot == slot &&
+                (slots->items[i].how == MARKDOWN_CORE_FIELD || slots->items[i].how == MARKDOWN_CORE_FIELD_BARE) &&
+                slots->items[i].end > slots->items[i].start) {
                 own[found++] = (markdown_core_place){r->start + slots->items[i].start, r->start + slots->items[i].end};
             }
         }
@@ -646,7 +648,7 @@ static bool recorded_places(const markdown_core_node *node, const view *r, markd
     }
     size_t kept = r->taken_count;
     for (uint32_t i = 0; i < count; i++) {
-        if (slots->items[i].end > slots->items[i].start) {
+        if (slots->items[i].end > slots->items[i].start && slots->items[i].how < MARKDOWN_CORE_FIELD_OPENER) {
             all[kept++] = (markdown_core_place){r->start + slots->items[i].start, r->start + slots->items[i].end};
         }
     }

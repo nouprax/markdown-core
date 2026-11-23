@@ -317,6 +317,16 @@ typedef struct markdown_core_runs {
  *               indentation) or the first place that holds it (FOUND: a
  *               comment or a formula), so that a block an edit reads in
  *               place keeps it as its literal changes.
+ *   BARE     -- the node's own field whose bytes are its syntax too (an
+ *               autolink's address): what a cursor writes there decides
+ *               whether the node is one, so it writes no slot.
+ *   OPENER   -- the opening syntax of a construct of kind `owner` that the
+ *               parse began in the node and did not finish (core-element-
+ *               decoupling.md 9.1): what is left of it is text. The OPEN
+ *               entries after it are the fields it wrote, as far as its
+ *               reading read them, which the completion reads at a cursor
+ *               as it reads a finished construct's fields.
+ *   OPEN
  *
  * The parse adds each as it reads it (markdown_core_field_add), `raw`: in
  * the source, or, for an inline node, in the content of its inline root,
@@ -324,12 +334,23 @@ typedef struct markdown_core_runs {
  * starts, as its runs, so that a node kept whole as text before it moves
  * keeps them. A node with none holds no list. Storage the node owns
  * (markdown_core_node_pool_bytes). */
-enum { MARKDOWN_CORE_FIELD = 0, MARKDOWN_CORE_FIELD_LENT, MARKDOWN_CORE_FIELD_LINES, MARKDOWN_CORE_FIELD_FOUND };
+enum {
+    MARKDOWN_CORE_FIELD = 0,
+    MARKDOWN_CORE_FIELD_LENT,
+    MARKDOWN_CORE_FIELD_LINES,
+    MARKDOWN_CORE_FIELD_FOUND,
+    MARKDOWN_CORE_FIELD_BARE,
+    MARKDOWN_CORE_FIELD_OPENER,
+    MARKDOWN_CORE_FIELD_OPEN
+};
 
 typedef struct markdown_core_written {
     uint32_t start, end;
-    uint8_t slot, how;
-    bool raw;
+    /* The kind of the construct an OPENER or an OPEN entry is of, or 0. */
+    uint16_t owner;
+    uint8_t slot;
+    uint8_t how : 7;
+    uint8_t raw : 1;
 } markdown_core_written;
 
 typedef struct markdown_core_fields {
@@ -877,6 +898,12 @@ void markdown_core_node_drop_slots(markdown_core_node *node, uint32_t slots);
 /* Keeps only `node`'s literal anchors, each now read as `how`: a node whose
  * kind changes to one that reads none of the other fields. */
 void markdown_core_node_keep_anchors(markdown_core_node *node, uint8_t how);
+/* Drops the constructs `node` kept as given up (OPENER) that a reading
+ * gives up again, each with the fields after it: those a line of the block
+ * phase kept when `line`, else those of its inline runs, whose opener
+ * starts at `raw` or past it, for one the parse placed, or at `published`
+ * or past it, measured as a published one is. */
+void markdown_core_node_drop_opens(markdown_core_node *node, bool line, uint32_t raw, uint32_t published);
 
 /* A label in storage of the pool's, `length` bytes and a NUL, copied into
  * storage of `pool`'s, as a view's record copies the labels it holds

@@ -94,86 +94,37 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
            !topic_joiner(scalar);
 }
 
-/* Where a topic's name goes on from its start: segment characters, and a
- * `/` between two. */
-static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
-    bool word = false;
+/* The topic whose `#` is at `at`, given up with its name, from past the `#`
+ * to `stop`, kept on the run's node (markdown_core_inline_open). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_state *inline_state, bufsize_t at,
+                                                         bufsize_t stop) {
+    const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, stop};
+    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_TOPIC, at, at + 1, &name, 1);
+}
+
+/* Where a name read from `data` stops: runs of segment characters joined by
+ * single `/` signs, a `/` belonging to it only when a segment character
+ * follows. `word` is set when it holds a word character. */
+static bufsize_t name_end(const unsigned char *data, bufsize_t length, bool *word) {
     bufsize_t end = 0;
     for (;;) {
-        int width = segment_width(data + end, length - end, &word);
+        /* A run of ASCII segment characters is read a byte at a time,
+         * looking for a word character only until one is found. */
+        while (!*word && end < length && SEGMENT_BYTES[data[end]]) {
+            *word = SEGMENT_BYTES[data[end++]] == TOPIC_WORD;
+        }
+        while (end < length && SEGMENT_BYTES[data[end]]) {
+            end++;
+        }
+        const int width = segment_width(data + end, length - end, word);
         if (width) {
             end += width;
-        } else if (end && end < length && data[end] == '/' && segment_width(data + end + 1, length - end - 1, &word)) {
+        } else if (end && end < length && data[end] == '/' && segment_width(data + end + 1, length - end - 1, word)) {
             end++;
         } else {
             return end;
         }
     }
-}
-
-static bool identifier_byte(unsigned char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
-}
-
-/* Where a block identifier goes on past a cursor. */
-static bufsize_t identifier_end(const unsigned char *data, bufsize_t length) {
-    bufsize_t end = 0;
-    while (end < length && identifier_byte(data[end])) {
-        end++;
-    }
-    return end;
-}
-
-/* The blocks a block identifier may name: the paragraph whose line it ends,
- * or the block before it that its own line follows, as a list, a list item
- * or a table. Which one the document decides, and the identifier the node
- * carries confirms it. */
-static const markdown_core_node_kind NAMED[] = {
-    MARKDOWN_CORE_KIND_PARAGRAPH,       MARKDOWN_CORE_KIND_HEADING,        MARKDOWN_CORE_KIND_LIST,
-    MARKDOWN_CORE_KIND_LIST_ITEM,       MARKDOWN_CORE_KIND_CALLOUT,        MARKDOWN_CORE_KIND_TABLE,
-    MARKDOWN_CORE_KIND_CODE_BLOCK,      MARKDOWN_CORE_KIND_HTML_BLOCK,     MARKDOWN_CORE_KIND_FORMULA_BLOCK,
-    MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_THEMATIC_BREAK, MARKDOWN_CORE_KIND_DEFINITION_LIST,
-    MARKDOWN_CORE_KIND_DEFINITION,      MARKDOWN_CORE_KIND_FOOTNOTE,       MARKDOWN_CORE_KIND_SPECIMEN,
-};
-enum { NAMED_COUNT = sizeof(NAMED) / sizeof(NAMED[0]) };
-
-/* The name of the topic whose `#` is at `at`, which the content's end cuts
- * short, to the run's context sink. At the end of a paragraph the `#` may
- * open a block identifier, which the document must close. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_state *inline_state, bufsize_t at) {
-    const bufsize_t len = markdown_core_inline_size(inline_state);
-    markdown_core_field fields[1 + NAMED_COUNT] = {
-        {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, name_end, {{0}}, 0, false, 0}};
-    size_t count = 1;
-    if (markdown_core_node_get_kind(inline_state->owner) == MARKDOWN_CORE_KIND_PARAGRAPH &&
-        at + 1 + identifier_end(markdown_core_inline_window(inline_state, 0).data + at + 1, len - at - 1) == len) {
-        for (size_t i = 0; i < NAMED_COUNT; i++) {
-            fields[count++] =
-                (markdown_core_field){MARKDOWN_CORE_SLOT_ID, NAMED[i], at + 1, identifier_end, {{0}}, 0, true, 0};
-        }
-    }
-    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_TOPIC, at, at + 1, fields, count);
-}
-
-/* (topic.h) A line of `#` signs the input's end cuts short, from `first`
- * to `end`, is a heading only while nothing follows its last sign: the
- * name that may yet follow is a topic's, or a block identifier's. */
-/* The fields a line of `#` signs from `first` to `end`, which the input's
- * end cuts short, leaves open, to the parse's context sink (services.h,
- * MARKDOWN_CORE_SERVICE_TOPIC_LINES). */
-static void S_report_line(const markdown_core_element_instance *self, markdown_core_parser *parser, bufsize_t first,
-                          bufsize_t end) {
-    (void)self;
-    markdown_core_field fields[1 + NAMED_COUNT] = {
-        {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, end, name_end, {{0}}, 0, false, 0}};
-    size_t count = 1;
-    if (end == first + 1) {
-        for (size_t i = 0; i < NAMED_COUNT; i++) {
-            fields[count++] =
-                (markdown_core_field){MARKDOWN_CORE_SLOT_ID, NAMED[i], end, identifier_end, {{0}}, 0, true, 0};
-        }
-    }
-    markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_TOPIC, end - 1, end, fields, count);
 }
 
 /* THE END OF THE TOPIC whose `#` is at `at`, or 0 when there is none. The
@@ -188,26 +139,7 @@ static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t a
         return 0;
     }
     bool word = false;
-    bufsize_t end = at + 1;
-    for (;;) {
-        /* A run of ASCII segment characters is read a byte at a time,
-         * looking for a word character only until one is found. */
-        while (!word && end < len && SEGMENT_BYTES[data[end]]) {
-            word = SEGMENT_BYTES[data[end++]] == TOPIC_WORD;
-        }
-        while (end < len && SEGMENT_BYTES[data[end]]) {
-            end++;
-        }
-        int width = segment_width(data + end, len - end, &word);
-        if (width) {
-            end += width;
-        } else if (end > at + 1 && end < len && data[end] == '/' &&
-                   segment_width(data + end + 1, len - end - 1, &word)) {
-            end++;
-        } else {
-            break;
-        }
-    }
+    const bufsize_t end = at + 1 + name_end(data + at + 1, len - at - 1, &word);
     /* The name may go on with the input, and what follows it decides
      * whether it is one; a name the input's end cuts short is a field, as
      * is one a `/` the input ends with may go on from. The character after
@@ -216,16 +148,9 @@ static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t a
     if (end + (end < len && data[end] == '/' ? 5 : 4) > len) {
         markdown_core_inline_saw_end(inline_state);
     }
-    if (inline_state->context && (end == len || (end + 1 == len && end > at + 1 && data[end] == '/'))) {
-        S_report(inline_state, at);
-    }
-    if (!word) {
-        return 0;
-    }
-    if (end < len && data[end] == '#') {
-        return 0;
-    }
-    if (len - end >= 3 && data[end] == ':' && data[end + 1] == '/' && data[end + 2] == '/') {
+    if (!word || (end < len && data[end] == '#') ||
+        (len - end >= 3 && data[end] == ':' && data[end + 1] == '/' && data[end + 2] == '/')) {
+        S_report(inline_state, at, end);
         return 0;
     }
     return end;
@@ -284,16 +209,23 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
     return words->text(words->context, (const unsigned char *)"#", 1) && markdown_core_words_literal(node, words);
 }
 
+/* A name reads as far as name_end reads it, and holds a word character. */
+static bufsize_t S_field_end(int slot, uint8_t before, const unsigned char *data, bufsize_t length) {
+    (void)before;
+    if (slot != MARKDOWN_CORE_SLOT_NAME) {
+        return -1;
+    }
+    bool word = false;
+    const bufsize_t end = name_end(data, length, &word);
+    return word ? end : 0;
+}
+
 const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TOPIC, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_TOPIC, .words = S_words, .field_end = S_field_end},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
-static const markdown_core_report_ops TOPIC_LINES = {.report = S_report_line};
-static const markdown_core_service TOPIC_SERVICES[] = {{MARKDOWN_CORE_SERVICE_TOPIC_LINES, &TOPIC_LINES}, {0}};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
-    .provides = TOPIC_SERVICES,
     .facets = MARKDOWN_CORE_TOPIC_FACETS,
     .name = "topic",
     .run_state_size = sizeof(topic_run),

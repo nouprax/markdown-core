@@ -76,30 +76,21 @@ struct markdown_core_field;
 bufsize_t markdown_core_attributes_closes(const markdown_core_element_instance *self,
                                           markdown_core_inline_state *inline_state, bufsize_t start,
                                           markdown_core_node_kind owner);
-/* What keeps the members of the many braces of one stretch linear: zeroed
- * before the first brace, freed after the last. */
-typedef struct markdown_core_member_memo {
-    bufsize_t *walks, *values;
-    struct markdown_core_field *found;
-    size_t count, room, asked;
-    bool refused;
-} markdown_core_member_memo;
-void markdown_core_member_memo_free(markdown_core_member_memo *memo);
-/* THE MEMBER AN ATTRIBUTE BLOCK THAT DOES NOT CLOSE IS IN AT ITS END, the
- * block's `{` at `start` of the `n` bytes at `s`: an `#` identifier, a `.`
- * class, a record's name, or its value after the name its prefix holds; a
- * member boundary reads as a name not yet begun. False when the block is no
- * block whatever follows. The field's owner is left to the caller. A memo,
- * or NULL, is shared by the braces asked about on the same `n` bytes. */
-bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
-                                          struct markdown_core_field *field, markdown_core_member_memo *memo);
-/* Where a member's name, read from `data`, ends. */
-bufsize_t markdown_core_attributes_name_end(const unsigned char *data, bufsize_t length);
-/* The attribute tails a block of kind `owner` may open on the line being
- * read, `line`, at or after `from`, that the line's end at `end` leaves
- * open, to the parse's context sink: every brace that may be one, since
- * which is the tail only the finished line tells; whether there is one. */
-bool markdown_core_attributes_report(const markdown_core_element_instance *self, markdown_core_parser *parser,
+/* AN ATTRIBUTE BLOCK THAT DOES NOT CLOSE, its `{` at `start` of the `n`
+ * bytes at `s`, which reach to the end of what may hold it: kept on `to`'s
+ * node (markdown_core_field_opener), a construct of kind NONE whose members
+ * a construct of kind `owner` would take, read by a line of the block phase
+ * when `line`, with each member's fields as the block's would be once it
+ * closed, to where their reading stopped, and, at a member boundary where
+ * the bytes end, a name not yet begun. Nothing, and false, when the block
+ * is no block whatever follows. */
+bool markdown_core_attributes_open(const markdown_core_field_to *to, markdown_core_node_kind owner, bool line,
+                                   const unsigned char *s, bufsize_t n, bufsize_t start);
+/* The attribute blocks a block of kind `owner` opens and does not close on
+ * its line `line`, at or after `from`, before `end`, kept on `to`'s node
+ * (markdown_core_attributes_open): every brace that may be one; whether
+ * there is one. */
+bool markdown_core_attributes_report(const markdown_core_element_instance *self, const markdown_core_field_to *to,
                                      markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
                                      bufsize_t end);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES;

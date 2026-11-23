@@ -158,18 +158,21 @@ slot anchor Link closed before=1:16..1:17 after=1:18..1:17 prefix="foo&#38;ba"
 [t](foo&#3‸8;bar)
 .
 block Paragraph 1:1..1:10
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:10 after=1:11..1:15
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: foo&#x2‸6;bar
 .
-block Paragraph 1:1..1:12
+block Reference 1:1..1:12
+slot dest Reference closed before=1:6..1:12 after=1:13..1:17
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: foo&#38;ba‸r
 .
-block Paragraph 1:1..1:15
+block Reference 1:1..1:15
 slot dest Reference closed before=1:6..1:15 after=1:16..1:16
 ````````````````````````````````
 
@@ -184,7 +187,7 @@ slot dest Link closed before=1:5..1:14 after=1:15..1:20
 ```````````````````````````````` example
 [x]: foo(bar#ba‸z)tail
 .
-block Paragraph 1:1..1:15
+block Reference 1:1..1:15
 slot dest Reference closed before=1:6..1:15 after=1:16..1:21
 ````````````````````````````````
 
@@ -192,24 +195,28 @@ slot dest Reference closed before=1:6..1:15 after=1:16..1:21
 [outer](url "a [t](fo‸o)")
 .
 block Paragraph 1:1..1:21
+inline Link 1:1..1:1
 ````````````````````````````````
 
 ```````````````````````````````` example
 [outer](url "a [inner](u){.fo‸o}")
 .
 block Paragraph 1:1..1:29
+inline Link 1:1..1:1
 ````````````````````````````````
 
 ```````````````````````````````` example
 [outer](url "a [inner](u){key=fo‸o}")
 .
 block Paragraph 1:1..1:32
+inline Link 1:1..1:1
 ````````````````````````````````
 
 ```````````````````````````````` example
 [outer](url "a [inner](u){.fo‸o")
 .
 block Paragraph 1:1..1:29
+inline Link 1:1..1:1
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -255,6 +262,7 @@ inline Link 1:1..1:1
 [outer `[t](fo‸o)`](url)
 .
 block Paragraph 1:1..1:14
+inline Link 1:1..1:1
 inline Code 1:8..1:8
 ````````````````````````````````
 
@@ -263,7 +271,6 @@ inline Code 1:8..1:8
 .
 block Paragraph 1:1..1:8
 inline Link 1:1..1:1
-inline None 1:5..1:5
 slot dest Link open before=1:6..1:8 after=1:9..1:8
 ````````````````````````````````
 
@@ -316,7 +323,7 @@ slot dest Link open before=1:5..1:4 after=1:5..1:4
 ```````````````````````````````` example
 [la‸]: /u
 .
-block Paragraph 1:1..1:3
+block Reference 1:1..1:3
 slot label Reference closed before=1:2..1:3 after=1:4..1:3
 ````````````````````````````````
 
@@ -325,26 +332,26 @@ slot label Reference closed before=1:2..1:3 after=1:4..1:3
 .
 block Paragraph 1:1..1:3
 inline None 1:1..1:1
+slot label Reference open before=1:2..1:3 after=1:4..1:3
 ````````````````````````````````
 
 ```````````````````````````````` example
 a [x‸]: /u
 .
 block Paragraph 1:1..1:4
-inline None 1:3..1:3
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: ‸foo
 .
-block Paragraph 1:1..1:5
+block Reference 1:1..1:5
 slot dest Reference closed before=1:6..1:5 after=1:6..1:8
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]:   ‸foo "t"
 .
-block Paragraph 1:1..1:7
+block Reference 1:1..1:7
 slot dest Reference closed before=1:8..1:7 after=1:8..1:10
 ````````````````````````````````
 
@@ -361,7 +368,7 @@ slot dest Reference open before=1:6..1:5 after=1:6..1:5
 .
 block Paragraph 1:1..1:4
 inline Directive 1:4..1:4
-slot dest Reference open before=1:5..1:4 after=1:5..1:4
+slot name Directive open before=1:5..1:4 after=1:5..1:4
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -369,7 +376,6 @@ slot dest Reference open before=1:5..1:4 after=1:5..1:4
 .
 block Paragraph 1:1..1:4
 inline Link 1:1..1:1
-slot dest Link closed before=1:5..1:4 after=1:5..1:13
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -377,20 +383,18 @@ slot dest Link closed before=1:5..1:4 after=1:5..1:13
 .
 block Paragraph 1:1..1:4
 inline Link 1:1..1:1
-slot dest Link closed before=1:5..1:4 after=1:5..1:13
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: ‸<foo bar>
 .
-block Paragraph 1:1..1:5
-slot dest Reference closed before=1:6..1:5 after=1:6..1:14
+block Reference 1:1..1:5
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: <pa‸th>
 .
-block Paragraph 1:1..1:8
+block Reference 1:1..1:8
 slot dest Reference closed before=1:7..1:8 after=1:9..1:10
 ````````````````````````````````
 
@@ -398,7 +402,6 @@ slot dest Reference closed before=1:7..1:8 after=1:9..1:10
 [x]: <pa‸
 .
 block Paragraph 1:1..1:8
-inline None 1:6..1:6
 slot dest Reference open before=1:7..1:8 after=1:9..1:8
 ````````````````````````````````
 
@@ -406,28 +409,27 @@ slot dest Reference open before=1:7..1:8 after=1:9..1:8
 [x]: <a#fr‸
 .
 block Paragraph 1:1..1:10
-inline None 1:6..1:6
 slot anchor Reference open before=1:9..1:10 after=1:11..1:10 prefix="a"
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: /u‸
 .
-block Paragraph 1:1..1:7
+block Reference 1:1..1:7
 slot dest Reference closed before=1:6..1:7 after=1:8..1:7
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: /u#an‸
 .
-block Paragraph 1:1..1:10
+block Reference 1:1..1:10
 slot anchor Reference closed before=1:9..1:10 after=1:11..1:10 prefix="/u"
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]: /u‸rl "t"
 .
-block Paragraph 1:1..1:7
+block Reference 1:1..1:7
 slot dest Reference closed before=1:6..1:7 after=1:8..1:9
 ````````````````````````````````
 
@@ -439,6 +441,7 @@ slot dest Reference closed before=1:6..1:7 after=1:8..1:9
 block Paragraph 1:1..1:4
 inline Cite 1:1..1:2
 slot footnote Citation open before=1:3..1:4 after=1:5..1:4
+slot footnote Footnote open before=1:3..1:4 after=1:5..1:4
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -452,7 +455,7 @@ slot footnote Citation open before=1:5..1:6 after=1:7..1:6
 ```````````````````````````````` example
 [^no‸]: text
 .
-block Paragraph 1:1..1:4
+block Footnote 1:1..1:4
 slot footnote Footnote closed before=1:3..1:4 after=1:5..1:4
 ````````````````````````````````
 
@@ -462,6 +465,7 @@ slot footnote Footnote closed before=1:3..1:4 after=1:5..1:4
 block Paragraph 1:1..1:2
 inline Cite 1:1..1:2
 slot footnote Citation open before=1:3..1:2 after=1:3..1:2
+slot footnote Footnote open before=1:3..1:2 after=1:3..1:2
 ````````````````````````````````
 
 ## Citations and specimens
@@ -470,23 +474,21 @@ slot footnote Citation open before=1:3..1:2 after=1:3..1:2
 See @do‸
 .
 block Paragraph 1:1..1:7
-inline Cite 1:5..1:5
 slot bib Citation closed before=1:6..1:7 after=1:8..1:7
-slot specimen Citation closed before=1:6..1:7 after=1:8..1:7
 ````````````````````````````````
 
 ```````````````````````````````` example
 See [@do‸]
 .
 block Paragraph 1:1..1:8
-inline Cite 1:6..1:6
+inline Cite 1:5..1:5
 slot bib Citation closed before=1:7..1:8 after=1:9..1:8
 ````````````````````````````````
 
 ```````````````````````````````` example
 (@sp‸) text
 .
-block Paragraph 1:1..1:4
+block Specimen 1:1..1:4
 slot specimen Specimen closed before=1:3..1:4 after=1:5..1:4
 ````````````````````````````````
 
@@ -494,16 +496,14 @@ slot specimen Specimen closed before=1:3..1:4 after=1:5..1:4
 (@sp‸
 .
 block Paragraph 1:1..1:4
-inline Cite 1:2..1:2
 slot bib Citation closed before=1:3..1:4 after=1:5..1:4
-slot specimen Citation closed before=1:3..1:4 after=1:5..1:4
 ````````````````````````````````
 
 ```````````````````````````````` example
 See @{a{b‸}c} after
 .
 block Paragraph 1:1..1:9
-inline Cite 1:5..1:5
+inline Citation 1:5..1:6
 slot bib Citation closed before=1:7..1:9 after=1:10..1:11
 ````````````````````````````````
 
@@ -511,9 +511,7 @@ slot bib Citation closed before=1:7..1:9 after=1:10..1:11
 See @‸{foo} after
 .
 block Paragraph 1:1..1:5
-inline Cite 1:5..1:5
-slot bib Citation closed before=1:6..1:5 after=1:6..1:10
-slot specimen Citation closed before=1:6..1:5 after=1:6..1:10
+inline Citation 1:5..1:6
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -551,8 +549,6 @@ slot dest Link closed before=1:15..1:16 after=1:17..1:17
 See @{fo‸o bar}
 .
 block Paragraph 1:1..1:8
-inline Cite 1:5..1:5
-slot bib Citation open before=1:7..1:8 after=1:9..1:9
 ````````````````````````````````
 
 ## Topics and block identifiers
@@ -561,7 +557,6 @@ slot bib Citation open before=1:7..1:8 after=1:9..1:9
 see #to‸
 .
 block Paragraph 1:1..1:7
-inline Topic 1:5..1:5
 slot name Topic closed before=1:6..1:7 after=1:8..1:7
 ````````````````````````````````
 
@@ -673,6 +668,7 @@ slot name DirectiveBlock closed before=1:3..1:4 after=1:5..1:4
 :::note {.c‸
 .
 block Paragraph 1:1..1:11
+slot class DirectiveBlock open before=1:11..1:11 after=1:12..1:11
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -696,6 +692,7 @@ slot name DirectiveBlock open before=1:6..1:5 after=1:6..1:5
 [x](u){#i‸}
 .
 block Paragraph 1:1..1:9
+inline Link 1:1..1:1
 slot id Link closed before=1:9..1:9 after=1:10..1:9
 ````````````````````````````````
 
@@ -704,7 +701,6 @@ slot id Link closed before=1:9..1:9 after=1:10..1:9
 .
 block Paragraph 1:1..1:9
 inline None 1:7..1:7
-inline Topic 1:8..1:8
 slot id Link open before=1:9..1:9 after=1:10..1:9
 slot name Topic closed before=1:9..1:9 after=1:10..1:9
 ````````````````````````````````
@@ -721,6 +717,7 @@ slot class Span open before=1:6..1:6 after=1:7..1:6
 `c`{.c‸}
 .
 block Paragraph 1:1..1:6
+inline Code 1:1..1:1
 slot class Code closed before=1:6..1:6 after=1:7..1:6
 ````````````````````````````````
 
@@ -736,6 +733,7 @@ slot record Span open before=1:5..1:4 after=1:5..1:4
 [x]{rec=va‸}
 .
 block Paragraph 1:1..1:10
+inline Span 1:1..1:1
 slot value Span closed before=1:9..1:10 after=1:11..1:10 prefix="rec"
 ````````````````````````````````
 
@@ -743,6 +741,7 @@ slot value Span closed before=1:9..1:10 after=1:11..1:10 prefix="rec"
 [x]{key=fo‸o\bar} after
 .
 block Paragraph 1:1..1:10
+inline Span 1:1..1:1
 slot value Span closed before=1:9..1:10 after=1:11..1:15 prefix="key"
 ````````````````````````````````
 
@@ -750,6 +749,7 @@ slot value Span closed before=1:9..1:10 after=1:11..1:15 prefix="key"
 [x]{key=foo\b‸ar} after
 .
 block Paragraph 1:1..1:13
+inline Span 1:1..1:1
 slot value Span closed before=1:9..1:13 after=1:14..1:15 prefix="key"
 ````````````````````````````````
 
@@ -757,6 +757,7 @@ slot value Span closed before=1:9..1:13 after=1:14..1:15 prefix="key"
 [x]{key="fo‸o} after
 .
 block Paragraph 1:1..1:11
+inline Span 1:1..1:1
 slot value Span closed before=1:9..1:11 after=1:12..1:12 prefix="key"
 ````````````````````````````````
 
@@ -764,27 +765,30 @@ slot value Span closed before=1:9..1:11 after=1:12..1:12 prefix="key"
 [x]{key="fo‸o bar"} after
 .
 block Paragraph 1:1..1:11
-slot value Span closed before=1:9..1:11 after=1:12..1:17 prefix="key"
+inline Span 1:1..1:1
+slot value Span closed before=1:10..1:11 after=1:12..1:16 prefix="key"
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]{key='fo‸o' .c} after
 .
 block Paragraph 1:1..1:11
-slot value Span closed before=1:9..1:11 after=1:12..1:13 prefix="key"
+inline Span 1:1..1:1
+slot value Span closed before=1:10..1:11 after=1:12..1:12 prefix="key"
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]{key=‸"foo bar"} after
 .
 block Paragraph 1:1..1:8
-slot value Span closed before=1:9..1:8 after=1:9..1:17 prefix="key"
+inline Span 1:1..1:1
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]{.foo ‸bar}
 .
 block Paragraph 1:1..1:9
+inline Span 1:1..1:1
 slot record Span closed before=1:10..1:9 after=1:10..1:12
 ````````````````````````````````
 
@@ -793,13 +797,14 @@ slot record Span closed before=1:10..1:9 after=1:10..1:12
 .
 block Paragraph 1:1..1:12
 inline None 1:4..1:4
-slot value Span open before=1:9..1:12 after=1:13..1:12 prefix="rec"
+slot value Span open before=1:10..1:12 after=1:13..1:12 prefix="rec"
 ````````````````````````````````
 
 ```````````````````````````````` example
 [x]{#a .b r‸}
 .
 block Paragraph 1:1..1:11
+inline Span 1:1..1:1
 slot record Span closed before=1:11..1:11 after=1:12..1:11
 ````````````````````````````````
 
@@ -807,6 +812,7 @@ slot record Span closed before=1:11..1:11 after=1:12..1:11
 :d[x]{.c‸}
 .
 block Paragraph 1:1..1:8
+inline Directive 1:1..1:1
 slot class Directive closed before=1:8..1:8 after=1:9..1:8
 ````````````````````````````````
 
@@ -814,6 +820,7 @@ slot class Directive closed before=1:8..1:8 after=1:9..1:8
 <http://a>{.c‸}
 .
 block Paragraph 1:1..1:13
+inline Link 1:1..1:1
 slot class Link closed before=1:13..1:13 after=1:14..1:13
 ````````````````````````````````
 
@@ -828,21 +835,19 @@ slot id Heading closed before=1:10..1:10 after=1:11..1:10
 ## A {.b‸} ##
 .
 block Heading 1:1..1:8
-inline None 1:6..1:6
 ````````````````````````````````
 
 ```````````````````````````````` example
 # text {.fo‸o} trailing
 .
 block Heading 1:1..1:11
-inline None 1:8..1:8
 ````````````````````````````````
 
 ```````````````````````````````` example
 # text {.fo‸o trailing
 .
 block Heading 1:1..1:11
-inline None 1:8..1:8
+slot class Heading open before=1:10..1:11 after=1:12..1:12
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -857,7 +862,6 @@ slot dest Link closed before=1:7..1:13 after=1:14..1:15
 # text {.fo‸o} ##
 .
 block Heading 1:1..1:11
-inline None 1:8..1:8
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -871,14 +875,13 @@ slot class Heading closed before=1:11..1:11 after=1:12..1:11
 # text {.fo‸o}##
 .
 block Heading 1:1..1:11
-inline None 1:8..1:8
 ````````````````````````````````
 
 ```````````````````````````````` example
 # text {k="x {.ba‸r}
 .
 block Heading 1:1..1:17
-inline None 1:8..1:8
+slot value Heading open before=1:12..1:17 after=1:18..1:19 prefix="k"
 slot class Heading closed before=1:16..1:17 after=1:18..1:18
 ````````````````````````````````
 
@@ -898,13 +901,13 @@ block Callout 1:1..1:6
 block Paragraph 1:3..1:6
 inline None 1:3..1:3
 slot variant Callout open before=1:5..1:6 after=1:7..1:6
+slot label Reference open before=1:4..1:6 after=1:7..1:6
 ````````````````````````````````
 
 ```````````````````````````````` example
 > [!no‸te] Title
 .
 block Callout 1:1..1:6
-block Paragraph 1:3..1:6
 slot variant Callout closed before=1:5..1:6 after=1:7..1:8
 ````````````````````````````````
 
@@ -915,6 +918,7 @@ block Callout 1:1..1:4
 block Paragraph 1:3..1:4
 inline None 1:3..1:3
 slot variant Callout open before=1:5..1:4 after=1:5..1:4
+slot label Reference open before=1:4..1:4 after=1:5..1:4
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -924,6 +928,7 @@ slot variant Callout open before=1:5..1:4 after=1:5..1:4
 block Callout 1:1..1:3
 block Paragraph 1:3..1:3
 inline None 2:3..2:3
+slot label Reference open before=2:4..2:6 after=2:7..2:6
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -932,7 +937,6 @@ inline None 2:3..2:3
 block List 1:1..1:8
 block ListItem 1:1..1:8
 block Callout 1:3..1:8
-block Paragraph 1:5..1:8
 slot variant Callout closed before=1:7..1:8 after=1:9..1:8
 ````````````````````````````````
 
@@ -958,6 +962,7 @@ slot info CodeBlock closed before=1:4..1:5 after=1:6..1:9
 ```‸
 .
 block CodeBlock 1:1..1:3
+slot info CodeBlock closed before=1:4..1:3 after=1:4..1:3
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -1036,6 +1041,7 @@ x
 ```
 .
 block CodeBlock 1:1..1:12
+slot value CodeBlock open before=1:11..1:12 after=1:13..1:13 prefix="k"
 slot info CodeBlock closed before=1:4..1:12 after=1:13..1:13
 ````````````````````````````````
 
@@ -1082,6 +1088,7 @@ slot value CodeBlock closed before=1:13..1:13 after=1:14..1:13 prefix="r"
 ```py {k="x {.ba‸r}
 .
 block CodeBlock 1:1..1:16
+slot value CodeBlock open before=1:11..1:16 after=1:17..1:18 prefix="k"
 slot class CodeBlock closed before=1:15..1:16 after=1:17..1:17
 ````````````````````````````````
 
@@ -1327,7 +1334,6 @@ inline Formula 1:3..1:3
 a <htt‸
 .
 block Paragraph 1:1..1:6
-inline None 1:3..1:3
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -1366,6 +1372,7 @@ block Paragraph 1:1..1:5
 [x](u){key=[y](v){.fo‸o}
 .
 block Paragraph 1:1..1:21
+inline Link 1:1..1:1
 slot value Link closed before=1:12..1:21 after=1:22..1:22 prefix="key"
 ````````````````````````````````
 
@@ -1373,6 +1380,7 @@ slot value Link closed before=1:12..1:21 after=1:22..1:22 prefix="key"
 [x](u){key=[y](v){‸.foo}
 .
 block Paragraph 1:1..1:18
+inline Link 1:1..1:1
 slot value Link closed before=1:12..1:18 after=1:19..1:22 prefix="key"
 ````````````````````````````````
 
@@ -1388,6 +1396,7 @@ slot name Topic closed before=1:6..1:7 after=1:8..1:8
 :d{k=:d[a]{.‸a}}
 .
 block Paragraph 1:1..1:12
+inline Directive 1:1..1:1
 slot value Directive closed before=1:6..1:12 after=1:13..1:13 prefix="k"
 ````````````````````````````````
 
@@ -1397,18 +1406,15 @@ slot value Directive closed before=1:6..1:12 after=1:13..1:13 prefix="k"
 .
 block Specimen 1:1..1:10
 block Paragraph 1:6..1:10
-inline Cite 2:6..2:6
 slot bib Citation closed before=2:7..2:7 after=2:8..2:7
-slot specimen Citation closed before=2:7..2:7 after=2:8..2:7
 ````````````````````````````````
 
 ```````````````````````````````` example
 ^[[x](@k‸)]
 .
 block Paragraph 1:1..1:8
-inline Footnote 1:1..1:2
+inline Cite 1:1..1:2
 inline Link 1:3..1:3
-inline Cite 1:7..1:7
 slot dest Link closed before=1:7..1:8 after=1:9..1:8
 ````````````````````````````````
 
@@ -1416,6 +1422,7 @@ slot dest Link closed before=1:7..1:8 after=1:9..1:8
 [^‸@k]{@}
 .
 block Paragraph 1:1..1:2
+inline Span 1:1..1:1
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -1423,7 +1430,8 @@ block Paragraph 1:1..1:2
 y‸z"}
 .
 block Paragraph 1:1..1:7
-slot value Directive closed before=2:1..2:1 after=2:2..2:3 prefix="k"
+inline Directive 1:1..1:1
+slot value Directive closed before=2:1..2:1 after=2:2..2:2 prefix="k"
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -1431,6 +1439,7 @@ see #fo‸o# text #foo#
 .
 block Paragraph 1:1..1:7
 inline Topic 1:5..1:5
+slot name Topic open before=1:6..1:7 after=1:8..1:8
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -1453,6 +1462,7 @@ slot anchor CrossLink closed before=1:6..1:8 after=1:9..1:9 prefix="x "
 [x]{.x #t ‸y #i#}
 .
 block Paragraph 1:1..1:10
+inline Span 1:1..1:1
 slot record Span closed before=1:11..1:10 after=1:11..1:11
 ````````````````````````````````
 
@@ -1462,6 +1472,7 @@ a‸b}
 ```"}
 .
 block Paragraph 1:1..1:10
+inline Span 1:1..1:1
 slot record Span closed before=2:1..2:1 after=2:2..2:2
 ````````````````````````````````
 
@@ -1471,9 +1482,10 @@ slot record Span closed before=2:1..2:1 after=2:2..2:2
 ```]{.a}
 .
 block Paragraph 1:1..1:6
+inline Directive 1:1..1:1
 inline None 1:3..1:3
 inline Code 1:4..1:6
-inline Cite 2:1..2:1
+inline Citation 2:1..2:1
 slot bib Citation closed before=2:2..2:1 after=2:2..2:2
 ````````````````````````````````
 
@@ -1489,7 +1501,7 @@ earlier heading, read as that heading finishes, reports nothing.
 [foo]: /url "title"
 ‸
 .
-block Paragraph 3:1..3:19
+none
 ````````````````````````````````
 
 ```````````````````````````````` example

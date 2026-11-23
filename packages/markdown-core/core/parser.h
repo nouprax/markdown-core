@@ -404,7 +404,8 @@ typedef struct markdown_core_line_stop {
  * a token whose reading read the end, or of an opener left unmatched,
  * INT32_MAX when there is none. It lists in `notes` the inline notes it
  * made, fields their Citations hold, which commit with the nodes that hold
- * them as those settle. */
+ * them as those settle. `source` is where `from` was written, measured
+ * from where the root's source starts, as its published fields are. */
 typedef struct {
     bufsize_t start;
     uint32_t misses;
@@ -412,6 +413,7 @@ typedef struct {
 
 typedef struct markdown_core_inline_settle {
     bufsize_t from, undecided;
+    uint32_t source;
     uint32_t misses;
     markdown_core_settle_start *starts;
     size_t count, capacity;
@@ -474,6 +476,12 @@ typedef struct {
     markdown_core_strbuf labels;
     struct markdown_core_node **anchored;
     size_t anchored_count, anchored_capacity;
+    /* The constructs the paragraph's run gave up before the point (node.h,
+     * OPENER), its entries in its content, which a snapshot's paragraph
+     * keeps no longer than the snapshot and the settled nodes carry. */
+    struct markdown_core_written *opens;
+    uint32_t open_count;
+    size_t open_capacity;
     markdown_core_inline_settle settle;
     bool taken;
 } markdown_core_settled;
@@ -781,6 +789,12 @@ typedef struct markdown_core_leap {
     size_t rest, land, landed, uses;
     bool kept, lands;
     markdown_core_seam_stops stops;
+    /* What the paragraph's inline runs gave up from the seam on, as the
+     * last publish measured it (node.h, OPENER), set aside while the parse
+     * reads past the seam: the old tail it meets keeps those in it. */
+    struct markdown_core_written *opens;
+    uint32_t open_count;
+    size_t open_room;
     /* THE PREFIX OF A PARAGRAPH (blocks.c): the content marks the last
      * reading of `node` read its content with, `marked` of them, which
      * stand right after the identity run until the next reopen or look,
@@ -956,6 +970,13 @@ typedef struct markdown_core_edit {
      * of the old tail of a paragraph whose parse met a seam of the back
      * (THE OLD TAIL OF A PARAGRAPH). */
     size_t uses_held;
+    /* What the line starts of the lines the deepest block reads again
+     * gave up (node.h, OPENER), set aside at the reopen as raw entries of
+     * the old text: those of old lines the reading takes back unread (THE
+     * LEAP, THE SPLICE IN A PARAGRAPH) come back, moved by the edit. */
+    struct markdown_core_written *line_opens;
+    uint32_t line_open_count;
+    size_t line_open_room;
     /* The old tail's children no record holds yet, nor the root, the
      * `unrecorded` from `recorded` (ast.c, record_tail): the parse lets
      * them go when it fails before its publish. */
@@ -1018,15 +1039,17 @@ struct markdown_core_parser {
     /* What the parse keeps as a stream (markdown_core_stream), made as the
      * parse starts. */
     markdown_core_stream *stream;
-    /* What the parse of the text before a cursor reports of what it leaves
-     * open (sink.h), or NULL: a parse with a sink is never published but
-     * to the context query. */
-    struct markdown_core_context_sink *sink;
     /* Every definition and explicit anchor the parse declared (roster.h):
      * the block phase declares definitions as it reads them, the headings
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_roster roster;
+    /* What the block starts of the line in hand began and gave up
+     * (markdown_core_field_opener with no node), placed in the source, which the
+     * block that takes the line's text keeps (node.h, OPENER). */
+    struct markdown_core_written *line_opens;
+    uint32_t line_open_count;
+    size_t line_open_capacity;
     /* The nodes that ask for names and the names they take (names.h). */
     markdown_core_names names;
     /* The root being completed: the queued block or field root the
@@ -1539,6 +1562,10 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
         return parser->error ? MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED : MARKDOWN_CORE_NODE_SET_KIND_CUT;
     }
     markdown_core_parser_note_kind(parser, kind);
+    if (kind != node->kind) {
+        /* What its inline runs gave up was its former kind's reading. */
+        markdown_core_node_drop_opens(node, false, 0, 0);
+    }
     if (parser->stream && node == parser->stream->settled.address && kind != node->kind) {
         markdown_core_parser_unseam(parser, node, kind);
     }
@@ -1945,14 +1972,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
  * begin in increasing source order, so a node began on `line` or later when
  * its start is at least this offset. */
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
-struct markdown_core_field;
-/* THE OPEN CONSTRUCT a block scanner reads on the line being read, when the
- * parse reports to a context sink and the line is the document's last: it
- * opens a construct of kind `opens` whose opening syntax is the line's bytes
- * `from` up to `to`, and reads the `count` fields at `fields`, their offsets
- * on the line too, when the line ends. A parse with no sink lists nothing. */
-void markdown_core_parser_open(markdown_core_parser *parser, markdown_core_node_kind opens, bufsize_t from,
-                               bufsize_t to, const struct markdown_core_field *fields, size_t count);
 /* The content of line `line` of the active input, which the driver read,
  * as the block parser reads it, a NUL as U+FFFD, without its terminator, and
  * its length; NULL, with the parse failed, when storage could not be had. */
@@ -2138,11 +2157,6 @@ static inline const markdown_core_roster_record *markdown_core_parser_find_defin
         markdown_core_parser_folds(parser, kind)
             ? markdown_core_roster_find_label(&parser->roster, kind, label, failed)
             : markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed);
-    if (parser->sink) {
-        /* A reading for a sink, whose roster holds the whole document's
-         * labels (session.c, THE LOOK), answers from them. */
-        return record;
-    }
     if (parser->snapshot && !*failed) {
         return markdown_core_parser_find_at_snapshot(parser, kind, label, at, record, failed);
     }
@@ -2451,15 +2465,6 @@ bool markdown_core_parser_complete(markdown_core_parser *parser);
  * back as its commit left it. The published root, which the next commit,
  * finalize or discard takes back, or NULL when the transaction failed. */
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length);
-/* THE LOOK (blocks.c): the flushed parse read from the rest point before
- * the root's child `child`, at input line `line`, or below it at `path`
- * of `depth` blocks that start at `starts`, the deepest's child before
- * the rest point ending at `before`, through `length` bytes of `source` as
- * a snapshot reads them, `span` blocks at most, for the parse's sink, and
- * left as the flush left it. False when storage could not be had. */
-bool markdown_core_parser_look(markdown_core_parser *parser, struct markdown_core_node *root, uint32_t child,
-                               size_t line, const char *source, size_t length, const uint32_t *path, size_t depth,
-                               const uint32_t *starts, size_t before, uint32_t span, markdown_core_folds *const *folds);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

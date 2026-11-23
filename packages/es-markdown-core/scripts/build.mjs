@@ -22,7 +22,6 @@ const core = [
     "map.c",
     "tree.c",
     "index.c",
-    "sink.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const elements = [

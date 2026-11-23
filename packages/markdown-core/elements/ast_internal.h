@@ -88,11 +88,6 @@ bool markdown_core_column_offset(const uint8_t *source, size_t at, size_t end, i
 bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, const markdown_core_node ***nodes,
                                 size_t *count, const markdown_core_node **last);
 
-/* The context at `position` of `size` bytes of `source`, read by a session
- * of the whole text, flushed (session.c, THE LOOK OF A TEXT AS A WHOLE). */
-markdown_core_status markdown_core_context_of(const uint8_t *source, size_t size, markdown_core_text_unit unit,
-                                              markdown_core_position position, struct markdown_core_context **context);
-
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;
  * markdown_core_document_scope is this query over a document's tree and
@@ -226,19 +221,12 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
 
-/* THE LOCUS OF A LOCATE (context.c, THE PREFIX FROM A REST POINT):
- * `lines`, the lines from the rest point an edit of the cursor's line reads
- * from through the one after the cursor's; `window`, the blocks that hold
- * them, down the chain to the rest point's level; and the reading of the
- * text before the cursor. */
-struct markdown_core_context_sink;
+/* THE LOCUS OF A LOCATE (session.c, THE WINDOW): `lines`, some lines of
+ * the text, through the one after the cursor's; `window`, the blocks that
+ * hold the cursor, or none, for the whole tree. */
 typedef struct markdown_core_locus {
     markdown_core_source_lines lines;
     markdown_core_window window;
-    /* The session's reading of the text before the cursor for `sink`, from
-     * the rest point an edit of the cursor's line reads from (session.c,
-     * THE LOOK). */
-    markdown_core_status (*look)(void *owner, struct markdown_core_context_sink *sink);
     /* The line that holds `offset`, a byte before `lines`, counted from 0
      * in the text, and where it starts. */
     void (*line)(void *owner, size_t offset, size_t *line, size_t *start);

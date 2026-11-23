@@ -25,7 +25,6 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
     "${MARKDOWN_CORE_CORE_DIR}/tree.c"
     "${MARKDOWN_CORE_CORE_DIR}/index.c"
-    "${MARKDOWN_CORE_CORE_DIR}/sink.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core_ctype.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/code.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/code_block.c"

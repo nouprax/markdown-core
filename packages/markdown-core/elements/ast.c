@@ -1041,17 +1041,26 @@ static inline bool publish_list(publish_walk *walk, markdown_core_node *node, ui
 /* The fields the parse read raw (node.h, markdown_core_fields), measured
  * from `source`, where the node's source starts, as its runs are: an inline
  * node's, `content`, in the content of the root whose places the walk
- * holds, as its place is, and a block's in the source. */
+ * holds, as its place is, and a block's in the source, but for what an
+ * inline root's run gave up (node.h, OPENER), in its content too, which
+ * `root` says the walk holds the places of. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void publish_fields(publish_walk *walk, markdown_core_node *node,
-                                                               bool content, uint32_t source, const content_place *at) {
+                                                               bool content, bool root, uint32_t source,
+                                                               const content_place *at) {
     markdown_core_fields *fields = node->fields;
+    bool run = false;
     for (uint32_t i = 0; i < fields->count; i++) {
         markdown_core_written *field = &fields->items[i];
+        if (field->how == MARKDOWN_CORE_FIELD_OPENER) {
+            run = root && !(field->slot & 1);
+        } else if (field->how != MARKDOWN_CORE_FIELD_OPEN) {
+            run = false;
+        }
         if (!field->raw) {
             continue;
         }
         markdown_core_place range = {field->start, field->end};
-        if (content) {
+        if (content || run) {
             /* A field in one place the content copies is that place's
              * bytes, at the place the field before it was in or found by
              * a search; any other is its runs' window. */
@@ -1111,7 +1120,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
         }
     }
     if (node->fields) {
-        publish_fields(walk, node, content, placed->source.start, at);
+        publish_fields(walk, node, content, placed->root, placed->source.start, at);
     }
     return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
 }
@@ -1169,6 +1178,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node_in_plac
             placed->root = false;
             if (node == walk->pane && !publish_pane(walk, placed)) {
                 return false;
+            }
+            /* What a reading of its content in the pane wrote on it, whose
+             * places the walk now holds. */
+            if (node->fields) {
+                publish_fields(walk, node, false, placed->root, placed->source.start, NULL);
             }
             return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
         }

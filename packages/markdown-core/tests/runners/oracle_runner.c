@@ -1509,7 +1509,12 @@ static bool refusable(const char *kind, const char *owner, const char *value, bo
         return !size || literal(value) || holds(value, "|[]#") || value[size - 1] == '\\';
     }
     if (!strcmp(kind, "anchor") && cross) {
-        return !size || literal(value) || holds(value, "|[]") || value[0] == '#' || value[size - 1] == '#' ||
+        /* After `#^` the anchor is a block identifier, which other bytes
+         * would turn into a heading's. */
+        return !size ||
+               (wrap == '^' &&
+                strspn(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != size) ||
+               literal(value) || holds(value, "|[]") || value[0] == '#' || value[size - 1] == '#' ||
                strstr(value, "##") || value[0] == '^' || value[size - 1] == '\\';
     }
     if (!strcmp(kind, "dest") || !strcmp(kind, "anchor")) {
@@ -1912,6 +1917,17 @@ static bool unheld(const char *kind, const char *owner, const uint8_t *source, s
     if (!strcmp(kind, "value") && next && !strchr(" \t}\r\n", next)) {
         return true;
     }
+    /* A member of a block the line leaves open, with more members after
+     * it, a space and more: a closer after the member would cut them off,
+     * and without one nothing written there lands in a field. */
+    if (!closed &&
+        (!strcmp(kind, "value") || !strcmp(kind, "record") || !strcmp(kind, "class") || !strcmp(kind, "id"))) {
+        for (size_t i = to; i + 1 < end; i++) {
+            if ((source[i] == ' ' || source[i] == '\t') && !strchr(" \t\r", source[i + 1])) {
+                return true;
+            }
+        }
+    }
     /* A value that begins its line began on an earlier one, in quotes the
      * line does not open: no insertion on the line replaces it whole. */
     if (!strcmp(kind, "value") && from == start) {
@@ -1966,7 +1982,13 @@ static void check_spell(report *r, const uint8_t *source, size_t length, size_t 
     const bool closed = slot->closed && !block;
     const char *later = "";
     char *expected = NULL;
+    /* A directive closes with a bracket or a brace, never a link's
+     * closers. */
+    const bool directive = !strcmp(owner, "Directive") || !strcmp(owner, "DirectiveBlock");
     for (size_t i = 0; LATER[i] && (i == 0 || !closed); i++) {
+        if (directive && strpbrk(LATER[i], ">)")) {
+            continue;
+        }
         free(expected);
         later = LATER[i];
         expected = spelled_tree(source, length, from, to, witness, later, kind, owner);

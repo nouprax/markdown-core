@@ -458,10 +458,9 @@ typedef struct markdown_core_inline_ops {
      * which no element holds anything open (inlines.h,
      * markdown_core_inline_settle). */
     bool (*holds)(const markdown_core_element_instance *, const markdown_core_inline_state *);
-    /* Lists to the run's context sink what the run's record holds open as
-     * its last token ends -- the brackets no closer met -- in the parse of
-     * the text before a cursor (sink.h). Asked only of a run that has a
-     * sink, before the run finishes. */
+    /* Keeps on the run's node what the run's record holds open as its last
+     * token ends -- the brackets no closer met -- the constructs it gave up
+     * (markdown_core_inline_open), before the run finishes. */
     void (*report)(const markdown_core_element_instance *, markdown_core_inline_state *);
     /* THE BRACKETS (bracket.h) a run opens, of any element: one opened,
      * its record zeroed; one whose body is decided, its construct made or
@@ -767,8 +766,7 @@ typedef struct markdown_core_edit_ops {
     /* The block kinds the element's block yields as it closes, more than
      * one, one after another on the lines that follow -- a paragraph's link
      * reference definitions: two of them on adjacent lines were one block
-     * as the later one's line was read, which a reading of a prefix of the
-     * text sees open from the first (session.c, THE LOOK), terminated by
+     * as the later one's line was read, terminated by
      * MARKDOWN_CORE_NODE_NONE, or NULL. */
     const markdown_core_node_type *joins;
     /* THE STOP LINES (blocks.c, AN OPENER READ TO THE END): a test of one
@@ -907,6 +905,13 @@ typedef struct markdown_core_facet {
      * tag's or a note's. */
     uint8_t reads;
     bool (*words)(const markdown_core_node *, const markdown_core_words *);
+    /* Where the element's reading of a field of slot kind `slot` of a node
+     * of the kind, written from the first of the `length` bytes at `data`
+     * with the byte `before` before it (0 at a line's start), stops: what the
+     * completion may write in the field is what it reads whole; -1 for a
+     * slot kind that stops only at its syntax's closer, and NULL when every
+     * slot kind the kind holds does. */
+    bufsize_t (*field_end)(int slot, uint8_t before, const unsigned char *data, bufsize_t length);
 } markdown_core_facet;
 
 enum { MARKDOWN_CORE_READS_NOTHING = 0, MARKDOWN_CORE_READS_LITERAL, MARKDOWN_CORE_READS_CHILDREN };

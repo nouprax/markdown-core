@@ -31,7 +31,6 @@ let package = Package(
                 "core/map.c",
                 "core/tree.c",
                 "core/index.c",
-                "core/sink.c",
                 "core/markdown_core_ctype.c",
                 "elements/code.c",
                 "elements/code_block.c",
