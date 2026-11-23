@@ -247,7 +247,8 @@ const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
  * element's scan reads ahead of the run's own, from a backtick run the run
  * may not take as an opener, on a backtick index of the scan's own, its
  * memo. */
-_Static_assert(sizeof(markdown_core_backticks) <= sizeof(markdown_core_skip_memo), "a backtick index fits a memo");
+/* C99 has no _Static_assert: an array of negative size fails the build. */
+typedef char S_backticks_fit[sizeof(markdown_core_backticks) <= sizeof(markdown_core_skip_memo) ? 1 : -1];
 
 static bufsize_t S_skip(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                         bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open) {

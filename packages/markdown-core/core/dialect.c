@@ -931,7 +931,9 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);
     assert(dialect->run_state_size == sizes->run_state_bytes);
     S_resolve_needs(dialect, instances, resolved);
-    memset(dialect->facets, 0, sizeof(dialect->facets));
+    for (size_t k = 0; k < MARKDOWN_CORE_FACET_ROOM; k++) {
+        dialect->facets[k] = NULL;
+    }
     for (size_t i = 0; i < count; i++) {
         instances[i].dialect = dialect;
         for (const markdown_core_facet *facet = instances[i].element->facets;
