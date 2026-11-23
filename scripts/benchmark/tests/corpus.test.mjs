@@ -548,7 +548,7 @@ test("the complete syntax and element inventories fail closed when a feature, ru
     const corpus = buildGrammarCorpus({ units: 1 });
     const coverage = validateFeatureCoverage(root, corpus);
     assert.equal(coverage.features, 31);
-    assert.equal(coverage.elements, 33);
+    assert.equal(coverage.elements, 34);
     assert.equal(coverage.sections, 133);
     assert.throws(
         () =>
