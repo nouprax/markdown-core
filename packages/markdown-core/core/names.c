@@ -718,10 +718,11 @@ static bool stems_make(markdown_core_names *state) {
         *markdown_core_array_write(&names->where, named_tree_at(entries, i)->id - 1) =
             markdown_core_tree_where(entries, i);
     }
+    /* A dialect that spells no names names no entry: it keeps no stems. */
     for (size_t i = 0; i < state->count; i++) {
         markdown_core_named *entry = named_tree_at(entries, i);
         entry->stem = 0;
-        if (entry->authored) {
+        if (entry->authored || !state->spelling) {
             continue;
         }
         markdown_core_pieces base;
