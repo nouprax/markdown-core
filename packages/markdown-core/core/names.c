@@ -1803,6 +1803,14 @@ void markdown_core_names_finish(markdown_core_parser *parser) {
     }
     const bool snapshot = parser->snapshot;
     names_follow(state);
+    /* A dialect that spells no names names no node (names.h): its entries
+     * still serve their owners' readings, and an edit's old tail goes. */
+    if (!state->spelling) {
+        if (state->edit && !snapshot && !back_drop(state)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        return;
+    }
     if (state->edit && !snapshot) {
         name_pass pass = {.parser = parser, .state = state, .name = MARKDOWN_CORE_BUF_INIT()};
         if (!back_drop(state)) {
@@ -1908,10 +1916,6 @@ void markdown_core_names_init(markdown_core_names *names, const markdown_core_el
 void markdown_core_parser_name(markdown_core_parser *parser, const markdown_core_element_instance *self,
                                markdown_core_node *node) {
     markdown_core_names *state = &parser->names;
-    /* A dialect that spells no names names no node (names.h). */
-    if (!state->spelling) {
-        return;
-    }
     names_follow(state);
     uint8_t owner = 0;
     while (state->owners[owner] != self) {

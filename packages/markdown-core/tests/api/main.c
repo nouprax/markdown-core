@@ -43,6 +43,7 @@
 #include "footnote.h"
 #include "heading_state.h"
 #include "heading.h"
+#include "anchor.h"
 #include "list.h"
 #include "properties.h"
 #include "specimen.h"
@@ -2942,6 +2943,7 @@ static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runne
 }
 
 static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core_node_type kind);
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
 
 /* EVERY NODE OF ONE KIND IN AN ENGINE TREE, in source order: the content and
  * every field root the engine's own field visitor names, an inline note's
@@ -3027,6 +3029,49 @@ static const char *footnote_label_of(const markdown_core_node *note) {
 /* A REFERENCE OCCURRENCE A HEADING DECLARES names the heading's label, and
  * the document resolves the label to the heading; the heading owns its
  * computed anchor. */
+/* A dialect without the anchor element spells no name, and names no
+ * heading; its headings still read their text, and their text still
+ * declares the label they answer to. */
+static void headings_read_without_the_anchor_element(test_batch_runner *runner) {
+    size_t count;
+    const markdown_core_element *const *core = markdown_core_core_elements(&count);
+    const markdown_core_element *elements[64];
+    size_t kept = 0;
+    for (size_t i = 0; i < count && kept < 64; i++) {
+        if (core[i] != &MARKDOWN_CORE_ELEMENT_ANCHOR) {
+            elements[kept++] = core[i];
+        }
+    }
+    INT_EQ(runner, kept, count - 1, "the core dialect holds the anchor element once");
+    markdown_core_parser *parser = markdown_core_parser_create(elements, kept, NULL, NULL);
+    OK(runner, parser != NULL, "a dialect without the anchor element builds");
+    if (!parser) {
+        return;
+    }
+    const char *source = "# Hello *world*\n\n# Plain\n\n[Plain]\n";
+    markdown_core_node_pool pool = {0};
+    markdown_core_revision revision = {.pool = &pool};
+    markdown_core_parser_start(parser, &revision);
+    markdown_core_parser_commit(parser, source, strlen(source), true);
+    markdown_core_node *root = markdown_core_parser_finalize(parser);
+    markdown_core_parser_destroy(parser);
+    markdown_core_node_pool_dispose(&pool);
+    OK(runner, root != NULL, "the parse succeeds");
+    if (!root) {
+        return;
+    }
+    markdown_core_node *heading = first_of_kind(root, MARKDOWN_CORE_NODE_HEADING);
+    OK(runner, heading && count_kind(heading, MARKDOWN_CORE_NODE_EMPHASIS) == 1,
+       "the heading reads its inline content");
+    OK(runner, heading && !heading->as.heading->name.base.size, "the heading is given no name");
+    markdown_core_chunk shown = {0};
+    OK(runner, heading && markdown_core_core_anchor(heading, &shown) && !shown.len, "the heading shows no anchor");
+    markdown_core_node *paragraph = child_at(root, 2);
+    OK(runner, paragraph && count_kind(paragraph, MARKDOWN_CORE_NODE_LINK) == 1,
+       "the heading's text declares the label a link answers to");
+    markdown_core_node_free(root);
+}
+
 static void heading_reference_resolves_to_the_heading(test_batch_runner *runner) {
     const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n\n# Untitled [x]\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
@@ -12847,6 +12892,7 @@ int main(void) {
     node_slots_come_from_slabs_and_go_back_to_the_pool(runner);
     resource_slots_come_from_slabs_and_outlive_the_pool(runner);
     heading_reference_resolves_to_the_heading(runner);
+    headings_read_without_the_anchor_element(runner);
     class_runs_split_on_ascii_white_space(runner);
     unicode_classes_are_unicode_17(runner);
     utf8_decode_reads_every_scalar(runner);
