@@ -2,7 +2,7 @@
 #include "parts.h"
 #include "html.h"
 #include "inline_internal.h"
-#define advance(inline_state) ((inline_state)->pos += 1)
+#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
 #include "comment.h"
 
@@ -16,10 +16,10 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
     bufsize_t matchlen = 0;
     bool comment = false;
     // finally, try to match an html tag
-    if (pos + 2 <= inline_state->input.len) {
-        int c = inline_state->input.data[pos];
+    if (pos + 2 <= markdown_core_inline_size(inline_state)) {
+        int c = markdown_core_inline_char_at(inline_state, pos);
         if (c == '!' && (*flags & FLAG_SKIP_HTML_COMMENT) == 0) {
-            c = inline_state->input.data[pos + 1];
+            c = markdown_core_inline_char_at(inline_state, pos + 1);
             if (markdown_core_comment_scan_html(inline_state, pos, &matchlen)) {
                 /* No closer through the end of the input: later scans
                  * would not find one either. */
@@ -29,23 +29,25 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
                 }
             } else if (c == '[') {
                 if ((*flags & FLAG_SKIP_HTML_CDATA) == 0) {
-                    matchlen = scan_html_cdata(inline_state->input.data, inline_state->input.len, pos + 2);
+                    matchlen = scan_html_cdata(markdown_core_inline_window(inline_state, 0).data,
+                                               markdown_core_inline_window(inline_state, 0).len, pos + 2);
                     if (matchlen > 0) {
                         // The regex doesn't require the final "]]>". But if we're not at
                         // the end of input, it must come after the match. Otherwise,
                         // disable subsequent scans to avoid quadratic behavior.
                         matchlen += 5; // prefix "![", suffix "]]>"
-                        if (pos + matchlen > inline_state->input.len) {
+                        if (pos + matchlen > markdown_core_inline_size(inline_state)) {
                             *flags |= FLAG_SKIP_HTML_CDATA;
                             matchlen = 0;
                         }
                     }
                 }
             } else if ((*flags & FLAG_SKIP_HTML_DECLARATION) == 0) {
-                matchlen = scan_html_declaration(inline_state->input.data, inline_state->input.len, pos + 1);
+                matchlen = scan_html_declaration(markdown_core_inline_window(inline_state, 0).data,
+                                                 markdown_core_inline_window(inline_state, 0).len, pos + 1);
                 if (matchlen > 0) {
                     matchlen += 2; // prefix "!", suffix ">"
-                    if (pos + matchlen > inline_state->input.len) {
+                    if (pos + matchlen > markdown_core_inline_size(inline_state)) {
                         *flags |= FLAG_SKIP_HTML_DECLARATION;
                         matchlen = 0;
                     }
@@ -54,15 +56,17 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
         } else if (c == '?') {
             if ((*flags & FLAG_SKIP_HTML_PI) == 0) {
                 // Note that we allow an empty match.
-                matchlen = scan_html_pi(inline_state->input.data, inline_state->input.len, pos + 1);
+                matchlen = scan_html_pi(markdown_core_inline_window(inline_state, 0).data,
+                                        markdown_core_inline_window(inline_state, 0).len, pos + 1);
                 matchlen += 3; // prefix "?", suffix "?>"
-                if (pos + matchlen > inline_state->input.len) {
+                if (pos + matchlen > markdown_core_inline_size(inline_state)) {
                     *flags |= FLAG_SKIP_HTML_PI;
                     matchlen = 0;
                 }
             }
         } else {
-            matchlen = scan_html_tag(inline_state->input.data, inline_state->input.len, pos);
+            matchlen = scan_html_tag(markdown_core_inline_window(inline_state, 0).data,
+                                     markdown_core_inline_window(inline_state, 0).len, pos);
             /* A tag ends at its `>`; one a name or `/` begins may end once
              * the input goes on. */
             if (!matchlen && (markdown_core_isalpha((char)c) || c == '/')) {
@@ -71,7 +75,8 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
         }
         /* A declaration, processing instruction or CDATA section that does
          * not close may close once the input goes on. */
-        if (!matchlen && (inline_state->input.data[pos] == '!' || inline_state->input.data[pos] == '?')) {
+        if (!matchlen && (markdown_core_inline_char_at(inline_state, pos) == '!' ||
+                          markdown_core_inline_char_at(inline_state, pos) == '?')) {
             markdown_core_inline_saw_end(inline_state);
         }
     } else {
@@ -91,21 +96,24 @@ static markdown_core_node *handle_pointy_brace(const markdown_core_element_insta
 
     advance(inline_state); // advance past first <
 
-    matchlen = markdown_core_inline_scan_inline_html(inline_state, inline_state->pos, &inline_state->flags, &comment);
+    matchlen = markdown_core_inline_scan_inline_html(inline_state, markdown_core_inline_offset(inline_state),
+                                                     &inline_state->flags, &comment);
     if (matchlen > 0) {
         if (comment && self->peers[HTML_COMMENT]) {
-            return markdown_core_comment_make_html(inline_state, inline_state->pos, matchlen);
+            return markdown_core_comment_make_html(inline_state, markdown_core_inline_offset(inline_state), matchlen);
         }
-        contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, matchlen + 1);
-        inline_state->pos += matchlen;
+        contents = markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, matchlen + 1);
+        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (matchlen));
         markdown_core_node *node = markdown_core_inline_make_literal(
-            inline_state, MARKDOWN_CORE_NODE_HTML, inline_state->pos - matchlen - 1, inline_state->pos - 1, contents);
+            inline_state, MARKDOWN_CORE_NODE_HTML, markdown_core_inline_offset(inline_state) - matchlen - 1,
+            markdown_core_inline_offset(inline_state) - 1, contents);
         return node;
     }
 
     // if nothing matches, just return the opening <:
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                    markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+    return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
+                    markdown_core_inline_offset(inline_state) - 1,
+                    markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
 }
 
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,

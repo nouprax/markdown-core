@@ -7,7 +7,7 @@
 /* The elements whose syntax this element asks: the attribute block a span
  * may end with, whose parts its own are read with. */
 static const markdown_core_element *const CODE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
-#define advance(inline_state) ((inline_state)->pos += 1)
+#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
 #define MAXBACKTICKS 80
 
@@ -15,7 +15,7 @@ static MARKDOWN_CORE_INLINE int isbacktick(int c) { return (c == '`'); }
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_state *inline_state, int (*f)(int)) {
     unsigned char c;
-    bufsize_t startpos = inline_state->pos;
+    bufsize_t startpos = markdown_core_inline_offset(inline_state);
     bufsize_t len = 0;
 
     while ((c = markdown_core_inline_peek_char(inline_state)) && (*f)(c)) {
@@ -23,7 +23,7 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_
         len++;
     }
 
-    return markdown_core_chunk_dup(&inline_state->input, startpos, len);
+    return markdown_core_inline_take(inline_state, startpos, len);
 }
 
 // Try to process a backtick code span that began with a
@@ -50,14 +50,16 @@ bufsize_t markdown_core_inline_scan_backticks(markdown_core_backticks *backticks
         return 0;
     }
     if (!backticks->positions) {
-        backticks->capacity = inline_state->input.len < MAXBACKTICKS ? inline_state->input.len : MAXBACKTICKS;
+        backticks->capacity = markdown_core_inline_size(inline_state) < MAXBACKTICKS
+                                  ? markdown_core_inline_size(inline_state)
+                                  : MAXBACKTICKS;
         backticks->positions = markdown_core_alloc((size_t)backticks->capacity + 1, sizeof(*backticks->positions));
         if (!backticks->positions) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return 0;
         }
     }
-    if (backticks->scanned && backticks->positions[openticklength] <= inline_state->pos) {
+    if (backticks->scanned && backticks->positions[openticklength] <= markdown_core_inline_offset(inline_state)) {
         // return if we already know there's no closer
         return 0;
     }
@@ -77,10 +79,10 @@ bufsize_t markdown_core_inline_scan_backticks(markdown_core_backticks *backticks
         }
         // store position of ender
         if (numticks <= backticks->capacity) {
-            backticks->positions[numticks] = inline_state->pos - numticks;
+            backticks->positions[numticks] = markdown_core_inline_offset(inline_state) - numticks;
         }
         if (numticks == openticklength) {
-            return (inline_state->pos);
+            return (markdown_core_inline_offset(inline_state));
         }
     }
     // got through whole input without finding closer
@@ -126,24 +128,26 @@ static void S_normalize_code(markdown_core_strbuf *s) {
 static markdown_core_node *handle_backticks(const markdown_core_element_instance *self,
                                             markdown_core_inline_state *inline_state) {
     markdown_core_chunk openticks = take_while(inline_state, isbacktick);
-    bufsize_t startpos = inline_state->pos;
+    bufsize_t startpos = markdown_core_inline_offset(inline_state);
     bufsize_t endpos = markdown_core_inline_scan_to_closing_backticks(self, inline_state, openticks.len);
 
-    if (endpos == 0) {                // not found
-        inline_state->pos = startpos; // rewind
+    if (endpos == 0) {                                     // not found
+        markdown_core_inline_seek(inline_state, startpos); // rewind
         /* A run with no closer opens a code span once one follows. */
         markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CODE, startpos - openticks.len, startpos, NULL, 0);
         /* The run stands as its own literal, so it covers ITS OWN BYTES:
          * `startpos` is one past the last of them and the run is
-         * `openticks.len` long. Both offsets used to be `inline_state->pos`, one past
+         * `openticks.len` long. Both offsets used to be `markdown_core_inline_offset(inline_state)`, one past
          * the run, so the literal was placed one column right -- and
          * consolidation then carried that end onto the whole merged text run:
          * `hi`lo` reported Text 1:5..1:8 inside a seven-byte paragraph. */
-        return make_str(inline_state, inline_state->pos - openticks.len, inline_state->pos - 1, openticks);
+        return make_str(inline_state, markdown_core_inline_offset(inline_state) - openticks.len,
+                        markdown_core_inline_offset(inline_state) - 1, openticks);
     } else {
         markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
 
-        markdown_core_strbuf_set(&buf, inline_state->input.data + startpos, endpos - startpos - openticks.len);
+        markdown_core_strbuf_set(&buf, markdown_core_inline_window(inline_state, 0).data + startpos,
+                                 endpos - startpos - openticks.len);
         S_normalize_code(&buf);
         if (buf.oom) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;

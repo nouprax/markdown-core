@@ -40,8 +40,7 @@ markdown_core_inline_footnote_definition(const markdown_core_element_instance *s
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
      * aliases, so the only allocation in here is the roster's own
      * normalization. */
-    markdown_core_chunk label =
-        markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
+    markdown_core_chunk label = markdown_core_inline_take(inline_state, label_start + 1, after_close - label_start - 2);
     bool failed = false;
     const markdown_core_roster_record *record = markdown_core_parser_find_definition(
         inline_state->owner_parser, self->spaces[FOOTNOTE_LABELS], &label,
@@ -86,10 +85,11 @@ static markdown_core_node *markdown_core_inline_close_inline_footnote(const mark
                                              MARKDOWN_CORE_NODE_CITE)) {
         markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(inline_state);
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+        return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
+                        markdown_core_inline_offset(inline_state) - 1,
+                        markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
     }
-    cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
+    cite = markdown_core_inline_make_footnote_cite(inline_state, opener, markdown_core_inline_offset(inline_state));
     footnote = cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
     if (!footnote) {
         if (cite) {
@@ -99,7 +99,8 @@ static markdown_core_node *markdown_core_inline_close_inline_footnote(const mark
         markdown_core_inline_pop_bracket(inline_state);
         return NULL;
     }
-    markdown_core_inline_state_place(inline_state, footnote, opener->position - 2, inline_state->pos - 1);
+    markdown_core_inline_state_place(inline_state, footnote, opener->position - 2,
+                                     markdown_core_inline_offset(inline_state) - 1);
     markdown_core_inline_settle_bracket(inline_state, opener);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_take_bracket_content(parser, inline_state, opener, footnote);
@@ -120,9 +121,10 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[' || !self->peers[FOOTNOTE_LINK]) {
         return NULL;
     }
-    inline_state->pos += 2;
-    markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
-                                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
+    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (2));
+    markdown_core_node *node = make_str(
+        inline_state, markdown_core_inline_offset(inline_state) - 2, markdown_core_inline_offset(inline_state) - 1,
+        markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 2, 2));
     if (node) {
         markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_FOOTNOTE_BRACKET, node);
     }
@@ -204,7 +206,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
 static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
                                                    markdown_core_parser *parser,
                                                    markdown_core_inline_state *inline_state, bracket *opener) {
-    bufsize_t initial_pos = inline_state->pos;
+    bufsize_t initial_pos = markdown_core_inline_offset(inline_state);
     markdown_core_node *label = markdown_core_scaffold_next(opener->inl_text);
     if (label && label->kind == MARKDOWN_CORE_NODE_TEXT) {
 
@@ -225,7 +227,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
         // are the other way round. It is REDUNDANT here and the proof is worth
         // writing down rather than rediscovering: reaching this function means
         // a ']' was consumed, and that ']' is after the '[', so
-        // `opener->position <= initial_pos - 2 < inline_state->input.len`. No mutant
+        // `opener->position <= initial_pos - 2 < markdown_core_inline_size(inline_state)`. No mutant
         // kills it, measured; it is kept because a reader should not have to
         // reconstruct that argument before touching the line.
         //
@@ -249,8 +251,8 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
          * test so that the case where the first holds and the second does not
          * can be reported. `[^x]` is footnote syntax and nothing else; a reader
          * who writes it and gets prose has no other way to find out. */
-        bool caret_written = opener->position < inline_state->input.len &&
-                             inline_state->input.data[opener->position] == '^' &&
+        bool caret_written = opener->position < markdown_core_inline_size(inline_state) &&
+                             markdown_core_inline_char_at(inline_state, opener->position) == '^' &&
                              (literal->len > 1 || markdown_core_scaffold_next(label));
         const markdown_core_roster_record *definition =
             caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
@@ -265,7 +267,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
             // advanced the current state beyond our footnote's actual closing
             // bracket, ie if it went looking for a `markdown_core_inline_link_label`.
             // Let's just rewind the inline state's position:
-            inline_state->pos = initial_pos;
+            markdown_core_inline_seek(inline_state, initial_pos);
 
             markdown_core_node *fnref = markdown_core_inline_make_footnote_cite(inline_state, opener, initial_pos);
             if (!fnref) {
@@ -296,7 +298,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
             // in hopes of being able to match a 'www.' substring.
             //
             // because this function is called one character at a time via the
-            // `parse_inlines` function, and the current inline_state->pos is pointing at the
+            // `parse_inlines` function, and the current markdown_core_inline_offset(inline_state) is pointing at the
             // closing ] brace, and because we copy all the text between the [ ]
             // braces, we should be able to safely ignore and delete any nodes after
             // the opener->inl_text->next.

@@ -1,16 +1,16 @@
 #include "line_break.h"
 #include "inline_internal.h"
-#define advance(inline_state) ((inline_state)->pos += 1)
+#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
 static markdown_core_node *handle_newline(markdown_core_inline_state *inline_state) {
-    markdown_core_inline_push_boundary(inline_state, inline_state->pos + 1);
-    bufsize_t nlpos = inline_state->pos;
+    markdown_core_inline_push_boundary(inline_state, markdown_core_inline_offset(inline_state) + 1);
+    bufsize_t nlpos = markdown_core_inline_offset(inline_state);
     markdown_core_node *brk;
     // skip over cr, crlf, or lf:
-    if (markdown_core_inline_peek_at(inline_state, inline_state->pos) == '\r') {
+    if (markdown_core_inline_peek_at(inline_state, markdown_core_inline_offset(inline_state)) == '\r') {
         advance(inline_state);
     }
-    if (markdown_core_inline_peek_at(inline_state, inline_state->pos) == '\n') {
+    if (markdown_core_inline_peek_at(inline_state, markdown_core_inline_offset(inline_state)) == '\n') {
         advance(inline_state);
     }
     // skip spaces at beginning of line

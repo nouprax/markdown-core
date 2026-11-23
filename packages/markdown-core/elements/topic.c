@@ -76,7 +76,7 @@ static int segment_width(const unsigned char *str, bufsize_t len, bool *word) {
  * begins a character reference with it, as twitter-text bounds a hashtag;
  * that character begins at the last non-continuation byte before `at`. */
 static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize_t at) {
-    const unsigned char *data = inline_state->input.data;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
     bufsize_t before = at;
     if (!at) {
         return true;
@@ -141,12 +141,12 @@ enum { NAMED_COUNT = sizeof(NAMED) / sizeof(NAMED[0]) };
  * short, to the run's context sink. At the end of a paragraph the `#` may
  * open a block identifier, which the document must close. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_state *inline_state, bufsize_t at) {
-    const bufsize_t len = inline_state->input.len;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     markdown_core_field fields[1 + NAMED_COUNT] = {
         {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, name_end, {{0}}, 0, false, 0}};
     size_t count = 1;
     if (markdown_core_node_get_kind(inline_state->owner) == MARKDOWN_CORE_KIND_PARAGRAPH &&
-        at + 1 + identifier_end(inline_state->input.data + at + 1, len - at - 1) == len) {
+        at + 1 + identifier_end(markdown_core_inline_window(inline_state, 0).data + at + 1, len - at - 1) == len) {
         for (size_t i = 0; i < NAMED_COUNT; i++) {
             fields[count++] =
                 (markdown_core_field){MARKDOWN_CORE_SLOT_ID, NAMED[i], at + 1, identifier_end, {{0}}, 0, true, 0};
@@ -177,8 +177,8 @@ void markdown_core_topic_report_line(markdown_core_parser *parser, bufsize_t fir
  * starts nor ends with one. A name of numbers alone, or one followed at once
  * by `#` or `://`, is not a topic. */
 static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t at) {
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     if (!topic_opener(inline_state, at)) {
         return 0;
     }
@@ -249,16 +249,16 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (character != '#') {
         return NULL;
     }
-    const bufsize_t start = inline_state->pos;
+    const bufsize_t start = markdown_core_inline_offset(inline_state);
     const topic_run *run = markdown_core_run_state(inline_state, self);
     const bufsize_t end = run && run->end && run->at == start ? run->end : topic_end(inline_state, start);
     if (!end) {
         return NULL;
     }
-    inline_state->pos = end;
+    markdown_core_inline_seek(inline_state, end);
     /* The name views the input without its `#`; the node covers both. */
     return markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TOPIC, start, end - 1,
-                                             markdown_core_chunk_dup(&inline_state->input, start + 1, end - start - 1));
+                                             markdown_core_inline_take(inline_state, start + 1, end - start - 1));
 }
 
 static const markdown_core_inline_ops TOPIC_INLINES = {

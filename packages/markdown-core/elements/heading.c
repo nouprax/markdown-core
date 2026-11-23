@@ -441,17 +441,16 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
      * on the line another grammar has taken from the text already
      * (no-flush.md 10.13). */
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING && !parent->as.heading->setext) {
-        bufsize_t hashes = inline_state->input.len;
-        while (hashes > 0 && inline_state->input.data[hashes - 1] == '#') {
+        bufsize_t hashes = markdown_core_inline_size(inline_state);
+        while (hashes > 0 && markdown_core_inline_char_at(inline_state, hashes - 1) == '#') {
             hashes--;
         }
-        if (hashes < inline_state->input.len &&
-            (hashes == 0 || markdown_core_is_space_or_tab(inline_state->input.data[hashes - 1]))) {
-            inline_state->input.len = hashes;
-            markdown_core_chunk_rtrim(&inline_state->input);
+        if (hashes < markdown_core_inline_size(inline_state) &&
+            (hashes == 0 || markdown_core_is_space_or_tab(markdown_core_inline_char_at(inline_state, hashes - 1)))) {
+            markdown_core_inline_shorten(inline_state, hashes);
         }
     }
-    run->label_end = inline_state->input.len;
+    run->label_end = markdown_core_inline_size(inline_state);
 }
 
 /* THE PARTS OF A HEADING (parts.h): the attribute tail that ends its last

@@ -2,7 +2,7 @@
 #include "escape.h"
 #include "entities.h"
 #include "link_scanners.h"
-#define advance(inline_state) ((inline_state)->pos += 1)
+#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 #include "attributes.h"
 #include "parts.h"
 #include "link.h"
@@ -117,34 +117,36 @@ bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data,
 }
 
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label) {
-    bufsize_t startpos = inline_state->pos;
+    bufsize_t startpos = markdown_core_inline_offset(inline_state);
     int length = 0;
     unsigned char c;
 
     // advance past [
     if (markdown_core_inline_peek_char(inline_state) == '[') {
-        inline_state->pos++;
+        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
     } else {
         return 0;
     }
 
-    length = markdown_core_inline_reference_label_length(inline_state->input.data + inline_state->pos,
-                                                         inline_state->input.len - inline_state->pos);
-    inline_state->pos += length;
+    length = markdown_core_inline_reference_label_length(
+        markdown_core_inline_window(inline_state, 0).data + markdown_core_inline_offset(inline_state),
+        markdown_core_inline_size(inline_state) - markdown_core_inline_offset(inline_state));
+    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (length));
     if (length > MAX_LINK_LABEL_LENGTH) {
         goto noMatch;
     }
     c = markdown_core_inline_peek_char(inline_state);
 
     if (c == ']') { // match found
-        *raw_label = markdown_core_chunk_dup(&inline_state->input, startpos + 1, inline_state->pos - (startpos + 1));
+        *raw_label = markdown_core_inline_take(inline_state, startpos + 1,
+                                               markdown_core_inline_offset(inline_state) - (startpos + 1));
         markdown_core_chunk_trim(raw_label);
-        inline_state->pos++; // advance past ]
+        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1); // advance past ]
         return 1;
     }
 
 noMatch:
-    inline_state->pos = startpos; // rewind
+    markdown_core_inline_seek(inline_state, startpos); // rewind
     return 0;
 }
 
@@ -226,33 +228,35 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
 }
 
 static void spnl(markdown_core_inline_state *inline_state) {
-    inline_state->pos =
-        markdown_core_skip_spaces_and_line_end(inline_state->input.data, inline_state->pos, inline_state->input.len);
+    const markdown_core_chunk window = markdown_core_inline_window(inline_state, 0);
+    markdown_core_inline_seek(inline_state, markdown_core_skip_spaces_and_line_end(
+                                                window.data, markdown_core_inline_offset(inline_state), window.len));
 }
 
 static bool reference_tail(markdown_core_inline_state *inline_state, markdown_core_attribute_parser *attributes,
                            markdown_core_attributes *value, bool *wide) {
-    bufsize_t before = inline_state->pos;
+    bufsize_t before = markdown_core_inline_offset(inline_state);
     if (!attributes) {
         /* A dialect without attribute blocks reads none. */
         markdown_core_inline_skip_spaces(inline_state);
         return markdown_core_inline_skip_line_end(inline_state);
     }
     spnl(inline_state);
-    bufsize_t base = (bufsize_t)(inline_state->input.data - attributes->data);
-    bufsize_t start = base + inline_state->pos;
+    bufsize_t base = (bufsize_t)(markdown_core_inline_window(inline_state, 0).data - attributes->data);
+    bufsize_t start = base + markdown_core_inline_offset(inline_state);
     /* An attribute list looked for reads on to where it ends, or to the
      * text's end. */
-    *wide |= inline_state->pos < inline_state->input.len && inline_state->input.data[inline_state->pos] == '{';
+    *wide |= markdown_core_inline_offset(inline_state) < markdown_core_inline_size(inline_state) &&
+             markdown_core_inline_char_at(inline_state, markdown_core_inline_offset(inline_state)) == '{';
     bufsize_t end = markdown_core_attributes_end(attributes, start);
     if (end) {
-        inline_state->pos = end - base;
+        markdown_core_inline_seek(inline_state, end - base);
         markdown_core_inline_skip_spaces(inline_state);
         if (markdown_core_inline_skip_line_end(inline_state)) {
             return markdown_core_attributes_parse(attributes, start, value, &end) != 0;
         }
     }
-    inline_state->pos = before;
+    markdown_core_inline_seek(inline_state, before);
     markdown_core_inline_skip_spaces(inline_state);
     return markdown_core_inline_skip_line_end(inline_state);
 }
@@ -572,8 +576,8 @@ static bool S_reference_cut(const unsigned char *data, bufsize_t path, bufsize_t
  * not open. */
 static void S_report_destination(markdown_core_inline_state *inline_state, const bracket *opener, bufsize_t start,
                                  markdown_core_slot_kind *reported) {
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     const bool angled = start < len && data[start] == '<';
     const bufsize_t path = angled ? start + 1 : start;
     const bufsize_t end = path + field_end(data + path, len - path, angled, true);
@@ -776,8 +780,8 @@ static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, m
 /* The label of `[text][label` the content's end cuts short, read from the
  * `[` at `start`, to the run's context sink. */
 static void S_report_label(markdown_core_inline_state *inline_state, const bracket *opener, bufsize_t start) {
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     if (start >= len || data[start] != '[' ||
         start + 1 + markdown_core_inline_reference_label_length(data + start + 1, len - start - 1) < len) {
         return;
@@ -791,7 +795,8 @@ static void S_report_label(markdown_core_inline_state *inline_state, const brack
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
                                                       markdown_core_inline_state *inline_state, bracket *opener,
                                                       markdown_core_link_candidate *candidate) {
-    bufsize_t initial_pos = inline_state->pos, starturl = 0, endurl, starttitle, endtitle, endall, n = -1;
+    bufsize_t initial_pos = markdown_core_inline_offset(inline_state), starturl = 0, endurl, starttitle, endtitle,
+              endall, n = -1;
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
@@ -804,17 +809,18 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
 
     bool link_allowed = is_image || !markdown_core_brackets(inline_state)->no_link_openers;
 
-    bufsize_t after_link_text_pos = inline_state->pos;
+    bufsize_t after_link_text_pos = markdown_core_inline_offset(inline_state);
 
     // First, look for an inline link. Its destination, title and closing
     // parenthesis may each follow spaces, tabs and up to one line ending.
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     /* A destination, title or parenthesis the end cuts short may be one
      * once the input goes on. */
     if (link_allowed && markdown_core_inline_peek_char(inline_state) == '(') {
-        starturl = markdown_core_skip_spaces_and_line_end(data, inline_state->pos + 1, len);
-        n = markdown_core_inline_manual_scan_link_url(&inline_state->input, starturl, &url_chunk);
+        starturl = markdown_core_skip_spaces_and_line_end(data, markdown_core_inline_offset(inline_state) + 1, len);
+        markdown_core_chunk window = markdown_core_inline_window(inline_state, 0);
+        n = markdown_core_inline_manual_scan_link_url(&window, starturl, &url_chunk);
         if (n < 0) {
             markdown_core_inline_saw_end(inline_state);
             if (inline_state->context) {
@@ -840,9 +846,9 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
 
         if (markdown_core_inline_peek_at(inline_state, endall) == ')') {
             explicit_tail = true;
-            inline_state->pos = endall + 1;
+            markdown_core_inline_seek(inline_state, endall + 1);
 
-            title_chunk = markdown_core_chunk_dup(&inline_state->input, starttitle, endtitle - starttitle);
+            title_chunk = markdown_core_inline_take(inline_state, starttitle, endtitle - starttitle);
             {
                 int lost = 0;
                 url = markdown_core_clean_url(link, &url_chunk, &lost);
@@ -860,7 +866,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
 
         } else {
             // it could still be a shortcut reference link
-            inline_state->pos = after_link_text_pos;
+            markdown_core_inline_seek(inline_state, after_link_text_pos);
         }
     }
 
@@ -869,18 +875,18 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     raw_label = markdown_core_chunk_literal("");
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
     if (!found_label && inline_state->context) {
-        S_report_label(inline_state, opener, inline_state->pos);
+        S_report_label(inline_state, opener, markdown_core_inline_offset(inline_state));
     }
     explicit_tail = found_label;
     if (!found_label) {
         // If we have a shortcut reference link, back up
         // to before the spacse we skipped.
-        inline_state->pos = initial_pos;
+        markdown_core_inline_seek(inline_state, initial_pos);
     }
 
     if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
         markdown_core_chunk_free(&raw_label);
-        raw_label = markdown_core_chunk_dup(&inline_state->input, opener->position, initial_pos - opener->position - 1);
+        raw_label = markdown_core_inline_take(inline_state, opener->position, initial_pos - opener->position - 1);
         found_label = true;
     }
 
@@ -960,7 +966,8 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // two need not be on the same line. Taking BOTH from inline_state->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
     // Text at 1:2 -- a node that begins after its own first child.
-    markdown_core_inline_state_place(inline_state, inl, opener->position - 1, inline_state->pos - 1);
+    markdown_core_inline_state_place(inline_state, inl, opener->position - 1,
+                                     markdown_core_inline_offset(inline_state) - 1);
     inl->place.start = opener->inl_text->place.start;
     /* What follows a link whose destination, title or label follows its `]`
      * may update it (no-flush.md 10.13). */
@@ -968,12 +975,12 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
         markdown_core_inline_made(inline_state, inl);
     }
     // And the destination and title are scanned by markdown_core_inline_manual_scan_link_url and
-    // scan_link_title, which move inline_state->pos without ever passing through
+    // scan_link_title, which move markdown_core_inline_offset(inline_state) without ever passing through
     // handle_newline -- so a line ending inside `(...)` is invisible to the
     // inline state, and every later node in the paragraph inherits the error.
     // The extent is projected from the two offsets, which is the repair inline
     // code and raw HTML already
-    // use; it walks only [initial_pos, inline_state->pos), which is what the bracket
+    // use; it walks only [initial_pos, markdown_core_inline_offset(inline_state)), which is what the bracket
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
@@ -1025,7 +1032,7 @@ static markdown_core_bracket_match S_close_explicit(const markdown_core_element_
                                                     markdown_core_node **made) {
     (void)made;
     S_tail *tail = S_bracket(self, opener);
-    const bufsize_t after = inline_state->pos;
+    const bufsize_t after = markdown_core_inline_offset(inline_state);
     tail->candidate = (markdown_core_link_candidate){0};
     tail->match = markdown_core_link_recognize(self, inline_state, opener, &tail->candidate);
     if (tail->match != LINK_EXPLICIT) {
@@ -1044,7 +1051,8 @@ static markdown_core_bracket_match S_close_shortcut(const markdown_core_element_
     if (tail->match != LINK_SHORTCUT) {
         return BRACKET_UNMATCHED;
     }
-    return markdown_core_link_commit(self, parser, inline_state, opener, &tail->candidate, inline_state->pos)
+    return markdown_core_link_commit(self, parser, inline_state, opener, &tail->candidate,
+                                     markdown_core_inline_offset(inline_state))
                ? BRACKET_MATCHED
                : BRACKET_REJECTED;
 }
@@ -1060,8 +1068,9 @@ static markdown_core_node *match_bracket(const markdown_core_element_instance *s
     (void)parser;
     if (character == '[') {
         advance(inline_state);
-        markdown_core_node *text = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                                            markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+        markdown_core_node *text = make_str(
+            inline_state, markdown_core_inline_offset(inline_state) - 1, markdown_core_inline_offset(inline_state) - 1,
+            markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
         if (text) {
             markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_LINK_BRACKET, text);
         }
@@ -1083,12 +1092,12 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
         markdown_core_node_kind opens = b->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET   ? MARKDOWN_CORE_KIND_EMBEDDED
                                         : b->shape == &MARKDOWN_CORE_FOOTNOTE_BRACKET ? MARKDOWN_CORE_KIND_FOOTNOTE
                                                                                       : MARKDOWN_CORE_KIND_NONE;
-        const bool label =
-            own && b->position + markdown_core_inline_reference_label_length(inline_state->input.data + b->position,
-                                                                             inline_state->input.len - b->position) ==
-                       inline_state->input.len;
-        const bool caret =
-            label && b->position < inline_state->input.len && inline_state->input.data[b->position] == '^';
+        const bool label = own && b->position + markdown_core_inline_reference_label_length(
+                                                    markdown_core_inline_window(inline_state, 0).data + b->position,
+                                                    markdown_core_inline_size(inline_state) - b->position) ==
+                                      markdown_core_inline_size(inline_state);
+        const bool caret = label && b->position < markdown_core_inline_size(inline_state) &&
+                           markdown_core_inline_char_at(inline_state, b->position) == '^';
         if (caret) {
             opens = MARKDOWN_CORE_KIND_CITE;
             fields[count++] = (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE,
@@ -1100,13 +1109,15 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
                                                     false,
                                                     0};
         }
-        const unsigned char *data = inline_state->input.data;
+        const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
         const bool line = start == 0 || data[start - 1] == '\n' || data[start - 1] == '\r';
         /* A footnote definition's label holds any byte but `]` and white
          * space, brackets too, which no other label does. */
-        if (!label && line && own && b->position < inline_state->input.len && data[b->position] == '^' &&
-            b->position + 1 + note_end(data + b->position + 1, inline_state->input.len - b->position - 1) ==
-                inline_state->input.len) {
+        if (!label && line && own && b->position < markdown_core_inline_size(inline_state) &&
+            data[b->position] == '^' &&
+            b->position + 1 +
+                    note_end(data + b->position + 1, markdown_core_inline_size(inline_state) - b->position - 1) ==
+                markdown_core_inline_size(inline_state)) {
             fields[count++] = (markdown_core_field){
                 MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_FOOTNOTE, b->position + 1, note_end, {{0}}, 0, true, 0};
         }

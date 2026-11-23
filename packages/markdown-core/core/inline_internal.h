@@ -286,6 +286,62 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
                                                                 markdown_core_node_type t);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                          markdown_core_chunk *chunk);
+/* THE INLINE STREAM: the run's bytes and its cursor, which only the engine
+ * holds. An element reads them through these and never through
+ * `inline_state->input` or `inline_state->pos`, so that every read of the
+ * run's end is the engine's to see: asking past the end IS reading it, and
+ * the token being read is then one that read the end
+ * (markdown_core_inline_saw_end).
+ *
+ *   `offset`  -- the cursor.
+ *   `seek`    -- moves it, forward past what a token took, or back to an
+ *                offset it had (an attempt that failed).
+ *   `has`     -- whether the run holds the byte at `at`; false reads the end.
+ *   `char_at` -- the byte at `at`, 0 at or past the end, which reads it.
+ *   `take`    -- `length` bytes from `from`, as a chunk the node owns.
+ *   `window`  -- the bytes from `from` to the end, for a scanner that scans a
+ *                bounded window and says whether it met the window's end
+ *                (`met_end`); the caller reports that end as read.
+ *   `size`    -- the run's length, for a bound that reads no byte (a table
+ *                sized to the run), never to test where the run ends.
+ *   `shorten` -- ends the run at `end` and drops the white space before it:
+ *                a grammar that gives the run's tail to another before the
+ *                run is read (an ATX heading's closing sequence). */
+static inline bufsize_t markdown_core_inline_offset(const markdown_core_inline_state *inline_state) {
+    return inline_state->pos;
+}
+static inline void markdown_core_inline_seek(markdown_core_inline_state *inline_state, bufsize_t to) {
+    inline_state->pos = to;
+}
+static inline bool markdown_core_inline_has(markdown_core_inline_state *inline_state, bufsize_t at) {
+    if (at < inline_state->input.len) {
+        return true;
+    }
+    markdown_core_inline_saw_end(inline_state);
+    return false;
+}
+static inline unsigned char markdown_core_inline_char_at(markdown_core_inline_state *inline_state, bufsize_t at) {
+    return markdown_core_inline_has(inline_state, at) ? inline_state->input.data[at] : 0;
+}
+static inline markdown_core_chunk markdown_core_inline_take(markdown_core_inline_state *inline_state, bufsize_t from,
+                                                            bufsize_t length) {
+    return markdown_core_chunk_dup(&inline_state->input, from, length);
+}
+static inline markdown_core_chunk markdown_core_inline_window(const markdown_core_inline_state *inline_state,
+                                                              bufsize_t from) {
+    markdown_core_chunk window = {inline_state->input.data + from, inline_state->input.len - from, 0};
+    return window;
+}
+static inline void markdown_core_inline_met_end(markdown_core_inline_state *inline_state) {
+    markdown_core_inline_saw_end(inline_state);
+}
+static inline bufsize_t markdown_core_inline_size(const markdown_core_inline_state *inline_state) {
+    return inline_state->input.len;
+}
+static inline void markdown_core_inline_shorten(markdown_core_inline_state *inline_state, bufsize_t end) {
+    inline_state->input.len = end;
+    markdown_core_chunk_rtrim(&inline_state->input);
+}
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n);
 unsigned char markdown_core_inline_peek_char(markdown_core_inline_state *inline_state);
 unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_state, bufsize_t pos);

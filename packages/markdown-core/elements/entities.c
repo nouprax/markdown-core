@@ -3,7 +3,7 @@
 #include "inline_internal.h"
 #include "markdown_core_ctype.h"
 
-#define advance(inline_state) ((inline_state)->pos += 1)
+#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
 bufsize_t markdown_core_entities_read(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
                                       const uint8_t *src, bufsize_t size) {
@@ -36,32 +36,35 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 
     advance(inline_state);
 
-    len = houdini_unescape_ent(&ent, inline_state->input.data + inline_state->pos,
-                               inline_state->input.len - inline_state->pos);
+    len = houdini_unescape_ent(
+        &ent, markdown_core_inline_window(inline_state, 0).data + markdown_core_inline_offset(inline_state),
+        markdown_core_inline_size(inline_state) - markdown_core_inline_offset(inline_state));
 
     if (len == 0) {
         /* A reference that runs to the end may be one once the input goes
          * on: its name and its `;` are still to come. */
-        bufsize_t end = inline_state->pos;
-        while (markdown_core_inline_tracks_end(inline_state) && end < inline_state->input.len &&
-               (markdown_core_isalnum((char)inline_state->input.data[end]) || inline_state->input.data[end] == '#')) {
+        bufsize_t end = markdown_core_inline_offset(inline_state);
+        while (markdown_core_inline_tracks_end(inline_state) && end < markdown_core_inline_size(inline_state) &&
+               (markdown_core_isalnum((char)markdown_core_inline_char_at(inline_state, end)) ||
+                markdown_core_inline_char_at(inline_state, end) == '#')) {
             end++;
         }
-        if (end == inline_state->input.len) {
+        if (end == markdown_core_inline_size(inline_state)) {
             markdown_core_inline_saw_end(inline_state);
         }
-        markdown_core_node *literal = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                                               markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+        markdown_core_node *literal = make_str(
+            inline_state, markdown_core_inline_offset(inline_state) - 1, markdown_core_inline_offset(inline_state) - 1,
+            markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
         /* Not an entity: the `&` IS the literal, so it is content. */
         return literal;
     }
 
-    inline_state->pos += len;
+    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (len));
     if (ent.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    return make_str(inline_state, inline_state->pos - 1 - len, inline_state->pos - 1,
-                    markdown_core_chunk_buf_detach(&ent));
+    return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1 - len,
+                    markdown_core_inline_offset(inline_state) - 1, markdown_core_chunk_buf_detach(&ent));
 }
 
 static const markdown_core_inline_ops ENTITIES_INLINES = {

@@ -490,16 +490,19 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
 }
 
 bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t *length) {
-    if (inline_state->input.data[pos] != '!' || inline_state->input.data[pos + 1] != '-' ||
-        inline_state->input.data[pos + 2] != '-') {
+    if (markdown_core_inline_char_at(inline_state, pos) != '!' ||
+        markdown_core_inline_char_at(inline_state, pos + 1) != '-' ||
+        markdown_core_inline_char_at(inline_state, pos + 2) != '-') {
         return false;
     }
-    if (inline_state->input.data[pos + 3] == '>') {
+    if (markdown_core_inline_char_at(inline_state, pos + 3) == '>') {
         *length = 4;
-    } else if (inline_state->input.data[pos + 3] == '-' && inline_state->input.data[pos + 4] == '>') {
+    } else if (markdown_core_inline_char_at(inline_state, pos + 3) == '-' &&
+               markdown_core_inline_char_at(inline_state, pos + 4) == '>') {
         *length = 5;
     } else {
-        *length = scan_html_comment(inline_state->input.data, inline_state->input.len, pos + 1);
+        *length = scan_html_comment(markdown_core_inline_window(inline_state, 0).data,
+                                    markdown_core_inline_window(inline_state, 0).len, pos + 1);
         /* 0 when no closer follows through the end of the input. */
         if (*length > 0) {
             *length += 1; // prefix "<"
@@ -511,9 +514,10 @@ markdown_core_node *markdown_core_comment_make_html(markdown_core_inline_state *
                                                     bufsize_t length) {
     /* The empty short forms have overlapping opening and closing markers. */
     bufsize_t body_length = length > 6 ? length - 6 : 0;
-    markdown_core_chunk body = markdown_core_chunk_dup(&inline_state->input, pos + 3, body_length);
-    inline_state->pos = pos + length;
-    return markdown_core_comment_make_inline(inline_state, pos - 1, inline_state->pos - 1, body);
+    markdown_core_chunk body = markdown_core_inline_take(inline_state, pos + 3, body_length);
+    markdown_core_inline_seek(inline_state, pos + length);
+    return markdown_core_comment_make_inline(inline_state, pos - 1, markdown_core_inline_offset(inline_state) - 1,
+                                             body);
 }
 
 /* THE PARTS OF A COMMENT (parts.h): its literal, the body between its

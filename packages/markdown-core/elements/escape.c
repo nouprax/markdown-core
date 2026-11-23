@@ -7,7 +7,7 @@
 /* The elements whose state this element names: an escaped space is the
  * text element's contextual space (text.h). */
 static const markdown_core_element *const ESCAPE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_TEXT, NULL};
-#define advance(inline_state) ((inline_state)->pos += 1)
+#define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
 void markdown_core_escape_strip(const markdown_core_element_instance *escape, markdown_core_strbuf *buf) {
     if (!escape) {
@@ -48,7 +48,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         return NULL;
     }
     markdown_core_escape_work *counts = self->state;
-    bufsize_t start = inline_state->pos;
+    bufsize_t start = markdown_core_inline_offset(inline_state);
     /* The line frame BEFORE anything is consumed. The hard-break arm below
      * needs it, and reading it after `markdown_core_inline_skip_line_end` would be right only
      * because `markdown_core_inline_skip_line_end` happens not to advance the frame -- an accident,
@@ -61,23 +61,24 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
          * Leave it to the inherited text/line-ending scanner, including its
          * trimming and hard-break rules. These lookaheads are disjoint: each
          * begins after its own backslash and ends before the next token. */
-        bufsize_t end = inline_state->pos;
-        while (end < inline_state->input.len &&
+        bufsize_t end = markdown_core_inline_offset(inline_state);
+        while (end < markdown_core_inline_size(inline_state) &&
                markdown_core_is_space_or_tab(markdown_core_inline_peek_at(inline_state, end))) {
             end++;
         }
-        if (end == inline_state->input.len) {
+        if (end == markdown_core_inline_size(inline_state)) {
             markdown_core_inline_saw_end(inline_state);
         }
-        counts->whitespace += (size_t)(end - inline_state->pos);
-        if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
-            (end < inline_state->input.len &&
+        counts->whitespace += (size_t)(end - markdown_core_inline_offset(inline_state));
+        if ((end == markdown_core_inline_size(inline_state) &&
+             !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
+            (end < markdown_core_inline_size(inline_state) &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
-            return make_str(inline_state, start, start, markdown_core_chunk_dup(&inline_state->input, start, 1));
+            return make_str(inline_state, start, start, markdown_core_inline_take(inline_state, start, 1));
         }
         advance(inline_state);
-        markdown_core_node *escaped = make_str(inline_state, start, inline_state->pos - 1,
-                                               markdown_core_chunk_dup(&inline_state->input, start, 2));
+        markdown_core_node *escaped = make_str(inline_state, start, markdown_core_inline_offset(inline_state) - 1,
+                                               markdown_core_inline_take(inline_state, start, 2));
         if (escaped) {
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
@@ -88,11 +89,12 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (markdown_core_ispunct(nextchar)) {
         if (nextchar == '\\' && !any_element_dispatches(self, parser, '\\')) {
             bufsize_t end = start;
-            while (end + 1 < inline_state->input.len && inline_state->input.data[end] == '\\' &&
-                   inline_state->input.data[end + 1] == '\\') {
+            while (end + 1 < markdown_core_inline_size(inline_state) &&
+                   markdown_core_inline_char_at(inline_state, end) == '\\' &&
+                   markdown_core_inline_char_at(inline_state, end + 1) == '\\') {
                 end += 2;
             }
-            if (end + 1 >= inline_state->input.len) {
+            if (end + 1 >= markdown_core_inline_size(inline_state)) {
                 markdown_core_inline_saw_end(inline_state);
             }
             if (end - start >= 4) {
@@ -102,7 +104,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
                     markdown_core_chunk contents = {output, output_len, 1};
                     markdown_core_node *run;
                     memset(output, '\\', (size_t)output_len);
-                    inline_state->pos = end;
+                    markdown_core_inline_seek(inline_state, end);
                     run = make_str(inline_state, start, end - 1, contents);
                     /* One escape per PAIR: the first backslash of each is the
                      * escape and reaches no literal, the second is the byte the
@@ -115,12 +117,13 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         advance(inline_state);
         {
             markdown_core_node *escaped =
-                make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
-                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+                make_str(inline_state, markdown_core_inline_offset(inline_state) - 2,
+                         markdown_core_inline_offset(inline_state) - 1,
+                         markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
             return escaped;
         }
     } else if (!markdown_core_inline_is_eof(inline_state) && markdown_core_inline_skip_line_end(inline_state)) {
-        markdown_core_inline_push_boundary(inline_state, inline_state->pos);
+        markdown_core_inline_push_boundary(inline_state, markdown_core_inline_offset(inline_state));
         // A backslash hard break CONSUMES a line ending, so the inline state has to
         // be told, exactly as handle_newline tells it. It was not, so every node
         // after such a break kept the break's own line and a column measured
@@ -135,15 +138,16 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
             markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_LINE_BREAK);
         if (hard) {
             /* The break's extent is the backslash and the line ending it
-             * escapes; `inline_state->pos` is one past that ending's last byte, CR, LF
+             * escapes; `markdown_core_inline_offset(inline_state)` is one past that ending's last byte, CR, LF
              * or CRLF alike. Projected from the two offsets, so the frame
              * captured before the consume is only the fallback's. */
-            markdown_core_inline_state_place(inline_state, hard, start, inline_state->pos - 1);
+            markdown_core_inline_state_place(inline_state, hard, start, markdown_core_inline_offset(inline_state) - 1);
         }
         return hard;
     } else {
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+        return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
+                        markdown_core_inline_offset(inline_state) - 1,
+                        markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
     }
 }
 

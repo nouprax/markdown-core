@@ -1063,8 +1063,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_saw_end(markdown_core_inline_s
                                                           markdown_core_node_kind owner) {
     markdown_core_inline_saw_end(inline_state);
     markdown_core_field field;
-    if (inline_state->context && start < inline_state->input.len &&
-        markdown_core_attributes_open_member(inline_state->input.data, inline_state->input.len, start, &field, NULL)) {
+    if (inline_state->context && start < markdown_core_inline_size(inline_state) &&
+        markdown_core_attributes_open_member(markdown_core_inline_window(inline_state, 0).data,
+                                             markdown_core_inline_window(inline_state, 0).len, start, &field, NULL)) {
         field.owner = owner;
         markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, start, start + 1, &field, 1);
     }
@@ -1115,8 +1116,8 @@ static int S_read(const markdown_core_element_instance *self, markdown_core_inli
      * end leaves open is the tail only once the line ends after it: until
      * then it may be the construct's. */
     if (inline_state->cut >= 0 && start >= inline_state->cut) {
-        if (report && inline_state->context && start < inline_state->input.len &&
-            inline_state->input.data[start] == '{' && markdown_core_inline_tracks_end(inline_state)) {
+        if (report && inline_state->context && start < markdown_core_inline_size(inline_state) &&
+            markdown_core_inline_char_at(inline_state, start) == '{' && markdown_core_inline_tracks_end(inline_state)) {
             S_saw_end(inline_state, start, owner);
         }
         return 0;
@@ -1124,19 +1125,19 @@ static int S_read(const markdown_core_element_instance *self, markdown_core_inli
     /* Most constructs have no attribute block after them: only a `{` is
      * read further. At the input's end a block may yet begin, once the
      * input goes on. */
-    if (start >= inline_state->input.len) {
+    if (start >= markdown_core_inline_size(inline_state)) {
         if (markdown_core_inline_tracks_end(inline_state)) {
             S_saw_end(inline_state, start, owner);
         }
         return 0;
     }
-    if (inline_state->input.data[start] != '{') {
+    if (markdown_core_inline_char_at(inline_state, start) != '{') {
         return 0;
     }
     if (!recognizer->data) {
         *recognizer = (markdown_core_attribute_parser){
-            .data = inline_state->input.data,
-            .length = inline_state->input.len,
+            .data = markdown_core_inline_window(inline_state, 0).data,
+            .length = markdown_core_inline_size(inline_state),
             .scratch = markdown_core_attributes_scratch(self),
         };
     }
@@ -1178,20 +1179,21 @@ static bufsize_t S_follow_token(const markdown_core_element_instance *self, mark
     (void)parser;
     markdown_core_inline_state *inline_state = lead->inline_state;
     markdown_core_node *node = lead->node;
-    if (inline_state->pos >= inline_state->input.len || inline_state->input.data[inline_state->pos] != '{') {
+    if (markdown_core_inline_offset(inline_state) >= markdown_core_inline_size(inline_state) ||
+        markdown_core_inline_char_at(inline_state, markdown_core_inline_offset(inline_state)) != '{') {
         return 0;
     }
     bufsize_t end;
     /* Only a context query reads the owner's kind. */
     const markdown_core_node_kind owner =
         inline_state->context ? markdown_core_node_get_kind(node) : MARKDOWN_CORE_KIND_NONE;
-    const bool asked = S_run_of(self, inline_state)->asked == inline_state->pos + 1;
-    const bufsize_t start = inline_state->pos;
+    const bool asked = S_run_of(self, inline_state)->asked == markdown_core_inline_offset(inline_state) + 1;
+    const bufsize_t start = markdown_core_inline_offset(inline_state);
     if (!S_read(self, inline_state, start, owner, &node->attributes, &end, !asked)) {
         return 0;
     }
     const uint32_t place = node->place.start;
-    inline_state->pos = end;
+    markdown_core_inline_seek(inline_state, end);
     markdown_core_inline_state_place(inline_state, node, end - 1, end - 1);
     node->place.start = place;
     return end - start;
@@ -1201,16 +1203,17 @@ static bufsize_t S_follow_token(const markdown_core_element_instance *self, mark
  * follows it: the block may yet close as the input goes on. */
 static bool holds(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
     (void)self;
-    return markdown_core_inline_made_node(inline_state) && inline_state->pos < inline_state->input.len &&
-           inline_state->input.data[inline_state->pos] == '{';
+    return markdown_core_inline_made_node(inline_state) &&
+           markdown_core_inline_offset(inline_state) < markdown_core_inline_size(inline_state) &&
+           markdown_core_inline_window(inline_state, markdown_core_inline_offset(inline_state)).data[0] == '{';
 }
 
 /* A run whose last token made a node that may be updated at the input's end:
  * an attribute block may yet begin there, once the input goes on. */
 static void finish(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     (void)self;
-    if (inline_state->made && inline_state->made_end >= inline_state->input.len && inline_state->cut < 0 &&
-        markdown_core_inline_tracks_end(inline_state)) {
+    if (inline_state->made && inline_state->made_end >= markdown_core_inline_size(inline_state) &&
+        inline_state->cut < 0 && markdown_core_inline_tracks_end(inline_state)) {
         markdown_core_inline_saw_end(inline_state);
     }
 }
@@ -1224,7 +1227,8 @@ static markdown_core_bracket_match S_close_span(const markdown_core_element_inst
     (void)made;
     markdown_core_attributes attributes = {0};
     bufsize_t end;
-    if (!S_read(self, inline_state, inline_state->pos, MARKDOWN_CORE_KIND_SPAN, &attributes, &end, true)) {
+    if (!S_read(self, inline_state, markdown_core_inline_offset(inline_state), MARKDOWN_CORE_KIND_SPAN, &attributes,
+                &end, true)) {
         return BRACKET_UNMATCHED;
     }
     if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
@@ -1239,7 +1243,7 @@ static markdown_core_bracket_match S_close_span(const markdown_core_element_inst
         return BRACKET_MATCHED;
     }
     inl->attributes = attributes;
-    inline_state->pos = end;
+    markdown_core_inline_seek(inline_state, end);
     markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
     markdown_core_inline_settle_bracket(inline_state, opener);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
@@ -1415,8 +1419,8 @@ static void report(const markdown_core_element_instance *self, markdown_core_inl
     } else {
         return;
     }
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     bufsize_t at = len;
     while (at > 0 && !markdown_core_is_line_end(data[at - 1])) {
         at--;

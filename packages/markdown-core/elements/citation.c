@@ -73,7 +73,7 @@ static int citation_key_width(const unsigned char *str, bufsize_t len) {
  * a key character; that character begins at the last non-continuation byte
  * before `pos`. */
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos) {
-    const unsigned char *data = inline_state->input.data;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
     bufsize_t before = pos;
     if (!pos) {
         return true;
@@ -85,18 +85,19 @@ static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inl
 }
 
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at) {
-    if (at >= inline_state->input.len) {
+    if (at >= markdown_core_inline_size(inline_state)) {
         markdown_core_inline_saw_end(inline_state);
         return false;
     }
-    return inline_state->input.data[at] == '{' ||
-           citation_key_width(inline_state->input.data + at, inline_state->input.len - at);
+    return markdown_core_inline_char_at(inline_state, at) == '{' ||
+           citation_key_width(markdown_core_inline_window(inline_state, at).data,
+                              markdown_core_inline_window(inline_state, at).len);
 }
 
 static bool source_escaped(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                            bufsize_t at, bufsize_t begin) {
     bufsize_t escape = at;
-    while (escape > begin && inline_state->input.data[escape - 1] == '\\') {
+    while (escape > begin && markdown_core_inline_char_at(inline_state, escape - 1) == '\\') {
         escape--;
     }
     citation_work(self)->work += (size_t)(at - escape);
@@ -115,20 +116,22 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
      * reads none of the content before it, which its view may not hold
      * (blocks.c, THE BACK OF A PARAGRAPH), and no citation it reads starts
      * there. */
-    for (bufsize_t at = inline_state->settle ? inline_state->settle->from : 0; at < inline_state->input.len;) {
+    for (bufsize_t at = inline_state->settle ? inline_state->settle->from : 0;
+         at < markdown_core_inline_size(inline_state);) {
         bufsize_t opaque_end = at;
-        unsigned char c = inline_state->input.data[at];
+        unsigned char c = markdown_core_inline_char_at(inline_state, at);
         bool escaped = (c == '`' || c == '<') && source_escaped(self, inline_state, at, 0);
         /* A backtick run is opaque where the dialect reads code spans. */
         if (c == '`' && !escaped && self->peers[CITATION_CODE]) {
             bufsize_t run = at;
-            while (run < inline_state->input.len && inline_state->input.data[run] == '`') {
+            while (run < markdown_core_inline_size(inline_state) &&
+                   markdown_core_inline_char_at(inline_state, run) == '`') {
                 run++;
             }
-            bufsize_t saved = inline_state->pos;
-            inline_state->pos = run;
+            bufsize_t saved = markdown_core_inline_offset(inline_state);
+            markdown_core_inline_seek(inline_state, run);
             opaque_end = markdown_core_inline_scan_backticks(&index->ticks, inline_state, run - at);
-            inline_state->pos = saved;
+            markdown_core_inline_seek(inline_state, saved);
             if (!opaque_end) {
                 opaque_end = run;
                 if (top >= 0) {
@@ -140,15 +143,17 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
                                   ? markdown_core_inline_scan_inline_html(inline_state, at + 1, &html_flags, NULL)
                                   : 0;
             if (!width) {
-                width = scan_autolink_uri(inline_state->input.data, inline_state->input.len, at + 1);
+                width = scan_autolink_uri(markdown_core_inline_window(inline_state, 0).data,
+                                          markdown_core_inline_window(inline_state, 0).len, at + 1);
             }
             if (!width) {
-                width = scan_autolink_email(inline_state->input.data, inline_state->input.len, at + 1);
+                width = scan_autolink_email(markdown_core_inline_window(inline_state, 0).data,
+                                            markdown_core_inline_window(inline_state, 0).len, at + 1);
             }
             if (width) {
                 opaque_end = at + 1 + width;
-            } else if (top >= 0 && inline_state->input.len - at >= 4 &&
-                       !memcmp(inline_state->input.data + at, "<!--", 4)) {
+            } else if (top >= 0 && markdown_core_inline_size(inline_state) - at >= 4 &&
+                       !memcmp(markdown_core_inline_window(inline_state, 0).data + at, "<!--", 4)) {
                 index->entries[top].cut = true;
             }
         }
@@ -157,7 +162,7 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
                 counts->work++;
                 if (top >= 0) {
                     index->entries[top].content = true;
-                    if (markdown_core_is_whitespace(inline_state->input.data[at])) {
+                    if (markdown_core_is_whitespace(markdown_core_inline_char_at(inline_state, at))) {
                         index->entries[top].valid = false;
                     }
                 }
@@ -311,15 +316,15 @@ static void S_report_key(const markdown_core_element_instance *self, markdown_co
                          bufsize_t start, bufsize_t at, bufsize_t field, bool braced) {
     markdown_core_field fields[3];
     size_t count = 0;
-    const markdown_core_field_end end = braced                             ? braced_key_end
-                                        : field == inline_state->input.len ? unbegun_key_end
-                                                                           : key_end;
+    const markdown_core_field_end end = braced                                             ? braced_key_end
+                                        : field == markdown_core_inline_size(inline_state) ? unbegun_key_end
+                                                                                           : key_end;
     fields[count++] =
         (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
     if (!braced && !markdown_core_open_bracket(inline_state)) {
         fields[count++] = (markdown_core_field){
             MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
-        const unsigned char *data = inline_state->input.data;
+        const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
         bufsize_t open = start;
         while (open > 0 && data[open - 1] >= '0' && data[open - 1] <= '9') {
             open--;
@@ -336,8 +341,8 @@ static void S_report_key(const markdown_core_element_instance *self, markdown_co
  * cuts short, from the `@` at `at` that opens no citation, to the run's
  * context sink. */
 static void S_report_numbered(markdown_core_inline_state *inline_state, bufsize_t at) {
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t len = markdown_core_inline_size(inline_state);
     bufsize_t open = at;
     while (open > 0 && data[open - 1] >= '0' && data[open - 1] <= '9') {
         open--;
@@ -402,8 +407,8 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
     /* Internal punctuation is single and must be followed by a key
      * character, as Pandoc has it: `@Foo_bar.baz.` keeps `Foo_bar.baz` and
      * `@Foo_bar--baz` stops at `Foo_bar`. */
-    const unsigned char *data = inline_state->input.data;
-    bufsize_t len = inline_state->input.len;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    bufsize_t len = markdown_core_inline_size(inline_state);
     token->key_start = pos;
     while (pos < len) {
         unsigned char c = data[pos];
@@ -435,13 +440,13 @@ static citation_tokens *markdown_core_inline_current_citation_tokens(const markd
 static markdown_core_node *markdown_core_inline_read_citation_token(const markdown_core_element_instance *self,
                                                                     markdown_core_inline_state *inline_state,
                                                                     bool key) {
-    citation_token value = {.start = inline_state->pos, .end = inline_state->pos + 1};
-    if (key && !scan_citation_key(self, inline_state, inline_state->pos, &value)) {
+    citation_token value = {.start = markdown_core_inline_offset(inline_state),
+                            .end = markdown_core_inline_offset(inline_state) + 1};
+    if (key && !scan_citation_key(self, inline_state, markdown_core_inline_offset(inline_state), &value)) {
         return NULL;
     }
-    markdown_core_node *text =
-        make_str(inline_state, value.start, value.end - 1,
-                 markdown_core_chunk_dup(&inline_state->input, value.start, value.end - value.start));
+    markdown_core_node *text = make_str(inline_state, value.start, value.end - 1,
+                                        markdown_core_inline_take(inline_state, value.start, value.end - value.start));
     if (!text) {
         return NULL;
     }
@@ -457,8 +462,8 @@ static markdown_core_node *markdown_core_inline_read_citation_token(const markdo
     *token = value;
     token->tail_start = -1;
     if (key) {
-        bufsize_t at =
-            markdown_core_skip_spaces_and_line_end(inline_state->input.data, value.end, inline_state->input.len);
+        bufsize_t at = markdown_core_skip_spaces_and_line_end(markdown_core_inline_window(inline_state, 0).data,
+                                                              value.end, markdown_core_inline_size(inline_state));
         citation_work(self)->work += (size_t)(at - value.end);
         if (markdown_core_inline_peek_at(inline_state, at) == '[' &&
             markdown_core_inline_peek_at(inline_state, at + 1) != '^') {
@@ -469,7 +474,7 @@ static markdown_core_node *markdown_core_inline_read_citation_token(const markdo
     token->boundary = boundary;
     citation_tokens *tokens = markdown_core_inline_current_citation_tokens(self, inline_state);
     markdown_core_stack_push(tokens, &token->item);
-    inline_state->pos = value.end;
+    markdown_core_inline_seek(inline_state, value.end);
     return text;
 }
 
@@ -496,8 +501,7 @@ static markdown_core_node *new_bib_item(markdown_core_inline_state *inline_state
     item->as.citation->mode = key->suppress ? MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR
                               : normal      ? MARKDOWN_CORE_BIB_MODE_NORMAL
                                             : MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT;
-    item->as.citation->value =
-        markdown_core_chunk_dup(&inline_state->input, key->key_start, key->key_end - key->key_start);
+    item->as.citation->value = markdown_core_inline_take(inline_state, key->key_start, key->key_end - key->key_start);
     if (!markdown_core_chunk_to_cstr(&item->as.citation->value)) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
@@ -522,7 +526,7 @@ static void citation_boundary(markdown_core_inline_state *inline_state, citation
  * the edges are trimmed byte by byte. */
 static void trim_citation_source(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                                  bufsize_t *start, bufsize_t *end) {
-    const unsigned char *data = inline_state->input.data;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
     markdown_core_citation_work *counts = citation_work(self);
     while (*start < *end && markdown_core_is_whitespace(data[*start])) {
         counts->work++;
@@ -743,7 +747,7 @@ static bool markdown_core_inline_close_bibliography(const markdown_core_element_
     }
     markdown_core_inline_state_place(inline_state, cite,
                                      tail ? S_bracket(self, opener)->author->start : opener->position - 1,
-                                     inline_state->pos - 1);
+                                     markdown_core_inline_offset(inline_state) - 1);
     markdown_core_node *content = markdown_core_scaffold_next(opener->inl_text);
     if (tail) {
         markdown_core_node *old = S_bracket(self, opener)->author->node;
@@ -770,7 +774,7 @@ static bool markdown_core_inline_close_bibliography(const markdown_core_element_
         while (separator && separator->key) {
             separator = citation_token_next(separator);
         }
-        bufsize_t item_end = separator ? separator->start : inline_state->pos - 1;
+        bufsize_t item_end = separator ? separator->start : markdown_core_inline_offset(inline_state) - 1;
         bufsize_t scope_start = author_item ? key->start : item_start;
         bufsize_t scope_end = author_item && tail_starts_item ? key->end : item_end;
         trim_citation_source(self, inline_state, &scope_start, &scope_end);
@@ -803,7 +807,7 @@ static bool markdown_core_inline_close_bibliography(const markdown_core_element_
         }
     }
     if (tail) {
-        S_bracket(self, opener)->author->end = inline_state->pos;
+        S_bracket(self, opener)->author->end = markdown_core_inline_offset(inline_state);
     }
     markdown_core_inline_pop_bracket(inline_state);
     return true;
@@ -887,12 +891,12 @@ static void resolve_citation_tail(const markdown_core_element_instance *self, ma
 static bool markdown_core_citation_defer_tail(const markdown_core_element_instance *self,
                                               markdown_core_inline_state *inline_state, bracket *opener,
                                               markdown_core_node **result) {
-    bufsize_t initial_pos = inline_state->pos;
+    bufsize_t initial_pos = markdown_core_inline_offset(inline_state);
     if (S_bracket(self, opener)->author && !opener->close_text && markdown_core_inline_peek_char(inline_state) != '(' &&
         markdown_core_inline_peek_char(inline_state) != '[' &&
         markdown_core_inline_citation_group_valid(&S_bracket(self, opener)->citations, true)) {
         markdown_core_node *close = make_str(inline_state, initial_pos - 1, initial_pos - 1,
-                                             markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
+                                             markdown_core_inline_take(inline_state, initial_pos - 1, 1));
         delimiter *end =
             close ? markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_CITATION_TOKEN, initial_pos)
                   : NULL;
@@ -913,9 +917,9 @@ static bool markdown_core_citation_defer_tail(const markdown_core_element_instan
 
 static bool is_inline_start(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                             bufsize_t at) {
-    unsigned char c = inline_state->input.data[at];
+    unsigned char c = markdown_core_inline_char_at(inline_state, at);
     if (c == '-') {
-        if (at + 1 >= inline_state->input.len) {
+        if (at + 1 >= markdown_core_inline_size(inline_state)) {
             markdown_core_inline_saw_end(inline_state);
             return false;
         }
@@ -930,7 +934,7 @@ static bool is_inline_start(const markdown_core_element_instance *self, markdown
         }
         return false;
     }
-    if (inline_state->context && at + 1 == inline_state->input.len) {
+    if (inline_state->context && at + 1 == markdown_core_inline_size(inline_state)) {
         S_report_key(self, inline_state, at, at + 1, at + 1, false);
     }
     return markdown_core_inline_citation_key_follows(inline_state, at + 1);
@@ -1041,7 +1045,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
 static void S_opened(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b) {
     citation_token *author = citation_token_last(markdown_core_inline_current_citation_tokens(self, inline_state));
     if (b->shape == &MARKDOWN_CORE_LINK_BRACKET && author && author->key &&
-        author->tail_start == inline_state->pos - 1) {
+        author->tail_start == markdown_core_inline_offset(inline_state) - 1) {
         S_bracket(self, b)->author = author;
     }
 }

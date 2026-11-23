@@ -104,7 +104,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(const markdown_cor
  * an autolink or HTML. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_inline_state *inline_state,
                                                                 bufsize_t from) {
-    const unsigned char first = from < inline_state->input.len ? inline_state->input.data[from] : 0;
+    const unsigned char first =
+        from < markdown_core_inline_size(inline_state) ? markdown_core_inline_char_at(inline_state, from) : 0;
     if (!first || markdown_core_isalnum((char)first) ||
         (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
         markdown_core_inline_saw_end(inline_state);
@@ -114,11 +115,13 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_in
 
 static markdown_core_node *match_angle(const markdown_core_element_instance *self,
                                        markdown_core_inline_state *inline_state) {
-    bufsize_t from = inline_state->pos + 1;
-    bufsize_t length = scan_autolink_uri(inline_state->input.data, inline_state->input.len, from);
+    bufsize_t from = markdown_core_inline_offset(inline_state) + 1;
+    bufsize_t length = scan_autolink_uri(markdown_core_inline_window(inline_state, 0).data,
+                                         markdown_core_inline_window(inline_state, 0).len, from);
     bool email = false;
     if (!length) {
-        length = scan_autolink_email(inline_state->input.data, inline_state->input.len, from);
+        length = scan_autolink_email(markdown_core_inline_window(inline_state, 0).data,
+                                     markdown_core_inline_window(inline_state, 0).len, from);
         email = true;
     }
     if (!length) {
@@ -130,9 +133,9 @@ static markdown_core_node *match_angle(const markdown_core_element_instance *sel
         }
         return NULL;
     }
-    markdown_core_chunk content = markdown_core_chunk_dup(&inline_state->input, from, length - 1);
-    inline_state->pos = from + length;
-    return make_autolink(self, inline_state, from - 1, inline_state->pos - 1, content, email);
+    markdown_core_chunk content = markdown_core_inline_take(inline_state, from, length - 1);
+    markdown_core_inline_seek(inline_state, from + length);
+    return make_autolink(self, inline_state, from - 1, markdown_core_inline_offset(inline_state) - 1, content, email);
 }
 
 /* The width of the host character at `link`, or 0 when the character there
@@ -259,7 +262,7 @@ typedef struct {
 static size_t check_domain(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                            uint8_t *data, size_t size, int allow_short) {
     size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
-    bufsize_t start = (bufsize_t)(data - inline_state->input.data);
+    bufsize_t start = (bufsize_t)(data - markdown_core_inline_window(inline_state, 0).data);
     autolink_run *run = markdown_core_run_state(inline_state, self);
     markdown_core_autolink_work *counts = self->state;
     counts->domains++;

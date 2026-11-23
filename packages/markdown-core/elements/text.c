@@ -24,8 +24,8 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
      * them ASCII, so the walk back from `endpos` tests bytes and decodes
      * nothing: no byte of a multi-byte character is whitespace. */
     bufsize_t boundary = -1, walked = endpos;
-    while (walked > inline_state->pos) {
-        if (markdown_core_is_whitespace(inline_state->input.data[--walked])) {
+    while (walked > markdown_core_inline_offset(inline_state)) {
+        if (markdown_core_is_whitespace(markdown_core_inline_char_at(inline_state, --walked))) {
             boundary = walked + 1;
             break;
         }
@@ -40,9 +40,10 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
     if (self->peers[TEXT_EMBEDDED]) {
         markdown_core_embedded_record_text(self->peers[TEXT_EMBEDDED], inline_state, endpos);
     }
-    contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos, endpos - inline_state->pos);
-    startpos = inline_state->pos;
-    inline_state->pos = endpos;
+    contents = markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state),
+                                         endpos - markdown_core_inline_offset(inline_state));
+    startpos = markdown_core_inline_offset(inline_state);
+    markdown_core_inline_seek(inline_state, endpos);
 
     // if we're at a newline, strip trailing spaces.
     if (markdown_core_is_line_end(markdown_core_inline_peek_char(inline_state))) {

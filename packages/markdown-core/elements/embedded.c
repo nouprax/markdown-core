@@ -73,7 +73,7 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     const bufsize_t pipe = S_bracket(self, opener)->pipe - 1;
     bufsize_t suffix = pipe >= 0 ? pipe : opener->position;
     markdown_core_dimensions dimensions;
-    markdown_core_chunk label = markdown_core_chunk_dup(&inline_state->input, opener->position, end - opener->position);
+    markdown_core_chunk label = markdown_core_inline_take(inline_state, opener->position, end - opener->position);
     if (!markdown_core_parse_dimensions(label, suffix - opener->position, pipe >= 0 ? 1 : 0, &dimensions,
                                         &((markdown_core_embedded_work *)self->state)->dimensions)) {
         return;
@@ -101,9 +101,9 @@ void markdown_core_embedded_record_text(const markdown_core_element_instance *se
     bracket *image = link ? markdown_core_open_bracket(inline_state) : NULL;
     if (image && image->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET) {
         markdown_core_embedded_work *counts = self->state;
-        for (bufsize_t i = inline_state->pos; i < endpos; i++) {
+        for (bufsize_t i = markdown_core_inline_offset(inline_state); i < endpos; i++) {
             counts->dimensions++;
-            if (inline_state->input.data[i] == '|') {
+            if (markdown_core_inline_char_at(inline_state, i) == '|') {
                 S_bracket(self, image)->pipe = i + 1;
             }
         }
@@ -116,20 +116,22 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (character != '!') {
         return NULL;
     }
-    inline_state->pos++;
+    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
     /* An image opens a bracket, which only a dialect with links reads. */
     if (self->peers[EMBEDDED_LINK] && markdown_core_inline_peek_char(inline_state) == '[' &&
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
-        inline_state->pos++;
-        markdown_core_node *text = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
-                                            markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
+        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
+        markdown_core_node *text = make_str(
+            inline_state, markdown_core_inline_offset(inline_state) - 2, markdown_core_inline_offset(inline_state) - 1,
+            markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 2, 2));
         if (text) {
             markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_EMBEDDED_BRACKET, text);
         }
         return text;
     }
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                    markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+    return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
+                    markdown_core_inline_offset(inline_state) - 1,
+                    markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
 }
 
 static const markdown_core_inline_ops EMBEDDED_INLINES = {
