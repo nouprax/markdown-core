@@ -14,10 +14,23 @@
  * `freed`), never by name. A `]` closes the innermost bracket by the dialect's rules (element.h,
  * markdown_core_close_rule), which the engine asks in order. */
 
-/* How the opener is spelled: `[`, `![` or `^[`. A `^[` opens a body of its
- * own: it takes no link or image state from the brackets around it, and the
- * rule about links inside links is restored when it closes. */
-typedef enum { BRACKET_LINK, BRACKET_IMAGE, BRACKET_FOOTNOTE } bracket_kind;
+/* THE SHAPE OF A BRACKET: how its opener reads, which the element that
+ * opens it declares and the engine reads -- never the opener's spelling.
+ * The opener spans `width` bytes before the body, of which the first
+ * `kept` stay as text when a construct replaces it (an image's `!`). It
+ * sets in-body mark `mark` (0 or 1, -1 none) for the brackets inside it,
+ * which markdown_core_inline_state_in_bracket answers. An `own` body takes
+ * no marks from the brackets around it, is where a body of its own starts
+ * (markdown_core_inline_state_context_start), and leaves the rule about
+ * links inside links to its element, which restores it as it closes. A
+ * `keeps` bracket leaves that rule as it was around it. `closer` is the
+ * byte that closes it. */
+typedef struct markdown_core_bracket_shape {
+    uint8_t width, kept;
+    int8_t mark;
+    bool own, keeps;
+    unsigned char closer;
+} markdown_core_bracket_shape;
 
 /* An open bracket, an item of the run's stack of open brackets (stack.h),
  * the bracket around it before it: the element that opened it, the
@@ -33,7 +46,7 @@ typedef struct bracket {
     const markdown_core_element_instance *owner;
     markdown_core_node *inl_text;
     bufsize_t position;
-    bracket_kind kind;
+    const markdown_core_bracket_shape *shape;
     bool outer_no_link_openers;
     bool bracket_after;
     bool in_bracket_image0;
@@ -62,12 +75,11 @@ static inline void *markdown_core_bracket_record(const bracket *b, const markdow
     return (void *)((unsigned char *)b->records + self->bracket_offset);
 }
 
-/* `owner` opens a bracket spelled `kind` whose opener is `text`, which
- * ends at the run's position; the dialect's elements are told
- * (`opened`). */
+/* `owner` opens a bracket of `shape` whose opener is `text`, which ends at
+ * the run's position; the dialect's elements are told (`opened`). */
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *owner,
-                                       markdown_core_inline_state *inline_state, bracket_kind kind,
-                                       markdown_core_node *text);
+                                       markdown_core_inline_state *inline_state,
+                                       const markdown_core_bracket_shape *shape, markdown_core_node *text);
 /* The innermost bracket closes, its construct made or not: the dialect's
  * elements are told (`freed`) and it is freed. */
 void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state);
@@ -78,8 +90,8 @@ void markdown_core_inline_settle_bracket(markdown_core_inline_state *inline_stat
  * to the node a suspended `]` made. */
 void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                                bracket *opener, markdown_core_node *owner);
-/* `replacement` goes where the opener's text was: after the `!` of a `![`,
- * which stays as text, and in place of a `[` or `^[`. */
+/* `replacement` goes where the opener's text was: after the bytes of it
+ * its shape keeps as text, or in its place when it keeps none. */
 void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state, bracket *opener,
                                                  markdown_core_node *replacement);
 /* What a token scanner may ask of the brackets around it: whether it is in
@@ -101,8 +113,10 @@ void markdown_core_inline_resume_bracket(markdown_core_parser *parser, markdown_
                                          bracket *opener);
 /* The run ends: every bracket it holds, open or suspended, is freed. */
 void markdown_core_inline_clear_brackets(markdown_core_inline_state *inline_state);
-/* THE `]` at the run's position: it closes the innermost bracket by the
- * dialect's rules, or is text. What the `]` leaves to append, or NULL. */
+/* THE CLOSER at the run's position, a byte an element's close rules close
+ * at (element.h, markdown_core_inline_ops `closer`): it closes the
+ * innermost bracket by the dialect's rules for that byte when the bracket's
+ * shape closes at it, or is text. What it leaves to append, or NULL. */
 markdown_core_node *markdown_core_inline_close_bracket(markdown_core_parser *parser,
                                                        markdown_core_inline_state *inline_state);
 

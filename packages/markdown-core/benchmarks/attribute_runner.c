@@ -76,11 +76,18 @@ int main(int argc, char **argv) {
 
     receipt.lists = 0;
     receipt.values = 0;
-    if (bench_parse_attributes(source, length, &receipt, census ? stdout : NULL) != 0) {
-        fprintf(stderr, "attribute_runner: %s failed on %s\n", bench_baseline_name(), input);
+    if (bench_setup() != 0) {
+        fprintf(stderr, "attribute_runner: %s could not be set up\n", bench_baseline_name());
         free(source);
         return 1;
     }
+    if (bench_parse_attributes(source, length, &receipt, census ? stdout : NULL) != 0) {
+        fprintf(stderr, "attribute_runner: %s failed on %s\n", bench_baseline_name(), input);
+        bench_teardown();
+        free(source);
+        return 1;
+    }
+    bench_teardown();
     free(source);
 
     /* An input that recovered nothing would make every number a measurement of

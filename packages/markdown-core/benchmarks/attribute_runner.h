@@ -37,6 +37,11 @@ typedef struct attribute_receipt {
 /* The baseline's name as it appears in the report. */
 const char *bench_baseline_name(void);
 
+/* What the baseline holds across the measured call, made before it and
+ * released after it, outside the measured edge. Returns 0 on success. */
+int bench_setup(void);
+void bench_teardown(void);
+
 /* Recover every attribute list in the buffer.
  *
  * With `census` NULL this is the measured path and writes nothing. With a

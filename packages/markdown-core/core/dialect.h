@@ -321,6 +321,9 @@ typedef struct markdown_core_dialect {
     bool container_prefix[256];
     /* Every byte an element's `claims` declares. */
     bool claims[256];
+    /* Every byte an element's close rules close a bracket at (element.h,
+     * markdown_core_inline_ops `closer`). */
+    bool closes[256];
     /* Every first byte a cut owner reads an item from (element.h,
      * `cut_needs`), one bit each: a block whose text starts with no such
      * byte keeps its front. */
@@ -362,6 +365,13 @@ typedef struct markdown_core_dialect {
      * `mine_first`, `mine_count`), by precedence. */
     const struct markdown_core_closer *closers;
     size_t closer_count, shared;
+    /* THE ROSTER SPACES the elements name (element.h, markdown_core_space),
+     * by roster kind: `space_count` of them, the first two NULL, no
+     * kind's and the engine's ANCHOR. */
+    const markdown_core_space *const *spaces;
+    size_t space_count;
+    /* How names are spelled (element.h, `spelling`), or NULL. */
+    const struct markdown_core_name_spelling *spelling;
     /* The instances whose elements ask the names service for names
      * (element.h, `names`), in element order, ending at NULL. */
     const markdown_core_element_instance *const *namers;
@@ -374,6 +384,7 @@ typedef struct markdown_core_dialect {
 typedef struct markdown_core_closer {
     const markdown_core_element_instance *owner;
     const struct markdown_core_close_rule *rule;
+    unsigned char byte;
 } markdown_core_closer;
 
 /* The record of `kind`, and the instance of the structure element of a node's
@@ -409,6 +420,19 @@ markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markd
     }
 }
 
+/* The roster kind the dialect numbered `space` (element.h,
+ * markdown_core_space), or 0, no kind's, when no element of it names the
+ * space: a kind no record has, which every lookup answers with none. */
+static inline unsigned markdown_core_dialect_space_kind(const markdown_core_dialect *dialect,
+                                                        const markdown_core_space *space) {
+    for (size_t kind = 0; kind < dialect->space_count; kind++) {
+        if (dialect->spaces[kind] == space) {
+            return (unsigned)kind;
+        }
+    }
+    return 0;
+}
+
 /* What sealing a builder takes, counted from its element list alone: how
  * many finish step entries, projected instance pointers, instance-table
  * entries, resolved peers and gate-table bytes follow the struct beside one instance per
@@ -425,8 +449,9 @@ typedef struct markdown_core_dialect_sizes {
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
     /* The peers the elements declare, all together, and their rules for
-     * closing a bracket. */
-    size_t peers, closers;
+     * closing a bracket; the spaces they name, each once, and their
+     * namings, all together. */
+    size_t peers, closers, spaces, namings;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */

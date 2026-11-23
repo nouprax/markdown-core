@@ -28,7 +28,6 @@ set(HEADERS
     inlines.h
     inline_internal.h
     block_internal.h
-    houdini.h
     markdown_core_ctype.h
     element.h
     delimiter.h
@@ -56,7 +55,6 @@ set(LIBRARY_SOURCES
     tree.c
     index.c
     sink.c
-    houdini_html_u.c
     markdown_core_ctype.c
     ${HEADERS})
 

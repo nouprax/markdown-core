@@ -1,5 +1,6 @@
 #include <assert.h>
 #include "document.h"
+#include "anchor.h"
 #include "attributes.h"
 #include "code_block.h"
 #include "html_block.h"
@@ -13,6 +14,8 @@
 #include "html.h"
 #include "line_break.h"
 #include "text.h"
+#include "escape.h"
+#include "entities.h"
 #include "embedded.h"
 #include "link.h"
 #include "definition_list.h"
@@ -41,40 +44,26 @@
 /* Every parse attaches the same elements. Scanner precedence is
  * source ownership: footnote before superscript, double tilde before single
  * tilde, opaque scanners before bracket alternatives, and table last. */
-static const markdown_core_element *const CORE_ELEMENTS[] = {&MARKDOWN_CORE_ELEMENT_DOCUMENT,
-                                                             &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
-                                                             &MARKDOWN_CORE_ELEMENT_CODE_BLOCK,
-                                                             &MARKDOWN_CORE_ELEMENT_CALLOUT,
-                                                             &MARKDOWN_CORE_ELEMENT_HEADING,
-                                                             &MARKDOWN_CORE_ELEMENT_HTML_BLOCK,
-                                                             &MARKDOWN_CORE_ELEMENT_THEMATIC_BREAK,
-                                                             &MARKDOWN_CORE_ELEMENT_PARAGRAPH,
-                                                             &MARKDOWN_CORE_ELEMENT_CODE,
-                                                             &MARKDOWN_CORE_ELEMENT_EMPHASIS,
-                                                             &MARKDOWN_CORE_ELEMENT_EMPHASIS_UNDERSCORE,
-                                                             &MARKDOWN_CORE_ELEMENT_LINE_BREAK,
-                                                             &MARKDOWN_CORE_ELEMENT_DEFINITION_LIST,
+static const markdown_core_element *const CORE_ELEMENTS[] = {
+    &MARKDOWN_CORE_ELEMENT_DOCUMENT,      &MARKDOWN_CORE_ELEMENT_ANCHOR,
+    &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,    &MARKDOWN_CORE_ELEMENT_CODE_BLOCK,
+    &MARKDOWN_CORE_ELEMENT_CALLOUT,       &MARKDOWN_CORE_ELEMENT_HEADING,
+    &MARKDOWN_CORE_ELEMENT_HTML_BLOCK,    &MARKDOWN_CORE_ELEMENT_THEMATIC_BREAK,
+    &MARKDOWN_CORE_ELEMENT_PARAGRAPH,     &MARKDOWN_CORE_ELEMENT_CODE,
+    &MARKDOWN_CORE_ELEMENT_EMPHASIS,      &MARKDOWN_CORE_ELEMENT_EMPHASIS_UNDERSCORE,
+    &MARKDOWN_CORE_ELEMENT_LINE_BREAK,    &MARKDOWN_CORE_ELEMENT_DEFINITION_LIST,
 
-                                                             &MARKDOWN_CORE_ELEMENT_STRIKETHROUGH,
-                                                             &MARKDOWN_CORE_ELEMENT_MARK,
-                                                             &MARKDOWN_CORE_ELEMENT_INSERTION,
-                                                             &MARKDOWN_CORE_ELEMENT_CITATION,
-                                                             &MARKDOWN_CORE_ELEMENT_FOOTNOTE,
-                                                             &MARKDOWN_CORE_ELEMENT_SPECIMEN,
-                                                             &MARKDOWN_CORE_ELEMENT_LIST,
-                                                             &MARKDOWN_CORE_ELEMENT_SUPERSCRIPT,
-                                                             &MARKDOWN_CORE_ELEMENT_SUBSCRIPT,
-                                                             &MARKDOWN_CORE_ELEMENT_AUTOLINK,
-                                                             &MARKDOWN_CORE_ELEMENT_FORMULA,
-                                                             &MARKDOWN_CORE_ELEMENT_COMMENT,
-                                                             &MARKDOWN_CORE_ELEMENT_CROSS_LINK,
-                                                             &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
-                                                             &MARKDOWN_CORE_ELEMENT_TOPIC,
-                                                             &MARKDOWN_CORE_ELEMENT_HTML,
-                                                             &MARKDOWN_CORE_ELEMENT_LINK,
-                                                             &MARKDOWN_CORE_ELEMENT_EMBEDDED,
-                                                             &MARKDOWN_CORE_ELEMENT_TEXT,
-                                                             &MARKDOWN_CORE_ELEMENT_TABLE};
+    &MARKDOWN_CORE_ELEMENT_STRIKETHROUGH, &MARKDOWN_CORE_ELEMENT_MARK,
+    &MARKDOWN_CORE_ELEMENT_INSERTION,     &MARKDOWN_CORE_ELEMENT_CITATION,
+    &MARKDOWN_CORE_ELEMENT_FOOTNOTE,      &MARKDOWN_CORE_ELEMENT_SPECIMEN,
+    &MARKDOWN_CORE_ELEMENT_LIST,          &MARKDOWN_CORE_ELEMENT_SUPERSCRIPT,
+    &MARKDOWN_CORE_ELEMENT_SUBSCRIPT,     &MARKDOWN_CORE_ELEMENT_AUTOLINK,
+    &MARKDOWN_CORE_ELEMENT_FORMULA,       &MARKDOWN_CORE_ELEMENT_COMMENT,
+    &MARKDOWN_CORE_ELEMENT_CROSS_LINK,    &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
+    &MARKDOWN_CORE_ELEMENT_TOPIC,         &MARKDOWN_CORE_ELEMENT_HTML,
+    &MARKDOWN_CORE_ELEMENT_LINK,          &MARKDOWN_CORE_ELEMENT_EMBEDDED,
+    &MARKDOWN_CORE_ELEMENT_ESCAPE,        &MARKDOWN_CORE_ELEMENT_ENTITIES,
+    &MARKDOWN_CORE_ELEMENT_TEXT,          &MARKDOWN_CORE_ELEMENT_TABLE};
 
 #define CORE_ELEMENT_COUNT (sizeof(CORE_ELEMENTS) / sizeof(CORE_ELEMENTS[0]))
 
@@ -164,7 +153,7 @@ bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chu
         *anchor = node->attributes.anchor;
         return true;
     }
-    return markdown_core_name_anchor(facet->named(node), anchor);
+    return markdown_core_name_anchor(facet->named(node), &MARKDOWN_CORE_ANCHOR_SPELLING, anchor);
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len) {

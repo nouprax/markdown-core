@@ -23,7 +23,6 @@ const core = [
     "tree.c",
     "index.c",
     "sink.c",
-    "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const elements = [
@@ -47,6 +46,10 @@ const elements = [
     "link_scanners.c",
     "table_scanners.c",
     "text_scanners.c",
+    "anchor.c",
+    "entities.c",
+    "escape.c",
+    "houdini_html_u.c",
     "ast.c",
     "attributes.c",
     "autolink.c",

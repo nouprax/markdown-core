@@ -1,7 +1,7 @@
 #ifndef MARKDOWN_CORE_ELEMENT_EMBEDDED_H
 #define MARKDOWN_CORE_ELEMENT_EMBEDDED_H
 #include "inlines.h"
-struct bracket;
+#include "bracket.h"
 /* The image grammar's calls, with `embedded` the embedded element's
  * instance: the link commit applies an image's dimensions, and the text
  * scanner records each text slice inside an image's label. */
@@ -11,6 +11,9 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
 void markdown_core_embedded_record_text(const markdown_core_element_instance *embedded,
                                         markdown_core_inline_state *inline_state, bufsize_t endpos);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED;
+/* An image's bracket, opened by a `![`, whose `!` stays as text when the
+ * image replaces it (bracket.h). */
+extern const markdown_core_bracket_shape MARKDOWN_CORE_EMBEDDED_BRACKET;
 /* Parse one raw label suffix atomically. Callers record its separator while
  * recognizing their own label grammar; no search or allocation occurs here. */
 bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix, bufsize_t separator_length,

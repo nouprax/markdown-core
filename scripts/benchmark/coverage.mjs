@@ -12,9 +12,9 @@ import { sectionDispositions } from "./sections.mjs";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 // The specification owns grammar certificates, with explicit cross-feature reuse.
 export const featureOwners = {
-    anchors: { elements: [], certificates: [] },
+    anchors: { elements: ["ANCHOR"], certificates: [] },
     attributes: { elements: ["ATTRIBUTES"], certificates: ["record-span", "class-span"] },
-    base: { elements: ["DOCUMENT", "PARAGRAPH", "TEXT"], certificates: [] },
+    base: { elements: ["DOCUMENT", "ENTITIES", "ESCAPE", "PARAGRAPH", "TEXT"], certificates: [] },
     "block-identifiers": { elements: [], certificates: ["anchor"] },
     "bracketed-spans": { elements: [], certificates: ["record-span", "class-span"] },
     callouts: { elements: ["CALLOUT"], certificates: [] },

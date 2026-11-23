@@ -1,3 +1,4 @@
+#include "entities.h"
 #include "autolink_scanners.h"
 #include "inline_internal.h"
 #include "autolink.h"
@@ -15,14 +16,16 @@
 #endif
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { AUTOLINK_LINK };
-static const markdown_core_element *const AUTOLINK_PEERS[] = {[AUTOLINK_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
+enum { AUTOLINK_LINK, AUTOLINK_ENTITIES };
+static const markdown_core_element *const AUTOLINK_PEERS[] = {
+    [AUTOLINK_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [AUTOLINK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES, NULL};
 
-static markdown_core_node *make_str_with_entities(markdown_core_inline_state *inline_state, int start_column,
+static markdown_core_node *make_str_with_entities(const markdown_core_element_instance *self,
+                                                  markdown_core_inline_state *inline_state, int start_column,
                                                   int end_column, markdown_core_chunk *content) {
     markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT();
 
-    if (houdini_unescape_html(&unescaped, content->data, content->len)) {
+    if (markdown_core_entities_decode(self->peers[AUTOLINK_ENTITIES], &unescaped, content->data, content->len)) {
         if (unescaped.oom) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
@@ -32,7 +35,8 @@ static markdown_core_node *make_str_with_entities(markdown_core_inline_state *in
     }
 }
 
-static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_state *inline_state,
+static markdown_core_chunk markdown_core_clean_autolink(const markdown_core_element_instance *self,
+                                                        markdown_core_inline_state *inline_state,
                                                         markdown_core_chunk *url, int is_email) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
 
@@ -47,14 +51,15 @@ static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_sta
         markdown_core_strbuf_puts(&buf, "mailto:");
     }
 
-    houdini_unescape_html_f(&buf, url->data, url->len);
+    markdown_core_entities_copy(self->peers[AUTOLINK_ENTITIES], &buf, url->data, url->len);
     if (buf.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     return markdown_core_chunk_buf_detach(&buf);
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inline_state *inline_state,
+static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(const markdown_core_element_instance *self,
+                                                              markdown_core_inline_state *inline_state,
                                                               int start_column, int end_column, markdown_core_chunk url,
                                                               int is_email) {
     markdown_core_node *link = markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_LINK);
@@ -68,7 +73,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         // built with absence. It used to be set to an empty title, and
         // `elements.txt` records both spellings of one construct on one line
         // disagreeing about it three columns apart.
-        markdown_core_chunk destination = markdown_core_clean_autolink(inline_state, &url, is_email);
+        markdown_core_chunk destination = markdown_core_clean_autolink(self, inline_state, &url, is_email);
         link->as.link->resource = markdown_core_resource_new(inline_state->owner_parser->pool, destination,
                                                              markdown_core_optional_chunk_absent());
         if (!link->as.link->resource) {
@@ -84,7 +89,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     // autolink inside a block quote, or on any line but the first of its
     // paragraph, produced a Link that did not contain its own Text.
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
-    text = make_str_with_entities(inline_state, start_column + 1, end_column - 1, &url);
+    text = make_str_with_entities(self, inline_state, start_column + 1, end_column - 1, &url);
     if (text) {
         markdown_core_scaffold_append(link, text);
     }
@@ -107,7 +112,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_in
     }
 }
 
-static markdown_core_node *match_angle(markdown_core_inline_state *inline_state) {
+static markdown_core_node *match_angle(const markdown_core_element_instance *self,
+                                       markdown_core_inline_state *inline_state) {
     bufsize_t from = inline_state->pos + 1;
     bufsize_t length = scan_autolink_uri(inline_state->input.data, inline_state->input.len, from);
     bool email = false;
@@ -126,7 +132,7 @@ static markdown_core_node *match_angle(markdown_core_inline_state *inline_state)
     }
     markdown_core_chunk content = markdown_core_chunk_dup(&inline_state->input, from, length - 1);
     inline_state->pos = from + length;
-    return make_autolink(inline_state, from - 1, inline_state->pos - 1, content, email);
+    return make_autolink(self, inline_state, from - 1, inline_state->pos - 1, content, email);
 }
 
 /* The width of the host character at `link`, or 0 when the character there
@@ -573,7 +579,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
                                  markdown_core_node *parent, unsigned char c,
                                  markdown_core_inline_state *inline_state) {
     if (c == '<') {
-        return match_angle(inline_state);
+        return match_angle(self, inline_state);
     }
 
     int in_bracket = markdown_core_inline_state_in_bracket(inline_state, false) ||

@@ -47,6 +47,7 @@
 #include "properties.h"
 #include "specimen.h"
 #include "text.h"
+#include "escape.h"
 
 #include <markdown_core.h>
 
@@ -3408,6 +3409,10 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
+/* Roster kinds for the roster's own tests: spaces past the engine's
+ * ANCHOR, as a dialect numbers its elements' (dialect.h, `spaces`). */
+enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = ROSTER_TEST_KIND + 3 };
+
 /* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
  * log's array and the index each double -- rather than one each, and all of
@@ -3416,14 +3421,13 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
     enum { COUNT = 4096 };
     payload_probe_arm();
     markdown_core_roster roster;
-    markdown_core_roster_init(&roster);
+    markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     char label[32];
     bool declared = true;
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
-        declared = declared &&
-                   markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, (const unsigned char *)label,
-                                                (bufsize_t)strlen(label), (uint32_t)i);
+        declared = declared && markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, (const unsigned char *)label,
+                                                            (bufsize_t)strlen(label), (uint32_t)i);
     }
     OK(runner, declared && roster.count == COUNT, "every declaration is a record");
     /* Twelve doublings reach COUNT; each of the three structures doubles
@@ -3432,7 +3436,7 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
     bool failed = false;
     markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
     const markdown_core_roster_record *found =
-        markdown_core_roster_find_label(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, &lookup, &failed);
+        markdown_core_roster_find_label(&roster, ROSTER_TEST_KIND, &lookup, &failed);
     markdown_core_chunk name = found ? markdown_core_roster_label(found) : (markdown_core_chunk){0};
     OK(runner, !failed && name.len == 10 && !memcmp(name.data, "label 4095", 10),
        "a carved record is found by its label's normal form");
@@ -3600,34 +3604,31 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
  * a key declared twice starts where its earlier declaration starts. */
 static void roster_kinds_and_starts(test_batch_runner *runner) {
     markdown_core_roster roster;
-    markdown_core_roster_init(&roster);
+    markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     const unsigned char *x = (const unsigned char *)"x";
     bool failed = false;
-    OK(runner, markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 40),
-       "a reference is declared");
-    OK(runner, !markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_FOOTNOTE, x, 1, &failed),
+    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40), "a reference is declared");
+    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_SPECIMEN, x, 1, &failed), "nor a specimen");
-    const markdown_core_roster_record *record =
-        markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, &failed);
+    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
+    const markdown_core_roster_record *record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner,
        record && !markdown_core_roster_starts_before(&roster, record, 40) &&
            markdown_core_roster_starts_before(&roster, record, 41),
        "a declaration starts where its definition starts");
     OK(runner,
-       markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 90) &&
-           markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 10),
+       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90) &&
+           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10),
        "the key is declared twice more");
-    record = markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, &failed);
+    record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner,
        record && record->start == 10 && markdown_core_roster_starts_before(&roster, record, 11) &&
            !markdown_core_roster_starts_before(&roster, record, 10),
        "the key's earliest declaration answers");
     markdown_core_roster_mark mark = markdown_core_roster_mark_now(&roster);
-    OK(runner, markdown_core_roster_declare(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, 2),
-       "a declaration after the mark");
+    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 2), "a declaration after the mark");
     markdown_core_roster_rollback(&roster, mark);
-    record = markdown_core_roster_find(&roster, MARKDOWN_CORE_ROSTER_REFERENCE, x, 1, &failed);
+    record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner, record && record->start == 10 && !markdown_core_roster_starts_before(&roster, record, 10),
        "a rollback takes the earlier start back with the record");
     OK(runner, !failed, "and no lookup failed");
@@ -3677,10 +3678,12 @@ static size_t roster_model_withdrawn(const roster_model_key *key, uint32_t start
 }
 
 static void roster_rollback_matches_a_model(test_batch_runner *runner) {
+    /* The kinds: the engine's ANCHOR, filed under a measure, and three
+     * spaces after it. */
     enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
     markdown_core_roster roster;
-    markdown_core_roster_init(&roster);
+    markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     roster_model_step *model = malloc(STEPS * sizeof(*model));
     roster_model_key *keys = calloc((size_t)KINDS * (SHARED + STEPS), sizeof(*keys));
     size_t model_count = 0, fresh = SHARED, mark_count = 0;
@@ -3732,7 +3735,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
             char text[16];
             roster_label_text(record.label, text, sizeof(text));
             const markdown_core_roster_kind kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_REFERENCE + record.kind);
+                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + record.kind);
             agrees = record.withdraws ? markdown_core_roster_withdraw(&roster, kind, (const unsigned char *)text,
                                                                       (bufsize_t)strlen(text), record.start)
                                       : markdown_core_roster_declare(&roster, kind, (const unsigned char *)text,
@@ -3763,7 +3766,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
                 continue;
             }
             const markdown_core_roster_kind compared_kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_REFERENCE + kind);
+                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind);
             for (unsigned label = 0; label < fresh && agrees; label++) {
                 const roster_model_key *key = &keys[kind * (SHARED + STEPS) + label];
                 /* Only a label some step declared can answer; the rest are
@@ -5251,7 +5254,7 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t autolink_domains;
-    size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
+    size_t cross_link, opaque, delimiters, comment, lookahead, nonblank, block_identifier, callout, dimensions;
     size_t definition_lists, citation_brace_bytes;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool heading_collection_disposed;
@@ -5286,7 +5289,8 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     for (const markdown_core_stack_item *entry = parser->delimiter_pool.free; entry; entry = entry->next) {
         work->pooled_delimiters++;
     }
-    work->whitespace = ELEMENT_STATE(parser, markdown_core_text_work, MARKDOWN_CORE_ELEMENT_TEXT)->whitespace;
+    work->whitespace = ELEMENT_STATE(parser, markdown_core_text_work, MARKDOWN_CORE_ELEMENT_TEXT)->whitespace +
+                       ELEMENT_STATE(parser, markdown_core_escape_work, MARKDOWN_CORE_ELEMENT_ESCAPE)->whitespace;
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = properties->line_work;
     work->physical_line_bytes = parser->input_line_work;
@@ -5318,10 +5322,11 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->anchors = parser->names.work;
     work->definitions = 0;
     for (size_t i = 0; i < parser->roster.count; i++) {
-        work->definitions += parser->roster.records[i]->key[0] == MARKDOWN_CORE_ROSTER_REFERENCE;
+        work->definitions += parser->roster.records[i]->key[0] ==
+                             markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE);
     }
     work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
-    work->footnote_body = parser->footnote_body_work;
+    work->nonblank = parser->nonblank_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
@@ -5679,9 +5684,9 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             markdown_core_node *root = markdown_core_parse_document_with_setup(
                 (const char *)source.ptr, (size_t)source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial inline footnotes parse");
-            OK(runner, work.footnote_body <= (size_t)source.size,
+            OK(runner, work.nonblank <= (size_t)source.size,
                "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
-               work.footnote_body);
+               work.nonblank);
             if (root) {
                 node_list notes = footnotes_of(root);
                 node_list citations = nodes_of_kind(root, MARKDOWN_CORE_NODE_CITATION);
@@ -7398,7 +7403,7 @@ static void heading_roster_invariants(test_batch_runner *runner) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), count,
                    "every live delimiter pair resolves once");
-            OK(runner, work.anchors + work.attributes + work.footnote_body < 40 * (size_t)source.size,
+            OK(runner, work.anchors + work.attributes + work.nonblank < 40 * (size_t)source.size,
                "declaration parsing and finalization stay linear with pending cursors");
             markdown_core_node_free(root);
         }

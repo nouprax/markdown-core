@@ -20,18 +20,17 @@ extern "C" {
  *
  * A record states a kind, a label in that kind's normal form, and the source
  * offset where the declaring definition starts. The kinds are lookup spaces:
+ * the engine's own,
  *
- *   REFERENCE  the label of a link reference definition, and the label a
- *              heading's text declares -- one space, which a reference
- *              occurrence resolves against;
- *   FOOTNOTE   the label of a footnote definition;
- *   SPECIMEN   the label of a specimen definition;
  *   ANCHOR     an explicit anchor, reserved where completion meets it, and
- *              withdrawn where completion releases the node that holds it.
+ *              withdrawn where completion releases the node that holds it,
+ *              as its bytes as written;
  *
- * Reference and footnote labels are in the reference-label normal form
- * (markdown_core_roster_normal_label); a specimen label and an anchor are
- * their bytes as written.
+ * and the spaces the dialect's elements declare (element.h,
+ * markdown_core_space), numbered after it as the dialect is sealed: a link
+ * reference definition's labels, say, which a heading's text declares too.
+ * A space that `folds` holds its labels in the reference-label normal form
+ * (markdown_core_roster_normal_label), any other its bytes as written.
  *
  * A record declares its key, or withdraws one earlier declaration of it, the
  * one that starts where the withdrawal does: that declaration is withdrawn,
@@ -67,12 +66,10 @@ extern "C" {
  * places, and its records hold where they start in the text. */
 #define MARKDOWN_CORE_ROSTER_UNPLACED UINT32_MAX
 
-typedef enum {
-    MARKDOWN_CORE_ROSTER_REFERENCE = 1,
-    MARKDOWN_CORE_ROSTER_FOOTNOTE,
-    MARKDOWN_CORE_ROSTER_SPECIMEN,
-    MARKDOWN_CORE_ROSTER_ANCHOR
-} markdown_core_roster_kind;
+/* A kind: the engine's ANCHOR, or a number the dialect gave a space its
+ * elements declare (dialect.h, `spaces`); a key's first byte. */
+typedef unsigned markdown_core_roster_kind;
+#define MARKDOWN_CORE_ROSTER_ANCHOR 1u
 
 typedef struct markdown_core_roster_record {
     /* A declaration the index holds: the key's declarations before and
@@ -118,12 +115,18 @@ typedef struct {
     size_t indexed, cursor;
     /* The kind's declarations about an edit, once one reads the parse. */
     markdown_core_tree places;
+    /* The roster that holds the kind, which a moved place's entry is
+     * written in. */
+    struct markdown_core_roster *roster;
 } markdown_core_roster_space;
 
 typedef struct markdown_core_roster {
     markdown_core_roster_record **records;
     size_t count, capacity;
-    markdown_core_roster_space spaces[MARKDOWN_CORE_ROSTER_ANCHOR + 1];
+    /* Each kind's records, by kind; `kinds` of them, the first no
+     * kind's. */
+    markdown_core_roster_space *spaces;
+    size_t kinds;
     /* Each key's first declaration in its list, as the record. The index
      * borrows the key bytes from that record, and holds in `extra` how
      * many declarations the list holds. */
@@ -156,7 +159,11 @@ typedef struct {
     size_t block_used, block_size, bytes, dead;
 } markdown_core_roster_mark;
 
-void markdown_core_roster_init(markdown_core_roster *roster);
+/* A roster of `kinds` kinds, the first no kind's (dialect.h,
+ * `space_count`).
+ * False when storage could not be had, and the parse that holds it fails;
+ * it is freed as any other. */
+bool markdown_core_roster_init(markdown_core_roster *roster, size_t kinds);
 void markdown_core_roster_free(markdown_core_roster *roster);
 
 /* Append a record of `kind` for `label`, already in the kind's normal form,

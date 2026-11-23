@@ -24,6 +24,10 @@ static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] 
                                                              [HEADING_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
                                                              [HEADING_CROSS_LINK] = &MARKDOWN_CORE_ELEMENT_CROSS_LINK,
                                                              NULL};
+/* The spaces this element files labels in, as `self->spaces` numbers them:
+ * the link element's, a heading's text declaring a reference label. */
+enum { HEADING_REFERENCE };
+static const markdown_core_space *const HEADING_SPACES[] = {[HEADING_REFERENCE] = &MARKDOWN_CORE_REFERENCE_SPACE, NULL};
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
 typedef struct {
     markdown_core_node *node;
@@ -407,7 +411,7 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
         markdown_core_chunk *declared = &node->as.heading->label;
         if (!declared->len && self->peers[HEADING_LINK] && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_REFERENCE, &label, node->place.start, declared);
+            markdown_core_parser_declare(parser, self->spaces[HEADING_REFERENCE], &label, node->place.start, declared);
         }
     }
     /* The run is read to its end: it finishes as every run does. */
@@ -734,6 +738,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .names = &HEADING_NAMES,
     .facets = MARKDOWN_CORE_HEADING_FACETS,
     .peers = HEADING_PEERS,
+    .spaces = HEADING_SPACES,
     .name = "heading",
     .state_size = sizeof(markdown_core_heading_state),
     .run_state_size = sizeof(markdown_core_heading_run),

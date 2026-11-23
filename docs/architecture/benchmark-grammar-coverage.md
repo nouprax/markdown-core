@@ -33,7 +33,7 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **31 specification features, 133 sections, 33 registered elements,
+There are **31 specification features, 133 sections, 36 registered elements,
 186 certificates and 792 generated documents**, 396 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
 Of the 133 sections, **128 link to grammar certificates and five are explicitly

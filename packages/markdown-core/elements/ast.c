@@ -13,6 +13,9 @@
 #include "heading.h"
 #include "markdown-core-elements.h"
 #include "table.h"
+#include "link.h"
+#include "footnote.h"
+#include "specimen.h"
 
 #include <node_type.h>
 #include <node.h>
@@ -2263,6 +2266,11 @@ static bool reference_targets(markdown_core_parser *parser, markdown_core_docume
 enum { LABELS_FOOTNOTES, LABELS_SPECIMENS, LABELS_TARGETS };
 
 static const uint32_t table_labels[TABLE_COUNT] = {LABELS_FOOTNOTES, LABELS_SPECIMENS, LABELS_TARGETS, LABELS_TARGETS};
+/* The roster space of each definition table's labels, whose kind the
+ * committed tables hold (`kinds`). */
+static const markdown_core_space *const table_spaces[TABLE_COUNT] = {
+    &MARKDOWN_CORE_FOOTNOTE_SPACE, &MARKDOWN_CORE_SPECIMEN_SPACE, &MARKDOWN_CORE_REFERENCE_SPACE,
+    &MARKDOWN_CORE_REFERENCE_SPACE};
 
 typedef char committed_tables_fit[(int)TABLE_COUNT == (int)MARKDOWN_CORE_DEFINITION_TABLES &&
                                           (int)LABELS_TARGETS + 1 == (int)MARKDOWN_CORE_LABEL_TABLES
@@ -2591,11 +2599,6 @@ static bool committed_settle(markdown_core_committed_tables *committed) {
  * stands in the roster's part that its entry stands in, where it starts
  * in that part's terms. */
 
-/* The roster's kind of each definition table's labels. */
-static const markdown_core_roster_kind table_kinds[TABLE_COUNT] = {
-    MARKDOWN_CORE_ROSTER_FOOTNOTE, MARKDOWN_CORE_ROSTER_SPECIMEN, MARKDOWN_CORE_ROSTER_REFERENCE,
-    MARKDOWN_CORE_ROSTER_REFERENCE};
-
 /* The entries of table `table`'s front from `from` up to `to`, but the one
  * of `kept`, which go as their labels move on. */
 typedef struct {
@@ -2640,14 +2643,14 @@ static bool committed_next(const markdown_core_committed_tables *committed, mark
         markdown_core_tree *tree = (markdown_core_tree *)&committed->starts[table];
         bool failed = false;
         markdown_core_roster_record *first =
-            markdown_core_roster_first(roster, table_kinds[table], label.data, label.len, &failed);
+            markdown_core_roster_first(roster, committed->kinds[table], label.data, label.len, &failed);
         if (failed) {
             return false;
         }
         const markdown_core_roster_record *record = first;
         if (table == table_gone && gone->held) {
             const markdown_core_roster_record *held = markdown_core_roster_held_at(
-                roster, table_kinds[table], label.data, label.len, gone->back, gone->place);
+                roster, committed->kinds[table], label.data, label.len, gone->back, gone->place);
             record = held ? held->after : first;
         }
         const bool front = tree->front != 0;
@@ -2846,11 +2849,13 @@ static const markdown_core_committed_tables *committed_of(const markdown_core_st
 
 /* The stream's committed tables, made when it has none. NULL when storage
  * could not be had. */
-static markdown_core_committed_tables *committed_need(markdown_core_stream *stream) {
+static markdown_core_committed_tables *committed_need(markdown_core_parser *parser) {
+    markdown_core_stream *stream = parser->stream;
     if (!stream->committed) {
         stream->committed = markdown_core_alloc(1, sizeof(*stream->committed));
         for (size_t table = 0; stream->committed && table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
             stream->committed->starts[table] = markdown_core_tree_make(&listed_ops);
+            stream->committed->kinds[table] = markdown_core_dialect_space_kind(parser->dialect, table_spaces[table]);
         }
         for (size_t labels = 0; stream->committed && labels < MARKDOWN_CORE_LABEL_TABLES; labels++) {
             stream->committed->labels[labels] = markdown_core_tree_make(&labels_ops);
@@ -2863,7 +2868,7 @@ static markdown_core_committed_tables *committed_need(markdown_core_stream *stre
  * and taken out of the walk's, which then list the snapshot's own. False
  * when storage could not be had. */
 static bool keep_committed(markdown_core_parser *parser, const publish_walk *walk) {
-    markdown_core_committed_tables *committed = walk->kept_count ? committed_need(parser->stream) : NULL;
+    markdown_core_committed_tables *committed = walk->kept_count ? committed_need(parser) : NULL;
     if (walk->kept_count && !committed) {
         return false;
     }
@@ -2928,7 +2933,7 @@ bool markdown_core_publish_withdraw(markdown_core_parser *parser, markdown_core_
 
 bool markdown_core_publish_define(markdown_core_parser *parser, uint32_t table, const markdown_core_node *node,
                                   uint32_t start) {
-    markdown_core_committed_tables *committed = committed_need(parser->stream);
+    markdown_core_committed_tables *committed = committed_need(parser);
     if (!committed) {
         return false;
     }
@@ -3222,7 +3227,7 @@ static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, mar
  * that took nothing back read every old definition again. False when
  * storage could not be had. */
 static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk, markdown_core_document_value *value) {
-    markdown_core_committed_tables *committed = committed_need(parser->stream);
+    markdown_core_committed_tables *committed = committed_need(parser);
     if (!committed) {
         return false;
     }
@@ -3637,7 +3642,7 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
      * definition stays, and the reading's publish finds it there as it
      * lists it again (committed_keep). The metadata goes, and with it every
      * definition before the rest point. */
-    markdown_core_committed_tables *committed = committed_need(stream);
+    markdown_core_committed_tables *committed = committed_need(parser);
     ok = ok && committed;
     for (uint32_t table = 0; ok && table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
         markdown_core_tree *tree = &committed->starts[table];
@@ -3757,7 +3762,7 @@ bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_c
 bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
-    markdown_core_committed_tables *committed = committed_need(stream);
+    markdown_core_committed_tables *committed = committed_need(parser);
     if (!committed) {
         return false;
     }

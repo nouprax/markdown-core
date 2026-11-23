@@ -7,7 +7,7 @@ complete examples per family. The run emits 792 documents, each measured once:
 in each of [two alphabets](#alphabets), 180 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-31 syntax-guide features, 133 sections and 33 registered elements. Its explicit
+31 syntax-guide features, 133 sections and 36 registered elements. Its explicit
 section mapping names certificates for 128 source-language sections and gives
 reviewed context-only dispositions for five sections. Certificates are registered
 directly from their source grammars and specification obligations.

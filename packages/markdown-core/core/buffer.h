@@ -306,8 +306,6 @@ void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf);
 
 void markdown_core_strbuf_trim(markdown_core_strbuf *buf);
 
-void markdown_core_strbuf_unescape(markdown_core_strbuf *s);
-
 #ifdef __cplusplus
 }
 #endif

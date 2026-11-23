@@ -11,8 +11,16 @@
 enum { FOOTNOTE_LINK };
 static const markdown_core_element *const FOOTNOTE_PEERS[] = {[FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
 
+const markdown_core_bracket_shape MARKDOWN_CORE_FOOTNOTE_BRACKET = {.width = 2, .mark = -1, .own = true, .closer = ']'};
+
+const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .folds = true};
+/* The spaces this element files labels in, as `self->spaces` numbers them. */
+enum { FOOTNOTE_LABELS };
+static const markdown_core_space *const FOOTNOTE_SPACES[] = {[FOOTNOTE_LABELS] = &MARKDOWN_CORE_FOOTNOTE_SPACE, NULL};
+
 static const markdown_core_roster_record *
-markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
+markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
+                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
                                          bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close);
@@ -23,7 +31,8 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
 static const markdown_core_roster_record *
-markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
+markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
+                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
                                          bufsize_t after_close) {
     if (after_close - label_start < 2) {
         return NULL;
@@ -35,7 +44,7 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
         markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
     bool failed = false;
     const markdown_core_roster_record *record = markdown_core_parser_find_definition(
-        inline_state->owner_parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &label,
+        inline_state->owner_parser, self->spaces[FOOTNOTE_LABELS], &label,
         markdown_core_inline_state_root_offset(inline_state, label_start), &failed);
     if (failed) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -60,8 +69,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
         return NULL;
     }
     citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
-    markdown_core_inline_state_place(inline_state, cite, opener->position - (opener->kind == BRACKET_FOOTNOTE ? 2 : 1),
-                                     after_close - 1);
+    markdown_core_inline_state_place(inline_state, cite, opener->position - opener->shape->width, after_close - 1);
     markdown_core_inline_state_place(inline_state, citation, opener->position, after_close - 2);
     return cite;
 }
@@ -116,7 +124,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
                                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
     if (node) {
-        markdown_core_inline_push_bracket(self, inline_state, BRACKET_FOOTNOTE, node);
+        markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_FOOTNOTE_BRACKET, node);
     }
     return node;
 }
@@ -161,6 +169,7 @@ static const markdown_core_close_rule FOOTNOTE_CLOSES[] = {
 static const markdown_core_inline_ops FOOTNOTE_INLINES = {
     .closes = FOOTNOTE_CLOSES,
     .close_count = sizeof(FOOTNOTE_CLOSES) / sizeof(FOOTNOTE_CLOSES[0]),
+    .closer = ']',
     .match = match,
     .terminates = "^",
     .dispatch = "^",
@@ -185,6 +194,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
     .edit = &FOOTNOTE_EDIT,
     .peers = FOOTNOTE_PEERS,
+    .spaces = FOOTNOTE_SPACES,
     .name = "footnote",
     .inlines = &FOOTNOTE_INLINES,
     .opens = &FOOTNOTE_OPENS,
@@ -243,7 +253,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
                              inline_state->input.data[opener->position] == '^' &&
                              (literal->len > 1 || markdown_core_scaffold_next(label));
         const markdown_core_roster_record *definition =
-            caret_written ? markdown_core_inline_footnote_definition(inline_state, opener->position, initial_pos)
+            caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
                           : NULL;
         if (definition) {
             if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
@@ -366,7 +376,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
     const bool declared =
-        markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_FOOTNOTE, &c, footnote->place.start, &normal);
+        markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &c, footnote->place.start, &normal);
     if (normal.len) {
         footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
     }

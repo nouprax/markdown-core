@@ -26,7 +26,6 @@
 #include "index.h"
 #include "utf8.h"
 #include "inlines.h"
-#include "houdini.h"
 #include "buffer.h"
 
 #define TAB_STOP 4
@@ -456,8 +455,10 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->room_holder = NULL;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
-    markdown_core_roster_init(&parser->roster);
-    markdown_core_names_init(&parser->names, parser->dialect->namers);
+    if (!markdown_core_roster_init(&parser->roster, parser->dialect->space_count)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_names_init(&parser->names, parser->dialect->namers, parser->dialect->spelling);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
      * ownership. */
@@ -4455,10 +4456,11 @@ static bool S_use_name(const markdown_core_edit *edit, const markdown_core_use *
     const unsigned char *label = edit->use_labels.ptr + use->label;
     markdown_core_strbuf_clear(name);
     markdown_core_strbuf_putc(name, (int)use->kind);
-    if (use->kind == MARKDOWN_CORE_ROSTER_SPECIMEN) {
-        markdown_core_strbuf_put(name, label, (bufsize_t)use->size);
-    } else {
+    const markdown_core_space *space = edit->spaces[use->kind];
+    if (space && space->folds) {
         markdown_core_utf8proc_normalize_label(name, label, (bufsize_t)use->size);
+    } else {
+        markdown_core_strbuf_put(name, label, (bufsize_t)use->size);
     }
     return !name->oom;
 }
@@ -4625,7 +4627,7 @@ static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count) {
 
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal) {
-    if (kind == MARKDOWN_CORE_ROSTER_REFERENCE || kind == MARKDOWN_CORE_ROSTER_FOOTNOTE) {
+    if (markdown_core_parser_folds(parser, kind)) {
         if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, label, normal)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
@@ -5252,10 +5254,15 @@ static void S_revert_end(markdown_core_revert *revert) {
     }
 }
 
+/* Whether a cut owner reads an item from `byte` (dialect.h, `fronts`). */
+static inline bool S_cut_fronts(const markdown_core_dialect *dialect, unsigned char byte) {
+    return (dialect->fronts[byte >> 3] >> (byte & 7)) & 1u;
+}
+
 /* A block of literal lines leaps, and so does a paragraph whose text is all
- * its own, from its first byte to its last: one whose
- * front a definition may take, which may read past its first line, does
- * not. */
+ * its own, from its first byte to its last: one whose front a cut owner may
+ * take (its first byte is one a `cut_needs` declares), which may read past
+ * its first line, does not. */
 bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdown_core_node *block) {
     const unsigned flags = S_read_flags(parser, block);
     if (markdown_core_parser_reads_lines(parser, block)) {
@@ -5267,7 +5274,7 @@ bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdo
      * set as no line before it set it: a table's delimiter row that found
      * no header in it says no later one will. */
     return (flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) && !parser->input.mapped && !block->cut_front &&
-           !block->cut_back && block->content.size && block->content.ptr[0] != '[' &&
+           !block->cut_back && block->content.size && !S_cut_fronts(parser->dialect, block->content.ptr[0]) &&
            !(block->flags & (markdown_core_node_internal_flags) ~(MARKDOWN_CORE_NODE__ELEMENT_FIRST - 1));
 }
 
@@ -7754,6 +7761,7 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     if (!edit) {
         return false;
     }
+    edit->spaces = parser->dialect->spaces;
     edit->use_labels = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     edit->uses = markdown_core_tree_make(&S_uses_ops);
     edit->spare = UINT32_MAX;
@@ -9592,11 +9600,6 @@ static bool S_cut_starts_line(markdown_core_parser *parser, size_t start) {
     return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
 }
 
-/* Whether a cut owner reads an item from `byte` (dialect.h, `fronts`). */
-static inline bool S_cut_fronts(const markdown_core_dialect *dialect, unsigned char byte) {
-    return (dialect->fronts[byte >> 3] >> (byte & 7)) & 1u;
-}
-
 /* The item one of the dialect's cut owners reads at the front of
  * `cut->rest`, or 0. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
@@ -10031,7 +10034,7 @@ done:
  * containers are lists and list items -- the containers that accept every
  * blank line -- steps over a recorded run at once. Footnote definitions
  * accept a blank line by its shape, so a scan visits their blank lines one by
- * one; their nesting is bounded by MAX_FOOTNOTE_DEPTH, so that visit count is
+ * one; the footnote element bounds their nesting, so that visit count is
  * a constant factor. A block quote rejects a blank line, so a scan below one
  * ends at the run's first line. Deliberately nested failing candidates inside
  * directive containers cannot be built: a `%%` line in an inner container is

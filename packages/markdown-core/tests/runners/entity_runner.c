@@ -1,7 +1,7 @@
 /* Entity reference suite.
  *
- * Parses "&name;" for every entity in the engine's entity table (included
- * directly from core/entities.inc) through the read-only facade and checks
+ * Parses "&name;" for every entity in the entities element's table (included
+ * directly from elements/entities.inc) through the read-only facade and checks
  * that the concatenated Text literals of the resulting AST contain the
  * expected UTF-8 expansion.  No renderer and no HTML escaping are involved:
  * the AST carries the raw expansion bytes.

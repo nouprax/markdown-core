@@ -8,7 +8,6 @@
 #include <string.h>
 #include "markdown_core_ctype.h"
 #include "utf8.h"
-#include "houdini.h"
 #include "inlines.h"
 #include "element.h"
 #include "sink.h"

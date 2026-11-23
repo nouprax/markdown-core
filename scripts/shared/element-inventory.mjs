@@ -8,7 +8,8 @@ import path from "node:path";
  * audit's inventory.
  *
  * A descriptor names the interface tables it implements (`.inlines =
- * &NAME_INLINES`, element.h); each is read from the same source into
+ * &NAME_INLINES`, element.h) and the declarations it makes (`.spelling =
+ * &NAME_SPELLING`); each is read from the same source into
  * `tables`, by field, and a named table the source does not define fails.
  */
 export function parseElementInventory(sources) {
@@ -26,7 +27,7 @@ export function parseElementInventory(sources) {
             const tables = {};
             for (const [, field, name] of body.matchAll(/\.(\w+)\s*=\s*&\s*(\w+)/g)) {
                 const table = new RegExp(
-                    `\\bconst\\s+markdown_core_\\w+_ops\\s+${name}\\s*=\\s*\\{([\\s\\S]*?)^\\};`,
+                    `\\bconst\\s+markdown_core_\\w+\\s+${name}\\s*=\\s*\\{([\\s\\S]*?)^\\};`,
                     "m"
                 ).exec(source);
                 if (table === null) throw new Error(`${symbol}: could not read its ${field} table ${name}`);

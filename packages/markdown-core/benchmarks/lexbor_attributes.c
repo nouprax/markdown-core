@@ -28,6 +28,10 @@
 
 const char *bench_baseline_name(void) { return "lexbor"; }
 
+int bench_setup(void) { return 0; }
+
+void bench_teardown(void) {}
+
 typedef struct {
     attribute_receipt *receipt;
     FILE *census;

@@ -5,6 +5,8 @@
 bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
                                      markdown_core_reader *reader);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN;
+/* The space of specimen definitions' labels (roster.h), as written. */
+extern const markdown_core_space MARKDOWN_CORE_SPECIMEN_SPACE;
 
 /* THE SPECIMENS OF ONE PARSE (the specimen element's parse record): the
  * marker bytes the element stepped over, for its complexity gate. Each
