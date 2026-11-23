@@ -1,24 +1,24 @@
 #include "alloc.h"
-#include "escape.h"
-#include "entities.h"
+#include "services.h"
 #include "link_scanners.h"
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
-#include "attributes.h"
 #include "parts.h"
+#include "attributes.h"
 #include "link.h"
-#include "embedded.h"
-#include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { LINK_EMBEDDED, LINK_ATTRIBUTES, LINK_FOOTNOTE, LINK_ESCAPE, LINK_ENTITIES };
-static const markdown_core_element *const LINK_PEERS[] = {
-    [LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
-    [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE, [LINK_ESCAPE] = &MARKDOWN_CORE_ELEMENT_ESCAPE,
-    [LINK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES, NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { LINK_DIMENSIONS, LINK_ATTRIBUTES, LINK_ESCAPES, LINK_REFERENCES };
+static const char *const LINK_NEEDS[] = {[LINK_DIMENSIONS] = MARKDOWN_CORE_SERVICE_DIMENSIONS,
+                                         [LINK_ATTRIBUTES] = MARKDOWN_CORE_SERVICE_ATTRIBUTES,
+                                         [LINK_ESCAPES] = MARKDOWN_CORE_SERVICE_ESCAPES,
+                                         [LINK_REFERENCES] = MARKDOWN_CORE_SERVICE_REFERENCES,
+                                         NULL};
 
-const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET = {.width = 1, .mark = 0, .closer = ']'};
+/* A link's bracket, opened by a `[` (bracket.h). */
+static const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET = {
+    .width = 1, .mark = 0, .closer = ']', .kind = MARKDOWN_CORE_KIND_LINK};
 
 const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE = {.name = "reference", .folds = true};
 /* The spaces this element files labels in, as `self->spaces` numbers them. */
@@ -32,9 +32,19 @@ typedef struct {
     markdown_core_attribute_parser held;
 } S_state;
 
+/* The held recognizer let go, which only the grammar that began it held. */
+static void S_release(const markdown_core_element_instance *self) {
+    markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
+    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
+    if (need.ops) {
+        ((const markdown_core_attribute_ops *)need.ops)->release(need.instance, held);
+    }
+    *held = (markdown_core_attribute_parser){0};
+}
+
 static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)parser;
-    markdown_core_attribute_parser_free(&((S_state *)self->state)->held);
+    S_release(self);
 }
 
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
@@ -57,9 +67,9 @@ markdown_core_chunk markdown_core_clean_url(const markdown_core_element_instance
         return markdown_core_chunk_literal("");
     }
 
-    markdown_core_entities_copy(link->peers[LINK_ENTITIES], &buf, url->data, url->len);
+    markdown_core_decoder_write(link->needs[LINK_REFERENCES], &buf, url->data, url->len);
 
-    markdown_core_escape_strip(link->peers[LINK_ESCAPE], &buf);
+    markdown_core_decoder_strip(link->needs[LINK_ESCAPES], &buf);
     if (buf.oom && lost) {
         *lost = 1;
     }
@@ -80,12 +90,12 @@ markdown_core_optional_chunk markdown_core_clean_title(const markdown_core_eleme
 
     // remove surrounding quotes if any:
     if ((first == '\'' && last == '\'') || (first == '(' && last == ')') || (first == '"' && last == '"')) {
-        markdown_core_entities_copy(link->peers[LINK_ENTITIES], &buf, title->data + 1, title->len - 2);
+        markdown_core_decoder_write(link->needs[LINK_REFERENCES], &buf, title->data + 1, title->len - 2);
     } else {
-        markdown_core_entities_copy(link->peers[LINK_ENTITIES], &buf, title->data, title->len);
+        markdown_core_decoder_write(link->needs[LINK_REFERENCES], &buf, title->data, title->len);
     }
 
-    markdown_core_escape_strip(link->peers[LINK_ESCAPE], &buf);
+    markdown_core_decoder_strip(link->needs[LINK_ESCAPES], &buf);
     if (buf.oom && lost) {
         *lost = 1;
     }
@@ -233,27 +243,36 @@ static void spnl(markdown_core_inline_state *inline_state) {
                                                 window.data, markdown_core_inline_offset(inline_state), window.len));
 }
 
-static bool reference_tail(markdown_core_inline_state *inline_state, markdown_core_attribute_parser *attributes,
+/* What a definition's attribute tail is read with: the attribute grammar
+ * (services.h, markdown_core_attribute_ops), its provider and the
+ * recognizer over the definition's text. */
+typedef struct {
+    const markdown_core_attribute_ops *ops;
+    const markdown_core_element_instance *self;
+    markdown_core_attribute_parser *p;
+} S_tails;
+
+static bool reference_tail(markdown_core_inline_state *inline_state, const S_tails *tails,
                            markdown_core_attributes *value, bool *wide) {
     bufsize_t before = markdown_core_inline_offset(inline_state);
-    if (!attributes) {
+    if (!tails) {
         /* A dialect without attribute blocks reads none. */
         markdown_core_inline_skip_spaces(inline_state);
         return markdown_core_inline_skip_line_end(inline_state);
     }
     spnl(inline_state);
-    bufsize_t base = (bufsize_t)(markdown_core_inline_window(inline_state, 0).data - attributes->data);
+    bufsize_t base = (bufsize_t)(markdown_core_inline_window(inline_state, 0).data - tails->p->data);
     bufsize_t start = base + markdown_core_inline_offset(inline_state);
     /* An attribute list looked for reads on to where it ends, or to the
      * text's end. */
     *wide |= markdown_core_inline_offset(inline_state) < markdown_core_inline_size(inline_state) &&
              markdown_core_inline_char_at(inline_state, markdown_core_inline_offset(inline_state)) == '{';
-    bufsize_t end = markdown_core_attributes_end(attributes, start);
+    bufsize_t end = tails->ops->end(tails->self, tails->p, start);
     if (end) {
         markdown_core_inline_seek(inline_state, end - base);
         markdown_core_inline_skip_spaces(inline_state);
         if (markdown_core_inline_skip_line_end(inline_state)) {
-            return markdown_core_attributes_parse(attributes, start, value, &end) != 0;
+            return tails->ops->parse(tails->self, tails->p, start, value, &end);
         }
     }
     markdown_core_inline_seek(inline_state, before);
@@ -272,7 +291,7 @@ typedef struct {
     bool wide;
 } reference_definition;
 
-static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
+static bufsize_t S_reference_definition(markdown_core_chunk *input, const S_tails *tails,
                                         reference_definition *definition) {
     markdown_core_inline_state inline_state;
     const markdown_core_chunk absent_title = MARKDOWN_CORE_CHUNK_EMPTY;
@@ -321,10 +340,10 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, &definition->value, &definition->wide)) {
+    if (!reference_tail(&inline_state, tails, &definition->value, &definition->wide)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, &definition->value, &definition->wide)) {
+            if (!reference_tail(&inline_state, tails, &definition->value, &definition->wide)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -344,18 +363,23 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
 
 bufsize_t markdown_core_reference_definition_length(const markdown_core_element_instance *self,
                                                     markdown_core_parser *parser, markdown_core_chunk *input) {
-    const markdown_core_element_instance *peer = self->peers[LINK_ATTRIBUTES];
-    markdown_core_attribute_parser attributes = {
-        .data = input->data, .length = input->len, .scratch = peer ? markdown_core_attributes_scratch(peer) : NULL};
+    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
+    markdown_core_attribute_parser attributes = {0};
+    const S_tails tails = {need.ops, need.instance, &attributes};
+    if (tails.ops) {
+        tails.ops->begin(need.instance, &attributes, input->data, input->len);
+    }
     reference_definition definition;
-    bufsize_t length = S_reference_definition(input, peer ? &attributes : NULL, &definition);
+    bufsize_t length = S_reference_definition(input, tails.ops ? &tails : NULL, &definition);
     if (length) {
         markdown_core_attributes_free(&definition.value);
     }
     if (attributes.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    markdown_core_attribute_parser_free(&attributes);
+    if (tails.ops) {
+        tails.ops->release(need.instance, &attributes);
+    }
     return length;
 }
 
@@ -363,8 +387,8 @@ static bool S_report_reference(markdown_core_parser *parser, markdown_core_node 
                                bufsize_t before, const markdown_core_chunk *url);
 static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                             bufsize_t before);
-static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
-                          bufsize_t before);
+static void S_report_tail(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *b, markdown_core_chunk *input, bufsize_t before);
 
 /* THE FRONT CUT'S ITEM (element.h, markdown_core_cut): the link reference
  * definition at the front of `cut->rest`, `cut->at` bytes into the block's
@@ -378,16 +402,16 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
     const bufsize_t before = cut->at;
     /* A cut's first item begins a text: the recognizer of the last is let
      * go, and the next reads this one. */
-    const markdown_core_element_instance *peer = self->peers[LINK_ATTRIBUTES];
+    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
     markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
-    if (peer && (cut->at == 0 || held->data != cut->text.data || held->length != cut->text.len)) {
-        markdown_core_attribute_parser_free(held);
-        *held = (markdown_core_attribute_parser){
-            .data = cut->text.data, .length = cut->text.len, .scratch = markdown_core_attributes_scratch(peer)};
+    const S_tails tails = {need.ops, need.instance, held};
+    if (tails.ops && (cut->at == 0 || held->data != cut->text.data || held->length != cut->text.len)) {
+        tails.ops->release(need.instance, held);
+        tails.ops->begin(need.instance, held, cut->text.data, cut->text.len);
     }
     reference_definition definition; /* S_reference_definition writes it whole. */
-    bufsize_t length = S_reference_definition(input, peer ? held : NULL, &definition);
-    if (peer && held->oom) {
+    bufsize_t length = S_reference_definition(input, tails.ops ? &tails : NULL, &definition);
+    if (tails.ops && held->oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     cut->wide = definition.wide;
@@ -400,14 +424,14 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
     if (!length) {
         if (parser->sink) {
             S_report_unread(parser, b, input, before);
-            S_report_tail(parser, b, input, before);
+            S_report_tail(self, parser, b, input, before);
         }
         return 0;
     }
     /* A definition whose destination the content's end cuts short may yet
      * be text: the run reads it too. */
     if (parser->sink) {
-        S_report_tail(parser, b, input, before);
+        S_report_tail(self, parser, b, input, before);
         if (S_report_reference(parser, b, input, before, &definition.url)) {
             markdown_core_attributes_free(&definition.value);
             return 0;
@@ -462,9 +486,7 @@ static bufsize_t S_cut_reference(const markdown_core_element_instance *self, mar
     const bufsize_t rest = cut->rest.len;
     const bufsize_t length = S_cut_item(self, parser, reader, cut);
     if (!length || length == rest) {
-        markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
-        markdown_core_attribute_parser_free(held);
-        *held = (markdown_core_attribute_parser){0};
+        S_release(self);
     }
     return length;
 }
@@ -588,7 +610,7 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
     if (S_reference_cut(data, path, hash, end)) {
         return;
     }
-    const bool image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
+    const bool image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
     const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
     const bufsize_t at = opener->position - opener->shape->width;
     if (hash < end) {
@@ -744,12 +766,13 @@ static bufsize_t S_tail_brace(markdown_core_chunk *input) {
 
 /* The member of the attribute block after a definition's destination or
  * title that the content's end leaves open, to the parse's context sink. */
-static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
-                          bufsize_t before) {
-    const bufsize_t brace = S_tail_brace(input);
+static void S_report_tail(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *b, markdown_core_chunk *input, bufsize_t before) {
+    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
+    const markdown_core_attribute_ops *attributes = need.ops;
+    const bufsize_t brace = attributes ? S_tail_brace(input) : -1;
     markdown_core_field member;
-    if (brace < 0 ||
-        !markdown_core_attributes_open_member(input->data, S_content_length(input), brace, &member, NULL)) {
+    if (brace < 0 || !attributes->member(need.instance, input->data, S_content_length(input), brace, &member, NULL)) {
         return;
     }
     bufsize_t at[5] = {brace, member.start, member.prefix[0][0], member.prefix[0][1], 0};
@@ -786,7 +809,7 @@ static void S_report_label(markdown_core_inline_state *inline_state, const brack
         start + 1 + markdown_core_inline_reference_label_length(data + start + 1, len - start - 1) < len) {
         return;
     }
-    const bool image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
+    const bool image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
     const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
     const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, label_end, {{0}}, 0, false, 0};
     markdown_core_inline_open(inline_state, kind, opener->position - opener->shape->width, opener->position, &label, 1);
@@ -805,7 +828,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
     // Now we check to see if it's a link/image.
-    bool is_image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
+    bool is_image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
 
     bool link_allowed = is_image || !markdown_core_brackets(inline_state)->no_link_openers;
 
@@ -912,7 +935,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
 bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
                                markdown_core_inline_state *inline_state, bracket *opener,
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
-    bool is_image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
+    bool is_image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
     bool explicit_tail = candidate->explicit_tail;
     bool reference = candidate->label.len != 0;
     markdown_core_chunk url = candidate->url;
@@ -989,8 +1012,11 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
 
     /* Only the embedded element opens an image bracket. */
     if (is_image) {
-        markdown_core_inline_apply_image_dimensions(link->peers[LINK_EMBEDDED], inline_state, opener, inl,
-                                                    initial_pos - 1);
+        const markdown_core_need dimensions = link->needs[LINK_DIMENSIONS];
+        if (dimensions.ops) {
+            ((const markdown_core_dimension_ops *)dimensions.ops)
+                ->apply(dimensions.instance, inline_state, opener, inl, initial_pos - 1);
+        }
     }
 
     // Free the bracket [:
@@ -1089,9 +1115,7 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
         const bufsize_t start = b->position - b->shape->width;
         markdown_core_field fields[2];
         size_t count = 0;
-        markdown_core_node_kind opens = b->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET   ? MARKDOWN_CORE_KIND_EMBEDDED
-                                        : b->shape == &MARKDOWN_CORE_FOOTNOTE_BRACKET ? MARKDOWN_CORE_KIND_FOOTNOTE
-                                                                                      : MARKDOWN_CORE_KIND_NONE;
+        markdown_core_node_kind opens = own ? MARKDOWN_CORE_KIND_NONE : b->shape->kind;
         const bool label = own && b->position + markdown_core_inline_reference_label_length(
                                                     markdown_core_inline_window(inline_state, 0).data + b->position,
                                                     markdown_core_inline_size(inline_state) - b->position) ==
@@ -1228,14 +1252,32 @@ void markdown_core_link_parts(markdown_core_parts *parts) {
 /* THE PARTS OF A REFERENCE DEFINITION (parts.h), as S_reference_definition
  * reads it: its label, its destination, its title inside its quotes, and
  * the attribute container after them. */
+static bufsize_t S_parts_end(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
+                             bufsize_t start) {
+    (void)self;
+    return markdown_core_attributes_end(p, start);
+}
+
+static bool S_parts_parse(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
+                          bufsize_t start, markdown_core_attributes *value, bufsize_t *end) {
+    (void)self;
+    return markdown_core_attributes_parse(p, start, value, end) != 0;
+}
+
+/* The attribute grammar a reader of a published node asks outside a parse,
+ * with no dialect's service to ask: its own functions (parts readers go
+ * when slots are recorded as the parse reads them, plan 8.3). */
+static const markdown_core_attribute_ops S_PARTS_ATTRIBUTES = {.end = S_parts_end, .parse = S_parts_parse};
+
 void markdown_core_reference_parts(markdown_core_parts *parts) {
     /* Through the line ending after the text, which ends a bare
      * destination. */
     markdown_core_chunk input = {(unsigned char *)parts->text, parts->length + 1, 0};
     markdown_core_attribute_scratch scratch = {0};
     markdown_core_attribute_parser attributes = {.data = parts->text, .length = input.len, .scratch = &scratch};
+    const S_tails tails = {&S_PARTS_ATTRIBUTES, NULL, &attributes};
     reference_definition definition;
-    const bufsize_t length = S_reference_definition(&input, &attributes, &definition);
+    const bufsize_t length = S_reference_definition(&input, &tails, &definition);
     parts->failed = parts->failed || attributes.oom;
     if (length) {
         const unsigned char *s = parts->text;
@@ -1279,15 +1321,25 @@ static const markdown_core_open_ops LINK_OPENS = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts},
-    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts},
+    {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts, .words = markdown_core_words_children},
     {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+static bufsize_t S_label_length(const markdown_core_element_instance *self, const unsigned char *data, bufsize_t size) {
+    (void)self;
+    return markdown_core_inline_reference_label_length(data, size);
+}
+
+static const markdown_core_label_ops LINK_LABELS = {.length = S_label_length,
+                                                    .definition = markdown_core_reference_definition_length};
+static const markdown_core_service LINK_SERVICES[] = {{MARKDOWN_CORE_SERVICE_LABELS, &LINK_LABELS}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
+    .provides = LINK_SERVICES,
     .facets = MARKDOWN_CORE_LINK_FACETS,
-    .peers = LINK_PEERS,
+    .needs = LINK_NEEDS,
     .spaces = LINK_SPACES,
     .state_size = sizeof(S_state),
     .dispose_parser = dispose_parser,

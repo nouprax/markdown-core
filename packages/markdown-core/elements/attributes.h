@@ -2,10 +2,12 @@
 #define MARKDOWN_CORE_ELEMENT_ATTRIBUTES_H
 #include "inlines.h"
 #include "../core/attributes.h"
+#include "services.h"
 
 /* THE ATTRIBUTE GRAMMAR, the attribute element's: its recognizer and its
- * decoder, which the elements that declare it a peer ask (element.h,
- * `peers`). */
+ * decoder, which other elements ask through the service it provides
+ * (services.h, MARKDOWN_CORE_SERVICE_ATTRIBUTES), and the engine's own
+ * readers and tests here. */
 /* THE WORKSPACE A CONTAINER IS READ INTO before it is laid out as a value
  * (`markdown_core_attributes_parse`): its decoded strings, each
  * NUL-terminated, and each class and record as offsets into them, in source
@@ -26,34 +28,20 @@ typedef struct markdown_core_attribute_scratch {
      * added once as that recogniser is released, for the attribute grammar's
      * complexity gate. */
     size_t work;
-    /* The entities element's instance, whose references a quoted value
-     * decodes (entities.h): set by `markdown_core_attributes_scratch`, NULL
-     * in a workspace of no parse, which decodes none. */
-    const struct markdown_core_element_instance *entities;
+    /* The decoder of the references a quoted value decodes (services.h,
+     * MARKDOWN_CORE_SERVICE_REFERENCES): set by
+     * `markdown_core_attributes_scratch`, none in a workspace of no parse,
+     * which decodes none. */
+    markdown_core_need references;
 } markdown_core_attribute_scratch;
 
-/* A recogniser belongs to one immutable input extent. It walks forward from
- * each candidate brace it is asked about and memoises, by position, the
- * answer for every member boundary and every `=` it passes, so overlapping
- * candidates cannot repeatedly scan that extent (elements/attributes.c states
- * the memo's encoding and why its walks tile the extent). Values are decoded
- * only after recognition succeeds, into `scratch`, which the recogniser
- * borrows from whoever owns the parse: required by
- * `markdown_core_attributes_parse`, never touched by recognition. */
-typedef struct {
-    const unsigned char *data;
-    bufsize_t length;
-    struct markdown_core_attribute_suffix {
-        bufsize_t end;
-        bufsize_t assignment_end;
-    } *ends;
-    markdown_core_attribute_scratch *scratch;
-    size_t work;
-    int oom;
-    /* Whether a quote's lookahead met the extent's end with no closer: what
-     * the walks answered may change once the input goes on. */
-    int ran_out;
-} markdown_core_attribute_parser;
+/* A recogniser (services.h, markdown_core_attribute_parser) memoises, by
+ * position, the answer for every member boundary and every `=` it passes:
+ * its `ends`, one per byte of its extent. */
+struct markdown_core_attribute_suffix {
+    bufsize_t end;
+    bufsize_t assignment_end;
+};
 
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
 void markdown_core_attribute_scratch_free(markdown_core_attribute_scratch *scratch);
@@ -69,7 +57,7 @@ bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *parser, 
 int markdown_core_attributes_parse(markdown_core_attribute_parser *parser, bufsize_t start,
                                    markdown_core_attributes *result, bufsize_t *end);
 
-/* THE PARTS OF AN ATTRIBUTE BLOCK (parts.h) in a node of a kind of a peer:
+/* THE PARTS OF AN ATTRIBUTE BLOCK (parts.h) in a node of another kind:
  * those of the container whose `{` is at `brace`, one past its `}`, or
  * `brace` when none closes there; and those of the container that ends a
  * block's line at `end`, but for spaces and tabs, read after `from` as the
@@ -82,7 +70,7 @@ bufsize_t markdown_core_attributes_tail_parts(struct markdown_core_parts *parts,
  * (`scratch`). */
 markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self);
 struct markdown_core_field;
-/* THE SYNTAX QUESTION A PEER ASKS (element.h, `peers`): where an attribute
+/* THE SERVICE'S `closes` (services.h): where an attribute
  * block at content offset `start` of a construct of kind `owner` closes,
  * one past its `}`, or 0 when none closes there. The block's value is the
  * attribute element's to write: it updates the node the construct makes
@@ -116,19 +104,6 @@ bufsize_t markdown_core_attributes_name_end(const unsigned char *data, bufsize_t
 bool markdown_core_attributes_report(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                      markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
                                      bufsize_t end);
-/* A PEER'S SYNTAX QUESTION OF A BLOCK LINE: where the attribute block at
- * `start` of the `length` bytes at `data` closes, one past its `}`, or 0
- * when none closes there. What it recognized stays in `held`, zeroed before
- * the question, which the asker keeps: the block's value is the attribute
- * element's to write into the block the line opens
- * (markdown_core_attributes_write), from what it recognized, and `held` is
- * let go either way (markdown_core_attributes_release). */
-bufsize_t markdown_core_attributes_close_at(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_attribute_parser *held, const unsigned char *data,
-                                            bufsize_t length, bufsize_t start);
-bool markdown_core_attributes_write(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_attribute_parser *held, bufsize_t start, markdown_core_node *node);
-void markdown_core_attributes_release(const markdown_core_element_instance *self, markdown_core_attribute_parser *held);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES;
 
 #endif

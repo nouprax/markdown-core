@@ -1,5 +1,4 @@
-#include "escape.h"
-#include "entities.h"
+#include "services.h"
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
@@ -8,15 +7,14 @@
 #include "attributes.h"
 #include <string.h>
 
-/* The elements whose syntax this element asks: where an attribute tail
- * ends an info string's first word, and the escapes and references the
- * info string decodes. */
-enum { CODE_BLOCK_ATTRIBUTES, CODE_BLOCK_ESCAPE, CODE_BLOCK_ENTITIES };
-static const markdown_core_element *const CODE_BLOCK_PEERS[] = {[CODE_BLOCK_ATTRIBUTES] =
-                                                                    &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
-                                                                [CODE_BLOCK_ESCAPE] = &MARKDOWN_CORE_ELEMENT_ESCAPE,
-                                                                [CODE_BLOCK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES,
-                                                                NULL};
+/* The services this element asks, as `self->needs` holds them: where an
+ * attribute tail ends an info string's first word, and the escapes and
+ * references the info string decodes. */
+enum { CODE_BLOCK_ATTRIBUTES, CODE_BLOCK_ESCAPES, CODE_BLOCK_REFERENCES };
+static const char *const CODE_BLOCK_NEEDS[] = {[CODE_BLOCK_ATTRIBUTES] = MARKDOWN_CORE_SERVICE_ATTRIBUTES,
+                                               [CODE_BLOCK_ESCAPES] = MARKDOWN_CORE_SERVICE_ESCAPES,
+                                               [CODE_BLOCK_REFERENCES] = MARKDOWN_CORE_SERVICE_REFERENCES,
+                                               NULL};
 #define peek_at(input, at) ((input)->data[(at)])
 
 /* The end of an indented code block's literal: past the line ending of its
@@ -159,16 +157,19 @@ static bufsize_t space_reference(const unsigned char *data, bufsize_t at, bufsiz
  * as the fence's info string leaves it; a brace that opens no tail is a
  * byte of the word. `cut` says whether a reference the data's end cuts
  * short may yet spell a space. */
-static bufsize_t info_word(const unsigned char *data, bufsize_t length, bool *cut) {
+static bufsize_t info_stop(const unsigned char *data, bufsize_t length) {
     bufsize_t stop = length;
     while (stop > 0 && markdown_core_is_whitespace(data[stop - 1])) {
         stop--;
     }
-    markdown_core_attribute_parser attributes = {.data = data, .length = stop};
-    const bufsize_t tail = markdown_core_attributes_tail(&attributes, 0, stop);
-    const int oom = attributes.oom;
-    markdown_core_attribute_parser_free(&attributes);
-    if (oom) {
+    return stop;
+}
+
+/* (info_word) The `tail` the attribute grammar finds: where the block that
+ * ends the data but for white space starts, -1 when none does, or -2 when
+ * storage could not be had. */
+static bufsize_t info_word(const unsigned char *data, bufsize_t length, bufsize_t tail, bool *cut) {
+    if (tail < -1) {
         return -1;
     }
     bufsize_t end = 0;
@@ -192,9 +193,17 @@ static bufsize_t info_word(const unsigned char *data, bufsize_t length, bool *cu
     }
     return end;
 }
+/* The field's end as a context query reads it, outside a parse: the
+ * attribute grammar's own reader (context delegates, plan 8.5, give it the
+ * service). */
 static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
     bool cut;
-    return info_word(data, length, &cut);
+    const bufsize_t stop = info_stop(data, length);
+    markdown_core_attribute_parser attributes = {.data = data, .length = stop};
+    const bufsize_t tail = markdown_core_attributes_tail(&attributes, 0, stop);
+    const int oom = attributes.oom;
+    markdown_core_attribute_parser_free(&attributes);
+    return info_word(data, length, oom ? -2 : tail, &cut);
 }
 
 /* The fence line's field the line's end cuts short, `rest` its `length`
@@ -204,8 +213,8 @@ static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
  * the references that spell them before it. Both are candidates: what
  * follows the cursor decides whether the brace opens a tail or is a byte of
  * the word, so the query confirms one against the whole line. */
-static void S_report_info(markdown_core_parser *parser, markdown_core_reader *reader, const unsigned char *rest,
-                          bufsize_t length) {
+static void S_report_info(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_reader *reader, const unsigned char *rest, bufsize_t length) {
     const bufsize_t offset = reader->offset;
     bufsize_t start = 0, space;
     while (start < length) {
@@ -218,7 +227,17 @@ static void S_report_info(markdown_core_parser *parser, markdown_core_reader *re
         }
     }
     bool cut;
-    const bufsize_t end = info_word(rest + start, length - start, &cut);
+    const markdown_core_need need = self->needs[CODE_BLOCK_ATTRIBUTES];
+    const markdown_core_attribute_ops *attributes = need.ops;
+    const bufsize_t stop = info_stop(rest + start, length - start);
+    bufsize_t tail = -1;
+    if (attributes) {
+        markdown_core_attribute_parser recognizer = {.data = rest + start, .length = stop};
+        tail = attributes->tail(need.instance, &recognizer, 0, stop);
+        tail = recognizer.oom ? -2 : tail;
+        attributes->release(need.instance, &recognizer);
+    }
+    const bufsize_t end = info_word(rest + start, length - start, tail, &cut);
     if (end < 0) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     } else if (!cut && start + end == length) {
@@ -246,7 +265,7 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
     const bufsize_t offset = reader->offset;
     bufsize_t info_end = pos - markdown_core_parser_offer(parser, b, rest - offset, offset, offset + pos, true);
     if (parser->sink) {
-        S_report_info(parser, reader, rest, pos);
+        S_report_info(self, parser, reader, rest, pos);
     }
     b->as.code->literal_start = pos + 1;
     markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
@@ -257,8 +276,8 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
     while (info_end > info_start && markdown_core_is_space_or_tab(rest[info_end - 1])) {
         info_end--;
     }
-    markdown_core_entities_copy(self->peers[CODE_BLOCK_ENTITIES], &tmp, rest + info_start, info_end - info_start);
-    markdown_core_escape_strip(self->peers[CODE_BLOCK_ESCAPE], &tmp);
+    markdown_core_decoder_write(self->needs[CODE_BLOCK_REFERENCES], &tmp, rest + info_start, info_end - info_start);
+    markdown_core_decoder_strip(self->needs[CODE_BLOCK_ESCAPES], &tmp);
     /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
      * A fence with nothing but whitespace after it wrote none, and
      * this is the only place that still knows the difference between
@@ -438,7 +457,7 @@ const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
-    .peers = CODE_BLOCK_PEERS,
+    .needs = CODE_BLOCK_NEEDS,
     .facets = MARKDOWN_CORE_CODE_BLOCK_FACETS,
     .edit = &CODE_BLOCK_EDIT,
     .name = "code_block",

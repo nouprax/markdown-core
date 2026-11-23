@@ -1,4 +1,5 @@
 #include "topic.h"
+#include "services.h"
 #include "parts.h"
 #include "inline_internal.h"
 #include "utf8.h"
@@ -158,7 +159,12 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_st
 /* (topic.h) A line of `#` signs the input's end cuts short, from `first`
  * to `end`, is a heading only while nothing follows its last sign: the
  * name that may yet follow is a topic's, or a block identifier's. */
-void markdown_core_topic_report_line(markdown_core_parser *parser, bufsize_t first, bufsize_t end) {
+/* The fields a line of `#` signs from `first` to `end`, which the input's
+ * end cuts short, leaves open, to the parse's context sink (services.h,
+ * MARKDOWN_CORE_SERVICE_TOPIC_LINES). */
+static void S_report_line(const markdown_core_element_instance *self, markdown_core_parser *parser, bufsize_t first,
+                          bufsize_t end) {
+    (void)self;
     markdown_core_field fields[1 + NAMED_COUNT] = {
         {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, end, name_end, {{0}}, 0, false, 0}};
     size_t count = 1;
@@ -268,12 +274,21 @@ static const markdown_core_inline_ops TOPIC_INLINES = {
     .dispatch = "#",
 };
 
+/* A topic reads as its `#` and its name in a name. */
+static bool S_words(const markdown_core_node *node, const markdown_core_words *words) {
+    return words->text(words->context, (const unsigned char *)"#", 1) && markdown_core_words_literal(node, words);
+}
+
 const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TOPIC, .parts = markdown_core_topic_parts},
+    {.kind = MARKDOWN_CORE_KIND_TOPIC, .parts = markdown_core_topic_parts, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+static const markdown_core_report_ops TOPIC_LINES = {.report = S_report_line};
+static const markdown_core_service TOPIC_SERVICES[] = {{MARKDOWN_CORE_SERVICE_TOPIC_LINES, &TOPIC_LINES}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
+    .provides = TOPIC_SERVICES,
     .facets = MARKDOWN_CORE_TOPIC_FACETS,
     .name = "topic",
     .run_state_size = sizeof(topic_run),

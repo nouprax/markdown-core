@@ -31,6 +31,7 @@
 #include "markdown-core-elements.h"
 #include "document.h"
 #include "../../elements/attributes.h"
+#include "../../elements/emphasis.h"
 #include "sink.h"
 #include "block_identifier.h"
 #include "link.h"
@@ -4994,25 +4995,31 @@ static void properties_source_boundaries(test_batch_runner *runner) {
     markdown_core_dump_free(dumps[1]);
 }
 
-/* SEALING RESOLVES DECLARED PEERS. An element's `peers` become, in their
- * order, the instances the parser holds for them -- the same one the parser
- * answers from outside the dialect -- and NULL for one the dialect lacks. */
-static const markdown_core_element PEER_ABSENT = {.name = "absent"};
-static const markdown_core_element *const PROBE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_TABLE, &PEER_ABSENT,
-                                                           &MARKDOWN_CORE_ELEMENT_LINK, NULL};
-static int peers_resolved;
-static void observe_peers(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    peers_resolved = self->peers[0] == markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE) &&
-                     self->peers[0] && self->peers[0]->element == &MARKDOWN_CORE_ELEMENT_TABLE && !self->peers[1] &&
-                     self->peers[2] == markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_LINK) &&
-                     self->peers[2] && !markdown_core_parser_instance(parser, &PEER_ABSENT);
+/* SEALING RESOLVES THE SERVICES AN ELEMENT NEEDS. Its `needs` become, in
+ * their order, the instance of the last element registered that provides
+ * each and that element's operations -- the provider the parser answers for
+ * from outside the dialect -- and both NULL for one no element provides. A
+ * setup that registers a provider of a service a core element provides
+ * takes it over. */
+static const markdown_core_label_ops PROBE_LABELS = {0};
+static const markdown_core_service PROBE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_LABELS, &PROBE_LABELS}, {0}};
+static const markdown_core_element PROBE_PROVIDER = {.name = "provider", .provides = PROBE_SERVICES};
+static const char *const PROBE_NEEDS[] = {MARKDOWN_CORE_SERVICE_FLANK, "no such service", MARKDOWN_CORE_SERVICE_LABELS,
+                                          NULL};
+static int needs_resolved;
+static void observe_needs(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    needs_resolved =
+        self->needs[0].instance == markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_EMPHASIS) &&
+        self->needs[0].instance && self->needs[0].ops && !self->needs[1].instance && !self->needs[1].ops &&
+        self->needs[2].instance == markdown_core_parser_instance(parser, &PROBE_PROVIDER) && self->needs[2].instance &&
+        self->needs[2].ops == &PROBE_LABELS;
 }
-static void peers_resolve_at_seal(test_batch_runner *runner) {
-    static const markdown_core_element probe = {.dispose_parser = observe_peers, .peers = PROBE_PEERS};
-    const markdown_core_element *elements[] = {&probe};
-    peers_resolved = 0;
-    markdown_core_node *root = parse_with_probes("text\n", 5, elements, 1);
-    OK(runner, root != NULL && peers_resolved, "declared peers resolve in order, absent ones to NULL");
+static void needs_resolve_at_seal(test_batch_runner *runner) {
+    static const markdown_core_element probe = {.dispose_parser = observe_needs, .needs = PROBE_NEEDS};
+    const markdown_core_element *elements[] = {&probe, &PROBE_PROVIDER};
+    needs_resolved = 0;
+    markdown_core_node *root = parse_with_probes("text\n", 5, elements, 2);
+    OK(runner, root != NULL && needs_resolved, "needs resolve in order to the last provider, absent ones to NULL");
     markdown_core_node_free(root);
 }
 
@@ -12864,7 +12871,7 @@ int main(void) {
     properties_source_boundaries(runner);
     properties_nul(runner);
     properties_member_work(runner);
-    peers_resolve_at_seal(runner);
+    needs_resolve_at_seal(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
     callout_linear_work(runner);

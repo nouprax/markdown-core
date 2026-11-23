@@ -12,12 +12,11 @@
 #include "parts.h"
 
 #include "table.h"
-#include "directive.h"
+#include "services.h"
 
-/* The elements whose syntax this element asks, as `self->peers` holds
- * them. */
-enum { TABLE_DIRECTIVE };
-static const markdown_core_element *const TABLE_PEERS[] = {[TABLE_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE, NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { TABLE_DIRECTIVE_LINES };
+static const char *const TABLE_NEEDS[] = {[TABLE_DIRECTIVE_LINES] = MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES, NULL};
 #include "block_internal.h"
 #include "markdown-core-elements.h"
 
@@ -342,7 +341,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     /* A delimiter row that opens with `:` is one only while the input's
      * end leaves it be: written on, it may be a directive's name. */
     const int first = reader->nonspace;
-    if (parser->sink && self->peers[TABLE_DIRECTIVE] && markdown_core_reader_peek(reader, first) == ':' &&
+    if (parser->sink && self->needs[TABLE_DIRECTIVE_LINES].ops && markdown_core_reader_peek(reader, first) == ':' &&
         !markdown_core_reader_ends(reader, first + 1) &&
         !markdown_core_is_whitespace(markdown_core_reader_peek(reader, first + 1))) {
         int end = first;
@@ -352,7 +351,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         }
         if (end == markdown_core_reader_length(reader) ||
             markdown_core_is_line_end(markdown_core_reader_peek(reader, end))) {
-            markdown_core_directive_report_line(parser, first);
+            markdown_core_line_report(self->needs[TABLE_DIRECTIVE_LINES], parser, first, end);
         }
     }
 
@@ -680,7 +679,7 @@ const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[] = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
-    .peers = TABLE_PEERS,
+    .needs = TABLE_NEEDS,
     .facets = MARKDOWN_CORE_TABLE_FACETS,
     .edit = &TABLE_EDIT,
     .follows = TABLE_FOLLOWS,

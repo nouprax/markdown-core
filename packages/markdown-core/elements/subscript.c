@@ -20,7 +20,15 @@ static const markdown_core_inline_ops SUBSCRIPT_INLINES = {
     .dispatch = "~",
 };
 
+/* What its nodes read as in a name: their children (element.h,
+ * markdown_core_facet). */
+const markdown_core_facet MARKDOWN_CORE_SUBSCRIPT_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_SUBSCRIPT, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SUBSCRIPT = {
+    .facets = MARKDOWN_CORE_SUBSCRIPT_FACETS,
     .name = "subscript",
     .inlines = &SUBSCRIPT_INLINES,
 };

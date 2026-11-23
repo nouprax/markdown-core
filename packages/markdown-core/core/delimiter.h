@@ -42,7 +42,7 @@ typedef struct {
     /* What the run's neighbours make of a run of an inline body, the
      * element's grammar: whether it opens and whether it closes. NULL: it
      * does neither. */
-    unsigned (*flank)(markdown_core_flank);
+    unsigned (*flank)(const markdown_core_element_instance *self, markdown_core_flank);
     delimiter_body body;
     markdown_core_node_type single_kind, double_kind;
     bool exact_run;

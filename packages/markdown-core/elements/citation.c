@@ -1,26 +1,23 @@
 #include "alloc.h"
 #include "bracket.h"
 #include "autolink_scanners.h"
-#include "html.h"
 #include "citation.h"
-#include "link.h"
-#include "specimen.h"
+#include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "parts.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { CITATION_CODE, CITATION_HTML, CITATION_LINK, CITATION_SPECIMEN };
-static const markdown_core_element *const CITATION_PEERS[] = {[CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE,
-                                                              [CITATION_HTML] = &MARKDOWN_CORE_ELEMENT_HTML,
-                                                              [CITATION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
-                                                              [CITATION_SPECIMEN] = &MARKDOWN_CORE_ELEMENT_SPECIMEN,
-                                                              NULL};
+/* The services this element asks, as `self->needs` holds them: the spans a
+ * citation's brace steps over whole. */
+enum { CITATION_CODE_SPANS, CITATION_HTML_TAGS };
+static const char *const CITATION_NEEDS[] = {[CITATION_CODE_SPANS] = MARKDOWN_CORE_SERVICE_CODE_SPANS,
+                                             [CITATION_HTML_TAGS] = MARKDOWN_CORE_SERVICE_HTML_TAGS,
+                                             NULL};
 /* The spaces this element looks labels up in, as `self->spaces` numbers
- * them. */
+ * them: the specimens' (a space is its name, element.h). */
 enum { CITATION_SPECIMENS };
-static const markdown_core_space *const CITATION_SPACES[] = {[CITATION_SPECIMENS] = &MARKDOWN_CORE_SPECIMEN_SPACE,
-                                                             NULL};
+static const markdown_core_space CITATION_SPECIMEN_SPACE = {.name = "specimen"};
+static const markdown_core_space *const CITATION_SPACES[] = {[CITATION_SPECIMENS] = &CITATION_SPECIMEN_SPACE, NULL};
 
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos);
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at);
@@ -111,7 +108,7 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
     index->ready = true;
     size_t capacity = 0;
     bufsize_t top = -1;
-    unsigned html_flags = 0;
+    markdown_core_skip_memo html = {0};
     /* The index reads the run from where it starts: a run from a seam
      * reads none of the content before it, which its view may not hold
      * (blocks.c, THE BACK OF A PARAGRAPH), and no citation it reads starts
@@ -122,26 +119,19 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
         unsigned char c = markdown_core_inline_char_at(inline_state, at);
         bool escaped = (c == '`' || c == '<') && source_escaped(self, inline_state, at, 0);
         /* A backtick run is opaque where the dialect reads code spans. */
-        if (c == '`' && !escaped && self->peers[CITATION_CODE]) {
-            bufsize_t run = at;
-            while (run < markdown_core_inline_size(inline_state) &&
-                   markdown_core_inline_char_at(inline_state, run) == '`') {
-                run++;
-            }
-            bufsize_t saved = markdown_core_inline_offset(inline_state);
-            markdown_core_inline_seek(inline_state, run);
-            opaque_end = markdown_core_inline_scan_backticks(&index->ticks, inline_state, run - at);
-            markdown_core_inline_seek(inline_state, saved);
+        bufsize_t open;
+        if (c == '`' && !escaped && self->needs[CITATION_CODE_SPANS].ops) {
+            /* A backtick run no closer closes is text, read past whole. */
+            opaque_end = markdown_core_skip(self->needs[CITATION_CODE_SPANS], inline_state, at, &index->ticks, &open);
             if (!opaque_end) {
-                opaque_end = run;
+                opaque_end = open;
                 if (top >= 0) {
                     index->entries[top].cut = true;
                 }
             }
         } else if (c == '<' && !escaped) {
-            bufsize_t width = self->peers[CITATION_HTML]
-                                  ? markdown_core_inline_scan_inline_html(inline_state, at + 1, &html_flags, NULL)
-                                  : 0;
+            const bufsize_t end = markdown_core_skip(self->needs[CITATION_HTML_TAGS], inline_state, at, &html, &open);
+            bufsize_t width = end ? end - at - 1 : 0;
             if (!width) {
                 width = scan_autolink_uri(markdown_core_inline_window(inline_state, 0).data,
                                           markdown_core_inline_window(inline_state, 0).len, at + 1);
@@ -152,8 +142,7 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
             }
             if (width) {
                 opaque_end = at + 1 + width;
-            } else if (top >= 0 && markdown_core_inline_size(inline_state) - at >= 4 &&
-                       !memcmp(markdown_core_inline_window(inline_state, 0).data + at, "<!--", 4)) {
+            } else if (top >= 0 && open > at) {
                 index->entries[top].cut = true;
             }
         }
@@ -950,10 +939,6 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     return NULL;
 }
-void markdown_core_citation_finish_run_tokens(const markdown_core_element_instance *self,
-                                              markdown_core_inline_state *inline_state) {
-    markdown_core_inline_finish_citation_tokens(self, inline_state, &citation_run(self, inline_state)->tokens);
-}
 static void finish_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     for (bracket *open = markdown_core_open_bracket(inline_state); open; open = bracket_previous(open)) {
         markdown_core_inline_finish_citation_tokens(self, inline_state, &S_bracket(self, open)->citations);
@@ -971,7 +956,7 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     markdown_core_citation_run *run = markdown_core_run_state(inline_state, self);
     markdown_core_inline_free_citation_tokens(inline_state, &run->tokens);
     markdown_core_free(run->braces.entries);
-    markdown_core_backticks_free(&run->braces.ticks);
+    markdown_core_skip_release(self->needs[CITATION_CODE_SPANS], &run->braces.ticks);
     run->braces = (citation_brace_index){0};
 }
 
@@ -1025,14 +1010,29 @@ static const markdown_core_inline_ops CITATION_INLINES = {
     .dispatch = "@-;",
 };
 
+/* A citation reads in a name as its prefix, its `@` key and its suffix; a
+ * specimen's as its key alone; a note's as nothing. */
+static bool S_words(const markdown_core_node *node, const markdown_core_words *words) {
+    const markdown_core_citation_item *item = node->as.citation;
+    const bool bib = item->referent == MARKDOWN_CORE_NODE_REFERENT_BIB;
+    if (!bib && item->referent != MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
+        return true;
+    }
+    return (!bib || !item->prefix || markdown_core_words_children(item->prefix, words)) &&
+           words->text(words->context, (const unsigned char *)"@", 1) &&
+           words->text(words->context, item->value.data, item->value.len) &&
+           (!bib || !item->suffix || markdown_core_words_children(item->suffix, words));
+}
+
 const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CITATION, .parts = markdown_core_citation_parts},
+    {.kind = MARKDOWN_CORE_KIND_CITATION, .parts = markdown_core_citation_parts, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_CITE, .words = markdown_core_words_children},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .facets = MARKDOWN_CORE_CITATION_FACETS,
-    .peers = CITATION_PEERS,
+    .needs = CITATION_NEEDS,
     .spaces = CITATION_SPACES,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),
@@ -1044,7 +1044,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
 /* A bracket opens: a `[` right after an author key is the key's tail. */
 static void S_opened(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b) {
     citation_token *author = citation_token_last(markdown_core_inline_current_citation_tokens(self, inline_state));
-    if (b->shape == &MARKDOWN_CORE_LINK_BRACKET && author && author->key &&
+    if (b->shape->kind == MARKDOWN_CORE_KIND_LINK && author && author->key &&
         author->tail_start == markdown_core_inline_offset(inline_state) - 1) {
         S_bracket(self, b)->author = author;
     }

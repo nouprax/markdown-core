@@ -1,14 +1,12 @@
-#include "link.h"
 #include "embedded.h"
+#include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { EMBEDDED_LINK };
-static const markdown_core_element *const EMBEDDED_PEERS[] = {[EMBEDDED_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
-
-const markdown_core_bracket_shape MARKDOWN_CORE_EMBEDDED_BRACKET = {
-    .width = 2, .kept = 1, .mark = 1, .keeps = true, .closer = ']'};
+/* An image's bracket, opened by a `![`, whose `!` stays as text when the
+ * image replaces it (bracket.h). */
+static const markdown_core_bracket_shape MARKDOWN_CORE_EMBEDDED_BRACKET = {
+    .width = 2, .kept = 1, .mark = 1, .keeps = true, .closer = ']', .kind = MARKDOWN_CORE_KIND_EMBEDDED};
 static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
     if (*pos == end || s[*pos] < '1' || s[*pos] > '9') {
         return false;
@@ -26,8 +24,9 @@ static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_
     return true;
 }
 
-bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix, bufsize_t separator_length,
-                                    markdown_core_dimensions *value, size_t *work) {
+static bool S_parse(const markdown_core_element_instance *self, markdown_core_chunk label, bufsize_t suffix,
+                    bufsize_t separator_length, markdown_core_dimensions *value, size_t *work) {
+    (void)self;
     bufsize_t pos = suffix + separator_length;
     markdown_core_dimensions parsed = {0};
     (*work)++;
@@ -62,9 +61,8 @@ static S_picture *S_bracket(const markdown_core_element_instance *self, const br
     return markdown_core_bracket_record(b, self);
 }
 
-void markdown_core_inline_apply_image_dimensions(const markdown_core_element_instance *self,
-                                                 markdown_core_inline_state *inline_state, const bracket *opener,
-                                                 markdown_core_node *image, bufsize_t end) {
+static void S_apply(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                    const bracket *opener, markdown_core_node *image, bufsize_t end) {
     /* Earlier inline allocation failure may have omitted the final text run.
      * The transaction is already failed; do not consume its incomplete tree. */
     if (inline_state->error || inline_state->owner_parser->error) {
@@ -74,8 +72,8 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     bufsize_t suffix = pipe >= 0 ? pipe : opener->position;
     markdown_core_dimensions dimensions;
     markdown_core_chunk label = markdown_core_inline_take(inline_state, opener->position, end - opener->position);
-    if (!markdown_core_parse_dimensions(label, suffix - opener->position, pipe >= 0 ? 1 : 0, &dimensions,
-                                        &((markdown_core_embedded_work *)self->state)->dimensions)) {
+    if (!S_parse(self, label, suffix - opener->position, pipe >= 0 ? 1 : 0, &dimensions,
+                 &((markdown_core_embedded_work *)self->state)->dimensions)) {
         return;
     }
 
@@ -95,11 +93,10 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     image->as.link->dimensions.has_value = true;
 }
 
-void markdown_core_embedded_record_text(const markdown_core_element_instance *self,
-                                        markdown_core_inline_state *inline_state, bufsize_t endpos) {
-    const markdown_core_element_instance *link = self->peers[EMBEDDED_LINK];
-    bracket *image = link ? markdown_core_open_bracket(inline_state) : NULL;
-    if (image && image->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET) {
+static void S_record(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                     bufsize_t endpos) {
+    bracket *image = markdown_core_open_bracket(inline_state);
+    if (image && image->owner == self) {
         markdown_core_embedded_work *counts = self->state;
         for (bufsize_t i = markdown_core_inline_offset(inline_state); i < endpos; i++) {
             counts->dimensions++;
@@ -117,8 +114,9 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         return NULL;
     }
     markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
-    /* An image opens a bracket, which only a dialect with links reads. */
-    if (self->peers[EMBEDDED_LINK] && markdown_core_inline_peek_char(inline_state) == '[' &&
+    /* An image opens a bracket, which only a dialect that closes one reads. */
+    if (markdown_core_inline_bracket_closes(self, inline_state) &&
+        markdown_core_inline_peek_char(inline_state) == '[' &&
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
         markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
         markdown_core_node *text = make_str(
@@ -141,8 +139,12 @@ static const markdown_core_inline_ops EMBEDDED_INLINES = {
     .dispatch = "!",
 };
 
+static const markdown_core_dimension_ops EMBEDDED_DIMENSIONS = {.parse = S_parse, .record = S_record, .apply = S_apply};
+static const markdown_core_service EMBEDDED_SERVICES[] = {{MARKDOWN_CORE_SERVICE_DIMENSIONS, &EMBEDDED_DIMENSIONS},
+                                                          {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
-    .peers = EMBEDDED_PEERS,
+    .provides = EMBEDDED_SERVICES,
     .state_size = sizeof(markdown_core_embedded_work),
     .bracket_size = sizeof(S_picture),
     .name = "embedded",

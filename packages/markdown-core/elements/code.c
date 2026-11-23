@@ -3,10 +3,7 @@
 #include "inline_internal.h"
 #include "parts.h"
 #include "attributes.h"
-
-/* The elements whose syntax this element asks: the attribute block a span
- * may end with, whose parts its own are read with. */
-static const markdown_core_element *const CODE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+#include "services.h"
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
 #define MAXBACKTICKS 80
@@ -242,12 +239,41 @@ static const markdown_core_inline_ops CODE_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CODE, .parts = markdown_core_code_parts},
+    {.kind = MARKDOWN_CORE_KIND_CODE, .parts = markdown_core_code_parts, .words = markdown_core_words_literal},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* (services.h, MARKDOWN_CORE_SERVICE_CODE_SPANS) A code span another
+ * element's scan reads ahead of the run's own, from a backtick run the run
+ * may not take as an opener, on a backtick index of the scan's own, its
+ * memo. */
+_Static_assert(sizeof(markdown_core_backticks) <= sizeof(markdown_core_skip_memo), "a backtick index fits a memo");
+
+static bufsize_t S_skip(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                        bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open) {
+    (void)self;
+    bufsize_t run = at;
+    while (run < markdown_core_inline_size(inline_state) && markdown_core_inline_char_at(inline_state, run) == '`') {
+        run++;
+    }
+    const bufsize_t saved = markdown_core_inline_offset(inline_state);
+    markdown_core_inline_seek(inline_state, run);
+    const bufsize_t end = markdown_core_inline_scan_backticks((markdown_core_backticks *)memo, inline_state, run - at);
+    markdown_core_inline_seek(inline_state, saved);
+    *open = end ? at : run;
+    return end;
+}
+
+static void S_release(const markdown_core_element_instance *self, markdown_core_skip_memo *memo) {
+    (void)self;
+    markdown_core_backticks_free((markdown_core_backticks *)memo);
+}
+
+static const markdown_core_skip_ops CODE_SPANS = {.skip = S_skip, .release = S_release};
+static const markdown_core_service CODE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_CODE_SPANS, &CODE_SPANS}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
-    .peers = CODE_PEERS,
+    .provides = CODE_SERVICES,
     .facets = MARKDOWN_CORE_CODE_FACETS,
     .run_state_size = sizeof(markdown_core_backticks),
     .name = "code",

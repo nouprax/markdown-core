@@ -46,7 +46,20 @@ static const markdown_core_inline_ops LINE_BREAK_INLINES = {
     .dispatch = "\r\n",
 };
 
+/* A break reads as a `-` in a name (element.h, markdown_core_facet). */
+static bool S_words(const markdown_core_node *node, const markdown_core_words *words) {
+    (void)node;
+    return words->text(words->context, (const unsigned char *)"-", 1);
+}
+
+const markdown_core_facet MARKDOWN_CORE_LINE_BREAK_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_SOFT_BREAK, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_LINE_BREAK, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINE_BREAK = {
+    .facets = MARKDOWN_CORE_LINE_BREAK_FACETS,
     .name = "line_break",
     .inlines = &LINE_BREAK_INLINES,
 };

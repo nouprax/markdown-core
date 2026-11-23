@@ -58,7 +58,7 @@ for (const file of coreFiles.filter((name) => /\.[ch]$/.test(name))) {
     }
 }
 // No library code looks an element up while parsing: an element reads
-// another's state through the peers sealing resolved, and the lookup by
+// another through the services sealing resolved, and the lookup by
 // descriptor is for code outside the dialect (tests, embedders).
 for (const dir of ["core", "elements"]) {
     for (const file of fs.readdirSync(path.join(pkg, dir)).filter((name) => /\.[ch]$/.test(name))) {

@@ -878,6 +878,16 @@ typedef struct markdown_core_follow {
  * not show or shows from the node itself. A list of them ends at
  * MARKDOWN_CORE_KIND_NONE. */
 struct markdown_core_parts;
+/* WHAT A NODE READS AS IN A NAME its text makes (names.h, a heading's
+ * anchor), which a facet's `words` gives piece by piece, in order: `text`
+ * takes bytes, `node` a node whose own reading goes there. Each answers
+ * false when storage could not be had. */
+typedef struct markdown_core_words {
+    void *context;
+    bool (*text)(void *context, const unsigned char *data, bufsize_t size);
+    bool (*node)(void *context, const markdown_core_node *node);
+} markdown_core_words;
+
 typedef struct markdown_core_facet {
     markdown_core_node_kind kind;
     void (*parts)(struct markdown_core_parts *);
@@ -888,12 +898,31 @@ typedef struct markdown_core_facet {
     /* Where a node of the kind keeps the name the names service computes
      * for it (node.h, A NODE'S NAME; names.h), when the element names it. */
     struct markdown_core_name *(*named)(const markdown_core_node *);
+    /* What a node of the kind reads as in a name (markdown_core_words):
+     * NULL for a kind that reads as nothing, an HTML tag's or a note's. */
+    bool (*words)(const markdown_core_node *, const markdown_core_words *);
 } markdown_core_facet;
 
+/* The words of a node whose children read in turn (an emphasis, a link). */
+static inline bool markdown_core_words_children(const markdown_core_node *node, const markdown_core_words *words) {
+    for (uint32_t i = 0; i < node->child_count; i++) {
+        if (!words->node(words->context, node->children[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The words of a node whose literal reads as itself (a text, a code span). */
+static inline bool markdown_core_words_literal(const markdown_core_node *node, const markdown_core_words *words) {
+    return words->text(words->context, node->as.literal->data, node->as.literal->len);
+}
+
 /* A ROSTER SPACE (roster.h): a lookup space the labels an element declares
- * are filed in and looked up from. The element that defines it owns it,
- * and every element that declares or looks up labels in it names it in
- * `spaces`; the dialect numbers each space once, after the engine's own
+ * are filed in and looked up from. A space is its `name`: every element
+ * that declares or looks up labels in it names it in `spaces`, each with
+ * its own descriptor, and registration refuses two that name one space
+ * with different `folds`. The dialect numbers each space once, after the engine's own
  * ANCHOR, in descriptor order of first naming, and the instance holds the
  * numbers in `spaces`, in its descriptor's order. A space that `folds`
  * holds its labels in the reference-label normal form, any other their
@@ -907,16 +936,30 @@ typedef struct markdown_core_space {
  * engine's ANCHOR and no kind's 0 take two of its values. */
 #define MARKDOWN_CORE_SPACE_LIMIT 254
 
+/* A SERVICE: what an element offers the others under a name, an
+ * operations table of the interface the name stands for
+ * (elements/services.h), which takes the provider's instance as its first
+ * argument. A list of them ends at one with no `name`. The engine reads the
+ * name alone: what the table does is the interface's and its provider's. */
+typedef struct markdown_core_service {
+    const char *name;
+    const void *ops;
+} markdown_core_service;
+
 struct markdown_core_element {
     /* WHO THE ELEMENT IS AND WHAT IT STORES. */
     const char *name;
-    /* The elements whose state this element's code reads, NULL-terminated
+    /* The services the element offers (markdown_core_service), or NULL, and
+     * the ones its code asks, by name, NULL-terminated
      * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
-     * Sealing resolves them, in this order, into the instance's `peers`. */
-    const markdown_core_element *const *peers;
+     * Sealing resolves each it asks, in this order, into the instance's
+     * `needs`. No element names another: one depends on a service, which
+     * any element may provide. */
+    const markdown_core_service *provides;
+    const char *const *needs;
     /* The roster spaces the element declares or looks up labels in,
-     * NULL-terminated (markdown_core_space); a space another element owns
-     * is that element's, which `peers` names. */
+     * NULL-terminated (markdown_core_space); a space is its name, so every
+     * element naming one names the same space. */
     const markdown_core_space *const *spaces;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS

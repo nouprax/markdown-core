@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * An element reaches another element only through the peers its descriptor
- * declares (`.peers`, element.h), and the engine reaches elements only
- * through their descriptors. This audit reads the sources, which is the only
+ * An element reaches another element only through the services it needs
+ * (`.needs`, element.h): it asks a service by name, and whichever element
+ * provides it answers through the interface elements/services.h states. So
+ * no element source names a symbol another element's header declares -- a
+ * function, a macro, a type, an enum constant or a descriptor -- nor
+ * includes such a header. This audit reads the sources, which is the only
  * place the fact exists: a call from one element into another's functions
  * compiles, links and produces correct output whether or not the dialect
  * attaches the callee, so no output-level oracle can see it.
@@ -10,27 +13,25 @@
  * OWNERSHIP. A header belongs to element E when it declares E's descriptor
  * (`extern const markdown_core_element MARKDOWN_CORE_ELEMENT_E`), and so does
  * every header and source named `<stem>_<anything>` beside a `<stem>.h` that
- * E owns (its scanners, its state). A source belongs to the elements whose
- * descriptors it defines. Files owned by no element (the composition root,
- * the AST and context services) are not elements and are not judged here.
+ * E owns (its state). A source belongs to the elements whose descriptors it
+ * defines. Files owned by no element (services.h, the composition root, the
+ * AST and context services) are not elements and are not judged here.
  *
- * THE GENERATED SCANNERS ARE A LEXICON, NOT AN ELEMENT. A `*_scanners.h`
- * declares pure functions from bytes to a match length, generated from its
- * `.re`: no instance, no state, no hook. Two elements that read the same
- * lexical rule (HTML tags for inline and block HTML, a URI for an autolink
- * and a citation) share its scanner without either asking the other
- * anything, so these headers belong to no element.
+ * THE GENERATED SCANNERS BELONG TO NO ELEMENT. A `*_scanners.h` declares
+ * pure functions from bytes to a match length, generated from its `.re`: no
+ * instance, no state, no hook.
  *
- * WHAT AN ELEMENT MAY NAME. In a source owned by element E, every symbol
- * declared by a header owned by element F ≠ E — a function, a macro, a type,
- * an enum constant or F's descriptor itself — is a finding unless F is in
- * E's `_PEERS[]` initializer, and so is an `#include` of F's header. Naming
- * F's descriptor is allowed only inside that initializer.
+ * WHAT IS STILL READ OUTSIDE A PARSE. The readers of a published node's
+ * parts and a context field's end run with no dialect, so no service can
+ * answer them: the attribute grammar's own functions are what they call
+ * (`OUTSIDE`). They go when slots are recorded as the parse reads them and
+ * context reads only what the parse recorded (the decoupling plan, 8.3 and
+ * 8.5); the list must shrink, never grow.
  *
  * AND THE AUDIT MUST SEE SOMETHING: every element header must contribute
- * symbols and every attached descriptor must be read, or it fails closed.
+ * symbols and an element source must be judged, or it fails closed.
  *
- *   node scripts/audit/check-element-peers.mjs [--verbose]
+ *   node scripts/audit/check-element-services.mjs [--verbose]
  */
 
 import fs from "node:fs";
@@ -105,6 +106,27 @@ for (const file of headers) {
     }
 }
 
+/* (WHAT IS STILL READ OUTSIDE A PARSE) source -> the other elements'
+ * symbols and headers it may name. */
+const attributesOutside = [
+    "attributes.h",
+    "markdown_core_attributes_parts",
+    "markdown_core_attributes_tail_parts",
+    "markdown_core_attributes_tail",
+    "markdown_core_attributes_end",
+    "markdown_core_attributes_parse",
+    "markdown_core_attribute_parser_free",
+    "markdown_core_attribute_scratch",
+    "markdown_core_attribute_scratch_free"
+];
+const OUTSIDE = new Map([
+    ["code.c", attributesOutside],
+    ["code_block.c", attributesOutside],
+    ["directive.c", attributesOutside],
+    ["heading.c", attributesOutside],
+    ["link.c", attributesOutside]
+]);
+
 const findings = [];
 let judged = 0;
 for (const file of sources) {
@@ -116,27 +138,21 @@ for (const file of sources) {
     if (self.length === 0) self = stemOwner(file) ?? [];
     if (self.length === 0) continue;
     judged++;
-    const peerBlocks = [...text.matchAll(/_PEERS\[\]\s*=\s*\{([^}]*)\}/g)];
-    const peers = new Set(peerBlocks.flatMap((m) => [...m[1].matchAll(/MARKDOWN_CORE_ELEMENT_\w+/g)].map((x) => x[0])));
+    const outside = new Set(OUTSIDE.get(file) ?? []);
     const mine = (owner) => owner.some((symbol) => self.includes(symbol));
-    const allowed = (owner) => mine(owner) || owner.some((symbol) => peers.has(symbol));
+    if (/\b\w+_PEERS\[\]/.test(text)) findings.push(`${file}: declares peers; an element asks services`);
     for (const [, include] of raw.matchAll(/^\s*#\s*include\s*"([^"]+)"/gm)) {
         const owner = owners.has(include) ? owners.get(include) : stemOwner(include);
-        if (owner && headers.includes(include) && !allowed(owner)) {
-            findings.push(`${file}: includes ${include} of ${owner.join(", ")}, not a peer`);
+        if (owner && headers.includes(include) && !mine(owner) && !outside.has(include)) {
+            findings.push(`${file}: includes ${include} of ${owner.join(", ")}`);
         }
     }
-    const outside = text.replace(/_PEERS\[\]\s*=\s*\{[^}]*\}/g, " ");
     const seen = new Set();
-    for (const [name] of outside.matchAll(/\b[A-Za-z_]\w*\b/g)) {
+    for (const [name] of text.matchAll(/\b[A-Za-z_]\w*\b/g)) {
         const hit = owned.get(name);
-        if (!hit || seen.has(name) || mine(hit.owner)) continue;
+        if (!hit || seen.has(name) || mine(hit.owner) || outside.has(name)) continue;
         seen.add(name);
-        if (/^MARKDOWN_CORE_ELEMENT_/.test(name) && hit.owner.includes(name)) {
-            findings.push(`${file}: names ${name} outside its peers`);
-        } else if (!allowed(hit.owner)) {
-            findings.push(`${file}: uses ${name} of ${hit.file} (${hit.owner.join(", ")}), not a peer`);
-        }
+        findings.push(`${file}: uses ${name} of ${hit.file} (${hit.owner.join(", ")})`);
     }
 }
 if (judged === 0) throw new Error("no element source was judged");
@@ -144,6 +160,6 @@ if (judged === 0) throw new Error("no element source was judged");
 if (verbose) console.log(`element headers: ${owners.size}, owned symbols: ${owned.size}, sources judged: ${judged}`);
 for (const finding of findings) console.log(finding);
 console.log(
-    `element peers: ${findings.length === 0 ? "ok" : `${findings.length} finding(s)`}, ${judged} element sources`
+    `element services: ${findings.length === 0 ? "ok" : `${findings.length} finding(s)`}, ${judged} element sources`
 );
 process.exit(findings.length === 0 ? 0 : 1);

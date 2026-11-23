@@ -6,7 +6,7 @@
 #include "bracket.h"
 #include "inline_internal.h"
 #include "../core/attributes.h"
-#include "entities.h"
+#include "services.h"
 #include "node.h"
 #include "markdown_core_ctype.h"
 #include <stdint.h>
@@ -546,7 +546,7 @@ static bufsize_t decode_quoted(markdown_core_attribute_parser *p, bufsize_t open
             markdown_core_strbuf_putc(&w->strings, s[at + 1]);
             at += 2;
         } else if (c == '&') {
-            bufsize_t used = markdown_core_entities_read(w->entities, &w->strings, s + at + 1, limit - at - 1);
+            bufsize_t used = markdown_core_decoder_read(w->references, &w->strings, s + at + 1, limit - at - 1);
             if (used) {
                 at += used + 1;
             } else {
@@ -1075,7 +1075,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_saw_end(markdown_core_inline_s
  * reads it, with `value` NULL for recognition alone. */
 /* WHAT A RUN HOLDS OF THE ATTRIBUTE ELEMENT: the recognizer of its input,
  * made at the first block read, and one plus the start of the last block a
- * peer asked about (markdown_core_attributes_closes), whose end reads that
+ * service user asked about (markdown_core_attributes_closes), whose end reads that
  * question already reported, or 0. */
 typedef struct {
     markdown_core_attribute_parser parser;
@@ -1092,14 +1092,13 @@ typedef struct {
     markdown_core_attribute_scratch scratch;
 } S_state;
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { ATTRIBUTES_ENTITIES };
-static const markdown_core_element *const ATTRIBUTES_PEERS[] = {[ATTRIBUTES_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES,
-                                                                NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { ATTRIBUTES_REFERENCES };
+static const char *const ATTRIBUTES_NEEDS[] = {[ATTRIBUTES_REFERENCES] = MARKDOWN_CORE_SERVICE_REFERENCES, NULL};
 
 markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self) {
     markdown_core_attribute_scratch *scratch = &((S_state *)self->state)->scratch;
-    scratch->entities = self->peers[ATTRIBUTES_ENTITIES];
+    scratch->references = self->needs[ATTRIBUTES_REFERENCES];
     return scratch;
 }
 
@@ -1267,37 +1266,6 @@ static void S_span_parts(markdown_core_parts *parts) {
     }
 }
 
-bufsize_t markdown_core_attributes_close_at(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_attribute_parser *held, const unsigned char *data,
-                                            bufsize_t length, bufsize_t start) {
-    (void)self;
-    held->data = data;
-    held->length = length;
-    held->scratch = markdown_core_attributes_scratch(self);
-    const bufsize_t end = markdown_core_attributes_end(held, start);
-    if (held->oom) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    return end;
-}
-
-bool markdown_core_attributes_write(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_attribute_parser *held, bufsize_t start, markdown_core_node *node) {
-    (void)self;
-    bufsize_t end;
-    const bool written = markdown_core_attributes_parse(held, start, &node->attributes, &end);
-    if (held->oom) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    return written;
-}
-
-void markdown_core_attributes_release(const markdown_core_element_instance *self,
-                                      markdown_core_attribute_parser *held) {
-    (void)self;
-    markdown_core_attribute_parser_free(held);
-}
-
 bool markdown_core_attributes_report(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                      markdown_core_node_kind owner, const unsigned char *line, bufsize_t from,
                                      bufsize_t end) {
@@ -1460,13 +1428,62 @@ static const markdown_core_inline_ops ATTRIBUTES_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = S_span_parts},
+    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = S_span_parts, .words = markdown_core_words_children},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* THE SERVICE (services.h, MARKDOWN_CORE_SERVICE_ATTRIBUTES): the grammar
+ * above, for the elements whose constructs take a block. */
+static void S_begin(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
+                    const unsigned char *data, bufsize_t size) {
+    *p = (markdown_core_attribute_parser){
+        .data = data, .length = size, .scratch = markdown_core_attributes_scratch(self)};
+}
+
+static void S_release(const markdown_core_element_instance *self, markdown_core_attribute_parser *p) {
+    (void)self;
+    markdown_core_attribute_parser_free(p);
+}
+
+static bufsize_t S_end(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start) {
+    (void)self;
+    return markdown_core_attributes_end(p, start);
+}
+
+static bufsize_t S_tail(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start,
+                        bufsize_t end) {
+    (void)self;
+    return markdown_core_attributes_tail(p, start, end);
+}
+
+static bool S_parse(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start,
+                    markdown_core_attributes *value, bufsize_t *end) {
+    (void)self;
+    return markdown_core_attributes_parse(p, start, value, end) != 0;
+}
+
+static bool S_member(const markdown_core_element_instance *self, const unsigned char *data, bufsize_t size,
+                     bufsize_t start, markdown_core_field *field, markdown_core_member_memo *memo) {
+    (void)self;
+    return markdown_core_attributes_open_member(data, size, start, field, memo);
+}
+
+static const markdown_core_attribute_ops ATTRIBUTES_OPS = {
+    .begin = S_begin,
+    .release = S_release,
+    .end = S_end,
+    .tail = S_tail,
+    .parse = S_parse,
+    .closes = markdown_core_attributes_closes,
+    .report = markdown_core_attributes_report,
+    .member = S_member,
+};
+static const markdown_core_service ATTRIBUTES_SERVICES[] = {{MARKDOWN_CORE_SERVICE_ATTRIBUTES, &ATTRIBUTES_OPS}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES = {
     .name = "attributes",
-    .peers = ATTRIBUTES_PEERS,
+    .provides = ATTRIBUTES_SERVICES,
+    .needs = ATTRIBUTES_NEEDS,
     .state_size = sizeof(S_state),
     .run_state_size = sizeof(S_run),
     .dispose_parser = dispose_parser,

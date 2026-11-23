@@ -1,8 +1,8 @@
-#include "entities.h"
 #include "autolink_scanners.h"
 #include "inline_internal.h"
 #include "autolink.h"
-#include "link.h"
+#include "services.h"
+#include "bracket.h"
 #include "element.h"
 #include <parser.h>
 #include <string.h>
@@ -15,17 +15,16 @@
 #include <strings.h>
 #endif
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { AUTOLINK_LINK, AUTOLINK_ENTITIES };
-static const markdown_core_element *const AUTOLINK_PEERS[] = {
-    [AUTOLINK_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [AUTOLINK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES, NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { AUTOLINK_REFERENCES };
+static const char *const AUTOLINK_NEEDS[] = {[AUTOLINK_REFERENCES] = MARKDOWN_CORE_SERVICE_REFERENCES, NULL};
 
 static markdown_core_node *make_str_with_entities(const markdown_core_element_instance *self,
                                                   markdown_core_inline_state *inline_state, int start_column,
                                                   int end_column, markdown_core_chunk *content) {
     markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT();
 
-    if (markdown_core_entities_decode(self->peers[AUTOLINK_ENTITIES], &unescaped, content->data, content->len)) {
+    if (markdown_core_decoder_decode(self->needs[AUTOLINK_REFERENCES], &unescaped, content->data, content->len)) {
         if (unescaped.oom) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
@@ -51,7 +50,7 @@ static markdown_core_chunk markdown_core_clean_autolink(const markdown_core_elem
         markdown_core_strbuf_puts(&buf, "mailto:");
     }
 
-    markdown_core_entities_copy(self->peers[AUTOLINK_ENTITIES], &buf, url->data, url->len);
+    markdown_core_decoder_write(self->needs[AUTOLINK_REFERENCES], &buf, url->data, url->len);
     if (buf.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
@@ -888,7 +887,7 @@ static const markdown_core_inline_ops AUTOLINK_INLINES = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
-    .peers = AUTOLINK_PEERS,
+    .needs = AUTOLINK_NEEDS,
     .name = "autolink",
     .state_size = sizeof(markdown_core_autolink_work),
     .run_state_size = sizeof(autolink_run),

@@ -838,11 +838,20 @@ static markdown_core_placement S_placement(const markdown_core_node *node) {
                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
 }
 
+/* A formula reads as its literal in a name. */
+static bool S_words(const markdown_core_node *node, const markdown_core_words *words) {
+    const unsigned char *front, *back;
+    bufsize_t front_size, back_size;
+    markdown_core_elements_formula_halves(node, &front, &front_size, &back, &back_size);
+    return words->text(words->context, front, front_size) && words->text(words->context, back, back_size);
+}
+
 const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_FORMULA,
      .parts = markdown_core_formula_parts,
      .literal = S_literal,
-     .placement = S_placement},
+     .placement = S_placement,
+     .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK,
      .parts = markdown_core_formula_parts,
      .literal = S_literal,

@@ -1,37 +1,32 @@
-#include "cross_link.h"
 #include "alloc.h"
 #include "claim.h"
 #include "heading_scanners.h"
-#include "citation.h"
 #include "heading.h"
-#include "link.h"
-#include "directive.h"
+#include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "topic.h"
 #include "parts.h"
 #include "attributes.h"
 #include "ast_internal.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { HEADING_CITATION, HEADING_LINK, HEADING_DIRECTIVE, HEADING_TOPIC, HEADING_ATTRIBUTES, HEADING_CROSS_LINK };
+/* The services this element asks, as `self->needs` holds them. */
+enum { HEADING_LABELS, HEADING_TOPIC_LINES };
+static const char *const HEADING_NEEDS[] = {
+    [HEADING_LABELS] = MARKDOWN_CORE_SERVICE_LABELS, [HEADING_TOPIC_LINES] = MARKDOWN_CORE_SERVICE_TOPIC_LINES, NULL};
 /* A heading whose inline content is parsed (markdown_core_headings_prepare). */
 enum { MARKDOWN_CORE_NODE__HEADING_PARSED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
-static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
-                                                             [HEADING_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
-                                                             [HEADING_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
-                                                             [HEADING_TOPIC] = &MARKDOWN_CORE_ELEMENT_TOPIC,
-                                                             [HEADING_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
-                                                             [HEADING_CROSS_LINK] = &MARKDOWN_CORE_ELEMENT_CROSS_LINK,
-                                                             NULL};
 /* The spaces this element files labels in, as `self->spaces` numbers them:
- * the link element's, a heading's text declaring a reference label. */
+ * the reference labels', a heading's text declaring one (a space is its
+ * name, element.h). */
 enum { HEADING_REFERENCE };
-static const markdown_core_space *const HEADING_SPACES[] = {[HEADING_REFERENCE] = &MARKDOWN_CORE_REFERENCE_SPACE, NULL};
-typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
+static const markdown_core_space HEADING_REFERENCE_SPACE = {.name = "reference", .folds = true};
+static const markdown_core_space *const HEADING_SPACES[] = {[HEADING_REFERENCE] = &HEADING_REFERENCE_SPACE, NULL};
+/* A PIECE OF A PROJECTION still to read: a node, or the bytes of a text
+ * piece when it has none. */
 typedef struct {
-    markdown_core_node *node;
-    anchor_projection_kind kind;
+    const markdown_core_node *node;
+    const unsigned char *data;
+    bufsize_t size;
 } anchor_projection;
 
 typedef struct {
@@ -216,11 +211,7 @@ static void project_anchor_literal(size_t *work, markdown_core_strbuf *base, con
     markdown_core_utf8proc_anchor(base, text, length);
 }
 
-static bool push_anchor_projection(anchor_projection_stack *stack, markdown_core_node *node,
-                                   anchor_projection_kind kind) {
-    if (!node) {
-        return true;
-    }
+static bool push_anchor_projection(anchor_projection_stack *stack, anchor_projection piece) {
     if (stack->count == stack->capacity) {
         size_t capacity = stack->capacity ? stack->capacity * 2 : 8;
         if (capacity > SIZE_MAX / sizeof(*stack->values)) {
@@ -233,112 +224,58 @@ static bool push_anchor_projection(anchor_projection_stack *stack, markdown_core
         stack->values = values;
         stack->capacity = capacity;
     }
-    stack->values[stack->count++] = (anchor_projection){node, kind};
+    stack->values[stack->count++] = piece;
     return true;
 }
 
 /* `node`'s children from `from` up to `to`, pushed last first so that they
  * are projected in order; none for no node. */
 static bool push_anchor_range(anchor_projection_stack *stack, const markdown_core_node *node, uint32_t from,
-                              uint32_t to, anchor_projection_kind kind) {
+                              uint32_t to) {
     for (uint32_t i = to; node && i > from; i--) {
-        if (!push_anchor_projection(stack, node->children[i - 1], kind)) {
+        if (!push_anchor_projection(stack, (anchor_projection){node->children[i - 1], NULL, 0})) {
             return false;
         }
     }
     return true;
 }
 
-/* `node`'s children, pushed last first so that they are projected in order;
- * none for no node. */
-static bool push_anchor_children(anchor_projection_stack *stack, const markdown_core_node *node,
-                                 anchor_projection_kind kind) {
-    return push_anchor_range(stack, node, 0, node ? node->child_count : 0, kind);
+/* What a node reads as (element.h, markdown_core_words), pushed in order
+ * and turned last first once its kind has said it all. */
+static bool S_words_text(void *context, const unsigned char *data, bufsize_t size) {
+    return size <= 0 || push_anchor_projection(context, (anchor_projection){NULL, data, size});
+}
+
+static bool S_words_node(void *context, const markdown_core_node *node) {
+    return !node || push_anchor_projection(context, (anchor_projection){node, NULL, 0});
 }
 
 /* What the stack holds, projected and appended to `base`, the work it took
- * added to `*work`. False when storage could not be had. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack(size_t *work,
-                                                                                 markdown_core_strbuf *base,
-                                                                                 anchor_projection_stack *stack) {
+ * added to `*work`: each node as its kind's facet says it reads in a name
+ * (element.h, `words`), whichever element shows the kind. False when
+ * storage could not be had. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack(
+    const markdown_core_element_instance *self, size_t *work, markdown_core_strbuf *base,
+    anchor_projection_stack *stack) {
+    const markdown_core_words words = {stack, S_words_text, S_words_node};
     bool ok = true;
     while (stack->count && ok && !base->oom) {
-        anchor_projection projection = stack->values[--stack->count];
-        markdown_core_node *node = projection.node;
+        anchor_projection piece = stack->values[--stack->count];
+        if (!piece.node) {
+            project_anchor_literal(work, base, piece.data, piece.size);
+            continue;
+        }
         (*work)++;
-        if (projection.kind == ANCHOR_KEY) {
-            project_anchor_literal(work, base, (const unsigned char *)"@", 1);
-            project_anchor_literal(work, base, node->as.citation->value.data, node->as.citation->value.len);
-            continue;
-        }
-        if (projection.kind == ANCHOR_CITATIONS) {
-            markdown_core_citation_item *item = node->as.citation;
-            if (item->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
-                ok = push_anchor_children(stack, item->suffix, ANCHOR_CONTENT) &&
-                     push_anchor_projection(stack, node, ANCHOR_KEY) &&
-                     push_anchor_children(stack, item->prefix, ANCHOR_CONTENT);
-            } else if (item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
-                ok = push_anchor_projection(stack, node, ANCHOR_KEY);
+        const markdown_core_facet *facet =
+            markdown_core_instance_facet(self, markdown_core_kind_public(piece.node->kind));
+        if (facet && facet->words) {
+            const size_t first = stack->count;
+            ok = facet->words(piece.node, &words);
+            for (size_t a = first, b = stack->count; ok && a + 1 < b; a++, b--) {
+                anchor_projection swap = stack->values[a];
+                stack->values[a] = stack->values[b - 1];
+                stack->values[b - 1] = swap;
             }
-            continue;
-        }
-        switch (node->kind) {
-        case MARKDOWN_CORE_NODE_TEXT:
-        case MARKDOWN_CORE_NODE_CODE:
-            project_anchor_literal(work, base, node->as.literal->data, node->as.literal->len);
-            break;
-        case MARKDOWN_CORE_NODE_TOPIC:
-            project_anchor_literal(work, base, (const unsigned char *)"#", 1);
-            project_anchor_literal(work, base, node->as.literal->data, node->as.literal->len);
-            break;
-        case MARKDOWN_CORE_NODE_FORMULA: {
-            const unsigned char *front, *back;
-            bufsize_t front_size, back_size;
-            markdown_core_elements_formula_halves(node, &front, &front_size, &back, &back_size);
-            project_anchor_literal(work, base, front, front_size);
-            project_anchor_literal(work, base, back, back_size);
-            break;
-        }
-        case MARKDOWN_CORE_NODE_SOFT_BREAK:
-        case MARKDOWN_CORE_NODE_LINE_BREAK:
-            markdown_core_strbuf_putc(base, '-');
-            break;
-        case MARKDOWN_CORE_NODE_CROSS_LINK:
-        case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
-            markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
-            if (cross->label.has_value) {
-                project_anchor_literal(work, base, cross->label.value.data, cross->label.value.len);
-            } else {
-                project_anchor_literal(work, base, cross->path.data, cross->path.len);
-                if (cross->anchor.has_value) {
-                    project_anchor_literal(work, base, cross->anchor.value.data, cross->anchor.value.len);
-                }
-            }
-            break;
-        }
-        case MARKDOWN_CORE_NODE_CITE:
-            ok = push_anchor_children(stack, node, ANCHOR_CITATIONS);
-            break;
-        case MARKDOWN_CORE_NODE_EMPHASIS:
-        case MARKDOWN_CORE_NODE_STRONG:
-        case MARKDOWN_CORE_NODE_STRIKETHROUGH:
-        case MARKDOWN_CORE_NODE_MARK:
-        case MARKDOWN_CORE_NODE_INSERTION:
-        case MARKDOWN_CORE_NODE_SPAN:
-        case MARKDOWN_CORE_NODE_SUPERSCRIPT:
-        case MARKDOWN_CORE_NODE_SUBSCRIPT:
-        case MARKDOWN_CORE_NODE_LINK:
-        case MARKDOWN_CORE_NODE_EMBEDDED:
-        case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
-            ok = push_anchor_children(stack, node, ANCHOR_CONTENT);
-            break;
-        case MARKDOWN_CORE_NODE_DIRECTIVE: {
-            ok = push_anchor_children(stack, markdown_core_directive_label(node), ANCHOR_CONTENT);
-            break;
-        }
-        default:
-            /* HTML, comments and other opaque values contribute no text. */
-            break;
         }
     }
     return ok && !base->oom;
@@ -346,13 +283,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack
 
 /* The projection of the children of `root` from `from` up to `to`,
  * appended to `base`. False when storage could not be had. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_range(size_t *work,
-                                                                                 const markdown_core_node *root,
-                                                                                 uint32_t from, uint32_t to,
-                                                                                 markdown_core_strbuf *base,
-                                                                                 anchor_projection_stack *stack) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_range(
+    const markdown_core_element_instance *self, size_t *work, const markdown_core_node *root, uint32_t from,
+    uint32_t to, markdown_core_strbuf *base, anchor_projection_stack *stack) {
     stack->count = 0;
-    return push_anchor_range(stack, root, from, to, ANCHOR_CONTENT) && project_anchor_stack(work, base, stack);
+    return push_anchor_range(stack, root, from, to) && project_anchor_stack(self, work, base, stack);
 }
 
 /* (names.h, the owner's `project`) The projection of a heading's children,
@@ -361,7 +296,7 @@ static bool heading_project(const markdown_core_element_instance *self, const ma
                             uint32_t to, markdown_core_strbuf *base, size_t *work) {
     markdown_core_heading_state *state = self->state;
     anchor_projection_stack stack = {state->stack, 0, state->stack_room};
-    const bool ok = project_anchor_range(work, node, from, to, base, &stack);
+    const bool ok = project_anchor_range(self, work, node, from, to, base, &stack);
     state->stack = stack.values;
     state->stack_room = stack.capacity;
     return ok;
@@ -397,9 +332,6 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
         }
     }
     if (!parser->error && !inline_state.error) {
-        if (self->peers[HEADING_CITATION]) {
-            markdown_core_citation_finish_run_tokens(self->peers[HEADING_CITATION], &inline_state);
-        }
         const markdown_core_heading_run *run = markdown_core_run_state(&inline_state, self);
         /* A heading whose text gave its tail back has the whole text. */
         markdown_core_chunk label = {inline_state.input.data, node->cut_back ? run->label_end : inline_state.input.len,
@@ -409,8 +341,10 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
          * when no Reference declares it. It declares it once: a heading
          * parsed again has. */
         markdown_core_chunk *declared = &node->as.heading->label;
-        if (!declared->len && self->peers[HEADING_LINK] && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
-            markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
+        const markdown_core_need labels = self->needs[HEADING_LABELS];
+        if (!declared->len && labels.ops && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
+            ((const markdown_core_label_ops *)labels.ops)->length(labels.instance, label.data, label.len) ==
+                label.len) {
             markdown_core_parser_declare(parser, self->spaces[HEADING_REFERENCE], &label, node->place.start, declared);
         }
     }
@@ -542,7 +476,7 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
                                                                  markdown_core_reader_length(context->reader),
                                                                  context->reader->nonspace))) {
         start->open = open_atx;
-        if (parser->sink && self->peers[HEADING_TOPIC]) {
+        if (parser->sink && self->needs[HEADING_TOPIC_LINES].ops) {
             const unsigned char *data = markdown_core_reader_rest(context->reader, 0);
             bufsize_t end = context->reader->nonspace, last = markdown_core_reader_length(context->reader);
             while (end < last && data[end] == '#') {
@@ -552,7 +486,7 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
                 last--;
             }
             if (end == last) {
-                markdown_core_topic_report_line(parser, context->reader->nonspace, end);
+                markdown_core_line_report(self->needs[HEADING_TOPIC_LINES], parser, context->reader->nonspace, end);
             }
         }
     } else if (context->paragraph && (first == '=' || first == '-') &&
@@ -736,7 +670,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .stages = &HEADING_STAGES,
     .names = &HEADING_NAMES,
     .facets = MARKDOWN_CORE_HEADING_FACETS,
-    .peers = HEADING_PEERS,
+    .needs = HEADING_NEEDS,
     .spaces = HEADING_SPACES,
     .name = "heading",
     .state_size = sizeof(markdown_core_heading_state),

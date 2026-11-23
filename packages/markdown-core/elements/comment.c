@@ -1,5 +1,6 @@
 #include "comment_scanners.h"
 #include "comment.h"
+#include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "parts.h"
@@ -90,7 +91,8 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
             markdown_core_parser_see_end(parser);
             break;
         }
-        if (line->indent < 4 && is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
+        if (line->indent < 4 &&
+            is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
             closed = !parser->error;
             break;
         }
@@ -312,7 +314,13 @@ const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+static markdown_core_node *S_make_html(const markdown_core_element_instance *self,
+                                       markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t length);
+static const markdown_core_make_ops COMMENT_HTML = {.make = S_make_html};
+static const markdown_core_service COMMENT_SERVICES[] = {{MARKDOWN_CORE_SERVICE_HTML_COMMENTS, &COMMENT_HTML}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
+    .provides = COMMENT_SERVICES,
     .facets = MARKDOWN_CORE_COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),
     .follows = COMMENT_FOLLOWS,
@@ -489,29 +497,11 @@ static bool close_comment(const markdown_core_element_instance *self, markdown_c
     return true;
 }
 
-bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t *length) {
-    if (markdown_core_inline_char_at(inline_state, pos) != '!' ||
-        markdown_core_inline_char_at(inline_state, pos + 1) != '-' ||
-        markdown_core_inline_char_at(inline_state, pos + 2) != '-') {
-        return false;
-    }
-    if (markdown_core_inline_char_at(inline_state, pos + 3) == '>') {
-        *length = 4;
-    } else if (markdown_core_inline_char_at(inline_state, pos + 3) == '-' &&
-               markdown_core_inline_char_at(inline_state, pos + 4) == '>') {
-        *length = 5;
-    } else {
-        *length = scan_html_comment(markdown_core_inline_window(inline_state, 0).data,
-                                    markdown_core_inline_window(inline_state, 0).len, pos + 1);
-        /* 0 when no closer follows through the end of the input. */
-        if (*length > 0) {
-            *length += 1; // prefix "<"
-        }
-    }
-    return true;
-}
-markdown_core_node *markdown_core_comment_make_html(markdown_core_inline_state *inline_state, bufsize_t pos,
-                                                    bufsize_t length) {
+/* (services.h, MARKDOWN_CORE_SERVICE_HTML_COMMENTS) The comment the HTML
+ * grammar read, `length` bytes after its `<`, at `pos`. */
+static markdown_core_node *S_make_html(const markdown_core_element_instance *self,
+                                       markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t length) {
+    (void)self;
     /* The empty short forms have overlapping opening and closing markers. */
     bufsize_t body_length = length > 6 ? length - 6 : 0;
     markdown_core_chunk body = markdown_core_inline_take(inline_state, pos + 3, body_length);

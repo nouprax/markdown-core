@@ -1,9 +1,13 @@
 #include "inline_internal.h"
-#include "emphasis.h"
+#include "services.h"
 
-/* The elements whose grammar this element takes: emphasis's flanking of a
- * delimiter run (emphasis.h). */
-static const markdown_core_element *const STRIKETHROUGH_PEERS[] = {&MARKDOWN_CORE_ELEMENT_EMPHASIS, NULL};
+/* The services this element asks, as `self->needs` holds them: the flank
+ * rule of a paired delimiter run (services.h). */
+enum { STRIKETHROUGH_FLANK };
+static const char *const STRIKETHROUGH_NEEDS[] = {[STRIKETHROUGH_FLANK] = MARKDOWN_CORE_SERVICE_FLANK, NULL};
+static unsigned S_flank(const markdown_core_element_instance *self, markdown_core_flank flank) {
+    return markdown_core_flank_sides(self->needs[STRIKETHROUGH_FLANK], flank);
+}
 #include "strikethrough.h"
 #include "element.h"
 #include <parser.h>
@@ -32,7 +36,7 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
     .rule = MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     .delimiter = {.minimum_width = 2,
                   .maximum_width = 2,
-                  .flank = markdown_core_emphasis_free,
+                  .flank = S_flank,
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},
@@ -42,8 +46,16 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
     .transparent = "~",
 };
 
+/* What its nodes read as in a name: their children (element.h,
+ * markdown_core_facet). */
+const markdown_core_facet MARKDOWN_CORE_STRIKETHROUGH_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_STRIKETHROUGH, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
-    .peers = STRIKETHROUGH_PEERS,
+    .facets = MARKDOWN_CORE_STRIKETHROUGH_FACETS,
+    .needs = STRIKETHROUGH_NEEDS,
     .name = "strikethrough",
     .contain = &STRIKETHROUGH_CONTAIN,
     .inlines = &STRIKETHROUGH_INLINES,

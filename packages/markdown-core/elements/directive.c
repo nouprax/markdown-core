@@ -1,5 +1,6 @@
 #include "alloc.h"
 #include "attributes.h"
+#include "services.h"
 #include "block_internal.h"
 #include "directive.h"
 #include "element.h"
@@ -20,11 +21,14 @@
 
 typedef markdown_core_directive_value node_directive;
 
-/* The elements whose syntax this element asks, as `self->peers` holds
- * them. */
+/* The services this element asks, as `self->needs` holds them. */
 enum { DIRECTIVE_ATTRIBUTES };
-static const markdown_core_element *const DIRECTIVE_PEERS[] = {
-    [DIRECTIVE_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+static const char *const DIRECTIVE_NEEDS[] = {[DIRECTIVE_ATTRIBUTES] = MARKDOWN_CORE_SERVICE_ATTRIBUTES, NULL};
+
+/* The attribute grammar (services.h), NULL in a dialect without it. */
+static const markdown_core_attribute_ops *S_attributes(const markdown_core_element_instance *self) {
+    return self->needs[DIRECTIVE_ATTRIBUTES].ops;
+}
 
 typedef struct {
     bufsize_t name_start;
@@ -188,13 +192,22 @@ static void directive_opaque_adopt(markdown_core_node *view, markdown_core_node 
     markdown_core_chunk_adopt(&made->name, &directive->name);
 }
 
-/* Where the attribute block at `*pos` closes is the attribute element's
- * to say (element.h, `peers`); a dialect without it has none. */
+/* Where the attribute block at `*pos` closes is the attribute grammar's to
+ * say (services.h); a dialect without it has none. What it recognized stays
+ * in `parsed`, which lets it go either way. */
 static int scan_directive_attributes(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                      unsigned char *data, bufsize_t len, bufsize_t *pos, parsed_directive *parsed) {
-    const markdown_core_element_instance *peer = self->peers[DIRECTIVE_ATTRIBUTES];
-    const bufsize_t end =
-        peer ? markdown_core_attributes_close_at(peer, parser, &parsed->attributes, data, len, *pos) : 0;
+    const markdown_core_attribute_ops *attributes = S_attributes(self);
+    if (!attributes) {
+        return 0;
+    }
+    const markdown_core_element_instance *provider = self->needs[DIRECTIVE_ATTRIBUTES].instance;
+    attributes->release(provider, &parsed->attributes);
+    attributes->begin(provider, &parsed->attributes, data, len);
+    const bufsize_t end = attributes->end(provider, &parsed->attributes, *pos);
+    if (parsed->attributes.oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     if (!end) {
         return 0;
     }
@@ -283,8 +296,14 @@ static int apply_parsed_directive(const markdown_core_element_instance *self, ma
         const unsigned char *source = data + parsed->attributes_start;
         if (*source == '{') {
             /* The block's value is the attribute element's to write. */
-            if (!markdown_core_attributes_write(self->peers[DIRECTIVE_ATTRIBUTES], parser, &parsed->attributes,
-                                                parsed->attributes_start, node)) {
+            bufsize_t end;
+            const bool written =
+                S_attributes(self)->parse(self->needs[DIRECTIVE_ATTRIBUTES].instance, &parsed->attributes,
+                                          parsed->attributes_start, &node->attributes, &end);
+            if (parsed->attributes.oom) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            }
+            if (!written) {
                 return 0;
             }
         } else {
@@ -355,7 +374,14 @@ static void S_report_name(markdown_core_inline_state *inline_state, bufsize_t co
     markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
 }
 
-void markdown_core_directive_report_line(markdown_core_parser *parser, bufsize_t colon) {
+/* The name a line's `:` at `colon`, which the input's end cuts short, may
+ * yet begin, to the parse's context sink: the line is a definition's
+ * marker only while nothing follows it (services.h,
+ * MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES). */
+static void S_report_line(const markdown_core_element_instance *self, markdown_core_parser *parser, bufsize_t colon,
+                          bufsize_t end) {
+    (void)self;
+    (void)end;
     const markdown_core_field name = {
         MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE, colon + 1, name_end, {{0}}, 0, false, 0};
     markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
@@ -449,10 +475,10 @@ static markdown_core_node *match_colon_directive(const markdown_core_element_ins
     /* Without a label the attribute block anchors the directive: whether one
      * closes here is the attribute grammar's to say, and its value is that
      * element's to write, as it updates the directive (no-flush.md 10.13). */
-    const markdown_core_element_instance *attributes_peer = self->peers[DIRECTIVE_ATTRIBUTES];
-    if (!has_label &&
-        !(attributes_peer && pos < chunk->len && chunk->data[pos] == '{' &&
-          markdown_core_attributes_closes(attributes_peer, inline_state, pos, MARKDOWN_CORE_KIND_DIRECTIVE))) {
+    const markdown_core_attribute_ops *attributes = S_attributes(self);
+    if (!has_label && !(attributes && pos < chunk->len && chunk->data[pos] == '{' &&
+                        attributes->closes(self->needs[DIRECTIVE_ATTRIBUTES].instance, inline_state, pos,
+                                           MARKDOWN_CORE_KIND_DIRECTIVE))) {
         return NULL;
     }
 
@@ -572,8 +598,9 @@ static void S_report_block(const markdown_core_element_instance *self, markdown_
     while (len > suffix && markdown_core_is_line_end(input[len - 1])) {
         len--;
     }
-    const markdown_core_element_instance *peer = self->peers[DIRECTIVE_ATTRIBUTES];
-    if (peer && markdown_core_attributes_report(peer, parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, input, suffix, len)) {
+    const markdown_core_attribute_ops *attributes = S_attributes(self);
+    if (attributes && attributes->report(self->needs[DIRECTIVE_ATTRIBUTES].instance, parser,
+                                         MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, input, suffix, len)) {
         return;
     }
     bufsize_t word = suffix;
@@ -657,8 +684,8 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
 
 done:
-    if (self->peers[DIRECTIVE_ATTRIBUTES]) {
-        markdown_core_attributes_release(self->peers[DIRECTIVE_ATTRIBUTES], &parsed.attributes);
+    if (S_attributes(self)) {
+        S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &parsed.attributes);
     }
     return node;
 }
@@ -795,20 +822,33 @@ static markdown_core_node **S_label(const markdown_core_node *node) {
     return &((markdown_core_directive_value *)node->opaque)->label;
 }
 
+/* An inline directive reads as its label in a name. */
+static bool S_words(const markdown_core_node *node, const markdown_core_words *words) {
+    const markdown_core_node *label = *S_label(node);
+    return !label || markdown_core_words_children(label, words);
+}
+
 const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_DIRECTIVE,
      .parts = markdown_core_directive_parts,
      .name = markdown_core_elements_get_directive_name,
-     .label = S_label},
+     .label = S_label,
+     .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
      .parts = markdown_core_directive_parts,
      .name = markdown_core_elements_get_directive_name,
      .label = S_label},
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_LABEL, .words = markdown_core_words_children},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+static const markdown_core_report_ops DIRECTIVE_REPORTS = {.report = S_report_line};
+static const markdown_core_service DIRECTIVE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES, &DIRECTIVE_REPORTS},
+                                                           {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
-    .peers = DIRECTIVE_PEERS,
+    .provides = DIRECTIVE_SERVICES,
+    .needs = DIRECTIVE_NEEDS,
     .facets = MARKDOWN_CORE_DIRECTIVE_FACETS,
     .edit = &DIRECTIVE_EDIT,
     .name = "directive",

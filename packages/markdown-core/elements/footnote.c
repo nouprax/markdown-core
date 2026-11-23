@@ -1,5 +1,4 @@
 #include "alloc.h"
-#include "link.h"
 #include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
 #include "footnote.h"
@@ -7,11 +6,10 @@
 #include "block_internal.h"
 #include "parts.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { FOOTNOTE_LINK };
-static const markdown_core_element *const FOOTNOTE_PEERS[] = {[FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
-
-const markdown_core_bracket_shape MARKDOWN_CORE_FOOTNOTE_BRACKET = {.width = 2, .mark = -1, .own = true, .closer = ']'};
+/* An inline note's bracket, opened by a `^[`: a body of its own
+ * (bracket.h). */
+static const markdown_core_bracket_shape MARKDOWN_CORE_FOOTNOTE_BRACKET = {
+    .width = 2, .mark = -1, .own = true, .closer = ']', .kind = MARKDOWN_CORE_KIND_FOOTNOTE};
 
 const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .folds = true};
 /* The spaces this element files labels in, as `self->spaces` numbers them. */
@@ -117,8 +115,10 @@ static markdown_core_node *markdown_core_inline_close_inline_footnote(const mark
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
-    /* An inline note opens a bracket, which only a dialect with links reads. */
-    if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[' || !self->peers[FOOTNOTE_LINK]) {
+    /* An inline note opens a bracket, which only a dialect that closes one
+     * reads. */
+    if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[' ||
+        !markdown_core_inline_bracket_closes(self, inline_state)) {
         return NULL;
     }
     markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (2));
@@ -195,7 +195,6 @@ const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
     .edit = &FOOTNOTE_EDIT,
-    .peers = FOOTNOTE_PEERS,
     .spaces = FOOTNOTE_SPACES,
     .name = "footnote",
     .inlines = &FOOTNOTE_INLINES,

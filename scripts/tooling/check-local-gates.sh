@@ -33,7 +33,7 @@ echo "context-coverage  : $(node scripts/audit/check-context-coverage.mjs 2>&1 |
 echo "source-lists      : $(node scripts/audit/check-source-lists.mjs 2>&1 | tail -1)"
 echo "public-surface    : $(bash scripts/audit/check-public-surface.sh 2>&1 | tail -1)"
 echo "package-contents  : $(bash scripts/audit/check-package-contents.sh 2>&1 | tail -1)"
-echo "element-peers     : $(node scripts/audit/check-element-peers.mjs 2>&1 | tail -1)"
+echo "element-services  : $(node scripts/audit/check-element-services.mjs 2>&1 | tail -1)"
 echo "element-stream    : $(node scripts/audit/check-element-stream.mjs 2>&1 | tail -1)"
 echo "special-chars     : $(node scripts/audit/check-element-special-chars.mjs 2>&1 | head -1)"
 echo "attach-order      : $(node scripts/audit/check-element-attach-order.mjs 2>&1 | tail -1)"

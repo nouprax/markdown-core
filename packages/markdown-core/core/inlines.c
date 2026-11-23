@@ -274,6 +274,7 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     unsigned char c = markdown_core_inline_peek_at(inline_state, start);
     delimiter_run run = {.start = start, .end = start, .rule = rule};
     assert(run.rule != MARKDOWN_CORE_DELIM_RULE_NONE);
+    const markdown_core_element_instance *owner = inline_state->dialect->delimiter_owners[run.rule];
     const delimiter_rule_spec *spec = delimiter_spec(inline_state, run.rule);
     while (run.end < inline_state->input.len && markdown_core_inline_peek_at(inline_state, run.end) == c &&
            (!spec->run_limit || run.end - run.start < spec->run_limit)) {
@@ -338,7 +339,7 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     const markdown_core_flank flank = {
         before & MARKDOWN_CORE_UNICODE_WHITESPACE, after & MARKDOWN_CORE_UNICODE_WHITESPACE,
         before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL, after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL};
-    const unsigned sides = spec->flank ? spec->flank(flank) : 0u;
+    const unsigned sides = spec->flank ? spec->flank(owner, flank) : 0u;
     run.can_open = (sides & MARKDOWN_CORE_FLANK_OPENS) != 0;
     run.can_close = (sides & MARKDOWN_CORE_FLANK_CLOSES) != 0;
     inline_state->cached_run = run;

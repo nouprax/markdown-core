@@ -1,13 +1,12 @@
 #include "definition_list.h"
-#include "link.h"
+#include "services.h"
 #include "block_internal.h"
-#include "directive.h"
 
-/* The elements whose syntax this element asks, as `self->peers` holds
- * them. */
-enum { DEFINITION_LINK, DEFINITION_DIRECTIVE };
-static const markdown_core_element *const DEFINITION_PEERS[] = {
-    [DEFINITION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [DEFINITION_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE, NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { DEFINITION_LABELS, DEFINITION_DIRECTIVE_LINES };
+static const char *const DEFINITION_NEEDS[] = {[DEFINITION_LABELS] = MARKDOWN_CORE_SERVICE_LABELS,
+                                               [DEFINITION_DIRECTIVE_LINES] = MARKDOWN_CORE_SERVICE_DIRECTIVE_LINES,
+                                               NULL};
 
 static inline bool markdown_core_block_definition_marker(markdown_core_reader *reader);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
@@ -184,9 +183,10 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool definition_term_reads(const mark
     markdown_core_definition_list_work *counts = self->state;
     markdown_core_chunk term = {(unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
                                 markdown_core_reader_length(reader) - reader->nonspace, 0};
-    if (term.data[0] == '[' && self->peers[DEFINITION_LINK]) {
+    const markdown_core_need labels = self->needs[DEFINITION_LABELS];
+    if (term.data[0] == '[' && labels.ops) {
         counts->work += term.len;
-        bool reference = markdown_core_reference_definition_length(self->peers[DEFINITION_LINK], parser, &term) != 0;
+        bool reference = ((const markdown_core_label_ops *)labels.ops)->definition(labels.instance, parser, &term) != 0;
         if (reference || parser->error) {
             return false;
         }
@@ -282,9 +282,10 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
         return false;
     }
-    if (parser->sink && self->peers[DEFINITION_DIRECTIVE] && markdown_core_reader_peek(reader, first) == ':' &&
+    if (parser->sink && self->needs[DEFINITION_DIRECTIVE_LINES].ops &&
+        markdown_core_reader_peek(reader, first) == ':' &&
         markdown_core_is_line_end(markdown_core_reader_peek(reader, first + 1))) {
-        markdown_core_directive_report_line(parser, first);
+        markdown_core_line_report(self->needs[DEFINITION_DIRECTIVE_LINES], parser, first, first + 1);
     }
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
     start->open = markdown_core_definition_list_open;
@@ -444,7 +445,7 @@ static const markdown_core_line_ops DEFINITION_LIST_LINES = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
-    .peers = DEFINITION_PEERS,
+    .needs = DEFINITION_NEEDS,
     .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
     .name = "definition_list",

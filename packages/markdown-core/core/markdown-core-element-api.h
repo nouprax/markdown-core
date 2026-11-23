@@ -344,15 +344,30 @@ typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const mark
  * `markdown_core_run_state` for the run's. Hooks that act on nodes outside a
  * parse (`can_contain_func` and the rest) take the descriptor alone.
  *
- * An element whose code reads ANOTHER element's state declares that element
- * in `peers`. Sealing resolves each declared peer once, in declaration order,
- * into `self->peers`: the peer's instance, or NULL when the dialect does not
- * hold it. The declaration is where one element depending on another is
- * written down, and no parse-time code looks an element up by name. The
+ * An element whose code asks ANOTHER element something asks a service
+ * (element.h, markdown_core_service): it names the service in `needs`, and
+ * the one that answers names it in `provides`. Sealing resolves each need
+ * once, in declaration order, into `self->needs`: the instance of the last
+ * element registered that provides it and that element's operations, or
+ * both NULL when no element of the dialect does. The declaration is where
+ * one element depending on another is written down; no element names
+ * another, and no parse-time code looks one up by name. The
  * engine never reads a record; it knows sizes and lifetimes only, so an
  * element that needs state declares a size rather than adding a field to a
  * core struct.
  */
+/* Facets (element.h, markdown_core_facet) are kept by public kind, below
+ * this many. */
+#define MARKDOWN_CORE_FACET_ROOM 64
+
+/* A SERVICE AS A PARSE RESOLVED IT: the instance that provides it and its
+ * operations, an interface of elements/services.h, or both NULL when the
+ * dialect holds no provider. */
+typedef struct markdown_core_need {
+    const markdown_core_element_instance *instance;
+    const void *ops;
+} markdown_core_need;
+
 struct markdown_core_element_instance {
     const markdown_core_element *element;
     /* The element's `lines` (element.h), never NULL: an element whose
@@ -364,8 +379,11 @@ struct markdown_core_element_instance {
     /* Where the element's record lies in a run's block of records, and
      * where its record lies in a bracket's (bracket.h, `bracket_size`). */
     size_t run_offset, bracket_offset;
-    /* The instances of the descriptor's `peers`, in its order. */
-    const markdown_core_element_instance *const *peers;
+    /* The services the descriptor `needs`, in its order. */
+    const markdown_core_need *needs;
+    /* The dialect that holds it, which answers what the dialect's other
+     * kinds show (markdown_core_instance_facet). */
+    const struct markdown_core_dialect *dialect;
     /* The roster kinds of the descriptor's `spaces`, in its order
      * (element.h, markdown_core_space). */
     const unsigned *spaces;
@@ -378,7 +396,7 @@ struct markdown_core_element_instance {
  *  dialect does not hold `element`. A dialect holds an element once:
  *  registration refuses a descriptor already attached. For code outside the
  *  dialect -- an embedder or a test inspecting a parse; an element reaches
- *  another through its declared `peers`. */
+ *  another through the services it `needs`. */
 const markdown_core_element_instance *markdown_core_parser_instance(const markdown_core_parser *parser,
                                                                     const markdown_core_element *element);
 

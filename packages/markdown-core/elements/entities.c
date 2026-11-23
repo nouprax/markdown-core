@@ -1,25 +1,21 @@
 #include "entities.h"
+#include "services.h"
 #include "houdini.h"
 #include "inline_internal.h"
 #include "markdown_core_ctype.h"
 
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
-bufsize_t markdown_core_entities_read(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
-                                      const uint8_t *src, bufsize_t size) {
-    return entities ? houdini_unescape_ent(out, src, size) : 0;
+static bufsize_t S_read(const markdown_core_element_instance *self, markdown_core_strbuf *out, const uint8_t *data,
+                        bufsize_t size) {
+    (void)self;
+    return houdini_unescape_ent(out, data, size);
 }
 
-int markdown_core_entities_decode(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
-                                  const uint8_t *src, bufsize_t size) {
-    return entities ? houdini_unescape_html(out, src, size) : 0;
-}
-
-void markdown_core_entities_copy(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
-                                 const uint8_t *src, bufsize_t size) {
-    if (!markdown_core_entities_decode(entities, out, src, size)) {
-        markdown_core_strbuf_put(out, src, size);
-    }
+static bool S_decode(const markdown_core_element_instance *self, markdown_core_strbuf *out, const uint8_t *data,
+                     bufsize_t size) {
+    (void)self;
+    return houdini_unescape_html(out, data, size) != 0;
 }
 
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -74,7 +70,11 @@ static const markdown_core_inline_ops ENTITIES_INLINES = {
     .dispatch = "&",
 };
 
+static const markdown_core_decoder ENTITIES_DECODER = {.read = S_read, .decode = S_decode};
+static const markdown_core_service ENTITIES_SERVICES[] = {{MARKDOWN_CORE_SERVICE_REFERENCES, &ENTITIES_DECODER}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ENTITIES = {
     .name = "entities",
+    .provides = ENTITIES_SERVICES,
     .inlines = &ENTITIES_INLINES,
 };

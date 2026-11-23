@@ -22,7 +22,5 @@ typedef struct {
 bufsize_t markdown_core_comment_block_start(const markdown_core_node *node);
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
                                                       markdown_core_chunk literal);
-bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t *length);
-markdown_core_node *markdown_core_comment_make_html(markdown_core_inline_state *inline_state, bufsize_t pos,
-                                                    bufsize_t length);
+/* It provides MARKDOWN_CORE_SERVICE_HTML_COMMENTS (services.h). */
 #endif

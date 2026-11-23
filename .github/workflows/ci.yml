@@ -59,7 +59,7 @@ jobs:
                   pnpm audit:ci
                   pnpm audit:surface
                   pnpm check:element-inventory
-                  pnpm audit:element-peers
+                  pnpm audit:element-services
                   pnpm audit:element-stream
                   pnpm audit:core-kinds
                   pnpm audit:element-special-chars

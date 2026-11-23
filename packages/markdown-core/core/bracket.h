@@ -24,12 +24,14 @@
  * (markdown_core_inline_state_context_start), and leaves the rule about
  * links inside links to its element, which restores it as it closes. A
  * `keeps` bracket leaves that rule as it was around it. `closer` is the
- * byte that closes it. */
+ * byte that closes it, and `kind` the kind of the construct its element
+ * opens it for, which the rules that close it read (an image's `![`). */
 typedef struct markdown_core_bracket_shape {
     uint8_t width, kept;
     int8_t mark;
     bool own, keeps;
     unsigned char closer;
+    markdown_core_node_kind kind;
 } markdown_core_bracket_shape;
 
 /* An open bracket, an item of the run's stack of open brackets (stack.h),
@@ -80,6 +82,13 @@ static inline void *markdown_core_bracket_record(const bracket *b, const markdow
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *owner,
                                        markdown_core_inline_state *inline_state,
                                        const markdown_core_bracket_shape *shape, markdown_core_node *text);
+/* Whether a bracket `owner` opens can close: the dialect has a rule that
+ * closes the brackets no `mine` rule claims, or `owner` has `mine` rules.
+ * An opener none closes is text. */
+static inline bool markdown_core_inline_bracket_closes(const markdown_core_element_instance *owner,
+                                                       const markdown_core_inline_state *inline_state) {
+    return inline_state->dialect->shared > 0 || owner->mine_count > 0;
+}
 /* The innermost bracket closes, its construct made or not: the dialect's
  * elements are told (`freed`) and it is freed. */
 void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state);

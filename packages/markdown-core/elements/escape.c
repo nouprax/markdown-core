@@ -1,18 +1,20 @@
 #include "alloc.h"
 #include "escape.h"
-#include "text.h"
+#include "services.h"
 #include "inline_internal.h"
 #include "markdown_core_ctype.h"
 
-/* The elements whose state this element names: an escaped space is the
- * text element's contextual space (text.h). */
-static const markdown_core_element *const ESCAPE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_TEXT, NULL};
+/* The services this element asks, as `self->needs` holds them: an escaped
+ * space is a word space (services.h). */
+enum { ESCAPE_WORD_SPACES };
+static const char *const ESCAPE_NEEDS[] = {[ESCAPE_WORD_SPACES] = MARKDOWN_CORE_SERVICE_WORD_SPACES, NULL};
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
-void markdown_core_escape_strip(const markdown_core_element_instance *escape, markdown_core_strbuf *buf) {
-    if (!escape) {
-        return;
-    }
+/* The escapes of a slice another element decodes (a link's destination and
+ * title, a fence's info string): `buf` loses each backslash before an ASCII
+ * punctuation character, in place. */
+static void S_strip(const markdown_core_element_instance *self, markdown_core_strbuf *buf) {
+    (void)self;
     bufsize_t r, w;
 
     markdown_core_strbuf_unsettle(buf, 0);
@@ -82,7 +84,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         if (escaped) {
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
-            escaped->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+            markdown_core_word_space_note(self->needs[ESCAPE_WORD_SPACES], escaped);
         }
         return escaped;
     }
@@ -158,8 +160,12 @@ static const markdown_core_inline_ops ESCAPE_INLINES = {
     .dispatch = "\\",
 };
 
+static const markdown_core_decoder ESCAPE_DECODER = {.strip = S_strip};
+static const markdown_core_service ESCAPE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_ESCAPES, &ESCAPE_DECODER}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ESCAPE = {
-    .peers = ESCAPE_PEERS,
+    .provides = ESCAPE_SERVICES,
+    .needs = ESCAPE_NEEDS,
     .state_size = sizeof(markdown_core_escape_work),
     .name = "escape",
     .inlines = &ESCAPE_INLINES,

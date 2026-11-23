@@ -10,22 +10,8 @@
  * its decoder (houdini.h) are this element's and nobody else's. */
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_ENTITIES;
 
-/* The decoders of the references in a slice another element decodes (an
- * attribute value, a link's destination and title, a fence's info string,
- * an autolink), for an element that holds the entities element as a peer.
- * A NULL `entities`, a dialect without the element, decodes nothing.
- *
- * `read`: the reference whose name, after its `&`, begins `src`: appends
- * its character to `out` and returns the bytes it spans after the `&`, or
- * 0 when none begins there.
- * `decode`: `src` with every reference decoded, appended to `out`; 0, and
- * nothing appended, when `src` holds no `&` to decode.
- * `copy`: `decode`, appending `src` as it is when it returns 0. */
-bufsize_t markdown_core_entities_read(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
-                                      const uint8_t *src, bufsize_t size);
-int markdown_core_entities_decode(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
-                                  const uint8_t *src, bufsize_t size);
-void markdown_core_entities_copy(const markdown_core_element_instance *entities, markdown_core_strbuf *out,
-                                 const uint8_t *src, bufsize_t size);
+/* It provides MARKDOWN_CORE_SERVICE_REFERENCES (services.h): a decoder
+ * that reads one reference after its `&` and decodes every reference of a
+ * slice. */
 
 #endif

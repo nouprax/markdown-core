@@ -1,5 +1,6 @@
 #include "emphasis.h"
 #include "inline_internal.h"
+#include "services.h"
 
 static inline bool S_left(markdown_core_flank flank) {
     return !flank.space_after && (!flank.punct_after || flank.space_before || flank.punct_before);
@@ -9,11 +10,16 @@ static inline bool S_right(markdown_core_flank flank) {
     return !flank.space_before && (!flank.punct_before || flank.space_after || flank.punct_after);
 }
 
-unsigned markdown_core_emphasis_free(markdown_core_flank flank) {
+/* `*`: a left-flanking run opens and a right-flanking one closes. */
+static unsigned S_free(const markdown_core_element_instance *self, markdown_core_flank flank) {
+    (void)self;
     return (S_left(flank) ? MARKDOWN_CORE_FLANK_OPENS : 0u) | (S_right(flank) ? MARKDOWN_CORE_FLANK_CLOSES : 0u);
 }
 
-unsigned markdown_core_emphasis_bound(markdown_core_flank flank) {
+/* `_`: a run flanking on both sides opens only after punctuation and closes
+ * only before it. */
+static unsigned S_bound(const markdown_core_element_instance *self, markdown_core_flank flank) {
+    (void)self;
     const bool left = S_left(flank), right = S_right(flank);
     return (left && (!right || flank.punct_before) ? MARKDOWN_CORE_FLANK_OPENS : 0u) |
            (right && (!left || flank.punct_after) ? MARKDOWN_CORE_FLANK_CLOSES : 0u);
@@ -38,7 +44,7 @@ static const markdown_core_inline_ops EMPHASIS_INLINES = {
     .delimiter = {.minimum_width = 1,
                   .maximum_width = 2,
                   .rule_of_three = true,
-                  .flank = markdown_core_emphasis_free,
+                  .flank = S_free,
                   .body = DELIMITER_INLINE_BODY,
                   .single_kind = MARKDOWN_CORE_NODE_EMPHASIS,
                   .double_kind = MARKDOWN_CORE_NODE_STRONG},
@@ -47,8 +53,22 @@ static const markdown_core_inline_ops EMPHASIS_INLINES = {
     .dispatch = "*",
 };
 
+/* The `*` rule, which the other paired-run elements take as theirs. */
+static const markdown_core_flank_rule EMPHASIS_FLANK = {.sides = S_free};
+static const markdown_core_service EMPHASIS_SERVICES[] = {{MARKDOWN_CORE_SERVICE_FLANK, &EMPHASIS_FLANK}, {0}};
+
+/* What its nodes read as in a name: their children (element.h,
+ * markdown_core_facet). */
+const markdown_core_facet MARKDOWN_CORE_EMPHASIS_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_EMPHASIS, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_STRONG, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMPHASIS = {
+    .facets = MARKDOWN_CORE_EMPHASIS_FACETS,
     .name = "emphasis",
+    .provides = EMPHASIS_SERVICES,
     .inlines = &EMPHASIS_INLINES,
 };
 static const markdown_core_inline_ops EMPHASIS_UNDERSCORE_INLINES = {
@@ -58,7 +78,7 @@ static const markdown_core_inline_ops EMPHASIS_UNDERSCORE_INLINES = {
     .delimiter = {.minimum_width = 1,
                   .maximum_width = 2,
                   .rule_of_three = true,
-                  .flank = markdown_core_emphasis_bound,
+                  .flank = S_bound,
                   .body = DELIMITER_INLINE_BODY,
                   .single_kind = MARKDOWN_CORE_NODE_EMPHASIS,
                   .double_kind = MARKDOWN_CORE_NODE_STRONG},

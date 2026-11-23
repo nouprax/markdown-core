@@ -23,11 +23,9 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
 /* The space of reference labels (roster.h): a link reference definition's,
  * which a heading's text declares too, folded. */
 extern const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE;
-/* A link's bracket, opened by a `[` (bracket.h). */
-extern const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET;
 /* The destination and the title of a link as values: their references
- * and escapes decoded, by the elements `link` (the link element's instance)
- * holds as peers. */
+ * and escapes decoded, by the services `link` (the link element's instance)
+ * needs (services.h). */
 markdown_core_chunk markdown_core_clean_url(const markdown_core_element_instance *link, markdown_core_chunk *url,
                                             int *lost);
 markdown_core_optional_chunk markdown_core_clean_title(const markdown_core_element_instance *link,

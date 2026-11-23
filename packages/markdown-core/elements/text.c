@@ -1,11 +1,11 @@
 #include "parts.h"
-#include "embedded.h"
 #include "text.h"
+#include "services.h"
 #include "inline_internal.h"
 
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { TEXT_EMBEDDED };
-static const markdown_core_element *const TEXT_PEERS[] = {[TEXT_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { TEXT_DIMENSIONS };
+static const char *const TEXT_NEEDS[] = {[TEXT_DIMENSIONS] = MARKDOWN_CORE_SERVICE_DIMENSIONS, NULL};
 
 markdown_core_node *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                              markdown_core_inline_state *inline_state, bufsize_t endpos) {
@@ -37,8 +37,9 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */
-    if (self->peers[TEXT_EMBEDDED]) {
-        markdown_core_embedded_record_text(self->peers[TEXT_EMBEDDED], inline_state, endpos);
+    const markdown_core_need dimensions = self->needs[TEXT_DIMENSIONS];
+    if (dimensions.ops) {
+        ((const markdown_core_dimension_ops *)dimensions.ops)->record(dimensions.instance, inline_state, endpos);
     }
     contents = markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state),
                                          endpos - markdown_core_inline_offset(inline_state));
@@ -58,6 +59,11 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
      * is what L5 measures. */
     return new_inl;
 }
+static void S_note(const markdown_core_element_instance *self, markdown_core_node *node) {
+    (void)self;
+    node->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+}
+
 static void complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *node, int word_depth) {
     (void)self;
@@ -81,13 +87,17 @@ static const markdown_core_inline_ops TEXT_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts, .words = markdown_core_words_literal},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+static const markdown_core_word_space TEXT_WORD_SPACES = {.note = S_note};
+static const markdown_core_service TEXT_SERVICES[] = {{MARKDOWN_CORE_SERVICE_WORD_SPACES, &TEXT_WORD_SPACES}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
+    .provides = TEXT_SERVICES,
     .facets = MARKDOWN_CORE_TEXT_FACETS,
-    .peers = TEXT_PEERS,
+    .needs = TEXT_NEEDS,
     .state_size = sizeof(markdown_core_text_work),
     .name = "text",
     .finish = &TEXT_FINISH,

@@ -1,6 +1,6 @@
 #ifndef MARKDOWN_CORE_CITATION_STATE_H
 #define MARKDOWN_CORE_CITATION_STATE_H
-#include "code.h"
+#include "services.h"
 #include "delimiter.h"
 #include "inline_internal.h"
 
@@ -39,12 +39,12 @@ typedef struct {
 } citation_brace;
 
 /* The index's code spans read ahead of the run's own, from backtick runs the
- * run may not take as openers, so they keep a backtick index of their own
- * (code.h). */
+ * run may not take as openers, so they keep a memo of their own
+ * (services.h, MARKDOWN_CORE_SERVICE_CODE_SPANS). */
 typedef struct {
     citation_brace *entries;
     size_t count, cursor;
-    markdown_core_backticks ticks;
+    markdown_core_skip_memo ticks;
     bool ready;
 } citation_brace_index;
 

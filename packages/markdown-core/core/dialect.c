@@ -167,6 +167,29 @@ static bool S_element_attached(const markdown_core_element *const *elements, siz
     return false;
 }
 
+/* Whether `a` and `b` are one space: a space is its name (element.h,
+ * markdown_core_space). */
+static bool S_same_space(const markdown_core_space *a, const markdown_core_space *b) {
+    return a == b || strcmp(a->name, b->name) == 0;
+}
+
+/* Whether two of the spaces the `count` elements name are one space that
+ * folds in one and not the other, which no dialect holds. */
+static bool S_spaces_disagree(const markdown_core_element *const *elements, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        for (const markdown_core_space *const *space = elements[i]->spaces; space && *space; space++) {
+            for (size_t e = 0; e <= i; e++) {
+                for (const markdown_core_space *const *other = elements[e]->spaces; other && *other; other++) {
+                    if (S_same_space(*other, *space) && (*other)->folds != (*space)->folds) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /* The distinct spaces the `count` elements name, and, past `limit`, any
  * number over it. */
 static size_t S_count_spaces(const markdown_core_element *const *elements, size_t count, size_t limit) {
@@ -179,7 +202,7 @@ static size_t S_count_spaces(const markdown_core_element *const *elements, size_
                     if (e == i && other == space) {
                         break;
                     }
-                    if (*other == *space) {
+                    if (S_same_space(*other, *space)) {
                         seen = true;
                         break;
                     }
@@ -197,6 +220,7 @@ void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
     for (size_t i = 0; i < count; i++) {
         assert(!S_element_refused(elements[i]) && !S_element_attached(elements, i, elements[i]));
     }
+    assert(!S_spaces_disagree(elements, count));
 #endif
     builder->elements = elements;
     builder->element_allocation = NULL;
@@ -222,7 +246,8 @@ int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder,
             probe[i] = builder->elements[i];
         }
         probe[count] = element;
-        if (S_count_spaces(probe, count + 1, MARKDOWN_CORE_SPACE_LIMIT) > MARKDOWN_CORE_SPACE_LIMIT) {
+        if (S_count_spaces(probe, count + 1, MARKDOWN_CORE_SPACE_LIMIT) > MARKDOWN_CORE_SPACE_LIMIT ||
+            S_spaces_disagree(probe, count + 1)) {
             return 0;
         }
     }
@@ -664,17 +689,36 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
     }
 }
 
-/* THE PEERS: each instance's declared peers resolved, in declaration order,
- * to their instances in this dialect -- NULL for one the dialect does not
- * hold. Resolution happens here, once, so no parse-time code asks for
- * another element by name; the element that reads a peer's record decides
- * what an absent peer means. */
-static void S_resolve_peers(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
-                            const markdown_core_element_instance **peers) {
+/* THE NEEDS: each service an instance asks resolved, in declaration order,
+ * to the last instance of this dialect that provides it and that element's
+ * operations -- both NULL when none does, as an owner of a role is the
+ * last element that declares it (S_resolve_owners), so a setup that
+ * registers a replacement provides the service for it. Resolution happens
+ * here, once, so no parse-time code asks for a service by name; the element
+ * that asks decides what an absent one means. */
+static const void *S_provided(const markdown_core_element *element, const char *name) {
+    for (const markdown_core_service *service = element->provides; service && service->name; service++) {
+        if (strcmp(service->name, name) == 0) {
+            return service->ops;
+        }
+    }
+    return NULL;
+}
+
+static void S_resolve_needs(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
+                            markdown_core_need *needs) {
     for (size_t i = 0; i < dialect->element_count; i++) {
-        instances[i].peers = peers;
-        for (const markdown_core_element *const *peer = instances[i].element->peers; peer && *peer; peer++) {
-            *peers++ = markdown_core_dialect_instance(dialect, *peer);
+        instances[i].needs = needs;
+        for (const char *const *name = instances[i].element->needs; name && *name; name++) {
+            *needs = (markdown_core_need){0};
+            for (size_t e = dialect->element_count; e-- > 0;) {
+                const void *ops = S_provided(instances[e].element, *name);
+                if (ops) {
+                    *needs = (markdown_core_need){&instances[e], ops};
+                    break;
+                }
+            }
+            needs++;
         }
     }
 }
@@ -690,7 +734,7 @@ static void S_number_spaces(markdown_core_dialect *dialect, markdown_core_elemen
         instances[i].spaces = namings;
         for (const markdown_core_space *const *space = instances[i].element->spaces; space && *space; space++) {
             size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
-            while (kind < kinds && spaces[kind] != *space) {
+            while (kind < kinds && !S_same_space(spaces[kind], *space)) {
                 kind++;
             }
             if (kind == kinds) {
@@ -780,8 +824,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         sizes->run_state_bytes += markdown_core_state_align(elements[i]->run_state_size);
         sizes->pointers += elements[i]->names != NULL;
         sizes->pointers += elements[i]->stages != NULL;
-        for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
-            sizes->peers++;
+        for (const char *const *name = elements[i]->needs; name && *name; name++) {
+            sizes->needs++;
         }
         for (const markdown_core_space *const *space = elements[i]->spaces; space && *space; space++) {
             sizes->namings++;
@@ -807,10 +851,9 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     sizes->spaces = S_count_spaces(elements, count, SIZE_MAX);
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
            sizes->closers * sizeof(markdown_core_closer) +
-           (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
-               sizeof(const markdown_core_element_instance *) +
-           (sizes->spaces + 2) * sizeof(const markdown_core_space *) + sizes->namings * sizeof(unsigned) +
-           sizes->gate_bytes;
+           (sizes->pointers + ((size_t)1 << sizes->instance_bits)) * sizeof(const markdown_core_element_instance *) +
+           sizes->needs * sizeof(markdown_core_need) + (sizes->spaces + 2) * sizeof(const markdown_core_space *) +
+           sizes->namings * sizeof(unsigned) + sizes->gate_bytes;
 }
 
 /* THE RULES FOR CLOSING A BRACKET (element.h, markdown_core_close_rule):
@@ -866,7 +909,7 @@ static void S_project_closers(markdown_core_dialect *dialect, markdown_core_elem
  * `sizes` was measured for. The tail after the struct holds the finish step
  * entries, then the instances, then the rules for closing a bracket, then the instance-pointer lists (the block
  * families, the inline-content families, the inline dispatch), the
- * instance table and the resolved peers, then the gate tables. Each region's alignment is at most
+ * instance table and the resolved needs, then the gate tables. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
  * list is copied into the instances rather than taken, so the dialect owns
  * nothing apart from its storage and the builder still owns what it did. */
@@ -879,15 +922,25 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     const markdown_core_element_instance **entries =
         (const markdown_core_element_instance **)(closers + sizes->closers);
     const markdown_core_element_instance **table = entries + sizes->pointers;
-    const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
-    const markdown_core_space **spaces = (const markdown_core_space **)(peers + sizes->peers);
+    markdown_core_need *resolved = (markdown_core_need *)(table + ((size_t)1 << sizes->instance_bits));
+    const markdown_core_space **spaces = (const markdown_core_space **)(resolved + sizes->needs);
     unsigned *namings = (unsigned *)(spaces + sizes->spaces + 2);
     uint8_t *tables = (uint8_t *)(namings + sizes->namings);
 
     dialect->element_count = count;
     S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);
     assert(dialect->run_state_size == sizes->run_state_bytes);
-    S_resolve_peers(dialect, instances, peers);
+    S_resolve_needs(dialect, instances, resolved);
+    memset(dialect->facets, 0, sizeof(dialect->facets));
+    for (size_t i = 0; i < count; i++) {
+        instances[i].dialect = dialect;
+        for (const markdown_core_facet *facet = instances[i].element->facets;
+             facet && facet->kind != MARKDOWN_CORE_KIND_NONE; facet++) {
+            if ((size_t)facet->kind < MARKDOWN_CORE_FACET_ROOM) {
+                dialect->facets[facet->kind] = facet;
+            }
+        }
+    }
     S_number_spaces(dialect, instances, spaces, namings);
     S_resolve_owners(dialect);
     S_project_kinds(dialect);

@@ -34,7 +34,6 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 struct markdown_core_facet;
 /* THE FACETS BY KIND (core-elements.c): each kind's facet as its element
  * declares it, NULL for a kind with none. */
-#define MARKDOWN_CORE_FACET_ROOM 64
 extern const struct markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM];
 static inline const struct markdown_core_facet *markdown_core_core_facet(markdown_core_node_kind kind) {
     return (size_t)kind < MARKDOWN_CORE_FACET_ROOM ? markdown_core_facet_table[kind] : NULL;

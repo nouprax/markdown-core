@@ -13,8 +13,5 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION;
  * citation element's instance. */
 void markdown_core_inline_finish_citation_tokens(const markdown_core_element_instance *citation,
                                                  markdown_core_inline_state *inline_state, citation_tokens *tokens);
-/* Resolve the run's citation tokens read outside every bracket. */
-void markdown_core_citation_finish_run_tokens(const markdown_core_element_instance *citation,
-                                              markdown_core_inline_state *inline_state);
 
 #endif

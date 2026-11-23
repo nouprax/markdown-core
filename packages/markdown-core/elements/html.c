@@ -1,18 +1,44 @@
+#include <string.h>
 #include "html_scanners.h"
 #include "parts.h"
 #include "html.h"
 #include "inline_internal.h"
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 
-#include "comment.h"
+#include "comment_scanners.h"
+#include "services.h"
 
-/* The elements whose syntax this element asks, as `self->peers` holds
- * them. */
-enum { HTML_COMMENT };
-static const markdown_core_element *const HTML_PEERS[] = {[HTML_COMMENT] = &MARKDOWN_CORE_ELEMENT_COMMENT, NULL};
+/* The services this element asks, as `self->needs` holds them. */
+enum { HTML_COMMENTS };
+static const char *const HTML_NEEDS[] = {[HTML_COMMENTS] = MARKDOWN_CORE_SERVICE_HTML_COMMENTS, NULL};
 
-bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inline_state, bufsize_t pos,
-                                                unsigned *flags, bool *is_comment) {
+/* An HTML comment (CommonMark 0.31.2, 6.6) after the `<` at `pos - 1`:
+ * whether one opens there, and then its `length`, 0 when no closer follows
+ * through the end of the input. */
+static bool S_scan_comment(markdown_core_inline_state *inline_state, bufsize_t pos, bufsize_t *length) {
+    if (markdown_core_inline_char_at(inline_state, pos) != '!' ||
+        markdown_core_inline_char_at(inline_state, pos + 1) != '-' ||
+        markdown_core_inline_char_at(inline_state, pos + 2) != '-') {
+        return false;
+    }
+    if (markdown_core_inline_char_at(inline_state, pos + 3) == '>') {
+        *length = 4;
+    } else if (markdown_core_inline_char_at(inline_state, pos + 3) == '-' &&
+               markdown_core_inline_char_at(inline_state, pos + 4) == '>') {
+        *length = 5;
+    } else {
+        *length = scan_html_comment(markdown_core_inline_window(inline_state, 0).data,
+                                    markdown_core_inline_window(inline_state, 0).len, pos + 1);
+        /* 0 when no closer follows through the end of the input. */
+        if (*length > 0) {
+            *length += 1; // prefix "<"
+        }
+    }
+    return true;
+}
+
+static bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inline_state, bufsize_t pos,
+                                                       unsigned *flags, bool *is_comment) {
     bufsize_t matchlen = 0;
     bool comment = false;
     // finally, try to match an html tag
@@ -20,7 +46,7 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
         int c = markdown_core_inline_char_at(inline_state, pos);
         if (c == '!' && (*flags & FLAG_SKIP_HTML_COMMENT) == 0) {
             c = markdown_core_inline_char_at(inline_state, pos + 1);
-            if (markdown_core_comment_scan_html(inline_state, pos, &matchlen)) {
+            if (S_scan_comment(inline_state, pos, &matchlen)) {
                 /* No closer through the end of the input: later scans
                  * would not find one either. */
                 comment = matchlen > 0;
@@ -99,8 +125,10 @@ static markdown_core_node *handle_pointy_brace(const markdown_core_element_insta
     matchlen = markdown_core_inline_scan_inline_html(inline_state, markdown_core_inline_offset(inline_state),
                                                      &inline_state->flags, &comment);
     if (matchlen > 0) {
-        if (comment && self->peers[HTML_COMMENT]) {
-            return markdown_core_comment_make_html(inline_state, markdown_core_inline_offset(inline_state), matchlen);
+        const markdown_core_need comments = self->needs[HTML_COMMENTS];
+        if (comment && comments.ops) {
+            return ((const markdown_core_make_ops *)comments.ops)
+                ->make(comments.instance, inline_state, markdown_core_inline_offset(inline_state), matchlen);
         }
         contents = markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, matchlen + 1);
         markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (matchlen));
@@ -132,9 +160,32 @@ const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* (services.h, MARKDOWN_CORE_SERVICE_HTML_TAGS) A tag another element's
+ * scan steps over, the flags of the constructs that never close shared by
+ * its asks, its memo. */
+static bufsize_t S_skip(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                        bufsize_t at, markdown_core_skip_memo *memo, bufsize_t *open) {
+    (void)self;
+    unsigned flags = (unsigned)memo->words[0];
+    const bufsize_t width = markdown_core_inline_scan_inline_html(inline_state, at + 1, &flags, NULL);
+    memo->words[0] = flags;
+    if (width) {
+        return at + 1 + width;
+    }
+    if (markdown_core_inline_size(inline_state) - at >= 4 &&
+        !memcmp(markdown_core_inline_window(inline_state, 0).data + at, "<!--", 4)) {
+        *open = at + 4;
+    }
+    return 0;
+}
+
+static const markdown_core_skip_ops HTML_TAGS = {.skip = S_skip};
+static const markdown_core_service HTML_SERVICES[] = {{MARKDOWN_CORE_SERVICE_HTML_TAGS, &HTML_TAGS}, {0}};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
     .facets = MARKDOWN_CORE_HTML_FACETS,
     .name = "html",
-    .peers = HTML_PEERS,
+    .provides = HTML_SERVICES,
+    .needs = HTML_NEEDS,
     .inlines = &HTML_INLINES,
 };

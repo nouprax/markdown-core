@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "node.h"
 #include "element.h"
 #include "follow.h"
@@ -370,6 +371,10 @@ typedef struct markdown_core_dialect {
      * kind's and the engine's ANCHOR. */
     const markdown_core_space *const *spaces;
     size_t space_count;
+    /* THE FACETS of the kinds the elements show (element.h,
+     * markdown_core_facet), by public kind: the last registered element's
+     * that declares one, NULL for a kind none does. */
+    const markdown_core_facet *facets[MARKDOWN_CORE_FACET_ROOM];
     /* How names are spelled (element.h, `spelling`), or NULL. */
     const struct markdown_core_name_spelling *spelling;
     /* The instances whose elements ask the names service for names
@@ -406,8 +411,15 @@ markdown_core_dialect_structure(const markdown_core_dialect *dialect, const mark
     return node ? markdown_core_dialect_kind(dialect, (markdown_core_node_type)node->kind)->structure : NULL;
 }
 
+/* The facet the dialect of `self` holds of public kind `kind`, or NULL: what
+ * another element's node shows, asked without naming the element. */
+static inline const markdown_core_facet *markdown_core_instance_facet(const markdown_core_element_instance *self,
+                                                                      markdown_core_node_kind kind) {
+    return (size_t)kind < MARKDOWN_CORE_FACET_ROOM ? self->dialect->facets[kind] : NULL;
+}
+
 /* The instance of `element` in `dialect`, or NULL when it holds none. Sealing
- * resolves kinds and peers through it, and introspection asks it; parse-time
+ * resolves kinds through it, and introspection asks it; parse-time
  * code never does, since every instance a hook reaches is already resolved. */
 static inline const markdown_core_element_instance *
 markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markdown_core_element *element) {
@@ -426,7 +438,7 @@ markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markd
 static inline unsigned markdown_core_dialect_space_kind(const markdown_core_dialect *dialect,
                                                         const markdown_core_space *space) {
     for (size_t kind = 0; kind < dialect->space_count; kind++) {
-        if (dialect->spaces[kind] == space) {
+        if (dialect->spaces[kind] && strcmp(dialect->spaces[kind]->name, space->name) == 0) {
             return (unsigned)kind;
         }
     }
@@ -435,7 +447,7 @@ static inline unsigned markdown_core_dialect_space_kind(const markdown_core_dial
 
 /* What sealing a builder takes, counted from its element list alone: how
  * many finish step entries, projected instance pointers, instance-table
- * entries, resolved peers and gate-table bytes follow the struct beside one instance per
+ * entries, resolved needs and gate-table bytes follow the struct beside one instance per
  * element, and the counts that place each projection among them. */
 typedef struct markdown_core_dialect_sizes {
     size_t block_totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
@@ -448,10 +460,10 @@ typedef struct markdown_core_dialect_sizes {
     unsigned instance_bits;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
-    /* The peers the elements declare, all together, and their rules for
+    /* The services the elements need, all together, and their rules for
      * closing a bracket; the spaces they name, each once, and their
      * namings, all together. */
-    size_t peers, closers, spaces, namings;
+    size_t needs, closers, spaces, namings;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */

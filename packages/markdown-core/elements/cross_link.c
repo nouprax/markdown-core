@@ -1,4 +1,4 @@
-#include "embedded.h"
+#include "services.h"
 #include "cross_link.h"
 #include "element.h"
 #include "inlines.h"
@@ -7,11 +7,10 @@
 #include "inline_internal.h"
 #include "parts.h"
 
-/* The elements whose syntax this element asks, as `self->peers` holds
- * them. */
-enum { CROSS_LINK_EMBEDDED };
-static const markdown_core_element *const CROSS_LINK_PEERS[] = {[CROSS_LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
-                                                                NULL};
+/* The services this element asks, as `self->needs` holds them: an embed's
+ * dimensions (services.h). */
+enum { CROSS_LINK_DIMENSIONS };
+static const char *const CROSS_LINK_NEEDS[] = {[CROSS_LINK_DIMENSIONS] = MARKDOWN_CORE_SERVICE_DIMENSIONS, NULL};
 
 /* How a cross link's target goes on past a cursor: its path up to the `#`
  * that starts its anchor, and its anchor, which may hold more parts, up to
@@ -161,9 +160,11 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (label >= 0) {
         cross->label = markdown_core_optional_chunk_present(markdown_core_chunk_dup(input, label, i - label));
         bufsize_t suffix = dimension_separator >= 0 ? dimension_separator - label : 0;
-        if (embedded && self->peers[CROSS_LINK_EMBEDDED] &&
-            markdown_core_parse_dimensions(cross->label.value, suffix, dimension_separator_length,
-                                           &node->as.cross_embedded->dimensions.value, &counts->dimensions)) {
+        const markdown_core_need need = self->needs[CROSS_LINK_DIMENSIONS];
+        const markdown_core_dimension_ops *dimensions = need.ops;
+        if (embedded && dimensions &&
+            dimensions->parse(need.instance, cross->label.value, suffix, dimension_separator_length,
+                              &node->as.cross_embedded->dimensions.value, &counts->dimensions)) {
             node->as.cross_embedded->dimensions.has_value = true;
             cross->label.value.len = suffix;
         }
@@ -185,14 +186,24 @@ static const markdown_core_inline_ops CROSS_LINK_INLINES = {
     .dispatch = "[!",
 };
 
+/* A cross link reads as its label in a name, or its path and anchor. */
+static bool S_words(const markdown_core_node *node, const markdown_core_words *words) {
+    const markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
+    if (cross->label.has_value) {
+        return words->text(words->context, cross->label.value.data, cross->label.value.len);
+    }
+    return words->text(words->context, cross->path.data, cross->path.len) &&
+           (!cross->anchor.has_value || words->text(words->context, cross->anchor.value.data, cross->anchor.value.len));
+}
+
 const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CROSS_LINK, .parts = markdown_core_cross_link_parts},
-    {.kind = MARKDOWN_CORE_KIND_CROSS_EMBEDDED, .parts = markdown_core_cross_link_parts},
+    {.kind = MARKDOWN_CORE_KIND_CROSS_LINK, .parts = markdown_core_cross_link_parts, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_CROSS_EMBEDDED, .parts = markdown_core_cross_link_parts, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
-    .peers = CROSS_LINK_PEERS,
+    .needs = CROSS_LINK_NEEDS,
     .facets = MARKDOWN_CORE_CROSS_LINK_FACETS,
     .name = "cross_link",
     .state_size = sizeof(markdown_core_cross_link_work),
