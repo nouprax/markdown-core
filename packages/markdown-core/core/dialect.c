@@ -218,7 +218,9 @@ int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder,
     /* A dialect numbers its spaces in a byte (MARKDOWN_CORE_SPACE_LIMIT). */
     if (element->spaces && element->spaces[0]) {
         const markdown_core_element *probe[MARKDOWN_CORE_ELEMENT_LIMIT];
-        memcpy(probe, builder->elements, count * sizeof(*probe));
+        for (size_t i = 0; i < count; i++) {
+            probe[i] = builder->elements[i];
+        }
         probe[count] = element;
         if (S_count_spaces(probe, count + 1, MARKDOWN_CORE_SPACE_LIMIT) > MARKDOWN_CORE_SPACE_LIMIT) {
             return 0;

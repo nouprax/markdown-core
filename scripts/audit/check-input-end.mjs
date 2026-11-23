@@ -62,7 +62,7 @@ const OWNERS = new Set([
 ]);
 
 function librarySources() {
-    return ["core", "elements"].flatMap((dir) =>
+    return ["core", "lexicon", "elements"].flatMap((dir) =>
         fs
             .readdirSync(path.join(pkg, dir))
             .filter((name) => name.endsWith(".c") || name.endsWith(".h"))

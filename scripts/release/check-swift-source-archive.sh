@@ -18,6 +18,7 @@ cp packages/swift-markdown-core/Package.release.swift "$package/Package.swift"
 cp LICENSE README.md VERSION "$package/"
 cp -R packages/markdown-core/core "$package/packages/markdown-core/core"
 cp -R packages/markdown-core/elements "$package/packages/markdown-core/elements"
+cp -R packages/markdown-core/lexicon "$package/packages/markdown-core/lexicon"
 cp -R packages/markdown-core/include "$package/packages/markdown-core/include"
 cp -R packages/markdown-core/lsp "$package/packages/markdown-core/lsp"
 cp -R packages/swift-markdown-core/Sources/MarkdownCore \
