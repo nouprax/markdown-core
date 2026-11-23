@@ -1321,8 +1321,8 @@ static const markdown_core_open_ops LINK_OPENS = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts, .words = markdown_core_words_children},
-    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts, .reads = MARKDOWN_CORE_READS_CHILDREN},
+    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };

@@ -1026,7 +1026,7 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
 
 const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_CITATION, .parts = markdown_core_citation_parts, .words = S_words},
-    {.kind = MARKDOWN_CORE_KIND_CITE, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_CITE, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

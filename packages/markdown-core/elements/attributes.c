@@ -1428,7 +1428,7 @@ static const markdown_core_inline_ops ATTRIBUTES_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = S_span_parts, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_SPAN, .parts = S_span_parts, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

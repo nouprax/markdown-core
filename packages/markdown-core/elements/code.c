@@ -239,7 +239,7 @@ static const markdown_core_inline_ops CODE_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CODE, .parts = markdown_core_code_parts, .words = markdown_core_words_literal},
+    {.kind = MARKDOWN_CORE_KIND_CODE, .parts = markdown_core_code_parts, .reads = MARKDOWN_CORE_READS_LITERAL},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

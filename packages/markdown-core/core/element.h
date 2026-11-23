@@ -898,10 +898,15 @@ typedef struct markdown_core_facet {
     /* Where a node of the kind keeps the name the names service computes
      * for it (node.h, A NODE'S NAME; names.h), when the element names it. */
     struct markdown_core_name *(*named)(const markdown_core_node *);
-    /* What a node of the kind reads as in a name (markdown_core_words):
-     * NULL for a kind that reads as nothing, an HTML tag's or a note's. */
+    /* What a node of the kind reads as in a name: its literal or its
+     * children in turn, which the name reads itself, or, when `words` is
+     * set, what that says (markdown_core_words); nothing by default, an HTML
+     * tag's or a note's. */
+    uint8_t reads;
     bool (*words)(const markdown_core_node *, const markdown_core_words *);
 } markdown_core_facet;
+
+enum { MARKDOWN_CORE_READS_NOTHING = 0, MARKDOWN_CORE_READS_LITERAL, MARKDOWN_CORE_READS_CHILDREN };
 
 /* The words of a node whose children read in turn (an emphasis, a link). */
 static inline bool markdown_core_words_children(const markdown_core_node *node, const markdown_core_words *words) {

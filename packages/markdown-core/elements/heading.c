@@ -240,24 +240,43 @@ static bool push_anchor_range(anchor_projection_stack *stack, const markdown_cor
     return true;
 }
 
-/* What a node reads as (element.h, markdown_core_words), pushed in order
- * and turned last first once its kind has said it all. */
+/* WHAT A NODE READS AS (element.h, markdown_core_words) when its kind's
+ * `words` says it: bytes it gives before any node go to the name at once,
+ * and the rest is pushed in order and turned last first once it has said
+ * it all. */
+typedef struct {
+    anchor_projection_stack *stack;
+    markdown_core_strbuf *base;
+    size_t *work;
+    size_t first;
+} S_reading;
+
 static bool S_words_text(void *context, const unsigned char *data, bufsize_t size) {
-    return size <= 0 || push_anchor_projection(context, (anchor_projection){NULL, data, size});
+    S_reading *reading = context;
+    if (size <= 0) {
+        return true;
+    }
+    if (reading->stack->count == reading->first) {
+        project_anchor_literal(reading->work, reading->base, data, size);
+        return true;
+    }
+    return push_anchor_projection(reading->stack, (anchor_projection){NULL, data, size});
 }
 
 static bool S_words_node(void *context, const markdown_core_node *node) {
-    return !node || push_anchor_projection(context, (anchor_projection){node, NULL, 0});
+    S_reading *reading = context;
+    return !node || push_anchor_projection(reading->stack, (anchor_projection){node, NULL, 0});
 }
 
 /* What the stack holds, projected and appended to `base`, the work it took
  * added to `*work`: each node as its kind's facet says it reads in a name
- * (element.h, `words`), whichever element shows the kind. False when
+ * (element.h, `reads`), whichever element shows the kind. False when
  * storage could not be had. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack(
     const markdown_core_element_instance *self, size_t *work, markdown_core_strbuf *base,
     anchor_projection_stack *stack) {
-    const markdown_core_words words = {stack, S_words_text, S_words_node};
+    S_reading reading = {stack, base, work, 0};
+    const markdown_core_words words = {&reading, S_words_text, S_words_node};
     bool ok = true;
     while (stack->count && ok && !base->oom) {
         anchor_projection piece = stack->values[--stack->count];
@@ -266,16 +285,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack
             continue;
         }
         (*work)++;
-        const markdown_core_facet *facet =
-            markdown_core_instance_facet(self, markdown_core_kind_public(piece.node->kind));
-        if (facet && facet->words) {
-            const size_t first = stack->count;
-            ok = facet->words(piece.node, &words);
-            for (size_t a = first, b = stack->count; ok && a + 1 < b; a++, b--) {
+        const markdown_core_node *node = piece.node;
+        const markdown_core_facet *facet = markdown_core_instance_facet(self, markdown_core_kind_public(node->kind));
+        if (!facet) {
+            continue;
+        }
+        if (facet->words) {
+            reading.first = stack->count;
+            ok = facet->words(node, &words);
+            for (size_t a = reading.first, b = stack->count; ok && a + 1 < b; a++, b--) {
                 anchor_projection swap = stack->values[a];
                 stack->values[a] = stack->values[b - 1];
                 stack->values[b - 1] = swap;
             }
+        } else if (facet->reads == MARKDOWN_CORE_READS_LITERAL) {
+            project_anchor_literal(work, base, node->as.literal->data, node->as.literal->len);
+        } else if (facet->reads == MARKDOWN_CORE_READS_CHILDREN) {
+            ok = push_anchor_range(stack, node, 0, node->child_count);
         }
     }
     return ok && !base->oom;

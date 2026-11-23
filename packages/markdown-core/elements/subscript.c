@@ -23,7 +23,7 @@ static const markdown_core_inline_ops SUBSCRIPT_INLINES = {
 /* What its nodes read as in a name: their children (element.h,
  * markdown_core_facet). */
 const markdown_core_facet MARKDOWN_CORE_SUBSCRIPT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_SUBSCRIPT, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_SUBSCRIPT, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

@@ -91,7 +91,7 @@ static const markdown_core_inline_ops TEXT_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts, .words = markdown_core_words_literal},
+    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts, .reads = MARKDOWN_CORE_READS_LITERAL},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

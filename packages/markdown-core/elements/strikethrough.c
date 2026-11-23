@@ -49,7 +49,7 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
 /* What its nodes read as in a name: their children (element.h,
  * markdown_core_facet). */
 const markdown_core_facet MARKDOWN_CORE_STRIKETHROUGH_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_STRIKETHROUGH, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_STRIKETHROUGH, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

@@ -60,8 +60,8 @@ static const markdown_core_service EMPHASIS_SERVICES[] = {{MARKDOWN_CORE_SERVICE
 /* What its nodes read as in a name: their children (element.h,
  * markdown_core_facet). */
 const markdown_core_facet MARKDOWN_CORE_EMPHASIS_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_EMPHASIS, .words = markdown_core_words_children},
-    {.kind = MARKDOWN_CORE_KIND_STRONG, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_EMPHASIS, .reads = MARKDOWN_CORE_READS_CHILDREN},
+    {.kind = MARKDOWN_CORE_KIND_STRONG, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

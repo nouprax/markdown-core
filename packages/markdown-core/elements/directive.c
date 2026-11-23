@@ -838,7 +838,7 @@ const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[] = {
      .parts = markdown_core_directive_parts,
      .name = markdown_core_elements_get_directive_name,
      .label = S_label},
-    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_LABEL, .words = markdown_core_words_children},
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_LABEL, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
