@@ -15,7 +15,8 @@
  *                                             declared family, or on the
  *                                             Kth of N shards of them
  *   incremental_runner --set DIR --self-test   require every faulty subject
- *                                             to fail with its oracle
+ *     [--shard K/N]                           to fail with its oracle, or
+ *                                             the Kth of every N of them
  *   incremental_runner --fuzz COUNT FILE...    check COUNT seeded inputs on
  *                                             each document, as the session
  *                                             fuzz target decodes them
@@ -740,9 +741,9 @@ int main(int argc, char **argv) {
             break;
         }
     }
-    if (!directory || (self_test && (family || subject != &ih_session)) || (shards && !family)) {
-        fputs("usage: incremental_runner --set DIR [--subject S] [--family F [--shard K/N]] | --set DIR --self-test | "
-              "--fuzz COUNT FILE...\n",
+    if (!directory || (self_test && (family || subject != &ih_session)) || (shards && !family && !self_test)) {
+        fputs("usage: incremental_runner --set DIR [--subject S] [--family F [--shard K/N]] | --set DIR --self-test "
+              "[--shard K/N] | --fuzz COUNT FILE...\n",
               stderr);
         return 2;
     }
@@ -760,7 +761,8 @@ int main(int argc, char **argv) {
                       {&loose, "4.13"}};
         int failures = 0;
         size_t which;
-        for (which = 0; which < sizeof(faulty) / sizeof(faulty[0]); which++) {
+        /* A shard K/N takes the subjects K, K + N, ... */
+        for (which = shards ? shard - 1 : 0; which < sizeof(faulty) / sizeof(faulty[0]); which += shards ? shards : 1) {
             run state;
             memset(&state, 0, sizeof(state));
             state.subject = faulty[which].subject;

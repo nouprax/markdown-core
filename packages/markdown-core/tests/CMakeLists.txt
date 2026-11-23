@@ -236,14 +236,20 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/headings.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md")
-markdown_core_add_test(
-    api_incremental_faulty
-    api
-    600
-    incremental_runner
-    --set
-    "${MARKDOWN_CORE_INCREMENTAL_DIR}"
-    --self-test)
+# The faulty subjects are dealt into shards, one test each, as a long
+# family is.
+foreach(shard RANGE 1 2)
+    markdown_core_add_test(
+        api_incremental_faulty_${shard}
+        api
+        600
+        incremental_runner
+        --set
+        "${MARKDOWN_CORE_INCREMENTAL_DIR}"
+        --self-test
+        --shard
+        ${shard}/2)
+endforeach()
 
 # conformance: public facade/schema shape and every manifest-owned canonical dump.
 markdown_core_add_test(

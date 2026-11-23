@@ -962,11 +962,11 @@ void markdown_core_node_view_adopt(markdown_core_node_pool *pool, markdown_core_
  * FOUND NOTHING): a node of `root`'s kind in a slot of `pool`'s, holding what
  * the block phase made of `root` and nothing its completion or its publish
  * made: a copy of each thing `root` owns -- its attributes, its record and
- * what the record owns -- and its content buffer, which it borrows
- * (BORROWS_CONTENT). A root holds no field root and no element payload, and
- * its children are inline content its completion makes. It has no id, and
- * no place, places or runs until the caller gives them; its scaffold is
- * empty.
+ * what the record owns, and the fields the block phase wrote -- and its
+ * content buffer, which it borrows (BORROWS_CONTENT). A root holds no field
+ * root and no element payload, and its children are inline content its
+ * completion makes. It has no id, and no place, places or runs until the
+ * caller gives them; its scaffold is empty.
  * NULL, having taken nothing, when storage could not be had. */
 markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *root);
 /* The storage `taker` borrows, made its own, and lent by `lender`, which

@@ -10711,6 +10711,35 @@ static void session_locates_after_looked_edit(test_batch_runner *runner) {
        at.column);
 }
 
+/* A heading the stream read before the definition its link names is read
+ * again once the definition is known (blocks.c, A LOOKUP THAT FOUND
+ * NOTHING): the candidate keeps the fields its attribute tail wrote, so a
+ * locate at each place of the flushed text is the document query. */
+static void session_locates_in_completed_heading(test_batch_runner *runner) {
+    static const char *const sources[] = {"# [a] {#i}\n\n[a]: /url\n", "[a]{k=1}\n- \n[a]: /url\n"};
+    bool same = true;
+    markdown_core_position at = {1, 1};
+    for (size_t i = 0; same && i < sizeof(sources) / sizeof(sources[0]); i++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        same = markdown_core_session_new((const uint8_t *)sources[i], strlen(sources[i]), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                         &session) == MARKDOWN_CORE_OK &&
+               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+        at = (markdown_core_position){1, 1};
+        for (const char *c = sources[i]; same && *c; c++) {
+            same = markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK && session_as_queried(session, at);
+            if (*c == '\n') {
+                at = (markdown_core_position){at.line + 1, 1};
+            } else {
+                at.column++;
+            }
+        }
+        markdown_core_session_close(session);
+    }
+    OK(runner, same, "a locate in a heading read again for its definition is the document query, at %d:%d", at.line,
+       at.column);
+}
+
 /* A nested opener a candidate rejected as the text ended read the end: a
  * closer appended after it, past the paragraph it continued, makes the
  * opener a block of its own, as a parse does (blocks.c, S_candidates_end). */
@@ -12997,6 +13026,7 @@ int main(void) {
     session_locates_table_rows(runner);
     session_locates_unclosed_openers(runner);
     session_locates_after_looked_edit(runner);
+    session_locates_in_completed_heading(runner);
     session_edits_after_nested_opener(runner);
     session_edits_keep_term_look(runner);
     session_edits_wide_list(runner);

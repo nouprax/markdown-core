@@ -657,6 +657,19 @@ markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, 
         copy->flags |= MARKDOWN_CORE_NODE__BORROWS_CONTENT;
     }
     S_copy_state state = {pool, false};
+    /* The fields the block phase wrote, an attribute tail's and the
+     * constructs its lines gave up, without those its completion gave up,
+     * which its inlines parsed again give up anew. */
+    if (root->fields && root->fields->count) {
+        const size_t bytes = sizeof(*root->fields) + root->fields->count * sizeof(root->fields->items[0]);
+        copy->fields = S_bytes_take(pool, bytes);
+        if (copy->fields) {
+            memcpy(copy->fields, root->fields, bytes);
+            markdown_core_node_drop_opens(copy, false, 0, 0);
+        } else {
+            state.failed = true;
+        }
+    }
     markdown_core_attributes_view(&copy->attributes);
     S_view_node_as(&state, copy, root);
     if (!state.failed && !markdown_core_attributes_own(&copy->attributes, &root->attributes)) {

@@ -831,6 +831,18 @@ block Heading 1:1..1:10
 slot id Heading closed before=1:10..1:10 after=1:11..1:10
 ````````````````````````````````
 
+A heading whose link the parse reads again once its definition is known
+keeps its attribute tail's fields.
+
+```````````````````````````````` example
+# [a] {#i‸}
+
+[a]: /url
+.
+block Heading 1:1..1:9
+slot id Heading closed before=1:9..1:9 after=1:10..1:9
+````````````````````````````````
+
 ```````````````````````````````` example
 ## A {.b‸} ##
 .
