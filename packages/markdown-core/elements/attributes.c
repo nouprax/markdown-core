@@ -865,8 +865,10 @@ enum { MEMBER_FAIL, MEMBER_END, MEMBER_NEXT };
 /* The last value of each kind a walk read, unquoted, in double quotes or in
  * single quotes, from `from` to `end`: a value of that kind that begins
  * inside it ends where it did, since nothing between ends one. The walks
- * from each brace of a line share them, so a line of open blocks reads each
- * value byte at most once for each kind (markdown_core_attributes_report). */
+ * from each brace of a line share them, as the walks from each block an
+ * inline run gives up do, so a line of open blocks reads each value byte at
+ * most once for each kind (markdown_core_attributes_report). An end of 0 is
+ * none read yet: zeroed, it holds none. */
 typedef struct {
     bufsize_t from[3], end[3];
 } S_value_seen;
@@ -874,7 +876,7 @@ typedef struct {
 static bufsize_t S_value_end(const unsigned char *s, bufsize_t n, bufsize_t v, unsigned char quote,
                              S_value_seen *seen) {
     const int kind = quote == '"' ? 1 : quote == '\'' ? 2 : 0;
-    if (seen && v >= seen->from[kind] && v <= seen->end[kind]) {
+    if (seen && seen->end[kind] > 0 && v >= seen->from[kind] && v <= seen->end[kind]) {
         return seen->end[kind];
     }
     const bufsize_t end = quote ? v + quoted_end(s + v, n - v, quote) : v + value_end(s + v, n - v);
@@ -982,29 +984,29 @@ bool markdown_core_attributes_open(const markdown_core_field_to *to, markdown_co
     return S_members_open(to, owner, line, s, n, start, NULL);
 }
 
-/* The block at `start` that does not close, kept on the run's node with the
- * members it read (markdown_core_attributes_open). Kept out of line, off
- * the path of every attribute block that closes. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_gave_up(markdown_core_inline_state *inline_state, bufsize_t start,
-                                                          markdown_core_node_kind owner) {
-    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, inline_state->owner);
-    markdown_core_attributes_open(&to, owner, false, markdown_core_inline_window(inline_state, 0).data,
-                                  markdown_core_inline_size(inline_state), start);
-}
-
-/* The attribute block at `start`, read as markdown_core_inline_state_attributes
- * reads it, with `value` NULL for recognition alone. */
 /* WHAT A RUN HOLDS OF THE ATTRIBUTE ELEMENT: the recognizer of its input,
- * made at the first block read, and one plus the start of the last block a
- * service user asked about (markdown_core_attributes_closes), whose end reads that
- * question already reported, or 0. */
+ * made at the first block read, one plus the start of the last block a
+ * service user asked about (markdown_core_attributes_closes), whose end reads
+ * that question already reported, or 0, and the values the walks of the
+ * blocks it gave up read. */
 typedef struct {
     markdown_core_attribute_parser parser;
     bufsize_t asked;
+    S_value_seen seen;
 } S_run;
 
 static S_run *S_run_of(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
     return markdown_core_run_state(inline_state, self);
+}
+
+/* The block at `start` that does not close, kept on the run's node with the
+ * members it read (markdown_core_attributes_open). Kept out of line, off
+ * the path of every attribute block that closes. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_gave_up(markdown_core_inline_state *inline_state, S_run *run,
+                                                          bufsize_t start, markdown_core_node_kind owner) {
+    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, inline_state->owner);
+    S_members_open(&to, owner, false, markdown_core_inline_window(inline_state, 0).data,
+                   markdown_core_inline_size(inline_state), start, &run->seen);
 }
 
 /* WHAT A PARSE HOLDS OF IT: the workspace every value of the parse is read
@@ -1074,7 +1076,7 @@ static int S_read(const markdown_core_element_instance *self, markdown_core_inli
         markdown_core_inline_saw_end(inline_state);
     }
     if (report && !matched && !inline_state->error) {
-        S_gave_up(inline_state, start, owner);
+        S_gave_up(inline_state, S_run_of(self, inline_state), start, owner);
     }
     return matched;
 }
@@ -1178,7 +1180,7 @@ static markdown_core_bracket_match S_close_span(const markdown_core_element_inst
 static bool S_report_open(const markdown_core_field_to *to, markdown_core_node_kind owner, const unsigned char *line,
                           bufsize_t from, bufsize_t last, bufsize_t end) {
     bool open = false;
-    S_value_seen seen = {{-1, -1, -1}, {-1, -1, -1}};
+    S_value_seen seen = {{0}, {0}};
     /* Each brace a backslash does not escape: an odd run of them before
      * it, from `from`, ends with one that does. */
     for (const unsigned char *brace = memchr(line + from, '{', (size_t)(last - from)); brace;
