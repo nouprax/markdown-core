@@ -75,10 +75,11 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
     }
 }
 
-// Create an inline with a literal string value.
-markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
-                                                      markdown_core_node_type t, int start_column, int end_column,
-                                                      markdown_core_chunk s) {
+// Create an inline with a literal string value. Inlined into the delimiter
+// match, whose every run makes one; the extern form serves the elements.
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
+    markdown_core_node *S_make_literal(markdown_core_inline_state *inline_state, markdown_core_node_type t,
+                                       int start_column, int end_column, markdown_core_chunk s) {
     markdown_core_node *e = markdown_core_parser_make_node(inline_state->owner_parser, t);
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
@@ -89,6 +90,12 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
     *e->as.literal = s;
     markdown_core_inline_place(inline_state, e, start_column, end_column);
     return e;
+}
+
+markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
+                                                      markdown_core_node_type t, int start_column, int end_column,
+                                                      markdown_core_chunk s) {
+    return S_make_literal(inline_state, t, start_column, end_column, s);
 }
 
 /* Records the kind it creates. Every parse-time caller reaches the parser
@@ -501,8 +508,8 @@ static markdown_core_node *handle_delim(markdown_core_inline_state *inline_state
     assert(delimiter_needs_stack(inline_state, run));
     inline_state->pos = run->end;
     markdown_core_node *inl_text =
-        make_str(inline_state, run->start, run->end - 1,
-                 markdown_core_chunk_dup(&inline_state->input, run->start, run->end - run->start));
+        S_make_literal(inline_state, inline_state->dialect->plain, run->start, run->end - 1,
+                       markdown_core_chunk_dup(&inline_state->input, run->start, run->end - run->start));
     // One eligible maximal run owns one stack entry and cannot match itself.
     if (inl_text) {
         push_delimiter(inline_state, inline_state->dialect->delimiter_owners[run->rule], run->rule, run->can_open,
@@ -1622,8 +1629,8 @@ markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_ele
             return NULL;
         }
         inline_state->pos = run->end;
-        return make_str(inline_state, run->start, run->end - 1,
-                        markdown_core_chunk_dup(&inline_state->input, run->start, run->end - run->start));
+        return S_make_literal(inline_state, inline_state->dialect->plain, run->start, run->end - 1,
+                              markdown_core_chunk_dup(&inline_state->input, run->start, run->end - run->start));
     }
     return handle_delim(inline_state, run);
 }
