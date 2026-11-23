@@ -6,7 +6,10 @@
  * `_char_at`, `_take`, `_window` and `_size`, so every read of the run's end
  * is one the engine sees. This audit reads the element sources, the only
  * place the fact exists, and fails on a field access of an inline state's
- * `input` or `pos`.
+ * `input` or `pos`. The block phase's line has its stream already (reader.h:
+ * `peek`, `rest`, `advance`, each noting how far the reading read); an
+ * element reads the line's facts (`indent`, `nonspace`, ...) but never its
+ * bytes (`line`) or how far it was read (`far`) by field.
  *
  * The services that still live beside the elements (ast, session, context,
  * parts) are not elements and are not judged here; they move into core.
@@ -36,6 +39,9 @@ for (const file of fs.readdirSync(dir).sort()) {
     judged++;
     const lines = strip(fs.readFileSync(path.join(dir, file), "utf8")).split("\n");
     lines.forEach((line, index) => {
+        if (/->\s*(line\s*\.\s*(data|len)|far)\b/.test(line)) {
+            findings.push(`${file}:${index + 1}: reads a line's bytes or reach by field, not through reader.h`);
+        }
         if (/\binline_state\s*->\s*(input|pos)\b/.test(line)) {
             findings.push(
                 `${file}:${index + 1}: reads the inline state's ${RegExp.lastMatch.split(/->\s*/)[1]} directly`

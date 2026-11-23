@@ -90,7 +90,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
             markdown_core_parser_see_end(parser);
             break;
         }
-        if (line->indent < 4 && is_fence_line(line->line.data, line->line.len, line->nonspace)) {
+        if (line->indent < 4 && is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
             closed = !parser->error;
             break;
         }
