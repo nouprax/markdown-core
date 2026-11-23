@@ -438,6 +438,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
             inputs.files(
                 repositoryRoot.files("CMakeLists.txt"),
                 repositoryRoot.dir("packages/markdown-core/core"),
+                repositoryRoot.dir("packages/markdown-core/lexicon"),
                 repositoryRoot.dir("packages/markdown-core/elements"),
                 repositoryRoot.dir("packages/markdown-core/include"),
                 repositoryRoot.dir("packages/markdown-core/wire"),
@@ -463,6 +464,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
             dependsOn(configureTask)
             inputs.files(
                 repositoryRoot.dir("packages/markdown-core/core"),
+                repositoryRoot.dir("packages/markdown-core/lexicon"),
                 repositoryRoot.dir("packages/markdown-core/elements"),
                 repositoryRoot.dir("packages/markdown-core/include"),
                 repositoryRoot.dir("packages/markdown-core/wire"),
@@ -533,6 +535,7 @@ val configureDesktopJni =
         inputs.files(
             repositoryRoot.files("CMakeLists.txt"),
             repositoryRoot.dir("packages/markdown-core/core"),
+            repositoryRoot.dir("packages/markdown-core/lexicon"),
             repositoryRoot.dir("packages/markdown-core/elements"),
             repositoryRoot.dir("packages/markdown-core/include"),
             repositoryRoot.dir("packages/markdown-core/wire"),
@@ -567,6 +570,7 @@ val buildDesktopJni =
         dependsOn(configureDesktopJni)
         inputs.files(
             repositoryRoot.dir("packages/markdown-core/core"),
+            repositoryRoot.dir("packages/markdown-core/lexicon"),
             repositoryRoot.dir("packages/markdown-core/elements"),
             repositoryRoot.dir("packages/markdown-core/include"),
             repositoryRoot.dir("packages/markdown-core/wire"),

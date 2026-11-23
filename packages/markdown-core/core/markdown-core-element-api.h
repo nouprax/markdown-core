@@ -366,6 +366,9 @@ struct markdown_core_element_instance {
     size_t run_offset, bracket_offset;
     /* The instances of the descriptor's `peers`, in its order. */
     const markdown_core_element_instance *const *peers;
+    /* The roster kinds of the descriptor's `spaces`, in its order
+     * (element.h, markdown_core_space). */
+    const unsigned *spaces;
     /* Where the element's `mine` rules for closing a bracket lie among the
      * dialect's (dialect.h, `closers`), and how many there are. */
     uint32_t mine_first, mine_count;

@@ -1,17 +1,29 @@
 #include "alloc.h"
+#include "houdini.h"
+#include "escape.h"
 #include "link_scanners.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 #include "attributes.h"
 #include "parts.h"
 #include "link.h"
 #include "embedded.h"
+#include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { LINK_EMBEDDED, LINK_ATTRIBUTES };
-static const markdown_core_element *const LINK_PEERS[] = {
-    [LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+enum { LINK_EMBEDDED, LINK_ATTRIBUTES, LINK_FOOTNOTE };
+static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
+                                                          [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
+                                                          [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE,
+                                                          NULL};
+
+const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET = {.width = 1, .mark = 0, .closer = ']'};
+
+const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE = {.name = "reference", .folds = true};
+/* The spaces this element files labels in, as `self->spaces` numbers them. */
+enum { LINK_REFERENCE };
+static const markdown_core_space *const LINK_SPACES[] = {[LINK_REFERENCE] = &MARKDOWN_CORE_REFERENCE_SPACE, NULL};
 
 /* WHAT A PARSE HOLDS OF THE LINK ELEMENT: the recognizer of the attribute
  * blocks of the text a front cut reads (element.h, markdown_core_cut), kept
@@ -431,7 +443,7 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
     cut->made = reference;
     /* The document defines the label from where the definition starts. */
     if (!parser->error) {
-        markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_REFERENCE, &definition.label, start,
+        markdown_core_parser_declare(parser, self->spaces[LINK_REFERENCE], &definition.label, start,
                                      &reference->as.reference->label);
     }
     return length;
@@ -570,9 +582,9 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
     if (S_reference_cut(data, path, hash, end)) {
         return;
     }
-    const bool image = opener->kind == BRACKET_IMAGE;
+    const bool image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
     const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
-    const bufsize_t at = opener->position - (image ? 2 : 1);
+    const bufsize_t at = opener->position - opener->shape->width;
     if (hash < end) {
         const markdown_core_field fragment = {MARKDOWN_CORE_SLOT_ANCHOR,
                                               kind,
@@ -768,10 +780,10 @@ static void S_report_label(markdown_core_inline_state *inline_state, const brack
         start + 1 + markdown_core_inline_reference_label_length(data + start + 1, len - start - 1) < len) {
         return;
     }
-    const bool image = opener->kind == BRACKET_IMAGE;
+    const bool image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
     const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
     const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, label_end, {{0}}, 0, false, 0};
-    markdown_core_inline_open(inline_state, kind, opener->position - (image ? 2 : 1), opener->position, &label, 1);
+    markdown_core_inline_open(inline_state, kind, opener->position - opener->shape->width, opener->position, &label, 1);
 }
 
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
@@ -786,7 +798,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
     // Now we check to see if it's a link/image.
-    bool is_image = opener->kind == BRACKET_IMAGE;
+    bool is_image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
 
     bool link_allowed = is_image || !markdown_core_brackets(inline_state)->no_link_openers;
 
@@ -877,7 +889,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     if (link_allowed && found_label) {
         bool failed = false;
         record = markdown_core_parser_find_definition(
-            inline_state->owner_parser, MARKDOWN_CORE_ROSTER_REFERENCE, &raw_label,
+            inline_state->owner_parser, link->spaces[LINK_REFERENCE], &raw_label,
             markdown_core_inline_state_root_offset(inline_state, opener->position), &failed);
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -892,7 +904,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
 bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
                                markdown_core_inline_state *inline_state, bracket *opener,
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
-    bool is_image = opener->kind == BRACKET_IMAGE;
+    bool is_image = opener->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET;
     bool explicit_tail = candidate->explicit_tail;
     bool reference = candidate->label.len != 0;
     markdown_core_chunk url = candidate->url;
@@ -1049,7 +1061,7 @@ static markdown_core_node *match_bracket(const markdown_core_element_instance *s
         markdown_core_node *text = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                                             markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
         if (text) {
-            markdown_core_inline_push_bracket(self, inline_state, BRACKET_LINK, text);
+            markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_LINK_BRACKET, text);
         }
         return text;
     }
@@ -1062,17 +1074,17 @@ static markdown_core_node *match_bracket(const markdown_core_element_instance *s
  * definition is one only where the document finishes it. */
 static void report_open(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     for (const bracket *b = markdown_core_open_bracket(inline_state); b; b = bracket_previous(b)) {
-        const bool wide = b->kind != BRACKET_LINK;
-        const bufsize_t start = b->position - (wide ? 2 : 1);
+        const bool own = b->shape == &MARKDOWN_CORE_LINK_BRACKET;
+        const bufsize_t start = b->position - b->shape->width;
         markdown_core_field fields[2];
         size_t count = 0;
-        markdown_core_node_kind opens = b->kind == BRACKET_IMAGE      ? MARKDOWN_CORE_KIND_EMBEDDED
-                                        : b->kind == BRACKET_FOOTNOTE ? MARKDOWN_CORE_KIND_FOOTNOTE
-                                                                      : MARKDOWN_CORE_KIND_NONE;
-        const bool label = b->kind == BRACKET_LINK && b->position + markdown_core_inline_reference_label_length(
-                                                                        inline_state->input.data + b->position,
-                                                                        inline_state->input.len - b->position) ==
-                                                          inline_state->input.len;
+        markdown_core_node_kind opens = b->shape == &MARKDOWN_CORE_EMBEDDED_BRACKET   ? MARKDOWN_CORE_KIND_EMBEDDED
+                                        : b->shape == &MARKDOWN_CORE_FOOTNOTE_BRACKET ? MARKDOWN_CORE_KIND_FOOTNOTE
+                                                                                      : MARKDOWN_CORE_KIND_NONE;
+        const bool label =
+            own && b->position + markdown_core_inline_reference_label_length(inline_state->input.data + b->position,
+                                                                             inline_state->input.len - b->position) ==
+                       inline_state->input.len;
         const bool caret =
             label && b->position < inline_state->input.len && inline_state->input.data[b->position] == '^';
         if (caret) {
@@ -1090,8 +1102,7 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
         const bool line = start == 0 || data[start - 1] == '\n' || data[start - 1] == '\r';
         /* A footnote definition's label holds any byte but `]` and white
          * space, brackets too, which no other label does. */
-        if (!label && line && b->kind == BRACKET_LINK && b->position < inline_state->input.len &&
-            data[b->position] == '^' &&
+        if (!label && line && own && b->position < inline_state->input.len && data[b->position] == '^' &&
             b->position + 1 + note_end(data + b->position + 1, inline_state->input.len - b->position - 1) ==
                 inline_state->input.len) {
             fields[count++] = (markdown_core_field){
@@ -1242,6 +1253,7 @@ static const markdown_core_inline_ops LINK_INLINES = {
     .match = match_bracket,
     .closes = LINK_CLOSES,
     .close_count = sizeof(LINK_CLOSES) / sizeof(LINK_CLOSES[0]),
+    .closer = ']',
     .terminates = "[",
     .dispatch = "[",
 };
@@ -1263,6 +1275,7 @@ const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .facets = MARKDOWN_CORE_LINK_FACETS,
     .peers = LINK_PEERS,
+    .spaces = LINK_SPACES,
     .state_size = sizeof(S_state),
     .dispose_parser = dispose_parser,
     .bracket_size = sizeof(S_tail),

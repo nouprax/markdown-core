@@ -164,14 +164,14 @@ enum { SUFFIX_ROOM = 3 * sizeof(size_t) + 2 };
  * name an entry holds, a stem, a count of moves. */
 static const unsigned char HELD[1] = {0};
 
-/* The suffix `suffix` as a name ends with it, a hyphen and its digits, in
- * `tail`: how many bytes. */
-static inline bufsize_t suffix_write(unsigned char *tail, size_t suffix) {
+/* The suffix `suffix` as a name ends with it, the spelling's separator
+ * (names.h) and its digits, in `tail`: how many bytes. */
+static inline bufsize_t suffix_write(unsigned char *tail, size_t suffix, unsigned char separator) {
     bufsize_t size = 2;
     for (size_t rest = suffix / 10; rest; rest /= 10) {
         size++;
     }
-    tail[0] = '-';
+    tail[0] = separator;
     for (bufsize_t at = size; at-- > 1; suffix /= 10) {
         tail[at] = (unsigned char)('0' + suffix % 10);
     }
@@ -207,12 +207,15 @@ typedef struct {
     uint32_t parts;
     bufsize_t size;
     size_t suffix;
+    unsigned char separator;
     unsigned char tail[SUFFIX_ROOM];
 } name_view;
 
 /* The name of the base `base`, which measures `measure`. */
-static inline void name_base(name_view *name, const markdown_core_pieces *base, markdown_core_measure measure) {
+static inline void name_base(name_view *name, const markdown_core_pieces *base, markdown_core_measure measure,
+                             unsigned char separator) {
     name->pieces = *base;
+    name->separator = separator;
     name->measure = name->base = measure;
     name->hashed = false;
     name->parts = base->count;
@@ -221,7 +224,8 @@ static inline void name_base(name_view *name, const markdown_core_pieces *base, 
 }
 
 /* The name of the base `base` pieces hold, hashed. */
-static inline void name_hashed(name_view *name) {
+static inline void name_hashed(name_view *name, unsigned char separator) {
+    name->separator = separator;
     markdown_core_key_stream_start(&name->stream);
     for (uint32_t i = 0; i < name->pieces.count; i++) {
         markdown_core_key_stream_add(&name->stream, name->pieces.data[i], (size_t)name->pieces.sizes[i]);
@@ -238,7 +242,7 @@ static inline void name_suffix(name_view *name, size_t suffix) {
     name->pieces.count = name->parts;
     name->pieces.size = name->size;
     name->suffix = suffix;
-    const bufsize_t size = suffix ? suffix_write(name->tail, suffix) : 0;
+    const bufsize_t size = suffix ? suffix_write(name->tail, suffix, name->separator) : 0;
     if (size) {
         markdown_core_pieces_add(&name->pieces, name->tail, size);
     }
@@ -255,14 +259,16 @@ static inline void name_suffix(name_view *name, size_t suffix) {
 
 /* The name of the base `base`, which measures `measure`, and `suffix`. */
 static inline void name_make(name_view *name, const markdown_core_pieces *base, markdown_core_measure measure,
-                             size_t suffix) {
-    name_base(name, base, measure);
+                             size_t suffix, unsigned char separator) {
+    name_base(name, base, measure, separator);
     name_suffix(name, suffix);
 }
 
+/* The separator of the names `state` spells (names.h, the spelling). */
+static inline unsigned char separator_of(const markdown_core_names *state) { return state->spelling->separator; }
+
 /* The base of a node whose text projects to nothing, which its node
  * borrows. */
-static const markdown_core_strbuf SECTION = {.ptr = (unsigned char *)"section", .size = 7};
 
 /* Where the node, one of the element's, keeps its name (names.h, the
  * owner's `value`). */
@@ -282,9 +288,9 @@ static inline void value_base(const markdown_core_name *value, markdown_core_pie
 }
 
 /* The name of the base `value` keeps, hashed. */
-static inline void name_value(name_view *name, const markdown_core_name *value) {
+static inline void name_value(name_view *name, const markdown_core_name *value, unsigned char separator) {
     value_base(value, &name->pieces);
-    name_hashed(name);
+    name_hashed(name, separator);
 }
 
 /* The anchor the name showed, once read, goes: the name changed. */
@@ -513,8 +519,8 @@ static bool stem_is(const void *probe, const markdown_core_key_index_slot *slot)
  * last suffix `-k`, k a number of no leading zero that a suffix can be,
  * when some name is left; its measure in `*parent` and k in `*suffix`.
  * False when it has none. */
-static bool name_parent(const markdown_core_pieces *name, markdown_core_measure measure, markdown_core_measure *parent,
-                        uint32_t *suffix) {
+static bool name_parent(const markdown_core_pieces *name, markdown_core_measure measure, unsigned char separator,
+                        markdown_core_measure *parent, uint32_t *suffix) {
     unsigned char tail[12];
     const bufsize_t count = markdown_core_pieces_tail(name, (bufsize_t)sizeof(tail), tail);
     bufsize_t at = count;
@@ -522,7 +528,7 @@ static bool name_parent(const markdown_core_pieces *name, markdown_core_measure 
         at--;
     }
     const bufsize_t width = count - at;
-    if (!width || width > 10 || !at || tail[at - 1] != '-' || tail[at] == '0' || name->size - width < 2) {
+    if (!width || width > 10 || !at || tail[at - 1] != separator || tail[at] == '0' || name->size - width < 2) {
         return false;
     }
     uint64_t value = 0;
@@ -544,7 +550,7 @@ static uint32_t stem_parent(markdown_core_names *state, uint32_t id, uint32_t *s
     markdown_core_pieces text;
     stem_text(state, id, &text);
     markdown_core_measure measure;
-    if (!name_parent(&text, stem->measure, &measure, suffix)) {
+    if (!name_parent(&text, stem->measure, separator_of(state), &measure, suffix)) {
         return 0;
     }
     if (stem->up) {
@@ -564,7 +570,7 @@ static uint32_t name_stem(markdown_core_names *state, uint32_t id, uint32_t suff
     markdown_core_pieces text;
     stem_text(state, id, &text);
     name_view name;
-    name_make(&name, &text, stem_of(state->edit, id)->measure, suffix);
+    name_make(&name, &text, stem_of(state->edit, id)->measure, suffix, separator_of(state));
     return stem_find(state, &name.pieces, name.measure);
 }
 
@@ -591,7 +597,7 @@ static bool stem_link(markdown_core_names *state, uint32_t id) {
     stem_text(state, id, &text);
     markdown_core_measure measure;
     uint32_t suffix;
-    if (!name_parent(&text, stem_of(names, id)->measure, &measure, &suffix)) {
+    if (!name_parent(&text, stem_of(names, id)->measure, separator_of(state), &measure, &suffix)) {
         return true;
     }
     markdown_core_pieces head;
@@ -964,7 +970,7 @@ static bool name_holds(const void *probe, const markdown_core_key_index_slot *sl
     value_base(value, &held);
     unsigned char tail[SUFFIX_ROOM];
     if (suffix) {
-        markdown_core_pieces_add(&held, tail, suffix_write(tail, suffix));
+        markdown_core_pieces_add(&held, tail, suffix_write(tail, suffix, separator_of(look->state)));
     }
     return markdown_core_pieces_same(&name->pieces, &held);
 }
@@ -1098,7 +1104,7 @@ static void displace(name_pass *pass, size_t at) {
         const markdown_core_named *entry = named_at(state, at);
         size_t suffix = holder_suffix(state, entry, pass->beneath != NULL);
         name_view name;
-        name_value(&name, name_of(state, entry));
+        name_value(&name, name_of(state, entry), separator_of(state));
         markdown_core_key_index_slot *candidate;
         do {
             name_suffix(&name, ++suffix);
@@ -1129,7 +1135,7 @@ static void read_record(name_pass *pass, const markdown_core_roster_record *reco
     name_view name;
     markdown_core_pieces_clear(&name.pieces);
     markdown_core_pieces_add(&name.pieces, label.data, label.len);
-    name_hashed(&name);
+    name_hashed(&name, separator_of(pass->state));
     if (record->withdraws) {
         assert(!pass->beneath);
         if (!record->live) {
@@ -1189,11 +1195,12 @@ static void base_read(name_pass *pass, markdown_core_named *entry) {
     if (parser->error || !named_project(parser, pass->state, entry, 0, entry->node->child_count, name)) {
         return;
     }
-    /* An entry whose text projects to nothing borrows the base "section";
+    /* An entry whose text projects to nothing borrows the spelling's empty
+     * base (names.h);
      * any other copies the projection, so the pass keeps its storage for the
      * next entry's. */
     markdown_core_name *value = name_of(pass->state, entry);
-    const markdown_core_strbuf *read = name->size ? name : &SECTION;
+    const markdown_core_strbuf *read = name->size ? name : &pass->state->spelling->empty;
     markdown_core_pieces base;
     value_base(value, &base);
     if (!markdown_core_pieces_are(&base, read->ptr, read->size)) {
@@ -1201,7 +1208,7 @@ static void base_read(name_pass *pass, markdown_core_named *entry) {
             if (!markdown_core_strbuf_borrows(&value->base)) {
                 markdown_core_strbuf_free(&value->base);
             }
-            value->base = SECTION;
+            value->base = pass->state->spelling->empty;
         } else {
             if (markdown_core_strbuf_borrows(&value->base) || value->base.split) {
                 if (!markdown_core_strbuf_borrows(&value->base)) {
@@ -1238,7 +1245,7 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
         }
         if (!parser->error) {
             name_view name;
-            name_value(&name, name_of(state, entry));
+            name_value(&name, name_of(state, entry), separator_of(state));
             take_last(pass, at, &name);
         }
     }
@@ -1547,7 +1554,7 @@ static void kin_rename(name_pass *pass) {
         stem_text(state, cursor.stem, &base);
         uint32_t suffix = 0;
         name_view name;
-        name_base(&name, &base, stem->measure);
+        name_base(&name, &base, stem->measure, separator_of(state));
         for (;;) {
             name_suffix(&name, suffix);
             bool failed = false;
@@ -1634,7 +1641,7 @@ static void base_new(name_pass *pass, const markdown_core_named *entry, markdown
     }
     if (!base->measure.size) {
         base->old = NULL;
-        markdown_core_strbuf_puts(&base->mid, "section");
+        markdown_core_strbuf_put(&base->mid, state->spelling->empty.ptr, state->spelling->empty.size);
         base->measure = markdown_core_measure_of(base->mid.ptr, (size_t)base->mid.size);
     }
     if (base->mid.oom) {
@@ -1750,7 +1757,7 @@ static void edit_rename(name_pass *pass) {
         uint32_t suffix;
         const uint32_t own = stem_find(state, &label, measure);
         uint32_t up = 0;
-        if (name_parent(&label, measure, &parent, &suffix)) {
+        if (name_parent(&label, measure, separator_of(state), &parent, &suffix)) {
             markdown_core_pieces head;
             markdown_core_pieces_head(&label, (bufsize_t)parent.size, &head);
             up = stem_find(state, &head, parent);
@@ -1856,7 +1863,8 @@ typedef struct {
     unsigned char text[];
 } shown_anchor;
 
-bool markdown_core_name_anchor(markdown_core_name *value, markdown_core_chunk *shows) {
+bool markdown_core_name_anchor(markdown_core_name *value, const markdown_core_name_spelling *spelling,
+                               markdown_core_chunk *shows) {
     const markdown_core_strbuf *base = &value->base;
     if (!base->size) {
         *shows = (markdown_core_chunk){0};
@@ -1871,7 +1879,7 @@ bool markdown_core_name_anchor(markdown_core_name *value, markdown_core_chunk *s
         markdown_core_pieces pieces;
         value_base(value, &pieces);
         name_view name;
-        name_make(&name, &pieces, MARKDOWN_CORE_MEASURE_NONE, value->suffix);
+        name_make(&name, &pieces, MARKDOWN_CORE_MEASURE_NONE, value->suffix, spelling->separator);
         shown_anchor *made = markdown_core_alloc(1, sizeof(*made) + (size_t)name.pieces.size + 1);
         if (!made) {
             return false;
@@ -1889,8 +1897,10 @@ bool markdown_core_name_anchor(markdown_core_name *value, markdown_core_chunk *s
 }
 
 /* THE OWNER'S SIDE (names.h). */
-void markdown_core_names_init(markdown_core_names *names, const markdown_core_element_instance *const *owners) {
+void markdown_core_names_init(markdown_core_names *names, const markdown_core_element_instance *const *owners,
+                              const markdown_core_name_spelling *spelling) {
     names->owners = owners;
+    names->spelling = spelling;
 }
 
 /* (names.h) The node goes into the entries, in its place, numbered, in an
@@ -1898,6 +1908,10 @@ void markdown_core_names_init(markdown_core_names *names, const markdown_core_el
 void markdown_core_parser_name(markdown_core_parser *parser, const markdown_core_element_instance *self,
                                markdown_core_node *node) {
     markdown_core_names *state = &parser->names;
+    /* A dialect that spells no names names no node (names.h). */
+    if (!state->spelling) {
+        return;
+    }
     names_follow(state);
     uint8_t owner = 0;
     while (state->owners[owner] != self) {

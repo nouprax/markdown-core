@@ -418,15 +418,16 @@ typedef struct markdown_core_content_ops {
  * content runs (its structure), `enter`. Each may be NULL; the
  * dialect projects who answers what by byte and by hook as it is sealed. */
 struct bracket;
-/* What a rule makes of a bracket at a `]` (below). */
+/* What a rule makes of a bracket at its closer (below). */
 typedef enum { BRACKET_UNMATCHED, BRACKET_MATCHED, BRACKET_REJECTED } markdown_core_bracket_match;
-/* A RULE BY WHICH AN ELEMENT CLOSES A BRACKET at a `]` (bracket.h): the
- * engine asks the dialect's rules in ascending `precedence`, equal ones in
- * descriptor order, each with the run standing after the `]`. `close`
+/* A RULE BY WHICH AN ELEMENT CLOSES A BRACKET at its element's closer byte
+ * (bracket.h, markdown_core_inline_ops `closer`): the engine asks the
+ * dialect's rules for that byte in ascending `precedence`, equal ones in
+ * descriptor order, each with the run standing after the closer. `close`
  * answers MATCHED when it made its construct -- and then in `*made` the
- * node the `]` leaves, or NULL -- REJECTED when no construct is made of the
- * bracket at all, and UNMATCHED to leave it to the next rule; with neither
- * MATCHED, the `]` is text. A `mine` rule closes only the brackets its
+ * node the closer leaves, or NULL -- REJECTED when no construct is made of
+ * the bracket at all, and UNMATCHED to leave it to the next rule; with
+ * neither MATCHED, the closer is text. A `mine` rule closes only the brackets its
  * element opened, and those close only by its element's `mine` rules. */
 typedef struct markdown_core_close_rule {
     int precedence;
@@ -468,9 +469,12 @@ typedef struct markdown_core_inline_ops {
     void (*opened)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
     void (*settled)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
     void (*freed)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
-    /* The element's rules for closing a bracket, `close_count` of them. */
+    /* The element's rules for closing a bracket, `close_count` of them,
+     * each asked at `closer`, the byte they close a bracket at: the dialect
+     * ends a text run at it and reads it as a closer (bracket.h). */
     const markdown_core_close_rule *closes;
     size_t close_count;
+    unsigned char closer;
     /* Parsed delimiter semantics are declared by their element. Pairing,
      * run classification and node construction stay in the shared engine. */
     markdown_core_delimiter_rule rule;
@@ -886,6 +890,23 @@ typedef struct markdown_core_facet {
     struct markdown_core_name *(*named)(const markdown_core_node *);
 } markdown_core_facet;
 
+/* A ROSTER SPACE (roster.h): a lookup space the labels an element declares
+ * are filed in and looked up from. The element that defines it owns it,
+ * and every element that declares or looks up labels in it names it in
+ * `spaces`; the dialect numbers each space once, after the engine's own
+ * ANCHOR, in descriptor order of first naming, and the instance holds the
+ * numbers in `spaces`, in its descriptor's order. A space that `folds`
+ * holds its labels in the reference-label normal form, any other their
+ * bytes as written. */
+typedef struct markdown_core_space {
+    const char *name;
+    bool folds;
+} markdown_core_space;
+
+/* The most spaces a dialect numbers: a kind is a key's first byte, and the
+ * engine's ANCHOR and no kind's 0 take two of its values. */
+#define MARKDOWN_CORE_SPACE_LIMIT 254
+
 struct markdown_core_element {
     /* WHO THE ELEMENT IS AND WHAT IT STORES. */
     const char *name;
@@ -893,6 +914,10 @@ struct markdown_core_element {
      * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
      * Sealing resolves them, in this order, into the instance's `peers`. */
     const markdown_core_element *const *peers;
+    /* The roster spaces the element declares or looks up labels in,
+     * NULL-terminated (markdown_core_space); a space another element owns
+     * is that element's, which `peers` names. */
+    const markdown_core_space *const *spaces;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
      * IT"); zero declares none (a candidate's record is the candidate's,
@@ -917,6 +942,10 @@ struct markdown_core_element {
     /* What the element tells the names service of the nodes it asks names
      * for (names.h, markdown_core_name_ops), or NULL when it asks none. */
     const struct markdown_core_name_ops *names;
+    /* How the names service spells every name (names.h,
+     * markdown_core_name_spelling), or NULL: the dialect's last element
+     * that declares one, its anchor element, spells them. */
+    const struct markdown_core_name_spelling *spelling;
 
     /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
      * that asks it, in the order a line meets them. A NULL table says the

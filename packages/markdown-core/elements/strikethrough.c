@@ -27,6 +27,7 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
     .rule = MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     .delimiter = {.minimum_width = 2,
                   .maximum_width = 2,
+                  .flank = markdown_core_flank_free,
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},

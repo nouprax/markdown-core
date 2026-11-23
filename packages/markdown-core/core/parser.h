@@ -291,6 +291,8 @@ typedef struct markdown_core_listed {
 
 typedef struct markdown_core_committed_tables {
     markdown_core_tree starts[MARKDOWN_CORE_DEFINITION_TABLES];
+    /* The roster kind of each table's labels. */
+    unsigned kinds[MARKDOWN_CORE_DEFINITION_TABLES];
     /* Where each table's entry of a number stands (tree.h, A HANDLE); a
      * number no entry holds has no leaf, and its slot is the next free
      * number plus one, as `free` is the first's. */
@@ -851,6 +853,9 @@ typedef struct markdown_core_revert {
 } markdown_core_revert;
 
 typedef struct markdown_core_edit {
+    /* The dialect's roster spaces by kind (dialect.h, `spaces`), which say
+     * how the index keys a use's label. */
+    const markdown_core_space *const *spaces;
     /* The root's old tail (THE OLD TAIL IN PLACE), its `start` the root's
      * child the reading began at, and its room `children`, which has room
      * for all of it (markdown_core_edit_old). */
@@ -1130,7 +1135,9 @@ struct markdown_core_parser {
     /* THE ENGINE'S WORK COUNTERS, for deterministic complexity gates. An
      * element counts its own work in its own state record. */
     size_t opaque_scan_work;
-    size_t footnote_body_work;
+    /* Bytes walked back over a token's trailing white space to find the
+     * run's last nonblank byte. */
+    size_t nonblank_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Delimiter entries pushed, against which the pool's growth is measured. */
@@ -2116,14 +2123,20 @@ bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_r
  * not be had. */
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal);
+/* Whether `kind`'s labels are in the reference-label normal form (element.h,
+ * markdown_core_space `folds`); the engine's ANCHOR's are not. */
+static inline bool markdown_core_parser_folds(const markdown_core_parser *parser, markdown_core_roster_kind kind) {
+    const markdown_core_space *space = parser->dialect->spaces[kind];
+    return space && space->folds;
+}
 static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
                                                                                       markdown_core_roster_kind kind,
                                                                                       const markdown_core_chunk *label,
                                                                                       uint32_t at, bool *failed) {
     const markdown_core_roster_record *record =
-        kind == MARKDOWN_CORE_ROSTER_SPECIMEN
-            ? markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed)
-            : markdown_core_roster_find_label(&parser->roster, kind, label, failed);
+        markdown_core_parser_folds(parser, kind)
+            ? markdown_core_roster_find_label(&parser->roster, kind, label, failed)
+            : markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed);
     if (parser->sink) {
         /* A reading for a sink, whose roster holds the whole document's
          * labels (session.c, THE LOOK), answers from them. */

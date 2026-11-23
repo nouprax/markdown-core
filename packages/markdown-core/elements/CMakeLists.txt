@@ -2,6 +2,7 @@ set(LIBRARY "libmarkdown-core-elements")
 set(STATICLIBRARY "libmarkdown-core-elements_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
 set(LIBRARY_SOURCES
+    anchor.c
     ast.c
     attributes.c
     autolink.c

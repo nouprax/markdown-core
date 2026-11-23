@@ -28,7 +28,6 @@ set(HEADERS
     inlines.h
     inline_internal.h
     block_internal.h
-    houdini.h
     markdown_core_ctype.h
     element.h
     delimiter.h
@@ -38,8 +37,15 @@ set(HEADERS
     seam.h
     measure.h
     claim.h
-    sink.h)
+    sink.h
+    ../lexicon/houdini.h
+    ../lexicon/flank.h
+    ../lexicon/escape.h)
+# THE LEXICON (../lexicon): pure byte functions core and elements share,
+# built into the engine.
+set(LEXICON_SOURCES ../lexicon/houdini_html_u.c ../lexicon/flank.c ../lexicon/escape.c)
 set(LIBRARY_SOURCES
+    ${LEXICON_SOURCES}
     alloc.c
     ahead.c
     slab.c
@@ -56,7 +62,6 @@ set(LIBRARY_SOURCES
     tree.c
     index.c
     sink.c
-    houdini_html_u.c
     markdown_core_ctype.c
     ${HEADERS})
 

@@ -10,7 +10,6 @@
 #include "parser.h"
 #include "node_type.h"
 #include "buffer.h"
-#include "houdini.h"
 #include "utf8.h"
 #include "delimiter.h"
 #include "inlines.h"
@@ -325,21 +324,16 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     } else {
         markdown_core_inline_saw_end(inline_state);
     }
+    /* What the neighbours make of the run is its rule's (delimiter.h,
+     * `flank`). */
     const uint8_t before = markdown_core_utf8proc_classes(before_char);
     const uint8_t after = markdown_core_utf8proc_classes(after_char);
-    const bool space_before = before & MARKDOWN_CORE_UNICODE_WHITESPACE;
-    const bool space_after = after & MARKDOWN_CORE_UNICODE_WHITESPACE;
-    const bool punct_before = before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
-    const bool punct_after = after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
-    bool left_flanking = !space_after && (!punct_after || space_before || punct_before);
-    bool right_flanking = !space_before && (!punct_before || space_after || punct_after);
-    if (spec->punctuation_bound) {
-        run.can_open = left_flanking && (!right_flanking || punct_before);
-        run.can_close = right_flanking && (!left_flanking || punct_after);
-    } else {
-        run.can_open = left_flanking;
-        run.can_close = right_flanking;
-    }
+    const markdown_core_flank flank = {
+        before & MARKDOWN_CORE_UNICODE_WHITESPACE, after & MARKDOWN_CORE_UNICODE_WHITESPACE,
+        before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL, after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL};
+    const unsigned sides = spec->flank ? spec->flank(flank) : 0u;
+    run.can_open = (sides & MARKDOWN_CORE_FLANK_OPENS) != 0;
+    run.can_close = (sides & MARKDOWN_CORE_FLANK_CLOSES) != 0;
     inline_state->cached_run = run;
     return &inline_state->cached_run;
 }
@@ -899,9 +893,9 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
             }
         }
     }
-    /* A `]` closes a bracket by the dialect's rules (bracket.h). */
-    new_inl = c == ']' && parser->dialect->closer_count ? markdown_core_inline_close_bracket(parser, inline_state)
-                                                        : try_elements(parser, parent, c, inline_state);
+    /* A closer closes a bracket by the dialect's rules (bracket.h). */
+    new_inl = parser->dialect->closes[c] ? markdown_core_inline_close_bracket(parser, inline_state)
+                                         : try_elements(parser, parent, c, inline_state);
     if (inline_state->pos == token_start && !new_inl && !parser->error && !inline_state->error) {
         endpos = inline_state_find_special_char(inline_state);
         const markdown_core_element_instance *text = parser->dialect->text_structure;
@@ -911,7 +905,7 @@ append:
     endpos = inline_state->pos;
     while (endpos > token_start) {
         unsigned char byte = inline_state->input.data[--endpos];
-        parser->footnote_body_work++;
+        parser->nonblank_work++;
         if (!markdown_core_is_space_or_tab(byte)) {
             inline_state->nonblank_end = endpos + 1;
             break;
@@ -1078,7 +1072,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_pa
     if (at < sink->length && sink->source[at] == '\n' && (at == 0 || sink->source[at - 1] != '\n')) {
         at++;
     }
-    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t' || sink->source[at] == '>')) {
+    /* Past the next line's container prefixes: indentation and the bytes
+     * container elements declare (the dialect's one table). */
+    while (at < sink->length && inline_state->dialect->container_prefix[(unsigned char)sink->source[at]]) {
         at++;
     }
     if (at < sink->length) {

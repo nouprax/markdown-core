@@ -13,6 +13,7 @@ static const markdown_core_inline_ops INSERTION_INLINES = {
     .character = '+',
     .delimiter = {.minimum_width = 2,
                   .maximum_width = 2,
+                  .flank = markdown_core_flank_free,
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_INSERTION},
     .match = match,

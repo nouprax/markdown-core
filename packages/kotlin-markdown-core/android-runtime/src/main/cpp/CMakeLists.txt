@@ -7,6 +7,7 @@ set(MARKDOWN_CORE_ROOT
 get_filename_component(MARKDOWN_CORE_ROOT "${MARKDOWN_CORE_ROOT}" ABSOLUTE)
 set(MARKDOWN_CORE_CORE_DIR "${MARKDOWN_CORE_ROOT}/packages/markdown-core/core")
 set(MARKDOWN_CORE_ELEMENTS_DIR "${MARKDOWN_CORE_ROOT}/packages/markdown-core/elements")
+set(MARKDOWN_CORE_LEXICON_DIR "${MARKDOWN_CORE_ROOT}/packages/markdown-core/lexicon")
 
 add_library(
     markdown_core_kotlin SHARED
@@ -26,7 +27,9 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/tree.c"
     "${MARKDOWN_CORE_CORE_DIR}/index.c"
     "${MARKDOWN_CORE_CORE_DIR}/sink.c"
-    "${MARKDOWN_CORE_CORE_DIR}/houdini_html_u.c"
+    "${MARKDOWN_CORE_LEXICON_DIR}/houdini_html_u.c"
+    "${MARKDOWN_CORE_LEXICON_DIR}/flank.c"
+    "${MARKDOWN_CORE_LEXICON_DIR}/escape.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core_ctype.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/code.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/code_block.c"
@@ -48,6 +51,7 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/link_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/table_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/text_scanners.c"
+    "${MARKDOWN_CORE_ELEMENTS_DIR}/anchor.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/ast.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/attributes.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/autolink.c"
@@ -87,6 +91,7 @@ add_library(
 target_include_directories(
     markdown_core_kotlin
     PRIVATE "${MARKDOWN_CORE_CORE_DIR}"
+            "${MARKDOWN_CORE_LEXICON_DIR}"
             "${MARKDOWN_CORE_ELEMENTS_DIR}"
             "${MARKDOWN_CORE_ROOT}/packages/markdown-core/include"
             "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire"

@@ -1445,6 +1445,7 @@ static const markdown_core_inline_ops ATTRIBUTES_INLINES = {
     .dispose = dispose_inline,
     .closes = ATTRIBUTES_CLOSES,
     .close_count = sizeof(ATTRIBUTES_CLOSES) / sizeof(ATTRIBUTES_CLOSES[0]),
+    .closer = ']',
 };
 
 const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[] = {

@@ -4,6 +4,7 @@
 #include "alloc.h"
 #include "block_internal.h"
 #include "dialect.h"
+#include "roster.h"
 
 /* Whether a descriptor is refused. The rule: an element takes part in the
  * finish stage through one step, asked in completion's walk where it can
@@ -166,6 +167,30 @@ static bool S_element_attached(const markdown_core_element *const *elements, siz
     return false;
 }
 
+/* The distinct spaces the `count` elements name, and, past `limit`, any
+ * number over it. */
+static size_t S_count_spaces(const markdown_core_element *const *elements, size_t count, size_t limit) {
+    size_t distinct = 0;
+    for (size_t i = 0; i < count && distinct <= limit; i++) {
+        for (const markdown_core_space *const *space = elements[i]->spaces; space && *space; space++) {
+            bool seen = false;
+            for (size_t e = 0; e <= i && !seen; e++) {
+                for (const markdown_core_space *const *other = elements[e]->spaces; other && *other; other++) {
+                    if (e == i && other == space) {
+                        break;
+                    }
+                    if (*other == *space) {
+                        seen = true;
+                        break;
+                    }
+                }
+            }
+            distinct += !seen;
+        }
+    }
+    return distinct;
+}
+
 void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
                                         const markdown_core_element *const *elements, size_t count) {
 #ifndef NDEBUG
@@ -189,6 +214,15 @@ int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder,
     if (S_element_refused(element) || count >= MARKDOWN_CORE_ELEMENT_LIMIT ||
         S_element_attached(builder->elements, count, element)) {
         return 0;
+    }
+    /* A dialect numbers its spaces in a byte (MARKDOWN_CORE_SPACE_LIMIT). */
+    if (element->spaces && element->spaces[0]) {
+        const markdown_core_element *probe[MARKDOWN_CORE_ELEMENT_LIMIT];
+        memcpy(probe, builder->elements, count * sizeof(*probe));
+        probe[count] = element;
+        if (S_count_spaces(probe, count + 1, MARKDOWN_CORE_SPACE_LIMIT) > MARKDOWN_CORE_SPACE_LIMIT) {
+            return 0;
+        }
     }
     const markdown_core_element **entries =
         markdown_core_reserve(builder->element_allocation, &builder->element_capacity, count + 1, sizeof(*entries));
@@ -298,6 +332,9 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         }
         if (S_opens_of(element)->text) {
             dialect->text_block_structure = instance;
+        }
+        if (element->spelling) {
+            dialect->spelling = element->spelling;
         }
         if (S_inlines_of(element)->rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
             dialect->delimiter_owners[S_inlines_of(element)->rule] = instance;
@@ -640,6 +677,30 @@ static void S_resolve_peers(markdown_core_dialect *dialect, markdown_core_elemen
     }
 }
 
+/* THE SPACES: each space the instances name numbered once, after the
+ * engine's ANCHOR, in descriptor order of first naming, and each
+ * instance's namings resolved to the numbers, in its order. */
+static void S_number_spaces(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
+                            const markdown_core_space **spaces, unsigned *namings) {
+    size_t kinds = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
+    spaces[0] = spaces[MARKDOWN_CORE_ROSTER_ANCHOR] = NULL;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        instances[i].spaces = namings;
+        for (const markdown_core_space *const *space = instances[i].element->spaces; space && *space; space++) {
+            size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
+            while (kind < kinds && spaces[kind] != *space) {
+                kind++;
+            }
+            if (kind == kinds) {
+                spaces[kinds++] = *space;
+            }
+            *namings++ = (unsigned)kind;
+        }
+    }
+    dialect->spaces = spaces;
+    dialect->space_count = kinds;
+}
+
 /* THE LINE NAMES ITS CANDIDATES. Each gated family's owners are projected
  * into one list per key, in the family's own order: a count, then owner
  * indices, `count + 1` bytes, so a family's table is
@@ -720,6 +781,9 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
             sizes->peers++;
         }
+        for (const markdown_core_space *const *space = elements[i]->spaces; space && *space; space++) {
+            sizes->namings++;
+        }
         sizes->closers += inlines->close_count;
     }
     sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
@@ -738,10 +802,12 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
             sizes->gate_bytes += MARKDOWN_CORE_BLOCK_GATE_KEYS * (sizes->block_totals[hook] + 1);
         }
     }
+    sizes->spaces = S_count_spaces(elements, count, SIZE_MAX);
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
            sizes->closers * sizeof(markdown_core_closer) +
            (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
                sizeof(const markdown_core_element_instance *) +
+           (sizes->spaces + 2) * sizeof(const markdown_core_space *) + sizes->namings * sizeof(unsigned) +
            sizes->gate_bytes;
 }
 
@@ -763,7 +829,7 @@ static size_t S_place_closers(markdown_core_dialect *dialect, markdown_core_clos
             closers[to] = closers[to - 1];
             to--;
         }
-        closers[to] = (markdown_core_closer){&dialect->instances[i], rule};
+        closers[to] = (markdown_core_closer){&dialect->instances[i], rule, inlines->closer};
     }
     return at;
 }
@@ -784,11 +850,13 @@ static void S_project_closers(markdown_core_dialect *dialect, markdown_core_elem
     assert(at == count);
     dialect->closers = closers;
     dialect->closer_count = count;
-    /* The engine reads a `]` whenever a rule may close a bracket at it, so
-     * the byte ends a text run unconditionally. */
-    if (count > 0) {
-        dialect->special_chars[']'] = MARKDOWN_CORE_TEXT_END;
-        dialect->inline_start_owners[']'] = NULL;
+    /* The engine reads a closer whenever a rule may close a bracket at it,
+     * so the byte ends a text run unconditionally. */
+    for (size_t i = 0; i < count; i++) {
+        const unsigned char byte = closers[i].byte;
+        dialect->closes[byte] = true;
+        dialect->special_chars[byte] = MARKDOWN_CORE_TEXT_END;
+        dialect->inline_start_owners[byte] = NULL;
     }
 }
 
@@ -810,12 +878,15 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         (const markdown_core_element_instance **)(closers + sizes->closers);
     const markdown_core_element_instance **table = entries + sizes->pointers;
     const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
-    uint8_t *tables = (uint8_t *)(peers + sizes->peers);
+    const markdown_core_space **spaces = (const markdown_core_space **)(peers + sizes->peers);
+    unsigned *namings = (unsigned *)(spaces + sizes->spaces + 2);
+    uint8_t *tables = (uint8_t *)(namings + sizes->namings);
 
     dialect->element_count = count;
     S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);
     assert(dialect->run_state_size == sizes->run_state_bytes);
     S_resolve_peers(dialect, instances, peers);
+    S_number_spaces(dialect, instances, spaces, namings);
     S_resolve_owners(dialect);
     S_project_kinds(dialect);
     S_project_inline_bytes(dialect);

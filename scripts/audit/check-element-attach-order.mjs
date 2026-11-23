@@ -24,10 +24,23 @@ const elementHeaders = fs
 const syntaxScanners = elementHeaders
     .filter((file) => file.endsWith("_scanners.h"))
     .flatMap((file) => [...read(`elements/${file}`).matchAll(/\b(_?scan_\w+)\s*\(/g)].map((match) => match[1]));
+// Every engine source but the command line's, which reads its arguments.
+const engineSources = fs
+    .readdirSync(path.join(pkg, "core"))
+    .filter((file) => file.endsWith(".c") && file !== "main.c")
+    .map((file) => `core/${file}`);
+const descriptors = elementHeaders.flatMap((file) =>
+    [...read(`elements/${file}`).matchAll(/extern const markdown_core_element (MARKDOWN_CORE_ELEMENT_\w+)/g)].map(
+        (match) => match[1]
+    )
+);
+const kinds = new Set(
+    [...read("core/node_type.h").matchAll(/^\s*MARKDOWN_CORE_NODE_([A-Z][A-Z_]*)\s*=/gm)].map((match) => match[1])
+);
 failures.push(
     ...auditParserBoundaries(
-        ["core/inlines.c", "core/blocks.c"].map((file) => ({ file, source: read(file) })),
-        { elementHeaders, syntaxScanners }
+        engineSources.map((file) => ({ file, source: read(file) })),
+        { elementHeaders, syntaxScanners, descriptors, kinds }
     )
 );
 // No engine source or header reaches an element's interface: element state

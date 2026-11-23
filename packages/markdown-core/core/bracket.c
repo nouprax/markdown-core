@@ -22,8 +22,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_tell(markdown_core
 }
 
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *owner,
-                                       markdown_core_inline_state *inline_state, bracket_kind kind,
-                                       markdown_core_node *text) {
+                                       markdown_core_inline_state *inline_state,
+                                       const markdown_core_bracket_shape *shape, markdown_core_node *text) {
     bracket *b = markdown_core_pool_take(&inline_state->owner_parser->bracket_pool,
                                          sizeof(bracket) + inline_state->dialect->bracket_size);
     if (!b) {
@@ -34,24 +34,24 @@ void markdown_core_inline_push_bracket(const markdown_core_element_instance *own
     bracket *const around = bracket_last(&brackets->open);
     if (around != NULL) {
         around->bracket_after = true;
-        if (kind != BRACKET_FOOTNOTE) {
+        if (!shape->own) {
             b->in_bracket_image0 = around->in_bracket_image0;
             b->in_bracket_image1 = around->in_bracket_image1;
         }
     }
     b->owner = owner;
-    b->kind = kind;
+    b->shape = shape;
     b->outer_no_link_openers = brackets->no_link_openers;
     b->inl_text = text;
     b->position = inline_state->pos;
-    if (kind == BRACKET_IMAGE) {
+    if (shape->mark == 1) {
         b->in_bracket_image1 = true;
-    } else if (kind == BRACKET_LINK) {
+    } else if (shape->mark == 0) {
         b->in_bracket_image0 = true;
     }
     S_tell(inline_state, MARKDOWN_CORE_INLINE_HOOK_OPENED, b);
     markdown_core_stack_push(&brackets->open, &b->item);
-    if (kind != BRACKET_IMAGE) {
+    if (!shape->keeps) {
         brackets->no_link_openers = false;
     }
 }
@@ -90,10 +90,12 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, mar
 
 void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state, bracket *opener,
                                                  markdown_core_node *replacement) {
-    if (opener->kind == BRACKET_IMAGE) {
-        opener->inl_text->as.literal->len = 1;
-        markdown_core_inline_state_place(inline_state, opener->inl_text, opener->position - 2, opener->position - 2);
-        /* The replacement follows the `!`, which stays as text. */
+    const markdown_core_bracket_shape *shape = opener->shape;
+    if (shape->kept) {
+        const bufsize_t start = opener->position - shape->width;
+        opener->inl_text->as.literal->len = shape->kept;
+        markdown_core_inline_state_place(inline_state, opener->inl_text, start, start + shape->kept - 1);
+        /* The replacement follows the bytes kept as text. */
         markdown_core_node *after = markdown_core_scaffold_next(opener->inl_text);
         if (after) {
             markdown_core_scaffold_insert_before(after, replacement);
@@ -115,12 +117,13 @@ int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_sta
 }
 
 unsigned char markdown_core_inline_state_closing_bracket(markdown_core_inline_state *inline_state) {
-    return markdown_core_open_bracket(inline_state) ? ']' : 0;
+    const bracket *opener = markdown_core_open_bracket(inline_state);
+    return opener ? opener->shape->closer : 0;
 }
 
 int markdown_core_inline_state_context_start(markdown_core_inline_state *inline_state) {
     const bracket *opener = markdown_core_open_bracket(inline_state);
-    return opener && opener->kind == BRACKET_FOOTNOTE ? opener->position : 0;
+    return opener && opener->shape->own ? opener->position : 0;
 }
 
 /* The run ends: every bracket it holds, open or suspended, is freed. */
@@ -140,9 +143,10 @@ void markdown_core_inline_clear_brackets(markdown_core_inline_state *inline_stat
 markdown_core_node *markdown_core_inline_close_bracket(markdown_core_parser *parser,
                                                        markdown_core_inline_state *inline_state) {
     parser->bracket_work++;
+    const unsigned char byte = inline_state->input.data[inline_state->pos];
     const bufsize_t after = ++inline_state->pos;
     bracket *opener = markdown_core_open_bracket(inline_state);
-    if (opener) {
+    if (opener && opener->shape->closer == byte) {
         /* A bracket whose element closes its own by `mine` rules meets
          * those alone (element.h, markdown_core_close_rule); any other, the
          * shared rules (dialect.h, `closers`). */
@@ -151,6 +155,9 @@ markdown_core_node *markdown_core_inline_close_bracket(markdown_core_parser *par
         const markdown_core_closer *closer = dialect->closers + (owner->mine_count ? owner->mine_first : 0);
         const markdown_core_closer *const end = closer + (owner->mine_count ? owner->mine_count : dialect->shared);
         for (; closer < end; closer++) {
+            if (closer->byte != byte) {
+                continue;
+            }
             inline_state->pos = after;
             markdown_core_node *made = NULL;
             const markdown_core_bracket_match match =
@@ -162,7 +169,7 @@ markdown_core_node *markdown_core_inline_close_bracket(markdown_core_parser *par
                 break;
             }
         }
-        /* No construct: the body stays as it was read, and the `]` is
+        /* No construct: the body stays as it was read, and the closer is
          * text. */
         markdown_core_inline_settle_bracket(inline_state, opener);
         markdown_core_inline_pop_bracket(inline_state);

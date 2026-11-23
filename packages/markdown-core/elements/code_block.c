@@ -1,3 +1,5 @@
+#include "houdini.h"
+#include "escape.h"
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"

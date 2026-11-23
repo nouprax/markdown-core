@@ -3,14 +3,24 @@
 #include "autolink_scanners.h"
 #include "html.h"
 #include "citation.h"
+#include "link.h"
+#include "specimen.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { CITATION_CODE, CITATION_HTML };
-static const markdown_core_element *const CITATION_PEERS[] = {
-    [CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE, [CITATION_HTML] = &MARKDOWN_CORE_ELEMENT_HTML, NULL};
+enum { CITATION_CODE, CITATION_HTML, CITATION_LINK, CITATION_SPECIMEN };
+static const markdown_core_element *const CITATION_PEERS[] = {[CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE,
+                                                              [CITATION_HTML] = &MARKDOWN_CORE_ELEMENT_HTML,
+                                                              [CITATION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
+                                                              [CITATION_SPECIMEN] = &MARKDOWN_CORE_ELEMENT_SPECIMEN,
+                                                              NULL};
+/* The spaces this element looks labels up in, as `self->spaces` numbers
+ * them. */
+enum { CITATION_SPECIMENS };
+static const markdown_core_space *const CITATION_SPACES[] = {[CITATION_SPECIMENS] = &MARKDOWN_CORE_SPECIMEN_SPACE,
+                                                             NULL};
 
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos);
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at);
@@ -638,7 +648,7 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
     bool failed = false, specimen = false;
     if (!token->suppress && token->key_start == token->start + 1) {
         specimen = markdown_core_parser_find_definition(
-                       inline_state->owner_parser, MARKDOWN_CORE_ROSTER_SPECIMEN, &item->as.citation->value,
+                       inline_state->owner_parser, self->spaces[CITATION_SPECIMENS], &item->as.citation->value,
                        markdown_core_inline_state_root_offset(inline_state, token->start), &failed) != NULL;
     }
     if (failed) {
@@ -1004,6 +1014,7 @@ static const markdown_core_inline_ops CITATION_INLINES = {
     .freed = S_freed,
     .closes = CITATION_CLOSES,
     .close_count = sizeof(CITATION_CLOSES) / sizeof(CITATION_CLOSES[0]),
+    .closer = ']',
     .match = match,
     .starts = is_inline_start,
     .terminates = "@-;",
@@ -1018,6 +1029,7 @@ const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .facets = MARKDOWN_CORE_CITATION_FACETS,
     .peers = CITATION_PEERS,
+    .spaces = CITATION_SPACES,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),
     .bracket_size = sizeof(markdown_core_citation_bracket),
@@ -1028,7 +1040,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
 /* A bracket opens: a `[` right after an author key is the key's tail. */
 static void S_opened(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bracket *b) {
     citation_token *author = citation_token_last(markdown_core_inline_current_citation_tokens(self, inline_state));
-    if (b->kind == BRACKET_LINK && author && author->key && author->tail_start == inline_state->pos - 1) {
+    if (b->shape == &MARKDOWN_CORE_LINK_BRACKET && author && author->key &&
+        author->tail_start == inline_state->pos - 1) {
         S_bracket(self, b)->author = author;
     }
 }

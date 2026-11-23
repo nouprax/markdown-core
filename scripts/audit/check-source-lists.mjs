@@ -37,8 +37,14 @@ function cmakeSources(relative, variable) {
     return [...text.slice(start, end).matchAll(/([A-Za-z0-9_-]+\.c)\b/g)].map((m) => m[1]);
 }
 
+const lexiconSources = cmakeSources("packages/markdown-core/core/CMakeLists.txt", "LEXICON_SOURCES");
 const authority = {
-    core: cmakeSources("packages/markdown-core/core/CMakeLists.txt", "LIBRARY_SOURCES"),
+    // The engine's own sources; the lexicon's join them in one target but
+    // live in their own directory.
+    core: cmakeSources("packages/markdown-core/core/CMakeLists.txt", "LIBRARY_SOURCES").filter(
+        (file) => !lexiconSources.includes(file)
+    ),
+    lexicon: lexiconSources,
     elements: cmakeSources("packages/markdown-core/elements/CMakeLists.txt", "LIBRARY_SOURCES")
 };
 
@@ -107,18 +113,22 @@ const SWIFT_RELEASE = "packages/swift-markdown-core/Package.release.swift";
 const declared = {
     "Package.swift": follower("Package.swift", () => ({
         core: names("Package.swift", "core", swiftPattern("core")),
+        lexicon: names("Package.swift", "lexicon", swiftPattern("lexicon")),
         elements: names("Package.swift", "elements", swiftPattern("elements"))
     })),
     [SWIFT_RELEASE]: follower(SWIFT_RELEASE, () => ({
         core: names(SWIFT_RELEASE, "core", swiftPattern("core")),
+        lexicon: names(SWIFT_RELEASE, "lexicon", swiftPattern("lexicon")),
         elements: names(SWIFT_RELEASE, "elements", swiftPattern("elements"))
     })),
     [ANDROID_CMAKE]: follower(ANDROID_CMAKE, () => ({
         core: names(ANDROID_CMAKE, "core", androidPattern("CORE")),
+        lexicon: names(ANDROID_CMAKE, "lexicon", androidPattern("LEXICON")),
         elements: names(ANDROID_CMAKE, "elements", androidPattern("ELEMENTS"))
     })),
     [ES_BUILD]: follower(ES_BUILD, () => ({
         core: esArray(ES_BUILD, "core"),
+        lexicon: esArray(ES_BUILD, "lexicon"),
         elements: esArray(ES_BUILD, "elements")
     }))
 };
@@ -139,6 +149,7 @@ const report = (message) => {
 const androidSources = names(ANDROID_CMAKE, "complete Android target", /"(?<file>[^"\n]+\.c)"/g);
 const expectedAndroidSources = [
     ...authority.core.map((file) => `\${MARKDOWN_CORE_CORE_DIR}/${file}`),
+    ...authority.lexicon.map((file) => `\${MARKDOWN_CORE_LEXICON_DIR}/${file}`),
     ...authority.elements.map((file) => `\${MARKDOWN_CORE_ELEMENTS_DIR}/${file}`),
     "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire/markdown_core_wire.c",
     ...cmakeSources("packages/markdown-core/lsp/CMakeLists.txt", "MARKDOWN_CORE_LSP_SOURCES").map(
@@ -162,7 +173,11 @@ if (androidSources.length !== actualAndroidSet.size) {
 
 // Existence first: a list naming a file that is not there is the failure all
 // three of the rotted lists actually had.
-const directories = { core: "packages/markdown-core/core", elements: "packages/markdown-core/elements" };
+const directories = {
+    core: "packages/markdown-core/core",
+    lexicon: "packages/markdown-core/lexicon",
+    elements: "packages/markdown-core/elements"
+};
 for (const [name, buckets] of [["CMake (authority)", authority], ...Object.entries(followers)]) {
     for (const [bucket, files] of Object.entries(buckets)) {
         for (const file of files) {
@@ -173,13 +188,10 @@ for (const [name, buckets] of [["CMake (authority)", authority], ...Object.entri
     }
 }
 
-const expected = new Set([
-    ...authority.core.map((f) => `core/${f}`),
-    ...authority.elements.map((f) => `elements/${f}`)
-]);
+const expected = new Set(Object.entries(authority).flatMap(([bucket, files]) => files.map((f) => `${bucket}/${f}`)));
 
 for (const [name, buckets] of Object.entries(followers)) {
-    const actual = new Set([...buckets.core.map((f) => `core/${f}`), ...buckets.elements.map((f) => `elements/${f}`)]);
+    const actual = new Set(Object.entries(buckets).flatMap(([bucket, files]) => files.map((f) => `${bucket}/${f}`)));
     const missing = [...expected].filter((f) => !actual.has(f)).sort();
     const extra = [...actual].filter((f) => !expected.has(f)).sort();
     if (missing.length) {

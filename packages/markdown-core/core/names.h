@@ -22,6 +22,16 @@
 struct markdown_core_parser;
 struct markdown_core_element_instance;
 
+/* THE SPELLING OF NAMES (element.h, `spelling`): the base of a node whose
+ * text projects to nothing, `empty`, which a name borrows, and the byte
+ * that parts a base from its suffix's digits, `separator`. The dialect's
+ * last element that declares a spelling spells every name; a dialect with
+ * none names no node. */
+typedef struct markdown_core_name_spelling {
+    markdown_core_strbuf empty;
+    unsigned char separator;
+} markdown_core_name_spelling;
+
 /* WHAT A NAME OWNER DECLARES (element.h, `names`): `value`, where its node
  * keeps its name (node.h, A NODE'S NAME), which its kind's facet shows too
  * (element.h, the facet's `named`); `project`, the projection of the node's
@@ -165,6 +175,7 @@ typedef struct markdown_core_names {
     size_t work;
     markdown_core_name_edit *edit;
     const struct markdown_core_element_instance *const *owners;
+    const markdown_core_name_spelling *spelling;
 } markdown_core_names;
 
 /* THE OWNER'S SIDE. The node `node`, whose block closed, asks the element
@@ -198,17 +209,19 @@ void markdown_core_names_reread(struct markdown_core_parser *parser, markdown_co
  * could not be had. */
 bool markdown_core_names_retire(struct markdown_core_parser *parser, const struct markdown_core_element_instance *self,
                                 markdown_core_node *node);
-/* The anchor the name shows, in `*anchor`: its base itself when that is
- * whole and takes no suffix, joined at its first read otherwise; empty for
- * a node that holds none. False, `*anchor` untouched, when storage could
- * not be had for it. */
-bool markdown_core_name_anchor(markdown_core_name *name, markdown_core_chunk *anchor);
+/* The anchor the name shows, in `*anchor`, as `spelling` spells it: its
+ * base itself when that is whole and takes no suffix, joined at its first
+ * read otherwise; empty for a node that holds none. False, `*anchor`
+ * untouched, when storage could not be had for it. */
+bool markdown_core_name_anchor(markdown_core_name *name, const markdown_core_name_spelling *spelling,
+                               markdown_core_chunk *anchor);
 
 /* THE ENGINE'S SIDE (blocks.c, THE STAGES): the names start with the parse,
  * finish at a snapshot's end and at the flush, let go at the release, and
  * follow an edit's reopen at `start` and splice at `point`; false when
  * storage could not be had. */
-void markdown_core_names_init(markdown_core_names *names, const struct markdown_core_element_instance *const *owners);
+void markdown_core_names_init(markdown_core_names *names, const struct markdown_core_element_instance *const *owners,
+                              const markdown_core_name_spelling *spelling);
 void markdown_core_names_finish(struct markdown_core_parser *parser);
 void markdown_core_names_release(markdown_core_names *names);
 bool markdown_core_names_reopen(struct markdown_core_parser *parser, uint32_t start);

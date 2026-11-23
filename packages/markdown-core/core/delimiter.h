@@ -5,6 +5,7 @@
 #include "buffer.h"
 #include "markdown-core-element-api.h"
 #include "stack.h"
+#include "flank.h"
 
 /* Private to the inline engine. Elements receive read-only marker views
  * and construct opaque AST values; stack ordering and reduction belong here. */
@@ -27,7 +28,9 @@ typedef struct {
     bufsize_t minimum_width, maximum_width;
     bufsize_t run_limit; /* zero means a maximal run */
     bool rule_of_three;
-    bool punctuation_bound;
+    /* What the run's neighbours make of a run of an inline body (flank.h):
+     * whether it opens and whether it closes. NULL: it does neither. */
+    unsigned (*flank)(markdown_core_flank);
     delimiter_body body;
     markdown_core_node_type single_kind, double_kind;
     bool exact_run;

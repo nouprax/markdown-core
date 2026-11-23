@@ -1,3 +1,4 @@
+#include "houdini.h"
 #include "autolink_scanners.h"
 #include "inline_internal.h"
 #include "autolink.h"

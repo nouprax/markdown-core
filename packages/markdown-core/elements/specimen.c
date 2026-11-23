@@ -3,6 +3,11 @@
 #include "block_internal.h"
 #include "parts.h"
 
+const markdown_core_space MARKDOWN_CORE_SPECIMEN_SPACE = {.name = "specimen"};
+/* The spaces this element files labels in, as `self->spaces` numbers them. */
+enum { SPECIMEN_LABELS };
+static const markdown_core_space *const SPECIMEN_SPACES[] = {[SPECIMEN_LABELS] = &MARKDOWN_CORE_SPECIMEN_SPACE, NULL};
+
 MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_specimen_value, specimen_marker_fits);
 
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
@@ -114,7 +119,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     markdown_core_specimen_state *state = self->state;
     /* A citation names a specimen by its label as written. */
     if (specimen.label.has_value &&
-        !markdown_core_parser_declare(parser, MARKDOWN_CORE_ROSTER_SPECIMEN, &specimen.label.value,
+        !markdown_core_parser_declare(parser, self->spaces[SPECIMEN_LABELS], &specimen.label.value,
                                       (*container)->place.start, NULL)) {
         return false;
     }
@@ -178,6 +183,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .facets = MARKDOWN_CORE_SPECIMEN_FACETS,
     .edit = &SPECIMEN_EDIT,
     .name = "specimen",
+    .spaces = SPECIMEN_SPACES,
     .state_size = sizeof(markdown_core_specimen_state),
     .opens = &SPECIMEN_OPENS,
     .lines = &SPECIMEN_LINES,

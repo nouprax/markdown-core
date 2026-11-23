@@ -23,9 +23,13 @@ const core = [
     "tree.c",
     "index.c",
     "sink.c",
-    "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
+// The lexicon (packages/markdown-core/lexicon): pure byte functions that
+// core and elements share.
+const lexicon = ["houdini_html_u.c", "flank.c", "escape.c"].map((file) =>
+    path.join(root, "packages/markdown-core/lexicon", file)
+);
 const elements = [
     "code.c",
     "code_block.c",
@@ -47,6 +51,7 @@ const elements = [
     "link_scanners.c",
     "table_scanners.c",
     "text_scanners.c",
+    "anchor.c",
     "ast.c",
     "attributes.c",
     "autolink.c",
@@ -119,6 +124,7 @@ const result = spawnSync(
     "emcc",
     [
         ...core,
+        ...lexicon,
         ...elements,
         ...lsp,
         path.join(root, "packages/markdown-core/wire/markdown_core_wire.c"),
@@ -140,6 +146,7 @@ const result = spawnSync(
         "-DMARKDOWN_CORE_ELEMENTS_STATIC_DEFINE",
         "-DMARKDOWN_CORE_LSP_STATIC_DEFINE",
         `-I${path.join(root, "packages/markdown-core/core")}`,
+        `-I${path.join(root, "packages/markdown-core/lexicon")}`,
         `-I${path.join(root, "packages/markdown-core/elements")}`,
         `-I${path.join(root, "packages/markdown-core/include")}`,
         `-I${path.join(root, "packages/markdown-core/core/include")}`,

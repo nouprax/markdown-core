@@ -41,6 +41,11 @@ if(MARKDOWN_CORE_WARNINGS_AS_ERRORS)
 endif()
 
 set(MARKDOWN_CORE_CORE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/core")
+# THE LEXICON: pure functions from bytes to what they spell (HTML entities, the
+# flanking of a delimiter run), shared by core and elements and owned by
+# neither; every target of the package sees its headers.
+set(MARKDOWN_CORE_LEXICON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lexicon")
+include_directories("${MARKDOWN_CORE_LEXICON_SOURCE_DIR}")
 set(MARKDOWN_CORE_CORE_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/core")
 set(MARKDOWN_CORE_ELEMENTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/elements")
 set(MARKDOWN_CORE_ELEMENTS_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/elements")
