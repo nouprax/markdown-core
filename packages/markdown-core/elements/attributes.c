@@ -861,12 +861,36 @@ static void S_member_put(S_members *members, markdown_core_slot_kind slot, bufsi
 
 enum { MEMBER_FAIL, MEMBER_END, MEMBER_NEXT };
 
+/* The last value of each kind a walk read, unquoted, in double quotes or in
+ * single quotes, from `from` to `end`: a value of that kind that begins
+ * inside it ends where it did, since nothing between ends one. The walks
+ * from each brace of a line share them, so a line of open blocks reads each
+ * value byte at most once for each kind (markdown_core_attributes_report). */
+typedef struct {
+    bufsize_t from[3], end[3];
+} S_value_seen;
+
+static bufsize_t S_value_end(const unsigned char *s, bufsize_t n, bufsize_t v, unsigned char quote,
+                             S_value_seen *seen) {
+    const int kind = quote == '"' ? 1 : quote == '\'' ? 2 : 0;
+    if (seen && v >= seen->from[kind] && v <= seen->end[kind]) {
+        return seen->end[kind];
+    }
+    const bufsize_t end = quote ? v + quoted_end(s + v, n - v, quote) : v + value_end(s + v, n - v);
+    if (seen) {
+        seen->from[kind] = v;
+        seen->end[kind] = end;
+    }
+    return end;
+}
+
 /* One member of a block that does not close, read from the boundary `b`:
  * its fields, as the block's would be once it closed, a quoted value's
  * inside its quotes, each to where its reading stopped, and the boundary
  * after it; or, where the bytes end, a name not yet begun there; or neither
  * when the block is no block whatever follows. */
-static int member_step(const unsigned char *s, bufsize_t n, bufsize_t b, bufsize_t *next, S_members *members) {
+static int member_step(const unsigned char *s, bufsize_t n, bufsize_t b, bufsize_t *next, S_members *members,
+                       S_value_seen *seen) {
     bool lines = false;
     while (b < n && (horizontal(s[b]) || newline(s[b]))) {
         if (newline(s[b])) {
@@ -915,7 +939,7 @@ static int member_step(const unsigned char *s, bufsize_t n, bufsize_t b, bufsize
     }
     const bool quoted = e + 1 < n && (s[e + 1] == '"' || s[e + 1] == '\'');
     const bufsize_t v = e + 1 + quoted;
-    const bufsize_t close = quoted ? v + quoted_end(s + v, n - v, s[v - 1]) : v + value_end(s + v, n - v);
+    const bufsize_t close = S_value_end(s, n, v, quoted ? s[v - 1] : 0, seen);
     S_member_put(members, MARKDOWN_CORE_SLOT_VALUE, v, close);
     if (close >= n) {
         return MEMBER_END;
@@ -924,15 +948,15 @@ static int member_step(const unsigned char *s, bufsize_t n, bufsize_t b, bufsize
     return MEMBER_NEXT;
 }
 
-bool markdown_core_attributes_open(const markdown_core_field_to *to, markdown_core_node_kind owner, bool line,
-                                   const unsigned char *s, bufsize_t n, bufsize_t start) {
+static bool S_members_open(const markdown_core_field_to *to, markdown_core_node_kind owner, bool line,
+                           const unsigned char *s, bufsize_t n, bufsize_t start, S_value_seen *seen) {
     S_members members;
     members.items = NULL;
     members.count = members.room = 0;
     members.failed = false;
     bufsize_t b = start + 1, next = 0;
     int step;
-    while ((step = member_step(s, n, b, &next, &members)) == MEMBER_NEXT) {
+    while ((step = member_step(s, n, b, &next, &members, seen)) == MEMBER_NEXT) {
         b = next;
     }
     if (step != MEMBER_END) {
@@ -950,6 +974,11 @@ bool markdown_core_attributes_open(const markdown_core_field_to *to, markdown_co
         markdown_core_free(members.items);
     }
     return members.count > 0;
+}
+
+bool markdown_core_attributes_open(const markdown_core_field_to *to, markdown_core_node_kind owner, bool line,
+                                   const unsigned char *s, bufsize_t n, bufsize_t start) {
+    return S_members_open(to, owner, line, s, n, start, NULL);
 }
 
 /* The block at `start` that does not close, kept on the run's node with the
@@ -1148,11 +1177,12 @@ bool markdown_core_attributes_report(const markdown_core_element_instance *self,
                                      bufsize_t end) {
     (void)self;
     bool open = false;
+    S_value_seen seen = {{-1, -1, -1}, {-1, -1, -1}};
     for (bufsize_t at = from; at < end; at++) {
         if (escaped(line, end, at)) {
             at++;
         } else if (line[at] == '{') {
-            open = markdown_core_attributes_open(to, owner, true, line, end, at) || open;
+            open = S_members_open(to, owner, true, line, end, at, &seen) || open;
         }
     }
     return open;

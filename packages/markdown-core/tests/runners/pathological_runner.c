@@ -1237,6 +1237,15 @@ static int case_directive_unclosed_attributes(pc_context *context) {
     return pc_expect_text_is_input(context);
 }
 
+/* A heading of attribute blocks that do not close, each value running to
+ * the line's end: what each leaves open is read once, not once per brace. */
+static int case_heading_unclosed_attributes(pc_context *context) {
+    if (pc_build(context, "# ", "{k=", 200000, NULL) != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_HEADING, 1, "Heading");
+}
+
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
 
 /* A name of numbers alone is no topic, and the `#` after it follows a name
@@ -1554,6 +1563,7 @@ static const pc_case_entry PC_CASES[] = {
     {"dump_wide_siblings", case_dump_wide_siblings},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
+    {"heading_unclosed_attributes", case_heading_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},
     {"directive_long_label", case_directive_long_label},
     {"directive_long_attributes", case_directive_long_attributes},
