@@ -37,15 +37,8 @@ set(HEADERS
     seam.h
     measure.h
     claim.h
-    sink.h
-    ../lexicon/houdini.h
-    ../lexicon/flank.h
-    ../lexicon/escape.h)
-# THE LEXICON (../lexicon): pure byte functions core and elements share,
-# built into the engine.
-set(LEXICON_SOURCES ../lexicon/houdini_html_u.c ../lexicon/flank.c ../lexicon/escape.c)
+    sink.h)
 set(LIBRARY_SOURCES
-    ${LEXICON_SOURCES}
     alloc.c
     ahead.c
     slab.c

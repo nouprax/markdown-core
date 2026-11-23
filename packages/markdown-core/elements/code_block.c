@@ -1,5 +1,5 @@
-#include "houdini.h"
 #include "escape.h"
+#include "entities.h"
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
@@ -9,8 +9,14 @@
 #include <string.h>
 
 /* The elements whose syntax this element asks: where an attribute tail
- * ends an info string's first word. */
-static const markdown_core_element *const CODE_BLOCK_PEERS[] = {&MARKDOWN_CORE_ELEMENT_ATTRIBUTES, NULL};
+ * ends an info string's first word, and the escapes and references the
+ * info string decodes. */
+enum { CODE_BLOCK_ATTRIBUTES, CODE_BLOCK_ESCAPE, CODE_BLOCK_ENTITIES };
+static const markdown_core_element *const CODE_BLOCK_PEERS[] = {[CODE_BLOCK_ATTRIBUTES] =
+                                                                    &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
+                                                                [CODE_BLOCK_ESCAPE] = &MARKDOWN_CORE_ELEMENT_ESCAPE,
+                                                                [CODE_BLOCK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES,
+                                                                NULL};
 #define peek_at(input, at) ((input)->data[(at)])
 
 /* The end of an indented code block's literal: past the line ending of its
@@ -228,7 +234,8 @@ static void S_report_info(markdown_core_parser *parser, markdown_core_reader *re
  * of the fence line, less an attribute tail, trimmed of spaces and tabs as
  * written. References and escapes are decoded after the trim, so a space one
  * of them spells is the info string's own. */
-static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, markdown_core_reader *reader) {
+static void S_fence_info(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *b, markdown_core_reader *reader) {
     const unsigned char *rest = markdown_core_reader_rest(reader, reader->offset);
     const bufsize_t length = markdown_core_reader_length(reader) - reader->offset;
     const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
@@ -250,8 +257,8 @@ static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, ma
     while (info_end > info_start && markdown_core_is_space_or_tab(rest[info_end - 1])) {
         info_end--;
     }
-    houdini_unescape_html_f(&tmp, rest + info_start, info_end - info_start);
-    markdown_core_strbuf_unescape(&tmp);
+    markdown_core_entities_copy(self->peers[CODE_BLOCK_ENTITIES], &tmp, rest + info_start, info_end - info_start);
+    markdown_core_escape_strip(self->peers[CODE_BLOCK_ESCAPE], &tmp);
     /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
      * A fence with nothing but whitespace after it wrote none, and
      * this is the only place that still knows the difference between
@@ -279,7 +286,6 @@ static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, ma
 }
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
                         markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
-    (void)self;
     bufsize_t matched = start->matched;
 
     *container =
@@ -293,7 +299,7 @@ static bool open_fenced(const markdown_core_element_instance *self, markdown_cor
     (*container)->as.code->fence_offset = (int8_t)(reader->nonspace - reader->offset);
     (*container)->as.code->fence_closed = false;
     markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
-    S_fence_info(parser, *container, reader);
+    S_fence_info(self, parser, *container, reader);
 
     return true;
 }

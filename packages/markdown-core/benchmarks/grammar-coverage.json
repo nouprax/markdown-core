@@ -384,7 +384,7 @@
                     }
                 }
             ],
-            "elements": ["DOCUMENT", "PARAGRAPH", "TEXT"],
+            "elements": ["DOCUMENT", "ENTITIES", "ESCAPE", "PARAGRAPH", "TEXT"],
             "certificates": [
                 {
                     "id": "common-entities",

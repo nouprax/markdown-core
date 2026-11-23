@@ -1,6 +1,6 @@
 #include "alloc.h"
-#include "houdini.h"
 #include "escape.h"
+#include "entities.h"
 #include "link_scanners.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 #include "attributes.h"
@@ -12,11 +12,11 @@
 #include "block_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { LINK_EMBEDDED, LINK_ATTRIBUTES, LINK_FOOTNOTE };
-static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
-                                                          [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
-                                                          [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE,
-                                                          NULL};
+enum { LINK_EMBEDDED, LINK_ATTRIBUTES, LINK_FOOTNOTE, LINK_ESCAPE, LINK_ENTITIES };
+static const markdown_core_element *const LINK_PEERS[] = {
+    [LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, [LINK_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
+    [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE, [LINK_ESCAPE] = &MARKDOWN_CORE_ELEMENT_ESCAPE,
+    [LINK_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES, NULL};
 
 const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET = {.width = 1, .mark = 0, .closer = ']'};
 
@@ -49,23 +49,25 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
  * references decoded. Nothing is trimmed: an unbracketed destination cannot
  * hold a space, tab or line ending, and CommonMark keeps the spaces a
  * bracketed one encloses (`<  u >` is `  u `). */
-markdown_core_chunk markdown_core_clean_url(markdown_core_chunk *url, int *lost) {
+markdown_core_chunk markdown_core_clean_url(const markdown_core_element_instance *link, markdown_core_chunk *url,
+                                            int *lost) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
 
     if (url->len == 0) {
         return markdown_core_chunk_literal("");
     }
 
-    houdini_unescape_html_f(&buf, url->data, url->len);
+    markdown_core_entities_copy(link->peers[LINK_ENTITIES], &buf, url->data, url->len);
 
-    markdown_core_strbuf_unescape(&buf);
+    markdown_core_escape_strip(link->peers[LINK_ESCAPE], &buf);
     if (buf.oom && lost) {
         *lost = 1;
     }
     return markdown_core_chunk_buf_detach(&buf);
 }
 
-markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *title, int *lost) {
+markdown_core_optional_chunk markdown_core_clean_title(const markdown_core_element_instance *link,
+                                                       markdown_core_chunk *title, int *lost) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
     unsigned char first, last;
 
@@ -78,12 +80,12 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *titl
 
     // remove surrounding quotes if any:
     if ((first == '\'' && last == '\'') || (first == '(' && last == ')') || (first == '"' && last == '"')) {
-        houdini_unescape_html_f(&buf, title->data + 1, title->len - 2);
+        markdown_core_entities_copy(link->peers[LINK_ENTITIES], &buf, title->data + 1, title->len - 2);
     } else {
-        houdini_unescape_html_f(&buf, title->data, title->len);
+        markdown_core_entities_copy(link->peers[LINK_ENTITIES], &buf, title->data, title->len);
     }
 
-    markdown_core_strbuf_unescape(&buf);
+    markdown_core_escape_strip(link->peers[LINK_ESCAPE], &buf);
     if (buf.oom && lost) {
         *lost = 1;
     }
@@ -410,8 +412,8 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
     /* The destination and title are cleaned here, the way a direct link's
      * are, so a Reference and a direct link state the same values. */
     int lost = 0;
-    markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
-    markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
+    markdown_core_chunk clean_url = markdown_core_clean_url(self, &definition.url, &lost);
+    markdown_core_optional_chunk clean_title = markdown_core_clean_title(self, &definition.title, &lost);
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
     markdown_core_node *reference =
         resource
@@ -843,8 +845,8 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
             title_chunk = markdown_core_chunk_dup(&inline_state->input, starttitle, endtitle - starttitle);
             {
                 int lost = 0;
-                url = markdown_core_clean_url(&url_chunk, &lost);
-                title = markdown_core_clean_title(&title_chunk, &lost);
+                url = markdown_core_clean_url(link, &url_chunk, &lost);
+                title = markdown_core_clean_title(link, &title_chunk, &lost);
                 if (lost) {
                     inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 }

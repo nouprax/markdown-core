@@ -6,7 +6,7 @@
 #include "bracket.h"
 #include "inline_internal.h"
 #include "../core/attributes.h"
-#include "houdini.h"
+#include "entities.h"
 #include "node.h"
 #include "markdown_core_ctype.h"
 #include <stdint.h>
@@ -546,7 +546,7 @@ static bufsize_t decode_quoted(markdown_core_attribute_parser *p, bufsize_t open
             markdown_core_strbuf_putc(&w->strings, s[at + 1]);
             at += 2;
         } else if (c == '&') {
-            bufsize_t used = houdini_unescape_ent(&w->strings, s + at + 1, limit - at - 1);
+            bufsize_t used = markdown_core_entities_read(w->entities, &w->strings, s + at + 1, limit - at - 1);
             if (used) {
                 at += used + 1;
             } else {
@@ -1091,8 +1091,15 @@ typedef struct {
     markdown_core_attribute_scratch scratch;
 } S_state;
 
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { ATTRIBUTES_ENTITIES };
+static const markdown_core_element *const ATTRIBUTES_PEERS[] = {[ATTRIBUTES_ENTITIES] = &MARKDOWN_CORE_ELEMENT_ENTITIES,
+                                                                NULL};
+
 markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self) {
-    return &((S_state *)self->state)->scratch;
+    markdown_core_attribute_scratch *scratch = &((S_state *)self->state)->scratch;
+    scratch->entities = self->peers[ATTRIBUTES_ENTITIES];
+    return scratch;
 }
 
 static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
@@ -1455,6 +1462,7 @@ const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[] = {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES = {
     .name = "attributes",
+    .peers = ATTRIBUTES_PEERS,
     .state_size = sizeof(S_state),
     .run_state_size = sizeof(S_run),
     .dispose_parser = dispose_parser,

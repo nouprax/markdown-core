@@ -25,8 +25,13 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
 extern const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE;
 /* A link's bracket, opened by a `[` (bracket.h). */
 extern const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET;
-markdown_core_chunk markdown_core_clean_url(markdown_core_chunk *url, int *lost);
-markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *title, int *lost);
+/* The destination and the title of a link as values: their references
+ * and escapes decoded, by the elements `link` (the link element's instance)
+ * holds as peers. */
+markdown_core_chunk markdown_core_clean_url(const markdown_core_element_instance *link, markdown_core_chunk *url,
+                                            int *lost);
+markdown_core_optional_chunk markdown_core_clean_title(const markdown_core_element_instance *link,
+                                                       markdown_core_chunk *title, int *lost);
 
 /* The length of the link reference definition at the front of `input`, 0
  * when there is none. */

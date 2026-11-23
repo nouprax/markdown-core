@@ -26,7 +26,7 @@ done
 # installed header, bounded by the export maps. An internal header that marks
 # a symbol for export is a second, unreviewed public surface.
 if grep -R -n -E '__declspec|visibility\("default"\)|MARKDOWN_CORE_(API|EXPORT)\b' \
-    packages/markdown-core/core packages/markdown-core/lexicon packages/markdown-core/elements --include='*.h' --exclude-dir=build; then
+    packages/markdown-core/core packages/markdown-core/elements --include='*.h' --exclude-dir=build; then
     fail "an internal header marks a symbol for export"
 fi
 test ! -e packages/markdown-core/extensions \

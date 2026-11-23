@@ -21,6 +21,8 @@ set(LIBRARY_SOURCES
     directive.c
     document.c
     emphasis.c
+    entities.c
+    escape.c
     footnote.c
     footnote_scanners.c
     formula.c
@@ -30,6 +32,7 @@ set(LIBRARY_SOURCES
     html.c
     html_block.c
     html_scanners.c
+    houdini_html_u.c
     session.c
     context.c
     parts.c

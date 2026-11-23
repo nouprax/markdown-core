@@ -47,6 +47,7 @@
 #include "properties.h"
 #include "specimen.h"
 #include "text.h"
+#include "escape.h"
 
 #include <markdown_core.h>
 
@@ -5288,7 +5289,8 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     for (const markdown_core_stack_item *entry = parser->delimiter_pool.free; entry; entry = entry->next) {
         work->pooled_delimiters++;
     }
-    work->whitespace = ELEMENT_STATE(parser, markdown_core_text_work, MARKDOWN_CORE_ELEMENT_TEXT)->whitespace;
+    work->whitespace = ELEMENT_STATE(parser, markdown_core_text_work, MARKDOWN_CORE_ELEMENT_TEXT)->whitespace +
+                       ELEMENT_STATE(parser, markdown_core_escape_work, MARKDOWN_CORE_ELEMENT_ESCAPE)->whitespace;
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = properties->line_work;
     work->physical_line_bytes = parser->input_line_work;

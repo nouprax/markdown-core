@@ -1,4 +1,9 @@
 #include "inline_internal.h"
+#include "emphasis.h"
+
+/* The elements whose grammar this element takes: emphasis's flanking of a
+ * delimiter run (emphasis.h). */
+static const markdown_core_element *const STRIKETHROUGH_PEERS[] = {&MARKDOWN_CORE_ELEMENT_EMPHASIS, NULL};
 #include "strikethrough.h"
 #include "element.h"
 #include <parser.h>
@@ -27,7 +32,7 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
     .rule = MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     .delimiter = {.minimum_width = 2,
                   .maximum_width = 2,
-                  .flank = markdown_core_flank_free,
+                  .flank = markdown_core_emphasis_free,
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},
@@ -38,6 +43,7 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
+    .peers = STRIKETHROUGH_PEERS,
     .name = "strikethrough",
     .contain = &STRIKETHROUGH_CONTAIN,
     .inlines = &STRIKETHROUGH_INLINES,

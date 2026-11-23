@@ -26,6 +26,10 @@ typedef struct markdown_core_attribute_scratch {
      * added once as that recogniser is released, for the attribute grammar's
      * complexity gate. */
     size_t work;
+    /* The entities element's instance, whose references a quoted value
+     * decodes (entities.h): set by `markdown_core_attributes_scratch`, NULL
+     * in a workspace of no parse, which decodes none. */
+    const struct markdown_core_element_instance *entities;
 } markdown_core_attribute_scratch;
 
 /* A recogniser belongs to one immutable input extent. It walks forward from

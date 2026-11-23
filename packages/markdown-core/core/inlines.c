@@ -324,8 +324,8 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     } else {
         markdown_core_inline_saw_end(inline_state);
     }
-    /* What the neighbours make of the run is its rule's (delimiter.h,
-     * `flank`). */
+    /* What the neighbours make of the run is its rule's grammar
+     * (delimiter.h, `flank`). */
     const uint8_t before = markdown_core_utf8proc_classes(before_char);
     const uint8_t after = markdown_core_utf8proc_classes(after_char);
     const markdown_core_flank flank = {

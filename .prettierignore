@@ -21,7 +21,7 @@ specs/context/queries.json
 # Generated, copied, and package-manager content
 packages/markdown-core/core/case_fold.inc
 packages/markdown-core/core/case_fold_index.inc
-packages/markdown-core/lexicon/entities.inc
+packages/markdown-core/elements/entities.inc
 packages/markdown-core/core/measure_tables.inc
 packages/markdown-core/core/anchor_scalars.inc
 packages/markdown-core/core/unicode_categories.inc

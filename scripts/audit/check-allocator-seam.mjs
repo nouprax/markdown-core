@@ -27,9 +27,9 @@ const pkg = path.join(root, "packages/markdown-core");
 
 const failures = [];
 
-/** Every `*.c` and `*.h` under `core/`, `lexicon/` and `elements/` -- the shipped library. */
+/** Every `*.c` and `*.h` under `core/` and `elements/` -- the shipped library. */
 function librarySources() {
-    return ["core", "lexicon", "elements"].flatMap((dir) =>
+    return ["core", "elements"].flatMap((dir) =>
         fs
             .readdirSync(path.join(pkg, dir))
             .filter((name) => name.endsWith(".c") || name.endsWith(".h"))

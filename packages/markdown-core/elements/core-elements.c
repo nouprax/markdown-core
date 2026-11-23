@@ -14,6 +14,8 @@
 #include "html.h"
 #include "line_break.h"
 #include "text.h"
+#include "escape.h"
+#include "entities.h"
 #include "embedded.h"
 #include "link.h"
 #include "definition_list.h"
@@ -60,6 +62,7 @@ static const markdown_core_element *const CORE_ELEMENTS[] = {
     &MARKDOWN_CORE_ELEMENT_CROSS_LINK,    &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
     &MARKDOWN_CORE_ELEMENT_TOPIC,         &MARKDOWN_CORE_ELEMENT_HTML,
     &MARKDOWN_CORE_ELEMENT_LINK,          &MARKDOWN_CORE_ELEMENT_EMBEDDED,
+    &MARKDOWN_CORE_ELEMENT_ESCAPE,        &MARKDOWN_CORE_ELEMENT_ENTITIES,
     &MARKDOWN_CORE_ELEMENT_TEXT,          &MARKDOWN_CORE_ELEMENT_TABLE};
 
 #define CORE_ELEMENT_COUNT (sizeof(CORE_ELEMENTS) / sizeof(CORE_ELEMENTS[0]))

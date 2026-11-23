@@ -741,9 +741,10 @@ static bool close_formula_block(const markdown_core_element_instance *self, mark
 }
 
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
- * set and NOT the terminator set: `is_core_special_character` refuses it there
- * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
- * element claims `\\` before taking a core fast path. */
+ * set and NOT the terminator set: the escape element terminates text there
+ * anyway, and it must stay in dispatch because the escape element asks whether
+ * any other element claims `\\` before taking its fast path for a run of
+ * escaped backslashes (escape.c). */
 
 static markdown_core_node_type formula_former(const markdown_core_element_instance *self,
                                               const markdown_core_node *node) {

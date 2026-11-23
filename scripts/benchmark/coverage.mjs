@@ -14,7 +14,7 @@ const digest = (value) => createHash("sha256").update(value).digest("hex");
 export const featureOwners = {
     anchors: { elements: ["ANCHOR"], certificates: [] },
     attributes: { elements: ["ATTRIBUTES"], certificates: ["record-span", "class-span"] },
-    base: { elements: ["DOCUMENT", "PARAGRAPH", "TEXT"], certificates: [] },
+    base: { elements: ["DOCUMENT", "ENTITIES", "ESCAPE", "PARAGRAPH", "TEXT"], certificates: [] },
     "block-identifiers": { elements: [], certificates: ["anchor"] },
     "bracketed-spans": { elements: [], certificates: ["record-span", "class-span"] },
     callouts: { elements: ["CALLOUT"], certificates: [] },
