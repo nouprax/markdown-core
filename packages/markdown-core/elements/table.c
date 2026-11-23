@@ -9,7 +9,6 @@
 #include <string.h>
 #include <limits.h>
 #include "utf8.h"
-#include "parts.h"
 
 #include "table.h"
 #include "services.h"
@@ -440,6 +439,36 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     return node;
 }
 
+/* The cells a row writes past its table's width, from `start`, where its
+ * last cell ends, to `end`, where its line's content ends: one field of no
+ * slot kind, past the pipe after that cell, without the row's closing pipe
+ * and the whitespace around them. */
+static void S_extra_field(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_node *row,
+                          bufsize_t start, bufsize_t end) {
+    while (start < end && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, start))) {
+        start++;
+    }
+    if (start >= end || markdown_core_reader_peek(reader, start) != '|') {
+        return;
+    }
+    start++;
+    while (end > start && markdown_core_is_whitespace(markdown_core_reader_peek(reader, end - 1))) {
+        end--;
+    }
+    if (end > start && markdown_core_reader_peek(reader, end - 1) == '|' &&
+        !(end - 1 > start && markdown_core_reader_peek(reader, end - 2) == '\\')) {
+        end--;
+    }
+    while (start < end && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, start))) {
+        start++;
+    }
+    while (end > start && markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, end - 1))) {
+        end--;
+    }
+    const markdown_core_field_to fields = {parser, row, NULL, reader, 0, NULL};
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, start, end);
+}
+
 static markdown_core_node *try_opening_table_row(const markdown_core_element *self, markdown_core_parser *parser,
                                                  markdown_core_node *parent_container, markdown_core_reader *reader) {
     markdown_core_node *table_row_block;
@@ -484,9 +513,11 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
 
         pipe_row_cursor cells = pipe_row_cells(&row);
         node_cell geometry;
+        bufsize_t past = -1;
         for (i = 0; i < table_columns && pipe_row_next(&cells, &geometry); ++i) {
             const node_cell *cell = &geometry;
             const bufsize_t from = reader->nonspace + cell->start_offset, to = reader->nonspace + cell->end_offset;
+            past = to + 1;
             markdown_core_node *node = table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL,
                                                    markdown_core_reader_span(reader, parser, from, to + 1));
             if (!node) {
@@ -498,6 +529,9 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         }
 
         table->autocompleted_cells += (size_t)(table_columns - i);
+        if (i == table_columns && past >= 0) {
+            S_extra_field(parser, reader, table_row_block, past, completed_at);
+        }
 
         /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
          * 2026-08-23). A row shorter than its header is completed to the
@@ -673,14 +707,8 @@ static const markdown_core_line_ops TABLE_LINES = {
     .uncut = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TABLE_ROW, .parts = markdown_core_table_row_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .needs = TABLE_NEEDS,
-    .facets = MARKDOWN_CORE_TABLE_FACETS,
     .edit = &TABLE_EDIT,
     .follows = TABLE_FOLLOWS,
     .name = "table",
@@ -690,35 +718,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .opens = &TABLE_OPENS,
     .lines = &TABLE_LINES,
 };
-
-/* A pipe row's part: the cells written past its table's width, which the
- * row drops, as one field of no slot kind. */
-void markdown_core_table_row_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    bufsize_t start = markdown_core_parts_last(parts, 0), end = parts->length;
-    while (start < end && markdown_core_is_space_or_tab(text[start])) {
-        start++;
-    }
-    if (start == 0 || start >= end || text[start] != '|') {
-        return;
-    }
-    start++;
-    for (bufsize_t at = start; at < end; at++) {
-        if (markdown_core_is_line_end(text[at])) {
-            return;
-        }
-    }
-    while (end > start && markdown_core_is_whitespace(text[end - 1])) {
-        end--;
-    }
-    if (end > start && text[end - 1] == '|' && !(end - 1 > start && text[end - 2] == '\\')) {
-        end--;
-    }
-    while (start < end && markdown_core_is_space_or_tab(text[start])) {
-        start++;
-    }
-    while (end > start && markdown_core_is_space_or_tab(text[end - 1])) {
-        end--;
-    }
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, start, end);
-}

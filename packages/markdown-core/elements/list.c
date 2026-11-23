@@ -1,4 +1,3 @@
-#include "parts.h"
 #include "list.h"
 #include "tasklist.h"
 #include "block_internal.h"
@@ -386,13 +385,7 @@ static const markdown_core_line_ops LIST_LINES = {
     .blank_runs = true,
 };
 
-const markdown_core_facet MARKDOWN_CORE_LIST_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_LIST_ITEM, .parts = markdown_core_list_item_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
-    .facets = MARKDOWN_CORE_LIST_FACETS,
     .edit = &LIST_EDIT,
     .state_size = sizeof(markdown_core_list_work),
     .name = "list",

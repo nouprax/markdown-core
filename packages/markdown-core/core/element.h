@@ -820,10 +820,12 @@ typedef struct markdown_core_lead {
     markdown_core_node *node, *parent;
     /* MARKDOWN_CORE_FOLLOW_TOKEN */
     struct markdown_core_inline_state *inline_state;
-    /* MARKDOWN_CORE_FOLLOW_TAIL */
+    /* MARKDOWN_CORE_FOLLOW_TAIL: and where the fields a follower reads in
+     * the line go (markdown_core_field_to). */
     const unsigned char *line;
     bufsize_t from, to;
     bool live;
+    markdown_core_field_to fields;
 } markdown_core_lead;
 
 typedef struct markdown_core_follow {
@@ -870,14 +872,12 @@ typedef struct markdown_core_follow {
 
 /* THE FACET OF A KIND: what a published node of `kind` shows of itself,
  * which the public node readers ask of the kind by the element that
- * declares it -- how its text splits into fields and markers (`parts`,
- * parts.h), and, for a payload of the element's own, its literal and where
+ * declares it -- for a payload of the element's own, its literal and where
  * its published text starts in it, a formula's placement, a directive's
  * name and where its label is, and the name the names service computes
  * for it. Each may be NULL, for what the kind does
  * not show or shows from the node itself. A list of them ends at
  * MARKDOWN_CORE_KIND_NONE. */
-struct markdown_core_parts;
 /* WHAT A NODE READS AS IN A NAME its text makes (names.h, a heading's
  * anchor), which a facet's `words` gives piece by piece, in order: `text`
  * takes bytes, `node` a node whose own reading goes there. Each answers
@@ -890,7 +890,10 @@ typedef struct markdown_core_words {
 
 typedef struct markdown_core_facet {
     markdown_core_node_kind kind;
-    void (*parts)(struct markdown_core_parts *);
+    /* Whether a node of the kind is one field of slot kind NONE, all of its
+     * own source: a text, an HTML tag or block, which hold no field of
+     * their own and no marker. */
+    bool whole;
     markdown_core_chunk *(*literal)(const markdown_core_node *, bufsize_t *start);
     markdown_core_placement (*placement)(const markdown_core_node *);
     const char *(*name)(const markdown_core_node *);

@@ -26,6 +26,7 @@
 #include "index.h"
 #include "utf8.h"
 #include "inlines.h"
+#include "inline_internal.h"
 #include "buffer.h"
 
 #define TAB_STOP 4
@@ -1266,6 +1267,119 @@ bool markdown_core_text_place(markdown_core_parser *parser, const markdown_core_
     return true;
 }
 
+void markdown_core_field_put(const markdown_core_field_to *to, int slot, int how, bufsize_t from, bufsize_t end,
+                             bool unique) {
+    const bool anchor = how == MARKDOWN_CORE_FIELD_LINES || how == MARKDOWN_CORE_FIELD_FOUND;
+    if ((end <= from && !anchor) || !to->node || !to->parser) {
+        return;
+    }
+    markdown_core_place place;
+    if (to->run &&
+        markdown_core_inline_frame_place(to->run, from + to->base, (anchor ? from : end) + to->base, &place)) {
+    } else if (to->map) {
+        if (!markdown_core_text_place(to->parser, to->map, from + to->base, (anchor ? from : end) + to->base, &place)) {
+            return;
+        }
+    } else if (to->reader) {
+        place = markdown_core_reader_span(to->reader, to->parser, from + to->base, (anchor ? from : end) + to->base);
+    } else {
+        place = (markdown_core_place){(uint32_t)(from + to->base), (uint32_t)((anchor ? from : end) + to->base)};
+    }
+    if (!markdown_core_node_add_field(to->parser->pool, to->node, (uint8_t)slot, (uint8_t)how, place.start, place.end,
+                                      unique)) {
+        markdown_core_parser_fail(to->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+
+/* THE RUN A FIELD WAS PLACED ON, which places the next of a reading's
+ * fields by arithmetic when both of its ends lie on it, as the inline
+ * frame does (inline_internal.h): the run's first content offset, the
+ * offset the next run starts at, and its source byte, step and width. */
+typedef struct {
+    bufsize_t first, past, source;
+    int step, width;
+    bool set;
+} S_run;
+
+/* Places the bytes `from` up to `end` of `map`'s text on the run `frame`
+ * holds, seated on `from`'s run first when it holds none or another:
+ * false, `*place` untouched, when `end` lies past the run or the parse
+ * reads a back of a paragraph (S_back_place). */
+static bool S_run_place(const markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t from,
+                        bufsize_t end, S_run *frame, markdown_core_place *place) {
+    if (parser->apart || map->count <= 0 || from < 0) {
+        return false;
+    }
+    const bufsize_t first = from + map->offset, last = end - 1 + map->offset;
+    if (!frame->set || first < frame->first || first >= frame->past) {
+        const int at = markdown_core_block_content_mark_at(parser, map, first);
+        const markdown_core_line_mark *mark = &parser->line_marks.values[at];
+        frame->first = mark->content_offset;
+        frame->past = at + 1 < map->first + map->count ? parser->line_marks.values[at + 1].content_offset : INT32_MAX;
+        frame->source = mark->source;
+        frame->step = mark->source_step;
+        frame->width = mark->source_width;
+        frame->set = true;
+    }
+    if (first < frame->first || last >= frame->past) {
+        return false;
+    }
+    place->start = (uint32_t)(frame->source + (first - frame->first) * frame->step);
+    place->end = (uint32_t)(frame->source + (last - frame->first) * frame->step + frame->width);
+    return true;
+}
+
+void markdown_core_field_many(const markdown_core_field_to *to, const markdown_core_field_spot *spots, size_t count) {
+    size_t filled = 0;
+    for (size_t i = 0; i < count; i++) {
+        filled += spots[i].end > spots[i].from;
+    }
+    if (!filled || !to->node || !to->parser) {
+        return;
+    }
+    markdown_core_written *room = markdown_core_node_field_room(to->parser->pool, to->node, (uint32_t)filled);
+    if (!room) {
+        markdown_core_parser_fail(to->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    markdown_core_fields *fields = to->node->fields;
+    S_run run = {0};
+    /* A reader's line, written where it was read, places its bytes from
+     * where the line starts. */
+    const bool line = to->reader && !to->run && !to->map && !to->parser->input.mapped;
+    const bufsize_t line_start =
+        line ? (bufsize_t)markdown_core_parser_visited_line(to->parser, to->reader->number)->start : 0;
+    for (size_t i = 0; i < count; i++) {
+        const bufsize_t from = spots[i].from + to->base, end = spots[i].end + to->base;
+        markdown_core_place place;
+        if (end <= from) {
+            continue;
+        }
+        if (to->run && markdown_core_inline_frame_place(to->run, from, end, &place)) {
+        } else if (to->map) {
+            if (!S_run_place(to->parser, to->map, from, end, &run, &place) &&
+                !markdown_core_text_place(to->parser, to->map, from, end, &place)) {
+                continue;
+            }
+        } else if (line) {
+            place = (markdown_core_place){(uint32_t)(line_start + from), (uint32_t)(line_start + end)};
+        } else if (to->reader) {
+            place = markdown_core_reader_span(to->reader, to->parser, from, end);
+        } else {
+            place = (markdown_core_place){(uint32_t)from, (uint32_t)end};
+        }
+        if (place.end > place.start) {
+            fields->items[fields->count++] =
+                (markdown_core_written){place.start, place.end, (uint8_t)spots[i].slot, MARKDOWN_CORE_FIELD, true};
+        }
+    }
+}
+
+void markdown_core_field_add(const markdown_core_field_to *to, int slot, bufsize_t from, bufsize_t end) {
+    const markdown_core_field_spot spot = {from, end, slot};
+    markdown_core_field_many(to, &spot, 1);
+}
+
 int markdown_core_text_line(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at) {
     int line = 0;
     bufsize_t source;
@@ -1779,12 +1893,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close_hook(markdow
 
 /* (parser.h) */
 bufsize_t markdown_core_parser_offer(markdown_core_parser *parser, markdown_core_node *block, const unsigned char *line,
-                                     bufsize_t from, bufsize_t to, bool live) {
+                                     bufsize_t from, bufsize_t to, bool live, const markdown_core_field_to *fields) {
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
     if (!kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]) {
         return 0;
     }
-    markdown_core_lead lead = {.node = block, .line = line, .from = from, .to = to, .live = live};
+    markdown_core_lead lead = {.node = block, .line = line, .from = from, .to = to, .live = live, .fields = *fields};
     return kind->follow[MARKDOWN_CORE_FOLLOW_TAIL]->follow(kind->follower[MARKDOWN_CORE_FOLLOW_TAIL], parser, &lead);
 }
 

@@ -75,24 +75,17 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
 /* The facets each element of the core dialect declares (element.h,
  * `facets`), which the table below reads by kind. */
 extern const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CODE_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_DOCUMENT_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_HEADING_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_HTML_BLOCK_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_HTML_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_LIST_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_PARAGRAPH_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_SPECIMEN_FACETS[];
-extern const markdown_core_facet MARKDOWN_CORE_TABLE_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_EMPHASIS_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_SUPERSCRIPT_FACETS[];
@@ -108,7 +101,6 @@ extern const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[];
  * debug build checks the table against the declarations as the first
  * parser is made. */
 const markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_ROOM] = {
-    [MARKDOWN_CORE_KIND_CALLOUT] = &MARKDOWN_CORE_CALLOUT_FACETS[0],
     [MARKDOWN_CORE_KIND_CITATION] = &MARKDOWN_CORE_CITATION_FACETS[0],
     [MARKDOWN_CORE_KIND_CODE] = &MARKDOWN_CORE_CODE_FACETS[0],
     [MARKDOWN_CORE_KIND_CODE_BLOCK] = &MARKDOWN_CORE_CODE_BLOCK_FACETS[0],
@@ -117,8 +109,6 @@ const markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_R
     [MARKDOWN_CORE_KIND_CROSS_EMBEDDED] = &MARKDOWN_CORE_CROSS_LINK_FACETS[1],
     [MARKDOWN_CORE_KIND_DIRECTIVE] = &MARKDOWN_CORE_DIRECTIVE_FACETS[0],
     [MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK] = &MARKDOWN_CORE_DIRECTIVE_FACETS[1],
-    [MARKDOWN_CORE_KIND_METADATA] = &MARKDOWN_CORE_DOCUMENT_FACETS[0],
-    [MARKDOWN_CORE_KIND_FOOTNOTE] = &MARKDOWN_CORE_FOOTNOTE_FACETS[0],
     [MARKDOWN_CORE_KIND_FORMULA] = &MARKDOWN_CORE_FORMULA_FACETS[0],
     [MARKDOWN_CORE_KIND_FORMULA_BLOCK] = &MARKDOWN_CORE_FORMULA_FACETS[1],
     [MARKDOWN_CORE_KIND_HEADING] = &MARKDOWN_CORE_HEADING_FACETS[0],
@@ -126,14 +116,7 @@ const markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_R
     [MARKDOWN_CORE_KIND_HTML_BLOCK] = &MARKDOWN_CORE_HTML_BLOCK_FACETS[0],
     [MARKDOWN_CORE_KIND_LINK] = &MARKDOWN_CORE_LINK_FACETS[0],
     [MARKDOWN_CORE_KIND_EMBEDDED] = &MARKDOWN_CORE_LINK_FACETS[1],
-    [MARKDOWN_CORE_KIND_REFERENCE] = &MARKDOWN_CORE_LINK_FACETS[2],
     [MARKDOWN_CORE_KIND_SPAN] = &MARKDOWN_CORE_ATTRIBUTES_FACETS[0],
-    [MARKDOWN_CORE_KIND_LIST_ITEM] = &MARKDOWN_CORE_LIST_FACETS[0],
-    [MARKDOWN_CORE_KIND_PARAGRAPH] = &MARKDOWN_CORE_PARAGRAPH_FACETS[0],
-    [MARKDOWN_CORE_KIND_LIST] = &MARKDOWN_CORE_PARAGRAPH_FACETS[1],
-    [MARKDOWN_CORE_KIND_TABLE] = &MARKDOWN_CORE_PARAGRAPH_FACETS[2],
-    [MARKDOWN_CORE_KIND_SPECIMEN] = &MARKDOWN_CORE_SPECIMEN_FACETS[0],
-    [MARKDOWN_CORE_KIND_TABLE_ROW] = &MARKDOWN_CORE_TABLE_FACETS[0],
     [MARKDOWN_CORE_KIND_TEXT] = &MARKDOWN_CORE_TEXT_FACETS[0],
     [MARKDOWN_CORE_KIND_TOPIC] = &MARKDOWN_CORE_TOPIC_FACETS[0],
     [MARKDOWN_CORE_KIND_CITE] = &MARKDOWN_CORE_CITATION_FACETS[1],

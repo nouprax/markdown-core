@@ -2,7 +2,6 @@
 #include "block_internal.h"
 #include "markdown-core-elements.h"
 #include "sink.h"
-#include "parts.h"
 #include <string.h>
 
 typedef struct {
@@ -122,6 +121,17 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
      * paragraph's text. */
     if (S_attach_block_identifier(parser, owner, &candidate)) {
         paragraph->cut_back += text.len - candidate.content_end;
+        /* The paragraph's text holds it: its own field, or lent to the list
+         * item it names. */
+        const markdown_core_field_to own = {parser, paragraph, &paragraph->content_map, NULL, 0, NULL};
+        markdown_core_field_put(&own, MARKDOWN_CORE_SLOT_ID,
+                                owner == paragraph ? MARKDOWN_CORE_FIELD : MARKDOWN_CORE_FIELD_LENT, at,
+                                at + candidate.identifier.len, true);
+        if (owner != paragraph) {
+            const markdown_core_field_to item = {parser, owner, &paragraph->content_map, NULL, 0, NULL};
+            markdown_core_field_put(&item, MARKDOWN_CORE_SLOT_ID, MARKDOWN_CORE_FIELD, at,
+                                    at + candidate.identifier.len, true);
+        }
     }
 }
 
@@ -189,6 +199,10 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
+    const markdown_core_field_to fields = {parser, owner, NULL, reader, 0, NULL};
+    const bufsize_t at = (bufsize_t)(candidate.identifier.data - markdown_core_reader_rest(reader, 0));
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_ID, MARKDOWN_CORE_FIELD, at, at + candidate.identifier.len,
+                            true);
     return true;
 }
 
@@ -210,58 +224,4 @@ markdown_core_candidate_step markdown_core_block_feed_identifier_line(const mark
     (void)line;
     (void)ends;
     return MARKDOWN_CORE_CANDIDATE_ENDS;
-}
-
-/* Where the identifier `#anchor#` stands on a line of its own or at a
- * line's end in the text: the first such place, or the last when `last`;
- * -1 for none. */
-static bufsize_t S_identifier_place(const markdown_core_parts *parts, const markdown_core_chunk *anchor, bool last) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length, size = anchor->len;
-    bufsize_t found = -1;
-    for (bufsize_t at = 0; at + size + 2 <= n; at++) {
-        if (s[at] != '#' || s[at + size + 1] != '#' || memcmp(s + at + 1, anchor->data, (size_t)size) ||
-            (at && !markdown_core_is_space_or_tab(s[at - 1]) && !markdown_core_is_line_end(s[at - 1]))) {
-            continue;
-        }
-        bufsize_t end = at + size + 2;
-        while (end < n && markdown_core_is_space_or_tab(s[end])) {
-            end++;
-        }
-        if (end >= n || markdown_core_is_line_end(s[end])) {
-            found = at;
-            if (!last) {
-                break;
-            }
-        }
-    }
-    return found;
-}
-
-/* THE PARTS OF A BLOCK THAT A BLOCK IDENTIFIER NAMES (parts.h): the
- * identifier a paragraph's text ends with, as S_scan_block_identifier
- * reads it, which is the paragraph's own or, when its list item took it,
- * lent; and a list's, a table's or a callout's on the line after it. */
-void markdown_core_block_identifier_parts(markdown_core_parts *parts) {
-    const markdown_core_node *node = parts->node;
-    if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_PARAGRAPH) {
-        markdown_core_block_identifier_work work = {0};
-        block_identifier candidate;
-        if (node->cut_back && S_scan_block_identifier(&work, parts->text, parts->length, &candidate)) {
-            const bufsize_t at = (bufsize_t)(candidate.identifier.data - parts->text);
-            if (node->attributes.anchor.len) {
-                markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ID, at, at + candidate.identifier.len);
-            } else {
-                markdown_core_parts_lend(parts, MARKDOWN_CORE_SLOT_ID, at, at + candidate.identifier.len);
-            }
-        }
-        return;
-    }
-    if (node->attributes.anchor.len) {
-        const bufsize_t at = S_identifier_place(parts, &node->attributes.anchor,
-                                                markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_LIST_ITEM);
-        if (at >= 0) {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ID, at + 1, at + 1 + node->attributes.anchor.len);
-        }
-    }
 }

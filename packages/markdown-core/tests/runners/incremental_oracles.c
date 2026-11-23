@@ -386,6 +386,39 @@ static void correspondence_free(correspondence *pairs) {
  * dump's. Each step takes SCOPE_SAMPLE nodes spread over the walk, and the
  * next step the nodes after them, so consecutive steps cover the whole
  * document: every query costs a walk of the document. */
+/* The node's fields of every slot kind and its markers, which the parse
+ * records as it reads them, are the expected document's node's. */
+static void check_fields(run *state, const char *oracle, const char *where, size_t step,
+                         const markdown_core_document *document, const markdown_core_node *node,
+                         const markdown_core_document *expected_document, const markdown_core_node *expected,
+                         size_t index, const uint8_t *text, size_t length) {
+    for (int slot = MARKDOWN_CORE_SLOT_NONE; slot <= MARKDOWN_CORE_SLOT_VALUE + 1 && !stopped(state); slot++) {
+        markdown_core_scope *mine = NULL, *theirs = NULL;
+        size_t mine_count = 0, theirs_count = 0;
+        const bool markers = slot > MARKDOWN_CORE_SLOT_VALUE;
+        const markdown_core_status a =
+            markers ? markdown_core_document_markers(document, node, text, length, &mine, &mine_count)
+                    : markdown_core_document_field(document, node, (markdown_core_slot_kind)slot, text, length, &mine,
+                                                   &mine_count);
+        const markdown_core_status b =
+            markers ? markdown_core_document_markers(expected_document, expected, text, length, &theirs, &theirs_count)
+                    : markdown_core_document_field(expected_document, expected, (markdown_core_slot_kind)slot, text,
+                                                   length, &theirs, &theirs_count);
+        if (a != b || (a == MARKDOWN_CORE_OK && !same_scopes(mine, mine_count, theirs, theirs_count))) {
+            if (markers) {
+                fail(state, oracle, "%s step %zu: node %zu's markers differ from the expected document's", where, step,
+                     index + 1);
+            } else {
+                fail(state, oracle,
+                     "%s step %zu: node %zu's fields of slot kind %d differ from the expected document's", where, step,
+                     index + 1, slot);
+            }
+        }
+        markdown_core_scopes_free(mine);
+        markdown_core_scopes_free(theirs);
+    }
+}
+
 static void check_queries(run *state, const char *oracle, const char *where, size_t step, ih_unit unit,
                           const markdown_core_document *document, const view *actual,
                           const markdown_core_document *expected_document, const view *expected,
@@ -458,6 +491,8 @@ static void check_queries(run *state, const char *oracle, const char *where, siz
         }
         markdown_core_scopes_free(mine);
         markdown_core_scopes_free(theirs);
+        check_fields(state, oracle, where, step, document, actual->nodes[index].object, expected_document,
+                     expected->nodes[index].object, index, text, length);
     }
     free(starts);
 }

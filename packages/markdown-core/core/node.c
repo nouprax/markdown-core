@@ -157,6 +157,89 @@ markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type
     return markdown_core_node_pool_new(NULL, type, element);
 }
 
+markdown_core_written *markdown_core_node_field_room(markdown_core_node_pool *pool, markdown_core_node *node,
+                                                     uint32_t count) {
+    markdown_core_fields *fields = node->fields;
+    const uint32_t held = fields ? fields->count : 0;
+    const size_t needed = sizeof(*fields) + (size_t)(held + count) * sizeof(fields->items[0]);
+    if (!fields || markdown_core_bytes_size(fields) < needed) {
+        /* Room for four at first, then twice what it must hold: most nodes
+         * that hold fields hold a few. */
+        const uint32_t room = held + count <= 4 ? 4 : 2 * (held + count);
+        markdown_core_fields *grown = S_bytes_take(pool, sizeof(*fields) + (size_t)room * sizeof(fields->items[0]));
+        if (!grown) {
+            return NULL;
+        }
+        grown->count = held;
+        if (fields) {
+            memcpy(grown->items, fields->items, held * sizeof(fields->items[0]));
+            markdown_core_node_pool_bytes_free(pool, fields);
+        }
+        node->fields = fields = grown;
+    }
+    return fields->items + held;
+}
+
+bool markdown_core_node_add_field(markdown_core_node_pool *pool, markdown_core_node *node, uint8_t slot, uint8_t how,
+                                  uint32_t start, uint32_t end, bool unique) {
+    const bool anchor = how == MARKDOWN_CORE_FIELD_LINES || how == MARKDOWN_CORE_FIELD_FOUND;
+    if (end <= start && !anchor) {
+        return true;
+    }
+    markdown_core_fields *fields = node->fields;
+    const markdown_core_written field = {start, anchor ? start : end, slot, how, true};
+    if (fields && unique) {
+        for (uint32_t i = 0; i < fields->count; i++) {
+            if (fields->items[i].slot == slot && fields->items[i].how == how) {
+                fields->items[i] = field;
+                return true;
+            }
+        }
+    }
+    markdown_core_written *room = markdown_core_node_field_room(pool, node, 1);
+    if (!room) {
+        return false;
+    }
+    *room = field;
+    node->fields->count++;
+    return true;
+}
+
+void markdown_core_node_drop_fields(markdown_core_node_pool *pool, markdown_core_node *node) {
+    if (node->fields) {
+        markdown_core_node_pool_bytes_free(pool, node->fields);
+        node->fields = NULL;
+    }
+}
+
+void markdown_core_node_drop_slots(markdown_core_node *node, uint32_t slots) {
+    markdown_core_fields *fields = node->fields;
+    uint32_t kept = 0;
+    for (uint32_t i = 0; fields && i < fields->count; i++) {
+        if (!(slots & (1u << fields->items[i].slot)) || fields->items[i].how != MARKDOWN_CORE_FIELD) {
+            fields->items[kept++] = fields->items[i];
+        }
+    }
+    if (fields) {
+        fields->count = kept;
+    }
+}
+
+void markdown_core_node_keep_anchors(markdown_core_node *node, uint8_t how) {
+    markdown_core_fields *fields = node->fields;
+    uint32_t kept = 0;
+    for (uint32_t i = 0; fields && i < fields->count; i++) {
+        const uint8_t was = fields->items[i].how;
+        if (was == MARKDOWN_CORE_FIELD_LINES || was == MARKDOWN_CORE_FIELD_FOUND) {
+            fields->items[kept] = fields->items[i];
+            fields->items[kept++].how = how;
+        }
+    }
+    if (fields) {
+        fields->count = kept;
+    }
+}
+
 markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
@@ -237,6 +320,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
         }
         if (e->source.runs) {
             markdown_core_node_pool_bytes_free(pool, e->source.runs);
+        }
+        if (e->fields) {
+            markdown_core_node_pool_bytes_free(pool, e->fields);
         }
 
         /* The node-valued fields join the same iterative free walk as
@@ -503,8 +589,18 @@ markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const
     }
     S_copy_state state = {pool, false};
     view->source.places = NULL;
+    view->fields = NULL;
     view->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PUBLISHED;
     S_view_owned(&state, view, node);
+    if (node->fields && !state.failed) {
+        const size_t bytes = sizeof(*node->fields) + node->fields->count * sizeof(node->fields->items[0]);
+        view->fields = S_bytes_take(pool, bytes);
+        if (view->fields) {
+            memcpy(view->fields, node->fields, bytes);
+        } else {
+            state.failed = true;
+        }
+    }
     if (!(node->flags & MARKDOWN_CORE_NODE__PUBLISHED) && node->source.places && !state.failed) {
         const size_t bytes =
             sizeof(markdown_core_places) + node->source.places->count * sizeof(markdown_core_source_place);
@@ -532,6 +628,7 @@ markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, 
     copy->id = 0;
     copy->place = (markdown_core_place){0, 0};
     copy->source.places = NULL;
+    copy->fields = NULL;
     copy->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PUBLISHED;
     copy->children = NULL;
     copy->child_count = 0;

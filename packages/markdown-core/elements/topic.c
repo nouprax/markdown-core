@@ -1,6 +1,5 @@
 #include "topic.h"
 #include "services.h"
-#include "parts.h"
 #include "inline_internal.h"
 #include "utf8.h"
 
@@ -263,8 +262,14 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     markdown_core_inline_seek(inline_state, end);
     /* The name views the input without its `#`; the node covers both. */
-    return markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TOPIC, start, end - 1,
-                                             markdown_core_inline_take(inline_state, start + 1, end - start - 1));
+    markdown_core_node *topic =
+        markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TOPIC, start, end - 1,
+                                          markdown_core_inline_take(inline_state, start + 1, end - start - 1));
+    if (topic) {
+        const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, topic);
+        markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NAME, start + 1, end);
+    }
+    return topic;
 }
 
 static const markdown_core_inline_ops TOPIC_INLINES = {
@@ -280,7 +285,7 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
 }
 
 const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TOPIC, .parts = markdown_core_topic_parts, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_TOPIC, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -294,8 +299,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
     .run_state_size = sizeof(topic_run),
     .inlines = &TOPIC_INLINES,
 };
-
-/* THE PARTS OF A TOPIC (parts.h): its name, after its `#`. */
-void markdown_core_topic_parts(markdown_core_parts *parts) {
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NAME, 1, parts->length);
-}

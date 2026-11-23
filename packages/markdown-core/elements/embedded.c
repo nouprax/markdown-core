@@ -91,6 +91,9 @@ static void S_apply(const markdown_core_element_instance *self, markdown_core_in
     }
     image->as.link->dimensions.value = dimensions;
     image->as.link->dimensions.has_value = true;
+    /* The suffix after the pipe is the image's field of no slot kind. */
+    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, image);
+    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_NONE, suffix + (pipe >= 0), end);
 }
 
 static void S_record(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,

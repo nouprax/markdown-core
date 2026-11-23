@@ -1,11 +1,9 @@
 #include "alloc.h"
-#include "attributes.h"
 #include "services.h"
 #include "block_internal.h"
 #include "directive.h"
 #include "element.h"
 #include "inline_internal.h"
-#include "parts.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -292,6 +290,9 @@ static int apply_parsed_directive(const markdown_core_element_instance *self, ma
     if (parsed->name_len && !set_chunk_bytes(&directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
+    const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NAME, parsed->name_start,
+                            parsed->name_start + parsed->name_len);
     if (parsed->attributes_len) {
         const unsigned char *source = data + parsed->attributes_start;
         if (*source == '{') {
@@ -306,10 +307,13 @@ static int apply_parsed_directive(const markdown_core_element_instance *self, ma
             if (!written) {
                 return 0;
             }
+            S_attributes(self)->fields(self->needs[DIRECTIVE_ATTRIBUTES].instance, &parsed->attributes, &fields);
         } else {
             if (!markdown_core_attributes_single_class(&node->attributes, source, parsed->attributes_len)) {
                 return 0;
             }
+            markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_CLASS, parsed->attributes_start,
+                                    parsed->attributes_start + parsed->attributes_len);
         }
     }
 
@@ -496,6 +500,8 @@ static markdown_core_node *match_colon_directive(const markdown_core_element_ins
      * table cell's edge it is the cell's line ending, placed at the end of
      * the row. */
     markdown_core_inline_state_place(inline_state, node, (int)offset, (int)pos - 1);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NAME, name_start, name_start + name_len);
 
     if (has_label) {
         label_node = make_label_node(element, parser, chunk->data + label_start, label_len, 0, 0);
@@ -830,14 +836,10 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
 
 const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_DIRECTIVE,
-     .parts = markdown_core_directive_parts,
      .name = markdown_core_elements_get_directive_name,
      .label = S_label,
      .words = S_words},
-    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
-     .parts = markdown_core_directive_parts,
-     .name = markdown_core_elements_get_directive_name,
-     .label = S_label},
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, .name = markdown_core_elements_get_directive_name, .label = S_label},
     {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_LABEL, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
@@ -859,37 +861,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .opens = &DIRECTIVE_OPENS,
     .lines = &DIRECTIVE_LINES,
 };
-
-/* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what
- * follows its colons: its name, the label node after it, and the attribute
- * container; a nameless container's class word or container instead, as
- * parse_nameless_suffix reads them. */
-void markdown_core_directive_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t at = 0;
-    while (at < n && markdown_core_is_space_or_tab(s[at])) {
-        at++;
-    }
-    const bufsize_t colons = count_colons(s, n, at);
-    at += colons;
-    const bool block = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
-    if (block && colons >= 3 && at < n && (markdown_core_is_space_or_tab(s[at]) || s[at] == '{')) {
-        while (at < n && markdown_core_is_space_or_tab(s[at])) {
-            at++;
-        }
-        if (at < n && s[at] == '{') {
-            markdown_core_attributes_parts(parts, at);
-        } else {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_CLASS, at, at + class_word_end(s + at, n - at));
-        }
-        return;
-    }
-    const bufsize_t name = at;
-    at += name_end(s + at, n - at);
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NAME, name, at);
-    at = markdown_core_parts_skip(parts, at);
-    if (at < n && s[at] == '{') {
-        markdown_core_attributes_parts(parts, at);
-    }
-}

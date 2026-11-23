@@ -5,7 +5,6 @@
 #include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "parts.h"
 
 /* The services this element asks, as `self->needs` holds them: the spans a
  * citation's brace steps over whole. */
@@ -480,6 +479,17 @@ markdown_core_node *markdown_core_inline_new_citation(markdown_core_inline_state
     return item;
 }
 
+/* The key of the citation `item`, its referent settled, as the field of
+ * that referent's slot kind. */
+static void S_key_field(markdown_core_inline_state *inline_state, markdown_core_node *item, const citation_token *key) {
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, item);
+    markdown_core_field_put(&fields,
+                            item->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN
+                                ? MARKDOWN_CORE_SLOT_SPECIMEN
+                                : MARKDOWN_CORE_SLOT_BIB,
+                            MARKDOWN_CORE_FIELD, key->key_start, key->key_end, false);
+}
+
 static markdown_core_node *new_bib_item(markdown_core_inline_state *inline_state, markdown_core_node *cite,
                                         const citation_token *key, bool normal) {
     markdown_core_node *item = markdown_core_inline_new_citation(inline_state, cite);
@@ -653,6 +663,7 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
         item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
         item->as.citation->mode = 0;
     }
+    S_key_field(inline_state, item, token);
     bufsize_t start = token->start, end = token->end;
     if (specimen && start && markdown_core_inline_peek_at(inline_state, start - 1) == '(' &&
         markdown_core_inline_peek_at(inline_state, end) == ')') {
@@ -771,6 +782,7 @@ static bool markdown_core_inline_close_bibliography(const markdown_core_element_
         if (!item) {
             break;
         }
+        S_key_field(inline_state, item, key);
         markdown_core_inline_state_place(inline_state, item, scope_start, scope_end - 1);
         if (!author_item) {
             take_citation_affix(self, inline_state, &item->as.citation->prefix, content, key->node, item_start,
@@ -1025,7 +1037,7 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
 }
 
 const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CITATION, .parts = markdown_core_citation_parts, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_CITATION, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_CITE, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
@@ -1048,46 +1060,6 @@ static void S_opened(const markdown_core_element_instance *self, markdown_core_i
         author->tail_start == markdown_core_inline_offset(inline_state) - 1) {
         S_bracket(self, b)->author = author;
     }
-}
-
-/* THE PARTS OF A CITATION (parts.h): its key or label, after the prefix
- * node and the `-`, `@` or `^` before it, inside a key's braces; a
- * citation that stands for an inline note has none of its own. */
-void markdown_core_citation_parts(markdown_core_parts *parts) {
-    const markdown_core_citation_item *item = parts->node->as.citation;
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    if (item->note) {
-        return;
-    }
-    const markdown_core_slot_kind slot =
-        item->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE   ? MARKDOWN_CORE_SLOT_FOOTNOTE
-        : item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN ? MARKDOWN_CORE_SLOT_SPECIMEN
-                                                                 : MARKDOWN_CORE_SLOT_BIB;
-    /* The referent's sigil is the first after the prefix. */
-    bufsize_t at = markdown_core_parts_skip(parts, 0);
-    while (at < n && s[at] != '@' && s[at] != '^') {
-        at++;
-    }
-    at++;
-    const bufsize_t stop = markdown_core_parts_next(parts, at);
-    if (at < stop && s[at] == '{') {
-        bufsize_t close = stop;
-        while (close > at && s[close - 1] != '}') {
-            close--;
-        }
-        markdown_core_parts_add(parts, slot, at + 1, close > at ? close - 1 : at + 1);
-        return;
-    }
-    bufsize_t end = stop;
-    if (slot == MARKDOWN_CORE_SLOT_FOOTNOTE) {
-        while (end > at && markdown_core_is_whitespace(s[end - 1])) {
-            end--;
-        }
-    } else {
-        end = at + key_end(s + at, stop - at);
-    }
-    markdown_core_parts_add(parts, slot, at, end);
 }
 
 /* A citation's record (markdown_core_record_ops): its referent's bytes,

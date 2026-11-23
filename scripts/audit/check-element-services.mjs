@@ -21,12 +21,11 @@
  * pure functions from bytes to a match length, generated from its `.re`: no
  * instance, no state, no hook.
  *
- * WHAT IS STILL READ OUTSIDE A PARSE. The readers of a published node's
- * parts and a context field's end run with no dialect, so no service can
- * answer them: the attribute grammar's own functions are what they call
- * (`OUTSIDE`). They go when slots are recorded as the parse reads them and
- * context reads only what the parse recorded (the decoupling plan, 8.3 and
- * 8.5); the list must shrink, never grow.
+ * WHAT IS STILL READ OUTSIDE A PARSE. A context field's end runs with no
+ * dialect, so no service can answer it: the attribute grammar's own
+ * functions are what it calls (`OUTSIDE`). It goes when context reads only
+ * what the parse recorded (the decoupling plan, 8.5); the list must shrink,
+ * never grow.
  *
  * AND THE AUDIT MUST SEE SOMETHING: every element header must contribute
  * symbols and an element source must be judged, or it fails closed.
@@ -108,23 +107,8 @@ for (const file of headers) {
 
 /* (WHAT IS STILL READ OUTSIDE A PARSE) source -> the other elements'
  * symbols and headers it may name. */
-const attributesOutside = [
-    "attributes.h",
-    "markdown_core_attributes_parts",
-    "markdown_core_attributes_tail_parts",
-    "markdown_core_attributes_tail",
-    "markdown_core_attributes_end",
-    "markdown_core_attributes_parse",
-    "markdown_core_attribute_parser_free",
-    "markdown_core_attribute_scratch",
-    "markdown_core_attribute_scratch_free"
-];
 const OUTSIDE = new Map([
-    ["code.c", attributesOutside],
-    ["code_block.c", attributesOutside],
-    ["directive.c", attributesOutside],
-    ["heading.c", attributesOutside],
-    ["link.c", attributesOutside]
+    ["code_block.c", ["attributes.h", "markdown_core_attributes_tail", "markdown_core_attribute_parser_free"]]
 ]);
 
 const findings = [];

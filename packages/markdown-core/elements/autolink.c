@@ -88,6 +88,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(const markdown_cor
     // autolink inside a block quote, or on any line but the first of its
     // paragraph, produced a Link that did not contain its own Text.
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
+    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, link);
+    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_DEST, start_column + 1, end_column);
     text = make_str_with_entities(self, inline_state, start_column + 1, end_column - 1, &url);
     if (text) {
         markdown_core_scaffold_append(link, text);
@@ -440,6 +442,8 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
 
     markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
+    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_DEST, (bufsize_t)max_rewind, (bufsize_t)(max_rewind + link_end));
 
     return node;
 }
@@ -512,6 +516,9 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
 
     markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
+    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_DEST, (bufsize_t)(max_rewind - rewind),
+                            (bufsize_t)(max_rewind + link_end));
 
     return node;
 }
@@ -795,6 +802,11 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             }
         }
         set_sourcepos_from_range(parser, link_node, &source_map, link_start, link_len);
+        /* All of the address is the link's destination. */
+        if (!markdown_core_node_add_field(parser->pool, link_node, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD,
+                                          link_node->place.start, link_node->place.end, false)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
 
         markdown_core_node *link_text = email_text_fragment(parser, &source_map, &source, link_start, link_len);
         if (!link_text) {

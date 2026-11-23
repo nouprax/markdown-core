@@ -5,8 +5,6 @@
 #include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "parts.h"
-#include "attributes.h"
 #include "ast_internal.h"
 
 /* The services this element asks, as `self->needs` holds them. */
@@ -43,7 +41,8 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
     /* The end of its text is offered (element.h, markdown_core_follow):
      * what is taken is cut from it. */
     const markdown_core_chunk text = markdown_core_node_text(node);
-    node->cut_back += markdown_core_parser_offer(parser, node, text.data, 0, text.len, false);
+    const markdown_core_field_to fields = {parser, node, &node->content_map, NULL, node->cut_front, NULL};
+    node->cut_back += markdown_core_parser_offer(parser, node, text.data, 0, text.len, false, &fields);
     markdown_core_parser_name(parser, self, node);
     return true;
 }
@@ -413,31 +412,6 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
     run->label_end = markdown_core_inline_size(inline_state);
 }
 
-/* THE PARTS OF A HEADING (parts.h): the attribute tail that ends its last
- * content line, as markdown_core_heading_begin_inlines finds it, unless a
- * node of its content holds the brace. A setext heading's last content line
- * is the one before its underline. */
-void markdown_core_heading_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    bufsize_t end = parts->length;
-    while (end > 0 && markdown_core_is_line_end(s[end - 1])) {
-        end--;
-    }
-    if (parts->node->as.heading->setext) {
-        while (end > 0 && !markdown_core_is_line_end(s[end - 1])) {
-            end--;
-        }
-        while (end > 0 && markdown_core_is_line_end(s[end - 1])) {
-            end--;
-        }
-    }
-    bufsize_t line = end;
-    while (line > 0 && !markdown_core_is_line_end(s[line - 1])) {
-        line--;
-    }
-    markdown_core_attributes_tail_parts(parts, line, end);
-}
-
 #define peek_at(input, at) ((input)->data[(at)])
 static bool open_atx(const markdown_core_element_instance *self, markdown_core_parser *parser,
                      markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
@@ -663,7 +637,7 @@ static const markdown_core_line_ops HEADING_LINES = {
 static markdown_core_name *heading_name(const markdown_core_node *node) { return &node->as.heading->name; }
 
 const markdown_core_facet MARKDOWN_CORE_HEADING_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_HEADING, .parts = markdown_core_heading_parts, .named = heading_name},
+    {.kind = MARKDOWN_CORE_KIND_HEADING, .named = heading_name},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

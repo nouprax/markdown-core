@@ -1517,9 +1517,10 @@ static inline const markdown_core_kind_record *markdown_core_parser_block_kind(c
 /* A LINE'S TAIL OFFERED (element.h, MARKDOWN_CORE_FOLLOW_TAIL): bytes `from`
  * to `to` of `line`, the end of a line of `block` its own grammar leaves
  * open, to the element that takes the tails of its kind; how many bytes
- * before `to` it took, 0 when none does. */
+ * before `to` it took, 0 when none does. The fields the taker reads in it
+ * go where `fields` has them go. */
 bufsize_t markdown_core_parser_offer(markdown_core_parser *parser, markdown_core_node *block, const unsigned char *line,
-                                     bufsize_t from, bufsize_t to, bool live);
+                                     bufsize_t from, bufsize_t to, bool live, const markdown_core_field_to *fields);
 
 /* Whether a block of `node`'s kind changing to `kind` keeps a block: one
  * whose element cuts the items its text opens with, becoming one of a kind

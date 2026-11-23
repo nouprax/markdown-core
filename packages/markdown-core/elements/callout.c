@@ -1,6 +1,5 @@
 #include "callout.h"
 #include "block_internal.h"
-#include "parts.h"
 #include "sink.h"
 
 /* What a callout's scan found after its marker (WHAT THE SCAN FOUND,
@@ -131,6 +130,9 @@ static void S_callout_build(markdown_core_parser *parser, markdown_core_node *no
     }
     node->as.callout->variant = markdown_core_optional_chunk_present(variant);
     node->as.callout->collapsed = (markdown_core_optional_bool){header->fold, header->collapsed};
+    const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_VARIANT, MARKDOWN_CORE_FIELD, header->variant,
+                            header->variant_end, true);
     markdown_core_reader_advance(reader, header->title - reader->offset, false);
 }
 
@@ -271,37 +273,13 @@ static const markdown_core_line_ops CALLOUT_LINES = {
     .text = callout_text,
 };
 
-const markdown_core_facet MARKDOWN_CORE_CALLOUT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CALLOUT, .parts = markdown_core_callout_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
-    .facets = MARKDOWN_CORE_CALLOUT_FACETS,
     .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
     .name = "callout",
     .opens = &CALLOUT_OPENS,
     .lines = &CALLOUT_LINES,
 };
-
-/* A callout's parts: its variant, inside `[!` and `]` on its first line, and
- * a block identifier on the line after it. The fold sign is a marker. */
-void markdown_core_callout_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    bufsize_t at = parts->node->as.callout->variant.has_value ? 0 : parts->length;
-    while (at < parts->length && text[at] != '\n' && text[at] != '\r' &&
-           !(text[at] == '[' && at + 1 < parts->length && text[at + 1] == '!')) {
-        at++;
-    }
-    if (at + 1 < parts->length && text[at] == '[' && text[at + 1] == '!') {
-        const bufsize_t end = at + 2 + variant_end(text + at + 2, parts->length - at - 2);
-        if (end < parts->length && text[end] == ']') {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_VARIANT, at + 2, end);
-        }
-    }
-    markdown_core_block_identifier_parts(parts);
-}
 
 /* A callout's record (markdown_core_record_ops): its variant, and its title,
  * a field root. */

@@ -1,5 +1,4 @@
 #include "comment_scanners.h"
-#include "parts.h"
 #include "html_scanners.h"
 #include "html_block.h"
 #include "block_internal.h"
@@ -120,7 +119,7 @@ static const markdown_core_line_ops HTML_BLOCK_LINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_HTML_BLOCK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_HTML_BLOCK, .parts = markdown_core_literal_parts},
+    {.kind = MARKDOWN_CORE_KIND_HTML_BLOCK, .whole = true},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

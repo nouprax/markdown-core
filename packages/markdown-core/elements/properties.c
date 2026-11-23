@@ -3,7 +3,6 @@
 #include "metadata.h"
 #include "parser.h"
 #include "node.h"
-#include "parts.h"
 #include "buffer.h"
 #include <string.h>
 #include <limits.h>
@@ -635,13 +634,21 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
-    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata};
+    /* The envelope's places, read as its fields as the payload is read. */
+    markdown_core_metadata_places places = {0};
+    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata, .places = &places};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p, next_line(source, 3, consumed));
     properties_close(&p);
     if (p.failed) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    const markdown_core_field_to to = {parser, node, NULL, NULL, 0, NULL};
+    for (size_t i = 0; i < places.count; i++) {
+        markdown_core_field_add(&to, places.items[i].slot, (bufsize_t)places.items[i].from,
+                                (bufsize_t)places.items[i].to);
+    }
+    markdown_core_free(places.items);
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);
         return 0;
@@ -666,15 +673,4 @@ bool markdown_core_metadata_places_read(const unsigned char *text, size_t length
     properties_close(&p);
     markdown_core_metadata_fields_free(&fields);
     return !p.failed;
-}
-
-/* An envelope's parts: its places that hold bytes. */
-void markdown_core_metadata_parts(markdown_core_parts *parts) {
-    markdown_core_metadata_places places = {0};
-    parts->failed = !markdown_core_metadata_places_read(parts->text, (size_t)parts->length, &places) || parts->failed;
-    for (size_t i = 0; i < places.count; i++) {
-        markdown_core_parts_add(parts, places.items[i].slot, (bufsize_t)places.items[i].from,
-                                (bufsize_t)places.items[i].to);
-    }
-    markdown_core_free(places.items);
 }

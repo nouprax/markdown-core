@@ -12,6 +12,11 @@ typedef struct {
     markdown_core_chunk url;
     markdown_core_optional_chunk title;
     bool explicit_tail;
+    /* Where the run holds the tail's fields, empty for none: an inline
+     * tail's destination, `angled` when `<` and `>` hold it, and its title
+     * inside its quotes; a full reference's label inside its brackets. */
+    bufsize_t dest, dest_end, title_start, title_end, label_start, label_end;
+    bool angled;
 } markdown_core_link_candidate;
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
                                                       markdown_core_inline_state *inline_state, struct bracket *opener,

@@ -236,6 +236,30 @@ static inline void markdown_core_inline_map_text(markdown_core_inline_state *inl
     }
 }
 
+/* The source place of the bytes `from` up to `end` of the run's text, by
+ * its frame's arithmetic (inline_internal.h, markdown_core_inline_place):
+ * false, `*place` untouched, when either end lies off the cursor's run.
+ * `end` equal to `from` places where `from` starts. */
+static inline bool markdown_core_inline_frame_place(const markdown_core_inline_state *inline_state, bufsize_t from,
+                                                    bufsize_t end, markdown_core_place *place) {
+    if (!inline_state->mapped || from < 0 || end < from) {
+        return false;
+    }
+    const bufsize_t base = inline_state->owner->content_map.offset;
+    const bufsize_t first = from + base, last = (end > from ? end - 1 : from) + base;
+    if (first < inline_state->mark_run_start || last >= inline_state->mark_run_end) {
+        return false;
+    }
+    const bufsize_t start =
+        inline_state->mark_source + (first - inline_state->mark_run_start) * inline_state->mark_step;
+    place->start = (uint32_t)start;
+    place->end = end > from ? (uint32_t)(inline_state->mark_source +
+                                         (last - inline_state->mark_run_start) * inline_state->mark_step +
+                                         inline_state->mark_width)
+                            : (uint32_t)start;
+    return true;
+}
+
 /* A placement that leaves the frame: resolved by the span, which moves the
  * cursor to where the node ends (inlines.c). */
 void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_node *node,
@@ -307,6 +331,19 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
  *   `shorten` -- ends the run at `end` and drops the white space before it:
  *                a grammar that gives the run's tail to another before the
  *                run is read (an ATX heading's closing sequence). */
+/* Where the fields of `node`, read from the run by its offsets, go
+ * (markdown_core_field_to): nowhere when the run is placed nowhere. */
+static inline markdown_core_field_to markdown_core_inline_fields(const markdown_core_inline_state *inline_state,
+                                                                 markdown_core_node *node) {
+    const bool placed = inline_state->owner_parser && inline_state->owner && inline_state->owner->content_map.count > 0;
+    markdown_core_field_to to = {placed ? inline_state->owner_parser : NULL,
+                                 placed ? node : NULL,
+                                 placed ? &inline_state->owner->content_map : NULL,
+                                 NULL,
+                                 0,
+                                 inline_state};
+    return to;
+}
 static inline bufsize_t markdown_core_inline_offset(const markdown_core_inline_state *inline_state) {
     return inline_state->pos;
 }

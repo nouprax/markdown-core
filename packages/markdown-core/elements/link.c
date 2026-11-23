@@ -1,9 +1,9 @@
+#include <string.h>
+
 #include "alloc.h"
 #include "services.h"
 #include "link_scanners.h"
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
-#include "parts.h"
-#include "attributes.h"
 #include "link.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -253,8 +253,9 @@ typedef struct {
 } S_tails;
 
 static bool reference_tail(markdown_core_inline_state *inline_state, const S_tails *tails,
-                           markdown_core_attributes *value, bool *wide) {
+                           markdown_core_attributes *value, bool *wide, bool *listed) {
     bufsize_t before = markdown_core_inline_offset(inline_state);
+    *listed = false;
     if (!tails) {
         /* A dialect without attribute blocks reads none. */
         markdown_core_inline_skip_spaces(inline_state);
@@ -272,7 +273,8 @@ static bool reference_tail(markdown_core_inline_state *inline_state, const S_tai
         markdown_core_inline_seek(inline_state, end - base);
         markdown_core_inline_skip_spaces(inline_state);
         if (markdown_core_inline_skip_line_end(inline_state)) {
-            return tails->ops->parse(tails->self, tails->p, start, value, &end);
+            *listed = tails->ops->parse(tails->self, tails->p, start, value, &end);
+            return *listed;
         }
     }
     markdown_core_inline_seek(inline_state, before);
@@ -289,6 +291,8 @@ typedef struct {
     markdown_core_chunk label, url, title;
     markdown_core_attributes value;
     bool wide;
+    /* Its attribute list was read, the last the recognizer read. */
+    bool listed;
 } reference_definition;
 
 static bufsize_t S_reference_definition(markdown_core_chunk *input, const S_tails *tails,
@@ -340,10 +344,10 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, const S_tail
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, tails, &definition->value, &definition->wide)) {
+    if (!reference_tail(&inline_state, tails, &definition->value, &definition->wide, &definition->listed)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, tails, &definition->value, &definition->wide)) {
+            if (!reference_tail(&inline_state, tails, &definition->value, &definition->wide, &definition->listed)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -389,6 +393,40 @@ static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b,
                             bufsize_t before);
 static void S_report_tail(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *b, markdown_core_chunk *input, bufsize_t before);
+
+static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool angled, bool fragment);
+
+/* The fields of the definition `definition` read in `text`, the content of
+ * the block `b`, on `reference`: its label, destination and fragment, its
+ * title inside its quotes and its attribute list's members. */
+static void S_reference_fields(markdown_core_parser *parser, markdown_core_node *reference, markdown_core_node *b,
+                               const unsigned char *text, const reference_definition *definition,
+                               const S_tails *tails) {
+    const markdown_core_field_to to = {parser, reference, &b->content_map, NULL, 0, NULL};
+    markdown_core_field_spot spots[4];
+    size_t count = 0;
+    const bufsize_t label = (bufsize_t)(definition->label.data - text);
+    spots[count++] = (markdown_core_field_spot){label, label + definition->label.len, MARKDOWN_CORE_SLOT_LABEL};
+    const bufsize_t url = (bufsize_t)(definition->url.data - text), url_end = url + definition->url.len;
+    const bool angled = url > 0 && text[url - 1] == '<';
+    /* A destination with no `#` is all path. */
+    const bufsize_t hash = memchr(text + url, '#', (size_t)definition->url.len)
+                               ? url + field_end(text + url, definition->url.len, angled, false)
+                               : url_end;
+    spots[count++] = (markdown_core_field_spot){url, hash < url_end ? hash : url_end, MARKDOWN_CORE_SLOT_DEST};
+    if (hash < url_end) {
+        spots[count++] = (markdown_core_field_spot){hash + 1, url_end, MARKDOWN_CORE_SLOT_ANCHOR};
+    }
+    if (definition->title.data) {
+        const bufsize_t title = (bufsize_t)(definition->title.data - text);
+        spots[count++] =
+            (markdown_core_field_spot){title + 1, title + definition->title.len - 1, MARKDOWN_CORE_SLOT_NONE};
+    }
+    markdown_core_field_many(&to, spots, count);
+    if (definition->listed && tails->ops) {
+        tails->ops->fields(tails->self, tails->p, &to);
+    }
+}
 
 /* THE FRONT CUT'S ITEM (element.h, markdown_core_cut): the link reference
  * definition at the front of `cut->rest`, `cut->at` bytes into the block's
@@ -469,6 +507,7 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
     }
     reference->place = (markdown_core_place){b->place.start, b->place.start};
     markdown_core_text_place(parser, &b->content_map, before, before + end, &reference->place);
+    S_reference_fields(parser, reference, b, cut->text.data, &definition, &tails);
     const bufsize_t start = (bufsize_t)reference->place.start;
     cut->made = reference;
     /* The document defines the label from where the definition starts. */
@@ -871,6 +910,8 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
             explicit_tail = true;
             markdown_core_inline_seek(inline_state, endall + 1);
 
+            const unsigned char *url_chunk_start = url_chunk.data;
+            const bufsize_t url_length = url_chunk.len;
             title_chunk = markdown_core_inline_take(inline_state, starttitle, endtitle - starttitle);
             {
                 int lost = 0;
@@ -885,6 +926,13 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
             candidate->url = url;
             candidate->title = title;
             candidate->explicit_tail = true;
+            candidate->dest = (bufsize_t)(url_chunk_start - data);
+            candidate->dest_end = candidate->dest + url_length;
+            candidate->angled = starturl < len && data[starturl] == '<';
+            if (endtitle > starttitle) {
+                candidate->title_start = starttitle + 1;
+                candidate->title_end = endtitle - 1;
+            }
             return LINK_EXPLICIT;
 
         } else {
@@ -896,7 +944,12 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     // Next, look for a following [link label] that a definition declares.
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
+    const bufsize_t label_open = markdown_core_inline_offset(inline_state);
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
+    if (found_label) {
+        candidate->label_start = label_open + 1;
+        candidate->label_end = markdown_core_inline_offset(inline_state) - 1;
+    }
     if (!found_label && inline_state->context) {
         S_report_label(inline_state, opener, markdown_core_inline_offset(inline_state));
     }
@@ -930,6 +983,35 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     candidate->label = record ? markdown_core_roster_label(record) : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
+}
+
+/* THE FIELDS OF A LINK'S TAIL, as recognize read them (node.h,
+ * markdown_core_fields): an inline tail's destination, its path and, after
+ * its first `#` that starts a fragment, as field_end reads it, its anchor,
+ * and its title inside its quotes; a full reference's label. */
+static void S_tail_fields(markdown_core_inline_state *inline_state, markdown_core_node *inl,
+                          const markdown_core_link_candidate *candidate) {
+    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, inl);
+    markdown_core_field_spot spots[4];
+    size_t count = 0;
+    if (candidate->dest_end > candidate->dest) {
+        const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+        const bufsize_t start = candidate->dest, end = candidate->dest_end;
+        /* A destination with no `#` is all path. */
+        const bufsize_t hash = memchr(data + start, '#', (size_t)(end - start))
+                                   ? start + field_end(data + start, end - start, candidate->angled, false)
+                                   : end;
+        spots[count++] = (markdown_core_field_spot){start, hash < end ? hash : end, MARKDOWN_CORE_SLOT_DEST};
+        if (hash < end) {
+            spots[count++] = (markdown_core_field_spot){hash + 1, end, MARKDOWN_CORE_SLOT_ANCHOR};
+        }
+    }
+    spots[count++] = (markdown_core_field_spot){candidate->title_start, candidate->title_end, MARKDOWN_CORE_SLOT_NONE};
+    if (!inl->as.link->resource) {
+        spots[count++] =
+            (markdown_core_field_spot){candidate->label_start, candidate->label_end, MARKDOWN_CORE_SLOT_LABEL};
+    }
+    markdown_core_field_many(&to, spots, count);
 }
 
 bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
@@ -992,6 +1074,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     markdown_core_inline_state_place(inline_state, inl, opener->position - 1,
                                      markdown_core_inline_offset(inline_state) - 1);
     inl->place.start = opener->inl_text->place.start;
+    S_tail_fields(inline_state, inl, candidate);
     /* What follows a link whose destination, title or label follows its `]`
      * may update it (no-flush.md 10.13). */
     if (explicit_tail) {
@@ -1167,141 +1250,6 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
     }
 }
 
-/* A destination's parts, from `start` to `end` of the text: its path and,
- * after its first `#` that starts a fragment, as field_end reads it, its
- * anchor. */
-static void S_destination_parts(markdown_core_parts *parts, bufsize_t start, bufsize_t end, bool angled) {
-    const bufsize_t hash = start + field_end(parts->text + start, end - start, angled, false);
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, start, hash < end ? hash : end);
-    if (hash < end) {
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ANCHOR, hash + 1, end);
-    }
-}
-
-/* THE PARTS OF A LINK OR AN IMAGE (parts.h), read as
- * markdown_core_link_recognize reads its tail after the `]` that closes its
- * text: an inline tail's destination, as manual_scan_link_url reads it, and
- * its title inside its quotes; a full reference's label; an image's
- * dimensions after the `|` that ends its text; and the attribute container
- * after them. An autolink's destination is the text inside its angle
- * brackets, or all of a bare one. */
-void markdown_core_link_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    const markdown_core_link *link = parts->node->as.link;
-    if (!n) {
-        return;
-    }
-    if (s[0] == '<') {
-        bufsize_t close = 1;
-        while (close < n && s[close] != '>') {
-            close++;
-        }
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, 1, close);
-        if (close + 1 < n && s[close + 1] == '{') {
-            markdown_core_attributes_parts(parts, close + 1);
-        }
-        return;
-    }
-    if (s[0] != '[' && s[0] != '!') {
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, 0, n);
-        return;
-    }
-    /* The text's `]`: the first after the nodes the text holds. */
-    const bufsize_t open = s[0] == '!' ? 2 : 1, last = markdown_core_parts_last(parts, open);
-    bufsize_t close = last;
-    while (close < n && s[close] != ']') {
-        close += s[close] == '\\' && close + 1 < n ? 2 : 1;
-    }
-    if (link->dimensions.has_value) {
-        bufsize_t pipe = close;
-        while (pipe > last && s[pipe - 1] != '|') {
-            pipe--;
-        }
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, pipe, close);
-    }
-    bufsize_t at = close + 1;
-    markdown_core_chunk input = {(unsigned char *)s, n, 0}, url;
-    if (link->resource && at < n && s[at] == '(') {
-        at = markdown_core_skip_spaces_and_line_end(s, at + 1, n);
-        const bufsize_t matched = markdown_core_inline_manual_scan_link_url(&input, at, &url);
-        if (matched < 0) {
-            return;
-        }
-        const bufsize_t path = (bufsize_t)(url.data - s);
-        S_destination_parts(parts, path, path + url.len, s[at] == '<');
-        const bufsize_t past = at + matched, title = markdown_core_skip_spaces_and_line_end(s, past, n);
-        const bufsize_t quoted = title == past ? 0 : scan_link_title(s, n, title);
-        if (quoted) {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, title + 1, title + quoted - 1);
-            at = markdown_core_skip_spaces_and_line_end(s, title + quoted, n);
-        } else {
-            at = title;
-        }
-        at += at < n && s[at] == ')';
-    } else if (at < n && s[at] == '[') {
-        const bufsize_t label = at + 1, end = label + markdown_core_inline_reference_label_length(s + label, n - label);
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_LABEL, label, end);
-        at = end + (end < n);
-    }
-    if (at < n && s[at] == '{') {
-        markdown_core_attributes_parts(parts, at);
-    }
-}
-
-/* THE PARTS OF A REFERENCE DEFINITION (parts.h), as S_reference_definition
- * reads it: its label, its destination, its title inside its quotes, and
- * the attribute container after them. */
-static bufsize_t S_parts_end(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
-                             bufsize_t start) {
-    (void)self;
-    return markdown_core_attributes_end(p, start);
-}
-
-static bool S_parts_parse(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
-                          bufsize_t start, markdown_core_attributes *value, bufsize_t *end) {
-    (void)self;
-    return markdown_core_attributes_parse(p, start, value, end) != 0;
-}
-
-/* The attribute grammar a reader of a published node asks outside a parse,
- * with no dialect's service to ask: its own functions (parts readers go
- * when slots are recorded as the parse reads them, plan 8.3). */
-static const markdown_core_attribute_ops S_PARTS_ATTRIBUTES = {.end = S_parts_end, .parse = S_parts_parse};
-
-void markdown_core_reference_parts(markdown_core_parts *parts) {
-    /* Through the line ending after the text, which ends a bare
-     * destination. */
-    markdown_core_chunk input = {(unsigned char *)parts->text, parts->length + 1, 0};
-    markdown_core_attribute_scratch scratch = {0};
-    markdown_core_attribute_parser attributes = {.data = parts->text, .length = input.len, .scratch = &scratch};
-    const S_tails tails = {&S_PARTS_ATTRIBUTES, NULL, &attributes};
-    reference_definition definition;
-    const bufsize_t length = S_reference_definition(&input, &tails, &definition);
-    parts->failed = parts->failed || attributes.oom;
-    if (length) {
-        const unsigned char *s = parts->text;
-        const bufsize_t n = parts->length, label = (bufsize_t)(definition.label.data - s);
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_LABEL, label, label + definition.label.len);
-        bufsize_t at = (bufsize_t)(definition.url.data - s) + definition.url.len;
-        const bool angled = at > 0 && definition.url.data > s && definition.url.data[-1] == '<';
-        S_destination_parts(parts, at - definition.url.len, at, angled);
-        at += angled;
-        if (definition.title.data) {
-            const bufsize_t title = (bufsize_t)(definition.title.data - s);
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, title + 1, title + definition.title.len - 1);
-            at = title + definition.title.len;
-        }
-        at = markdown_core_skip_spaces_and_line_end(s, at, n);
-        if (at < n && s[at] == '{') {
-            markdown_core_attributes_parts(parts, at);
-        }
-        markdown_core_attributes_free(&definition.value);
-    }
-    markdown_core_attribute_parser_free(&attributes);
-    markdown_core_attribute_scratch_free(&scratch);
-}
-
 static const markdown_core_inline_ops LINK_INLINES = {
     .report = report_open,
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
@@ -1321,9 +1269,8 @@ static const markdown_core_open_ops LINK_OPENS = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_LINK, .parts = markdown_core_link_parts, .reads = MARKDOWN_CORE_READS_CHILDREN},
-    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .parts = markdown_core_link_parts, .reads = MARKDOWN_CORE_READS_CHILDREN},
-    {.kind = MARKDOWN_CORE_KIND_REFERENCE, .parts = markdown_core_reference_parts},
+    {.kind = MARKDOWN_CORE_KIND_LINK, .reads = MARKDOWN_CORE_READS_CHILDREN},
+    {.kind = MARKDOWN_CORE_KIND_EMBEDDED, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

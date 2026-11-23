@@ -1,4 +1,3 @@
-#include "parts.h"
 #include "text.h"
 #include "services.h"
 #include "inline_internal.h"
@@ -91,7 +90,7 @@ static const markdown_core_inline_ops TEXT_INLINES = {
 };
 
 const markdown_core_facet MARKDOWN_CORE_TEXT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_TEXT, .parts = markdown_core_literal_parts, .reads = MARKDOWN_CORE_READS_LITERAL},
+    {.kind = MARKDOWN_CORE_KIND_TEXT, .whole = true, .reads = MARKDOWN_CORE_READS_LITERAL},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

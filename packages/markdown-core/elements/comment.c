@@ -3,7 +3,6 @@
 #include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "parts.h"
 #include <string.h>
 #include "element.h"
 #include "node.h"
@@ -125,6 +124,10 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
         return NULL;
     }
     markdown_core_node_set_element(node, self->element);
+    /* Its literal is found in its text past the opening `%%`. */
+    const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, first_nonspace + 2,
+                            first_nonspace + 2, true);
     /* The rest of the fence line, spaces and its ending, is the first line
      * of the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP), and no part of its literal. */
@@ -217,6 +220,8 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     /* The scope covers both delimiters and the body. */
     markdown_core_inline_state_place(inline_state, node, start, close + 1);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, start + 2, start + 2, true);
     markdown_core_inline_state_set_offset(inline_state, close + 2);
     return node;
 }
@@ -310,7 +315,7 @@ static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t 
 }
 
 const markdown_core_facet MARKDOWN_CORE_COMMENT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_COMMENT, .parts = markdown_core_comment_parts, .literal = S_literal},
+    {.kind = MARKDOWN_CORE_KIND_COMMENT, .literal = S_literal},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -451,6 +456,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_convert(markdown_c
     /* The comment's literal is the body between its delimiters, lazy as a
      * literal block's (node.h, A LITERAL, LAZY). */
     markdown_core_literal_set(b, b->as.literal, body_start, body_end);
+    const markdown_core_field_to fields = {parser, b, &b->content_map, NULL, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, body_start, body_start, true);
 }
 
 /* AN HTML BLOCK THAT IS ONE COMMENT becomes a CommentBlock as it closes
@@ -506,28 +513,11 @@ static markdown_core_node *S_make_html(const markdown_core_element_instance *sel
     bufsize_t body_length = length > 6 ? length - 6 : 0;
     markdown_core_chunk body = markdown_core_inline_take(inline_state, pos + 3, body_length);
     markdown_core_inline_seek(inline_state, pos + length);
-    return markdown_core_comment_make_inline(inline_state, pos - 1, markdown_core_inline_offset(inline_state) - 1,
-                                             body);
-}
-
-/* THE PARTS OF A COMMENT (parts.h): its literal, the body between its
- * delimiters, after its opening `%%` or `<!--`. */
-void markdown_core_comment_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t from = 0;
-    if (n >= 4 && !memcmp(s, "<!--", 4)) {
-        from = 4;
-    } else {
-        while (from < n && from < 2 && s[from] == '%') {
-            from++;
-        }
+    markdown_core_node *node =
+        markdown_core_comment_make_inline(inline_state, pos - 1, markdown_core_inline_offset(inline_state) - 1, body);
+    if (node) {
+        const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
+        markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, pos + 3, pos + 3, true);
     }
-    /* Its literal in at most two parts, which part at a line's start. */
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_literal_halves(parts->node, parts->node->as.literal, markdown_core_comment_block_start(parts->node),
-                                 &front, &front_size, &back, &back_size);
-    from = markdown_core_parts_find(parts, from, front, front_size);
-    markdown_core_parts_find(parts, from, back, back_size);
+    return node;
 }

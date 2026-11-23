@@ -4,7 +4,6 @@
 #include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
-#include "parts.h"
 
 /* An inline note's bracket, opened by a `^[`: a body of its own
  * (bracket.h). */
@@ -187,13 +186,7 @@ static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
 };
 
-const markdown_core_facet MARKDOWN_CORE_FOOTNOTE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_FOOTNOTE, .parts = markdown_core_footnote_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
-    .facets = MARKDOWN_CORE_FOOTNOTE_FACETS,
     .edit = &FOOTNOTE_EDIT,
     .spaces = FOOTNOTE_SPACES,
     .name = "footnote",
@@ -273,6 +266,16 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
+            /* The call's label, after its caret, without the whitespace
+             * before its `]`. */
+            const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+            bufsize_t end = initial_pos - 1;
+            while (end > opener->position + 1 && markdown_core_is_whitespace(data[end - 1])) {
+                end--;
+            }
+            const markdown_core_field_to fields =
+                markdown_core_inline_fields(inline_state, markdown_core_scaffold_first(fnref));
+            markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_FOOTNOTE, opener->position + 1, end);
             /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
             const markdown_core_chunk defined = markdown_core_roster_label(definition);
@@ -343,6 +346,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         return false;
     }
 
+    const bufsize_t label = reader->nonspace + 2;
     markdown_core_reader_advance(reader, reader->nonspace + matched - reader->offset, false);
     /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
      * where its OPENING BRACKET was written. It used to start at the
@@ -362,6 +366,8 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * consumer's single map went with the association -- a
      * `Footnote` and a resolved `Link` are different values now. */
     markdown_core_node *footnote = *container;
+    const markdown_core_field_to fields = {parser, footnote, NULL, reader, 0, NULL};
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_FOOTNOTE, label, label + c.len);
     markdown_core_chunk normal = {0};
     /* The document defines this label from here on.
      *
@@ -410,23 +416,6 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
                                      markdown_core_reader *reader) {
     return markdown_core_reader_indented(reader, 4, true);
-}
-
-/* A definition's part: its label, inside `[^` and the `]` before its `:`. An
- * inline note has none. */
-void markdown_core_footnote_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    if (parts->length < 2 || text[0] != '[' || text[1] != '^') {
-        return;
-    }
-    for (bufsize_t at = 2; at < parts->length; at++) {
-        if (text[at] == '\\') {
-            at++;
-        } else if (text[at] == ']') {
-            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_FOOTNOTE, 2, at);
-            return;
-        }
-    }
 }
 
 /* A footnote definition's record (markdown_core_record_ops): the label it

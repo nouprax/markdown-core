@@ -3,7 +3,6 @@
 #include "formula.h"
 #include "element.h"
 #include "inline_internal.h"
-#include "parts.h"
 
 #include <assert.h>
 #include <string.h>
@@ -236,8 +235,10 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     /* The rest of the line, spaces and its ending, is the first line of
      * the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP): the literal, trimmed, starts past it. */
-    markdown_core_reader_advance(
-        reader, first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3) - reader->offset, false);
+    const int past = first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3);
+    const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, past, past, true);
+    markdown_core_reader_advance(reader, past - reader->offset, false);
     return node;
 }
 
@@ -614,6 +615,8 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
         return NULL;
     }
     markdown_core_inline_state_place(inline_state, formula, (int)start, (int)end - 1);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, formula);
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, from, from, true);
     return formula;
 }
 
@@ -705,6 +708,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_promote(const mark
         return;
     }
     markdown_core_attributes_free(&node->attributes);
+    /* The literal, trimmed, is found past the fence line; the info string
+     * is no field of a formula. */
+    markdown_core_node_keep_anchors(node, MARKDOWN_CORE_FIELD_FOUND);
     node->content_map = (markdown_core_content_map){0};
     markdown_core_node_set_element(node, formula->element);
     node->opaque = payload;
@@ -847,15 +853,8 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
 }
 
 const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_FORMULA,
-     .parts = markdown_core_formula_parts,
-     .literal = S_literal,
-     .placement = S_placement,
-     .words = S_words},
-    {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK,
-     .parts = markdown_core_formula_parts,
-     .literal = S_literal,
-     .placement = S_placement},
+    {.kind = MARKDOWN_CORE_KIND_FORMULA, .literal = S_literal, .placement = S_placement, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_FORMULA_BLOCK, .literal = S_literal, .placement = S_placement},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
@@ -870,36 +869,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .opens = &FORMULA_OPENS,
     .lines = &FORMULA_LINES,
 };
-
-/* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or
- * `$$`, `\(` or `\[`, or its fence line. A `$` past the opener is the
- * literal's: `$$$a$$$` is a standalone formula whose literal is `$a`. */
-void markdown_core_formula_parts(markdown_core_parts *parts) {
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t from = 0;
-    while (from < n && from < 2 && s[from] == '\\') {
-        from++;
-    }
-    from = from && from < n && (s[from] == '(' || s[from] == '[') ? from + 1 : 0;
-    if (!from && n && s[0] == '$') {
-        from = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_FORMULA_BLOCK ||
-                       markdown_core_elements_get_formula_mode((markdown_core_node *)parts->node) ==
-                           MARKDOWN_CORE_FORMULA_MODE_STANDALONE
-                   ? 2
-                   : 1;
-        from = from < n ? from : n;
-    }
-    /* A fence's line is the fence and the word that names a formula. */
-    if (n && (s[0] == '`' || s[0] == '~' || markdown_core_is_space_or_tab(s[0]))) {
-        while (from < n && !markdown_core_is_line_end(s[from])) {
-            from++;
-        }
-    }
-    /* Its literal in at most two parts, which part at a line's start. */
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_elements_formula_halves(parts->node, &front, &front_size, &back, &back_size);
-    from = markdown_core_parts_find(parts, from, front, front_size);
-    markdown_core_parts_find(parts, from, back, back_size);
-}

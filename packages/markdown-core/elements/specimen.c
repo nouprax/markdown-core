@@ -1,7 +1,6 @@
 #include "alloc.h"
 #include "specimen.h"
 #include "block_internal.h"
-#include "parts.h"
 
 const markdown_core_space MARKDOWN_CORE_SPECIMEN_SPACE = {.name = "specimen"};
 /* The spaces this element files labels in, as `self->spaces` numbers them. */
@@ -98,6 +97,14 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
                                         block_start *start) {
     bufsize_t matched = start->matched;
     markdown_core_specimen_value specimen = *MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_specimen_value);
+    /* Its start number, a field of no slot kind, and its label, after the
+     * `(` and the `@`. */
+    const bufsize_t digits = reader->nonspace + 1;
+    bufsize_t sign = digits;
+    while (markdown_core_isdigit(markdown_core_reader_peek(reader, sign))) {
+        sign++;
+    }
+    const bufsize_t label = specimen.label.has_value ? sign + 1 + specimen.label.value.len : sign + 1;
 
     if (specimen.label.has_value && !markdown_core_chunk_to_cstr(&specimen.label.value)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -116,6 +123,9 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         specimen.start = 0;
     }
     *(*container)->as.specimen = specimen;
+    const markdown_core_field_to fields = {parser, *container, NULL, reader, 0, NULL};
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, digits, sign);
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_SPECIMEN, sign + 1, label);
     markdown_core_specimen_state *state = self->state;
     /* A citation names a specimen by its label as written. */
     if (specimen.label.has_value &&
@@ -174,13 +184,7 @@ static const markdown_core_line_ops SPECIMEN_LINES = {
     .prefix = continue_container,
 };
 
-const markdown_core_facet MARKDOWN_CORE_SPECIMEN_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_SPECIMEN, .parts = markdown_core_specimen_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
-    .facets = MARKDOWN_CORE_SPECIMEN_FACETS,
     .edit = &SPECIMEN_EDIT,
     .name = "specimen",
     .spaces = SPECIMEN_SPACES,
@@ -188,31 +192,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .opens = &SPECIMEN_OPENS,
     .lines = &SPECIMEN_LINES,
 };
-
-/* A specimen's parts: its start number, a field of no slot kind, and its
- * label, between the `@` and the `)`. */
-void markdown_core_specimen_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    bufsize_t at = 0;
-    while (at < parts->length && text[at] != '(') {
-        at++;
-    }
-    const bufsize_t digits = ++at;
-    while (at < parts->length && markdown_core_isdigit(text[at])) {
-        at++;
-    }
-    if (at >= parts->length || text[at] != '@') {
-        return;
-    }
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, digits, at);
-    const bufsize_t label = ++at;
-    while (at < parts->length && text[at] != ')') {
-        at++;
-    }
-    if (at < parts->length) {
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_SPECIMEN, label, at);
-    }
-}
 
 /* A specimen definition's record (markdown_core_record_ops): its label. */
 static void free_specimen(markdown_core_node_pool *pool, markdown_core_node *node) {

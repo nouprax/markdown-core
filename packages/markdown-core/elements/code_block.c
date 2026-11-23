@@ -3,7 +3,6 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "sink.h"
-#include "parts.h"
 #include "attributes.h"
 #include <string.h>
 
@@ -263,7 +262,9 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
     /* The line's end is offered (element.h, markdown_core_follow): the
      * info string ends where what is taken begins. */
     const bufsize_t offset = reader->offset;
-    bufsize_t info_end = pos - markdown_core_parser_offer(parser, b, rest - offset, offset, offset + pos, true);
+    const markdown_core_field_to fields = {parser, b, NULL, reader, 0, NULL};
+    bufsize_t info_end =
+        pos - markdown_core_parser_offer(parser, b, rest - offset, offset, offset + pos, true, &fields);
     if (parser->sink) {
         S_report_info(self, parser, reader, rest, pos);
     }
@@ -276,6 +277,11 @@ static void S_fence_info(const markdown_core_element_instance *self, markdown_co
     while (info_end > info_start && markdown_core_is_space_or_tab(rest[info_end - 1])) {
         info_end--;
     }
+    /* The info string as written is the block's field; its literal starts
+     * on the line after the fence's. */
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_INFO, offset + info_start, offset + info_end);
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_LINES, offset + pos, offset + pos,
+                            false);
     markdown_core_decoder_write(self->needs[CODE_BLOCK_REFERENCES], &tmp, rest + info_start, info_end - info_start);
     markdown_core_decoder_strip(self->needs[CODE_BLOCK_ESCAPES], &tmp);
     /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
@@ -340,6 +346,10 @@ static bool open_indented(const markdown_core_element_instance *self, markdown_c
      * string, ever. */
     (*container)->as.code->info = markdown_core_optional_chunk_absent();
     (*container)->as.code->literal_start = 0;
+    /* Its literal starts where it does. */
+    const markdown_core_field_to fields = {parser, *container, NULL, reader, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_LINES, reader->offset, reader->offset,
+                            false);
 
     return true;
 }
@@ -380,43 +390,6 @@ static void reopen_code(const markdown_core_element_instance *self, markdown_cor
     (void)blank;
     node->as.code->fence_closed = false;
 }
-/* THE PARTS OF A CODE BLOCK (parts.h): a fenced block's info string, the
- * rest of its fence line less the attribute tail and the spaces around it,
- * as S_fence_info reads it, and the tail; and its literal. */
-void markdown_core_code_block_parts(markdown_core_parts *parts) {
-    const markdown_core_code *code = parts->node->as.code;
-    const unsigned char *s = parts->text;
-    const bufsize_t n = parts->length;
-    bufsize_t at = 0;
-    if (code->fenced) {
-        while (at < n && markdown_core_is_space_or_tab(s[at])) {
-            at++;
-        }
-        while (at < n && s[at] == code->fence_char) {
-            at++;
-        }
-        bufsize_t eol = at;
-        while (eol < n && !markdown_core_is_line_end(s[eol])) {
-            eol++;
-        }
-        bufsize_t end = markdown_core_attributes_tail_parts(parts, at, eol);
-        while (at < end && markdown_core_is_space_or_tab(s[at])) {
-            at++;
-        }
-        while (end > at && markdown_core_is_space_or_tab(s[end - 1])) {
-            end--;
-        }
-        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_INFO, at, end);
-        at = eol + (eol < n && s[eol] == '\r' && eol + 1 < n && s[eol + 1] == '\n') + (eol < n);
-    }
-    /* Its literal in at most two parts, which part at a line's start. */
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_literal_halves(parts->node, &code->literal, code->literal_start, &front, &front_size, &back,
-                                 &back_size);
-    at = markdown_core_parts_lines(parts, at, front, front_size);
-    markdown_core_parts_lines(parts, at, back, back_size);
-}
 
 /* A fenced block an edit's reading closes as it did (blocks.c, THE SPLICE
  * IN A BLOCK) met its closing fence as it did: the fence closed it when the
@@ -451,8 +424,14 @@ static const markdown_core_line_ops CODE_BLOCK_LINES = {
     .blank_last = blank_line,
 };
 
+/* A code block's literal (element.h, markdown_core_facet `literal`). */
+static markdown_core_chunk *S_literal(const markdown_core_node *node, bufsize_t *start) {
+    *start = node->as.code->literal_start;
+    return &node->as.code->literal;
+}
+
 const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CODE_BLOCK, .parts = markdown_core_code_block_parts},
+    {.kind = MARKDOWN_CORE_KIND_CODE_BLOCK, .literal = S_literal},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 

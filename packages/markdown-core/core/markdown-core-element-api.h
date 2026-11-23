@@ -428,6 +428,45 @@ const markdown_core_element_instance *markdown_core_parser_instance(const markdo
  * begins. False, leaving `*place` as it is, when the map places no byte. */
 bool markdown_core_text_place(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t from,
                               bufsize_t to, markdown_core_place *place);
+/* WHERE A READING'S FIELDS GO (core-element-decoupling.md 8.3). A reading
+ * names a field of the node it makes as it reads it, by its own offsets,
+ * and the engine places them in the source and keeps them on the node
+ * (node.h, markdown_core_fields), which every query of the node's fields
+ * and markers then reads: no grammar reads the node again. The offsets are
+ * those of the text `map` places, or, with no map, those of the line in
+ * hand `reader` reads, or, with neither, the source's own; `base` is added
+ * to each. A target with no node or no parser adds nothing. */
+struct markdown_core_reader;
+typedef struct markdown_core_field_to {
+    markdown_core_parser *parser;
+    struct markdown_core_node *node;
+    const markdown_core_content_map *map;
+    const struct markdown_core_reader *reader;
+    bufsize_t base;
+    /* The inline run reading `map`'s text, whose frame places a field on
+     * the run its cursor is on by arithmetic (inline_internal.h). */
+    const struct markdown_core_inline_state *run;
+} markdown_core_field_to;
+/* Adds the bytes `from` up to `end` as `to`'s node's field of slot kind
+ * `slot`, a markdown_core_slot_kind (NONE for a field no slot kind names).
+ * An empty range adds nothing; with the parse failed when storage could
+ * not be had. */
+void markdown_core_field_add(const markdown_core_field_to *to, int slot, bufsize_t from, bufsize_t end);
+/* A field a reading noted, to be added with the others it read at once
+ * (markdown_core_field_many): its bytes and its slot kind. */
+typedef struct markdown_core_field_spot {
+    bufsize_t from, end;
+    int slot;
+} markdown_core_field_spot;
+/* Adds each of the `count` fields at `spots`, as markdown_core_field_add
+ * would one by one. */
+void markdown_core_field_many(const markdown_core_field_to *to, const markdown_core_field_spot *spots, size_t count);
+/* The same, read as `how` says (node.h, markdown_core_fields): a field
+ * lent to the node's holder, or where its literal starts; one `unique`
+ * replaces the node's earlier field of its slot read so, as a reading of
+ * the node again reads it again. */
+void markdown_core_field_put(const markdown_core_field_to *to, int slot, int how, bufsize_t from, bufsize_t end,
+                             bool unique);
 /* The input line, counted from 1, byte `at` of the text `map` places was
  * read from: 0 when the map places no byte. */
 int markdown_core_text_line(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t at);

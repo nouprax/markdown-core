@@ -299,6 +299,44 @@ typedef struct markdown_core_runs {
     markdown_core_run items[];
 } markdown_core_runs;
 
+/* THE FIELDS A NODE'S READING READ (core-element-decoupling.md 8.3): the
+ * bytes of its source that a field of slot kind `slot` holds, as written,
+ * escapes and references included, without the quotes, brackets or sigil
+ * around it; NONE for a field no slot kind names (a title). How each is
+ * read (`how`):
+ *
+ *   FIELD    -- the node's own field.
+ *   LENT     -- a field of the node that holds this one, which takes it as
+ *               its own (a list item's block identifier, written at its
+ *               first paragraph's end): neither this node's field nor its
+ *               marker.
+ *   LINES    -- where the node's literal starts (`end` unused): its field of
+ *   FOUND       no slot kind is its literal, which a query places in its
+ *               source from there line by line, each line the tail of the
+ *               source's (LINES: a code block, which strips each line's
+ *               indentation) or the first place that holds it (FOUND: a
+ *               comment or a formula), so that a block an edit reads in
+ *               place keeps it as its literal changes.
+ *
+ * The parse adds each as it reads it (markdown_core_field_add), `raw`: in
+ * the source, or, for an inline node, in the content of its inline root,
+ * as its place is. Publishing the node measures each from where its source
+ * starts, as its runs, so that a node kept whole as text before it moves
+ * keeps them. A node with none holds no list. Storage the node owns
+ * (markdown_core_node_pool_bytes). */
+enum { MARKDOWN_CORE_FIELD = 0, MARKDOWN_CORE_FIELD_LENT, MARKDOWN_CORE_FIELD_LINES, MARKDOWN_CORE_FIELD_FOUND };
+
+typedef struct markdown_core_written {
+    uint32_t start, end;
+    uint8_t slot, how;
+    bool raw;
+} markdown_core_written;
+
+typedef struct markdown_core_fields {
+    uint32_t count;
+    markdown_core_written items[];
+} markdown_core_fields;
+
 /* A node's places while the parse builds the tree, and its runs once it is
  * published. */
 typedef union {
@@ -444,6 +482,8 @@ struct markdown_core_node {
     markdown_core_content_map content_map;
     /* Its places, then its runs (markdown_core_node_source). */
     markdown_core_node_source source;
+    /* Its fields' bytes, or NULL (markdown_core_fields). */
+    markdown_core_fields *fields;
 
     const markdown_core_element *element;
     /* Element-owned data, made by its element's payload `init` and released
@@ -817,6 +857,26 @@ static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool,
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
+
+/* Adds to `node`'s fields (markdown_core_fields) the bytes `start` up to
+ * `end`, raw, of slot kind `slot`, read as `how` says: false when storage
+ * could not be had. An empty range adds nothing but a literal's start. A
+ * slot `unique` keeps one field: the node's earlier field of that slot is
+ * replaced, as a reading of it again reads it again. */
+bool markdown_core_node_add_field(markdown_core_node_pool *pool, markdown_core_node *node, uint8_t slot, uint8_t how,
+                                  uint32_t start, uint32_t end, bool unique);
+/* Drops `node`'s fields, as a reading of it begins again. */
+/* Room for `count` more fields after the node's, which the caller writes
+ * and counts: NULL when storage could not be had. */
+markdown_core_written *markdown_core_node_field_room(markdown_core_node_pool *pool, markdown_core_node *node,
+                                                     uint32_t count);
+void markdown_core_node_drop_fields(markdown_core_node_pool *pool, markdown_core_node *node);
+/* Drops `node`'s fields of the slot kinds `slots` has the bits of: what a
+ * reading that is undone wrote. */
+void markdown_core_node_drop_slots(markdown_core_node *node, uint32_t slots);
+/* Keeps only `node`'s literal anchors, each now read as `how`: a node whose
+ * kind changes to one that reads none of the other fields. */
+void markdown_core_node_keep_anchors(markdown_core_node *node, uint8_t how);
 
 /* A label in storage of the pool's, `length` bytes and a NUL, copied into
  * storage of `pool`'s, as a view's record copies the labels it holds

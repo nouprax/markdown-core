@@ -999,9 +999,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_place
  * root whose places the walk holds, cut from the walk's pool, and its
  * source `window`. False when they could not be allocated. */
 static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *node, markdown_core_place place,
-                                       uint32_t anchor, markdown_core_place *window) {
+                                       uint32_t anchor, markdown_core_place *window, const content_place **at) {
     assert(!node->source.places);
     const inline_span span = inline_span_of(&walk->places, place);
+    *at = span.at;
     markdown_core_runs *runs = markdown_core_node_pool_bytes(walk->pool, runs_bytes((uint32_t)(span.to - span.at + 1)));
     if (!runs) {
         return false;
@@ -1037,6 +1038,42 @@ static inline bool publish_list(publish_walk *walk, markdown_core_node *node, ui
                                               walk->decided != DECIDED || publish_keep(walk, table, values->count - 1));
 }
 
+/* The fields the parse read raw (node.h, markdown_core_fields), measured
+ * from `source`, where the node's source starts, as its runs are: an inline
+ * node's, `content`, in the content of the root whose places the walk
+ * holds, as its place is, and a block's in the source. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void publish_fields(publish_walk *walk, markdown_core_node *node,
+                                                               bool content, uint32_t source, const content_place *at) {
+    markdown_core_fields *fields = node->fields;
+    for (uint32_t i = 0; i < fields->count; i++) {
+        markdown_core_written *field = &fields->items[i];
+        if (!field->raw) {
+            continue;
+        }
+        markdown_core_place range = {field->start, field->end};
+        if (content) {
+            /* A field in one place the content copies is that place's
+             * bytes, at the place the field before it was in or found by
+             * a search; any other is its runs' window. */
+            if (!at || range.start < at->content || range.start >= at->content + at->length) {
+                at = content_place_at(&walk->places, range.start);
+            }
+            if (content_place_copied(at) && at->content <= range.start && range.end <= at->content + at->length) {
+                range = (markdown_core_place){at->start + (range.start - at->content),
+                                              at->start + (range.end - at->content)};
+            } else {
+                range = inline_runs(&walk->places, inline_span_of(&walk->places, range), 0, NULL);
+            }
+            if (field->how == MARKDOWN_CORE_FIELD_LINES || field->how == MARKDOWN_CORE_FIELD_FOUND) {
+                range.end = range.start;
+            }
+        }
+        field->start = range.start - source;
+        field->end = range.end - source;
+        field->raw = false;
+    }
+}
+
 /* Gives `node`, of slot `slot`, its extent against the relation in hand and
  * its runs, and records it in its lookup table when its slot says the tables
  * find it, at its source start. Its place is in the content of the root whose
@@ -1050,8 +1087,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
         (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)hand->anchor), place.end - place.start};
     placed->place = place;
     placed->root = false;
+    /* The content place the node starts in, where its fields look first. */
+    const content_place *at = NULL;
     if (content) {
-        if (!publish_inline_runs(walk, node, place, hand->source, &placed->source)) {
+        if (!publish_inline_runs(walk, node, place, hand->source, &placed->source, &at)) {
             return false;
         }
     } else {
@@ -1070,6 +1109,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
                    : !publish_range_run(walk->pool, node, place, hand->source)) {
             return false;
         }
+    }
+    if (node->fields) {
+        publish_fields(walk, node, content, placed->source.start, at);
     }
     return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
 }

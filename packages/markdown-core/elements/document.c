@@ -1,5 +1,4 @@
 #include "alloc.h"
-#include "parts.h"
 #include "document.h"
 #include "block_internal.h"
 #include "ast_internal.h"
@@ -114,13 +113,7 @@ static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .size = sizeof(document_call),
 };
 
-const markdown_core_facet MARKDOWN_CORE_DOCUMENT_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_METADATA, .parts = markdown_core_metadata_parts},
-    {.kind = MARKDOWN_CORE_KIND_NONE},
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
-    .facets = MARKDOWN_CORE_DOCUMENT_FACETS,
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",
     .edit = &DOCUMENT_EDIT,

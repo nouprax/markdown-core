@@ -24,6 +24,10 @@ typedef struct markdown_core_attribute_scratch {
         bufsize_t value, value_length;
     } *members;
     size_t member_count, member_capacity;
+    /* Where the last parse read each member, in the parsed bytes, as the
+     * field it is (markdown_core_attributes_fields). */
+    markdown_core_field_spot *places;
+    size_t place_count, place_capacity;
     /* The bytes every recogniser that borrowed this workspace examined, each
      * added once as that recogniser is released, for the attribute grammar's
      * complexity gate. */
@@ -56,16 +60,10 @@ bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *parser, 
  * sticky in parser->oom and never becomes a grammar fallback. */
 int markdown_core_attributes_parse(markdown_core_attribute_parser *parser, bufsize_t start,
                                    markdown_core_attributes *result, bufsize_t *end);
+/* The members the last parse read, as fields where `to` has them go
+ * (markdown_core_field_to), in the parsed bytes' offsets. */
+void markdown_core_attributes_fields(const markdown_core_attribute_parser *parser, const markdown_core_field_to *to);
 
-/* THE PARTS OF AN ATTRIBUTE BLOCK (parts.h) in a node of another kind:
- * those of the container whose `{` is at `brace`, one past its `}`, or
- * `brace` when none closes there; and those of the container that ends a
- * block's line at `end`, but for spaces and tabs, read after `from` as the
- * block's tail was taken (core/element.h, markdown_core_follow): its `{`,
- * or the end of the line's other bytes when it has none. */
-struct markdown_core_parts;
-bufsize_t markdown_core_attributes_parts(struct markdown_core_parts *parts, bufsize_t brace);
-bufsize_t markdown_core_attributes_tail_parts(struct markdown_core_parts *parts, bufsize_t from, bufsize_t end);
 /* The workspace a recognizer of the parse borrows: the attribute element's
  * (`scratch`). */
 markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self);

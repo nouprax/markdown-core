@@ -140,6 +140,8 @@ typedef struct markdown_core_attribute_parser {
  * `report`: the blocks a block of kind `owner` may open on the line `line`
  * being read, at or after `from`, that the line's end at `end` leaves open,
  * to the parse's context sink; whether there is one.
+ * `fields`: the members the last `parse` of `p` read, as the fields of
+ * the node `to` names, the parsed bytes' offsets placed as it places them.
  * `member`: the member a block that does not close is in at its end, the
  * block's `{` at `start` of the `size` bytes at `data`, into `field`;
  * false when it is no block whatever follows. `memo`, or NULL, is shared by
@@ -159,6 +161,8 @@ typedef struct markdown_core_attribute_ops {
                    markdown_core_node_kind owner, const unsigned char *line, bufsize_t from, bufsize_t end);
     bool (*member)(const markdown_core_element_instance *self, const unsigned char *data, bufsize_t size,
                    bufsize_t start, struct markdown_core_field *field, struct markdown_core_member_memo *memo);
+    void (*fields)(const markdown_core_element_instance *self, const markdown_core_attribute_parser *p,
+                   const markdown_core_field_to *to);
 } markdown_core_attribute_ops;
 
 #define MARKDOWN_CORE_SERVICE_ATTRIBUTES "attributes"
