@@ -67,7 +67,10 @@ static const markdown_core_edit_ops PARAGRAPH_EDIT = {
 static const markdown_core_node_type PARAGRAPH_LEADERS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_CALLOUT,
                                                             MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_follow PARAGRAPH_FOLLOWS[] = {
-    {.at = MARKDOWN_CORE_FOLLOW_LINE, .kinds = PARAGRAPH_LEADERS, .closed = true},
+    {.at = MARKDOWN_CORE_FOLLOW_LINE,
+     .kinds = PARAGRAPH_LEADERS,
+     .closed = true,
+     .writes = markdown_core_block_identifier_writes},
     {0},
 };
 

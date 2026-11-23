@@ -8,6 +8,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
+#include "utf8.h"
 #include "markdown-core-elements.h"
 #include "heading.h"
 #include "markdown-core-elements.h"
@@ -1789,8 +1790,27 @@ void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_cor
     }
 }
 
+/* The field among `block`'s relations of the one `holder` holds: its
+ * children's when `holder` is the block, or a field root's, as a callout's
+ * title. */
+static uint32_t holder_field(const markdown_core_node *block, const markdown_core_node *holder) {
+    markdown_core_relation_cursor cursor;
+    markdown_core_relation relation;
+    markdown_core_relations_begin(&cursor, block);
+    while (markdown_core_relations_next(&cursor, &relation)) {
+        if (relation.holder == holder) {
+            return cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
+        }
+    }
+    return 0;
+}
+
+/* The field of the children of `block` among its relations. */
+static inline uint32_t children_field(const markdown_core_node *block) { return holder_field(block, block); }
+
 bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
-                                     markdown_core_node *const *nodes, uint32_t count, uint32_t source) {
+                                     const markdown_core_node *holder, markdown_core_node *const *nodes, uint32_t count,
+                                     uint32_t source) {
     markdown_core_tail_records *records = &parser->stream->records;
     /* The owner's record: the chain's deepest block's is the one the reopen
      * gave it (reopen_chain), and any other is found among them all. */
@@ -1814,6 +1834,7 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
      * children it keeps end (blocks.c, THE SEAMS), each other from where
      * the one before ends. */
     uint32_t i = 0, first = 0, last = 0;
+    const uint32_t field = owner ? holder_field(root, holder) : 0;
     source += root->place.start;
     bool kept = true;
     for (; owner && i < count && nodes[i]->id; i++) {
@@ -1824,8 +1845,12 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
         }
         const markdown_core_place window = runs_window(nodes[i], source);
         source = window.end;
-        records->items[at - 1] = (markdown_core_tail_record){
-            .node = nodes[i], .id = nodes[i]->id, .start = window.start, .end = window.end, .kind = nodes[i]->kind};
+        records->items[at - 1] = (markdown_core_tail_record){.node = nodes[i],
+                                                             .id = nodes[i]->id,
+                                                             .start = window.start,
+                                                             .end = window.end,
+                                                             .field = field,
+                                                             .kind = nodes[i]->kind};
         if (last) {
             records->items[last - 1].next = at;
         } else {
@@ -3527,19 +3552,6 @@ static bool reopen_chain(markdown_core_tail_records *records, const markdown_cor
     return true;
 }
 
-/* The field of the children of `block` among its relations. */
-static uint32_t children_field(const markdown_core_node *block) {
-    markdown_core_relation_cursor cursor;
-    markdown_core_relation relation;
-    markdown_core_relations_begin(&cursor, block);
-    while (markdown_core_relations_next(&cursor, &relation)) {
-        if (relation.holder == block) {
-            return cursor.shape == SHAPE_CHILDREN ? 0 : (uint32_t)relation_field(&cursor);
-        }
-    }
-    return 0;
-}
-
 /* The records of the old children of the chain the reading passed, those
  * before the first it took back, or all of them, in the order of the text,
  * each after the record of the next block of the chain below its block's,
@@ -3563,6 +3575,14 @@ static bool record_nest(markdown_core_parser *parser) {
         const bool bodies = holds_bodies(block);
         const uint32_t field = body || bodies ? 1 : children_field(block);
         uint32_t last = carried ? carried : level + 1 < edit->depth ? edit->owners[level + 1] : 0;
+        /* The deepest block's records of a field its reading made again
+         * come first, the field before its children (blocks.c,
+         * THE TEXT OF ITS LINE). */
+        if (!last) {
+            for (uint32_t at = records->items[edit->owners[level] - 1].held; at; at = records->items[at - 1].next) {
+                last = at;
+            }
+        }
         carried = 0;
         uint32_t before = level + 1 < edit->depth ? edit->ends[level + 1] : edit->places[level].prior;
         for (uint32_t i = 0; i < edit->levels[level].held && edit->nest_recorded < end; i++) {
@@ -3659,8 +3679,8 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
          * PARAGRAPH). */
         const bool aside = edit->leap && edit->leap->kept;
         if (ok && !aside && !edit->levels[edit->depth - 1].held && deepest->child_count > kept) {
-            ok = markdown_core_publish_keep_left(parser, deepest, deepest->children + kept, deepest->child_count - kept,
-                                                 kept ? edit->leap->seam.source : 0);
+            ok = markdown_core_publish_keep_left(parser, deepest, deepest, deepest->children + kept,
+                                                 deepest->child_count - kept, kept ? edit->leap->seam.source : 0);
             deepest->child_count = kept;
             /* None kept: the reading settles its new children into an array
              * of its own (blocks.c, S_settle_scaffold). */
@@ -4186,15 +4206,7 @@ static size_t source_line_of(const markdown_core_source_lines *lines, size_t off
 /* The columns between two offsets of one line, in `unit`. A UTF-8 byte that
  * begins a four-byte scalar is two UTF-16 units; a continuation byte is none. */
 static size_t source_columns(const uint8_t *source, size_t from, size_t to, markdown_core_text_unit unit) {
-    if (unit == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
-        return to - from;
-    }
-    size_t units = 0;
-    for (size_t i = from; i < to; i++) {
-        uint8_t byte = source[i];
-        units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
-    }
-    return units;
+    return markdown_core_utf8_columns(source, from, to, unit != MARKDOWN_CORE_TEXT_UNIT_UTF8);
 }
 
 /* A byte range as editor coordinates: the start is the position of its first
@@ -4310,22 +4322,8 @@ bool markdown_core_position_offset(const markdown_core_source_lines *lines, cons
 
 bool markdown_core_column_offset(const uint8_t *source, size_t at, size_t end, int32_t column,
                                  markdown_core_text_unit unit, bool cursor, size_t *offset) {
-    if (cursor) {
-        while (end > at && (source[end - 1] == '\n' || source[end - 1] == '\r')) {
-            end--;
-        }
-    }
-    int64_t walked = 1;
-    while (walked < column && at < end) {
-        size_t next = at + 1;
-        while (next < end && (source[next] & 0xC0) == 0x80) {
-            next++;
-        }
-        walked += (int64_t)source_columns(source, at, next, unit);
-        at = next;
-    }
-    *offset = at;
-    return walked == column && (cursor ? at <= end : at < end);
+    return markdown_core_utf8_column_offset(source, at, end, column, unit != MARKDOWN_CORE_TEXT_UNIT_UTF8, cursor,
+                                            offset);
 }
 
 /* THE NODES THAT HOLD A BYTE: every node one of whose source ranges holds

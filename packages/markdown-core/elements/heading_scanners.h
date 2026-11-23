@@ -5,7 +5,6 @@
 extern "C" {
 #endif
 bufsize_t scan_atx_heading_start(const unsigned char *data, bufsize_t length, bufsize_t offset);
-bufsize_t scan_setext_heading_line(const unsigned char *data, bufsize_t length, bufsize_t offset);
 #ifdef __cplusplus
 }
 #endif

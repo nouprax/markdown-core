@@ -3,6 +3,8 @@
 #include "block_internal.h"
 #include "parts.h"
 
+MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_specimen_value, specimen_marker_fits);
+
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
                                                            markdown_core_reader *reader, bufsize_t pos,
                                                            markdown_core_specimen_value *value);
@@ -90,7 +92,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
                                         markdown_core_node **container, markdown_core_reader *reader,
                                         block_start *start) {
     bufsize_t matched = start->matched;
-    markdown_core_specimen_value specimen = start->specimen;
+    markdown_core_specimen_value specimen = *MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_specimen_value);
 
     if (specimen.label.has_value && !markdown_core_chunk_to_cstr(&specimen.label.value)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -132,7 +134,8 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
     markdown_core_reader *reader = context->reader;
     int first = reader->nonspace;
     if (!(!context->paragraph &&
-          (start->matched = markdown_core_block_parse_specimen_marker(self->state, reader, first, &start->specimen)))) {
+          (start->matched = markdown_core_block_parse_specimen_marker(
+               self->state, reader, first, MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_specimen_value))))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;

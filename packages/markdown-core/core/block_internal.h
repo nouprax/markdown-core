@@ -63,15 +63,17 @@ typedef struct markdown_core_block_start_context {
     bufsize_t thematic_kill;
 } block_start_context;
 
-/* What a callout's scan found after its marker (callout.c): a header
- * `[!variant]`, its fold and title, and where a variant the line's end cuts
- * short stands, -1 for none, which its open reports. */
-typedef struct {
-    bufsize_t variant, variant_end, title, title_end, report;
-    bool metadata, fold, collapsed;
-    /* Where the marker's motion leaves the reader. */
-    markdown_core_reader_mark after;
-} markdown_core_callout_header;
+/* WHAT THE SCAN FOUND: the claiming owner's own record of what its scan
+ * read, which its open builds from -- a list's marker, a specimen's label, a
+ * callout's header -- in a layout only the element knows. The scan writes it
+ * before its `open` reads it, and the engine never reads it. An element
+ * names it as its type with MARKDOWN_CORE_BLOCK_FOUND, and holds at build
+ * time that the type fits (MARKDOWN_CORE_BLOCK_FOUND_FITS). */
+#define MARKDOWN_CORE_BLOCK_FOUND_SIZE 64
+#define MARKDOWN_CORE_BLOCK_FOUND(start, type) ((type *)(void *)(start)->found.bytes)
+/* C99 has no _Static_assert: an array of negative size fails the build. */
+#define MARKDOWN_CORE_BLOCK_FOUND_FITS(type, name)                                                                     \
+    typedef char name[sizeof(type) <= MARKDOWN_CORE_BLOCK_FOUND_SIZE ? 1 : -1]
 
 typedef struct markdown_core_block_start {
     /* The claiming owner's open, and the owner itself, which the dispatcher
@@ -88,9 +90,12 @@ typedef struct markdown_core_block_start {
     const markdown_core_element_instance *owner;
     markdown_core_node_type kind;
     bufsize_t matched;
-    markdown_core_list list;
-    markdown_core_specimen_value specimen;
-    markdown_core_callout_header callout;
+    union {
+        void *pointer;
+        uint64_t whole;
+        double real;
+        unsigned char bytes[MARKDOWN_CORE_BLOCK_FOUND_SIZE];
+    } found;
 } block_start;
 int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
 /* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */

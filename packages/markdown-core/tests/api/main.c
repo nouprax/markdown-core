@@ -2386,6 +2386,30 @@ static void void_source_continues(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* A column names a place the walk over a line's scalars stops at
+ * (ast.c, markdown_core_column_offset): the line's first byte is one,
+ * whatever it is, a stray continuation byte too, so an edit there inserts
+ * before it, in either unit; a column inside a scalar names none. */
+static void stray_byte_columns(test_batch_runner *runner) {
+    static const char text[] = "\x80x\n\xc3\xa9";
+    const markdown_core_text_unit units[] = {MARKDOWN_CORE_TEXT_UNIT_UTF8, MARKDOWN_CORE_TEXT_UNIT_UTF16};
+    for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
+        markdown_core_session *session;
+        const markdown_core_document *document;
+        EXPECT_OK(markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, units[i], &session));
+        EXPECT_OK(markdown_core_session_flush(session, &document));
+        const markdown_core_position first = {1, 1};
+        INT_EQ(runner, markdown_core_session_edit(session, first, first, (const uint8_t *)"a", 1, &document),
+               MARKDOWN_CORE_OK, "an edit at a line's stray first byte inserts before it, unit %zu", i);
+        if (units[i] == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
+            const markdown_core_position inside = {2, 2};
+            INT_EQ(runner, markdown_core_session_edit(session, inside, inside, (const uint8_t *)"a", 1, &document),
+                   MARKDOWN_CORE_OUT_OF_BOUNDS, "a byte column inside a scalar names no place");
+        }
+        markdown_core_session_close(session);
+    }
+}
+
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -7866,7 +7890,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_html_block_end_5, "x]]>", -1},
                  {scan_link_title, "\"title\"", -1},
                  {scan_atx_heading_start, "## ", -1},
-                 {scan_setext_heading_line, "---\n", 2},
                  {scan_open_code_fence, "```lang\n", 3},
                  {scan_close_code_fence, "``` \n", 3},
                  {scan_entity, "&amp;", -1},
@@ -8495,8 +8518,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 20,
-           "ordinary physical geometry and the line look occupy twenty bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 24,
+           "ordinary physical geometry, the line look and how far the line decided occupy twenty-four bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -10674,6 +10697,77 @@ static void session_locates_unclosed_openers(test_batch_runner *runner) {
        at.column);
 }
 
+/* An edit under an unclosed opener whose look for its closer read the
+ * lines to the text's end in leaps no old line of the leaf it reopened:
+ * the lines read in are the new text's, and a locate after the edit at
+ * each place of the text is the document query (THE LEAP). */
+static void session_locates_after_looked_edit(test_batch_runner *runner) {
+    static const char source[] = "a\n%%\nb\ny\nm\n|\n- b\n\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                          &session) == MARKDOWN_CORE_OK &&
+                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+                markdown_core_session_edit(session, (markdown_core_position){3, 1}, (markdown_core_position){4, 1},
+                                           (const uint8_t *)"|", 1, &document) == MARKDOWN_CORE_OK;
+    markdown_core_position at = {1, 1};
+    for (const char *c = "a\n%%\n|y\nm\n|\n- b\n\n"; same && *c; c++) {
+        same = markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK && session_as_queried(session, at);
+        if (*c == '\n') {
+            at = (markdown_core_position){at.line + 1, 1};
+        } else {
+            at.column++;
+        }
+    }
+    markdown_core_session_close(session);
+    OK(runner, same, "a locate after an edit under an unclosed opener is the document query, at %d:%d", at.line,
+       at.column);
+}
+
+/* A nested opener a candidate rejected as the text ended read the end: a
+ * closer appended after it, past the paragraph it continued, makes the
+ * opener a block of its own, as a parse does (blocks.c, S_candidates_end). */
+static void session_edits_after_nested_opener(test_batch_runner *runner) {
+    static const char *const sources[] = {":::note\nx\n%%\n", "> x\n> %%\n"};
+    static const char *const closers[] = {"%%\n", "> %%\n"};
+    static const markdown_core_position ends[] = {{4, 1}, {3, 1}};
+    bool same = true;
+    for (size_t i = 0; same && i < 2; i++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        same = markdown_core_session_new((const uint8_t *)sources[i], strlen(sources[i]), MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                         &session) == MARKDOWN_CORE_OK &&
+               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+               markdown_core_session_edit(session, ends[i], ends[i], (const uint8_t *)closers[i], strlen(closers[i]),
+                                          &document) == MARKDOWN_CORE_OK &&
+               session_as_parsed(session);
+        markdown_core_session_close(session);
+    }
+    OK(runner, same, "a closer appended after a nested opener rejected at the text's end reads as a parse");
+}
+
+/* A line whose first reading looked past its end, a term at the next line's
+ * marker, keeps that it did through an edit that reads on inside it (blocks.c,
+ * A REST INSIDE A LINE): a later edit that ends the line elsewhere reads it
+ * again from its start, as a parse does. */
+static void session_edits_keep_term_look(test_batch_runner *runner) {
+    static const char source[] = "abcdef\nx\n::\n\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    const bool same =
+        markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+            MARKDOWN_CORE_OK &&
+        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_edit(session, (markdown_core_position){1, 5}, (markdown_core_position){1, 6},
+                                   (const uint8_t *)"d", 1, &document) == MARKDOWN_CORE_OK &&
+        session_as_parsed(session) &&
+        markdown_core_session_edit(session, (markdown_core_position){1, 4}, (markdown_core_position){3, 2},
+                                   (const uint8_t *)"\n", 1, &document) == MARKDOWN_CORE_OK &&
+        session_as_parsed(session);
+    markdown_core_session_close(session);
+    OK(runner, same, "a term's look past its line holds through an edit inside the line");
+}
+
 /* A long list, and a long one nested in one of its items, find the rest
  * point of a line by the widths of their items and fold the items kept
  * from the marks of the chunks before (session.c, THE NESTS): a locate at
@@ -12134,6 +12228,14 @@ static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runne
         LINES "a [use][label] here *x* and\nmore *y* words\n\n[label]: /url\n",
         LINES LINES "- item *one*\n- item *two*\n",
         LINES "with trailing *spaces*   \nand *more*\r\nlines *crlf*\r\n",
+        /* After a block that holds blocks, the line after its last and the
+         * line after blank lines past it may go on in it. */
+        "- one *a*\n\n- two *b*\n\n\n- three\n  - four *c*\n\n  - five\n\nafter *d*\n",
+        "1) one\n2) two\n\n   more *x*\n3) three\n\n\nnot *in*\n- y\n",
+        "> quote *a*\n> more\n\n> again\nlazy *b*\n\nout\n",
+        "- a\n  > q\n\n  > r\n- b\n\n  ```\n  code\n\n  ```\n\ntail\n",
+        /* Columns of scalars of two, three and four bytes. */
+        "\xc3\xa9t\xc3\xa9 *\xe2\x82\xac* \xf0\x9f\x98\x80 x\n- \xc3\xa9 *y*\n\n- \xe2\x82\xac\n",
     };
     static const size_t steps[] = {1, 3, 2, 5, 1, 4, 7, 2};
     for (size_t s = 0; s < sizeof(sources) / sizeof(*sources); s++) {
@@ -12855,6 +12957,7 @@ int main(void) {
     table_values(runner);
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
+    stray_byte_columns(runner);
     inline_hook_projection_ignores_non_owners(runner);
     properties_envelope_derives_each_line_once(runner);
     properties_rejected_members_borrow_source(runner);
@@ -12907,6 +13010,9 @@ int main(void) {
     session_edits_nested_identifier(runner);
     session_locates_table_rows(runner);
     session_locates_unclosed_openers(runner);
+    session_locates_after_looked_edit(runner);
+    session_edits_after_nested_opener(runner);
+    session_edits_keep_term_look(runner);
     session_edits_wide_list(runner);
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);

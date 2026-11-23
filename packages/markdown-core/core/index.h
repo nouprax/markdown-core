@@ -114,6 +114,70 @@ markdown_core_folds *markdown_core_index_folds(markdown_core_index *index, const
  * began in `*start` (THE READS PAST). */
 bool markdown_core_index_crossed(markdown_core_index *index, size_t from, size_t point, size_t past,
                                  const uint32_t *opens, size_t count, size_t *start);
+/* THE REST (docs/plans/no-flush.md, 10.15): where a reading of the text
+ * from before an edit, or before a look's cursor, reads as the old reading
+ * did, so that it may begin there. It is a position: a line, and the
+ * blocks the old reading held open at the line's start, from the root's
+ * child down (the chain), each found from its node alone -- a block that
+ * holds the line, or one whose close read past what the line decides
+ * (node.h, `closed`), as the line closed it. The reading begins at the
+ * line with the chain reopened (blocks.c, THE NESTED REOPEN, THE LEAP): a
+ * block of it that holds blocks keeps its children before the line, and a
+ * leaf, the chain's last, its lines. A position stands when no reading the
+ * line's reading does not do again read past what the line decides, but
+ * those of the chain's blocks (THE READS PAST), every block of the chain
+ * reopens there as its element says (element.h, the edit's `reopens`, THE
+ * LEAP), the child before the line, at the chain's end, is none a later
+ * line goes on in or writes (`awaits`, a TRAILED kind), the line before
+ * reads to the chain as the reopen can tell (blocks.c,
+ * markdown_core_parser_rest_blank), and what the edit writes neither
+ * writes the closer a leaf of the chain found (`shuts`) nor a stop line of
+ * an opener read to the end before it (`stops`). Where one does not stand,
+ * an earlier line is tried, where the reading that read past began, or
+ * where the block that does not reopen starts, and so on back to the
+ * text's start, which stands. Edits and looks find their rest so alike. */
+#define MARKDOWN_CORE_REST_DEPTH 32
+
+typedef struct {
+    markdown_core_node *chain[MARKDOWN_CORE_REST_DEPTH];
+    /* Each block's of the chain the child of the block before, or of the
+     * root, and at `depth` the first child of the chain's last block the
+     * reading reads again, or 0 for a leaf. */
+    uint32_t path[MARKDOWN_CORE_REST_DEPTH + 1];
+    /* Where each block of the chain starts, and where its child before the
+     * one on the path ends, or where it starts when that is its first. */
+    uint32_t starts[MARKDOWN_CORE_REST_DEPTH], priors[MARKDOWN_CORE_REST_DEPTH];
+    size_t depth, line;
+    /* Where the chain's last block ends, when it is a leaf, or 0. */
+    size_t last;
+    /* Whether the reading stands inside the line (A REST INSIDE A LINE),
+     * and where: where the text of the leaf the line opened begins, the
+     * chain's blocks from the first that starts on the line opened before
+     * it. */
+    bool inside;
+    size_t mid;
+    /* The root's first child the reading reads again or takes back: the
+     * one after the chain's, when there is a chain. */
+    uint32_t child;
+} markdown_core_rest;
+
+/* What the reading from the rest reads again: an edit of the bytes from
+ * `from` to `to`, which begins on line `line` and writes the `length`
+ * bytes of `text`, or a look, whose text ends at its cursor, `from` and
+ * `to`; `prose` when a paragraph may be the chain's leaf (THE LEAP): a look
+ * reads the text of the paragraph it is in whole, and so does a reading of
+ * an altered label's uses. */
+typedef struct {
+    size_t line, from, to;
+    const uint8_t *text;
+    size_t length;
+    bool prose, look;
+} markdown_core_rest_edit;
+
+/* The rest of `edit` in the text `source` of `size` bytes, the flushed
+ * one, in `*rest`. False when storage could not be had. */
+bool markdown_core_index_rest(markdown_core_index *index, const char *source, size_t size,
+                              const markdown_core_rest_edit *edit, markdown_core_rest *rest);
 /* After an edit that moved the text after it by `delta`, of the root's
  * children, `count` of them before, those from `first` up to `tail` read
  * again, and those from `tail` on taken back, or none when `tail` is

@@ -210,7 +210,8 @@ typedef struct markdown_core_kind_record {
     void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
     uint16_t flags;
     /* The element that follows a node of the kind at each time, with its
-     * declaration (element.h, markdown_core_follow), or NULL. */
+     * declaration (element.h, markdown_core_follow), or NULL; at a line,
+     * the one that follows it once it closed (`closed`). */
     const markdown_core_element_instance *follower[MARKDOWN_CORE_FOLLOW_TIMES];
     const struct markdown_core_follow *follow[MARKDOWN_CORE_FOLLOW_TIMES];
     /* The follower that makes a node of the kind of a leader of another, and

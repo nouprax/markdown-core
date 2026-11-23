@@ -619,9 +619,12 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     (void)indented;
     bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
     parsed_directive parsed;
+    /* An opener's colons come first: a line without two reads no further. */
     bufsize_t colon_count =
-        scan_directive_block(self, parser, (unsigned char *)markdown_core_reader_rest(reader, 0),
-                             markdown_core_reader_length(reader), first_nonspace, reader->indent, &parsed);
+        reader->indent < 4 && markdown_core_reader_run(reader, first_nonspace, ':') >= 2
+            ? scan_directive_block(self, parser, (unsigned char *)markdown_core_reader_rest(reader, 0),
+                                   markdown_core_reader_length(reader), first_nonspace, reader->indent, &parsed)
+            : (memset(&parsed, 0, sizeof(parsed)), 0);
     markdown_core_node *node = NULL;
     node_directive *directive;
     if (!colon_count) {
@@ -665,13 +668,16 @@ done:
  * by the matcher that closes the container and the lookahead that only asks. */
 static int directive_closer_line(const node_directive *directive, markdown_core_parser *parser,
                                  markdown_core_reader *reader) {
-    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
-    bufsize_t colon_count =
-        count_colons(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first_nonspace);
-
-    return reader->indent <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
-           markdown_core_is_blank_to_line_end(markdown_core_reader_rest(reader, 0), first_nonspace + colon_count,
-                                              (bufsize_t)markdown_core_reader_length(reader));
+    (void)parser;
+    if (reader->indent > 3) {
+        return 0;
+    }
+    /* The line is read only as far as it decides: the colons, and past them
+     * to the first byte that is no space. */
+    const bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
+    const bufsize_t colon_count = markdown_core_reader_run(reader, first_nonspace, ':');
+    return colon_count >= (bufsize_t)directive->fence_length &&
+           markdown_core_reader_blank_from(reader, first_nonspace + colon_count);
 }
 
 static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,

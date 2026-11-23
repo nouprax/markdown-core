@@ -2,6 +2,8 @@
 #define MARKDOWN_CORE_UTF8_H
 
 #include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "buffer.h"
 
@@ -170,6 +172,18 @@ static inline int markdown_core_utf8proc_alnum_width(const uint8_t *str, bufsize
 
 /* Append the anchors module's Unicode projection of a valid UTF-8 literal. */
 void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len);
+
+/* THE COLUMNS OF A LINE. An editor counts a line's columns in bytes, or,
+ * with `wide`, in UTF-16 units, where a scalar past the basic plane takes
+ * two: the columns of the bytes from `from` to `to`, and the byte a column,
+ * counted from 1, of the line from `at` to `end` names -- or, for a CURSOR,
+ * which stands between bytes, the place it stands at, which may be the
+ * line's end before its terminator. A column that lands inside a scalar or
+ * past the line names none: the answer is false, with `*offset` where the
+ * count stopped. */
+size_t markdown_core_utf8_columns(const uint8_t *source, size_t from, size_t to, bool wide);
+bool markdown_core_utf8_column_offset(const uint8_t *source, size_t at, size_t end, int32_t column, bool wide,
+                                      bool cursor, size_t *offset);
 
 #ifdef __cplusplus
 }
