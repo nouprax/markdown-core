@@ -340,10 +340,12 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
             const bool open = index->cursor < index->count && index->entries[index->cursor].start == pos &&
                               index->entries[index->cursor].valid;
             if (open) {
-                const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-                const bufsize_t len = markdown_core_inline_size(inline_state);
-                S_report_key(inline_state, start, pos, pos + 1, pos + 1 + braced_key_end(data + pos + 1, len - pos - 1),
-                             true);
+                /* The index read the key already: a valid brace that no
+                 * `}` closed holds no whitespace to the run's end, and one
+                 * a `}` closed with no content is `{}`. */
+                const bool empty = markdown_core_inline_peek_at(inline_state, pos + 1) == '}';
+                S_report_key(inline_state, start, pos, pos + 1,
+                             empty ? pos + 1 : markdown_core_inline_size(inline_state), true);
             }
             return false;
         }

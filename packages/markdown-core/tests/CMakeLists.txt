@@ -527,6 +527,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     directive_unclosed_attributes
     heading_unclosed_attributes
     span_unclosed_attributes
+    citation_unclosed_keys
     directive_colon_pairs
     directive_long_label
     directive_long_attributes
