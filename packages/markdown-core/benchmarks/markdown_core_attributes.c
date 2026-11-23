@@ -17,11 +17,30 @@
 #include <string.h>
 
 #include "../elements/attributes.h"
+#include "../elements/entities.h"
+#include "../elements/markdown-core-elements.h"
 #include "chunk.h"
 
 #include "attribute_runner.h"
 
 const char *bench_baseline_name(void) { return "markdown-core"; }
+
+/* The core dialect's parser, made once before the measured call: a quoted
+ * value decodes its references by the dialect's entities element
+ * (entities.h), which a workspace reaches through its instance. */
+static markdown_core_parser *S_parser;
+
+int bench_setup(void) {
+    S_parser = markdown_core_core_parser(NULL, NULL);
+    return S_parser && markdown_core_parser_instance(S_parser, &MARKDOWN_CORE_ELEMENT_ENTITIES) ? 0 : 1;
+}
+
+void bench_teardown(void) {
+    if (S_parser) {
+        markdown_core_parser_destroy(S_parser);
+        S_parser = NULL;
+    }
+}
 
 static void write_chunk(FILE *census, const markdown_core_chunk *chunk) {
     if (chunk->data && chunk->len > 0) {
@@ -35,7 +54,8 @@ int bench_parse_attributes(const char *source, size_t length, attribute_receipt 
      * rescan an extent, and giving each list its own would measure a parser
      * this repository does not ship. */
     /* The scratch a document parse would lend every reader: one for the run. */
-    markdown_core_attribute_scratch scratch = {0};
+    markdown_core_attribute_scratch scratch = {
+        .entities = markdown_core_parser_instance(S_parser, &MARKDOWN_CORE_ELEMENT_ENTITIES)};
     markdown_core_attribute_parser parser = {
         .data = (const unsigned char *)source, .length = (bufsize_t)length, .scratch = &scratch};
     bufsize_t at = 0;
