@@ -1405,6 +1405,9 @@ void markdown_core_field_many(const markdown_core_field_to *to, const markdown_c
     const bool line = to->reader && !to->run && !to->map && !to->parser->input.mapped;
     const bufsize_t line_start =
         line ? (bufsize_t)markdown_core_parser_visited_line(to->parser, to->reader->number)->start : 0;
+    /* An inline root's content is its own map's identity (S_read_content):
+     * its offsets are the place, which its publish places in the source. */
+    const bool identity = to->map && to->map->first == MARKDOWN_CORE_IDENTITY_MARK && to->map->count > 0;
     for (size_t i = 0; i < count; i++) {
         const bufsize_t from = spots[i].from + to->base, end = spots[i].end + to->base;
         markdown_core_place place;
@@ -1416,7 +1419,12 @@ void markdown_core_field_many(const markdown_core_field_to *to, const markdown_c
             continue;
         }
         const bufsize_t stop = point ? from : end;
-        if (to->run && markdown_core_inline_frame_place(to->run, from, stop, &place)) {
+        if (identity) {
+            if (from < 0) {
+                continue;
+            }
+            place = (markdown_core_place){(uint32_t)(from + to->map->offset), (uint32_t)(stop + to->map->offset)};
+        } else if (to->run && markdown_core_inline_frame_place(to->run, from, stop, &place)) {
         } else if (to->map) {
             if ((point || !S_run_place(to->parser, to->map, from, stop, &run, &place)) &&
                 !markdown_core_text_place(to->parser, to->map, from, stop, &place)) {

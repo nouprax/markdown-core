@@ -1023,8 +1023,26 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void publish_fields(publish_walk *wal
         }
         return;
     }
+    uint32_t i = 0;
+    if (content && at && content_place_copied(at) && node->place.start <= at->content + at->length) {
+        /* An inline node whose start is read from a copied place starts
+         * its source where its content starts there: a field the place
+         * copies is measured from the node's content start. */
+        const uint32_t from = at->content, past = at->content + at->length, base = node->place.start;
+        for (; i < fields->count; i++) {
+            markdown_core_written *field = &fields->items[i];
+            if (field->raw) {
+                if (field->start < from || field->start >= past || field->end > past) {
+                    break;
+                }
+                field->start -= base;
+                field->end -= base;
+                field->raw = false;
+            }
+        }
+    }
     bool run = false;
-    for (uint32_t i = 0; i < fields->count; i++) {
+    for (; i < fields->count; i++) {
         markdown_core_written *field = &fields->items[i];
         if (field->how == MARKDOWN_CORE_FIELD_OPENER) {
             run = root && !(field->slot & 1);
