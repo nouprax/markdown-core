@@ -9,6 +9,11 @@
  * takes the next one or three bytes in one append and the rest in another,
  * and its final document dumps as the expected block (plan 5.10).
  *
+ * And a NUL is a byte like any other control byte: the example with a NUL
+ * written at a character boundary parses as the example with \x01 written
+ * there does, at every boundary (docs/architecture/parser-input-storage.md,
+ * THE TEXT AS WRITTEN).
+ *
  *   spec_runner --spec FILE [--list] [--example N] [--section TEXT] [--dump]
  *
  * Every example parses the one dialect, exactly as a consumer would. A fence
@@ -103,6 +108,60 @@ static int streams_all_as_expected(const ts_spec_case *test_case) {
                         cut, stream_tails[i]);
                 return 0;
             }
+        }
+    }
+    return 1;
+}
+
+/* The example with `byte` written before its byte `at`, parsed and dumped,
+ * each NUL of the dump, raw or escaped, written as \x01; NULL when it could
+ * not be. */
+static uint8_t *dump_with(const ts_spec_case *test_case, size_t at, uint8_t byte, size_t *dump_length) {
+    const size_t size = test_case->markdown_length + 1;
+    uint8_t *source = malloc(size);
+    uint8_t *dump = NULL;
+    if (!source) {
+        return NULL;
+    }
+    memcpy(source, test_case->markdown, at);
+    source[at] = byte;
+    memcpy(source + at + 1, test_case->markdown + at, test_case->markdown_length - at);
+    markdown_core_document *document = ts_ast_parse(source, size);
+    if (!document || markdown_core_document_dump(document, markdown_core_document_root(document), source, size, &dump,
+                                                 dump_length) != MARKDOWN_CORE_OK) {
+        dump = NULL;
+    }
+    for (size_t i = 0; dump && i < *dump_length; i++) {
+        if (!dump[i]) {
+            dump[i] = 1;
+        } else if (i + 6 <= *dump_length && !memcmp(dump + i, "\\u0000", 6)) {
+            dump[i + 5] = '1';
+        }
+    }
+    markdown_core_document_free(document);
+    free(source);
+    return dump;
+}
+
+/* Whether the example with a NUL written at each character boundary parses
+ * as it does with \x01 there; the first boundary where it does not is
+ * reported. */
+static int nul_reads_as_control(const ts_spec_case *test_case) {
+    const unsigned char *text = (const unsigned char *)test_case->markdown;
+    for (size_t at = 0; at <= test_case->markdown_length; at++) {
+        if (at < test_case->markdown_length && (text[at] & 0xC0) == 0x80) {
+            continue;
+        }
+        size_t lengths[2] = {0, 0};
+        uint8_t *nul = dump_with(test_case, at, 0, &lengths[0]);
+        uint8_t *control = dump_with(test_case, at, 1, &lengths[1]);
+        const int same = nul && control && lengths[0] == lengths[1] && !memcmp(nul, control, lengths[0]);
+        markdown_core_dump_free(nul);
+        markdown_core_dump_free(control);
+        if (!same) {
+            fprintf(stderr, "example %d: a NUL at byte %zu parses otherwise than \\x01 there\n", test_case->example,
+                    at);
+            return 0;
         }
     }
     return 1;
@@ -323,7 +382,12 @@ int main(int argc, char **argv) {
             fwrite(dump, 1, dump_length, stdout);
             passed++;
         } else if (strlen(test_case->expected) == dump_length && memcmp(test_case->expected, dump, dump_length) == 0) {
-            if (streams_all_as_expected(test_case)) {
+            if (!nul_reads_as_control(test_case)) {
+                fprintf(stderr, "FAILED example %d (lines %d-%d) %s, with NUL\n", test_case->example,
+                        test_case->start_line, test_case->end_line, test_case->section);
+                fputs(test_case->markdown, stderr);
+                failed++;
+            } else if (streams_all_as_expected(test_case)) {
                 passed++;
             } else {
                 fprintf(stderr, "FAILED example %d (lines %d-%d) %s, streamed\n", test_case->example,

@@ -1640,12 +1640,16 @@ static void edit_rename(name_pass *pass) {
     if (!parser->error && !markdown_core_roster_anchors(&parser->roster, names->rest, &anchors)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    for (bufsize_t at = 0; !parser->error && at < anchors.size;) {
-        const bufsize_t size = (bufsize_t)strlen((const char *)anchors.ptr + at);
+    bufsize_t size;
+    for (bufsize_t at = 0; !parser->error;) {
+        const unsigned char *key = markdown_core_strbuf_key(&anchors, &at, &size);
+        if (!key) {
+            break;
+        }
         markdown_core_pieces label;
         markdown_core_pieces_clear(&label);
-        markdown_core_pieces_add(&label, anchors.ptr + at, size);
-        const markdown_core_measure measure = markdown_core_measure_of(anchors.ptr + at, (size_t)size);
+        markdown_core_pieces_add(&label, key, size);
+        const markdown_core_measure measure = markdown_core_measure_of(key, (size_t)size);
         markdown_core_measure parent;
         uint32_t suffix;
         const uint32_t own = stem_find(state, &label, measure);
@@ -1664,7 +1668,6 @@ static void edit_rename(name_pass *pass) {
         if ((own && !stem_touch(names, own)) || (up && !stem_touch(names, up))) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
-        at += size + 1;
     }
     markdown_core_strbuf_free(&anchors);
     if (!parser->error) {

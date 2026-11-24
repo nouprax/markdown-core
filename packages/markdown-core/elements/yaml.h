@@ -14,8 +14,8 @@ extern "C" {
  * plain and quoted scalars on one line, a double-quoted scalar's JSON
  * escapes, a bare `|` literal, comments, and the document markers. A
  * folded scalar, a scalar that goes on to another line, an explicit name,
- * an anchor, an alias, a tag and a directive are errors. A NUL reads as
- * U+FFFD, as the Markdown parser reads it, and a line ends at CR, LF or
+ * an anchor, an alias, a tag and a directive are errors. A NUL is a
+ * control byte, which no scalar holds, and a line ends at CR, LF or
  * CRLF only. One read takes a text in one pass, by recursive descent, and
  * writes its events in order into the parser's room. */
 

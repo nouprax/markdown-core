@@ -55,7 +55,7 @@ bufsize_t scan_html_comment(const unsigned char *data, bufsize_t length, bufsize
 		128, 128, 128, 128, 128, 128, 128, 128,
 		128, 128, 128, 128, 128, 128, 128, 128
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '-') goto yy2;
 	++p;
 yy1:
@@ -63,11 +63,11 @@ yy1:
 yy2:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych != '-') goto yy1;
 yy3:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych >= 0x01) goto yy5;
 yy4:
@@ -75,11 +75,11 @@ yy4:
 	goto yy1;
 yy5:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= 0x00) goto yy4;
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 0x00) goto yy4;
 	if (yych != '>') goto yy3;
 	++p;
@@ -135,7 +135,7 @@ bufsize_t scan_html_block_end_2(const unsigned char *data, bufsize_t length, buf
 		 64,  64,  64,  64,  64,  64,  64,  64,
 		 64,  64,  64,  64,  64,  64,  64,  64
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '\n') {
 		if (yych <= 0x00) goto yy7;
 		if (yych <= '\t') goto yy9;
@@ -151,7 +151,7 @@ yy9:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 0x00) goto yy8;
 	if (yych == '\n') goto yy8;
 	goto yy12;
@@ -159,13 +159,13 @@ yy10:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych <= '\n') goto yy8;
 	goto yy15;
 yy11:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy12:
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych >= '\v') goto yy14;
@@ -175,12 +175,12 @@ yy13:
 	else goto yy16;
 yy14:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych <= '\n') goto yy13;
 yy15:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy15;
 	if (yych <= '\n') {
 		if (yych <= 0x00) goto yy13;
@@ -192,7 +192,7 @@ yy15:
 	yyaccept = 1;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych >= '\v') goto yy14;
 yy16:

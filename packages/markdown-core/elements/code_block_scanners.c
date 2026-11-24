@@ -54,7 +54,7 @@ bufsize_t scan_open_code_fence(const unsigned char *data, bufsize_t length, bufs
 		192, 192, 192, 192, 192, 192, 192, 192,
 		192, 192, 192, 192, 192, 192, 192, 192
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '`') goto yy2;
 	if (yych == '~') goto yy3;
 	++p;
@@ -63,30 +63,30 @@ yy1:
 yy2:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '`') goto yy4;
 	goto yy1;
 yy3:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '~') goto yy6;
 	goto yy1;
 yy4:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 16) goto yy7;
 yy5:
 	p = marker;
 	goto yy1;
 yy6:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 32) goto yy8;
 	goto yy5;
 yy7:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 16) goto yy7;
 	if (yych <= '\n') {
 		if (yych <= 0x00) goto yy5;
@@ -106,7 +106,7 @@ yy7:
 	}
 yy8:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 32) goto yy8;
 	if (yych <= '\n') {
 		if (yych <= 0x00) goto yy5;
@@ -126,7 +126,7 @@ yy8:
 	}
 yy9:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy9;
 	if (yych <= 0x00) goto yy5;
 	if (yych >= 0x0E) goto yy5;
@@ -136,7 +136,7 @@ yy10:
 	{ return (bufsize_t)(p - start); }
 yy11:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy11;
 	if (yych <= 0x00) goto yy5;
 yy12:
@@ -193,7 +193,7 @@ bufsize_t scan_close_code_fence(const unsigned char *data, bufsize_t length, buf
 		  0,   0,   0,   0,   0,   0,   0,   0,
 		  0,   0,   0,   0,   0,   0,   0,   0
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '`') goto yy15;
 	if (yych == '~') goto yy16;
 	++p;
@@ -202,30 +202,30 @@ yy14:
 yy15:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '`') goto yy17;
 	goto yy14;
 yy16:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '~') goto yy19;
 	goto yy14;
 yy17:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 32) goto yy20;
 yy18:
 	p = marker;
 	goto yy14;
 yy19:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy21;
 	goto yy18;
 yy20:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 32) goto yy20;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy18;
@@ -251,7 +251,7 @@ yy20:
 	}
 yy21:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy21;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy18;
@@ -277,7 +277,7 @@ yy21:
 	}
 yy22:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy22;
 	if (yych <= 0x08) goto yy18;
 	if (yych <= '\n') goto yy23;
@@ -288,7 +288,7 @@ yy23:
 	{ return (bufsize_t)(p - start); }
 yy24:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy18;
 		if (yych <= '\t') goto yy24;

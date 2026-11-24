@@ -185,10 +185,10 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     }
 }
 
+/* The byte `n` past the cursor, or 0 past the end. A NUL of the text is a
+ * byte like any other, so 0 says no more than the byte: whether the input
+ * ended is the cursor's (markdown_core_inline_is_eof). */
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n) {
-    // NULL bytes should have been stripped out by now.  If they're
-    // present, it's a programming error:
-    assert(!(inline_state->pos + n < inline_state->input.len && inline_state->input.data[inline_state->pos + n] == 0));
     if (inline_state->pos + n < inline_state->input.len) {
         return inline_state->input.data[inline_state->pos + n];
     }
@@ -902,10 +902,10 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
     unsigned char c;
     bufsize_t startpos, endpos;
     bufsize_t token_start = inline_state->pos;
-    c = markdown_core_inline_peek_char(inline_state);
-    if (c == 0) {
+    if (markdown_core_inline_is_eof(inline_state)) {
         return 0;
     }
+    c = markdown_core_inline_peek_char(inline_state);
     if (inline_state->pos == inline_state->cut) {
         /* The rest is the cut's. */
         inline_state->pos = inline_state->input.len;
@@ -1344,21 +1344,16 @@ int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state) 
     return markdown_core_inline_is_eof(inline_state);
 }
 
+/* The `n` bytes at `s`, a NUL among them a byte like any other, with a
+ * NUL after them. */
 static char *my_strndup(const char *s, size_t n) {
-    char *result;
-    size_t len = strlen(s);
-
-    if (n < len) {
-        len = n;
-    }
-
-    result = (char *)malloc(len + 1);
+    char *result = (char *)malloc(n + 1);
     if (!result) {
         return 0;
     }
 
-    result[len] = '\0';
-    return (char *)memcpy(result, s, len);
+    result[n] = '\0';
+    return (char *)memcpy(result, s, n);
 }
 
 char *markdown_core_inline_state_take_while(markdown_core_inline_state *inline_state,
@@ -1367,7 +1362,7 @@ char *markdown_core_inline_state_take_while(markdown_core_inline_state *inline_s
     bufsize_t startpos = inline_state->pos;
     bufsize_t len = 0;
 
-    while ((c = markdown_core_inline_peek_char(inline_state)) && (*pred)(c)) {
+    while (!markdown_core_inline_is_eof(inline_state) && (*pred)(c = markdown_core_inline_peek_char(inline_state))) {
         advance(inline_state);
         len++;
     }

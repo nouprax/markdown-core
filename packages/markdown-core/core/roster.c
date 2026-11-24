@@ -657,7 +657,7 @@ void markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int
         for (size_t k = 0; k < gone; k++) {
             markdown_core_roster_record *record = S_places_at(places, front + k)->record;
             if (markdown_core_roster_stands(record)) {
-                markdown_core_strbuf_put(&roster->lost, record->key, record->key_len + 1);
+                markdown_core_strbuf_put_key(&roster->lost, record->key, record->key_len);
                 roster->dead += S_record_size(record->key_len - 1);
             }
             if (record->linked) {
@@ -674,7 +674,7 @@ void markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int
     roster->hidden = false;
 }
 
-/* A key at `key`, its NUL after it. */
+/* A key at `key`, `size` bytes. */
 typedef struct {
     const unsigned char *key;
     bufsize_t size;
@@ -688,8 +688,8 @@ static int S_key_order(const void *a, const void *b) {
     return order ? order : (left->size > right->size) - (left->size < right->size);
 }
 
-/* The `count` keys of `keys`, sorted, each once and with its NUL, into
- * `labels`. */
+/* The `count` keys of `keys`, sorted, each once, into the list of keys
+ * `labels` (buffer.h). */
 static bool S_put_keys(S_key *keys, size_t count, markdown_core_strbuf *labels) {
     if (count) {
         qsort(keys, count, sizeof(*keys), S_key_order);
@@ -697,7 +697,7 @@ static bool S_put_keys(S_key *keys, size_t count, markdown_core_strbuf *labels) 
     markdown_core_strbuf_clear(labels);
     for (size_t i = 0; i < count; i++) {
         if (!i || S_key_order(&keys[i], &keys[i - 1])) {
-            markdown_core_strbuf_put(labels, keys[i].key, keys[i].size + 1);
+            markdown_core_strbuf_put_key(labels, keys[i].key, keys[i].size);
         }
     }
     return !labels->oom;
@@ -735,7 +735,8 @@ bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core
         return false;
     }
     size_t count = 0;
-    for (bufsize_t at = 0; at < roster->lost.size; at += (bufsize_t)strlen((const char *)roster->lost.ptr + at) + 1) {
+    bufsize_t size;
+    for (bufsize_t at = 0; markdown_core_strbuf_key(&roster->lost, &at, &size);) {
         count++;
     }
     S_key *keys = count ? markdown_core_alloc(count, sizeof(*keys)) : NULL;
@@ -743,12 +744,14 @@ bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core
         return false;
     }
     count = 0;
-    for (bufsize_t at = 0; at < roster->lost.size;) {
-        const bufsize_t size = (bufsize_t)strlen((const char *)roster->lost.ptr + at);
-        if (roster->lost.ptr[at] != MARKDOWN_CORE_ROSTER_ANCHOR) {
-            keys[count++] = (S_key){roster->lost.ptr + at, size};
+    for (bufsize_t at = 0;;) {
+        const unsigned char *key = markdown_core_strbuf_key(&roster->lost, &at, &size);
+        if (!key) {
+            break;
         }
-        at += size + 1;
+        if (key[0] != MARKDOWN_CORE_ROSTER_ANCHOR) {
+            keys[count++] = (S_key){key, size};
+        }
     }
     const bool ok = S_put_keys(keys, count, labels);
     markdown_core_free(keys);
@@ -761,14 +764,17 @@ bool markdown_core_roster_anchors(const markdown_core_roster *roster, uint32_t s
     const size_t end = roster->hidden ? places->count : places->front;
     for (size_t i = markdown_core_tree_from(places, start, 0, places->front); i < end; i++) {
         const markdown_core_roster_record *record = S_places_at(places, i)->record;
-        markdown_core_strbuf_put(labels, record->key + 1, record->key_len);
+        markdown_core_strbuf_put_key(labels, record->key + 1, record->key_len - 1);
     }
-    for (bufsize_t at = 0; at < roster->lost.size;) {
-        const bufsize_t size = (bufsize_t)strlen((const char *)roster->lost.ptr + at);
-        if (roster->lost.ptr[at] == MARKDOWN_CORE_ROSTER_ANCHOR) {
-            markdown_core_strbuf_put(labels, roster->lost.ptr + at + 1, size);
+    bufsize_t size;
+    for (bufsize_t at = 0;;) {
+        const unsigned char *key = markdown_core_strbuf_key(&roster->lost, &at, &size);
+        if (!key) {
+            break;
         }
-        at += size + 1;
+        if (key[0] == MARKDOWN_CORE_ROSTER_ANCHOR) {
+            markdown_core_strbuf_put_key(labels, key + 1, size - 1);
+        }
     }
     return !labels->oom && !roster->lost.oom;
 }

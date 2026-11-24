@@ -452,9 +452,9 @@ typedef struct markdown_core_inline_ops {
      * `skip_chars`, which killed CommonMark flanking merely by attaching the
      * element, and `'}'` sat in the list dispatching to nothing.
      *
-     * Each set is a NUL-terminated byte list; NUL itself is never a member
-     * because source normalization replaces it before inlines run. A NULL set
-     * is empty. */
+     * Each set is a NUL-terminated byte list, so NUL is never a member: a
+     * NUL of the text is a byte that ends no run and starts no construct. A
+     * NULL set is empty. */
     const char *terminates;  /* ends a text run: inline_state_find_special_char */
     const char *dispatch;    /* offered to `match`, and owns a delimiter tag */
     const char *transparent; /* scan_delimiter looks through it; ASCII */
@@ -820,7 +820,8 @@ typedef struct markdown_core_facet {
     bool whole;
     markdown_core_chunk *(*literal)(const markdown_core_node *, bufsize_t *start);
     markdown_core_placement (*placement)(const markdown_core_node *);
-    const char *(*name)(const markdown_core_node *);
+    /* The name the node holds, which may hold any byte, or NULL for none. */
+    const markdown_core_chunk *(*name)(const markdown_core_node *);
     markdown_core_node **(*label)(const markdown_core_node *);
     /* Where a node of the kind keeps the name the names service computes
      * for it (node.h, A NODE'S NAME; names.h), when the element names it. */

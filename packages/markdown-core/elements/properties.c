@@ -44,7 +44,8 @@ typedef struct {
 } properties;
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
-    if (start == end || markdown_core_is_space_or_tab(s[start]) || strchr(",[]{}#&*!|>'\"%@`", s[start])) {
+    if (start == end || markdown_core_is_space_or_tab(s[start]) ||
+        (s[start] && strchr(",[]{}#&*!|>'\"%@`", s[start]))) {
         return false;
     }
     return !((s[start] == '?' || s[start] == ':') && (start + 1 == end || markdown_core_is_whitespace(s[start + 1])));

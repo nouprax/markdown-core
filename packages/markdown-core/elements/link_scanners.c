@@ -55,7 +55,7 @@ bufsize_t scan_link_title(const unsigned char *data, bufsize_t length, bufsize_t
 		208, 208, 208, 208, 208, 208, 208, 208,
 		208, 208, 208, 208, 208, 208, 208, 208
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '&') {
 		if (yych == '"') goto yy2;
 	} else {
@@ -69,27 +69,27 @@ yy2:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 0x00) goto yy1;
 	goto yy6;
 yy3:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 0x00) goto yy1;
 	goto yy12;
 yy4:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 0x00) goto yy1;
 	if (yych == '(') goto yy1;
 	goto yy17;
 yy5:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy6:
 	if (yybm[0+yych] & 16) goto yy5;
 	if (yych <= 0x00) goto yy7;
@@ -110,14 +110,14 @@ yy9:
 	{ return (bufsize_t)(p - start); }
 yy10:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 16) goto yy5;
 	if (yych <= 0x00) goto yy7;
 	if (yych <= '"') goto yy21;
 	goto yy10;
 yy11:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy12:
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych <= 0x00) goto yy7;
@@ -128,14 +128,14 @@ yy14:
 	{ return (bufsize_t)(p - start); }
 yy15:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych <= 0x00) goto yy7;
 	if (yych <= '\'') goto yy22;
 	goto yy15;
 yy16:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy17:
 	if (yybm[0+yych] & 128) goto yy16;
 	if (yych <= '(') goto yy7;
@@ -146,7 +146,7 @@ yy19:
 	{ return (bufsize_t)(p - start); }
 yy20:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ')') {
 		if (yych <= 0x00) goto yy7;
 		if (yych <= '(') goto yy16;
@@ -159,7 +159,7 @@ yy21:
 	yyaccept = 1;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 16) goto yy5;
 	if (yych <= 0x00) goto yy9;
 	if (yych <= '"') goto yy8;
@@ -168,7 +168,7 @@ yy22:
 	yyaccept = 2;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 64) goto yy11;
 	if (yych <= 0x00) goto yy14;
 	if (yych <= '\'') goto yy13;
@@ -177,7 +177,7 @@ yy23:
 	yyaccept = 3;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy16;
 	if (yych <= '(') goto yy19;
 	if (yych <= ')') goto yy18;
@@ -199,7 +199,7 @@ bufsize_t scan_dangerous_url(const unsigned char *data, bufsize_t length, bufsiz
 {
 	unsigned char yych;
 	unsigned int yyaccept = 0;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 'V') {
 		if (yych <= 'F') {
 			if (yych == 'D') goto yy26;
@@ -227,7 +227,7 @@ yy26:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'A') goto yy30;
 	if (yych == 'a') goto yy30;
 	goto yy25;
@@ -235,7 +235,7 @@ yy27:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'I') goto yy32;
 	if (yych == 'i') goto yy32;
 	goto yy25;
@@ -243,7 +243,7 @@ yy28:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'A') goto yy33;
 	if (yych == 'a') goto yy33;
 	goto yy25;
@@ -251,13 +251,13 @@ yy29:
 	yyaccept = 0;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'B') goto yy34;
 	if (yych == 'b') goto yy34;
 	goto yy25;
 yy30:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'T') goto yy35;
 	if (yych == 't') goto yy35;
 yy31:
@@ -266,59 +266,59 @@ yy31:
 	else goto yy43;
 yy32:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'L') goto yy36;
 	if (yych == 'l') goto yy36;
 	goto yy31;
 yy33:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'V') goto yy37;
 	if (yych == 'v') goto yy37;
 	goto yy31;
 yy34:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'S') goto yy38;
 	if (yych == 's') goto yy38;
 	goto yy31;
 yy35:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'A') goto yy39;
 	if (yych == 'a') goto yy39;
 	goto yy31;
 yy36:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'E') goto yy40;
 	if (yych == 'e') goto yy40;
 	goto yy31;
 yy37:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'A') goto yy34;
 	if (yych == 'a') goto yy34;
 	goto yy31;
 yy38:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'C') goto yy41;
 	if (yych == 'c') goto yy41;
 	goto yy31;
 yy39:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == ':') goto yy42;
 	goto yy31;
 yy40:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == ':') goto yy44;
 	goto yy31;
 yy41:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'R') goto yy45;
 	if (yych == 'r') goto yy45;
 	goto yy31;
@@ -326,7 +326,7 @@ yy42:
 	yyaccept = 1;
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'I') goto yy46;
 	if (yych == 'i') goto yy46;
 yy43:
@@ -336,50 +336,50 @@ yy44:
 	goto yy43;
 yy45:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'I') goto yy47;
 	if (yych == 'i') goto yy47;
 	goto yy31;
 yy46:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'M') goto yy48;
 	if (yych == 'm') goto yy48;
 	goto yy31;
 yy47:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'P') goto yy49;
 	if (yych == 'p') goto yy49;
 	goto yy31;
 yy48:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'A') goto yy50;
 	if (yych == 'a') goto yy50;
 	goto yy31;
 yy49:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'T') goto yy40;
 	if (yych == 't') goto yy40;
 	goto yy31;
 yy50:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'G') goto yy51;
 	if (yych != 'g') goto yy31;
 yy51:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'E') goto yy52;
 	if (yych != 'e') goto yy31;
 yy52:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych != '/') goto yy31;
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 'W') {
 		if (yych <= 'J') {
 			if (yych == 'G') goto yy53;
@@ -407,48 +407,48 @@ yy52:
 	}
 yy53:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'I') goto yy57;
 	if (yych == 'i') goto yy57;
 	goto yy31;
 yy54:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'P') goto yy58;
 	if (yych == 'p') goto yy58;
 	goto yy31;
 yy55:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'N') goto yy59;
 	if (yych == 'n') goto yy59;
 	goto yy31;
 yy56:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'E') goto yy60;
 	if (yych == 'e') goto yy60;
 	goto yy31;
 yy57:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'F') goto yy61;
 	if (yych == 'f') goto yy61;
 	goto yy31;
 yy58:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'E') goto yy59;
 	if (yych != 'e') goto yy31;
 yy59:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'G') goto yy61;
 	if (yych == 'g') goto yy61;
 	goto yy31;
 yy60:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'B') goto yy62;
 	if (yych == 'b') goto yy62;
 	goto yy31;
@@ -457,7 +457,7 @@ yy61:
 	{ return 0; }
 yy62:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == 'P') goto yy61;
 	if (yych == 'p') goto yy61;
 	goto yy31;

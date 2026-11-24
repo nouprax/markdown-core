@@ -296,6 +296,26 @@ void markdown_core_strbuf_clear(markdown_core_strbuf *buf);
 
 bufsize_t markdown_core_strbuf_strchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
 
+/* A LIST OF KEYS in a buffer: each key its size, then its bytes, which may
+ * hold any byte, NUL among them. */
+static inline void markdown_core_strbuf_put_key(markdown_core_strbuf *buf, const unsigned char *key, bufsize_t size) {
+    markdown_core_strbuf_put(buf, (const unsigned char *)&size, (bufsize_t)sizeof(size));
+    markdown_core_strbuf_put(buf, key, size);
+}
+
+/* The key of the list at `*at`, its size in `*size`, with `*at` moved past
+ * it; NULL past the last. */
+static inline const unsigned char *markdown_core_strbuf_key(const markdown_core_strbuf *buf, bufsize_t *at,
+                                                            bufsize_t *size) {
+    if (*at >= buf->size) {
+        return NULL;
+    }
+    memcpy(size, buf->ptr + *at, sizeof(*size));
+    const unsigned char *key = buf->ptr + *at + sizeof(*size);
+    *at += (bufsize_t)sizeof(*size) + *size;
+    return key;
+}
+
 bufsize_t markdown_core_strbuf_strrchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
 
 void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n);

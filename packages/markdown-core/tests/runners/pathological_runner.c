@@ -695,8 +695,7 @@ static int case_emphasis_in_deep_blockquote(pc_context *context) {
 
 static int case_nul_in_input(pc_context *context) {
     static const char raw[] = "abc\0de\0";
-    static const char expected[] = "abc\xEF\xBF\xBD"
-                                   "de\xEF\xBF\xBD";
+    static const char expected[] = "abc\0de\0";
     context->input = (char *)malloc(sizeof(raw));
     if (!context->input) {
         return -1;

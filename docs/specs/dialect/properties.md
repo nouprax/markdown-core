@@ -81,8 +81,9 @@ is empty. Names may also be quoted. Supported values are:
 `authors: - Ada` is text, not a list. A single quote is escaped by doubling it
 inside single-quoted text. Double-quoted strings accept JSON-style escapes and
 valid `\uXXXX` surrogate pairs. A decoded CR or LF invalidates a single-line
-field. Quoted strings are always text. A NUL reads as U+FFFD, as it does in
-the rest of the document, and NEL, LS and PS are text, not line endings.
+field. Quoted strings are always text. A NUL is a control byte, as it is in
+the rest of the document, which a value cannot hold; NEL, LS and PS are text,
+not line endings.
 
 Plain text cannot start with reserved indicators such as `&`, `*`, `!`, `|`,
 `>`, `[`, or `{`; quote them to store text. A separated `#` starts an ignored

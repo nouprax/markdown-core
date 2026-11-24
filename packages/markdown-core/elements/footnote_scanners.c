@@ -54,7 +54,7 @@ bufsize_t scan_footnote_definition(const unsigned char *data, bufsize_t length, 
 		 64,  64,  64,  64,  64,  64,  64,  64,
 		 64,  64,  64,  64,  64,  64,  64,  64
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '[') goto yy2;
 	++p;
 yy1:
@@ -62,26 +62,26 @@ yy1:
 yy2:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych != '^') goto yy1;
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych != ']') goto yy5;
 yy3:
 	p = marker;
 	goto yy1;
 yy4:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy5:
 	if (yybm[0+yych] & 64) goto yy4;
 	if (yych <= ' ') goto yy3;
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych != ':') goto yy3;
 yy6:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy6;
 	{ return (bufsize_t)(p - start); }
 }

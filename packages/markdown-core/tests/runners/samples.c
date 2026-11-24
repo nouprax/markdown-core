@@ -8,7 +8,7 @@
  * outer one, where the nesting and the escapes the fixtures write one at a
  * time meet. A construct is a template whose `@` the next one fills. An
  * atom's \001 stands for NUL, which a C string cannot hold and which the
- * parser reads as U+FFFD. */
+ * parser reads as the byte it is. */
 static const char *const CONSTRUCTS[] = {
     "[@](u)",
     "[x](@)",

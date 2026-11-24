@@ -54,7 +54,7 @@ bufsize_t scan_atx_heading_start(const unsigned char *data, bufsize_t length, bu
 		  0,   0,   0,   0,   0,   0,   0,   0,
 		  0,   0,   0,   0,   0,   0,   0,   0
 	};
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '#') goto yy2;
 	++p;
 yy1:
@@ -62,7 +62,7 @@ yy1:
 yy2:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy1;
@@ -75,7 +75,7 @@ yy2:
 	}
 yy3:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 yy4:
 	{ return (bufsize_t)(p - start); }
@@ -84,7 +84,7 @@ yy5:
 	goto yy4;
 yy6:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy7;
@@ -98,7 +98,7 @@ yy7:
 	goto yy1;
 yy8:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy7;
@@ -109,7 +109,7 @@ yy8:
 		if (yych != '#') goto yy7;
 	}
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy7;
@@ -120,7 +120,7 @@ yy8:
 		if (yych != '#') goto yy7;
 	}
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= '\f') {
 		if (yych <= 0x08) goto yy7;
@@ -131,7 +131,7 @@ yy8:
 		if (yych != '#') goto yy7;
 	}
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yybm[0+yych] & 128) goto yy3;
 	if (yych <= 0x08) goto yy7;
 	if (yych <= '\n') goto yy5;

@@ -360,7 +360,7 @@ static size_t autolink_extent(const markdown_core_element_instance *self, markdo
                               uint8_t *data, size_t size, size_t offset) {
     unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
     while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
-        if (data[offset] == closer) {
+        if (closer && data[offset] == closer) {
             break;
         }
         if (data[offset] == '\\' && offset + 1 < size && markdown_core_ispunct(data[offset + 1]) &&
@@ -385,7 +385,7 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
     size_t link_end;
 
     if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
-        strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
+        (!data[-1] || strchr("*_~(", data[-1]) == NULL) && !markdown_core_is_whitespace(data[-1])) {
         return 0;
     }
 
@@ -549,7 +549,8 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
 
     (void)parser;
     /* The local part, then '@'. */
-    for (at = 1; at < size && (markdown_core_isalnum(data[at]) || strchr(".+-_", data[at]) != NULL); at++) {
+    for (at = 1; at < size && (markdown_core_isalnum(data[at]) || (data[at] && strchr(".+-_", data[at]) != NULL));
+         at++) {
     }
     if (at >= size) {
         markdown_core_inline_state_saw_end(inline_state);
@@ -707,11 +708,11 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
                 continue;
             }
 
-            if (strchr(".+-_", c) != NULL) {
+            if (c && strchr(".+-_", c) != NULL) {
                 continue;
             }
 
-            if (strchr(":", c) != NULL) {
+            if (c == ':') {
                 if (validate_protocol("mailto:", data + start + offset + max_rewind, rewind, max_rewind)) {
                     auto_mailto = false;
                     continue;

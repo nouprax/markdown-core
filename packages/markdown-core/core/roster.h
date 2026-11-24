@@ -306,14 +306,14 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
 void markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta);
 /* The keys of the declarations of the front, but anchors, that start
  * where the last reading began or past it, each once and in byte order,
- * each with its NUL, into `labels`. False when storage could not be had. */
+ * into the list of keys `labels` (buffer.h). False when storage could not be had. */
 bool markdown_core_roster_made(const markdown_core_roster *roster, markdown_core_strbuf *labels);
 /* The keys of the declarations, but anchors, the last splice let go, as
  * markdown_core_roster_made writes them. False when storage could not be
  * had. */
 bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core_strbuf *labels);
 /* The labels of the anchors an edit's reading may have made or let go,
- * each with its NUL, some more than once: the front's from `start` on, the
+ * into a list of keys (buffer.h), some more than once: the front's from `start` on, the
  * ones the last splice let go, and, while the back is hidden -- a reading
  * that took nothing back, at its finish -- all of the back's. False when
  * storage could not be had. */

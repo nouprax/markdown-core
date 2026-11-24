@@ -152,6 +152,12 @@ int markdown_core_elements_set_directive_name(markdown_core_node *node, const ch
     return markdown_core_chunk_set_cstr(&((node_directive *)node->opaque)->name, name);
 }
 
+/* The name a directive holds, its bytes as written, or NULL for none. */
+static const markdown_core_chunk *S_name(const markdown_core_node *node) {
+    const node_directive *directive = node->opaque;
+    return directive->name.len ? &directive->name : NULL;
+}
+
 static void directive_opaque_alloc(markdown_core_node *node) {
     if (is_directive_node(node)) {
         node->opaque = markdown_core_alloc(1, sizeof(node_directive));
@@ -793,11 +799,8 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
 }
 
 const markdown_core_facet MARKDOWN_CORE_DIRECTIVE_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE,
-     .name = markdown_core_elements_get_directive_name,
-     .label = S_label,
-     .words = S_words},
-    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, .name = markdown_core_elements_get_directive_name, .label = S_label},
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE, .name = S_name, .label = S_label, .words = S_words},
+    {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, .name = S_name, .label = S_label},
     {.kind = MARKDOWN_CORE_KIND_DIRECTIVE_LABEL, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };

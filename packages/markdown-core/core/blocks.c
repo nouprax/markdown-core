@@ -68,8 +68,13 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_process_held_line(markdown_core_parser *parser,
                                                                     const unsigned char *buffer, bufsize_t bytes,
                                                                     const markdown_core_line_stop *from);
-static inline const unsigned char *S_input_line_content(markdown_core_parser *parser, markdown_core_input_line *line,
-                                                        bufsize_t *length);
+/* The content of input line `line`, without its terminator, and its
+ * length: the input's own bytes, as written. */
+static inline const unsigned char *S_input_line_content(markdown_core_parser *parser,
+                                                        const markdown_core_input_line *line, bufsize_t *length) {
+    *length = (bufsize_t)(line->end - line->start);
+    return parser->input.source + line->start;
+}
 
 static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, bufsize_t start) {
     markdown_core_node *e;
@@ -91,22 +96,6 @@ static markdown_core_node *make_document(markdown_core_parser *parser) {
     markdown_core_node *e = make_block(parser, parser->dialect->root, 0);
     return e;
 }
-
-/* A physical line containing NUL owns one immutable normalized view. Both
- * the driver and speculative readers borrow it until the active input ends;
- * queued mapped inputs therefore receive the same bytes the driver would.
- * Only transformed lines allocate, and the ownership chain releases only
- * those allocations rather than visiting every untransformed input line. */
-typedef struct markdown_core_normalized_line {
-    struct markdown_core_normalized_line *next;
-    /* The source offset of each NUL of the line, in order, so a normalized
-     * byte finds its source byte by a search rather than a scan. */
-    uint32_t *nuls;
-    uint32_t nul_count;
-    /* The line's facts that name it, counted from 1 (parser.h). */
-    uint32_t fact;
-    unsigned char bytes[];
-} markdown_core_normalized_line;
 
 /* THE LINE TREE (parser_input, `lines`; tree.h): the input's lines in
  * order, the front the input's own, the back the flushed text's past it, in
@@ -142,13 +131,9 @@ static inline size_t S_lines_start(const markdown_core_tree *lines, size_t index
     return S_line(lines, index)->start;
 }
 
-/* Line `index`, its facts dropped when it is in the back. */
+/* Line `index`. */
 static inline markdown_core_input_line S_lines_at(const markdown_core_tree *lines, size_t index) {
-    markdown_core_input_line line = *S_line(lines, index);
-    if (index >= lines->front) {
-        line.facts = 0;
-    }
-    return line;
+    return *S_line(lines, index);
 }
 
 /* The back's line `k` from the focus, and where it starts. */
@@ -170,43 +155,6 @@ static inline size_t S_lines_front_from(const markdown_core_tree *lines, size_t 
     return markdown_core_tree_from(lines, place, 0, lines->front);
 }
 
-/* The facts that input lines `first` up to `end` of the front name go, with
- * the normalized lines they name, which leave the list in one walk: a
- * normalized line names no facts once it goes. The facts past the last a
- * kept line names go too: storage keeps to the text, however many edits
- * read it again. A line names its facts alone, so those are the facts past
- * the last one no leaving line names. A line in the back has no facts. */
-static void S_lines_unfact(markdown_core_parser_input *input, size_t first, size_t end) {
-    markdown_core_tree *lines = &input->lines;
-    bool normalized_freed = false;
-    for (size_t i = first; i < end; i++) {
-        markdown_core_input_line *line = S_line(lines, i);
-        markdown_core_line_facts *facts = markdown_core_input_facts(input, line);
-        if (!facts) {
-            continue;
-        }
-        line->facts = 0;
-        facts->depth = MARKDOWN_CORE_FACTS_DROPPED;
-        if (facts->normalized) {
-            facts->normalized->fact = 0;
-            facts->normalized = NULL;
-            normalized_freed = true;
-        }
-    }
-    for (markdown_core_normalized_line **link = &input->normalized; normalized_freed && *link;) {
-        markdown_core_normalized_line *normalized = *link;
-        if (normalized->fact) {
-            link = &normalized->next;
-        } else {
-            *link = normalized->next;
-            markdown_core_free(normalized);
-        }
-    }
-    while (input->fact_count && input->facts[input->fact_count - 1].depth == MARKDOWN_CORE_FACTS_DROPPED) {
-        input->fact_count--;
-    }
-}
-
 /* The lines' focus moved to `place`, of the front's terms, or the back's
  * when it is past the front's lines. */
 static void S_lines_move(markdown_core_parser_input *input, size_t place) {
@@ -214,17 +162,12 @@ static void S_lines_move(markdown_core_parser_input *input, size_t place) {
     const bool back = lines->front < lines->count && S_lines_start(lines, lines->front) < place;
     const size_t focus = back ? markdown_core_tree_from(lines, place, lines->front, lines->count)
                               : markdown_core_tree_from(lines, place, 0, lines->front);
-    S_lines_unfact(input, focus, lines->front);
     markdown_core_tree_focus(lines, focus);
 }
 
-/* The front's lines from `line` on go, with the facts and normalized lines
- * only they name: storage keeps to the text, however many edits read it
- * again. A line names its facts alone, so those are the facts past the last
- * one no leaving line names. */
+/* The front's lines from `line` on go. */
 static void S_lines_truncate(markdown_core_parser_input *input, size_t line) {
     markdown_core_tree *lines = &input->lines;
-    S_lines_unfact(input, line, lines->front);
     if (line < lines->front) {
         markdown_core_tree_erase(lines, line, lines->front - line);
     }
@@ -242,18 +185,48 @@ static inline void S_lines_slide(markdown_core_tree *lines, int64_t delta) {
     markdown_core_tree_shift(lines, lines->front, delta);
 }
 
-static void S_clear_normalized_lines(markdown_core_parser_input *input) {
-    while (input->normalized) {
-        markdown_core_normalized_line *line = input->normalized;
-        input->normalized = line->next;
-        markdown_core_free(line);
+/* THE SCAN MEMO (parser.h, `memo`): the memo of line `line` of the
+ * reading, made empty when the memo did not hold it, or NULL with the parse
+ * failed. The memo holds a window of lines, which grows to take the line in:
+ * the lookaheads of a reading visit runs of lines, and one that begins past
+ * the window starts it anew (markdown_core_parser_lookahead_begin), so the
+ * window spans the lines of lookaheads that overlap. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_line_memo *S_memo_grow(markdown_core_parser *parser,
+                                                                                int line) {
+    markdown_core_parser_input *input = &parser->input;
+    if (!input->memo_count) {
+        input->memo_base = line;
     }
+    const size_t before = line < input->memo_base ? (size_t)(input->memo_base - line) : 0;
+    const size_t after = line >= input->memo_base ? (size_t)(line - input->memo_base) + 1 : 0;
+    const size_t count = before + (after > input->memo_count ? after : input->memo_count);
+    void *room = markdown_core_reserve(input->memo, &input->memo_room, count, sizeof(*input->memo));
+    if (!room) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return NULL;
+    }
+    input->memo = room;
+    if (before) {
+        memmove(input->memo + before, input->memo, input->memo_count * sizeof(*input->memo));
+        memset(input->memo, 0, before * sizeof(*input->memo));
+        input->memo_base = line;
+    } else {
+        memset(input->memo + input->memo_count, 0, (count - input->memo_count) * sizeof(*input->memo));
+    }
+    input->memo_count = count;
+    return &input->memo[line - input->memo_base];
+}
+
+static inline markdown_core_line_memo *S_memo(markdown_core_parser *parser, int line) {
+    markdown_core_parser_input *input = &parser->input;
+    return line >= input->memo_base && (size_t)(line - input->memo_base) < input->memo_count
+               ? &input->memo[line - input->memo_base]
+               : S_memo_grow(parser, line);
 }
 
 static void S_release_input(markdown_core_parser_input *input) {
-    S_clear_normalized_lines(input);
     markdown_core_tree_free(&input->lines);
-    markdown_core_free(input->facts);
+    markdown_core_free(input->memo);
     markdown_core_strbuf_free(&input->last_line);
 }
 
@@ -742,60 +715,11 @@ int markdown_core_text_append(markdown_core_parser *parser, const markdown_core_
     return 1;
 }
 
-/* The normalized view of a document line that carries NUL, or NULL: the
- * block parser reads each NUL as the three bytes of U+FFFD, so a column past
- * one is two bytes past its source byte. Only the document's own lines carry
- * NUL; a cell's content was copied from a normalized line. */
-static const markdown_core_normalized_line *S_nul_view_read(markdown_core_parser *parser,
-                                                            markdown_core_input_line *geometry) {
-    if (!markdown_core_input_facts(&parser->input, geometry)->nul_count) {
-        return NULL;
-    }
-    bufsize_t length;
-    if (!S_input_line_content(parser, geometry, &length)) {
-        return NULL;
-    }
-    return markdown_core_input_facts(&parser->input, geometry)->normalized;
-}
-
-/* Only a document line with facts can carry NUL. */
-static inline const markdown_core_normalized_line *S_nul_view(markdown_core_parser *parser,
-                                                              markdown_core_input_line *geometry) {
-    assert(markdown_core_parser_block_root(parser) == parser->root);
-    return markdown_core_input_facts(&parser->input, geometry) ? S_nul_view_read(parser, geometry) : NULL;
-}
-
-/* The source byte of normalized byte `index` of a NUL-bearing line, and
- * whether it is a byte of a replacement character, which stands for its NUL.
- * The NUL numbered k is at normalized byte `nuls[k] - start + 2k`. */
-static bufsize_t S_denormalized_offset(const markdown_core_normalized_line *view, uint32_t start, bufsize_t index,
-                                       bool *nul) {
-    uint32_t lo = 0, hi = view->nul_count;
-    while (lo < hi) {
-        uint32_t mid = lo + (hi - lo) / 2;
-        if ((bufsize_t)(view->nuls[mid] - start + 2 * mid) <= index) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    /* `lo` NULs are at or before the byte; the last of them may hold it. */
-    if (lo && index < (bufsize_t)(view->nuls[lo - 1] - start + 2 * (lo - 1) + 3)) {
-        *nul = true;
-        return (bufsize_t)view->nuls[lo - 1];
-    }
-    *nul = false;
-    return (bufsize_t)start + index - 2 * (bufsize_t)lo;
-}
-
 bufsize_t markdown_core_parser_mapped_source_offset(markdown_core_parser *parser, int line, int column) {
     assert(column > 0);
     markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
     if (markdown_core_parser_block_root(parser) == parser->root) {
-        const markdown_core_normalized_line *view = S_nul_view(parser, geometry);
-        bool nul;
-        return view ? S_denormalized_offset(view, geometry->start, column - 1, &nul)
-                    : (bufsize_t)geometry->start + column - 1;
+        return (bufsize_t)geometry->start + column - 1;
     }
     int ignored;
     bufsize_t source = 0;
@@ -831,10 +755,7 @@ static bufsize_t S_mapped_line_end(markdown_core_parser *parser, bufsize_t input
 bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, int line, int column) {
     markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
     if (markdown_core_parser_block_root(parser) == parser->root) {
-        if (!column) {
-            return (bufsize_t)geometry->start;
-        }
-        return markdown_core_parser_mapped_source_offset(parser, line, column) + 1;
+        return (bufsize_t)geometry->start + column;
     }
     if (!column) {
         return S_mapped_line_end(parser, (bufsize_t)geometry->start);
@@ -1008,11 +929,12 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
 
 void markdown_core_parser_claim(markdown_core_parser *parser, int line, const unsigned char *cursor, bufsize_t end) {
     /* The lookahead's last scan of each line recorded where it matched the
-     * line's containers to in the line's facts. */
+     * line's containers to in the reading's memo. */
     for (int claimed = parser->at.read.number + 1; claimed <= line; claimed++) {
         markdown_core_input_line *visited = markdown_core_parser_rewritten_line(parser, claimed);
-        assert(markdown_core_input_facts(&parser->input, visited));
-        visited->own = (uint32_t)markdown_core_input_facts(&parser->input, visited)->offset;
+        assert(claimed >= parser->input.memo_base &&
+               (size_t)(claimed - parser->input.memo_base) < parser->input.memo_count);
+        visited->own = (uint32_t)parser->input.memo[claimed - parser->input.memo_base].offset;
     }
     parser->claimed_cursor = cursor;
     parser->claimed_line = line;
@@ -1026,61 +948,12 @@ static inline int S_append_copied_mark(markdown_core_parser *parser, markdown_co
                                  (markdown_core_line_mark){offset, line, source, 1, 1, parser->at.read.indent});
 }
 
-/* The runs of a document line of an input that holds NUL. A line without
- * NUL is one copied run. On a NUL-bearing line, each replacement character is
- * a run whose three content bytes all stand for its one NUL, and the bytes
- * between them are copied runs. NUL k is at normalized byte
- * `nuls[k] - start + 2k`; the walk starts at the first NUL whose replacement
- * ends after the slice's first byte and meets each later one once. It stays
- * out of line, apart from the path of an input without NUL. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) int S_append_nul_line_marks(markdown_core_parser *parser,
-                                                                       markdown_core_node *node, int line,
-                                                                       bufsize_t line_start, int column,
-                                                                       bufsize_t length, bufsize_t offset) {
-    const markdown_core_normalized_line *view = S_nul_view(parser, markdown_core_parser_visited_line(parser, line));
-    if (!view) {
-        return S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
-    }
-    uint32_t start = (uint32_t)line_start;
-    bufsize_t first = column - 1, last = first + length, index = first;
-    uint32_t k = 0, hi = view->nul_count;
-    while (k < hi) {
-        uint32_t mid = k + (hi - k) / 2;
-        if ((bufsize_t)(view->nuls[mid] - start + 2 * mid) + 3 <= index) {
-            k = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    while (index < last) {
-        bool inside = false;
-        bufsize_t at = last, source;
-        if (k < view->nul_count) {
-            at = (bufsize_t)(view->nuls[k] - start + 2 * k);
-            inside = at <= index;
-        }
-        source = inside ? (bufsize_t)view->nuls[k] : (bufsize_t)start + index - 2 * (bufsize_t)k;
-        if (!S_append_content_mark(parser, &node->content_map,
-                                   (markdown_core_line_mark){offset + index - first, line, source, 1, inside ? 0 : 1,
-                                                             parser->at.read.indent})) {
-            return 0;
-        }
-        bufsize_t next = inside ? at + 3 : at;
-        k += inside;
-        index = next < last ? next : last;
-    }
-    return 1;
-}
-
 /* The runs of `length` bytes from `column` of input line `line`, which
  * starts at `line_start` in the active input. */
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset) {
     if (!parser->input.mapped) {
         return S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
-    }
-    if (markdown_core_parser_block_root(parser) == parser->root) {
-        return S_append_nul_line_marks(parser, node, line, line_start, column, length, offset);
     }
     return markdown_core_text_append(parser, &markdown_core_parser_block_root(parser)->content_map, &node->content_map,
                                      line_start + column - 1, length, offset);
@@ -4598,7 +4471,7 @@ static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) 
  * reading after one of those goes on as it is. The children taken back
  * stand as their publish left them, and so do their lines, what their
  * readings read (THE REACH), their roster records, their headings and
- * their definitions, moved by the edit's delta; their facts and content
+ * their definitions, moved by the edit's delta; their content
  * runs are their completion's, which is done, and go. The reopen keeps all of it aside (markdown_core_edit),
  * and the reading checks each child's line as it comes to it, the limit of
  * its line loop the line's start (S_parse_source). */
@@ -4851,19 +4724,10 @@ static void S_edit_pass(markdown_core_edit *edit, const markdown_core_node *root
  * new children against (ast.c, A DOCUMENT REOPENED FOR AN EDIT). */
 
 void markdown_core_parser_compact(markdown_core_parser *parser) {
-    markdown_core_parser_input *input = &parser->input;
     markdown_core_array_shrink(&parser->line_marks);
-    if (input->fact_count < input->fact_capacity / 2) {
-        void *facts =
-            markdown_core_realloc(input->facts, (input->fact_count ? input->fact_count : 1) * sizeof(*input->facts));
-        if (facts) {
-            input->facts = facts;
-            input->fact_capacity = input->fact_count ? input->fact_count : 1;
-        }
-    }
     /* What only a reading of the old tail holds: the whole text read none. */
     markdown_core_edit *edit = parser->stream->edit;
-    assert(!edit->count && !S_lines_back_count(&input->lines));
+    assert(!edit->count && !S_lines_back_count(&parser->input.lines));
     markdown_core_free(edit->children);
     edit->children = NULL;
     edit->children_capacity = 0;
@@ -5003,8 +4867,8 @@ bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdo
     if (markdown_core_parser_reads_lines(parser, block)) {
         return true;
     }
-    /* Its lines' bytes are its content's, which a text with NUL, read as
-     * U+FFFD, does not keep (S_leap_first). And no line of it set a flag of
+    /* Its lines' bytes are its content's, which a cell's content, an input
+     * of its own, does not keep (S_leap_first). And no line of it set a flag of
      * an element's (node.h), which a reading from a later line would find
      * set as no line before it set it: a table's delimiter row that found
      * no header in it says no later one will. */
@@ -5926,7 +5790,7 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
  * and the reading stands where a parse of the text before the line, all of
  * its blocks closed, stands: the root open and current, nothing pending.
  * The rest goes with the children after it -- the lines
- * from the line on, their facts and normalized bytes, the declarations,
+ * from the line on, the declarations,
  * the headings and the definitions listed from there (the document's
  * reopen), the lookups the commits found nothing for, which the flush has
  * asked again, and the cells it read -- and the input is the new text, a new
@@ -7418,27 +7282,30 @@ bool markdown_core_parser_altered_labels(markdown_core_parser *parser, markdown_
     markdown_core_strbuf_clear(altered);
     /* Both are in byte order: a merge keeps what one holds and the other
      * does not. */
-    for (bufsize_t left = 0, other = 0; ok && (left < made.size || other < lost.size);) {
-        const bufsize_t left_size = left < made.size ? (bufsize_t)strlen((const char *)made.ptr + left) + 1 : 0;
-        const bufsize_t other_size = other < lost.size ? (bufsize_t)strlen((const char *)lost.ptr + other) + 1 : 0;
-        int order = !left_size ? 1 : !other_size ? -1 : 0;
+    bufsize_t left = 0, other = 0, left_size = 0, other_size = 0;
+    const unsigned char *made_key = markdown_core_strbuf_key(&made, &left, &left_size);
+    const unsigned char *lost_key = markdown_core_strbuf_key(&lost, &other, &other_size);
+    while (ok && (made_key || lost_key)) {
+        int order = !made_key ? 1 : !lost_key ? -1 : 0;
         if (!order) {
             const bufsize_t common = left_size < other_size ? left_size : other_size;
-            order = memcmp(made.ptr + left, lost.ptr + other, (size_t)common);
+            order = memcmp(made_key, lost_key, (size_t)common);
+            order = order ? order : (left_size > other_size) - (left_size < other_size);
         }
         if (order) {
-            const unsigned char *key = order < 0 ? made.ptr + left : lost.ptr + other;
+            const unsigned char *key = order < 0 ? made_key : lost_key;
             const bufsize_t size = order < 0 ? left_size : other_size;
             bool failed = false;
-            if (S_label_flips(parser, key, size - 1, order < 0, start, to, &failed)) {
-                markdown_core_strbuf_put(altered, key, size);
+            if (S_label_flips(parser, key, size, order < 0, start, to, &failed)) {
+                markdown_core_strbuf_put_key(altered, key, size);
             }
             ok = !failed;
-            left += order < 0 ? left_size : 0;
-            other += order > 0 ? other_size : 0;
-        } else {
-            left += left_size;
-            other += other_size;
+        }
+        if (order <= 0) {
+            made_key = markdown_core_strbuf_key(&made, &left, &left_size);
+        }
+        if (order >= 0) {
+            lost_key = markdown_core_strbuf_key(&lost, &other, &other_size);
         }
     }
     markdown_core_strbuf_free(&made);
@@ -7478,10 +7345,12 @@ bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_c
     }
     size_t room = 0;
     bool ok = true;
-    for (bufsize_t item = 0; ok && item < altered->size;) {
-        const unsigned char *bytes = altered->ptr + item;
-        const bufsize_t size = (bufsize_t)strlen((const char *)bytes);
-        item += size + 1;
+    bufsize_t size;
+    for (bufsize_t item = 0; ok;) {
+        const unsigned char *bytes = markdown_core_strbuf_key(altered, &item, &size);
+        if (!bytes) {
+            break;
+        }
         const markdown_core_key_index_slot *slot = markdown_core_key_index_find(&edit->names, bytes, size);
         if (!slot) {
             continue;
@@ -7945,66 +7814,14 @@ static void S_release_stream(markdown_core_parser *parser) {
     parser->stream = NULL;
 }
 
-/* Materializing a normalized view is an allocation boundary, separate from
- * the ordinary borrowed view resolved inline by both consumers. */
-static const unsigned char *S_normalize_input_line(markdown_core_parser *parser, const markdown_core_input_line *line,
-                                                   markdown_core_line_facts *facts, bufsize_t length) {
-    size_t bytes = ((size_t)length + 2 + sizeof(uint32_t) - 1) / sizeof(uint32_t) * sizeof(uint32_t);
-    markdown_core_normalized_line *view =
-        markdown_core_alloc(1, sizeof(*view) + bytes + (size_t)facts->nul_count * sizeof(uint32_t));
-    if (!view) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    view->nuls = (uint32_t *)(void *)(view->bytes + bytes);
-    unsigned char *out = view->bytes;
-    for (size_t at = line->start; at < line->end; at++) {
-        unsigned char byte = parser->input.source[at];
-        if (byte) {
-            *out++ = byte;
-        } else {
-            view->nuls[view->nul_count++] = (uint32_t)at;
-            *out++ = 0xef;
-            *out++ = 0xbf;
-            *out++ = 0xbd;
-        }
-    }
-    *out++ = '\n';
-    *out = 0;
-    view->next = parser->input.normalized;
-    view->fact = (uint32_t)(facts - parser->input.facts) + 1;
-    parser->input.normalized = view;
-    facts->normalized = view;
-    return view->bytes;
-}
-
-static inline const unsigned char *S_input_line_content(markdown_core_parser *parser, markdown_core_input_line *line,
-                                                        bufsize_t *length) {
-    size_t size = line->end - line->start;
-    markdown_core_line_facts *facts = markdown_core_input_facts(&parser->input, line);
-    uint32_t nul_count = facts ? facts->nul_count : 0;
-    /* Raw geometry is bounded when its input is installed. Only expansion
-     * needs an additional bound at this allocation boundary. */
-    *length = (bufsize_t)size;
-    if (!nul_count) {
-        return parser->input.source + line->start;
-    }
-    if (nul_count > ((size_t)(INT32_MAX / 2) - size) / 2) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    *length += (bufsize_t)(2 * nul_count);
-    return facts->normalized ? facts->normalized->bytes : S_normalize_input_line(parser, line, facts, *length);
-}
-
-/* THE END OF A PHYSICAL SPAN: the first NUL, CR or LF at or after `cursor`,
- * or `end`. This alphabet belongs to the input contract (markdown_core.h), not
+/* THE END OF A PHYSICAL LINE: the first CR or LF at or after `cursor`, or
+ * `end`. This alphabet belongs to the input contract (markdown_core.h), not
  * to a grammar: no dialect changes it, and this is the one scan that reads
  * every byte of every input. So it does not go through a class table
  * (markdown_core_scan_to_class, one load per byte), but compares a machine
- * word at a time against its three bytes and steps bytewise only through the
+ * word at a time against its two bytes and steps bytewise only through the
  * word that holds the boundary. (x - ones) & ~x & highs flags a word that
- * holds a zero byte; a word holds CR or LF when the word XOR that byte
+ * holds a zero byte, so a word holds CR or LF when the word XOR that byte
  * repeated holds a zero. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
     unsigned char *S_source_span_end(const unsigned char *cursor, const unsigned char *end) {
@@ -8015,14 +7832,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
         memcpy(&word, cursor, sizeof(word));
         const uint64_t cr = word ^ (ones * '\r');
         const uint64_t lf = word ^ (ones * '\n');
-        if ((((word - ones) & ~word) | ((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
+        if ((((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
             break;
         }
         cursor += sizeof(word);
     }
     for (; cursor < end; cursor++) {
         const unsigned char byte = *cursor;
-        if (byte == '\0' || byte == '\r' || byte == '\n') {
+        if (byte == '\r' || byte == '\n') {
             break;
         }
     }
@@ -8031,27 +7848,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
 
 /* THE SOLE PHYSICAL-LINE SCANNER for root and mapped inputs: scans line
  * `entry` from `from` to its end, through its terminator, and counts the
- * NULs it meets in the line's facts, and the bytes past the frontier as the
- * input's line work. Grammar facts live beside their line,
- * so changing inputs drops them together. Inlining is explicit: both GCC and
- * Clang may otherwise outline this per-line step. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_scan_line(markdown_core_parser *parser,
+ * bytes past the frontier as the input's line work. Inlining is explicit:
+ * both GCC and Clang may otherwise outline this per-line step. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_scan_line(markdown_core_parser *parser,
                                                                         markdown_core_input_line *entry, size_t from) {
-    uint32_t nul_count = 0;
     const size_t scanned = parser->input.scanned;
     const unsigned char *source = parser->input.source;
-    const unsigned char *cursor = source + from;
     const unsigned char *end = source + parser->input.size;
-    /* Scan spans ending at a line boundary or a normalization boundary.
-     * The NUL count changes only at the latter, not on every source byte. */
-    for (;;) {
-        cursor = S_source_span_end(cursor, end);
-        if (cursor == end || *cursor) {
-            break;
-        }
-        nul_count++;
-        cursor++;
-    }
+    const unsigned char *cursor = S_source_span_end(source + from, end);
     entry->end = (uint32_t)(cursor - source);
     if (cursor < end && *cursor == '\r') {
         parser->input.returns = true;
@@ -8060,18 +7864,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_scan_line(markdown
     if (cursor < end && *cursor == '\n') {
         cursor++;
     }
-    if (nul_count) {
-        markdown_core_line_facts *facts = markdown_core_input_facts(&parser->input, entry);
-        facts = facts ? facts : markdown_core_parser_extend_line_facts(parser, entry);
-        if (!facts) {
-            return false;
-        }
-        facts->nul_count += nul_count;
-        parser->input.mapped = true;
-    }
     parser->input.scanned = (size_t)(cursor - source);
     parser->input_line_work += parser->input.scanned - scanned;
-    return true;
 }
 
 /* A line read in with no room in place: a new last leaf, or a place before
@@ -8090,9 +7884,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *line = NULL;
     while (index >= lines->front && parser->input.scanned < parser->input.size) {
         markdown_core_input_line entry = {.start = (uint32_t)parser->input.scanned};
-        if (!S_scan_line(parser, &entry, entry.start)) {
-            return NULL;
-        }
+        S_scan_line(parser, &entry, entry.start);
         /* A reading of an edit reads its lines in before the back's; room in
          * place in the last leaf is room at the end of a tree with no back. */
         line = lines->spare
@@ -8120,21 +7912,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
  * the static inline body directly, including when it advances the frontier. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index) {
     return S_extend_source_lines(parser, index);
-}
-
-markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
-                                                                 markdown_core_input_line *line) {
-    void *facts = markdown_core_reserve(parser->input.facts, &parser->input.fact_capacity, parser->input.fact_count + 1,
-                                        sizeof(*parser->input.facts));
-    if (!facts) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    parser->input.facts = facts;
-    markdown_core_line_facts *entry = &parser->input.facts[parser->input.fact_count++];
-    *entry = (markdown_core_line_facts){0};
-    line->facts = (uint32_t)parser->input.fact_count;
-    return entry;
 }
 
 /* Where the last complete line of `source` ends (parser.h, input_complete):
@@ -8178,32 +7955,11 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) size_t
 
 /* THE LINE THE TEXT HAD NOT FINISHED, the last the line index scanned when
  * a session's text grows, scanned on to where the text now ends: the text
- * grew at its end, so the line keeps its bytes and only its end moves, and
- * what a reading learned of it as it was goes -- the view its NULs made of
- * it, which it has outgrown, and the facts of its prefixes, which a reading
- * of its end recorded. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_scan_last_line(markdown_core_parser *parser) {
+ * grew at its end, so the line keeps its bytes and only its end moves. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_scan_last_line(markdown_core_parser *parser) {
     markdown_core_parser_input *input = &parser->input;
     markdown_core_input_line *line = markdown_core_input_line_at(input, input->lines.front - 1);
-    const uint32_t end = line->end;
-    if (!S_scan_line(parser, line, end)) {
-        return false;
-    }
-    markdown_core_line_facts *facts = markdown_core_input_facts(input, line);
-    if (line->end != end && facts) {
-        facts->container = NULL;
-        facts->table_container = NULL;
-        if (facts->normalized) {
-            markdown_core_normalized_line **link = &input->normalized;
-            while (*link != facts->normalized) {
-                link = &(*link)->next;
-            }
-            *link = facts->normalized->next;
-            markdown_core_free(facts->normalized);
-            facts->normalized = NULL;
-        }
-    }
-    return true;
+    S_scan_line(parser, line, line->end);
 }
 
 /* Reads input line `index`, from its start or from `from` (A REST INSIDE A
@@ -8237,6 +7993,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown
     }
     if (parser->claimed_cursor) {
         assert(parser->claimed_cursor >= source + next && parser->claimed_cursor <= source + length);
+        (void)length;
         parser->at.read.number = parser->claimed_line;
         parser->at.read.start = (bufsize_t)markdown_core_parser_visited_line(parser, parser->at.read.number)->start;
         parser->at.last_line_end = parser->claimed_last_end;
@@ -8283,7 +8040,7 @@ static void S_read_taken(markdown_core_parser *parser, size_t taken) {
 /* THE DRIVER: reads the lines of `source` as the active input. A cell's
  * content is an input of its own, installed and read whole. The document's
  * text is installed at its first commit and grows at its end from one commit
- * to the next, so its lines keep their geometry and facts and the driver
+ * to the next, so its lines keep their geometry and the driver
  * continues from the line it stopped before; the envelope at its start is
  * read by the call before its first line. An edit's reading reads to
  * `limit`, the line of the old child it may take back next, and first reads
@@ -8294,11 +8051,11 @@ static void S_read_taken(markdown_core_parser *parser, size_t taken) {
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
     assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     bool at_root = markdown_core_parser_block_root(parser) == parser->root;
+    /* What the lookaheads learn is this reading's (THE SCAN MEMO). */
+    parser->input.memo_count = 0;
     if (!at_root || !parser->input.source) {
-        S_clear_normalized_lines(&parser->input);
         parser->input.scanned = 0;
         markdown_core_tree_erase(&parser->input.lines, 0, parser->input.lines.count);
-        parser->input.fact_count = 0;
         parser->input.mapped = !at_root;
         parser->input.returns = false;
         parser->input.first_line = parser->at.read.number + 1;
@@ -8318,8 +8075,8 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     parser->input.last_line_ready = false;
     markdown_core_stream *const stream = at_root ? parser->stream : NULL;
     if (stream && parser->input.lines.front && parser->input.scanned < length &&
-        source[parser->input.scanned - 1] != '\n' && !S_scan_last_line(parser)) {
-        return;
+        source[parser->input.scanned - 1] != '\n') {
+        S_scan_last_line(parser);
     }
 bound:;
     size_t limit = length;
@@ -8417,7 +8174,8 @@ void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count,
      * Byte-counted advances may split a scalar; column-counted advances
      * always consume it completely. */
     if (!columns) {
-        while (count > 0 && reader->offset < reader->line.len && (c = data[reader->offset])) {
+        while (count > 0 && reader->offset < reader->line.len) {
+            c = data[reader->offset];
             reader->split = false;
             if (c == '\t') {
                 reader->column += TAB_STOP - (reader->column % TAB_STOP);
@@ -8429,7 +8187,8 @@ void markdown_core_reader_advance(markdown_core_reader *reader, bufsize_t count,
             count -= 1;
         }
     } else {
-        while (count > 0 && reader->offset < reader->line.len && (c = data[reader->offset])) {
+        while (count > 0 && reader->offset < reader->line.len) {
+            c = data[reader->offset];
             if (c == '\t') {
                 chars_to_tab = TAB_STOP - (reader->column % TAB_STOP);
                 reader->split = chars_to_tab > count;
@@ -8901,13 +8660,15 @@ done:
  * the block parser will hand to the new block, and the first line it rejects
  * is where the block parser will close the block's container.
  *
- * Linearity is the other contract, and it is why the cache exists. Two failed
+ * Linearity is the other contract, and it is why the memo exists (THE SCAN
+ * MEMO, parser.h `memo`). Two failed
  * candidates whose scans reach the same line have nested chains: the later
  * candidate's line lay inside the earlier one's scan, so every container open
  * at the earlier candidate was still open, and the later one's chain extends
- * it. The earlier scan therefore leaves, on every line it visited, the state
- * after the deepest container it matched, and a later scan resumes from
- * there: each (container, line) prefix is matched once per parse, and a line
+ * it. The earlier scan therefore leaves, in the memo of every line it
+ * visited, the state after the deepest container it matched, and a later
+ * scan resumes from there: each (container, line) prefix is matched once per
+ * reading, and a line
  * visited by a deeper scan costs the bytes of the containers it adds. Blank
  * lines, which cost no bytes, are recorded as runs, and a scan whose extra
  * containers are lists and list items -- the containers that accept every
@@ -8928,7 +8689,7 @@ static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int 
             line--;
             cursor = finished;
         }
-        markdown_core_line_facts *entry = markdown_core_parser_get_line_facts(lookahead->parser, lookahead->run_start);
+        markdown_core_line_memo *entry = S_memo(lookahead->parser, lookahead->run_start);
         if (entry) {
             entry->run_end = line;
             entry->run_end_at = (size_t)(cursor - lookahead->parser->input.source);
@@ -8978,6 +8739,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_lookahead_room(mar
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_lookahead_start(
     markdown_core_parser *parser, markdown_core_node *const *path, int depth, const unsigned char *cursor, int line,
     markdown_core_block_lookahead *lookahead) {
+    /* A lookahead that begins past the lines the memo holds overlaps no
+     * earlier one: the memo starts anew there (THE SCAN MEMO). */
+    if ((size_t)(line - parser->input.memo_base) > parser->input.memo_count) {
+        parser->input.memo_count = 0;
+    }
     *lookahead = (markdown_core_block_lookahead){
         .parser = parser,
         .path = path,
@@ -9036,7 +8802,7 @@ markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lo
         const unsigned char *start = lookahead->cursor;
         const unsigned char *next;
         markdown_core_chunk input;
-        markdown_core_line_facts *entry;
+        markdown_core_line_memo *entry;
         int this_line = lookahead->line;
         int from = 1;
         bufsize_t resumed_offset;
@@ -9058,11 +8824,7 @@ markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lo
         }
         next = parser->input.source + markdown_core_input_line_next(parser, geometry);
         parser->block_lookahead_work++;
-        if (markdown_core_input_facts(&parser->input, geometry) &&
-            markdown_core_input_facts(&parser->input, geometry)->nul_count) {
-            input.data = (unsigned char *)content;
-            input.len = content_length + 1;
-        } else if (next == parser->input.source + geometry->end) {
+        if (next == parser->input.source + geometry->end) {
             /* A line without a terminator, the input's last, normalized once:
              * the matchers read a line through its terminator. */
             if (!parser->input.last_line_ready) {
@@ -9095,8 +8857,8 @@ markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lo
         parser->at.read.blank = false;
         parser->at.read.split = false;
 
-        entry = markdown_core_parser_get_line_facts(parser, this_line);
-        if (!entry && parser->error) {
+        entry = S_memo(parser, this_line);
+        if (!entry) {
             return NULL;
         }
         if (entry && entry->container && entry->depth < lookahead->depth &&
@@ -9154,9 +8916,9 @@ markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lo
         }
         blank = taken || parser->at.read.blank;
 
-        /* Element callbacks may append optional facts and move their vector.
+        /* A lookahead an element callback ran may grow the memo and move it.
          * A line number, not the earlier borrow, survives that boundary. */
-        entry = markdown_core_parser_get_line_facts(parser, this_line);
+        entry = S_memo(parser, this_line);
         if (!entry) {
             return NULL;
         }

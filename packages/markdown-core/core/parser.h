@@ -121,8 +121,8 @@ typedef struct markdown_core_block_input {
     uint32_t enclosing;
 } markdown_core_block_input;
 
-/* AN INPUT the block parser reads: its bytes, and the geometry and grammar
- * facts of its lines. The driver and lookahead extend one index; a source
+/* AN INPUT the block parser reads: its bytes, and the geometry of its
+ * lines. The driver and lookahead extend one index; a source
  * byte is scanned for line geometry once, whether the input is the
  * document or a mapped cell. A cell's content is read as an input of its
  * own, beside the document's, which keeps its index (blocks.c,
@@ -144,16 +144,17 @@ typedef struct markdown_core_parser_input {
     /* Where the text ends that the back of the other trees is in the terms
      * of (THE BACK). */
     size_t back_end;
-    struct markdown_core_normalized_line *normalized;
-    /* THE FACTS of the lines, a line's `facts` naming its own as its index
-     * plus one, or none. A line that goes to the back loses its facts, which
-     * name blocks and lines a reading may read otherwise (S_lines_unfact). */
-    struct markdown_core_line_facts *facts;
-    size_t fact_count, fact_capacity;
+    /* THE SCAN MEMO of the reading (blocks.c, THE LOOKAHEAD): what the
+     * lookaheads of one reading of the input learned of the lines they
+     * visited, line `memo_base` first, so a later lookahead of the same
+     * reading resumes where an earlier one matched to. It is the reading's
+     * alone: each reading starts it empty (S_parse_source). */
+    struct markdown_core_line_memo *memo;
+    int memo_base;
+    size_t memo_count, memo_room;
     /* Whether a column of the input may stand elsewhere than the same
-     * offset from its line's start in the source: true for a cell's content,
-     * and for the document once its scan finds NUL, which the block parser
-     * reads as the three bytes of U+FFFD. */
+     * offset from its line's start in the source: true for a cell's
+     * content. */
     bool mapped;
     /* Whether the scan found a line that ends with `\r`, which a block of
      * literal lines writes as `\n` (blocks.c, THE LEAP): once it does, for
@@ -1322,13 +1323,10 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
     return markdown_core_node_set_kind(node, parent, kind);
 }
 
-/* Physical geometry is present for every visited line. Optional normalized
- * views and grammar facts share one lazily created record for that line. */
+/* Physical geometry is present for every visited line. */
 typedef struct markdown_core_input_line {
     /* Input buffers, hence offsets and line counts, are bounded by INT32_MAX / 2. */
     uint32_t start, end;
-    /* One-based index; zero means no query needs optional state for this line. */
-    uint32_t facts;
     /* Where the line's own bytes begin: the offset in the line where the
      * bytes of the last open block the line reached begin, past the
      * prefixes of the containers above it, as the block parser last matched
@@ -1354,23 +1352,12 @@ typedef struct markdown_core_input_line {
 #define MARKDOWN_CORE_LINE_LOOK(line) ((line)->look & ~MARKDOWN_CORE_LINE_CUT)
 #define MARKDOWN_CORE_LINE_PAST UINT32_C(0x80000000)
 
-#define MARKDOWN_CORE_FACTS_DROPPED INT_MIN
-
-typedef struct markdown_core_line_facts {
-    struct markdown_core_normalized_line *normalized;
-    /* Table grammar search facts under one matched container prefix. */
-    const struct markdown_core_node *table_container;
-    int table_offset;
-    unsigned table_absent;
-    /* A candidate matches open-container prefixes on every line it visits.
-     * Failed candidates reaching the same line have nested container paths,
-     * so each resumes from the deepest match already recorded. Each
-     * (container, line) prefix is matched at most once per parse. NULL means
-     * that no scan has recorded a prefix. */
+/* What a lookahead learned of a line it visited (blocks.c, THE LOOKAHEAD):
+ * the deepest container of its path it matched there, `container`, NULL for
+ * none, at `depth` in the path, and the line's state past that container's
+ * prefix. */
+typedef struct markdown_core_line_memo {
     const struct markdown_core_node *container;
-    /* Its place in the scan's path: path[depth] == container; or
-     * MARKDOWN_CORE_FACTS_DROPPED once its line dropped, when no line names
-     * it (blocks.c, S_drop_lines). */
     int depth;
     /* The line state after that container's prefix: what S_advance_offset left. */
     bufsize_t offset;
@@ -1386,12 +1373,8 @@ typedef struct markdown_core_line_facts {
      * whose extra containers accept every blank line steps over the run at
      * once. 0 when not a run. */
     int run_end;
-    /* Only NUL-bearing lines need this count; it occupies former padding. */
-    uint32_t nul_count;
-    /* Where the first line after the run begins, as an offset in the input:
-     * a session's text moves when it grows, and the facts stay. */
     size_t run_end_at;
-} markdown_core_line_facts;
+} markdown_core_line_memo;
 /* Where the line after `line`, a line the scan has passed, starts: past
  * its terminator. The lines are in leaves (tree.h), so the next line's
  * record may be in another; the terminator's one or two bytes say it. */
@@ -1415,12 +1398,6 @@ extern const markdown_core_tree_ops markdown_core_input_lines;
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *markdown_core_input_line_at(const markdown_core_parser_input *input, size_t index) {
     return (markdown_core_input_line *)markdown_core_tree_at(&input->lines, index, sizeof(markdown_core_input_line));
-}
-
-/* The facts line `line` names, or NULL. */
-static inline markdown_core_line_facts *markdown_core_input_facts(const markdown_core_parser_input *input,
-                                                                  const markdown_core_input_line *line) {
-    return line->facts ? &input->facts[line->facts - 1] : NULL;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -1499,24 +1476,10 @@ static inline size_t markdown_core_reader_after(const markdown_core_reader *read
 }
 
 /* WHERE THE LINES THE TEXT HAS FINISHED END (`complete`): the end of the
- * last line with a line ending. The facts a lookahead keeps for a run of
- * blank lines hold finished lines only. */
+ * last line with a line ending. The memo a lookahead keeps for a run of
+ * blank lines holds finished lines only. */
 static inline const unsigned char *markdown_core_parser_complete_end(const markdown_core_parser *parser) {
     return parser->input.source + parser->input.complete;
-}
-
-/* Optional state is sparse within the input index: properties and ordinary
- * driver visits need only geometry unless they normalize a NUL-bearing line.
- * Both vectors reset with their input and retain capacity until disposal. */
-markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
-                                                                 markdown_core_input_line *line);
-static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(markdown_core_parser *parser, int number) {
-    markdown_core_input_line *line = markdown_core_parser_source_line(parser, number);
-    if (!line) {
-        return NULL;
-    }
-    markdown_core_line_facts *facts = markdown_core_input_facts(&parser->input, line);
-    return facts ? facts : markdown_core_parser_extend_line_facts(parser, line);
 }
 
 /* The flags of a container a lookahead matches, as it first matched it. */
@@ -1613,8 +1576,8 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
  * `source_end` the offset just after it, so a range whose last byte is at
  * `column` ends there; column zero is the start of the line.
  * Producers call these when placing a node. */
-/* The answers for a line that is not a copy of its source: a document line
- * that carries NUL, or a line of a cell's content. */
+/* The answers for a line that is not a copy of its source: a line of a
+ * cell's content. */
 bufsize_t markdown_core_parser_mapped_source_offset(markdown_core_parser *parser, int line, int column);
 bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, int line, int column);
 
@@ -1653,7 +1616,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
  * its start is at least this offset. */
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
 /* The content of line `line` of the active input, which the driver read,
- * as the block parser reads it, a NUL as U+FFFD, without its terminator, and
+ * as the block parser reads it, without its terminator, and
  * its length; NULL, with the parse failed, when storage could not be had. */
 const unsigned char *markdown_core_parser_line_content(markdown_core_parser *parser, int line, bufsize_t *length);
 /* THE PLACES OF THE OWN LINES OF `node`, a block of `container`, which

@@ -56,7 +56,7 @@ without a library lock. A single returned document may be read concurrently;
 its owner must synchronize the final free after all readers have finished.
 
 Line endings are recognized as LF, CRLF, or CR. Embedded NUL bytes are parsed
-as U+FFFD, matching the engine's source rules. An empty source is a valid
+as written, as control bytes, matching the engine's source rules. An empty source is a valid
 document.
 
 The following interfaces do not exist:

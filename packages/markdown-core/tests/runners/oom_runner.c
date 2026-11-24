@@ -104,7 +104,7 @@ static const char OOM_CORPUS[] = "^a[**b c**]{}z^ ~a[**b&#32;c**]{}z~ ^a~~b c~~z
                                  "\n"
                                  "[^fn]: footnote *body*\n"
                                  "\n"
-                                 /* Exercises one-shot embedded-NUL normalization. */
+                                 /* An embedded NUL, a byte of the text like any other. */
                                  "text before \0 text after\n"
                                  "\n"
                                  "<!-- comment -->\n";

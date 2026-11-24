@@ -413,8 +413,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     }
     markdown_core_block_settle(parser, table_header, node);
 
-    markdown_core_reader_advance(
-        reader, (int)strlen((const char *)markdown_core_reader_rest(reader, 0)) - 1 - reader->offset, false);
+    markdown_core_reader_end(reader);
 
     return node;
 }

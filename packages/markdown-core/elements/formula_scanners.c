@@ -21,7 +21,7 @@ bufsize_t scan_formula_dollar_inline_open(const unsigned char *data, bufsize_t l
 
 {
   unsigned char yych;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '$') goto yy1;
   ++p;
   { return 0; }
@@ -43,14 +43,14 @@ bufsize_t scan_formula_dollar_backtick_open(const unsigned char *data, bufsize_t
 
 {
   unsigned char yych;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '$') goto yy4;
   ++p;
 yy3:
   { return 0; }
 yy4:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych != '`') goto yy3;
   ++p;
   { return (bufsize_t)(p - start); }
@@ -69,14 +69,14 @@ bufsize_t scan_formula_dollar_display_open(const unsigned char *data, bufsize_t 
 
 {
   unsigned char yych;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '$') goto yy7;
   ++p;
 yy6:
   { return 0; }
 yy7:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych != '$') goto yy6;
   ++p;
   { return (bufsize_t)(p - start); }
@@ -96,7 +96,7 @@ bufsize_t scan_formula_latex_backslash_inline_open(const unsigned char *data, bu
 
 {
   unsigned char yych;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '\\') goto yy10;
   ++p;
 yy9:
@@ -104,10 +104,10 @@ yy9:
 yy10:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych != '\\') goto yy9;
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '(') goto yy11;
   p = marker;
   goto yy9;
@@ -130,7 +130,7 @@ bufsize_t scan_formula_latex_backslash_display_open(const unsigned char *data, b
 
 {
   unsigned char yych;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '\\') goto yy14;
   ++p;
 yy13:
@@ -138,10 +138,10 @@ yy13:
 yy14:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych != '\\') goto yy13;
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '[') goto yy15;
   p = marker;
   goto yy13;

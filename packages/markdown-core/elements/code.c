@@ -13,7 +13,7 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_
     bufsize_t startpos = markdown_core_inline_offset(inline_state);
     bufsize_t len = 0;
 
-    while ((c = markdown_core_inline_peek_char(inline_state)) && (*f)(c)) {
+    while (!markdown_core_inline_is_eof(inline_state) && (*f)(c = markdown_core_inline_peek_char(inline_state))) {
         advance(inline_state);
         len++;
     }
@@ -61,7 +61,8 @@ bufsize_t markdown_core_inline_scan_backticks(markdown_core_backticks *backticks
     while (!found) {
         // read non backticks
         unsigned char c;
-        while ((c = markdown_core_inline_peek_char(inline_state)) && c != '`') {
+        while (!markdown_core_inline_is_eof(inline_state) &&
+               (c = markdown_core_inline_peek_char(inline_state)) != '`') {
             advance(inline_state);
         }
         if (markdown_core_inline_is_eof(inline_state)) {

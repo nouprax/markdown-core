@@ -1326,17 +1326,26 @@ static void utf8(test_batch_runner *runner) {
     test_valid_char(runner, "\xF0\x90\x80\x80", "valid utf8 F0908080");
     test_valid_char(runner, "\xF4\x8F\xBF\xBF", "valid utf8 F48FBFBF");
 
-    // Test string containing null character
+    // A NUL is a byte of the text, as it is written
     static const char string_with_null[] = "((((\0))))";
-    test_md_paragraph_bytes(runner, string_with_null, sizeof(string_with_null) - 1, "((((" UTF8_REPL "))))",
-                            "utf8 with U+0000");
+    markdown_core_node *nul_doc = markdown_core_parse_document(string_with_null, sizeof(string_with_null) - 1);
+    markdown_core_node *nul_text = child_at(child_at(nul_doc, 0), 0);
+    markdown_core_string nul_literal;
+    OK(runner,
+       nul_text && literal_of(nul_text, &nul_literal) && nul_literal.length == sizeof(string_with_null) - 1 &&
+           !memcmp(nul_literal.data, string_with_null, nul_literal.length),
+       "utf8 with U+0000 keeps the NUL in its text");
+    markdown_core_node_free(nul_doc);
 
     // Test NUL followed by newline
     static const char string_with_nul_lf[] = "```\n\0\n```\n";
     markdown_core_node *doc = markdown_core_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1);
     markdown_core_node *code_block = child_at(doc, 0);
     INT_EQ(runner, code_block->kind, MARKDOWN_CORE_NODE_CODE_BLOCK, "utf8 with \\0\\n parses a code block");
-    LITERAL_EQ(runner, code_block, UTF8_REPL "\n", "utf8 with \\0\\n");
+    markdown_core_string code_literal;
+    OK(runner,
+       literal_of(code_block, &code_literal) && code_literal.length == 2 && !memcmp(code_literal.data, "\0\n", 2),
+       "utf8 with \\0\\n keeps the NUL in the literal");
     markdown_core_node_free(doc);
 
     // A leading U+FEFF is an ordinary character: it is text, not a marker to skip.
@@ -4771,7 +4780,9 @@ static void properties_values(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
-/* A NUL in a member reads as U+FFFD, as the Markdown parser reads it. */
+/* A NUL in a member is a control byte, as the Markdown parser reads it,
+ * which a YAML value cannot hold: the envelope reads as one with \x01 in
+ * its place does. */
 static void properties_nul(test_batch_runner *runner) {
     static const char source[] = "---\ntitle: a\0b\n---\nbody\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, sizeof(source) - 1);
@@ -4782,14 +4793,8 @@ static void properties_nul(test_batch_runner *runner) {
     const markdown_core_node *metadata =
         facade_field(markdown_core_document_root(document), markdown_core_node_document_metadata);
     markdown_core_metadata_scalar scalar;
-    OK(runner,
-       metadata_scalar(facade_metadata(metadata, markdown_core_metadata_title), &scalar) &&
-           scalar.kind == MARKDOWN_CORE_METADATA_TEXT && scalar.value.string.length == 5 &&
-           !memcmp(scalar.value.string.data,
-                   "a\xEF\xBF\xBD"
-                   "b",
-                   5),
-       "a NUL in a value reads as U+FFFD");
+    OK(runner, metadata && !metadata_scalar(facade_metadata(metadata, markdown_core_metadata_title), &scalar),
+       "a NUL in a value is a byte YAML does not print, so the envelope holds no title");
     markdown_core_document_free(document);
 }
 
@@ -5209,7 +5214,7 @@ typedef struct {
     size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, nonblank, block_identifier, callout, dimensions;
     size_t definition_lists, citation_brace_bytes;
-    size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
+    size_t physical_lines, physical_capacity, memo_room;
     bool heading_collection_disposed;
     size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
     size_t inline_hooks;
@@ -5249,12 +5254,7 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->physical_line_bytes = parser->input_line_work;
     work->physical_lines = parser->input.lines.front;
     work->physical_capacity = markdown_core_tree_room(&parser->input.lines);
-    work->physical_facts = parser->input.fact_count;
-    work->physical_fact_capacity = parser->input.fact_capacity;
-    work->normalized_lines = 0;
-    for (size_t i = 0; i < parser->input.fact_count; i++) {
-        work->normalized_lines += parser->input.facts[i].normalized != NULL;
-    }
+    work->memo_room = parser->input.memo_room;
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
     work->brackets = parser->bracket_work;
@@ -8315,7 +8315,7 @@ static void properties_rejected_members_borrow_source(test_batch_runner *runner)
 
 static void source_line_geometry_is_shared(test_batch_runner *runner) {
     /* Physical geometry classifies bytes before any UTF-8 interpretation.
-     * Every byte other than CR/LF is content; NUL requests normalization. */
+     * Every byte other than CR/LF is content, NUL among them. */
     for (unsigned value = 0; value <= 255; value++) {
         for (size_t position = 0; position < 3 * sizeof(uint64_t); position++) {
             unsigned char bytes[3 * sizeof(uint64_t) + 1];
@@ -8332,17 +8332,12 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bool split = value == '\r' || value == '\n';
             OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
                "only CR and LF end a physical line: byte %u at %zu", value, position);
-            OK(runner,
-               first && ((markdown_core_input_facts(&reader.input, first) &&
-                          markdown_core_input_facts(&reader.input, first)->nul_count == 1) == (value == 0)),
-               "only NUL requests normalization: byte %u", value);
             markdown_core_input_line *second = markdown_core_parser_source_line(&reader, 2);
             bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
             OK(runner,
                remaining ? second && second->start == position + 1 && second->end == sizeof(bytes) - 1 : !second,
                "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
             INT_EQ(runner, reader.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
-            markdown_core_free(reader.input.facts);
             markdown_core_tree_free(&reader.input.lines);
         }
     }
@@ -8361,33 +8356,17 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                line && line->start == starts[i] && line->end == ends[i] &&
                    markdown_core_input_line_next(&parser, line) == next[i],
                "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
-            OK(runner,
-               line && (markdown_core_input_facts(&parser.input, line) &&
-                        markdown_core_input_facts(&parser.input, line)->nul_count != 0) == (i == 0),
-               "NUL normalization is a line fact");
         }
         INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
     }
     OK(runner, !markdown_core_parser_source_line(&parser, 6) && !markdown_core_parser_source_line(&parser, 11),
        "the active input has an explicit line range");
-    INT_EQ(runner, parser.input.fact_count, 1, "only the NUL-bearing line needs optional geometry state");
-    markdown_core_line_facts *first = markdown_core_parser_get_line_facts(&parser, 7);
-    OK(runner, first != NULL, "a grammar query attaches facts to its physical line");
-    if (first) {
-        first->run_end = 10;
-    }
-    markdown_core_line_facts *last = markdown_core_parser_get_line_facts(&parser, 10);
-    OK(runner, last && !last->run_end && markdown_core_parser_get_line_facts(&parser, 7)->run_end == 10,
-       "unrelated line queries preserve their own facts");
-    INT_EQ(runner, parser.input.fact_count, 2, "only queried lines own speculative facts");
-    INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
-    markdown_core_free(parser.input.facts);
     markdown_core_tree_free(&parser.input.lines);
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 24,
-           "ordinary physical geometry, the line look and how far the line decided occupy twenty-four bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 20,
+           "ordinary physical geometry, the line look and how far the line decided occupy twenty bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -8403,14 +8382,7 @@ static void short_line_storage_is_bounded(test_batch_runner *runner) {
             OK(runner, root != NULL, "adversarial short lines parse");
             INT_EQ(runner, work.physical_lines, count, "one geometry record per physical line");
             INT_EQ(runner, work.physical_line_bytes, source.size, "the source frontier consumes each byte once");
-            INT_EQ(runner, work.physical_facts, shape == 2 ? count : 0,
-                   "every NUL-bearing line, and no ordinary short line, needs one fact record");
-            INT_EQ(runner, work.normalized_lines, shape == 2 ? count : 0,
-                   "each NUL-bearing line owns exactly one replacement view");
-            OK(runner,
-               shape == 2 ? work.physical_fact_capacity >= count && work.physical_fact_capacity < 2 * count
-                          : work.physical_fact_capacity == 0,
-               "optional facts obey their own doubling bound");
+            INT_EQ(runner, work.memo_room, 0, "a line holds no state beyond its geometry, a NUL-bearing one neither");
             OK(runner, work.physical_capacity >= count && work.physical_capacity < count + MARKDOWN_CORE_TREE_LEAF,
                "retained geometry capacity is bounded by the lines and one leaf");
             markdown_core_node_free(root);
@@ -8932,7 +8904,7 @@ static size_t without_scopes(uint8_t *dump, size_t length) {
 
 /* Whether the node holding each NUL byte of `source` is Text whose literal
  * holds the replacement scalar. */
-static bool nul_bytes_are_replacement_text(const markdown_core_document *document, const markdown_core_strbuf *source) {
+static bool nul_bytes_stay_text(const markdown_core_document *document, const markdown_core_strbuf *source) {
     markdown_core_position position = {1, 1};
     for (size_t i = 0; i < (size_t)source->size; i++) {
         uint8_t byte = source->ptr[i];
@@ -8943,8 +8915,8 @@ static bool nul_bytes_are_replacement_text(const markdown_core_document *documen
                 return false;
             }
             markdown_core_string literal = facade_literal(node);
-            for (size_t at = 0; at + 3 <= literal.length && !replaced; at++) {
-                replaced = !memcmp(literal.data + at, "\xef\xbf\xbd", 3);
+            for (size_t at = 0; at < literal.length && !replaced; at++) {
+                replaced = !literal.data[at];
             }
             if (!replaced) {
                 return false;
@@ -8960,13 +8932,22 @@ static bool nul_bytes_are_replacement_text(const markdown_core_document *documen
     return true;
 }
 
-/* NUL is one scalar represented as U+FFFD before grammar sees a line. Driver,
- * lookahead, inline cells and queued block cells must see identical bytes, so
- * a NUL and its replacement produce the same values; positions stay source
- * bytes, so the one NUL byte is where the replacement's text is. Views remain
- * stable while another line's view is allocated and while the line index
- * grows. */
-static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runner) {
+/* The dump `dump` of a text with NUL as the same text with \x01 in its
+ * place dumps: each \u0000 as \u0001. */
+static void nul_as_control(uint8_t *dump, size_t length) {
+    for (size_t at = 0; dump && at + 6 <= length; at++) {
+        if (!memcmp(dump + at, "\\u0000", 6)) {
+            dump[at + 5] = '1';
+        }
+    }
+}
+
+/* A NUL is a byte like any other control byte: the text reads it as it is
+ * written, and driver, lookahead, inline cells and queued block cells read
+ * it as they read \x01 in its place, which they read as a byte that means
+ * nothing, so the two texts make the same values; the NUL stays in the
+ * text of the node that holds it. */
+static void nul_reads_as_a_control_byte(test_batch_runner *runner) {
     payload_probe_arm();
     static const char *const forms[] = {
         "| @ | h |\n| - | - |\n| a | @ |\n",
@@ -8990,7 +8971,7 @@ static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runne
                 for (const char *at = forms[f]; *at; at++) {
                     if (*at == '@') {
                         markdown_core_strbuf_putc(&input, 0);
-                        markdown_core_strbuf_puts(&control, "\xef\xbf\xbd");
+                        markdown_core_strbuf_putc(&control, 1);
                     } else if (*at == '\n') {
                         markdown_core_strbuf_puts(&input, endings[e]);
                         markdown_core_strbuf_puts(&control, endings[e]);
@@ -9008,24 +8989,25 @@ static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runne
                 markdown_core_strbuf *sources[] = {&input, &control};
                 for (size_t i = 0; i < 2; i++) {
                     markdown_core_document *document = facade_parse(sources[i]->ptr, sources[i]->size);
-                    OK(runner, document != NULL, "normalized table parses: %zu/%zu/%d/%zu", f, e, quoted, i);
+                    OK(runner, document != NULL, "a table with NUL parses: %zu/%zu/%d/%zu", f, e, quoted, i);
                     if (document) {
                         OK(runner,
                            (markdown_core_document_dump(document, markdown_core_document_root(document),
                                                         (const uint8_t *)sources[i]->ptr, sources[i]->size, &dumps[i],
                                                         &lengths[i]) == MARKDOWN_CORE_OK),
-                           "normalized table has a complete canonical dump");
+                           "a table with NUL has a complete canonical dump");
                         if (i == 0) {
-                            OK(runner, nul_bytes_are_replacement_text(document, &input),
-                               "each NUL byte is the source of its replacement's text: %zu/%zu/%d", f, e, quoted);
+                            OK(runner, nul_bytes_stay_text(document, &input),
+                               "each NUL byte stays in the text that holds it: %zu/%zu/%d", f, e, quoted);
                         }
                         markdown_core_document_free(document);
                     }
                 }
                 lengths[0] = without_scopes(dumps[0], lengths[0]);
                 lengths[1] = without_scopes(dumps[1], lengths[1]);
+                nul_as_control(dumps[0], lengths[0]);
                 OK(runner, dumps[0] && dumps[1] && lengths[0] == lengths[1] && !memcmp(dumps[0], dumps[1], lengths[0]),
-                   "NUL and its normalized scalar produce identical table values: %zu/%zu/%d", f, e, quoted);
+                   "NUL and a control byte make the same table values: %zu/%zu/%d", f, e, quoted);
                 markdown_core_dump_free(dumps[0]);
                 markdown_core_dump_free(dumps[1]);
                 markdown_core_strbuf_free(&input);
@@ -9033,7 +9015,7 @@ static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runne
             }
         }
     }
-    INT_EQ(runner, payload_live, 0, "all immutable line views end with their input transaction");
+    INT_EQ(runner, payload_live, 0, "a text with NUL keeps nothing past its parse");
     payload_probe_disarm();
 }
 
@@ -12504,7 +12486,7 @@ int main(void) {
     formula_promotion_views_content(runner);
     formula_promotion_keeps_the_fence_runs(runner);
     directive_recognition_survives_construction(runner);
-    lookahead_and_driver_share_normalized_lines(runner);
+    nul_reads_as_a_control_byte(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     completion_acts_on_every_root(runner);
     completion_links_at_any_depth(runner);

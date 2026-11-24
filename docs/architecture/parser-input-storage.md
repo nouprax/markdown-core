@@ -6,56 +6,35 @@ and node storage. Scratch never becomes an AST field.
 
 ## One physical input index
 
-`markdown_core_input_line` records the raw start, content end, optional-fact
-index, and the offset where the line's own bytes begin past the prefixes of
-the containers it continues, of one physical line. The next-line offset is derived from the following record or the scan
-frontier; NUL counts live only in the optional record. Container-prefix lookahead and
-table-search facts are addressed through that same entry. Compact geometry
-is stored for each line; a separate grow-only vector holds optional facts only
-for lines needing grammar state or a normalized view. The facts contain no copy
-of line geometry and have no independent line index or lifetime. The document
-driver, speculative
-readers, properties envelope, and mapped cell driver extend and consult one
-index. There is no eager mapped-input scan followed by a second driver scan.
+`markdown_core_input_line` records the raw start and content end of one
+physical line, the offset where the line's own bytes begin past the prefixes
+of the containers it continues, and how far the readings that began on it
+read. The next-line offset is derived from the line's terminator. The lines
+live in one tree (`tree.h`) that the document driver, speculative readers,
+the properties envelope and the mapped cell driver extend and consult. There
+is no eager mapped-input scan followed by a second driver scan.
 
-Geometry is **16 bytes per visited line** on the supported ABIs. Parser
-initialization reserves eight entries (128 bytes), including for an
-empty document, alongside the current-line buffer. For L > 0 lines its vector
-reserves C = max(8, next_power_of_two(L))
-entries, or 16C resident bytes. Thus for L >= 8 the geometry alone occupies
-[16L, 32L) bytes: for one-byte LF-only lines it is 16–32 times input size;
-for two-byte `x\n` lines it is 8–16 times input size. This excludes the source,
-AST, allocator headers, optional facts and normalized payloads. It is a linear
-space bound with a substantial short-line constant, not a constant-space claim.
-The optional record is 64 bytes on LP64/LLP64 and is reserved only for queried
-or NUL-bearing lines; its vector has the same doubling bound. Capacity survives
-input changes, so the bound uses the maximum visited-line and fact counts of
-any active input during the parse, not just the final input's length.
-For N NUL-bearing lines, normalized views additionally retain one pointer-sized
-header per line plus its raw content length, two extra bytes per NUL, and LF/NUL
-terminators. On LP64/LLP64, repeated `\0\n` therefore requests
-16C + 64C + 13L bytes for geometry, facts and normalized views: for L >= 8,
-[93L, 173L), or 46.5–86.5 times that two-byte-per-line input. This excludes
-other parser workspaces, the AST and allocator overhead; neither this bound
-nor the LF-only geometry bound is a bound on total parse memory or process RSS.
-Tests use empty, one-character and NUL-bearing lines across capacity boundaries
-and assert record size, independent geometry/fact capacity bounds, one normalized
-view per NUL-bearing line, and one frontier advance per source byte.
+A line holds nothing beyond its geometry: **20 bytes per visited line**,
+kept in the tree's leaves. What a container-prefix lookahead learns of the
+lines it visits -- the deepest container it matched on each, the line's state
+past that prefix, and the runs of blank lines it stepped over -- belongs to
+one reading of the input, the scan memo (`blocks.c`, THE SCAN MEMO). The memo
+is a window of lines that grows as the reading's lookaheads overlap and starts
+anew when one begins past it; each reading starts it empty, so an edit has
+nothing on its lines to invalidate, and a line the focus passes keeps only
+its bytes.
 
 The source driver advances through the static inline scanner in `blocks.c`.
 External lookahead calls a wrapper around that same scanner; there is one
 physical scanning algorithm, not separate driver and speculative scanners.
-The inner span walk uses bounded pointers and stops at CR, LF or NUL; only a
-NUL boundary updates the normalization count. One bounded span scanner probes
-whole machine words for these three bytes and resolves a matching word or tail
-bytewise. Unsigned zero-byte tests are endian-independent, and fixed-width
-`memcpy` avoids alignment and aliasing assumptions. Every probe stays within
-the input; no padding or sentinel is required. Geometry excludes
-physical terminators, so the grammar's mutable content/LF/NUL line is built
-with one reservation and copy, without testing and appending the terminator
-as a second buffer operation. All 256 byte values at every position across
-three machine words are checked against the physical-line and normalization
-contracts, including the scalar tail after a split.
+The inner span walk uses bounded pointers and stops at CR or LF. One bounded
+span scanner probes whole machine words for these two bytes and resolves a
+matching word or tail bytewise. Unsigned zero-byte tests are
+endian-independent, and fixed-width `memcpy` avoids alignment and aliasing
+assumptions. Every probe stays within the input; no padding or sentinel is
+required. All 256 byte values at every position across three machine words
+are checked against the physical-line contract, including the scalar tail
+after a split.
 The active grammar line always has exactly one terminal LF. Advancing grammar
 cursors does not change its extent, so both block-end and last-line columns
 derive the content length from that shared invariant instead of inspecting
@@ -69,32 +48,28 @@ benchmark measures only the two stages, so it cannot see work moved into
 creation. Keeping input-proportional reservation out of initialization is an
 invariant for review to hold; no number will report a breach.
 
-Index lookups are constant time once a line exists. Extension advances each
-raw byte once; a span boundary may add one word probe before byte resolution.
-Thus span-search byte inspections stay bounded by nine times the input length even
-for delimiter/NUL-only inputs, without an input-size or grammar-specific
-algorithm. CR, LF, and CRLF each terminate one physical line.
-Pointers into the vector expire on growth, so consumers carry indices or
-geometry values across calls that can extend it. Properties stores the envelope
-start index and loads geometry by value. Lookahead reacquires its fact record
-by line number after element callbacks. Table separator operations retain dash
-offsets and fetch interval values; they never return a borrowed dash pointer. Changing the active input
-resets its facts and used length while retaining vector capacity.
+Index lookups are logarithmic in the tree. Extension advances each raw byte
+once; a span boundary may add one word probe before byte resolution. CR, LF,
+and CRLF each terminate one physical line.
+Pointers into the tree and the memo expire on growth, so consumers carry
+line numbers or geometry values across calls that can extend them. Properties
+stores the envelope start index and loads geometry by value. Lookahead
+reacquires its memo entry by line number after element callbacks. Table
+separator operations retain dash offsets and fetch interval values; they
+never return a borrowed dash pointer.
 
-NUL replacement belongs to the input view, before block grammar reads it.
-A line containing NUL owns one immutable UTF-8 replacement view through its
-optional facts record, shared by the driver and lookahead. Its storage stays
-stable while the index grows or
-another line is normalized, and is released when that input ends. Ordinary
-lines borrow the source. A separate ownership chain visits only allocated
-views during disposal. The native cmark byte-column convention is preserved.
-Properties still validates its authored source bytes; normalization does not
-make an invalid metadata member valid.
+## The text as written
 
-This matters for tables: speculative lines are subsequently copied into
-mapped cell inputs. Passing raw NUL into those cells previously let their
-driver expand bytes a second time, invalidating the content-to-source map.
-Both paths now construct cells from the same normalized lines.
+A NUL is a byte of the text like any other control byte. The parse reads the
+text as it is written, validating and repairing nothing: no line has a view
+of its own, a NUL stays in the text of the node that holds it, and every
+reader ends at its length, never at a 0 byte. The scanners read a NUL as the
+control byte it is (`scanner_common.re`), the inline cursor's end is its
+position (`markdown_core_inline_is_eof`), and lists of keys carry their sizes
+(`buffer.h`). A text with NUL parses as the same text with `\x01` in its
+place does, which the API tests and a differential check over the fixtures
+hold. Writing U+FFFD for it, as CommonMark asks of HTML output, is a
+renderer's job; the AST carries the byte.
 
 `input_line_work` counts bytes consumed by the physical geometry frontier,
 excluding bounded word lookahead. The independent

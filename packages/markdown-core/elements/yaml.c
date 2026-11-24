@@ -150,18 +150,9 @@ static bool shut(parser *p, markdown_core_yaml_kind kind, bool flow) {
     return e != NULL;
 }
 
-/* Appends the text from `from` to `to`, each NUL as U+FFFD. */
+/* Appends the text from `from` to `to`. */
 static void put(const parser *p, markdown_core_strbuf *text, size_t from, size_t to) {
-    for (;;) {
-        const unsigned char *nul = memchr(p->text + from, 0, to - from);
-        const size_t stop = nul ? (size_t)(nul - p->text) : to;
-        markdown_core_strbuf_put(text, p->text + from, (bufsize_t)(stop - from));
-        if (!nul) {
-            return;
-        }
-        markdown_core_strbuf_put(text, (const unsigned char *)"\xEF\xBF\xBD", 3);
-        from = stop + 1;
-    }
+    markdown_core_strbuf_put(text, p->text + from, (bufsize_t)(to - from));
 }
 /* A scalar's text given up on a problem: an allocation that failed while
  * it was read is the problem, whatever the text goes on to be. */
@@ -172,8 +163,8 @@ static bool abandon(parser *p, markdown_core_strbuf *text, const char *problem) 
 }
 
 /* A SCALAR'S TEXT is the bytes it is written in, read in place, unless
- * reading it changes them: an escape, a doubled apostrophe, a NUL, which
- * reads as U+FFFD, or a literal's indentation and line endings. Then the
+ * reading it changes them: an escape, a doubled apostrophe, or a literal's
+ * indentation and line endings. Then the
  * parser writes the text into a buffer the event owns. */
 static event *scalar(parser *p, markdown_core_yaml_style style, size_t from, size_t to, size_t line) {
     event *e = emit(p, MARKDOWN_CORE_YAML_SCALAR);
@@ -201,14 +192,9 @@ static bool view(parser *p, event *e) {
     if (!e) {
         return false;
     }
-    if (!memchr(p->text + e->from, 0, e->to - e->from)) {
-        e->text = e->to > e->from ? p->text + e->from : NULL;
-        e->size = e->to - e->from;
-        return true;
-    }
-    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    put(p, &text, e->from, e->to);
-    return own(p, e, &text);
+    e->text = e->to > e->from ? p->text + e->from : NULL;
+    e->size = e->to - e->from;
+    return true;
 }
 
 /* Skips to the end of the line a comment starts on, keeping its span. */
@@ -898,7 +884,7 @@ static bool stream(parser *p) {
 }
 
 /* Whether each character from `start` to `end` is one YAML prints: a tab,
- * a line ending, or a printable scalar, with a NUL read as U+FFFD. */
+ * a line ending, or a printable scalar. */
 static bool printable(const unsigned char *text, size_t start, size_t end, size_t *bad) {
     for (size_t i = start; i < end;) {
         while (i < end && text[i] >= 0x20 && text[i] < 0x7f) {
@@ -909,7 +895,7 @@ static bool printable(const unsigned char *text, size_t start, size_t end, size_
         }
         if (text[i] < 0x80) {
             const unsigned char c = text[i];
-            if (c < 0x20 ? c && c != 9 && c != 10 && c != 13 : c == 0x7f) {
+            if (c < 0x20 ? c != 9 && c != 10 && c != 13 : c == 0x7f) {
                 *bad = i;
                 return false;
             }
@@ -918,8 +904,8 @@ static bool printable(const unsigned char *text, size_t start, size_t end, size_
         }
         int32_t c;
         const int n = markdown_core_utf8proc_decode(text + i, (bufsize_t)(end - i), &c);
-        if (!(c == 0 || c == 9 || c == 10 || c == 13 || (c >= 0x20 && c <= 0x7e) || c == 0x85 ||
-              (c >= 0xa0 && c <= 0xd7ff) || (c >= 0xe000 && c <= 0xfffd) || (c >= 0x10000 && c <= 0x10ffff))) {
+        if (!(c == 9 || c == 10 || c == 13 || (c >= 0x20 && c <= 0x7e) || c == 0x85 || (c >= 0xa0 && c <= 0xd7ff) ||
+              (c >= 0xe000 && c <= 0xfffd) || (c >= 0x10000 && c <= 0x10ffff))) {
             *bad = i;
             return false;
         }

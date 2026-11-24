@@ -56,7 +56,7 @@ bufsize_t scan_table_start(const unsigned char *data, bufsize_t length, bufsize_
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0
   };
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych <= ',') {
     if (yych <= '\t') {
       if (yych >= '\t') goto yy2;
@@ -77,7 +77,7 @@ yy1:
 yy2:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy5;
   if (yych == '-') goto yy7;
   if (yych == ':') goto yy8;
@@ -85,7 +85,7 @@ yy2:
 yy3:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy7;
   if (yych <= 0x1F) {
     if (yych <= '\n') {
@@ -108,12 +108,12 @@ yy3:
 yy4:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy7;
   goto yy1;
 yy5:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy5;
   if (yych == '-') goto yy7;
   if (yych == ':') goto yy8;
@@ -122,7 +122,7 @@ yy6:
   goto yy1;
 yy7:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy7;
   if (yych <= 0x1F) {
     if (yych <= '\n') {
@@ -145,12 +145,12 @@ yy7:
   }
 yy8:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy7;
   goto yy6;
 yy9:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy10:
   if (yych <= '\r') {
     if (yych <= '\t') {
@@ -178,12 +178,12 @@ yy12:
     }
 yy13:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '\n') goto yy11;
   goto yy12;
 yy14:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy7;
   if (yych <= '\r') {
     if (yych <= '\t') {
@@ -252,7 +252,7 @@ bufsize_t scan_table_cell(const unsigned char *data, bufsize_t length, bufsize_t
      64,  64,  64,  64,  64,  64,  64,  64,
      64,  64,  64,  64,  64,  64,  64,  64
   };
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy17;
   if (yych <= '\r') goto yy16;
   if (yych <= '\\') goto yy19;
@@ -261,7 +261,7 @@ yy16:
   { return 0; }
 yy17:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy17;
   if (yych <= '\r') goto yy18;
   if (yych <= '\\') goto yy19;
@@ -269,7 +269,7 @@ yy18:
   { return (bufsize_t)(p - start); }
 yy19:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy19;
   if (yych <= '\n') {
     if (yych <= 0x00) goto yy18;
@@ -328,13 +328,13 @@ bufsize_t scan_table_cell_end(const unsigned char *data, bufsize_t length, bufsi
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0
   };
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '|') goto yy21;
   ++p;
   { return 0; }
 yy21:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy21;
   { return (bufsize_t)(p - start); }
 }
@@ -387,7 +387,7 @@ bufsize_t scan_table_row_end(const unsigned char *data, bufsize_t length, bufsiz
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0
   };
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych <= '\f') {
     if (yych <= 0x08) goto yy23;
     if (yych <= '\t') goto yy25;
@@ -403,7 +403,7 @@ yy24:
 yy25:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych <= '\f') {
     if (yych <= 0x08) goto yy24;
     if (yych <= '\n') goto yy30;
@@ -419,12 +419,12 @@ yy27:
   { return (bufsize_t)(p - start); }
 yy28:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '\n') goto yy26;
   goto yy27;
 yy29:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 yy30:
   if (yybm[0+yych] & 128) goto yy29;
   if (yych <= 0x08) goto yy31;
@@ -481,7 +481,7 @@ int scan_table_dash(const unsigned char **cursor, const unsigned char *limit,
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0
   };
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy35;
   if (yych <= 0x00) goto yy33;
   if (yych == '-') goto yy36;
@@ -494,12 +494,12 @@ yy34:
   { *cursor = input + p; return -1; }
 yy35:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy35;
   { continue; }
 yy36:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy36;
   { *from = input + start; *cursor = input + p; return 1; }
 }
@@ -552,7 +552,7 @@ int scan_table_horizontal(const unsigned char *data, bufsize_t length, bufsize_t
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0
   };
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '+') goto yy39;
   ++p;
 yy38:
@@ -560,7 +560,7 @@ yy38:
 yy39:
   ++p;
   marker = p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy42;
   if (yych <= '9') {
     if (yych != '+') goto yy38;
@@ -571,7 +571,7 @@ yy39:
   }
 yy40:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 32) goto yy40;
   if (yych == '-') goto yy42;
   if (yych == '=') goto yy43;
@@ -580,21 +580,21 @@ yy41:
   goto yy38;
 yy42:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy42;
   if (yych == '+') goto yy44;
   if (yych == ':') goto yy45;
   goto yy41;
 yy43:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy43;
   if (yych == '+') goto yy46;
   if (yych == ':') goto yy47;
   goto yy41;
 yy44:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 64) goto yy42;
   if (yych <= '+') {
     if (yych <= 0x00) goto yy48;
@@ -605,12 +605,12 @@ yy44:
   }
 yy45:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '+') goto yy49;
   goto yy41;
 yy46:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yybm[0+yych] & 128) goto yy43;
   if (yych <= '+') {
     if (yych <= 0x00) goto yy50;
@@ -621,7 +621,7 @@ yy46:
   }
 yy47:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych == '+') goto yy51;
   goto yy41;
 yy48:
@@ -630,7 +630,7 @@ yy48:
   { return p == remaining ? '-' : 0; }
 yy49:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych <= 0x00) goto yy48;
   goto yy41;
 yy50:
@@ -639,7 +639,7 @@ yy50:
   { return p == remaining ? '=' : 0; }
 yy51:
   ++p;
-  yych = (p < remaining ? input[p] : 0);
+  yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
   if (yych <= 0x00) goto yy50;
   goto yy41;
 }

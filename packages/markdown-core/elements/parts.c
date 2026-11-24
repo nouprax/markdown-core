@@ -137,17 +137,13 @@ static bufsize_t place_find(placed *parts, bufsize_t from, const unsigned char *
 
 /* A NODE AS ITS RECORD PLACES IT: its runs, the source they hold joined as
  * its text, `size` bytes, and where each run starts in that text, and the
- * source ranges of the nodes it holds. The text reads each NUL as the
- * parse did, as the three bytes of U+FFFD; `nuls` are where the runs hold
- * one, in the source. */
+ * source ranges of the nodes it holds. */
 typedef struct {
     markdown_core_place *runs;
     size_t run_count;
     bufsize_t *bases;
     unsigned char *text;
     bufsize_t size;
-    uint32_t *nuls;
-    size_t nul_count;
     /* The held ranges, in the source, and where the node starts. */
     markdown_core_place *taken;
     size_t taken_count, taken_room;
@@ -158,57 +154,17 @@ static void view_free(view *r) {
     markdown_core_free(r->runs);
     markdown_core_free(r->bases);
     markdown_core_free(r->text);
-    markdown_core_free(r->nuls);
     markdown_core_free(r->taken);
-}
-
-/* How many of the NULs the runs hold lie before the source byte at `at`. */
-static size_t nuls_before(const view *r, uint32_t at) {
-    size_t low = 0, high = r->nul_count;
-    while (low < high) {
-        const size_t middle = low + (high - low) / 2;
-        if (r->nuls[middle] < at) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low;
 }
 
 /* Where the source byte at `at`, in run `i`, stands in the text. */
 static bufsize_t text_at(const view *r, size_t i, uint32_t at) {
-    const size_t nuls = r->nul_count ? nuls_before(r, at) - nuls_before(r, r->runs[i].start) : 0;
-    return r->bases[i] + (bufsize_t)(at - r->runs[i].start) + 2 * (bufsize_t)nuls;
+    return r->bases[i] + (bufsize_t)(at - r->runs[i].start);
 }
 
-/* Where the text at `at`, in run `i`, stands in the source: a place inside
- * a NUL's U+FFFD stands at the NUL, or past it when `end`. */
-static uint32_t source_at(const view *r, size_t i, bufsize_t at, bool end) {
-    const markdown_core_place run = r->runs[i];
-    if (!r->nul_count) {
-        return run.start + (uint32_t)(at - r->bases[i]);
-    }
-    /* The NULs of the run before `at`: the text place of each is past the
-     * one before it. */
-    const size_t first = nuls_before(r, run.start);
-    size_t low = first, high = nuls_before(r, run.end);
-    while (low < high) {
-        const size_t middle = low + (high - low) / 2;
-        if (r->bases[i] + (bufsize_t)(r->nuls[middle] - run.start) + 2 * (bufsize_t)(middle - first) < at) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    if (low > first) {
-        const uint32_t nul = r->nuls[low - 1];
-        const bufsize_t place = r->bases[i] + (bufsize_t)(nul - run.start) + 2 * (bufsize_t)(low - 1 - first);
-        if (at < place + 3) {
-            return end ? nul + 1 : nul;
-        }
-    }
-    return run.start + (uint32_t)(at - r->bases[i]) - 2 * (uint32_t)(low - first);
+/* Where the text at `at`, in run `i`, stands in the source. */
+static uint32_t source_at(const view *r, size_t i, bufsize_t at) {
+    return r->runs[i].start + (uint32_t)(at - r->bases[i]);
 }
 
 /* The first of `r`'s runs that ends past the source byte at `at`, or the
@@ -269,44 +225,24 @@ static bool hold(view *r, markdown_core_place run) {
     return true;
 }
 
-/* Joins the source of `r`'s runs as its text, each NUL as U+FFFD: false
- * when the source ends before the runs do, `*covered` false, or the text
- * could not be allocated. */
+/* Joins the source of `r`'s runs as its text: false when the source ends
+ * before the runs do, `*covered` false, or the text could not be
+ * allocated. */
 static bool join(view *r, const uint8_t *source, size_t length, bool *covered) {
     if (r->runs[r->run_count - 1].end > length) {
         *covered = false;
         return false;
     }
-    size_t size = 0, room = 0;
+    size_t size = 0;
     for (size_t i = 0; i < r->run_count; i++) {
         r->bases[i] = (bufsize_t)size;
-        for (uint32_t at = r->runs[i].start; at < r->runs[i].end; at++) {
-            if (source[at]) {
-                continue;
-            }
-            uint32_t *grown = markdown_core_reserve(r->nuls, &room, r->nul_count + 1, sizeof(*r->nuls));
-            if (!grown) {
-                return false;
-            }
-            r->nuls = grown;
-            r->nuls[r->nul_count++] = at;
-            size += 2;
-        }
         size += r->runs[i].end - r->runs[i].start;
     }
     if (!(r->text = markdown_core_alloc(size + 1, 1))) {
         return false;
     }
     for (size_t i = 0; i < r->run_count; i++) {
-        unsigned char *out = r->text + r->bases[i];
-        for (uint32_t at = r->runs[i].start; at < r->runs[i].end; at++) {
-            if (source[at]) {
-                *out++ = source[at];
-            } else {
-                memcpy(out, "\xef\xbf\xbd", 3);
-                out += 3;
-            }
-        }
+        memcpy(r->text + r->bases[i], source + r->runs[i].start, r->runs[i].end - r->runs[i].start);
     }
     r->text[size] = '\n';
     r->size = (bufsize_t)size;
@@ -518,7 +454,7 @@ static bool add_place(ranges *out, const view *r, bufsize_t start, bufsize_t end
             return false;
         }
         out->items = grown;
-        out->items[out->count++] = (markdown_core_place){source_at(r, i, from, false), source_at(r, i, to, true)};
+        out->items[out->count++] = (markdown_core_place){source_at(r, i, from), source_at(r, i, to)};
     }
     return true;
 }

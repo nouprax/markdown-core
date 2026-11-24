@@ -20,7 +20,7 @@ bufsize_t scan_entity(const unsigned char *data, bufsize_t length, bufsize_t off
 
 {
 	unsigned char yych;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == '&') goto yy2;
 	++p;
 yy1:
@@ -28,7 +28,7 @@ yy1:
 yy2:
 	++p;
 	marker = p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '@') {
 		if (yych != '#') goto yy1;
 	} else {
@@ -38,7 +38,7 @@ yy2:
 		goto yy1;
 	}
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= 'W') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy5;
@@ -51,7 +51,7 @@ yy3:
 	goto yy1;
 yy4:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '@') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy7;
@@ -64,14 +64,14 @@ yy4:
 	}
 yy5:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '/') goto yy3;
 	if (yych <= '9') goto yy8;
 	if (yych == ';') goto yy9;
 	goto yy3;
 yy6:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '@') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy10;
@@ -84,7 +84,7 @@ yy6:
 	}
 yy7:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy11;
@@ -102,7 +102,7 @@ yy7:
 	}
 yy8:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '/') goto yy3;
 	if (yych <= '9') goto yy12;
 	if (yych != ';') goto yy3;
@@ -111,7 +111,7 @@ yy9:
 	{ return (bufsize_t)(p - start); }
 yy10:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy13;
@@ -129,7 +129,7 @@ yy10:
 	}
 yy11:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy14;
@@ -147,14 +147,14 @@ yy11:
 	}
 yy12:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '/') goto yy3;
 	if (yych <= '9') goto yy15;
 	if (yych == ';') goto yy9;
 	goto yy3;
 yy13:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy16;
@@ -172,7 +172,7 @@ yy13:
 	}
 yy14:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy17;
@@ -190,14 +190,14 @@ yy14:
 	}
 yy15:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '/') goto yy3;
 	if (yych <= '9') goto yy18;
 	if (yych == ';') goto yy9;
 	goto yy3;
 yy16:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy19;
@@ -215,7 +215,7 @@ yy16:
 	}
 yy17:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy20;
@@ -233,14 +233,14 @@ yy17:
 	}
 yy18:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '/') goto yy3;
 	if (yych <= '9') goto yy21;
 	if (yych == ';') goto yy9;
 	goto yy3;
 yy19:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy22;
@@ -258,7 +258,7 @@ yy19:
 	}
 yy20:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy23;
@@ -276,14 +276,14 @@ yy20:
 	}
 yy21:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= '/') goto yy3;
 	if (yych <= '9') goto yy24;
 	if (yych == ';') goto yy9;
 	goto yy3;
 yy22:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy24;
@@ -301,7 +301,7 @@ yy22:
 	}
 yy23:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy25;
@@ -319,12 +319,12 @@ yy23:
 	}
 yy24:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych == ';') goto yy9;
 	goto yy3;
 yy25:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy26;
@@ -340,7 +340,7 @@ yy25:
 	}
 yy26:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy27;
@@ -356,7 +356,7 @@ yy26:
 	}
 yy27:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy28;
@@ -372,7 +372,7 @@ yy27:
 	}
 yy28:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy29;
@@ -388,7 +388,7 @@ yy28:
 	}
 yy29:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy30;
@@ -404,7 +404,7 @@ yy29:
 	}
 yy30:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy31;
@@ -420,7 +420,7 @@ yy30:
 	}
 yy31:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy32;
@@ -436,7 +436,7 @@ yy31:
 	}
 yy32:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy33;
@@ -452,7 +452,7 @@ yy32:
 	}
 yy33:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy34;
@@ -468,7 +468,7 @@ yy33:
 	}
 yy34:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy35;
@@ -484,7 +484,7 @@ yy34:
 	}
 yy35:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy36;
@@ -500,7 +500,7 @@ yy35:
 	}
 yy36:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy37;
@@ -516,7 +516,7 @@ yy36:
 	}
 yy37:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy38;
@@ -532,7 +532,7 @@ yy37:
 	}
 yy38:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy39;
@@ -548,7 +548,7 @@ yy38:
 	}
 yy39:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy40;
@@ -564,7 +564,7 @@ yy39:
 	}
 yy40:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy41;
@@ -580,7 +580,7 @@ yy40:
 	}
 yy41:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy42;
@@ -596,7 +596,7 @@ yy41:
 	}
 yy42:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy43;
@@ -612,7 +612,7 @@ yy42:
 	}
 yy43:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy44;
@@ -628,7 +628,7 @@ yy43:
 	}
 yy44:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy45;
@@ -644,7 +644,7 @@ yy44:
 	}
 yy45:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy46;
@@ -660,7 +660,7 @@ yy45:
 	}
 yy46:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy47;
@@ -676,7 +676,7 @@ yy46:
 	}
 yy47:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy48;
@@ -692,7 +692,7 @@ yy47:
 	}
 yy48:
 	++p;
-	yych = (p < remaining ? input[p] : 0);
+	yych = (p < remaining ? (input[p] ? input[p] : 1) : 0);
 	if (yych <= ';') {
 		if (yych <= '/') goto yy3;
 		if (yych <= '9') goto yy24;

@@ -3964,10 +3964,6 @@ static markdown_core_optional_string optional_chunk_string(markdown_core_optiona
     return (markdown_core_optional_string){chunk.has_value, chunk_string(chunk.value)};
 }
 
-static markdown_core_string cstr_string(const char *value) {
-    return (markdown_core_string){(const uint8_t *)value, strlen(value)};
-}
-
 static void list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
                             markdown_core_optional_i64 *start, markdown_core_ordered_list_variant *variant,
                             markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
@@ -4047,8 +4043,8 @@ static bool formula_properties(const markdown_core_node *node, markdown_core_pla
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }
 
 static markdown_core_optional_string directive_name(const markdown_core_node *node) {
-    const char *value = markdown_core_core_facet(public_kind(node))->name(node);
-    return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
+    const markdown_core_chunk *value = markdown_core_core_facet(public_kind(node))->name(node);
+    return value ? (markdown_core_optional_string){true, chunk_string(*value)} : (markdown_core_optional_string){0};
 }
 
 static markdown_core_string attribute_class(const markdown_core_node *node, size_t index) {
@@ -4817,6 +4813,36 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string value) 
     buffer_cstr(buffer, "\"");
 }
 
+/* An attribute's class: as written when it is a plain word, a byte the
+ * attribute list would read otherwise, a space, a control byte or a byte
+ * past ASCII making it a JSON string. */
+static void buffer_word(dump_buffer *buffer, markdown_core_string value) {
+    bool plain = value.length != 0;
+    for (size_t j = 0; j < value.length; j++) {
+        unsigned char c = (unsigned char)value.data[j];
+        if (c <= 32 || c >= 127 || strchr("\"\\{}[]()=", c)) {
+            plain = false;
+        }
+    }
+    if (plain) {
+        buffer_bytes(buffer, value.data, value.length);
+    } else {
+        buffer_json_string(buffer, value);
+    }
+}
+
+/* An attribute's name: as written, unless a control byte, which the dump
+ * would hold raw, makes it a JSON string. */
+static void buffer_name(dump_buffer *buffer, markdown_core_string value) {
+    for (size_t j = 0; j < value.length; j++) {
+        if (value.data[j] < 0x20 || value.data[j] == 0x7f) {
+            buffer_json_string(buffer, value);
+            return;
+        }
+    }
+    buffer_bytes(buffer, value.data, value.length);
+}
+
 /* `null` and `""` are two answers, not one, and this reads the presence flag
  * rather than the pointer -- which is the same rule the dump already applied
  * to an optional Int and an optional Bool (requirement 14). */
@@ -5304,18 +5330,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, const
             buffer_cstr(buffer, " ");
         }
         buffer_cstr(buffer, ".");
-        bool plain = value.length != 0;
-        for (size_t j = 0; j < value.length; j++) {
-            unsigned char c = (unsigned char)value.data[j];
-            if (c <= 32 || c >= 127 || strchr("\"\\{}[]()=", c)) {
-                plain = false;
-            }
-        }
-        if (plain) {
-            buffer_bytes(buffer, value.data, value.length);
-        } else {
-            buffer_json_string(buffer, value);
-        }
+        buffer_word(buffer, value);
     }
     for (size_t i = 0; i < records; i++) {
         markdown_core_string name, value;
@@ -5323,7 +5338,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, const
         if (i || classes) {
             buffer_cstr(buffer, " ");
         }
-        buffer_bytes(buffer, name.data, name.length);
+        buffer_name(buffer, name);
         buffer_cstr(buffer, "=");
         buffer_json_string(buffer, value);
     }

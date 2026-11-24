@@ -1202,14 +1202,7 @@ that have it.
 -STR
 
 > \n\x00:\r...
-+STR
-+DOC
-+MAP
-=VAL 1-2 1 :�
-=VAL 3-3 1 :
--MAP
--DOC ...
--STR
+error
 
 > ""\r\n...
 +STR
@@ -1606,16 +1599,7 @@ that have it.
 -STR
 
 > ---: [\x00]
-+STR
-+DOC
-+MAP
-=VAL 0-3 0 :---
-+SEQ []
-=VAL 6-7 0 :�
--SEQ
--MAP
--DOC
--STR
+error
 
 > [a#b,{}]
 +STR
@@ -2193,14 +2177,7 @@ that have it.
 -STR
 
 > \x00\r---    |
-+STR
-+DOC
-=VAL 0-1 0 :�
--DOC
-+DOC ---
-=VAL 9-9 1 |
--DOC
--STR
+error
 
 > "'": 1\n:x:
 +STR
@@ -3196,16 +3173,7 @@ that have it.
 #9-11
 
 > [\r\x00&'\n]\n---
-+STR
-+DOC
-+SEQ []
-=VAL 2-5 1 :�&'
--SEQ
--DOC
-+DOC ---
-=VAL 11-11 4 :
--DOC
--STR
+error
 
 > [":x","\\""]
 +STR
@@ -4741,18 +4709,7 @@ that have it.
 -STR
 
 > [c,"é",{\x00},]
-+STR
-+DOC
-+SEQ []
-=VAL 1-2 0 :c
-=VAL 4-6 0 "é
-+MAP {}
-=VAL 9-10 0 :�
-=VAL 10-10 0 :
--MAP
--SEQ
--DOC
--STR
+error
 
 > [x y,"a:b",z]
 +STR
@@ -5197,17 +5154,7 @@ that have it.
 -STR
 
 > - \x00}\x00: |\r\n #- 
-+STR
-+DOC
-+SEQ
-+MAP
-=VAL 2-5 0 :�}�
-=VAL 7-7 0 |
--MAP
--SEQ
--DOC
--STR
-#11-14
+error
 
 > - "'"\n---\nb: 1
 +STR
@@ -5867,16 +5814,7 @@ that have it.
 -STR
 
 > \x00b\x00:\n"\\u00e9" :
-+STR
-+DOC
-+MAP
-=VAL 0-3 0 :�b�
-=VAL 4-4 0 :
-=VAL 6-12 1 "é
-=VAL 15-15 1 :
--MAP
--DOC
--STR
+error
 
 > "'":\n  a#: "-x"
 +STR
@@ -6463,17 +6401,7 @@ that have it.
 -STR
 
 > --- ''\n---\nb: \x00
-+STR
-+DOC ---
-=VAL 5-5 0 '
--DOC
-+DOC ---
-+MAP
-=VAL 11-12 2 :b
-=VAL 14-15 2 :�
--MAP
--DOC
--STR
+error
 
 > --- [z: z,]\n...
 +STR
@@ -6664,19 +6592,7 @@ that have it.
 -STR
 
 > []\n---\nb: #c 1\x00
-+STR
-+DOC
-+SEQ []
--SEQ
--DOC
-+DOC ---
-+MAP
-=VAL 7-8 2 :b
-=VAL 9-9 2 :
--MAP
--DOC
--STR
-#10-15
+error
 
 > [a#b ,true: {}]
 +STR
@@ -7028,14 +6944,7 @@ that have it.
 -STR
 
 > #-\x00 [-*"\r\n- \r...
-+STR
-+DOC
-+SEQ
-=VAL 11-11 1 :
--SEQ
--DOC ...
--STR
-#0-8
+error
 
 > 'c':\n '-x': 1'c'
 +STR
@@ -10230,18 +10139,7 @@ that have it.
 -STR
 
 > a: #\r\n  b!---&\x00: b}{
-+STR
-+DOC
-+MAP
-=VAL 0-1 0 :a
-+MAP
-=VAL 8-15 1 :b!---&�
-=VAL 17-20 1 :b}{
--MAP
--MAP
--DOC
--STR
-#3-4
+error
 
 > z:\n  -\n    c: "a:b"\n  -\n    - "b"\n    - |\n        lit\n        more\n"'": {}\n"-x": |\n      lit\n      more
 +STR
@@ -11764,28 +11662,7 @@ that have it.
 -STR
 
 > -\n \x00 z:\n    -\n      2.5: 'name'\n      "it's": []\n- {c: }
-+STR
-+DOC
-+SEQ
-+MAP
-=VAL 3-6 1 :� z
-+SEQ
-+MAP
-=VAL 20-23 3 :2.5
-=VAL 26-30 3 'name
-=VAL 39-43 4 "it's
-+SEQ []
--SEQ
--MAP
--SEQ
--MAP
-+MAP {}
-=VAL 52-53 5 :c
-=VAL 55-55 5 :
--MAP
--SEQ
--DOC
--STR
+error
 
 > its:\n  'é':\n    :x:\n      - "é"\n    é: |\n        lit\n        more\n    '?x':\n      - ["c",]
 +STR
@@ -15016,11 +14893,4 @@ error
 -STR
 
 > a\x00b: "\x00"
-+STR
-+DOC
-+MAP
-=VAL 0-3 0 :a�b
-=VAL 6-7 0 "�
--MAP
--DOC
--STR
+error
