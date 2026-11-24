@@ -178,18 +178,6 @@ static inline bufsize_t suffix_write(unsigned char *tail, size_t suffix, unsigne
     return size;
 }
 
-/* The measure of the bytes `pieces` holds. */
-static inline markdown_core_measure pieces_measure(const markdown_core_pieces *pieces) {
-    if (pieces->count == 1) {
-        return markdown_core_measure_of(pieces->data[0], (size_t)pieces->sizes[0]);
-    }
-    markdown_core_measure measure = MARKDOWN_CORE_MEASURE_NONE;
-    for (uint32_t i = 0; i < pieces->count; i++) {
-        markdown_core_measure_add(&measure, pieces->data[i], (size_t)pieces->sizes[i]);
-    }
-    return measure;
-}
-
 /* A NAME IN PIECES: the base's pieces and its suffix's digits; and the
  * base's pieces and size, so that the name of the base and another suffix
  * is made in place. It reads its own digits, so it stays where it is made.
@@ -696,45 +684,18 @@ static bool stem_drop(markdown_core_names *state, uint32_t id, uint32_t entry) {
     return (stem_present(stem) || stem_unlink(names, id)) && stem_touch(names, id);
 }
 
-/* The entries' names, kept from now on as stems (THE NAMES AN EDIT MOVES):
- * a flushed parse named every entry that does not author its anchor, and
- * the front holds them all. False when storage could not be had. */
+/* The entries' names, kept as stems from the empty text on (THE NAMES AN
+ * EDIT MOVES; session.c, THE TEXT IS AN EDIT): the session's first step
+ * makes them, before it names any entry. False when storage could not be
+ * had. */
 static bool stems_make(markdown_core_names *state) {
+    assert(!state->count);
     markdown_core_name_edit *names = markdown_core_alloc(1, sizeof(*names));
-    if (!names || !markdown_core_key_index_init(&names->index, state->count)) {
+    if (!names || !markdown_core_key_index_init(&names->index, 0)) {
         markdown_core_free(names);
         return false;
     }
     state->edit = names;
-    names->fresh = state->count;
-    markdown_core_tree *entries = entries_of(state);
-    /* Every entry numbered, where it stands: an append in place tells
-     * nothing (tree.h). */
-    for (size_t i = 0; i < state->count; i++) {
-        named_tree_at(entries, i)->id = named_number(names);
-        if (!named_tree_at(entries, i)->id) {
-            return false;
-        }
-        *markdown_core_array_write(&names->where, named_tree_at(entries, i)->id - 1) =
-            markdown_core_tree_where(entries, i);
-    }
-    /* A dialect that spells no names names no entry: it keeps no stems. */
-    for (size_t i = 0; i < state->count; i++) {
-        markdown_core_named *entry = named_tree_at(entries, i);
-        entry->stem = 0;
-        if (entry->authored || !state->spelling) {
-            continue;
-        }
-        markdown_core_pieces base;
-        value_base(name_of(state, entry), &base);
-        const uint32_t id = stem_make(state, &base, pieces_measure(&base));
-        if (!id || !stem_add(state, id, named_tree_at(entries, i)->id)) {
-            return false;
-        }
-        named_tree_at(entries, i)->stem = id;
-    }
-    /* What the stems touched names nothing again: every name holds. */
-    names->touched_count = 0;
     markdown_core_key_index_free(&state->taken);
     return true;
 }

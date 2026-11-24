@@ -133,7 +133,9 @@ static bool widths_mend(markdown_core_index *index, markdown_core_widths *widths
     }
     for (size_t i = first; i < end; i++) {
         const markdown_core_width width = width_of(index, holder, i, after, true);
-        if (!width_tree_insert(tree, i, width, false)) {
+        /* The widths have no back: every entry is the front's, and one at
+         * the end goes in as an append. */
+        if (!width_tree_insert(tree, i, width, true)) {
             widths->made = false;
             return false;
         }

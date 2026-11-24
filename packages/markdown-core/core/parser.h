@@ -715,8 +715,9 @@ typedef struct markdown_core_edit {
     markdown_core_tree uses;
     markdown_core_strbuf use_labels;
     size_t uses_from, use_live;
-    /* THE USES' INDEX (blocks.c): the uses by name, made at the first
-     * lookup of the uses of altered labels and kept from then on. `names`
+    /* THE USES' INDEX (blocks.c): the uses by name, kept from the empty
+     * text on, as each reading notes its own; made again at a lookup of
+     * altered labels when storage once failed it. `names`
      * maps each name to its markdown_core_use_name, whose notes are among
      * the `note_count` of `notes`, those let go linked from `spare`; it holds
      * every use but what a reading noted when `indexed`. `anew` is set while

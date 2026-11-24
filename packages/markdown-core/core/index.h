@@ -19,7 +19,7 @@
  * an edit, which moves no child it takes back, mends: the children it read
  * go and come again, and those it took back move with it. A child is found
  * at an offset, and where it is, in time logarithmic in the children. They
- * are made at the first edit or locate, and an edit that could not have
+ * are made at the session's first step, and an edit that could not have
  * their storage leaves them to the next to make again. */
 typedef struct {
     uint32_t start, end;

@@ -293,11 +293,15 @@ static inline bool markdown_core_roster_seen(const markdown_core_roster *roster,
 }
 
 /* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's declarations that start there or past it go to the
- * back, which lookups do not see until the splice; the first edit places
- * them, and one whose log holds more dead bytes than live compacts it
- * first. False, with the roster as it was, when storage could not be
+ * back, which lookups do not see until the splice, and a roster whose log
+ * holds more dead bytes than live compacts it first. False, with the roster as it was, when storage could not be
  * had. */
 bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
+
+/* A parse that takes edits places each declaration as it declares it, from
+ * the empty text on (session.c, THE TEXT IS AN EDIT): the roster holds
+ * none yet. */
+void markdown_core_roster_edits(markdown_core_roster *roster);
 /* THE SPLICE (blocks.c): the back's declarations that start before `place`
  * of the text before the edit go with the text the edit replaced, their
  * keys kept for markdown_core_roster_lost, the end moves by `delta`, and

@@ -562,78 +562,13 @@ bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_co
     return true;
 }
 
-/* Two places in order of where they start, then of the log, which holds
- * the declarations of one start in the order the parse made them. */
-static int S_place_order(const void *a, const void *b) {
-    const markdown_core_roster_place *left = a, *right = b;
-    if (left->start != right->start) {
-        return left->start < right->start ? -1 : 1;
-    }
-    return (left->record > right->record) - (left->record < right->record);
-}
-
-/* The places of `roster`, none numbered, as they were before the first
- * edit: none. */
-static void S_unplace_all(markdown_core_roster *roster) {
-    for (size_t kind = 0; kind < roster->kinds; kind++) {
-        markdown_core_tree *places = &roster->spaces[kind].places;
-        for (size_t i = 0; i < places->count; i++) {
-            S_places_at(places, i)->record->id = MARKDOWN_CORE_ROSTER_UNPLACED;
-        }
-        markdown_core_tree_free(places);
-    }
-    markdown_core_array_free(&roster->where);
-    roster->free = 0;
-}
-
-/* THE FIRST EDIT places each kind's declarations that stand, all in the
- * front, in the order of where they start. False, with the roster as it
- * was, when storage could not be had. */
-static bool S_place(markdown_core_roster *roster) {
-    size_t count = 0;
-    for (size_t i = 0; i < roster->count; i++) {
-        count += markdown_core_roster_stands(roster->records[i]);
-    }
-    markdown_core_roster_place *sorted = count ? markdown_core_alloc(count, sizeof(*sorted)) : NULL;
-    if (count && !sorted) {
-        return false;
-    }
-    bool ok = true;
-    for (size_t kind = 0; ok && kind < roster->kinds; kind++) {
-        size_t taken = 0;
-        for (size_t i = 0; i < roster->count; i++) {
-            markdown_core_roster_record *record = roster->records[i];
-            if (record->key[0] == kind && markdown_core_roster_stands(record)) {
-                sorted[taken++] = (markdown_core_roster_place){record->start, record};
-            }
-        }
-        /* A record's address orders the declarations of one start as the
-         * log does only within a block; the parse makes most in order of
-         * where they start, which the sort then keeps. */
-        if (taken > 1) {
-            qsort(sorted, taken, sizeof(*sorted), S_place_order);
-        }
-        markdown_core_tree *places = &roster->spaces[kind].places;
-        for (size_t i = 0; ok && i < taken; i++) {
-            ok = S_number(roster, sorted[i].record) && S_places_insert(places, i, sorted[i], true);
-            if (!ok && sorted[i].record->id != MARKDOWN_CORE_ROSTER_UNPLACED && places->count == i) {
-                sorted[i].record->id = MARKDOWN_CORE_ROSTER_UNPLACED;
-            }
-        }
-    }
-    markdown_core_free(sorted);
-    if (!ok) {
-        S_unplace_all(roster);
-        return false;
-    }
+void markdown_core_roster_edits(markdown_core_roster *roster) {
+    assert(!roster->count);
     roster->placed = true;
-    return true;
 }
 
 bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
-    if (!roster->placed && !S_place(roster)) {
-        return false;
-    }
+    assert(roster->placed);
     if (roster->dead > roster->bytes - roster->dead + 4096 && !markdown_core_roster_compact(roster)) {
         return false;
     }

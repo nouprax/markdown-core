@@ -7338,8 +7338,9 @@ bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_c
     markdown_core_edit *edit = parser->stream->edit;
     *places = NULL;
     *place_count = 0;
-    /* The index is made at the first lookup, and a lookup of each altered
-     * name then finds its uses. */
+    /* The index notes each use as the reading records it, from the empty
+     * text on; one that could not be had is made again here. A lookup of
+     * each altered name then finds its uses. */
     if (!altered->size || (!edit->indexed && !S_uses_index(edit))) {
         return !altered->size;
     }
@@ -7482,7 +7483,9 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     edit->uses = markdown_core_tree_make(&S_uses_ops);
     edit->spare = UINT32_MAX;
     edit->point = SIZE_MAX;
+    edit->indexed = true;
     stream->edit = edit;
+    markdown_core_roster_edits(&parser->roster);
     parser->at.read.rests = true;
     /* Room for the cuts up front: the reopen keeps one in it (THE CUTS). */
     return markdown_core_array_reserve(&edit->cuts, 4);

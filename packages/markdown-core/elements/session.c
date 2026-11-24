@@ -28,9 +28,9 @@
  * revision lends the session's pool and counts the ids it issued. The
  * document is the parse's tree, published in place (ast.c, PUBLISHING IN
  * PLACE), and the session lends it until its next step. */
-/* What only an edit keeps, made at the first: the child index (index.h),
- * and the bytes of the text the last edit read again. A session that is
- * never edited holds none of it. */
+/* What an edit keeps, made at the first, the text's own (THE TEXT IS AN
+ * EDIT): the child index (index.h), and the bytes of the text the last
+ * edit read again. An empty session holds none of it. */
 typedef struct {
     markdown_core_index index;
     size_t reread_from, reread_to;
@@ -122,10 +122,19 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
     if (!made) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    markdown_core_status status = session_open(made, source, size, unit);
+    markdown_core_status status = session_open(made, NULL, 0, unit);
     if (status == MARKDOWN_CORE_OK) {
         /* Only a session takes edits; a one-off parse keeps no reach. */
         status = markdown_core_parser_edits(made->committed) ? session_finish(made) : MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    /* THE TEXT IS AN EDIT: the session parses the empty text, and the
+     * text is an append to it (AN APPEND IS AN EDIT AT THE TEXT'S END), so
+     * its reading builds, at parse time, what every later edit keeps: the
+     * declarations in place, the uses by name, the headings' stems and the
+     * child index. No edit builds any of it from the whole text. */
+    if (status == MARKDOWN_CORE_OK && size) {
+        const markdown_core_document *document;
+        status = markdown_core_session_append(made, source, size, &document);
     }
     if (status != MARKDOWN_CORE_OK) {
         session_close(made);
