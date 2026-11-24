@@ -1,5 +1,6 @@
 #include <assert.h>
 #include "document.h"
+#include "properties.h"
 #include "anchor.h"
 #include "attributes.h"
 #include "code_block.h"
@@ -29,6 +30,7 @@
 #include "superscript.h"
 #include "subscript.h"
 #include <stddef.h>
+#include <string.h>
 #include "element.h"
 
 #include "markdown-core-elements.h"
@@ -72,6 +74,57 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     return CORE_ELEMENTS;
 }
 
+/* The bytes after which a slot of the dialect may begin empty
+ * (markdown_core_slot_cues), each a byte its writers' syntax puts before a
+ * slot. The context oracle finds each of them, and no other, before a slot
+ * that begins at the cursor. */
+static const char CUES[] = "\t\n\r !\"#'(,.:;<=@[^`{~";
+
+markdown_core_string markdown_core_slot_cues(void) {
+    return (markdown_core_string){(const uint8_t *)CUES, sizeof(CUES) - 1};
+}
+
+/* THE WRITERS (write.h): a writing service is the last element's of the
+ * dialect that provides it; a slot's writer the element whose `writes`
+ * name the slot's kind and its owner, else one that names its kind and no
+ * owners. */
+const void *markdown_core_write_service(const char *name) {
+    const void *found = NULL;
+    for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
+        for (const markdown_core_service *at = CORE_ELEMENTS[i]->provides; at && at->name; at++) {
+            if (!strcmp(at->name, name)) {
+                found = at->ops;
+            }
+        }
+    }
+    return found;
+}
+
+const markdown_core_write_ops *markdown_core_writes(size_t index, bool *more) {
+    *more = index < CORE_ELEMENT_COUNT;
+    return *more ? CORE_ELEMENTS[index]->writes : NULL;
+}
+
+const markdown_core_write_ops *markdown_core_writer(markdown_core_slot_kind slot, markdown_core_node_kind owner) {
+    const markdown_core_write_ops *any = NULL;
+    for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
+        const markdown_core_write_ops *ops = CORE_ELEMENTS[i]->writes;
+        if (!ops || !(ops->slots & MARKDOWN_CORE_SLOT_BIT(slot))) {
+            continue;
+        }
+        if (!ops->owners) {
+            any = ops;
+            continue;
+        }
+        for (const markdown_core_node_kind *at = ops->owners; *at != MARKDOWN_CORE_KIND_NONE; at++) {
+            if (*at == owner) {
+                return ops;
+            }
+        }
+    }
+    return any;
+}
+
 /* The facets each element of the core dialect declares (element.h,
  * `facets`), which the table below reads by kind. */
 extern const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[];
@@ -95,6 +148,7 @@ extern const markdown_core_facet MARKDOWN_CORE_MARK_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_INSERTION_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_LINE_BREAK_FACETS[];
 extern const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[];
+extern const markdown_core_facet MARKDOWN_CORE_PROPERTIES_FACETS[];
 
 /* THE FACETS BY KIND (markdown-core-elements.h): the facets the elements
  * of the core dialect declare (element.h, `facets`), each at its kind. A
@@ -130,6 +184,7 @@ const markdown_core_facet *const markdown_core_facet_table[MARKDOWN_CORE_FACET_R
     [MARKDOWN_CORE_KIND_INSERTION] = &MARKDOWN_CORE_INSERTION_FACETS[0],
     [MARKDOWN_CORE_KIND_SOFT_BREAK] = &MARKDOWN_CORE_LINE_BREAK_FACETS[0],
     [MARKDOWN_CORE_KIND_LINE_BREAK] = &MARKDOWN_CORE_LINE_BREAK_FACETS[1],
+    [MARKDOWN_CORE_KIND_METADATA] = &MARKDOWN_CORE_PROPERTIES_FACETS[0],
 };
 
 #ifndef NDEBUG

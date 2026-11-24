@@ -1160,9 +1160,139 @@ static const markdown_core_label_ops LINK_LABELS = {.length = S_label_length,
                                                     .definition = markdown_core_reference_definition_length};
 static const markdown_core_service LINK_SERVICES[] = {{MARKDOWN_CORE_SERVICE_LABELS, &LINK_LABELS}, {0}};
 
+/* WRITING (write.h): a destination, its fragment and a label, and what a
+ * link's brackets and parentheses on the line keep from a spelling. */
+
+/* The fragment's field reads after its destination's. */
+static markdown_core_slot_kind S_prefix(markdown_core_slot_kind slot) {
+    return slot == MARKDOWN_CORE_SLOT_ANCHOR ? MARKDOWN_CORE_SLOT_DEST : MARKDOWN_CORE_SLOT_NONE;
+}
+
+/* A destination written in `<…>` opens with a `<` its field does not hold:
+ * a fragment's, its destination's. */
+static uint8_t S_wrap(markdown_core_slot_kind slot, markdown_core_node_kind owner, const markdown_core_wrap_site *at) {
+    (void)owner;
+    if (slot != MARKDOWN_CORE_SLOT_DEST && slot != MARKDOWN_CORE_SLOT_ANCHOR) {
+        return 0;
+    }
+    const size_t origin = slot == MARKDOWN_CORE_SLOT_ANCHOR && at->prefixed ? at->prefix : at->field;
+    return origin > at->line && at->source[origin - 1] == '<' ? '<' : 0;
+}
+
+/* A destination or its fragment: inside `<…>` as written, bare when the
+ * value allows it, otherwise in `<…>` when the slot may write them. */
+static bool S_spell_destination(markdown_core_spelling *out, const markdown_core_site *site, const uint8_t *value,
+                                size_t size) {
+    const bool fragment = site->kind == MARKDOWN_CORE_SLOT_ANCHOR, row = site->row;
+    const uint8_t *tail = site->line + site->end;
+    const size_t rest = site->size - site->end;
+    if (site->wrap == '<') {
+        markdown_core_write_escaped(out, value, size, fragment ? "\\<>()[]{}" : "\\<>()[]{}#", row);
+        return true;
+    }
+    bool bare = size > 0 && value[0] != '<';
+    for (size_t i = 0; i < size && bare; i++) {
+        bare = value[i] > ' ' && value[i] != 0x7F;
+    }
+    if (bare) {
+        /* A destination's `#` would begin its fragment. */
+        markdown_core_write_escaped(out, value, size, fragment ? "\\()<>`$%[]{}" : "\\()<>`$%[]{}#", row);
+        return true;
+    }
+    /* `<...>` is the whole destination: it stands only where the field
+     * ends with it, before the call's `)` or a space. */
+    if (fragment || (rest && tail[0] != ')' && tail[0] != ' ' && tail[0] != '\t')) {
+        return false;
+    }
+    for (size_t i = 0; i < size; i++) {
+        if (value[i] < ' ' && value[i] != '\t') {
+            return false;
+        }
+    }
+    markdown_core_write_put(out, '<');
+    markdown_core_write_escaped(out, value, size, "\\<>()[]{}", row);
+    markdown_core_write_put(out, '>');
+    return true;
+}
+
+/* Whether a backslash in `value` ends it or a bracket stands in it that no
+ * backslash escapes: a raw label holds neither. */
+static bool S_bracketed(const uint8_t *value, size_t size) {
+    bool odd = false;
+    for (size_t i = 0; i < size; i++) {
+        if (!odd && (value[i] == '[' || value[i] == ']')) {
+            return true;
+        }
+        odd = value[i] == '\\' && !odd;
+    }
+    return odd;
+}
+
+static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    markdown_core_spelling *out, bool *held) {
+    const uint8_t *tail = site->line + site->end;
+    const size_t rest = site->size - site->end;
+    const bool closed = site->closed;
+    if (site->kind == MARKDOWN_CORE_SLOT_LABEL) {
+        /* A label keeps its bytes. One that begins with `^` is a
+         * footnote's. A closed one whose `]` is on a later line goes on
+         * past the line. */
+        out->tokens = MARKDOWN_CORE_TOKENS_RAW;
+        *held = !(closed && !memchr(tail, ']', rest)) && !markdown_core_write_blank(value, size) && size < 1000 &&
+                value[0] != '^' && !S_bracketed(value, size) &&
+                markdown_core_write_plain(out, value, size, "", site->row);
+        out->closer = closed ? "" : "]";
+        return MARKDOWN_CORE_OK;
+    }
+    out->tokens = MARKDOWN_CORE_TOKENS_ESCAPED;
+    *held = S_spell_destination(out, site, value, size);
+    /* An open `<` closes after the field: where a fragment goes on after
+     * the slot, the closers cannot stand at it. */
+    const bool call = site->owner == MARKDOWN_CORE_KIND_LINK || site->owner == MARKDOWN_CORE_KIND_EMBEDDED;
+    const bool angled = site->wrap == '<' && !(rest && tail[0] == '>');
+    const bool goes = angled && rest && tail[0] != ' ' && tail[0] != '\t';
+    out->closer = closed || goes ? "" : call ? (angled ? ">)" : ")") : (angled ? ">" : "");
+    return MARKDOWN_CORE_OK;
+}
+
+/* Whether the spelling leaves the brackets and parentheses the line opens
+ * before the slot as they are: it closes none it does not open itself, and
+ * leaves none of its own open. */
+static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    const markdown_core_spelling *spelled, bool *kept) {
+    (void)value;
+    (void)size;
+    const bool in_brackets = markdown_core_write_opened(site, '[', ']'),
+               in_parens = markdown_core_write_opened(site, '(', ')');
+    size_t brackets = 0, parens = 0;
+    *kept = true;
+    for (size_t i = 0; i < spelled->size && *kept; i++) {
+        const uint8_t c = spelled->text[i];
+        if (c == '\\') {
+            i += i + 1 < spelled->size && !markdown_core_write_among(spelled->text[i + 1], "}=|");
+            continue;
+        }
+        *kept = !((c == ']' && !brackets && in_brackets) || (c == ')' && !parens && in_parens));
+        brackets += c == '[' ? 1 : c == ']' ? (size_t)-1 : 0;
+        parens += c == '(' ? 1 : c == ')' ? (size_t)-1 : 0;
+    }
+    *kept = *kept && !(brackets && in_brackets) && !(parens && in_parens);
+    return MARKDOWN_CORE_OK;
+}
+
+static const markdown_core_write_ops LINK_WRITES = {
+    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_DEST) | MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_ANCHOR) |
+             MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_LABEL),
+    .prefix = S_prefix,
+    .wrap = S_wrap,
+    .spell = S_spell,
+    .keeps = S_keeps,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .provides = LINK_SERVICES,
     .facets = MARKDOWN_CORE_LINK_FACETS,
+    .writes = &LINK_WRITES,
     .needs = LINK_NEEDS,
     .spaces = LINK_SPACES,
     .state_size = sizeof(S_state),

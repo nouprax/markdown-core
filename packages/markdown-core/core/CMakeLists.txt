@@ -30,6 +30,7 @@ set(HEADERS
     block_internal.h
     markdown_core_ctype.h
     element.h
+    write.h
     delimiter.h
     bracket.h
     ahead.h

@@ -3,6 +3,7 @@
 #include "markdown-core-element-api.h"
 #include "metadata.h"
 #include "yaml.h"
+#include "element.h"
 #include "markdown-core-element-api.h"
 
 /* THE PROPERTIES GRAMMAR'S WORK: the value bytes decoded, each
@@ -67,5 +68,11 @@ bool markdown_core_metadata_places_read(const unsigned char *text, size_t length
 /* Whether a plain scalar of `size` bytes of `text` resolves to text, not
  * to null, a boolean or a number. */
 bool markdown_core_metadata_text(const unsigned char *text, size_t size);
+
+/* What the context reads of an envelope at a cursor, and how a value is
+ * written in a member (write.h), the document element's. */
+extern const markdown_core_facet MARKDOWN_CORE_PROPERTIES_FACETS[];
+markdown_core_status markdown_core_properties_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                                    markdown_core_spelling *out, bool *held);
 
 #endif

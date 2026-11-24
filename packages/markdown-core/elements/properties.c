@@ -1,5 +1,7 @@
 #include "alloc.h"
 #include "properties.h"
+#include "element.h"
+#include "write.h"
 #include "metadata.h"
 #include "parser.h"
 #include "node.h"
@@ -679,4 +681,279 @@ bool markdown_core_metadata_places_read(const unsigned char *text, size_t length
     properties_close(&p);
     markdown_core_metadata_fields_free(&fields);
     return !p.failed;
+}
+
+/* THE ENVELOPE AT A CURSOR AND THE MEMBERS' SPELLING (write.h; plan 3.2):
+ * what the context reads of a properties envelope, which the walk of the
+ * tree does not reach, and how a value is written in a member. */
+
+/* Where the line that holds `offset` starts, and where it ends: its
+ * terminator, or the text's end. */
+static size_t S_line_start(const uint8_t *source, size_t offset) {
+    while (offset > 0 && source[offset - 1] != '\n' && source[offset - 1] != '\r') {
+        offset--;
+    }
+    return offset;
+}
+
+static size_t S_line_end(const uint8_t *source, size_t length, size_t offset) {
+    while (offset < length && source[offset] != '\n' && source[offset] != '\r') {
+        offset++;
+    }
+    return offset;
+}
+
+/* Whether `c` is a byte of a member's name as the field names spell it. */
+static bool S_name_byte(uint8_t c) {
+    return (c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z') || c == '_' || c == '-';
+}
+
+/* Whether the bytes from `from` to `to` are spaces and tabs. */
+static bool S_blanks(const uint8_t *source, size_t from, size_t to) {
+    for (size_t at = from; at < to; at++) {
+        if (source[at] != ' ' && source[at] != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The slot of the envelope's member at the cursor, from its places: `field`
+ * on a name, `value` on a value. A scalar on one line holds the cursor from
+ * its first byte to its last, inside its quotes; a literal's line from past
+ * the literal's indentation to the line's end. After a name's colon and a
+ * space, where the member reads an empty value, the empty value's slot holds
+ * it when no more than spaces and a comment follow on the line. Each of
+ * these the parse confirms, so it is closed. At a line that begins a member
+ * and holds no name the parse reads, the name characters before the cursor
+ * are an open `field`: the member names no field yet. A line a member holds
+ * (properties.h) begins none. Answers whether it found a slot. */
+static bool S_member_slot(const uint8_t *source, size_t cursor, const markdown_core_metadata_places *places,
+                          size_t line, size_t last, markdown_core_envelope *out) {
+    out->closed = true;
+    for (size_t i = 0; i < places->count; i++) {
+        const markdown_core_metadata_place *at = &places->items[i];
+        if (at->slot == MARKDOWN_CORE_SLOT_NONE) {
+            continue;
+        }
+        out->kind = at->slot;
+        out->field = at->from;
+        out->wrap = at->style == MARKDOWN_CORE_YAML_QUOTE        ? '"'
+                    : at->style == MARKDOWN_CORE_YAML_APOSTROPHE ? '\''
+                    : at->style == MARKDOWN_CORE_YAML_LITERAL    ? '|'
+                                                                 : 0;
+        if (at->style == MARKDOWN_CORE_YAML_LITERAL) {
+            /* Its first line's text starts past the indentation every
+             * line of it has. */
+            const size_t first = S_line_start(source, at->from);
+            const size_t start = line == first ? at->from : line + (at->from - first);
+            if (line >= first && line <= at->to && start <= last && start <= cursor && S_blanks(source, line, start)) {
+                out->from = start;
+                out->to = last;
+                return true;
+            }
+            continue;
+        }
+        if (at->style == MARKDOWN_CORE_YAML_PLAIN && at->from == at->to) {
+            /* An empty value, read where the name's colon ends: the value
+             * written after a space takes its place. */
+            size_t rest = cursor;
+            while (rest < last && (source[rest] == ' ' || source[rest] == '\t')) {
+                rest++;
+            }
+            if (at->from >= line && at->from < cursor && S_blanks(source, at->from, cursor) &&
+                (rest == last || (rest > cursor && source[rest] == '#'))) {
+                out->from = out->to = cursor;
+                return true;
+            }
+            continue;
+        }
+        if (at->from >= line && at->to <= last && at->from <= cursor && cursor <= at->to) {
+            out->from = at->from;
+            out->to = at->to;
+            return true;
+        }
+    }
+    /* A line that begins a member, the bytes before the cursor and after it
+     * a name: a member the parse skipped begins at the line, or the line is
+     * empty, and no value goes on through it. */
+    size_t start = line;
+    while (start < cursor && S_name_byte(source[start])) {
+        start++;
+    }
+    size_t end = cursor;
+    while (end < last && S_name_byte(source[end])) {
+        end++;
+    }
+    bool begins = line == last;
+    for (size_t i = 0; i < places->count; i++) {
+        const markdown_core_metadata_place *at = &places->items[i];
+        begins = (begins || (at->slot == MARKDOWN_CORE_SLOT_NONE && at->from == line && at->to > line)) &&
+                 !(at->slot == MARKDOWN_CORE_SLOT_VALUE && at->from < line && line <= at->to);
+    }
+    if (start != cursor || !begins || places->held || (end > line && source[line] == '-')) {
+        return false;
+    }
+    *out = (markdown_core_envelope){out->opening, true, MARKDOWN_CORE_SLOT_FIELD, line, end, line, 0, false};
+    return true;
+}
+
+/* A cursor in a properties envelope, from its opening fence through its
+ * closing one, is in the document's Metadata, not in the blocks its lines
+ * would be without the fences: its block is the Metadata, on the opening
+ * fence's line. In the payload, past the opening fence's line and before
+ * the closing fence's, its slot is the member's (S_member_slot), which the
+ * places' reader reads. An envelope that no fence closes is no envelope. */
+static bool S_envelope(const markdown_core_node *metadata, const uint8_t *source, size_t length, size_t cursor,
+                       markdown_core_envelope *out, bool *held) {
+    *held = false;
+    if (metadata->place.end < 6 || metadata->place.end > length || cursor > metadata->place.end) {
+        return true;
+    }
+    *held = true;
+    const size_t close = metadata->place.end - 3;
+    out->opening = S_line_end(source, length, 0);
+    size_t payload = out->opening;
+    payload += payload < length && source[payload] == '\r';
+    payload += payload < length && source[payload] == '\n';
+    payload = payload < close ? payload : close;
+    out->slot = false;
+    if (cursor < payload || cursor >= close) {
+        return true;
+    }
+    const size_t line = S_line_start(source, cursor), last = S_line_end(source, length, cursor);
+    markdown_core_metadata_places places = {.line = line};
+    if (!markdown_core_metadata_places_read(source, metadata->place.end, &places)) {
+        markdown_core_free(places.items);
+        return false;
+    }
+    out->slot = S_member_slot(source, cursor, &places, line, last, out);
+    markdown_core_free(places.items);
+    return true;
+}
+
+const markdown_core_facet MARKDOWN_CORE_PROPERTIES_FACETS[] = {
+    {.kind = MARKDOWN_CORE_KIND_METADATA, .envelope = S_envelope},
+    {.kind = MARKDOWN_CORE_KIND_NONE},
+};
+
+/* Whether the character of `width` bytes at `value` is one a YAML scalar
+ * holds as it is: a tab, or printable, U+0085 and U+FEFF among them, but
+ * not the other C1 controls, U+FFFE or U+FFFF (yaml.c). */
+static bool S_printable(const uint8_t *value, size_t width) {
+    const uint8_t c = value[0];
+    if (width == 1) {
+        return c == '\t' || (c >= 0x20 && c != 0x7F);
+    }
+    if (width == 2 && c == 0xC2) {
+        return value[1] == 0x85 || value[1] >= 0xA0;
+    }
+    return !(width == 3 && c == 0xEF && value[1] == 0xBF && value[2] >= 0xBE);
+}
+
+/* Writes `value` between double quotes' bytes: a quote and a backslash
+ * escaped, and a character no scalar holds as JSON's escape of it. */
+static void S_quoted(markdown_core_spelling *out, const uint8_t *value, size_t size) {
+    for (size_t i = 0; i < size;) {
+        const uint8_t c = value[i];
+        const size_t width = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        if (c == '"' || c == '\\') {
+            markdown_core_write_put(out, '\\');
+            markdown_core_write_put(out, c);
+        } else if (c == '\t') {
+            markdown_core_write_put(out, '\\');
+            markdown_core_write_put(out, 't');
+        } else if (!S_printable(value + i, width)) {
+            const uint32_t code = width == 1   ? c
+                                  : width == 2 ? (uint32_t)(c & 0x1F) << 6 | (value[i + 1] & 0x3F)
+                                               : 0xFFFFu - (0xBFu - value[i + 2]);
+            markdown_core_write_put(out, '\\');
+            markdown_core_write_put(out, 'u');
+            for (int shift = 12; shift >= 0; shift -= 4) {
+                markdown_core_write_put(out, (uint8_t)"0123456789abcdef"[(code >> shift) & 0xF]);
+            }
+        } else {
+            for (size_t j = 0; j < width; j++) {
+                markdown_core_write_put(out, value[i + j]);
+            }
+        }
+        i += width;
+    }
+}
+
+/* Whether `value` written bare is a plain scalar of its bytes that reads as
+ * text in any member: it starts with no indicator, ends with no space, holds
+ * no flow indicator, no `: `, `:?` and ` #`, no character a scalar must escape,
+ * and is no null, boolean or number. */
+static bool S_bare(const uint8_t *value, size_t size) {
+    if (!size || markdown_core_write_among(value[0], "-?:,[]{}#&*!|>'\"%@`~ \t") || value[size - 1] == ' ' ||
+        value[size - 1] == '\t' || !markdown_core_metadata_text(value, size)) {
+        return false;
+    }
+    for (size_t i = 0; i < size;) {
+        const uint8_t c = value[i];
+        const size_t width = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        if (markdown_core_write_among(c, ",[]{}\t") || !S_printable(value + i, width) ||
+            (c == ':' && (i + 1 == size || value[i + 1] == ' ' || value[i + 1] == '?')) ||
+            (c == '#' && value[i - 1] == ' ')) {
+            return false;
+        }
+        i += width;
+    }
+    return true;
+}
+
+/* A properties member's name or value (docs/specs/dialect/properties.md).
+ * A name is one of the grammar's field names, letters, numerals, `_` and
+ * `-`, written as it is. A value is written as the scalar its slot is in
+ * holds it: inside double quotes escaped, inside apostrophes with each
+ * doubled and nothing a scalar must escape, on a literal's line as it is,
+ * with text there and, on its first line, no space to start it, which
+ * would deepen its indentation; and bare where the slot is, as a plain
+ * scalar when it reads as that text, else between double quotes. */
+markdown_core_status markdown_core_properties_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                                    markdown_core_spelling *out, bool *held) {
+    if (site->kind == MARKDOWN_CORE_SLOT_FIELD) {
+        *held = markdown_core_write_word(value, size, "_-") && value[0] != '-' &&
+                markdown_core_write_plain(out, value, size, "", false);
+        return MARKDOWN_CORE_OK;
+    }
+    *held = true;
+    switch (site->wrap) {
+    case '"':
+        S_quoted(out, value, size);
+        break;
+    case '\'':
+        for (size_t i = 0; i < size && *held;) {
+            const size_t width = value[i] < 0x80 ? 1 : value[i] < 0xE0 ? 2 : value[i] < 0xF0 ? 3 : 4;
+            *held = S_printable(value + i, width);
+            if (value[i] == '\'') {
+                markdown_core_write_put(out, '\'');
+            }
+            for (size_t j = 0; j < width && *held; j++) {
+                markdown_core_write_put(out, value[i + j]);
+            }
+            i += width;
+        }
+        break;
+    case '|':
+        for (size_t i = 0; i < size && *held;) {
+            const size_t width = value[i] < 0x80 ? 1 : value[i] < 0xE0 ? 2 : value[i] < 0xF0 ? 3 : 4;
+            *held = S_printable(value + i, width);
+            i += width;
+        }
+        *held = *held && !markdown_core_write_blank(value, size) && !(site->field == site->start && value[0] == ' ') &&
+                markdown_core_write_plain(out, value, size, "", false);
+        break;
+    default:
+        if (S_bare(value, size)) {
+            *held = markdown_core_write_plain(out, value, size, "", false);
+            break;
+        }
+        markdown_core_write_put(out, '"');
+        S_quoted(out, value, size);
+        markdown_core_write_put(out, '"');
+        break;
+    }
+    return MARKDOWN_CORE_OK;
 }

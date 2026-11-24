@@ -1,3 +1,4 @@
+#include <string.h>
 #include "alloc.h"
 #include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
@@ -186,7 +187,25 @@ static const markdown_core_line_ops FOOTNOTE_LINES = {
     .prefix = continue_container,
 };
 
+/* WRITING (write.h): a footnote's label keeps its bytes, holds no bracket
+ * even escaped, and a final backslash would escape its `]`. A closed one
+ * whose `]` is on a later line goes on past the line. */
+static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    markdown_core_spelling *out, bool *held) {
+    out->tokens = MARKDOWN_CORE_TOKENS_RAW;
+    out->closer = site->closed ? "" : "]";
+    *held = !(site->closed && !memchr(site->line + site->end, ']', site->size - site->end)) && size > 0 &&
+            size <= 1000 && value[size - 1] != '\\' && markdown_core_write_plain(out, value, size, " \t[]", site->row);
+    return MARKDOWN_CORE_OK;
+}
+
+static const markdown_core_write_ops FOOTNOTE_WRITES = {
+    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_FOOTNOTE),
+    .spell = S_spell,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .writes = &FOOTNOTE_WRITES,
     .edit = &FOOTNOTE_EDIT,
     .spaces = FOOTNOTE_SPACES,
     .name = "footnote",

@@ -21,11 +21,10 @@
  * pure functions from bytes to a match length, generated from its `.re`: no
  * instance, no state, no hook.
  *
- * WHAT IS STILL READ OUTSIDE A PARSE. A context field's end runs with no
- * dialect, so no service can answer it: the attribute grammar's own
- * functions are what it calls (`OUTSIDE`). It goes when context reads only
- * what the parse recorded (the decoupling plan, 8.5); the list must shrink,
- * never grow.
+ * THE CONTEXT IS NO ELEMENT, AND NAMES NONE. The context finds the slot at a
+ * cursor and asks the dialect's elements how a value is written in it (the
+ * write interface, core/write.h), so its sources (`NEUTRAL`) name no
+ * element's symbol and include no element's header.
  *
  * AND THE AUDIT MUST SEE SOMETHING: every element header must contribute
  * symbols and an element source must be judged, or it fails closed.
@@ -105,11 +104,8 @@ for (const file of headers) {
     }
 }
 
-/* (WHAT IS STILL READ OUTSIDE A PARSE) source -> the other elements'
- * symbols and headers it may name. */
-const OUTSIDE = new Map([
-    ["code_block.c", ["attributes.h", "markdown_core_attributes_tail", "markdown_core_attribute_parser_free"]]
-]);
+/* (THE CONTEXT IS NO ELEMENT) sources judged as owning no element. */
+const NEUTRAL = new Set(["context.c"]);
 
 const findings = [];
 let judged = 0;
@@ -120,21 +116,20 @@ for (const file of sources) {
         (m) => m[1]
     );
     if (self.length === 0) self = stemOwner(file) ?? [];
-    if (self.length === 0) continue;
+    if (self.length === 0 && !NEUTRAL.has(file)) continue;
     judged++;
-    const outside = new Set(OUTSIDE.get(file) ?? []);
     const mine = (owner) => owner.some((symbol) => self.includes(symbol));
     if (/\b\w+_PEERS\[\]/.test(text)) findings.push(`${file}: declares peers; an element asks services`);
     for (const [, include] of raw.matchAll(/^\s*#\s*include\s*"([^"]+)"/gm)) {
         const owner = owners.has(include) ? owners.get(include) : stemOwner(include);
-        if (owner && headers.includes(include) && !mine(owner) && !outside.has(include)) {
+        if (owner && headers.includes(include) && !mine(owner)) {
             findings.push(`${file}: includes ${include} of ${owner.join(", ")}`);
         }
     }
     const seen = new Set();
     for (const [name] of text.matchAll(/\b[A-Za-z_]\w*\b/g)) {
         const hit = owned.get(name);
-        if (!hit || seen.has(name) || mine(hit.owner) || outside.has(name)) continue;
+        if (!hit || seen.has(name) || mine(hit.owner)) continue;
         seen.add(name);
         findings.push(`${file}: uses ${name} of ${hit.file} (${hit.owner.join(", ")})`);
     }

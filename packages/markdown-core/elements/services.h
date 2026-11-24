@@ -250,4 +250,47 @@ typedef struct markdown_core_make_ops {
 
 #define MARKDOWN_CORE_SERVICE_HTML_COMMENTS "html comments"
 
+/* WRITING A LITERAL BYTE (write.h, THE WRITING SERVICES): how a spelling
+ * writes a byte of a value so that the decoding its field reads it through
+ * gives the byte back. Stateless, since spelling reads a context, not a
+ * parse.
+ *
+ * An ESCAPE WRITING `guard`s the byte `c`: writes it, made literal, at
+ * `out` and returns the bytes it wrote.
+ * A REFERENCE WRITING `guard`s the byte at `at` of the `size` bytes of
+ * `value`: writes what keeps it from beginning a reference at `out` and
+ * returns the bytes it wrote, or 0 when it begins none. */
+typedef struct markdown_core_escape_writing {
+    size_t (*guard)(uint8_t *out, uint8_t c);
+} markdown_core_escape_writing;
+
+typedef struct markdown_core_reference_writing {
+    size_t (*guard)(uint8_t *out, const uint8_t *value, size_t size, size_t at);
+} markdown_core_reference_writing;
+
+#define MARKDOWN_CORE_SERVICE_ESCAPE_WRITING "escape writing"
+#define MARKDOWN_CORE_SERVICE_REFERENCE_WRITING "reference writing"
+
+/* Writes `value` with each byte of `marked`, and a `|` on a table's row,
+ * whose own backslash the row removes first, written literal, and each byte
+ * that would begin a reference kept from it: the field reads references
+ * before escapes. With no escape writing the bytes are written as they are. */
+static inline void markdown_core_write_escaped(markdown_core_spelling *out, const uint8_t *value, size_t size,
+                                               const char *marked, bool row) {
+    const markdown_core_escape_writing *escapes = markdown_core_write_service(MARKDOWN_CORE_SERVICE_ESCAPE_WRITING);
+    const markdown_core_reference_writing *references =
+        markdown_core_write_service(MARKDOWN_CORE_SERVICE_REFERENCE_WRITING);
+    for (size_t i = 0; i < size; i++) {
+        const uint8_t c = value[i];
+        const size_t guarded = references ? references->guard(out->text + out->size, value, size, i) : 0;
+        if (guarded) {
+            out->size += guarded;
+        } else if (escapes && ((row && c == '|') || markdown_core_write_among(c, marked))) {
+            out->size += escapes->guard(out->text + out->size, c);
+        } else {
+            markdown_core_write_put(out, c);
+        }
+    }
+}
+
 #endif

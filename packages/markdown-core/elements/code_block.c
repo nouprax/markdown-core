@@ -2,7 +2,6 @@
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
-#include "attributes.h"
 #include <string.h>
 
 /* The services this element asks, as `self->needs` holds them: where an
@@ -384,7 +383,50 @@ const markdown_core_facet MARKDOWN_CORE_CODE_BLOCK_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* The character of the fence the site's line opens, a backtick or a tilde,
+ * or 0: the first run of three before the slot. */
+static uint8_t S_fence(const markdown_core_site *site) {
+    for (size_t i = 0; i + 2 < site->start && i + 2 < site->size; i++) {
+        const uint8_t c = site->line[i];
+        if ((c == '`' || c == '~') && site->line[i + 1] == c && site->line[i + 2] == c) {
+            return c;
+        }
+    }
+    return 0;
+}
+
+/* An info string's writing (markdown_core_write_ops): the slot is its first
+ * word, the language, escaped where a backslash or a brace would read as
+ * more; a backtick fence's info string holds no backtick. */
+static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    markdown_core_spelling *out, bool *held) {
+    *held = size > 0 && !memchr(value, ' ', size) && !memchr(value, '\t', size) &&
+            !(S_fence(site) == '`' && memchr(value, '`', size));
+    if (*held) {
+        markdown_core_write_escaped(out, value, size, "\\{", site->row);
+    }
+    return MARKDOWN_CORE_OK;
+}
+
+/* A backtick fence's line holds no backtick in any other field after it. */
+static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    const markdown_core_spelling *spelled, bool *kept) {
+    (void)value;
+    (void)size;
+    *kept = site->owner != MARKDOWN_CORE_KIND_CODE_BLOCK || S_fence(site) != '`' ||
+            !memchr(spelled->text, '`', spelled->size);
+    return MARKDOWN_CORE_OK;
+}
+
+static const markdown_core_write_ops CODE_BLOCK_WRITES = {
+    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_INFO),
+    .alone = true,
+    .spell = S_spell,
+    .keeps = S_keeps,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
+    .writes = &CODE_BLOCK_WRITES,
     .needs = CODE_BLOCK_NEEDS,
     .facets = MARKDOWN_CORE_CODE_BLOCK_FACETS,
     .edit = &CODE_BLOCK_EDIT,

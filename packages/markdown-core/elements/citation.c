@@ -1,3 +1,4 @@
+#include <string.h>
 #include "alloc.h"
 #include "bracket.h"
 #include "autolink_scanners.h"
@@ -979,22 +980,95 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
            (!bib || !item->suffix || markdown_core_words_children(item->suffix, words));
 }
 
-/* A key reads to its braces' `}` when braced, else as a bare key; a note's
- * label stops only at its `]`. */
-static bufsize_t S_field_end(int slot, uint8_t before, const unsigned char *data, bufsize_t length) {
-    if (slot != MARKDOWN_CORE_SLOT_BIB && slot != MARKDOWN_CORE_SLOT_SPECIMEN) {
-        return -1;
-    }
+/* A key reads to its braces' `}` when braced, else as a bare key. */
+static bufsize_t S_field_end(uint8_t before, const unsigned char *data, bufsize_t length) {
     return before == '{' ? braced_key_end(data, length) : key_end(data, length);
 }
 
 const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
-    {.kind = MARKDOWN_CORE_KIND_CITATION, .words = S_words, .field_end = S_field_end},
+    {.kind = MARKDOWN_CORE_KIND_CITATION, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_CITE, .reads = MARKDOWN_CORE_READS_CHILDREN},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* WRITING (write.h): a key, and what a citation's `@` after the slot
+ * keeps from a spelling. */
+
+/* A braced key's field is inside its `@{`. */
+static uint8_t S_wrap(markdown_core_slot_kind slot, markdown_core_node_kind owner, const markdown_core_wrap_site *at) {
+    (void)slot;
+    (void)owner;
+    return at->start > at->line + 1 && at->source[at->start - 1] == '{' && at->source[at->start - 2] == '@' ? '{' : 0;
+}
+
+/* A key as written: braces in it balanced, and no space, which ends it. A
+ * specimen's label is key characters with single hyphens between, and no
+ * braces write one. A key the bare reading does not read whole is written
+ * in braces. The closers are the braces' and the bracket's or the
+ * parenthesis the citation opens with. */
+static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    markdown_core_spelling *out, bool *held) {
+    out->tokens = MARKDOWN_CORE_TOKENS_RAW;
+    int depth = 0;
+    *held = size > 0;
+    for (size_t i = 0; i < size && *held; i++) {
+        depth += value[i] == '{' ? 1 : value[i] == '}' ? -1 : 0;
+        *held = depth >= 0;
+    }
+    *held = *held && !depth && markdown_core_write_plain(out, value, size, " \t", site->row);
+    const bool braced = site->wrap == '{', cites = site->owner == MARKDOWN_CORE_KIND_CITATION;
+    markdown_core_status status = MARKDOWN_CORE_OK;
+    if (site->kind == MARKDOWN_CORE_SLOT_SPECIMEN) {
+        *held = *held && !braced && value[0] != '-' && value[size - 1] != '-';
+        for (size_t i = 0; *held && i < size; i++) {
+            const uint8_t c = value[i];
+            *held = c >= 0x80 || markdown_core_write_word(&c, 1, "_") || (c == '-' && value[i + 1] != '-');
+        }
+        if (*held && cites) {
+            status = markdown_core_write_reads(site, out, S_field_end, held);
+        }
+    } else if (*held && cites) {
+        bool whole = true;
+        status = markdown_core_write_reads(site, out, S_field_end, &whole);
+        if (!braced && !whole) {
+            memmove(out->text + 1, out->text, out->size);
+            out->text[0] = '{';
+            out->size++;
+            markdown_core_write_put(out, '}');
+        }
+        *held = braced ? whole : true;
+    }
+    const uint8_t open = site->opener != SIZE_MAX ? site->line[site->opener] : 0;
+    out->closer = braced && !site->closed ? (open == '['   ? "}]"
+                                             : open == '(' ? "})"
+                                                           : "}")
+                  : site->closed          ? ""
+                  : open == '['           ? "]"
+                  : open == '('           ? ")"
+                                          : "";
+    return status;
+}
+
+/* Whether a citation's `@` right after the slot keeps the class of the
+ * byte before it, which decides whether it begins one. */
+static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    const markdown_core_spelling *spelled, bool *kept) {
+    (void)value;
+    (void)size;
+    const size_t rest = site->size - site->end;
+    *kept = *spelled->closer || !rest || site->line[site->end] != '@' || markdown_core_write_flanked(site, spelled);
+    return MARKDOWN_CORE_OK;
+}
+
+static const markdown_core_write_ops CITATION_WRITES = {
+    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_BIB) | MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_SPECIMEN),
+    .wrap = S_wrap,
+    .spell = S_spell,
+    .keeps = S_keeps,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
+    .writes = &CITATION_WRITES,
     .facets = MARKDOWN_CORE_CITATION_FACETS,
     .needs = CITATION_NEEDS,
     .spaces = CITATION_SPACES,

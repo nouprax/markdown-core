@@ -181,7 +181,39 @@ static bufsize_t S_skip(const markdown_core_element_instance *self, markdown_cor
 static const markdown_core_skip_ops HTML_TAGS = {.skip = S_skip};
 static const markdown_core_service HTML_SERVICES[] = {{MARKDOWN_CORE_SERVICE_HTML_TAGS, &HTML_TAGS}, {0}};
 
+/* A tag the line opens before the slot ends at a space, a quote or a bracket, and a field that keeps its bytes holds no
+ * tag's bracket. */
+static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    const markdown_core_spelling *spelled, bool *kept) {
+    bool markup = false;
+    const size_t before = site->start - (site->wrap == '<' && site->start > 0);
+    for (size_t i = 0; i < before && i < site->size; i++) {
+        const uint8_t c = site->line[i], next = i + 1 < site->size ? site->line[i + 1] : 0;
+        if (c == '<' && (markdown_core_write_among(next, "/!?") || ((next | 0x20) >= 'a' && (next | 0x20) <= 'z'))) {
+            markup = true;
+        } else if (c == '>') {
+            markup = false;
+        }
+    }
+    *kept = spelled->tokens != MARKDOWN_CORE_TOKENS_RAW ||
+            (!markdown_core_write_holds(value, size, "<") && !markdown_core_write_holds(value, size, ">"));
+    for (size_t i = 0; markup && *kept && i < spelled->size; i++) {
+        const uint8_t c = spelled->text[i];
+        if (c == '\\') {
+            i += i + 1 < spelled->size && !markdown_core_write_among(spelled->text[i + 1], "}=|");
+            continue;
+        }
+        *kept = !markdown_core_write_among(c, " \t\"'<>");
+    }
+    return MARKDOWN_CORE_OK;
+}
+
+static const markdown_core_write_ops HTML_WRITES = {
+    .keeps = S_keeps,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
+    .writes = &HTML_WRITES,
     .facets = MARKDOWN_CORE_HTML_FACETS,
     .name = "html",
     .provides = HTML_SERVICES,

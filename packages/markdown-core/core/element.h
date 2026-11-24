@@ -7,6 +7,7 @@
 #include "config.h"
 #include "chunk.h"
 #include "delimiter.h"
+#include "write.h"
 #include "node.h"
 #include "attributes.h"
 #include "measure.h"
@@ -886,6 +887,8 @@ typedef struct markdown_core_words {
     bool (*node)(void *context, const markdown_core_node *node);
 } markdown_core_words;
 
+struct markdown_core_envelope;
+struct markdown_core_write_ops;
 typedef struct markdown_core_facet {
     markdown_core_node_kind kind;
     /* Whether a node of the kind is one field of slot kind NONE, all of its
@@ -905,13 +908,13 @@ typedef struct markdown_core_facet {
      * tag's or a note's. */
     uint8_t reads;
     bool (*words)(const markdown_core_node *, const markdown_core_words *);
-    /* Where the element's reading of a field of slot kind `slot` of a node
-     * of the kind, written from the first of the `length` bytes at `data`
-     * with the byte `before` before it (0 at a line's start), stops: what the
-     * completion may write in the field is what it reads whole; -1 for a
-     * slot kind that stops only at its syntax's closer, and NULL when every
-     * slot kind the kind holds does. */
-    bufsize_t (*field_end)(int slot, uint8_t before, const unsigned char *data, bufsize_t length);
+    /* The context at `cursor` in a node of the kind that the walk of the
+     * tree does not reach, a document's properties envelope, which its
+     * element reads itself (write.h, markdown_core_envelope), from the
+     * `length` bytes of `source`: `*held` whether the node holds the cursor.
+     * False when storage could not be had. */
+    bool (*envelope)(const markdown_core_node *, const uint8_t *source, size_t length, size_t cursor,
+                     struct markdown_core_envelope *out, bool *held);
 } markdown_core_facet;
 
 enum { MARKDOWN_CORE_READS_NOTHING = 0, MARKDOWN_CORE_READS_LITERAL, MARKDOWN_CORE_READS_CHILDREN };
@@ -1002,6 +1005,10 @@ struct markdown_core_element {
      * markdown_core_name_spelling), or NULL: the dialect's last element
      * that declares one, its anchor element, spells them. */
     const struct markdown_core_name_spelling *spelling;
+    /* What the element writes in a context's slots, and how it keeps its
+     * constructs from a spelling (write.h, markdown_core_write_ops), or
+     * NULL. */
+    const struct markdown_core_write_ops *writes;
 
     /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
      * that asks it, in the order a line meets them. A NULL table says the

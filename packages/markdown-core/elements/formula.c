@@ -858,7 +858,20 @@ const markdown_core_facet MARKDOWN_CORE_FORMULA_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
+/* A field that keeps its bytes, or escapes them, holds no formula's `$`, which the text around it may pair with. */
+static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
+                                    const markdown_core_spelling *spelled, bool *kept) {
+    (void)site;
+    *kept = spelled->tokens == MARKDOWN_CORE_TOKENS_FREE || !markdown_core_write_holds(value, size, "$");
+    return MARKDOWN_CORE_OK;
+}
+
+static const markdown_core_write_ops FORMULA_WRITES = {
+    .keeps = S_keeps,
+};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
+    .writes = &FORMULA_WRITES,
     .facets = MARKDOWN_CORE_FORMULA_FACETS,
     .name = "formula",
     .follows = FORMULA_FOLLOWS,
