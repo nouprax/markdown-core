@@ -168,7 +168,9 @@ static bool collect(const markdown_core_document *document, const uint8_t *sourc
     for (size_t i = 0; i < length; i++) {
         const markdown_core_node **path;
         size_t count;
-        if (markdown_core_document_path(document, (markdown_core_position){line, column}, source, length, &path,
+        /* The LF of a CRLF is the line ending the CR starts, not a column. */
+        if (!(source[i] == '\n' && i && source[i - 1] == '\r') &&
+            markdown_core_document_path(document, (markdown_core_position){line, column}, source, length, &path,
                                         &count) == MARKDOWN_CORE_OK) {
             for (size_t k = 0; k < count; k++) {
                 if (!add_node(out, path[k])) {
@@ -582,6 +584,87 @@ static bool substitute(report *r, const markdown_core_document *original, const 
     return unchanged;
 }
 
+/* The scopes of `node`'s markers, when `slot` is -1, or of its fields of
+ * slot kind `slot`; false when the query failed. */
+static bool scopes_of(const markdown_core_document *document, const markdown_core_node *node, int slot,
+                      const uint8_t *source, size_t length, markdown_core_scope **scopes, size_t *count) {
+    return (slot < 0 ? markdown_core_document_markers(document, node, source, length, scopes, count)
+                     : markdown_core_document_field(document, node, (markdown_core_slot_kind)slot, source, length,
+                                                    scopes, count)) == MARKDOWN_CORE_OK;
+}
+
+/* A LINE ENDING IS ONE: the example written with CRLF line endings has the
+ * nodes the example has, and each node's markers and fields are where they
+ * are in the example, line for line and column for column. */
+static void check_crlf(report *r, const markdown_core_document *document, const nodes *all, const uint8_t *source,
+                       size_t length) {
+    size_t lines = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (source[i] == '\r') {
+            return;
+        }
+        lines += source[i] == '\n';
+    }
+    if (!lines) {
+        return;
+    }
+    uint8_t *crlf = malloc(length + lines + 1);
+    if (!crlf) {
+        return;
+    }
+    size_t size = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (source[i] == '\n') {
+            crlf[size++] = '\r';
+        }
+        crlf[size++] = source[i];
+    }
+    crlf[size] = 0;
+    markdown_core_document *other;
+    nodes them = {0};
+    if (markdown_core_document_parse(crlf, size, &other) != MARKDOWN_CORE_OK) {
+        fail(r, source, length, "crlf", "the example with CRLF line endings could not be parsed");
+        free(crlf);
+        return;
+    }
+    if (!collect(other, crlf, size, &them) || them.count != all->count) {
+        fail(r, source, length, "crlf", "the example with CRLF line endings has other nodes");
+    }
+    for (size_t n = 0; n < all->count && n < them.count; n++) {
+        if (markdown_core_node_get_kind(all->items[n]) != markdown_core_node_get_kind(them.items[n])) {
+            fail(r, source, length, "crlf", "the example with CRLF line endings has other nodes");
+            break;
+        }
+        for (int slot = -1; slot <= MARKDOWN_CORE_SLOT_VALUE; slot++) {
+            markdown_core_scope *mine, *theirs;
+            size_t count, other_count;
+            if (!scopes_of(document, all->items[n], slot, source, length, &mine, &count)) {
+                continue;
+            }
+            if (!scopes_of(other, them.items[n], slot, crlf, size, &theirs, &other_count)) {
+                markdown_core_scopes_free(mine);
+                continue;
+            }
+            bool same = count == other_count;
+            for (size_t i = 0; same && i < count; i++) {
+                same = !memcmp(&mine[i], &theirs[i], sizeof(mine[i]));
+            }
+            if (!same) {
+                char what[160];
+                snprintf(what, sizeof(what), "%s %s crlf", kind_of(all->items[n]),
+                         slot < 0 ? "markers" : slot_of((markdown_core_slot_kind)slot));
+                fail(r, source, length, what, "a CRLF line ending moves the scopes");
+            }
+            r->checks++;
+            markdown_core_scopes_free(mine);
+            markdown_core_scopes_free(theirs);
+        }
+    }
+    free((void *)them.items);
+    markdown_core_document_free(other);
+    free(crlf);
+}
+
 static void check_example(report *r, const uint8_t *source, size_t length) {
     markdown_core_document *document;
     if (markdown_core_document_parse(source, length, &document) != MARKDOWN_CORE_OK) {
@@ -772,6 +855,7 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
     }
     free(pick);
     free(list.items);
+    check_crlf(r, document, &all, source, length);
     free((void *)all.items);
     free(dump);
     free(raw);

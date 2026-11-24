@@ -617,6 +617,27 @@ static bool recorded_places(const markdown_core_node *node, const view *r, markd
     return ok;
 }
 
+/* A LINE ENDING IS ONE: a range that starts or ends between a CR and its LF
+ * starts or ends past the LF, so the inline text, which keeps the CR and
+ * leaves the LF out, answers as the text written with LF alone does; a range
+ * left empty goes. */
+static void one_ends(ranges *out, const uint8_t *source, size_t length) {
+    size_t kept = 0;
+    for (size_t i = 0; i < out->count; i++) {
+        markdown_core_place place = out->items[i];
+        if (place.start && place.start < length && source[place.start - 1] == '\r' && source[place.start] == '\n') {
+            place.start++;
+        }
+        if (place.end && place.end < length && source[place.end - 1] == '\r' && source[place.end] == '\n') {
+            place.end++;
+        }
+        if (place.start < place.end) {
+            out->items[kept++] = place;
+        }
+    }
+    out->count = kept;
+}
+
 /* The source ranges of `node`'s fields of slot kind `slot`, or, when
  * `markers`, of its markers. */
 static markdown_core_status node_places(const markdown_core_node *root, const markdown_core_window *window,
@@ -641,6 +662,7 @@ static markdown_core_status node_places(const markdown_core_node *root, const ma
         *out = (ranges){0};
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    one_ends(out, source, length);
     return MARKDOWN_CORE_OK;
 }
 
