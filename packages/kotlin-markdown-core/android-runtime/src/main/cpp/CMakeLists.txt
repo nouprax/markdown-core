@@ -85,10 +85,8 @@ add_library(
 
 target_include_directories(
     markdown_core_kotlin
-    PRIVATE "${MARKDOWN_CORE_CORE_DIR}"
-            "${MARKDOWN_CORE_ELEMENTS_DIR}"
-            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/include"
-            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire"
+    PRIVATE "${MARKDOWN_CORE_CORE_DIR}" "${MARKDOWN_CORE_ELEMENTS_DIR}"
+            "${MARKDOWN_CORE_ROOT}/packages/markdown-core/include" "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire"
             "${MARKDOWN_CORE_ROOT}/packages/markdown-core/core/include")
 target_link_options(
     markdown_core_kotlin PRIVATE

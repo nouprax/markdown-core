@@ -1034,7 +1034,6 @@ final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { /
     final val unit // com.nouprax.markdown.core/MarkdownSession.unit|{}unit[0]
         final fun <get-unit>(): com.nouprax.markdown.core/TextUnit // com.nouprax.markdown.core/MarkdownSession.unit.<get-unit>|<get-unit>(){}[0]
 
-
     final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.append|append(kotlin.String){}[0]
     final fun close() // com.nouprax.markdown.core/MarkdownSession.close|close(){}[0]
     final fun edit(com.nouprax.markdown.core/Position, com.nouprax.markdown.core/Position, kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.edit|edit(com.nouprax.markdown.core.Position;com.nouprax.markdown.core.Position;kotlin.String){}[0]

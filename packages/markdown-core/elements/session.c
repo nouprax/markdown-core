@@ -161,24 +161,17 @@ static bool session_offset(const markdown_core_session *session, markdown_core_p
                                        session->document.unit, true, offset);
 }
 
-/* The widths of the children of `holder`, a block below the root
- * (markdown_core_index_nest). */
-static inline const markdown_core_widths *session_nest(const markdown_core_session *session,
-                                                       const markdown_core_node *holder) {
-    return markdown_core_index_nest(&session->edits->index, holder);
-}
-
-/* Where the root's child `child` starts and ends, and the root's child
- * before the first that ends past `offset`, or its first. */
-static inline size_t widths_start(const markdown_core_widths *widths, const markdown_core_node *root, size_t child) {
-    return markdown_core_widths_start(widths, root, root->extent.lead, child);
-}
-
+/* Where the root's child `child` ends. */
 static inline size_t widths_end(const markdown_core_widths *widths, const markdown_core_node *root, size_t child) {
     return markdown_core_widths_window(widths, root, (uint32_t)root->extent.lead, child).end;
 }
 
 #ifndef NDEBUG
+/* Where the root's child `child` starts. */
+static inline size_t widths_start(const markdown_core_widths *widths, const markdown_core_node *root, size_t child) {
+    return markdown_core_widths_start(widths, root, root->extent.lead, child);
+}
+
 /* Each of the root's children stands where the walk finds it. */
 static void session_walk_check(const markdown_core_widths *widths, const markdown_core_node *root) {
     /* The walk measures each child from the one before. */
