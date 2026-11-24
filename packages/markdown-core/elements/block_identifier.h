@@ -22,8 +22,8 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                 markdown_core_reader *reader);
 /* Whether a line as written may be an identifier line, which names the
- * block before it (element.h, the follow's `writes`): one that holds a `#`,
- * whatever its prefixes. */
+ * block before it (element.h, the follow's `writes`): one that ends with
+ * an identifier, whatever its prefixes. */
 bool markdown_core_block_identifier_writes(const markdown_core_element_instance *self, const unsigned char *line,
                                            size_t length);
 #endif

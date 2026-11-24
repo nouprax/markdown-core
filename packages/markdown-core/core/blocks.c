@@ -4912,14 +4912,12 @@ bool markdown_core_parser_writes(const markdown_core_parser *parser, const markd
     if (!follow || !follow->writes) {
         return true;
     }
-    size_t from = 0;
-    for (size_t i = 0; i <= length; i++) {
-        if (i == length || lines[i] == '\n' || lines[i] == '\r') {
-            if (follow->writes(follower, lines + from, i - from)) {
-                return true;
-            }
-            from = i + 1;
+    for (size_t from = 0; from <= length;) {
+        const size_t end = from + markdown_core_line_end(lines + from, length - from);
+        if (follow->writes(follower, lines + from, end - from)) {
+            return true;
         }
+        from = end + 1;
     }
     return false;
 }
@@ -5455,7 +5453,7 @@ static size_t S_leap_held(markdown_core_parser *parser, markdown_core_node *bloc
                 top = middle;
             }
         }
-        if (back == leap->mark_count || !S_reserve_content_marks(parser, (bufsize_t)back)) {
+        if (!S_reserve_content_marks(parser, (bufsize_t)back)) {
             markdown_core_array_truncate(&parser->line_marks, start);
             leap->mark_count = 0;
             return SIZE_MAX;
@@ -5465,7 +5463,23 @@ static size_t S_leap_held(markdown_core_parser *parser, markdown_core_node *bloc
         }
         leap->mark_count -= back;
         low = parser->line_marks.count;
-        leap->cut = S_back_mark(leap, 0).content_offset;
+        if (leap->mark_count) {
+            leap->cut = S_back_mark(leap, 0).content_offset;
+        } else {
+            /* Past every mark, as an edit at the text's end is: the line
+             * starts past the line ends from the last mark's on. */
+            markdown_core_strbuf_split_join(&block->content);
+            const markdown_core_line_mark last = parser->line_marks.values[low - 1];
+            const size_t cut = block->content.oom ? SIZE_MAX
+                                                  : S_line_ends(block->content.ptr, (size_t)block->content.size,
+                                                                (size_t)last.content_offset,
+                                                                (size_t)(target - last.line), parser->input.returns);
+            if (cut == SIZE_MAX) {
+                markdown_core_array_truncate(&parser->line_marks, start);
+                return SIZE_MAX;
+            }
+            leap->cut = (bufsize_t)cut;
+        }
         block->content_map = (markdown_core_content_map){(bufsize_t)start, (bufsize_t)(low - start), 0};
         return (size_t)leap->cut;
     }
@@ -5975,6 +5989,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
          * (S_leap_splice). */
         if (stream->edit->leap->node != leaf || stream->edit->leap->id != (leaf ? leaf->id : 0)) {
             stream->edit->leap->node = NULL;
+            stream->edit->leap->marked = 0;
         }
         stream->edit->leap->seam = (markdown_core_seam){0};
         stream->edit->leap->kept = stream->edit->leap->lands = false;
@@ -7127,6 +7142,26 @@ static bool S_runs_lines(markdown_core_parser *parser, markdown_core_node *block
     return true;
 }
 
+/* The marks the map of `block`, a block of literal lines the reading
+ * reads no more of, holds stand for the next reopen (THE PREFIX OF A
+ * PARAGRAPH), as a paragraph's do once its parse read them (S_seam_read):
+ * one whose old tail the splice took back, or one the reading read to the
+ * text's end. */
+static void S_leap_hold(markdown_core_parser *parser, markdown_core_node *block) {
+    markdown_core_leap *leap = parser->stream->edit->leap;
+    const markdown_core_content_map map = block->content_map;
+    leap->marked = map.first == MARKDOWN_CORE_IDENTITY_MARK + 1 && map.offset == 0 && map.count > 0 &&
+                           (size_t)(map.first + map.count) == parser->line_marks.count
+                       ? (uint32_t)map.count
+                       : 0;
+    if (leap->marked) {
+        leap->final = parser->line_marks.values[map.first + map.count - 1];
+    }
+    leap->base = parser->input.first_line;
+    leap->node = block;
+    leap->id = block->id;
+}
+
 /* The same, the splice made: the line at `start` of the new text, line
  * `index` of the input. False, with the parse failed, when storage could
  * not be had. */
@@ -7152,21 +7187,9 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
         return false;
     }
     S_leap_apart(parser, block, first, index);
-    /* A block of literal lines reads nothing more of its content: the marks
-     * its map holds stand for the next reopen (THE PREFIX OF A PARAGRAPH),
-     * as a paragraph's do once its parse read them (S_seam_read). */
+    /* A block of literal lines reads nothing more of its content. */
     if (!leap->prose) {
-        const markdown_core_content_map map = block->content_map;
-        leap->marked = map.first == MARKDOWN_CORE_IDENTITY_MARK + 1 && map.offset == 0 && map.count > 0 &&
-                               (size_t)(map.first + map.count) == parser->line_marks.count
-                           ? (uint32_t)map.count
-                           : 0;
-        if (leap->marked) {
-            leap->final = parser->line_marks.values[map.first + map.count - 1];
-        }
-        leap->base = parser->input.first_line;
-        leap->node = block;
-        leap->id = block->id;
+        S_leap_hold(parser, block);
     }
     /* It closes as it did: its close reads its first bytes and its last
      * line's, which are the old text's, and a block of literal lines the
@@ -9144,6 +9167,12 @@ markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lo
 
         if (blank) {
             *blank_lines += 1;
+            if (lookahead->once) {
+                /* The reading asked of this line alone: it reads no further
+                 * (THE REACH). */
+                lookahead->active = false;
+                return NULL;
+            }
             if (!lookahead->run_start) {
                 lookahead->run_start = this_line;
             }
@@ -9936,6 +9965,16 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         return NULL;
     }
 
+    /* The block of literal lines the reading reopened and read to the
+     * text's end, open still, keeps its marks (S_leap_hold). */
+    const markdown_core_edit *reading = parser->stream->edit;
+    if (reading && reading->depth && reading->leap) {
+        markdown_core_node *leaf = reading->chain[reading->depth - 1];
+        if (parser->at.current == leaf && !parser->at.pending && markdown_core_parser_reads_lines(parser, leaf) &&
+            !(S_read_flags(parser, leaf) & MARKDOWN_CORE_KIND_IS_PARAGRAPH)) {
+            S_leap_hold(parser, leaf);
+        }
+    }
     S_close_document(parser);
     if (parser->stream->edit && parser->stream->edit->depth) {
         S_unqueue_chain(parser);

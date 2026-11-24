@@ -1558,6 +1558,10 @@ typedef struct {
     bool active;
     /* The reading met the end of the input. */
     bool ended;
+    /* The reading reads the next line alone, blank or not: a caller that
+     * asks only whether it is blank sets it after `begin`, and what it
+     * decided depends on no line past it. */
+    bool once;
     /* The instance whose opener the reading is, when its element has stop
      * lines (element.h, `stops`), and whether the reading found one: set
      * by markdown_core_parser_lookahead_opener before the end. */
@@ -1859,6 +1863,14 @@ void markdown_core_parser_compact(markdown_core_parser *parser);
  * of literal lines, or one that read its lines as such a kind (blocks.c,
  * THE LEAP, THE FORMER KIND). */
 bool markdown_core_parser_leaf(const markdown_core_parser *parser, const struct markdown_core_node *block);
+/* The bytes of the `length` at `bytes` before the first line ending,
+ * all of them when none ends a line. */
+static inline size_t markdown_core_line_end(const unsigned char *bytes, size_t length) {
+    const unsigned char *feed = length ? (const unsigned char *)memchr(bytes, '\n', length) : NULL;
+    const size_t end = feed ? (size_t)(feed - bytes) : length;
+    const unsigned char *ret = end ? (const unsigned char *)memchr(bytes, '\r', end) : NULL;
+    return ret ? (size_t)(ret - bytes) : end;
+}
 /* THE BLOCK BEFORE (index.h, THE REST; blocks.c, THE SPLICE): whether a
  * line of the `length` bytes at `lines`, read after `prior`, may write it:
  * a block of a kind a later line may write once it closed (element.h, the

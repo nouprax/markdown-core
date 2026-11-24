@@ -633,14 +633,12 @@ static const markdown_core_widths *rest_widths(const rest_search *search, size_t
 static bool rest_line_in(const markdown_core_element_instance *self,
                          bool (*test)(const markdown_core_element_instance *, const unsigned char *, size_t),
                          const uint8_t *lines, size_t length) {
-    size_t from = 0;
-    for (size_t i = 0; i <= length; i++) {
-        if (i == length || lines[i] == '\n' || lines[i] == '\r') {
-            if (test(self, lines + from, i - from)) {
-                return true;
-            }
-            from = i + 1;
+    for (size_t from = 0; from <= length;) {
+        const size_t end = from + markdown_core_line_end(lines + from, length - from);
+        if (test(self, lines + from, end - from)) {
+            return true;
         }
+        from = end + 1;
     }
     return false;
 }
@@ -732,6 +730,13 @@ static bool rest_trails(const rest_search *search, const markdown_core_node *pri
         markdown_core_free(lines);
     }
     return writes;
+}
+
+/* Whether the line of the text before the edit at `start` may write
+ * `block` (markdown_core_parser_writes). */
+static bool rest_line_writes(const rest_search *search, const markdown_core_node *block, size_t start) {
+    const unsigned char *line = (const unsigned char *)search->source + start;
+    return markdown_core_parser_writes(search->parser, block, line, markdown_core_line_end(line, search->size - start));
 }
 
 /* THE CLOSER AN EDIT WRITES (element.h, the edit's `shuts`): the leaf the
@@ -1108,6 +1113,14 @@ static size_t rest_at(rest_search *search, size_t line) {
          * table's delimiter row, a closing fence), which its element reads
          * as the block's: the child before is read again. */
         if (rest->depth && !abuts && !starts && !rest_blank_line(search, start)) {
+            /* One that writes a block of the chain (markdown_core_follow,
+             * `closed`), which the block's reopen keeps what it wrote of:
+             * the block is read again from its start. */
+            for (size_t i = 0; i < rest->depth; i++) {
+                if (rest_line_writes(search, rest->chain[i], start)) {
+                    return rest_line(search, rest->starts[i]);
+                }
+            }
             return rest_line(search, first ? prior : rest->starts[rest->depth - 1]);
         }
         if (rest->depth && !abuts) {

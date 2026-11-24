@@ -8,31 +8,45 @@ typedef struct {
     bufsize_t content_end;
     bool own_line;
 } block_identifier;
-static bool S_scan_block_identifier(markdown_core_block_identifier_work *counts, const unsigned char *data,
-                                    bufsize_t length, block_identifier *candidate) {
-    bufsize_t end = length;
-    while (end && markdown_core_is_line_end(data[end - 1])) {
+/* THE IDENTIFIER AT A LINE'S END: whether `data`, past its line ending
+ * and the spaces and tabs before it, ends with `#name#`, a name of
+ * letters, digits and hyphens; the name from `*start` to `*end` - 1. */
+static bool S_identifier_end(markdown_core_block_identifier_work *counts, const unsigned char *data, bufsize_t length,
+                             bufsize_t *start, bufsize_t *end) {
+    bufsize_t last = length;
+    while (last && markdown_core_is_line_end(data[last - 1])) {
         counts->scan++;
-        end--;
+        last--;
     }
-    while (end && markdown_core_is_space_or_tab(data[end - 1])) {
+    while (last && markdown_core_is_space_or_tab(data[last - 1])) {
         counts->scan++;
-        end--;
+        last--;
     }
     counts->scan++;
-    if (end < 3 || data[end - 1] != '#') {
+    if (last < 3 || data[last - 1] != '#') {
         return false;
     }
-    bufsize_t start = end - 1;
-    while (start) {
-        unsigned char c = data[start - 1];
+    bufsize_t first = last - 1;
+    while (first) {
+        unsigned char c = data[first - 1];
         counts->scan++;
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-')) {
             break;
         }
-        start--;
+        first--;
     }
-    if (!start || start == end - 1 || data[start - 1] != '#') {
+    if (!first || first == last - 1 || data[first - 1] != '#') {
+        return false;
+    }
+    *start = first;
+    *end = last;
+    return true;
+}
+
+static bool S_scan_block_identifier(markdown_core_block_identifier_work *counts, const unsigned char *data,
+                                    bufsize_t length, block_identifier *candidate) {
+    bufsize_t start, end;
+    if (!S_identifier_end(counts, data, length, &start, &end)) {
         return false;
     }
     candidate->identifier = (markdown_core_chunk){(unsigned char *)data + start, end - start - 1, 0};
@@ -128,6 +142,7 @@ static bool S_identifier_bounded(markdown_core_parser *parser, markdown_core_nod
     if (!markdown_core_parser_lookahead_begin(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
+    lookahead.once = true;
     markdown_core_parser_lookahead_next(&lookahead, &blank_lines);
     markdown_core_parser_lookahead_end(&lookahead);
     return blank_lines > 0;
@@ -170,5 +185,10 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
 bool markdown_core_block_identifier_writes(const markdown_core_element_instance *self, const unsigned char *line,
                                            size_t length) {
     (void)self;
-    return length && memchr(line, '#', length) != NULL;
+    /* The line as written holds the prefixes of the blocks it is in, which
+     * the identifier line's own test reads past: it may be one when its
+     * end is an identifier's. */
+    markdown_core_block_identifier_work counts = {0};
+    bufsize_t start, end;
+    return length < INT32_MAX && S_identifier_end(&counts, line, (bufsize_t)length, &start, &end);
 }
