@@ -279,3 +279,63 @@ export function groupEdits(results, key) {
         session: group.session.length ? summary(group.session) : null
     }));
 }
+
+/* The shapes of workloads.mjs, scale and adversarial, by name: the only
+ * names of a sized workload a report may hold, and the publisher, which
+ * reads no generator, prints. */
+export const SHAPE_NAMES = Object.freeze([
+    "prose",
+    "list",
+    "quote",
+    "table",
+    "refs",
+    "flat",
+    "opener-fence",
+    "opener-html",
+    "opener-comment",
+    "opener-directive",
+    "long-list",
+    "deep-quotes",
+    "wide-definition",
+    "late-definition",
+    "repeated-heading",
+    "unclosed-strong",
+    "single-line",
+    "short-lines",
+    "unclosed-properties",
+    "unclosed-grid"
+]);
+
+/* The edit families whose cost per edit a document's length should leave
+ * as it is (core-element-decoupling.md 9.10, step 4). */
+export const RATIO_FAMILIES = Object.freeze(["typing", "far", "tail"]);
+
+/**
+ * The length ratios of the edit workloads: per shape and family of
+ * `RATIO_FAMILIES`, S's Ir per edit at each size, every alphabet pooled --
+ * the session's total over the edits it took -- and its ratio to the
+ * smallest size's. The grammar corpus has no size, and a shape measured at
+ * one size has no ratio; both are left out. No gate holds them (plan D5).
+ */
+export function lengthRatios(results) {
+    const cells = new Map();
+    for (const row of results) {
+        if (row.size === null) continue;
+        for (const script of row.scripts) {
+            if (!RATIO_FAMILIES.includes(script.family) || !script.session) continue;
+            const key = JSON.stringify([row.source, script.family]);
+            const sizes = cells.get(key) ?? new Map();
+            const cell = sizes.get(row.size) ?? { edits: 0, ir: 0 };
+            cell.edits += script.edits;
+            cell.ir += total(script.session.windows);
+            sizes.set(row.size, cell);
+            cells.set(key, sizes);
+        }
+    }
+    return [...cells].flatMap(([key, sizes]) => {
+        if (sizes.size < 2) return [];
+        const [shape, family] = JSON.parse(key);
+        const each = [...sizes].sort((a, b) => a[0] - b[0]).map(([size, cell]) => ({ size, ir: cell.ir / cell.edits }));
+        return [{ shape, family, sizes: each.map((entry) => ({ ...entry, ratio: entry.ir / each[0].ir })) }];
+    });
+}

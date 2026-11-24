@@ -70,6 +70,7 @@ import {
     flatStream,
     groupEdits,
     groupWindows,
+    lengthRatios,
     neverWorse,
     parseCost,
     REGRESSION_LIMIT,
@@ -80,7 +81,7 @@ import {
     windowEnds
 } from "./stream-gates.mjs";
 import { STAGES } from "./stage-budget.mjs";
-import { BENCHMARK_SETS, EDIT_WINDOWS, streamChunks, writeBenchmarkWorkloads } from "./workloads.mjs";
+import { BENCHMARK_SETS, EDIT_WINDOWS, streamChunks, TAIL_BYTES, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SUBJECTS = Object.freeze(["reparse", "session", "binding"]);
@@ -530,7 +531,7 @@ export function markdownReport(report) {
         "",
         "## Edits",
         "",
-        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text, and S the session's edits of the window, every one of them. Opening each script on its document is in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script. No gate holds them.`,
+        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text, and S the session's edits of the window, every one of them. Opening each script on its document is in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script, and every size \`tail\` (below). No gate holds them.`,
         "",
         "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
@@ -549,6 +550,28 @@ export function markdownReport(report) {
                 number(group.windows),
                 ...figures(group.reparse),
                 ...figures(group.session)
+            ].join(" | ")} |`
+        );
+    }
+    const lengths = lengthRatios(report.edits);
+    const sizes = [...new Set(lengths.flatMap((row) => row.sizes.map((entry) => entry.size)))].sort((a, b) => a - b);
+    lines.push(
+        "",
+        "## Length ratios",
+        "",
+        `S's Ir per edit of each shape, every alphabet pooled, at each size, and each larger size's over the smallest's: \`typing\` and \`far\` edit the document, and \`tail\` opens on all of it but its last ${number(TAIL_BYTES)} bytes and appends them back in token chunks. A cost the document's length leaves as it is keeps its ratios near 1. No gate holds them.`,
+        "",
+        `| Shape | Family | ${[...sizes.map(number), ...sizes.slice(1).map((size) => `${number(size)} / ${number(sizes[0])}`)].join(" | ")} |`,
+        `| --- | --- | ${Array.from({ length: 2 * sizes.length - 1 }, () => "---:").join(" | ")} |`
+    );
+    for (const row of lengths) {
+        const at = (size) => row.sizes.find((entry) => entry.size === size);
+        lines.push(
+            `| ${[
+                row.shape,
+                row.family,
+                ...sizes.map((size) => (at(size) ? number(Math.round(at(size).ir)) : "")),
+                ...sizes.slice(1).map((size) => (at(size) ? `${at(size).ratio.toFixed(2)}×` : ""))
             ].join(" | ")} |`
         );
     }

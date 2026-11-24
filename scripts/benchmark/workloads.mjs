@@ -34,7 +34,7 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const CORRECTNESS_SET = "specs/incremental";
 const CANONICAL = "specs/canonical-ast";
 
-export const WORKLOAD_VERSION = "incremental-workloads-v5";
+export const WORKLOAD_VERSION = "incremental-workloads-v6";
 export const SCRIPT_HEADER = "markdown-core incremental script 3";
 export const MANIFEST_HEADER = "markdown-core incremental manifest 2";
 export const SIZES = Object.freeze([16384, 65536, 262144, 1048576]);
@@ -1847,12 +1847,44 @@ export function correctnessSet() {
  * edit, and the larger sizes with `typing` and `far` alone, measured in at
  * most `EDIT_WINDOWS` windows a script, because each `reparse` edit there
  * parses up to a megabyte. `undo` replays the other families' edits
- * backwards, and is left to the correctness set.
+ * backwards, and is left to the correctness set. Every shape at every size
+ * also streams its tail back (`tailWorkload`), in at most `EDIT_WINDOWS`
+ * windows.
  *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
- * shapes are measured at their four sizes together or not at all.
+ * shapes are measured at their four sizes together or not at all. The
+ * `lengths` set is the shapes' edit workloads alone, at the sizes of
+ * `LENGTH_SIZES` the shape has, every size running `typing` and `far` in at
+ * most `EDIT_WINDOWS` windows, and its tail: what the length ratios read.
  */
-export const BENCHMARK_SETS = Object.freeze(["all", "corpus"]);
+export const BENCHMARK_SETS = Object.freeze(["all", "corpus", "lengths"]);
+/* The sizes the `lengths` set measures each shape at. */
+export const LENGTH_SIZES = Object.freeze(SIZES.filter((size) => size <= 262144));
+/* How much of a shape's text its `tail` script streams back. */
+export const TAIL_BYTES = 1024;
+
+/**
+ * The tail of a shape's document (core-element-decoupling.md 9.10, step 4):
+ * the document less its last `TAIL_BYTES` bytes, opened outside every
+ * window, and a `tail` script that writes them back at the text's end in
+ * token chunks, as a stream writes the end of a long document: an append,
+ * as an edit at the text's end, which the edit runner takes.
+ */
+function tailWorkload(document) {
+    const buffer = Buffer.from(document.text);
+    let cut = Math.max(0, buffer.length - TAIL_BYTES);
+    while (!isBoundary(buffer, cut)) cut--;
+    const head = { ...document, name: `${document.name}-tail`, text: buffer.subarray(0, cut).toString("utf8") };
+    const script = new Script("tail", "tail", head.text);
+    let at = cut;
+    for (let index = 0; at < buffer.length; index++) {
+        let end = Math.min(buffer.length, at + TOKEN_SIZES[index % TOKEN_SIZES.length]);
+        while (!isBoundary(buffer, end)) end++;
+        script.insert(script.buffer.length, buffer.subarray(at, end).toString("utf8"));
+        at = end;
+    }
+    return { document: head, name: `${head.name}.edits`, scripts: [script], stepwise: false };
+}
 export const BENCHMARK_EDITS = Object.freeze(EDIT_FAMILIES.filter((family) => family !== "undo"));
 const LARGE_EDITS = Object.freeze(["typing", "far"]);
 export const EDIT_WINDOWS = 4;
@@ -1869,6 +1901,19 @@ export function benchmarkWorkloads(set = "all") {
             scripts: editScripts(document, stepwise ? BENCHMARK_EDITS : LARGE_EDITS, 1),
             stepwise
         });
+    if (set === "lengths") {
+        for (const shape of [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)])
+            for (const alphabet of Object.keys(alphabets))
+                for (const size of shapeSizes(shape).filter((entry) => LENGTH_SIZES.includes(entry))) {
+                    const document = shapeDocument(shape, alphabet, size);
+                    documents.push(document);
+                    edited(document, false);
+                    const tail = tailWorkload(document);
+                    documents.push(tail.document);
+                    edits.push(tail);
+                }
+        return { documents, workloads, edits: edits.filter((entry) => entry.scripts.length) };
+    }
     for (const entry of buildGrammarCorpus().cases.filter((item) => item.side === "dialect")) {
         const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, parts: null, sites: [] };
         documents.push(document);
@@ -1890,6 +1935,9 @@ export function benchmarkWorkloads(set = "all") {
                         stepwise: !LOCAL_SHAPES.includes(shape) && size === shapeSizes(shape)[0]
                     });
                 edited(document, size === shapeSizes(shape)[0]);
+                const tail = tailWorkload(document);
+                documents.push(tail.document);
+                edits.push(tail);
             }
     return { documents, workloads, edits: edits.filter((entry) => entry.scripts.length) };
 }

@@ -7,6 +7,7 @@ import {
     everyStep,
     flatStream,
     groupWindows,
+    lengthRatios,
     neverWorse,
     parseCost,
     regressions,
@@ -265,4 +266,31 @@ test("6.4 rejects a p95, maximum or total above 1.02 times the base", () => {
         regressions(summary(mixed(20)), summary(mixed(10))).map((entry) => entry.metric),
         ["total"]
     );
+});
+
+test("length ratios divide each shape's session Ir per edit by its smallest size's, alphabets pooled", () => {
+    const script = (family, edits, session) => ({
+        name: family,
+        family,
+        edits,
+        windows: session,
+        session: { windows: session }
+    });
+    const rows = [
+        { source: "grammar corpus", size: null, scripts: [script("typing", 2, [9, 9])] },
+        { source: "prose", size: 16384, scripts: [script("typing", 4, [4, 4]), script("lines", 1, [50])] },
+        { source: "prose", size: 16384, scripts: [script("typing", 4, [8, 8])] },
+        { source: "prose", size: 262144, scripts: [script("typing", 8, [9, 9, 9, 9])] },
+        { source: "flat", size: 65536, scripts: [script("tail", 4, [12])] }
+    ];
+    assert.deepEqual(lengthRatios(rows), [
+        {
+            shape: "prose",
+            family: "typing",
+            sizes: [
+                { size: 16384, ir: 3, ratio: 1 },
+                { size: 262144, ir: 4.5, ratio: 1.5 }
+            ]
+        }
+    ]);
 });

@@ -16,6 +16,7 @@ import {
     SCALE_SHAPES,
     SIZES,
     STREAM_FAMILIES,
+    TAIL_BYTES,
     TOKEN_SIZES,
     correctnessSet,
     editScripts,
@@ -30,6 +31,7 @@ import {
     streamChunks,
     writeBenchmarkWorkloads
 } from "../workloads.mjs";
+import { SHAPE_NAMES } from "../stream-gates.mjs";
 
 const SHAPES = [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)];
 const smallest = (shape, alphabet) => shapeDocument(shape, alphabet, shapeSizes(shape)[0]);
@@ -299,7 +301,7 @@ test("a narrowed benchmark set writes and identifies only the named workloads", 
     }
 });
 
-test("the edit workloads run every family but undo with one seed, and a shape's larger sizes typing and far alone", () => {
+test("the edit workloads run every family but undo with one seed, a shape's larger sizes typing and far alone, and every size its tail", () => {
     assert.deepEqual(
         BENCHMARK_EDITS,
         EDIT_FAMILIES.filter((family) => family !== "undo")
@@ -311,7 +313,36 @@ test("the edit workloads run every family but undo with one seed, and a shape's 
         edits.filter((workload) => !workload.document.shape).map((workload) => workload.document),
         corpus
     );
-    for (const workload of edits) {
+    const tails = edits.filter((workload) => workload.name.endsWith("-tail.edits"));
+    for (const workload of tails) {
+        const { shape, size, alphabet } = workload.document;
+        assert.equal(workload.stepwise, false, workload.name);
+        assert.equal(workload.name, `${workload.document.name}.edits`);
+        assert.deepEqual(
+            workload.scripts.map((script) => [script.name, script.family]),
+            [["tail", "tail"]]
+        );
+        const [script] = workload.scripts;
+        assert.ok(script.steps.length, workload.name);
+        let length = Buffer.byteLength(workload.document.text);
+        for (const step of script.steps) {
+            assert.deepEqual([step.kind, step.start, step.end], ["edit", length, length], workload.name);
+            length += Buffer.byteLength(step.text);
+        }
+        /* The rest of the document, and its last bytes appended back, are the document. */
+        const whole = documents.find(
+            (document) =>
+                document.shape === shape &&
+                document.size === size &&
+                document.alphabet === alphabet &&
+                document !== workload.document
+        );
+        assert.equal(workload.document.text + script.steps.map((step) => step.text).join(""), whole.text);
+        assert.ok(Buffer.byteLength(whole.text) - Buffer.byteLength(workload.document.text) <= TAIL_BYTES + 3);
+    }
+    assert.equal(tails.length, edits.filter((workload) => workload.document.shape).length / 2);
+    assert.deepEqual(SHAPE_NAMES, SHAPES);
+    for (const workload of edits.filter((entry) => !tails.includes(entry))) {
         const { shape, size } = workload.document;
         const stepwise = !shape || size === shapeSizes(shape)[0];
         assert.equal(workload.stepwise, stepwise, workload.name);

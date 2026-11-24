@@ -99,7 +99,7 @@ const streams = () => ({
     schemaVersion: 8,
     subjects: ["reparse", "session", "binding"],
     editSubjects: ["reparse", "session"],
-    workloads: { version: "incremental-workloads-v4", set: "corpus", digest: "e".repeat(64), count: 3, edits: 2 },
+    workloads: { version: "incremental-workloads-v4", set: "corpus", digest: "e".repeat(64), count: 3, edits: 3 },
     baseline: { revision: "b".repeat(40) },
     edits: [
         {
@@ -112,6 +112,7 @@ const streams = () => ({
         },
         {
             name: "prose-ascii-64k.edits",
+            source: "prose",
             size: 65536,
             scripts: [
                 {
@@ -120,7 +121,16 @@ const streams = () => ({
                     edits: 64,
                     windows: [30, 31, 32, 33],
                     session: { windows: [10, 11, 12, 13] }
-                }
+                },
+                { name: "tail", family: "tail", edits: 8, windows: [6, 6, 6, 6], session: { windows: [5, 5, 5, 5] } }
+            ]
+        },
+        {
+            name: "prose-ascii-16k-tail.edits",
+            source: "prose",
+            size: 16384,
+            scripts: [
+                { name: "tail", family: "tail", edits: 8, windows: [3, 3, 3, 3], session: { windows: [4, 4, 4, 4] } }
             ]
         }
     ],
@@ -180,7 +190,10 @@ test("the stream table reports the R, S and B columns by family and size, pooled
         body,
         /\| Shapes \| typing \| 65,536 \| 1 \| 64 \| 4 \| 31 \| 33 \| 33 \| 126 \| 11 \| 13 \| 13 \| 46 \|/
     );
-    assert.match(body, /2 edit workloads/);
+    assert.match(body, /3 edit workloads/);
+    assert.match(body, /\| Shape \| Family \| 16,384 \| 65,536 \| 65,536 \/ 16,384 \|/);
+    assert.match(body, /\| prose \| tail \| 2 \| 3 \| 1\.25× \|/);
+    assert.doesNotMatch(body, /\| prose \| typing \|/);
     assert.doesNotMatch(body, /a\.tokens|a\.edits|typing-word|prose-ascii/);
     const unbased = streams();
     unbased.baseline = null;
@@ -216,7 +229,8 @@ test("the stream table reports the R, S and B columns by family and size, pooled
         (r) => (r.results[1].regressions[0].ratio = "1.03"),
         (r) => delete r.results[0].regressions,
         (r) => (r.editSubjects = ["reparse"]),
-        (r) => (r.workloads.edits = 3),
+        (r) => (r.workloads.edits = 4),
+        (r) => (r.edits[1].source = "<b>"),
         (r) => delete r.edits,
         (r) => (r.edits[0].size = -1),
         (r) => (r.edits[0].scripts = []),

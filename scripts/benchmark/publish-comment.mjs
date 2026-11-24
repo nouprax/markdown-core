@@ -4,7 +4,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
-import { everyStep, groupEdits, groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
+import {
+    everyStep,
+    groupEdits,
+    groupWindows,
+    lengthRatios,
+    REGRESSION_LIMIT,
+    SHAPE_NAMES,
+    WINDOWS
+} from "./stream-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
 import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
@@ -207,7 +215,7 @@ const STREAM_METRICS = ["p95", "max", "total"];
 // The subjects that take edits (plan 12.9, E1 on), and the families the
 // edit workloads run (workloads.mjs).
 const EDIT_SUBJECTS = ["reparse", "session"];
-const EDIT_FAMILIES = ["typing", "lines", "markers", "ranges", "far", "declarations", "random"];
+const EDIT_FAMILIES = ["typing", "lines", "markers", "ranges", "far", "declarations", "random", "tail"];
 
 // The R and S columns by family and size, the grammar corpus apart from the
 // shapes, with a base revision the workloads that pass 6.4, the B column
@@ -272,7 +280,8 @@ export function streamSection(report) {
     }
     // A script's windows are at most its edits, one cost each, and S has R's.
     for (const row of report.edits) {
-        if (row.size !== null) count(row.size);
+        if (row.size !== null && (count(row.size), !SHAPE_NAMES.includes(row.source)))
+            throw new Error("Invalid edit shape");
         if (!Array.isArray(row.scripts) || !row.scripts.length) throw new Error("Invalid edit workload");
         for (const script of row.scripts) {
             if (!EDIT_FAMILIES.includes(script?.family)) throw new Error("Invalid edit family");
@@ -359,6 +368,26 @@ export function streamSection(report) {
             ].join(" | ")} |`;
         })
     );
+    const lengths = lengthRatios(report.edits);
+    const sizes = [...new Set(lengths.flatMap((row) => row.sizes.map((entry) => entry.size)))].sort((a, b) => a - b);
+    if (lengths.length) {
+        lines.push(
+            "",
+            "Length ratios: S's Ir per edit of each shape at each size, every alphabet pooled, and each larger size's over the smallest's; `tail` appends a document's last bytes back to the rest of it in token chunks; no gate.",
+            "",
+            `| Shape | Family | ${[...sizes.map(number), ...sizes.slice(1).map((size) => `${number(size)} / ${number(sizes[0])}`)].join(" | ")} |`,
+            `| --- | --- | ${Array.from({ length: 2 * sizes.length - 1 }, () => "---:").join(" | ")} |`,
+            ...lengths.map((row) => {
+                const at = (size) => row.sizes.find((entry) => entry.size === size);
+                return `| ${[
+                    row.shape,
+                    row.family,
+                    ...sizes.map((size) => (at(size) ? number(Math.round(at(size).ir)) : "")),
+                    ...sizes.slice(1).map((size) => (at(size) ? `${at(size).ratio.toFixed(2)}×` : ""))
+                ].join(" | ")} |`;
+            })
+        );
+    }
     return lines.join("\n");
 }
 
