@@ -127,10 +127,12 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, digits, sign);
     markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_SPECIMEN, sign + 1, label);
     markdown_core_specimen_state *state = self->state;
-    /* A citation names a specimen by its label as written. */
-    if (specimen.label.has_value &&
-        !markdown_core_parser_declare(parser, self->spaces[SPECIMEN_LABELS], &specimen.label.value,
-                                      (*container)->place.start, NULL)) {
+    /* A citation names a specimen by its label as written; one of no label
+     * is listed all the same. */
+    const markdown_core_chunk none = {0};
+    if (!markdown_core_parser_declare(parser, self->spaces[SPECIMEN_LABELS],
+                                      specimen.label.has_value ? &specimen.label.value : &none,
+                                      (*container)->place.start, NULL, *container)) {
         return false;
     }
     S_specimen_marker(state, reader, matched);

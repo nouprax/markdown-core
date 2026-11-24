@@ -515,7 +515,7 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
     /* The document defines the label from where the definition starts. */
     if (!parser->error) {
         markdown_core_parser_declare(parser, self->spaces[LINK_REFERENCE], &definition.label, start,
-                                     &reference->as.reference->label);
+                                     &reference->as.reference->label, reference);
     }
     return length;
 }

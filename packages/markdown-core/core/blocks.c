@@ -2532,7 +2532,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
     if (!anchor->len) {
         return true;
     }
-    return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
+    return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start,
+                                        NULL);
 }
 
 /* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8) of
@@ -4003,6 +4004,13 @@ static size_t S_uses_from(const markdown_core_tree *uses, size_t place) {
  * as the roots do, so the focus parts a paragraph's uses where it parts its
  * text: at a seam (THE OLD TAIL OF A PARAGRAPH). The walk to the place goes
  * from the one the last use of the root was in. */
+/* The byte of the text content offset `at` reads, of the place `item`,
+ * whose content starts at offset `read`. */
+static inline uint32_t S_place_into(markdown_core_source_place item, uint32_t at, uint32_t read) {
+    const uint32_t into = at < read ? 0 : at - read < item.length ? at - read : item.length;
+    return item.end - item.start == item.length ? item.start + into : item.start;
+}
+
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at) {
     markdown_core_edit *edit = parser->stream->edit;
     const markdown_core_places *places = root->source.places;
@@ -4031,9 +4039,25 @@ static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node
     }
     edit->use_place = place;
     edit->use_read = read;
-    const markdown_core_source_place item = places->items[place];
-    const uint32_t into = at < read ? 0 : at - read < item.length ? at - read : item.length;
-    return item.end - item.start == item.length ? item.start + into : item.start;
+    return S_place_into(places->items[place], at, read);
+}
+
+uint32_t markdown_core_parser_source_at(markdown_core_parser *parser, uint32_t at) {
+    const markdown_core_node *root = parser->completing;
+    const markdown_core_places *places = root->source.places;
+    /* A root of no places reads its content from where it starts on. */
+    if (!places || !places->count) {
+        const uint32_t end = root->place.end > root->place.start ? root->place.end : root->place.start;
+        return at < end - root->place.start ? root->place.start + at : end;
+    }
+    if (parser->stream->edit) {
+        return (uint32_t)S_use_place(parser, root, at);
+    }
+    uint32_t place = 0, read = 0;
+    while (place + 1 < places->count && read + places->items[place].length <= at) {
+        read += places->items[place++].length;
+    }
+    return S_place_into(places->items[place], at, read);
 }
 
 /* A use of `label`, `size` bytes as written, of `kind`, at `start` of the
@@ -4236,15 +4260,16 @@ static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count) {
 }
 
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
-                                  const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal) {
-    if (markdown_core_parser_folds(parser, kind)) {
+                                  const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
+                                  const markdown_core_node *node) {
+    if (markdown_core_parser_folds(parser, kind) && label->len) {
         if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, label, normal)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
         label = normal;
     }
-    if (!markdown_core_roster_declare(&parser->roster, kind, label->data, label->len, start)) {
+    if (!markdown_core_roster_declare(&parser->roster, kind, label->data, label->len, start, node)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -4736,7 +4761,7 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     edit->nested = NULL;
     edit->nested_capacity = 0;
     (void)markdown_core_roster_compact(&parser->roster);
-    markdown_core_publish_compact_committed(parser->stream->committed);
+    markdown_core_publish_compact_tables(parser->stream->tables);
 }
 
 /* The kind `block` became as it closed read its lines as one whose kind
@@ -4813,8 +4838,7 @@ static bool S_revert(markdown_core_parser *parser, markdown_core_node *block, ma
         return true;
     }
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
-    if (!markdown_core_publish_let_go(parser, block) ||
-        !kind->made->revert(kind->maker, parser, block, parent, &revert->kept)) {
+    if (!kind->made->revert(kind->maker, parser, block, parent, &revert->kept)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -7776,8 +7800,8 @@ static void S_release_stream(markdown_core_parser *parser) {
     S_release_tail(parser);
     markdown_core_parser_release_records(parser, &stream->records);
     markdown_core_free(stream->records.items);
-    markdown_core_publish_release_committed(stream->committed);
-    markdown_core_free(stream->committed);
+    markdown_core_publish_release_tables(stream->tables);
+    markdown_core_free(stream->tables);
     if (stream->edit) {
         markdown_core_free(stream->edit->children);
         markdown_core_free(stream->edit->chain);
@@ -9768,6 +9792,12 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
      * The children an edit took back stand as their publish left them, and
      * only the first moves, from the child before it (THE SPLICE). */
     markdown_core_edit *const edit = parser->stream->edit;
+    /* A reading that took nothing back read every declaration again: the
+     * back's go before the publish reads the roster (ast.c, A DOCUMENT'S
+     * TABLES). */
+    if (edit && !edit->resumed) {
+        markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
+    }
     if (!parser->error) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         const uint32_t children = parser->root->child_count;
@@ -9825,7 +9855,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             markdown_core_tree_erase(&parser->input.lines, parser->input.lines.front,
                                      S_lines_back_count(&parser->input.lines));
             S_uses_drop(edit, S_uses_back(&edit->uses));
-            markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
         }
         edit->reading = false;
         edit->count = 0;

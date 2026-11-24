@@ -194,15 +194,15 @@ typedef struct {
 
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
  * Footnote, specimen and Reference definitions stay in the tree where they
- * were written; publishing the document keeps its definition tables in the
- * committed tables (parser.h), and the nodes reference occurrences resolve
- * to, by label: for each label, the first Reference declaring it, or, when
- * none does, the first Heading whose text declares it. A session's document
- * borrows the committed parse's tables; any other document owns them
- * (`owns`). */
+ * were written; the document's definition tables are the parse's roster
+ * (parser.h, A DOCUMENT'S TABLES), with the nodes reference occurrences
+ * resolve to, by label: for each label, the first Reference declaring it,
+ * or, when none does, the first Heading whose text declares it. A
+ * session's document borrows the parse's tables; any other document owns
+ * them (`owns`). */
 typedef struct {
     struct markdown_core_node *metadata;
-    struct markdown_core_committed_tables *committed;
+    struct markdown_core_tables *tables;
     bool owns;
 } markdown_core_document_value;
 

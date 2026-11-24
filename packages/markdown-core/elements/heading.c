@@ -369,7 +369,8 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
         if (!declared->len && labels.ops && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             ((const markdown_core_label_ops *)labels.ops)->length(labels.instance, label.data, label.len) ==
                 label.len) {
-            markdown_core_parser_declare(parser, self->spaces[HEADING_REFERENCE], &label, node->place.start, declared);
+            markdown_core_parser_declare(parser, self->spaces[HEADING_REFERENCE], &label, node->place.start, declared,
+                                         node);
         }
     }
     /* The run is read to its end: it finishes as every run does. */

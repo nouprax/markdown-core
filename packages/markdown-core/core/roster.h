@@ -54,13 +54,21 @@ extern "C" {
  * lookup of its kind never is. A withdrawal has the index take its kind's
  * records up to it as it is appended.
  *
- * THE PLACES. Each kind's declarations are in a tree (tree.h), in order
- * of where they start, placed as they are declared; its focus is an
- * edit's: the declarations before where
+ * THE PLACES. Each shelf's declarations are in a tree (tree.h), in order
+ * of where they start, placed as they are declared. A shelf is a kind and
+ * the kind of node that declares in it (`node`), or, for a declaration of
+ * no node, the kind alone: so a kind that nodes of two kinds declare, a
+ * link reference definition's and a heading's, holds each kind's
+ * declarations in a tree of their own, which a document lists (A
+ * DOCUMENT'S TABLES, elements/ast.c). A declaration of a node may have no
+ * label, which places it and declares nothing.
+ * Each tree's focus is an edit's: the declarations before where
  * the reading starts in the front, and the rest in the back, which the
  * reading does not see, until it takes the old text back from a place (THE
  * SPLICE, blocks.c), the back's declarations before that place going with
- * the text they were in. A placed record's number says where its entry is
+ * the text they were in. Every shelf is cut at the same place, so two
+ * declarations of shelves apart are in order as their parts and starts
+ * are. A placed record's number says where its entry is
  * (`where`), which holds where it starts: in the text, or, in the back, in
  * the text before the edit until the splice. A withdrawal is placed
  * nowhere, and holds where it starts in the text. */
@@ -78,6 +86,8 @@ typedef struct markdown_core_roster_record {
      * beside the last it let go, where a search of the list begins
      * (S_link). A withdrawal: the declaration it withdrew, in `before`. */
     struct markdown_core_roster_record *before, *after, *hint;
+    /* The node that declared it, or NULL. */
+    const markdown_core_node *node;
     /* Where the declaring or withdrawing definition starts in the text,
      * while the kinds hold no places; then a declaration's entry holds it
      * (markdown_core_roster_start). */
@@ -93,6 +103,8 @@ typedef struct markdown_core_roster_record {
      * withdrawal withdrew it; and whether the text it was in is gone, which
      * an edit replaced. */
     bool withdraws, linked, withdrawn, gone;
+    /* The shelf that places it. */
+    uint8_t shelf;
     unsigned char key[];
 } markdown_core_roster_record;
 
@@ -113,12 +125,20 @@ typedef struct {
     /* How many of them the index has taken: every one before `cursor` in
      * the log, and none after it. */
     size_t indexed, cursor;
-    /* The kind's declarations about an edit, once one reads the parse. */
+} markdown_core_roster_space;
+
+/* One shelf's declarations about an edit (THE PLACES). */
+typedef struct markdown_core_roster_shelf {
     markdown_core_tree places;
-    /* The roster that holds the kind, which a moved place's entry is
+    /* The roster that holds the shelf, which a moved place's entry is
      * written in. */
     struct markdown_core_roster *roster;
-} markdown_core_roster_space;
+    markdown_core_roster_kind kind;
+    /* The kind of node that declares in it, or MARKDOWN_CORE_NODE_NONE. */
+    uint16_t node;
+} markdown_core_roster_shelf;
+
+#define MARKDOWN_CORE_ROSTER_SHELVES 255
 
 typedef struct markdown_core_roster {
     markdown_core_roster_record **records;
@@ -127,6 +147,10 @@ typedef struct markdown_core_roster {
      * kind's. */
     markdown_core_roster_space *spaces;
     size_t kinds;
+    /* The shelves, each in storage of its own, as they are first declared
+     * in. */
+    markdown_core_roster_shelf **shelves;
+    size_t shelf_count;
     /* Each key's first declaration in its list, as the record. The index
      * borrows the key bytes from that record, and holds in `extra` how
      * many declarations the list holds. */
@@ -162,10 +186,12 @@ bool markdown_core_roster_init(markdown_core_roster *roster, size_t kinds);
 void markdown_core_roster_free(markdown_core_roster *roster);
 
 /* Append a record of `kind` for `label`, already in the kind's normal form,
- * declared by a definition starting at `start`. An empty label declares
- * nothing. False when storage could not be had. */
+ * declared by `node`, or by no node when it is NULL, a definition starting
+ * at `start`. An empty label declares nothing: of a node, the record is
+ * placed all the same. False when storage could not be had. */
 bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_roster_kind kind,
-                                  const unsigned char *label, bufsize_t length, uint32_t start);
+                                  const unsigned char *label, bufsize_t length, uint32_t start,
+                                  const markdown_core_node *node);
 
 /* Append a record of `kind` that withdraws the declaration of `label` that
  * starts at `start`, which stands. False when storage could not be had. */
@@ -185,24 +211,35 @@ const markdown_core_roster_record *markdown_core_roster_find_name(markdown_core_
                                                                   const markdown_core_pieces *name,
                                                                   markdown_core_measure measure, bool *failed);
 
-/* The earliest declaration of `kind` for `label`, in the kind's normal
- * form, that stands, one of a back that lookups do not see as well: the
- * key's next is its `after`, in order of where they start, the front's
- * first. `*failed` as above. */
-markdown_core_roster_record *markdown_core_roster_first(markdown_core_roster *roster, markdown_core_roster_kind kind,
-                                                        const unsigned char *label, bufsize_t length, bool *failed);
+/* The kind's records all in the index, as a reader of the roster needs
+ * them (markdown_core_roster_seek). False when storage could not be had. */
+bool markdown_core_roster_index(markdown_core_roster *roster, markdown_core_roster_kind kind);
 
-/* The declaration of the index's list of the back when `back`, or of the
- * front, of `kind` for `label`, as markdown_core_roster_first takes it,
- * that starts at `start` in that part's terms, or NULL, as it is when the
- * kinds hold no places. */
-const markdown_core_roster_record *markdown_core_roster_held_at(const markdown_core_roster *roster,
-                                                                markdown_core_roster_kind kind,
-                                                                const unsigned char *label, bufsize_t length, bool back,
-                                                                uint32_t start);
-/* The first declaration of the back in the list `first` begins, or NULL. */
-const markdown_core_roster_record *markdown_core_roster_back_first(const markdown_core_roster *roster,
-                                                                   markdown_core_roster_record *first);
+/* The earliest declaration of `kind` for `label`, in the kind's normal
+ * form, that stands, or NULL, of a roster whose back is not hidden and
+ * whose kind is all in the index: the key's next is its `after`. It reads
+ * and changes nothing else. */
+const markdown_core_roster_record *markdown_core_roster_seek(const markdown_core_roster *roster,
+                                                             markdown_core_roster_kind kind, const unsigned char *label,
+                                                             bufsize_t length);
+
+/* The shelf of `kind` that nodes of kind `node` declare in, or NULL when
+ * none has. */
+const markdown_core_roster_shelf *markdown_core_roster_shelf_of(const markdown_core_roster *roster,
+                                                                markdown_core_roster_kind kind, uint16_t node);
+
+/* The record at rank `index` of the shelf's places. */
+const markdown_core_roster_record *markdown_core_roster_shelf_at(const markdown_core_roster_shelf *shelf, size_t index);
+
+/* The keys of `kind` an edit's reading may have made or let go, into a
+ * list of keys (buffer.h), some more than once: the front's declarations
+ * from where it began, and those the last splice let go. False when
+ * storage could not be had. */
+bool markdown_core_roster_touched(const markdown_core_roster *roster, markdown_core_roster_kind kind,
+                                  markdown_core_strbuf *keys);
+
+/* A roster moved to `roster` from where it was, which holds none. */
+void markdown_core_roster_moved(markdown_core_roster *roster);
 
 /* The earliest declaration of `kind` for the reference-label normal form of
  * `label`, as written, as above; a label that normalizes to nothing, or is

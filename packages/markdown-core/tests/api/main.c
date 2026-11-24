@@ -3437,7 +3437,7 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
         declared = declared && markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, (const unsigned char *)label,
-                                                            (bufsize_t)strlen(label), (uint32_t)i);
+                                                            (bufsize_t)strlen(label), (uint32_t)i, NULL);
     }
     OK(runner, declared && roster.count == COUNT, "every declaration is a record");
     /* Twelve doublings reach COUNT; each of the four structures doubles
@@ -3619,7 +3619,7 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     const unsigned char *x = (const unsigned char *)"x";
     bool failed = false;
-    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40), "a reference is declared");
+    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40, NULL), "a reference is declared");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
        "a reference label is no footnote");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
@@ -3629,8 +3629,8 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
            markdown_core_roster_starts_before(&roster, record, 41),
        "a declaration starts where its definition starts");
     OK(runner,
-       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90) &&
-           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10),
+       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL) &&
+           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL),
        "the key is declared twice more");
     record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner,
@@ -3706,7 +3706,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             agrees = record.withdraws ? markdown_core_roster_withdraw(&roster, kind, (const unsigned char *)text,
                                                                       (bufsize_t)strlen(text), record.start)
                                       : markdown_core_roster_declare(&roster, kind, (const unsigned char *)text,
-                                                                     (bufsize_t)strlen(text), record.start);
+                                                                     (bufsize_t)strlen(text), record.start, NULL);
             if (record.withdraws) {
                 const size_t at = roster_model_withdrawn(key, record.start);
                 key->starts[at] = key->starts[--key->count];
@@ -3752,15 +3752,21 @@ static void roster_matches_a_model(test_batch_runner *runner) {
                 const markdown_core_roster_record *found = markdown_core_roster_find(
                     &roster, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
                 /* An anchor's key is filed under its measure (roster.c,
-                 * S_hash), any other's under its bytes. */
+                 * S_hash), any other's under its bytes read in parts. */
+                markdown_core_key_stream stream;
+                markdown_core_key_stream_start(&stream);
+                if (found) {
+                    markdown_core_key_stream_add(&stream, found->key, (size_t)found->key_len);
+                }
                 const markdown_core_key_index_slot *slot =
                     !found ? NULL
-                    : found->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
-                        ? markdown_core_key_index_find_hashed(&roster.index,
-                                                              markdown_core_key_index_hash(markdown_core_measure_of(
-                                                                  found->key, (size_t)found->key_len)),
-                                                              found->key, found->key_len)
-                        : markdown_core_key_index_find(&roster.index, found->key, found->key_len);
+                           : markdown_core_key_index_find_hashed(
+                                 &roster.index,
+                                 found->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
+                                     ? markdown_core_key_index_hash(
+                                           markdown_core_measure_of(found->key, (size_t)found->key_len))
+                                     : markdown_core_key_stream_end(&stream),
+                                 found->key, found->key_len);
                 agrees =
                     !failed && (found != NULL) == (key->count > 0) &&
                     (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
@@ -11738,8 +11744,8 @@ static void session_edits_cross_tables(test_batch_runner *runner) {
  * definition tables -- the lists, the lookups by label and the reference
  * labels -- name the nodes a fresh parse of the same text names, by where
  * they are in the text, since the snapshot's inline roots resolve only
- * definitions before them and its tree differs from the parse's. The committed definitions sit in the committed tables
- * and the tail's are the snapshot's own: footnotes nested in an open
+ * definitions before them and its tree differs from the parse's. The
+ * cases: footnotes nested in an open
  * footnote, inline notes, labels written twice, a Reference and Headings
  * declaring one label in either order, the tail's labels between committed
  * ones and over a committed Heading's, specimens, and a heading in a

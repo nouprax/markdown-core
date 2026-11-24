@@ -18,7 +18,8 @@ static void init_document(const markdown_core_element_instance *self, markdown_c
 static bool reopen_document(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *root, uint32_t child, uint32_t start) {
     (void)self;
-    return markdown_core_publish_reopen(parser, root, child, start);
+    (void)start;
+    return markdown_core_publish_reopen(parser, root, child);
 }
 /* THE EDIT TAKES THE OLD CHILDREN BACK (blocks.c, THE SPLICE): the
  * publish's records let the children go last, once nothing else can
@@ -27,7 +28,8 @@ static bool splice_document(const markdown_core_element_instance *self, markdown
                             markdown_core_node *root, uint32_t child, uint32_t point) {
     (void)self;
     (void)root;
-    return markdown_core_publish_splice(parser, child, point);
+    (void)point;
+    return markdown_core_publish_splice(parser, child);
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
@@ -74,9 +76,9 @@ MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown
     if (!document->owns) {
         return;
     }
-    markdown_core_publish_release_committed(document->committed);
-    markdown_core_free(document->committed);
-    document->committed = NULL;
+    markdown_core_publish_release_tables(document->tables);
+    markdown_core_free(document->tables);
+    document->tables = NULL;
     document->owns = false;
 }
 

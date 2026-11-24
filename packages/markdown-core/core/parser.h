@@ -227,60 +227,36 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
                                      const markdown_core_node *holder, markdown_core_node *const *nodes, uint32_t count,
                                      uint32_t source);
 
-/* The committed definition `block` is, which an edit's reading reads again
- * as another kind (blocks.c, THE FORMER KIND), goes from the committed
- * tables now, while it still names its label, as the splice would let it
- * go (markdown_core_publish_splice): it stands first in their back. False
- * when storage could not be had. */
-bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_core_node *block);
+/* A DOCUMENT'S TABLES (ast.c): the definitions the published document
+ * holds -- Footnotes, Specimens, References, Headings -- are the roster's
+ * declarations of their nodes, a shelf of each kind (roster.h, THE PLACES),
+ * which the document reads as the roster keeps them; and the reference
+ * targets by label, which a document lists in the order of their labels,
+ * an entry's pointer the label's definition. */
+enum { MARKDOWN_CORE_DEFINITION_TABLES = 4 };
 
-/* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
- * KEEPS): the definitions the published document holds as COMMITTED. Each
- * of the document's tables -- Footnotes, Specimens, References, Headings --
- * in order of where they start, a tree (tree.h) whose focus is where an
- * edit reads from, each entry the object the document holds, where it
- * starts and its number, which says where in the tree it stands (`where`);
- * and the labeled Footnotes, the labeled Specimens and the reference
- * targets by label, an entry's pointer the label's definition and its
- * number that definition's. When a label's definition goes, its next is the
- * first of the label's declarations in the roster, which keeps them in
- * order of where they start, that the tables hold (ast.c, THE LABEL'S NEXT
- * DEFINITION). */
-enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
-
-typedef struct markdown_core_listed {
-    const struct markdown_core_node *node;
-    uint32_t start;
-    /* Its table in the top two bits, and its index in the table's `where`. */
-    uint32_t id;
-} markdown_core_listed;
-
-#define MARKDOWN_CORE_LISTED_TABLE 30
-
-typedef struct markdown_core_committed_tables {
-    markdown_core_tree starts[MARKDOWN_CORE_DEFINITION_TABLES];
+typedef struct markdown_core_tables {
+    /* The roster the tables read: the parse's, or `held`, once a document
+     * took it from a parse that takes no edits. */
+    markdown_core_roster *roster;
+    markdown_core_roster held;
     /* The roster kind of each table's labels. */
     unsigned kinds[MARKDOWN_CORE_DEFINITION_TABLES];
-    /* Where each table's entry of a number stands (tree.h, A HANDLE); a
-     * number no entry holds has no leaf, and its slot is the next free
-     * number plus one, as `free` is the first's. */
-    MARKDOWN_CORE_ARRAY(markdown_core_tree_handle) where[MARKDOWN_CORE_DEFINITION_TABLES];
-    uint32_t free[MARKDOWN_CORE_DEFINITION_TABLES];
-    markdown_core_tree labels[MARKDOWN_CORE_LABEL_TABLES];
-    /* The label tables' own copies of their keys, which an entry and the
+    markdown_core_tree targets;
+    /* The targets' own copies of their keys, which an entry and the
      * separators above it borrow (tree.h) while the tables outlive any one
      * definition: carved from blocks newest first, `live` bytes of them
      * an entry holds and `dead` none does, which the tables let go once
      * they are made again. */
     void *label_blocks;
     size_t label_used, label_room, label_live, label_dead;
-} markdown_core_committed_tables;
+} markdown_core_tables;
 
-/* The committed tables' storage let go. */
-void markdown_core_publish_release_committed(markdown_core_committed_tables *committed);
-/* The committed tables held in no more storage than they need, after a
- * reading of the whole text (markdown_core_parser_compact). */
-void markdown_core_publish_compact_committed(markdown_core_committed_tables *committed);
+/* The tables' storage let go, and the roster they hold. */
+void markdown_core_publish_release_tables(markdown_core_tables *tables);
+/* The tables held in no more storage than they need, after a reading of
+ * the whole text (markdown_core_parser_compact). */
+void markdown_core_publish_compact_tables(markdown_core_tables *tables);
 
 /* WHERE AN EDIT'S READING STANDS INSIDE A LINE (blocks.c, A REST INSIDE A
  * LINE): the line has matched every open block and opened `container`,
@@ -333,9 +309,9 @@ typedef struct markdown_core_stream {
     /* THE RECORDS (ast.c). */
     markdown_core_tail_records records;
     /* The definitions the document holds (ast.c, A DOCUMENT'S TABLES):
-     * made at the first publish (ast.c, committed_need); a parse that takes
+     * made at the first publish (ast.c, tables_need); a parse that takes
      * no edits gives them to its document. */
-    markdown_core_committed_tables *committed;
+    markdown_core_tables *tables;
     /* THE EDIT the next publish follows (blocks.c, THE REOPEN): it replaced
      * the old text from `edit_from` to `edit_to` and moved what follows by
      * `edit_delta`; all zero for every other publish (ast.c, THE IMAGE OF AN
@@ -1694,14 +1670,21 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * when storage could not be had. */
 bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                    const markdown_core_chunk *label, uint32_t at);
-/* THE DECLARATION (roster.h): the document defines `label` in `kind`'s
- * space from `start` on, in the space's form, as the lookup above reads it:
- * a reference or footnote label normalized into `*normal`, in storage the
- * node that holds it owns, a specimen label or an anchor as written, when
- * `normal` may be NULL. False, with the parse failed, when storage could
- * not be had. */
+/* THE DECLARATION (roster.h): `node`, a definition, defines `label` in
+ * `kind`'s space from `start` on, in the space's form, as the lookup above
+ * reads it: a reference or footnote label normalized into `*normal`, in
+ * storage the node that holds it owns, a specimen label as written, when
+ * `normal` may be NULL. An empty label defines nothing, and the document
+ * lists the node all the same (roster.h, THE PLACES). False, with the parse
+ * failed, when storage could not be had. */
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
-                                  const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal);
+                                  const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
+                                  const markdown_core_node *node);
+/* The byte of the text that offset `at` of the content of the block being
+ * completed reads (its inline root's offset,
+ * markdown_core_inline_state_root_offset), as a use's is (blocks.c, WHERE
+ * A USE IS): where a definition its inline content makes starts. */
+uint32_t markdown_core_parser_source_at(markdown_core_parser *parser, uint32_t at);
 /* Whether `kind`'s labels are in the reference-label normal form (element.h,
  * markdown_core_space `folds`); the engine's ANCHOR's are not. */
 static inline bool markdown_core_parser_folds(const markdown_core_parser *parser, markdown_core_roster_kind kind) {

@@ -106,6 +106,13 @@ static markdown_core_node *markdown_core_inline_close_inline_footnote(const mark
     /* The note is its Citation's own field, as the affixes are. */
     markdown_core_scaffold_first(cite)->as.citation->note = footnote;
     markdown_core_inline_settle_note(parser, inline_state, footnote);
+    /* The note is a footnote of no label, which the document lists from
+     * where it starts: its place is in its root's content. */
+    const markdown_core_chunk none = {0};
+    if (!parser->error) {
+        markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &none,
+                                     markdown_core_parser_source_at(parser, footnote->place.start), NULL, footnote);
+    }
     markdown_core_parser_release_node(parser, opener->inl_text);
     markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(inline_state);
@@ -392,8 +399,8 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    const bool declared =
-        markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &c, footnote->place.start, &normal);
+    const bool declared = markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &c, footnote->place.start,
+                                                       &normal, footnote);
     if (normal.len) {
         footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
     }

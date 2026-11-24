@@ -23,8 +23,9 @@ struct markdown_core_document {
 };
 
 /* PUBLISHING, the last step of the parse transaction: the one canonical walk
- * that gives every node its id, makes its extent of its place and records
- * the definition tables it finds on the way in the root; a session's parse
+ * that gives every node its id and makes its extent of its place, and
+ * gives the root the definition tables, which the roster holds (ast.c, A
+ * DOCUMENT'S TABLES); a session's parse
  * publishes its tree in place (ast.c, PUBLISHING IN PLACE), and a fresh
  * parse numbers every node from 1 in walk order. The parser's root is the
  * result. It works in the parser's scratch. False when an allocation
@@ -32,17 +33,16 @@ struct markdown_core_document {
 bool markdown_core_publish_tree(markdown_core_parser *parser);
 /* A DOCUMENT REOPENED FOR AN EDIT (ast.c): the flushed `root` keeps its
  * children before `child` and lets the others go, its metadata with them
- * when `child` is 0, each an old node the next publish matches against,
- * and the committed tables' focus moves to the rest point `start`. False
- * when storage could not be had. */
-bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child,
-                                  uint32_t start);
+ * when `child` is 0, each an old node the next publish matches against;
+ * the reading reopens the roster at the rest point `start` (blocks.c, THE
+ * REOPEN) where it starts. False when storage could not be had. */
+bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_node *root, uint32_t child);
 /* The edit's reading takes the old children back from the one at `child`
- * among those the reopen let go (blocks.c, THE SPLICE), whose line starts at
- * `point` in the new text: their records let them go, and the committed
- * definitions the reading read again go.
+ * among those the reopen let go (blocks.c, THE SPLICE): their records let
+ * them go, as the roster's splice lets go the definitions the reading read
+ * again.
  * False, with the records as they were, when storage could not be had. */
-bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child, uint32_t point);
+bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child);
 /* Where a published node's source lies, its first run measured from
  * `anchor`: where the source of the node before it in its relation ends,
  * or where its owner's starts. */
