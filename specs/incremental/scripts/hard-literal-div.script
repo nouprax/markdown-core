@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-div hard
-flush
 edit 61 61 78
 edit 61 62 -
 edit 60 60 0a0a

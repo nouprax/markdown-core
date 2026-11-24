@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-places hard
-flush
 edit 265 265 7a
 edit 52 52 616263
 edit 198 198 6465

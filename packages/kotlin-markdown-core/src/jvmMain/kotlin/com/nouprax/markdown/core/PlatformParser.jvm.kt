@@ -43,7 +43,6 @@ private class JniSession(
 
     override fun append(text: ByteArray): Document = publish(JniParser.sessionAppendPayload(session[0], text))
 
-    override fun end(): Document = publish(JniParser.sessionFlushPayload(session[0]))
 
     override fun edit(
         startLine: Int,
@@ -105,10 +104,6 @@ private object JniParser {
         session: Long,
         text: ByteArray,
     ): ByteArray?
-
-    /** The MCB3 message of flushing [session]; null as for [parsePayload]. */
-    @JvmSynthetic
-    external fun sessionFlushPayload(session: Long): ByteArray?
 
     /**
      * The MCB3 message of replacing [session]'s text from the cursor at line

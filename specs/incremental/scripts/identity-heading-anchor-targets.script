@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script identity-heading-anchor-targets ids
-flush
 edit 11 14 74776f
 expect changed Document 0
 expect changed Heading 0

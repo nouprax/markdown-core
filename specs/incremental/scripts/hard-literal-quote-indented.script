@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-quote-indented hard
-flush
 edit 114 118 -
 edit 114 114 20202020
 edit 129 129 78

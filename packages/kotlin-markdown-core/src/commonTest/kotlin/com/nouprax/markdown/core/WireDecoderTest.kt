@@ -137,8 +137,6 @@ class WireDecoderTest {
         assertEquals(ErrorCode.ALLOCATION_FAILED, failure(1).code)
         assertEquals(ErrorCode.OUT_OF_BOUNDS, failure(2).code)
         assertEquals(ErrorCode.KIND_MISMATCH, failure(3).code)
-        assertEquals(ErrorCode.SESSION_FLUSHED, failure(4).code)
-        assertEquals(ErrorCode.SESSION_STREAMING, failure(5).code)
     }
 
     @Test

@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-leap hard
-flush
 edit 19 19 78
 edit 19 20 -
 edit 19 19 2a

@@ -44,7 +44,6 @@ Document.parse("# typed", { tables: true });
 const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
 const session = new MarkdownSession("# typed", { unit: "utf16" });
 const appended: Document = session.append("\n");
-const final: Document = session.flush();
 const edited: Document = session.edit({ line: 1, column: 1 }, { line: 1, column: 3 }, "# Re");
 // @ts-expect-error an edit takes two cursors and the text written between them
 session.edit({ line: 1, column: 1 }, "# Re");
@@ -52,11 +51,11 @@ const sessionText: string = session.text;
 const sessionUnit: TextUnit = session.unit;
 const slotKind: SlotKind = "dest";
 const path: Markup[] = session.path({ line: 1, column: 1 });
-const fields: Scope[] = session.scope(final, "dest");
-const others: Scope[] = session.scope(final, null);
-const markers: Scope[] = session.markers(final);
+const fields: Scope[] = session.scope(edited, "dest");
+const others: Scope[] = session.scope(edited, null);
+const markers: Scope[] = session.markers(edited);
 // @ts-expect-error a field is a slot kind or null
-session.scope(final, "title");
+session.scope(edited, "title");
 void [slotKind, path, fields, others, markers];
 session.dispose();
 // @ts-expect-error a unit is UTF-8 or UTF-16
@@ -67,7 +66,7 @@ const nodeDump: string = document.dump(document.content[0]!, "# typed");
 const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
 // @ts-expect-error a dump is computed from the source
 document.dump();
-void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, final, edited, sessionText, sessionUnit];
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, edited, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
 const runs: readonly Run[] = document.content[0]!.runs;
@@ -83,7 +82,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "sessionFlushed"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly

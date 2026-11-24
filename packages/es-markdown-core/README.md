@@ -189,31 +189,25 @@ import { MarkdownSession } from "@nouprax/es-markdown-core";
 const session = new MarkdownSession("# Hello\n\nwor");
 session.append("ld\n");
 session.append("more\n");
-console.log(session.document.dump(session.text));
-const final = session.flush();             // equals Document.parse(session.text), ids aside
+console.log(session.document.dump(session.text)); // equals Document.parse(session.text), ids aside
 session.dispose();
 ```
 
 A session's documents count scope columns in its `unit`, `"utf16"` by default,
 the unit of JavaScript strings, or `"utf8"`, chosen with
 `new MarkdownSession(source, { unit })`. Every document the session returns is
-an immutable value. Until `flush()`, each document is a snapshot of the text
-so far: a lookup of a reference, footnote or specimen sees only the definitions
-that start before the inline root asking. The caller ends the text with `flush()`, which returns
-the final document; afterwards `append` and `flush` throw
-`sessionFlushed`, and `document` and `text` stay readable. The session
-itself lives in WebAssembly memory: `dispose()` releases it, and a session
+an immutable value, which equals `Document.parse` of the session's text in
+everything but ids. The session itself lives in WebAssembly memory: `dispose()` releases it, and a session
 collected without it is released then.
 
-After `flush()`, `edit(start, end, text)` replaces the text between two
-cursors, positions in the session's unit, and returns the parse of the new
-text. The session reads again only the blocks the edit reaches: a node the
-edit did not reach is the old node, and one it read again keeps its `id`. An
-edit before `flush()` throws `sessionStreaming`.
+`edit(start, end, text)` replaces the text between two cursors, positions in
+the session's unit, and returns the parse of the new text; an append is an
+edit at the text's end. The session reads again only the blocks the edit
+reaches: a node the edit did not reach is the old node, and one it read again
+keeps its `id`.
 
 ```js
 const session = new MarkdownSession("# Title\n\nfirst\n");
-session.flush();
 session.edit({ line: 3, column: 6 }, { line: 3, column: 6 }, " line"); // "first" becomes "first line"
 session.dispose();
 ```
@@ -224,7 +218,6 @@ source.
 
 ```js
 const session = new MarkdownSession("See [[Field notes]]\n");
-session.flush();
 const link = session.path({ line: 1, column: 8 }).at(-1); // the cross link, under the root and paragraph
 session.scope(link, "dest");                   // [1:7..1:17]
 session.markers(link);                         // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
@@ -248,8 +241,6 @@ Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
 - `"kindMismatch"`: the engine's status for a value that is not of the kind a
   call reads. The binding decodes the whole tree into typed values, so none of
   its calls reports it today; the code keeps the set equal to the engine's.
-- `"sessionFlushed"`: a session's `append` or `flush` after its
-  `flush`.
 
 A node of another document is not checked: pass the document's own nodes.
 

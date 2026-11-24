@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-pre-closed hard
-flush
 edit 54 54 78
 edit 54 55 -
 edit 53 53 3c2f7072653e0a

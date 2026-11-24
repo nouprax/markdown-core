@@ -5,8 +5,8 @@
  *
  * It measures what an application pays per streamed chunk: each benchmark
  * workload of workloads.mjs, run through a subject by `stream_runner`, under
- * callgrind, one dump per window and one for the flush. A session window's
- * cost is the edge into `bench_apply_step` or `bench_flush`; a `reparse`
+ * callgrind, one dump per window. A session window's cost is the edge
+ * into `bench_apply_step`; a `reparse`
  * window's is the two parse stages of the `Document.parse` inside it; a
  * `binding` window's is what its MCB3 messages add to the session's steps.
  * Everything else in the process, including opening the subject, is outside
@@ -24,7 +24,7 @@
  * windows, and runs the streams a gate bounds: every stream `reparse` runs at
  * every step -- each of at most 1,024 steps, and each of a shape 6.2 leaves
  * to 6.3 at the shape's smallest size, whatever its length (decision G17) --
- * where 6.3 holds its total over the steps and the flush to 1.25 times
+ * where 6.3 holds its total over the steps to 1.25 times
  * `reparse`'s on the same steps, and every stream of a shape whose cost per
  * chunk the language keeps local, whose chunk windows 6.2 holds flat. B is
  * the C side of a binding's build of each published document's values, on
@@ -36,8 +36,8 @@
  * or 6.4 fails the run that writes the whole report.
  *
  * The edit workloads are a document and its edit scripts, one runner process
- * each: every script opens the subject on the document and flushes outside
- * every window, then each window holds its edits (5.1). `reparse` counts a
+ * each: every script opens the subject on the document outside every
+ * window, then each window holds its edits (5.1). `reparse` counts a
  * fresh `Document.parse` of a window's last edit's text, R, and `session` the
  * session's edits of the window, S; they are reported without a gate or a
  * base.
@@ -149,8 +149,8 @@ function parseArguments(argv) {
 }
 
 /**
- * One subject on one workload, in `windows` chunk windows: their costs, the
- * flush's and the receipt. The profile of the most expensive window is
+ * One subject on one workload, in `windows` chunk windows: their costs and
+ * the receipt. The profile of the most expensive window is
  * kept as `NAME.SUBJECT.max`; the rest are read and removed, because a long
  * stream writes thousands of them. `out` holds the run's workloads, and
  * `into` the profiles of the binaries `profile` names.
@@ -180,8 +180,8 @@ function measureSubject(profile, out, into, workload, subject, final, windows) {
     const receipt = /steps=(\d+) windows=(\d+) bytes=(\d+) root_children=(\d+)/u.exec(stdout);
     if (!receipt) throw new Error(`${workload.name} produced no receipt from ${subject}`);
     const [steps, dumped, bytes, rootChildren] = receipt.slice(1).map(Number);
-    /* Every chunk window, then the flush's. */
-    if (dumped !== windows + 1) throw new Error(`${workload.name} reported ${dumped} windows`);
+    /* Every chunk window. */
+    if (dumped !== windows) throw new Error(`${workload.name} reported ${dumped} windows`);
     const costs = [];
     let highest = 0;
     for (let window = 1; window <= dumped; window++) {
@@ -476,7 +476,7 @@ export function markdownReport(report) {
         "# Stream benchmark",
         "",
         `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
-        "Every figure is Ir per window of chunks and for the flush: S is the edge into `bench_apply_step` or `bench_flush`, and R the two parse stages of each `Document.parse`; the one-shot column parses each workload's final text once, both stages.",
+        "Every figure is Ir per window of chunks: S is the edge into `bench_apply_step`, and R the two parse stages of each `Document.parse`; the one-shot column parses each workload's final text once, both stages.",
         `S is measured on the workloads whose R runs every step, those of at most ${number(WINDOWS)} steps and those of the shapes 6.2 leaves to 6.3 at the shape's smallest size, where each workload's S total is at most 1.25 times its R total (6.3), and on every stream of a shape whose cost per chunk the language keeps local, where the highest chunk window up to a quarter of the stream and up to its end costs at most 1.25 times the highest up to its first sixteenth (6.2). S / R is over the first.`,
         "",
         "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | S / R total | Highest step S / R | One-shot total |",
@@ -530,7 +530,7 @@ export function markdownReport(report) {
         "",
         "## Edits",
         "",
-        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text, and S the session's edits of the window, every one of them. Opening each script on its document and flushing are in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script. No gate holds them.`,
+        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text, and S the session's edits of the window, every one of them. Opening each script on its document is in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script. No gate holds them.`,
         "",
         "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
@@ -678,7 +678,7 @@ async function measureSet(options) {
                 expected: workload.scripts.map((script) => ({
                     name: script.name,
                     family: script.family,
-                    edits: script.steps.length - 1
+                    edits: script.steps.length
                 }))
             }))
         ],

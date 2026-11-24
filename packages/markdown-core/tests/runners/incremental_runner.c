@@ -4,9 +4,8 @@
  * It drives the `session` subject through every workload of the tracked
  * correctness set, `specs/incremental/`, in both coordinate units, and checks
  * the oracles of incremental_oracles.h after the open and after every step.
- * Until step E1 gives the session its edit (plan 12.9), the edit families run
- * on the `reparse` subject, which keeps no ids, so they check 4.1, 4.7 and
- * 4.13 and the self-test proves the rest can fail.
+ * The `reparse` subject keeps no ids, so on it the families check 4.1 and
+ * 4.13, and the self-test proves the rest can fail.
  *
  *   incremental_runner --set DIR [--subject S] [--family F [--shard K/N]]
  *                                             check the `session` subject,
@@ -193,7 +192,6 @@ typedef struct faulty {
     ih_unit unit;
     void *inner, *other;
     size_t steps, edits;
-    bool flushed;
     ih_text text;
     markdown_core_document *made;
 } faulty;
@@ -244,14 +242,6 @@ static markdown_core_status faulty_status(bool done) {
     return done ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 
-/* A faulty subject ends its text as its session does. */
-static markdown_core_status faulty_flush(void *handle, const markdown_core_document **document) {
-    faulty *subject = (faulty *)handle;
-    markdown_core_status status = ih_session.flush(subject->inner, document);
-    subject->flushed = subject->flushed || status == MARKDOWN_CORE_OK;
-    return status;
-}
-
 /* The UTF-8 offset of `position` in the subject's unit, or false where it
  * names no scalar boundary of `text`. */
 static bool faulty_offset(const faulty *subject, const ih_text *text, size_t position, size_t *offset) {
@@ -262,9 +252,8 @@ static bool faulty_offset(const faulty *subject, const ih_text *text, size_t pos
     return ih_utf8_boundary(text->bytes, text->length, position);
 }
 
-/* The session takes no edits before step E1, so a faulty subject edits by
- * opening a new session on the new text and flushing it: the edit renumbers
- * every id. The old session stays as `other` until the next edit. With
+/* A faulty subject edits by opening a new session on the new text: the
+ * edit renumbers every id. The old session stays as `other` until the next edit. With
  * `clamp`, a range that names no part of the text is cut to the text. */
 static markdown_core_status faulty_reopen(faulty *subject, size_t start, size_t end, const uint8_t *text, size_t length,
                                           bool clamp, const markdown_core_document **document) {
@@ -293,7 +282,7 @@ static markdown_core_status faulty_reopen(faulty *subject, size_t start, size_t 
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     reopened = ih_session.open(subject->unit, subject->text.bytes, subject->text.length, document);
-    if (!reopened || ih_session.flush(reopened, document) != MARKDOWN_CORE_OK) {
+    if (!reopened) {
         ih_session.close(reopened);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -307,12 +296,7 @@ static markdown_core_status faulty_reopen(faulty *subject, size_t start, size_t 
 /* Renumbers every id on an edit. */
 static markdown_core_status faulty_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
                                         const markdown_core_document **document) {
-    faulty *subject = (faulty *)handle;
-    if (!subject->flushed) {
-        *document = NULL;
-        return IH_STREAMING;
-    }
-    return faulty_reopen(subject, start, end, text, length, false, document);
+    return faulty_reopen((faulty *)handle, start, end, text, length, false, document);
 }
 
 /* Returns the previous document for one step: its third, in every run. */
@@ -335,7 +319,6 @@ static markdown_core_status stale_append(void *handle, const uint8_t *text, size
 static const ih_subject_class stale = {.name = "returns the previous document for one step",
                                        .open = faulty_open,
                                        .append = stale_append,
-                                       .flush = faulty_flush,
                                        .text = faulty_text,
                                        .close = faulty_close,
                                        .edit = faulty_edit,
@@ -358,7 +341,6 @@ static markdown_core_status renumber_append(void *handle, const uint8_t *text, s
 static const ih_subject_class renumber = {.name = "renumbers every id on every step",
                                           .open = faulty_open,
                                           .append = renumber_append,
-                                          .flush = faulty_flush,
                                           .text = faulty_text,
                                           .close = faulty_close,
                                           .edit = faulty_edit,
@@ -406,7 +388,6 @@ static markdown_core_status keep_append(void *handle, const uint8_t *text, size_
 static const ih_subject_class keep = {.name = "keeps a node whose text changed",
                                       .open = keep_open,
                                       .append = keep_append,
-                                      .flush = faulty_flush,
                                       .text = faulty_text,
                                       .close = faulty_close,
                                       .edit = faulty_edit,
@@ -443,86 +424,12 @@ static markdown_core_status revive_append(void *handle, const uint8_t *text, siz
 static const ih_subject_class revive = {.name = "reuses a retired id for a new node",
                                         .open = faulty_open,
                                         .append = revive_append,
-                                        .flush = faulty_flush,
                                         .text = faulty_text,
                                         .close = faulty_close,
                                         .edit = faulty_edit,
                                         .keeps = true};
 
-/* Answers a snapshot's lookup from a definition that arrived in an earlier
- * append, wherever it was written: from its second append on it returns the
- * fresh parse of the text, whose lookups see every definition. */
-static markdown_core_status early_append(void *handle, const uint8_t *text, size_t length,
-                                         const markdown_core_document **document) {
-    faulty *subject = (faulty *)handle;
-    size_t after = 0;
-    markdown_core_status status = ih_session.append(subject->inner, text, length, document);
-    const uint8_t *current = status == MARKDOWN_CORE_OK ? ih_session.text(subject->inner, &after) : NULL;
-    if (status != MARKDOWN_CORE_OK || ++subject->steps < 2) {
-        return status;
-    }
-    return faulty_status(current && faulty_fresh(subject, current, after, document));
-}
-
-static const ih_subject_class early = {.name = "answers a snapshot's lookup from a definition that arrived in an "
-                                               "earlier append, wherever it was written",
-                                       .open = faulty_open,
-                                       .append = early_append,
-                                       .flush = faulty_flush,
-                                       .text = faulty_text,
-                                       .close = faulty_close,
-                                       .edit = faulty_edit,
-                                       .keeps = true};
-
-/* Accepts an append after flush: it answers with the final document and
- * takes none of the text. */
-typedef struct lenient_subject {
-    faulty base;
-    const markdown_core_document *final;
-} lenient_subject;
-
-static void *lenient_open(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
-    lenient_subject *subject = (lenient_subject *)calloc(1, sizeof(*subject));
-    faulty *base = subject ? (faulty *)faulty_open(unit, text, length, document) : NULL;
-    if (!base) {
-        free(subject);
-        return NULL;
-    }
-    subject->base = *base;
-    free(base);
-    return subject;
-}
-
-static markdown_core_status lenient_append(void *handle, const uint8_t *text, size_t length,
-                                           const markdown_core_document **document) {
-    lenient_subject *subject = (lenient_subject *)handle;
-    if (subject->final) {
-        *document = subject->final;
-        return MARKDOWN_CORE_OK;
-    }
-    return ih_session.append(subject->base.inner, text, length, document);
-}
-
-static markdown_core_status lenient_flush(void *handle, const markdown_core_document **document) {
-    lenient_subject *subject = (lenient_subject *)handle;
-    markdown_core_status status = faulty_flush(&subject->base, document);
-    if (status == MARKDOWN_CORE_OK) {
-        subject->final = *document;
-    }
-    return status;
-}
-
-static const ih_subject_class lenient = {.name = "accepts an append after flush",
-                                         .open = lenient_open,
-                                         .append = lenient_append,
-                                         .flush = lenient_flush,
-                                         .text = faulty_text,
-                                         .close = faulty_close,
-                                         .edit = faulty_edit,
-                                         .keeps = true};
-
-/* The edit faults: each takes its appends and its flush as the session
- * does. */
+/* The edit faults: each takes its appends as the session does. */
 
 static markdown_core_status faulty_append(void *handle, const uint8_t *text, size_t length,
                                           const markdown_core_document **document) {
@@ -532,7 +439,6 @@ static markdown_core_status faulty_append(void *handle, const uint8_t *text, siz
 static const ih_subject_class reopen = {.name = "renumbers every id on an edit",
                                         .open = faulty_open,
                                         .append = faulty_append,
-                                        .flush = faulty_flush,
                                         .text = faulty_text,
                                         .close = faulty_close,
                                         .edit = faulty_edit,
@@ -554,7 +460,6 @@ static markdown_core_status drift_edit(void *handle, size_t start, size_t end, c
 static const ih_subject_class drift = {.name = "answers an edit with the document before it",
                                        .open = faulty_open,
                                        .append = faulty_append,
-                                       .flush = faulty_flush,
                                        .text = faulty_text,
                                        .close = faulty_close,
                                        .edit = drift_edit,
@@ -569,47 +474,21 @@ static void wide_reread(const void *handle, size_t *from, size_t *to) {
 static const ih_subject_class wide = {.name = "reads the whole text again on an edit",
                                       .open = faulty_open,
                                       .append = faulty_append,
-                                      .flush = faulty_flush,
                                       .text = faulty_text,
                                       .close = faulty_close,
                                       .edit = faulty_edit,
                                       .reread = wide_reread,
                                       .keeps = true};
 
-/* Takes an edit while it streams: it flushes first. */
-static markdown_core_status rash_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
-                                      const markdown_core_document **document) {
-    faulty *subject = (faulty *)handle;
-    if (!subject->flushed && faulty_flush(handle, document) != MARKDOWN_CORE_OK) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    return faulty_edit(handle, start, end, text, length, document);
-}
-
-static const ih_subject_class rash = {.name = "takes an edit while it streams",
-                                      .open = faulty_open,
-                                      .append = faulty_append,
-                                      .flush = faulty_flush,
-                                      .text = faulty_text,
-                                      .close = faulty_close,
-                                      .edit = rash_edit,
-                                      .keeps = true};
-
 /* Cuts a range that names no part of the text to the text. */
 static markdown_core_status loose_edit(void *handle, size_t start, size_t end, const uint8_t *text, size_t length,
                                        const markdown_core_document **document) {
-    faulty *subject = (faulty *)handle;
-    if (!subject->flushed) {
-        *document = NULL;
-        return IH_STREAMING;
-    }
-    return faulty_reopen(subject, start, end, text, length, true, document);
+    return faulty_reopen((faulty *)handle, start, end, text, length, true, document);
 }
 
 static const ih_subject_class loose = {.name = "cuts an edit that names no range to the text",
                                        .open = faulty_open,
                                        .append = faulty_append,
-                                       .flush = faulty_flush,
                                        .text = faulty_text,
                                        .close = faulty_close,
                                        .edit = loose_edit,
@@ -756,9 +635,10 @@ int main(int argc, char **argv) {
         static const struct {
             const ih_subject_class *subject;
             const char *oracle;
-        } faulty[] = {{&stale, "4.1"},   {&renumber, "4.2 4.4 4.5"}, {&keep, "4.1"},  {&revive, "4.2"}, {&early, "4.6"},
-                      {&lenient, "4.7"}, {&reopen, "4.4"},           {&drift, "4.1"}, {&wide, "4.12"},  {&rash, "4.13"},
-                      {&loose, "4.13"}};
+        } faulty[] = {{&stale, "4.1"},  {&renumber, "4.2 4.4 4.5"},
+                      {&keep, "4.1"},   {&revive, "4.2"},
+                      {&reopen, "4.4"}, {&drift, "4.1"},
+                      {&wide, "4.12"},  {&loose, "4.13"}};
         int failures = 0;
         size_t which;
         /* A shard K/N takes the subjects K, K + N, ... */

@@ -20,6 +20,20 @@ promised to remain compatible between releases.
   built on the parser's AST as their one source of truth. The AST queries
   stay: a session's `path`, `scope` (fields by slot kind) and `markers`.
 
+- A session has one phase: every append is an edit at the text's end, and
+  every document a session returns equals a parse of its text, ids aside, so
+  a lookup of a definition written later resolves at once. Remove
+  `markdown_core_session_flush`, `markdown_core_wire_session_flush`, the
+  statuses `MARKDOWN_CORE_SESSION_FLUSHED` and
+  `MARKDOWN_CORE_SESSION_STREAMING` (wire statuses 4 and 5), and their
+  bindings: Swift's and Kotlin's `flush()` and ECMAScript's `flush()`, and
+  the error codes `sessionFlushed`/`SESSION_FLUSHED` and
+  `sessionStreaming`/`SESSION_STREAMING`. An edit is taken from the
+  session's first step, and an edit of a session whose parse failed answers
+  `MARKDOWN_CORE_ALLOCATION_FAILED` wherever its cursors stand. The
+  incremental scripts drop the `flush` step (`markdown-core incremental
+  script 3`).
+
 - Android requires API 24 (Android 7.0) or later, up from API 21, matching
   the Google Play services and AndroidX floor; CI tests it on an API 24
   emulator. The build moves to AGP 9.5.2.
@@ -30,12 +44,11 @@ promised to remain compatible between releases.
   at its first read, which answers `MARKDOWN_CORE_ALLOCATION_FAILED` when
   storage cannot be had, instead of showing no anchor.
 
-- Lend one line of a flushed session: `markdown_core_session_lines` counts
-  the text's lines, the empty one after a last line ending included, and
+- Lend one line of a session: `markdown_core_session_lines` counts the
+  text's lines, the empty one after a last line ending included, and
   `markdown_core_session_line(session, line, &text)` lends line `line`,
   counted from 1, without its ending, in constant time
-  (`MARKDOWN_CORE_SESSION_STREAMING` before the flush,
-  `MARKDOWN_CORE_OUT_OF_BOUNDS` for a line the text does not have). The
+  (`MARKDOWN_CORE_OUT_OF_BOUNDS` for a line the text does not have). The
   language engine places a protocol position on that one line instead of
   counting line endings from the text's start, so a didChange or a
   completion no longer costs more the further down the document it is.

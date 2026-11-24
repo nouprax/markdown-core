@@ -706,6 +706,7 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
                                               : markdown_core_tree_from(places, start, 0, places->front));
     }
     roster->hidden = true;
+    roster->from = start;
     markdown_core_strbuf_clear(&roster->lost);
     return true;
 }
@@ -764,7 +765,8 @@ static bool S_put_keys(S_key *keys, size_t count, markdown_core_strbuf *labels) 
     return !labels->oom;
 }
 
-bool markdown_core_roster_made(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels) {
+bool markdown_core_roster_made(const markdown_core_roster *roster, markdown_core_strbuf *labels) {
+    const uint32_t start = roster->from;
     size_t count = 0;
     for (size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1; kind < roster->kinds; kind++) {
         const markdown_core_tree *places = &roster->spaces[kind].places;

@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-table-rows-in-item hard
-flush
 edit 407 407 7a
 expect within 385 439
 edit 407 408 -

@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-indented-tab hard
-flush
 edit 98 98 78
 edit 98 99 -
 edit 97 97 780a

@@ -8,12 +8,9 @@
  *   not an integer of at least 1;
  * - `"kindMismatch"`: a value is not of the kind the call reads; no call of
  *   this binding reads a kind the tree has not already typed, so none reports
- *   it;
- * - `"sessionFlushed"`: a session was asked for another step after its
- *   `flush()`;
- * - `"sessionStreaming"`: a session was asked to edit before its `flush()`.
+ *   it.
  */
-export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch" | "sessionFlushed" | "sessionStreaming";
+export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch";
 
 /** The one error every public call of the library throws, carrying its code. */
 export class MarkdownCoreError extends Error {

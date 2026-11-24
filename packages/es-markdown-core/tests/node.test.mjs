@@ -671,36 +671,16 @@ test("robustness: a session continues a deep document", () => {
     }
 });
 
-test("api: a session's flush returns the final document and ends the session", () => {
+test("api: every document of a session is a parse of its text", () => {
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession("[a]\n\n", { unit });
         try {
-            const snapshot = session.append("[a]: /url\n");
-            // A snapshot's lookup sees only the definitions written before it.
-            assert.notEqual(snapshot.dump(session.text), Document.parse(session.text, { unit }).dump(session.text));
-            const final = session.flush();
-            const text = session.text;
-            assert.equal(final, session.document);
-            assert.equal(final.dump(text), Document.parse(text, { unit }).dump(text));
-            const flushed = (error) => error instanceof MarkdownCoreError && error.code === "sessionFlushed";
-            assert.throws(() => session.append("more"), flushed);
-            assert.throws(() => session.flush(), flushed);
-            assert.equal(session.text, text);
-            assert.equal(session.document, final);
-        } finally {
-            session.dispose();
-        }
-    }
-});
-
-test("api: a session's first document is a snapshot of its source", () => {
-    for (const unit of ["utf8", "utf16"]) {
-        const session = new MarkdownSession("[a]\n\n[a]: /url\n", { unit });
-        try {
-            const text = session.text;
-            // The source is the first append, so the use before its definition stays unresolved.
-            assert.notEqual(session.document.dump(text), Document.parse(text, { unit }).dump(text));
-            assert.equal(session.flush().dump(text), Document.parse(text, { unit }).dump(text));
+            const text = () => session.text;
+            assert.equal(session.document.dump(text()), Document.parse(text(), { unit }).dump(text()));
+            // A use before its definition resolves once the definition is appended.
+            const appended = session.append("[a]: /url\n");
+            assert.equal(appended, session.document);
+            assert.equal(appended.dump(text()), Document.parse(text(), { unit }).dump(text()));
         } finally {
             session.dispose();
         }
@@ -752,7 +732,6 @@ test("api: an edit at every cursor, and its undoing, hold the edit oracle", () =
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession(sweepSource, { unit });
         try {
-            session.flush();
             cursors(sweepSource).forEach((place, index) => {
                 const written = sweepWrites[index % sweepWrites.length];
                 const document = session.edit(place, place, written);
@@ -778,7 +757,6 @@ test("api: an edit's cursors count columns in the session's unit", () => {
     ]) {
         const session = new MarkdownSession("🚀 one\n\ntwo\n", { unit });
         try {
-            session.flush();
             session.edit({ line: 1, column }, { line: 1, column: column + 4 }, "*won*");
             assert.equal(session.text, "🚀*won*\n\ntwo\n");
             assert.equal(
@@ -794,7 +772,7 @@ test("api: an edit's cursors count columns in the session's unit", () => {
 test("api: a node an edit did not reach is the old node, and one it read again keeps its id", () => {
     const session = new MarkdownSession("# Title\n\nfirst\n\nsecond\n");
     try {
-        const before = session.flush();
+        const before = session.document;
         const end = { line: 5, column: 7 };
         const after = session.edit(end, end, " one");
         assert.equal(session.text, "# Title\n\nfirst\n\nsecond one\n");
@@ -809,15 +787,14 @@ test("api: a node an edit did not reach is the old node, and one it read again k
     }
 });
 
-test("errors: an edit before flush, out of bounds or backwards throws and changes nothing", () => {
+test("errors: an edit out of bounds or backwards throws and changes nothing", () => {
     const session = new MarkdownSession("- text\n");
     try {
         const start = { line: 1, column: 1 };
         const inside = { line: 1, column: 4 };
         const nowhere = { line: 9, column: 1 };
-        assert.throws(() => session.edit(start, start, "x"), { code: "sessionStreaming" });
         session.append("more\n");
-        const final = session.flush();
+        const final = session.document;
         assert.throws(() => session.edit(inside, start, ""), { code: "outOfBounds" });
         assert.throws(() => session.edit(nowhere, nowhere, ""), { code: "outOfBounds" });
         assert.throws(() => session.edit({ line: 0, column: 1 }, start, ""), { code: "outOfBounds" });
@@ -833,7 +810,6 @@ test("errors: a disposed session takes no further call", () => {
     session.dispose();
     session.dispose();
     assert.throws(() => session.append("more"), Error);
-    assert.throws(() => session.flush(), Error);
     assert.throws(() => session.edit({ line: 1, column: 1 }, { line: 1, column: 1 }, ""), Error);
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
@@ -842,7 +818,7 @@ test("errors: a disposed session takes no further call", () => {
 test("api: a session's path, field and marker queries divide a node's own source", () => {
     const source = '**a** [t](/x "T")\n';
     const session = new MarkdownSession(source, { unit: "utf8" });
-    const document = session.flush();
+    const document = session.document;
     const [strong, , link] = document.content[0].content;
     assert.deepEqual(
         session.path({ line: 1, column: 2 }).map((node) => node.kind),
@@ -1125,9 +1101,7 @@ test("errors: a native failure maps its status by value across the WASM boundary
     for (const [status, code] of [
         [1, "allocationFailed"],
         [2, "outOfBounds"],
-        [3, "kindMismatch"],
-        [4, "sessionFlushed"],
-        [5, "sessionStreaming"]
+        [3, "kindMismatch"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),

@@ -90,7 +90,6 @@ const exported = [
     "markdown_core_wire_parse",
     "markdown_core_wire_session_new",
     "markdown_core_wire_session_append",
-    "markdown_core_wire_session_flush",
     "markdown_core_wire_session_edit",
     "markdown_core_wire_field",
     "markdown_core_wire_markers",

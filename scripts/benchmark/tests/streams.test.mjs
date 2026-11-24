@@ -136,7 +136,7 @@ const row = (name, ir, base) => {
         family: "tokens",
         size: null,
         local: false,
-        steps: 1,
+        steps: 2,
         windows,
         reparse: { ir: figures },
         session: { windows, ir: figures },
@@ -228,8 +228,8 @@ test("6.3 measures a stepwise stream however long it is, and S / R covers it", (
     /* A shape 6.2 leaves to 6.3, at its smallest size: R and S at every step,
      * without B. */
     const steps = 2048;
-    const windows = Array.from({ length: steps + 1 }, () => 100);
-    const session = windows.map((cost, window) => (window === steps ? 400 : cost));
+    const windows = Array.from({ length: steps }, () => 100);
+    const session = windows.map((cost, window) => (window === steps - 1 ? 400 : cost));
     const stepwise = {
         ...row("unclosed-grid-ascii-16k.rows", 100, 1),
         source: "unclosed-grid",
@@ -237,16 +237,16 @@ test("6.3 measures a stepwise stream however long it is, and S / R covers it", (
         size: 16384,
         steps,
         windows,
-        session: { windows: session, ir: { p50: 100, p95: 100, max: 400, total: 100 * steps + 400 } },
+        session: { windows: session, ir: { p50: 100, p95: 100, max: 400, total: 100 * (steps - 1) + 400 } },
         binding: null,
         neverWorse: []
     };
     const report = { ...parts(1, 1)[0], shard: undefined, baseline: null, results: [stepwise] };
-    const ratio = (100 * steps + 400) / (100 * (steps + 1));
+    const ratio = (100 * (steps - 1) + 400) / (100 * steps);
     assert.match(
         markdownReport(report),
         new RegExp(
-            `\\| unclosed-grid \\| rows \\| 16,384 \\| 1 \\| 2,049 \\| .* \\| ${ratio.toFixed(3)}× \\| 4\\.000× \\|`,
+            `\\| unclosed-grid \\| rows \\| 16,384 \\| 1 \\| 2,048 \\| .* \\| ${ratio.toFixed(3)}× \\| 4\\.000× \\|`,
             "u"
         )
     );

@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-table-rows-in-root hard
-flush
 edit 353 353 7a
 expect within 335 383
 edit 353 354 -

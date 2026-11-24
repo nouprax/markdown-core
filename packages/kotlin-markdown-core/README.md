@@ -90,29 +90,23 @@ previous one: a node that continues an old node keeps its id, so a Compose
 MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by default
     session.append("st\n")
     session.append("\n> quote\n")
-    val document = session.document             // a snapshot of the text so far
-    val final = session.flush()              // the tree of Document.parse(session.text), ids aside
+    val document = session.document             // the tree of Document.parse(session.text), ids aside
 }
 ```
 
-Until `flush`, each document is a snapshot of the text so far: a lookup of
-a reference, footnote or specimen sees only the definitions that start before
-the inline root asking. A session's `unit` is how its documents count scope
-columns. The caller ends the text with `flush`, which returns the final
-document; afterwards `append` and `flush` throw
-`ErrorCode.SESSION_FLUSHED`, and `document` and `text` stay readable.
-`close` releases the engine's session; the documents it returned stay complete
+Every document a session returns equals `Document.parse` of its text, ids
+aside. A session's `unit` is how its documents count scope columns. `close`
+releases the engine's session; the documents it returned stay complete
 values.
 
-After `flush`, `edit(start, end, text)` replaces the text between two
-cursors, positions in the session's unit, and returns the parse of the new
-text. The session reads again only the blocks the edit reaches: a node the
-edit did not reach is the old node, and one it read again keeps its id. An
-edit before `flush` throws `ErrorCode.SESSION_STREAMING`.
+`edit(start, end, text)` replaces the text between two cursors, positions in
+the session's unit, and returns the parse of the new text; an append is an
+edit at the text's end. The session reads again only the blocks the edit
+reaches: a node the edit did not reach is the old node, and one it read again
+keeps its id.
 
 ```kotlin
 MarkdownSession("# Title\n\nfirst\n").use { session ->
-    session.flush()
     session.edit(Position(3, 6), Position(3, 6), " line")   // "first" becomes "first line"
 }
 ```
@@ -123,7 +117,6 @@ source.
 
 ```kotlin
 MarkdownSession("See [[Field notes]]\n").use { session ->
-    session.flush()
     val link = session.path(Position(1, 8)).last()           // the cross link, under the root and paragraph
     session.scope(link, SlotKind.DEST)                       // [1:7..1:17]
     session.markers(link)                                    // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
@@ -182,8 +175,6 @@ why:
   position past the source, or one no node holds, answers `null`.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
-- `ErrorCode.SESSION_FLUSHED`: a session's `append` or `flush` after its
-  `flush`.
 
 A node of another document is not checked, and the answer for it means
 nothing.

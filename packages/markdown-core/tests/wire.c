@@ -200,14 +200,7 @@ static void check_session(void) {
     check(size == strlen(expected) && memcmp(text, expected, size) == 0, "the session's text follows its steps");
     const markdown_core_position more = {5, 1}, past = {5, 5}, outside = {6, 1};
     message = markdown_core_wire_session_edit(session, more, past, (const uint8_t *)"less", 4);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_STREAMING,
-          "an edit before flush answers SESSION_STREAMING");
-    markdown_core_wire_free(message);
-    message = markdown_core_wire_session_flush(session);
-    check(message != NULL && message_status(message) == 0, "flush answers with the final document");
-    markdown_core_wire_free(message);
-    message = markdown_core_wire_session_edit(session, more, past, (const uint8_t *)"less", 4);
-    check(message != NULL && message_status(message) == 0, "an edit after flush answers with its document");
+    check(message != NULL && message_status(message) == 0, "an edit answers with its document");
     markdown_core_wire_free(message);
     const char edited[] = "# One\n\npair \xf0\x9f\x98\x80 here\n\nless";
     size = markdown_core_session_text_size(session);
@@ -224,12 +217,7 @@ static void check_session(void) {
           "an edit whose cursor stands nowhere in the text answers OUT_OF_BOUNDS");
     markdown_core_wire_free(message);
     message = markdown_core_wire_session_append(session, (const uint8_t *)"x", 1);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FLUSHED,
-          "an append after flush answers SESSION_FLUSHED");
-    markdown_core_wire_free(message);
-    message = markdown_core_wire_session_flush(session);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FLUSHED,
-          "a flush after flush answers SESSION_FLUSHED");
+    check(message != NULL && message_status(message) == 0, "an append after an edit answers with its document");
     markdown_core_wire_free(message);
     markdown_core_session_close(session);
 }
@@ -284,7 +272,7 @@ static void check_parts(const markdown_core_session *session, const uint8_t *tex
     markdown_core_scopes_free(scopes);
 }
 
-/* Every node a flushed session's document holds a byte of, asked through
+/* Every node a session's document holds a byte of, asked through
  * the wire at the first byte that names it, answers its field and marker
  * queries as the facade does; an identifier the path at that byte lacks is
  * OUT_OF_BOUNDS. Columns count UTF-8 bytes, so a byte's position is its
@@ -296,7 +284,7 @@ static void check_queries(const uint8_t *source, size_t length, const char *name
     size_t limit = 0, offset, start = 0;
     int32_t line = 1;
     if (markdown_core_session_new(source, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
-        markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+        !(document = markdown_core_session_document(session))) {
         fprintf(stderr, "FAILED: %s: no session\n", name);
         failures++;
         markdown_core_session_close(session);

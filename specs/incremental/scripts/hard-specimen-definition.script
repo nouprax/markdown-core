@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-specimen-definition hard
-flush
 edit 0 0 2840737065632920446566696e65642e0a0a
 expect within 0 41
 edit 2 6 7370656b

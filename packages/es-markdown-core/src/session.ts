@@ -44,15 +44,10 @@ function valid({ line, column }: Position): boolean {
  * continues an old node keeps its `id`. Every document a session returns is an
  * immutable value that borrows nothing.
  *
- * Until `flush()`, a document's lookups of a reference, footnote or
- * specimen see only the definitions that start before the inline root
- * asking.
- *
- * The caller ends the text with `flush()`, which returns the final
- * document; nothing ends a session implicitly. Afterwards `document` and
- * `text` stay readable, adding text or flushing again throws
- * `MarkdownCoreError` `sessionFlushed`, and `edit` replaces any part of the
- * text: streaming and editing are the session's two phases.
+ * Every document a session returns equals `Document.parse` of its `text` in
+ * everything but ids. Each step is an append, which adds text at the end, or
+ * an edit, which replaces any part of the text: an append is an edit at the
+ * text's end.
  *
  * The session also answers queries about its document: the `path` of nodes
  * that hold a byte, and the `scope` of a node's fields and its `markers`. Each asks the engine's parse
@@ -109,7 +104,7 @@ export class MarkdownSession {
 
     /** Appends `text` and parses the text so far. Throws `MarkdownCoreError`
      * `allocationFailed` when an allocation fails or the text would exceed
-     * 1 GiB, and `sessionFlushed` after `flush()`. */
+     * 1 GiB. */
     append(text: string): Document {
         const session = this.#open();
         const bytes = utf8Encoder.encode(text);
@@ -121,15 +116,6 @@ export class MarkdownSession {
         } finally {
             if (textPointer) native.free(textPointer);
         }
-    }
-
-    /** Ends the text and returns the final document, which equals
-     * `Document.parse` of `text` in everything but ids. Throws
-     * `MarkdownCoreError` `allocationFailed` when an allocation fails, and
-     * `sessionFlushed` when the session was already flushed. */
-    flush(): Document {
-        const message = native.markdown_core_wire_session_flush(this.#open());
-        return (this.#document = this.#step(message));
     }
 
     /**
@@ -145,8 +131,8 @@ export class MarkdownSession {
      * A cursor stands between characters, so its column may also stand at its
      * line's end, before the line's terminator, or at the text's end. It
      * counts columns in the session's `unit`; `start` itself as `end` inserts
-     * `text` there. Throws `MarkdownCoreError` `sessionStreaming` before
-     * `flush()`; `outOfBounds` when a cursor stands nowhere in the text, its
+     * `text` there. Throws `MarkdownCoreError` `outOfBounds` when a cursor
+     * stands nowhere in the text, its
      * line or column is not an integer of at least 1, or `end` is before
      * `start`; and `allocationFailed` when
      * an allocation fails or the text would exceed 1 GiB. A failed allocation

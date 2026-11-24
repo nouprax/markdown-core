@@ -49,20 +49,13 @@ import Testing
         #expect(session.text == chunks.joined())
     }
 
-    @Test("flush returns the final document and ends the session", arguments: [TextUnit.utf8, .utf16])
-    func flush(unit: TextUnit) throws {
+    @Test("a use before its definition resolves once the definition is appended", arguments: [TextUnit.utf8, .utf16])
+    func definition(unit: TextUnit) throws {
         let session = try MarkdownSession("[a]\n\n", unit: unit)
-        let snapshot = try session.append("[a]: /url\n")
-        // A snapshot's lookup sees only the definitions written before it.
-        #expect(try snapshot.dump(in: session.text) != Document.parse(session.text, unit: unit).dump(in: session.text))
-        let final = try session.flush()
+        let appended = try session.append("[a]: /url\n")
         let text = session.text
-        #expect(final == session.document)
-        #expect(try final.dump(in: text) == Document.parse(text, unit: unit).dump(in: text))
-        #expect(flushed { try session.append("more") })
-        #expect(flushed { try session.flush() })
-        #expect(session.text == text)
-        #expect(session.document == final)
+        #expect(appended == session.document)
+        #expect(try appended.dump(in: text) == Document.parse(text, unit: unit).dump(in: text))
     }
 }
 
@@ -117,7 +110,6 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
     @Test("an edit at every cursor, and its undoing, hold the edit oracle", arguments: [TextUnit.utf8, .utf16])
     func sweep(unit: TextUnit) throws {
         let session = try MarkdownSession(sweepSource, unit: unit)
-        try session.flush()
         for (index, place) in cursors(of: sweepSource).enumerated() {
             let written = sweepWrites[index % sweepWrites.count]
             let document = try session.edit(from: place, to: place, with: written)
@@ -132,7 +124,6 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
     @Test("an edit's cursors count columns in the session's unit", arguments: [TextUnit.utf8, .utf16])
     func units(unit: TextUnit) throws {
         let session = try MarkdownSession("🚀 one\n\ntwo\n", unit: unit)
-        try session.flush()
         // 🚀 is four UTF-8 bytes and two UTF-16 units.
         let after = Int32(unit == .utf8 ? 5 : 3)
         let document = try session.edit(
@@ -147,7 +138,7 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
     @Test("a node the edit did not reach is the old node, and one it read again keeps its id")
     func nodes() throws {
         let session = try MarkdownSession("# Title\n\nfirst\n\nsecond\n")
-        let before = try session.flush()
+        let before = session.document
         let end = Position(line: 5, column: 7)
         let after = try session.edit(from: end, to: end, with: " one")
         #expect(session.text == "# Title\n\nfirst\n\nsecond one\n")
@@ -161,15 +152,14 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
         #expect(new != old)
     }
 
-    @Test("an edit before flush, out of bounds or backwards throws and changes nothing")
+    @Test("an edit out of bounds or backwards throws and changes nothing")
     func refusals() throws {
         let session = try MarkdownSession("- text\n")
         let start = Position(line: 1, column: 1)
         let inside = Position(line: 1, column: 4)
         let nowhere = Position(line: 9, column: 1)
-        #expect(code { try session.edit(from: start, to: start, with: "x") } == .sessionStreaming)
         try session.append("more\n")
-        let final = try session.flush()
+        let final = session.document
         #expect(code { try session.edit(from: inside, to: start, with: "") } == .outOfBounds)
         #expect(code { try session.edit(from: nowhere, to: nowhere, with: "") } == .outOfBounds)
         #expect(code { try session.edit(from: Position(line: 0, column: 1), to: start, with: "") } == .outOfBounds)
@@ -186,9 +176,4 @@ private func code(_ call: () throws -> Document) -> ErrorCode? {
     } catch {
         return (error as? MarkdownCoreError)?.code
     }
-}
-
-/// Whether `call` throws the library's error with ``ErrorCode/sessionFlushed``.
-private func flushed(_ call: () throws -> Document) -> Bool {
-    code(call) == .sessionFlushed
 }

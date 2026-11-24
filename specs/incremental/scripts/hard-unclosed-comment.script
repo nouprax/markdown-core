@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-unclosed-comment hard
-flush
 edit 133 133 78
 expect within 125 146
 edit 133 134 -

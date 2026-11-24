@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-split-and-join hard
-flush
 edit 5 5 0a0a
 edit 5 7 -
 edit 18 18 0a2d20

@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script identity-insert-before-paragraph ids
-flush
 edit 0 0 6e65770a0a
 expect new Paragraph 0
 expect kept Paragraph 0 5

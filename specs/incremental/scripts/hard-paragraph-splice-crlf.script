@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-splice-crlf hard
-flush
 edit 62 62 78
 edit 63 63 79
 edit 62 64 -

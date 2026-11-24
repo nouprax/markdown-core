@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-tails hard
-flush
 edit 45 45 79
 edit 45 46 -
 edit 45 45 2a

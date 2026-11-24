@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-type-in-middle-paragraph hard
-flush
 edit 6 6 78
 expect reread 5 11
 edit 6 7 -

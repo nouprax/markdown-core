@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-leap-in-item hard
-flush
 edit 23 23 78
 edit 23 24 -
 edit 23 23 2a

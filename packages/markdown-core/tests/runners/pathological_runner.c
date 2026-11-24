@@ -410,7 +410,6 @@ static int case_deep_list_session(pc_context *context) {
         return -1;
     }
     if (markdown_core_session_append(session, (const uint8_t *)"n\n", 2, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
         ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") == 0 &&
         pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") == 0) {
@@ -966,8 +965,7 @@ static int case_duplicate_definitions_edit(pc_context *context) {
     }
     const markdown_core_position start = {1, 1}, end = {DEFINITIONS + 3, 1};
     int result = -1;
-    if (markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_edit(session, start, end, (const uint8_t *)context->input, context->input_length,
+    if (markdown_core_session_edit(session, start, end, (const uint8_t *)context->input, context->input_length,
                                    &document) == MARKDOWN_CORE_OK &&
         ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
         pc_expect_count(context, MARKDOWN_CORE_KIND_REFERENCE, DEFINITIONS, "Reference") == 0 &&
@@ -997,7 +995,6 @@ static int case_shared_anchor_completions(pc_context *context) {
     }
     int result = -1;
     if (markdown_core_session_append(session, (const uint8_t *)"[x]: /u\n", 8, &document) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
         ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
         pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, ROOTS, "Link") == 0) {
         result = 0;

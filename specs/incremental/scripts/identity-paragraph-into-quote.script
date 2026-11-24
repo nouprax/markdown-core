@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script identity-paragraph-into-quote ids
-flush
 edit 0 0 3e20
 expect new Callout 0
 expect new Paragraph 2

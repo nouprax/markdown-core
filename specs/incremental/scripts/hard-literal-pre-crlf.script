@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-pre-crlf hard
-flush
 edit 73 73 78
 edit 73 74 -
 edit 72 72 3c2f7072653e0d0a

@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-table-rows-in-quote hard
-flush
 edit 399 399 7a
 expect within 377 431
 edit 399 400 -

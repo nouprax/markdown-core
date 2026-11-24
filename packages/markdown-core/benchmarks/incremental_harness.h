@@ -9,8 +9,8 @@
  * script means.
  *
  * A subject opens in a coordinate unit with an initial text, takes `append`
- * steps and one `flush`, then `edit` steps (plan 12.3), each of which
- * returns the new document, and closes. A document a subject returns is the
+ * and `edit` steps in any order, each of which returns the new document, and
+ * closes. A document a subject returns is the
  * subject's, and is valid until its next step or its close. This file holds
  * the two subjects: `session`, the engine's session, and `reparse`, which
  * keeps the text and parses the whole of it on every step.
@@ -70,11 +70,6 @@ bool ih_utf8_offset(const uint8_t *bytes, size_t length, size_t units, size_t *o
  * begins a scalar. */
 bool ih_utf8_boundary(const uint8_t *bytes, size_t length, size_t offset);
 
-/* The status an edit fails with while its subject still streams (plan 12.3):
- * MARKDOWN_CORE_SESSION_STREAMING, which the public header names from step
- * E1 on. */
-#define IH_STREAMING ((markdown_core_status)5)
-
 /* ---------------------------------------------------------------- scripts */
 
 /* A scripted identity expectation (gates 4.5), kept as written for the
@@ -86,9 +81,9 @@ typedef struct ih_expectation {
     size_t from; /* kept: the old position */
 } ih_expectation;
 
-/* What a step does: append `text`, flush, edit, or make an edit the
- * subject must refuse (gates 4.13). */
-typedef enum ih_step_kind { IH_APPEND = 0, IH_FLUSH, IH_EDIT, IH_REJECT } ih_step_kind;
+/* What a step does: append `text`, edit, or make an edit the subject must
+ * refuse (gates 4.13). */
+typedef enum ih_step_kind { IH_APPEND = 0, IH_EDIT, IH_REJECT } ih_step_kind;
 
 /* One step. `length` bytes at `text`, which the step's owner holds, are an
  * append's text or the text an edit puts in place of [start, end). An edit's
@@ -192,17 +187,14 @@ typedef struct ih_subject_class {
     void *(*open)(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document);
     /* Each step answers MARKDOWN_CORE_OK with the new document, or the
      * status of its failure and no document: `append` adds to the end of the
-     * text, and `flush` ends it; after `flush` both answer
-     * MARKDOWN_CORE_SESSION_FLUSHED. */
+     * text. */
     markdown_core_status (*append)(void *subject, const uint8_t *text, size_t length,
                                    const markdown_core_document **document);
-    markdown_core_status (*flush)(void *subject, const markdown_core_document **document);
     /* The subject's text, as UTF-8. */
     const uint8_t *(*text)(const void *subject, size_t *length);
     void (*close)(void *subject);
-    /* Replaces [start, end) of the flushed text, in the subject's unit,
-     * with `length` bytes: IH_STREAMING before `flush`, and
-     * MARKDOWN_CORE_OUT_OF_BOUNDS for a range that is reversed, ends past the
+    /* Replaces [start, end) of the text, in the subject's unit, with
+     * `length` bytes: MARKDOWN_CORE_OUT_OF_BOUNDS for a range that is reversed, ends past the
      * text or has an offset that is no scalar boundary. NULL for a subject
      * that takes no edits. */
     markdown_core_status (*edit)(void *subject, size_t start, size_t end, const uint8_t *text, size_t length,
@@ -229,8 +221,7 @@ extern const ih_subject_class ih_reparse;
 
 /* The reparse subject's two halves, for the harness that measures it: extend
  * its text, and parse the whole text, releasing the previous document.
- * `append` is exactly the one followed by the other, and `flush` the parse
- * alone. */
+ * `append` is exactly the one followed by the other. */
 bool ih_reparse_extend(void *subject, const uint8_t *text, size_t length);
 bool ih_reparse_parse(void *subject, const markdown_core_document **document);
 /* The edit's half that changes the text: the edit is exactly it followed by

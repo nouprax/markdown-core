@@ -227,7 +227,7 @@ static char *copy_string(const char *value) {
 
 /* ---------------------------------------------------------------- scripts */
 
-static const char SCRIPT_HEADER[] = "markdown-core incremental script 2";
+static const char SCRIPT_HEADER[] = "markdown-core incremental script 3";
 static const char MANIFEST_HEADER[] = "markdown-core incremental manifest 2";
 
 static void script_free(ih_script *script) {
@@ -346,15 +346,13 @@ static bool parse_unit(const char *field, ih_unit *unit) {
 static bool parse_refusal(const char *field, markdown_core_status *refusal) {
     if (strcmp(field, "out-of-bounds") == 0) {
         *refusal = MARKDOWN_CORE_OUT_OF_BOUNDS;
-    } else if (strcmp(field, "streaming") == 0) {
-        *refusal = IH_STREAMING;
     } else {
         return false;
     }
     return true;
 }
 
-/* A step line: `append HEX`, `flush`, `edit START END HEX` or `reject
+/* A step line: `append HEX`, `edit START END HEX` or `reject
  * UNIT STATUS START END HEX`, whose bytes the script keeps, or an `expect`
  * line, which belongs to the step before it. */
 static bool parse_step(char **fields, size_t count, ih_script *script) {
@@ -373,10 +371,6 @@ static bool parse_step(char **fields, size_t count, ih_script *script) {
     if (strcmp(fields[0], "append") == 0 && count == 2) {
         step->kind = IH_APPEND;
         return append_hex(fields[1], &script->bytes, &step->length);
-    }
-    if (strcmp(fields[0], "flush") == 0 && count == 1) {
-        step->kind = IH_FLUSH;
-        return true;
     }
     if (strcmp(fields[0], "edit") == 0 && count == 4) {
         step->kind = IH_EDIT;
@@ -746,12 +740,6 @@ static markdown_core_status session_append(void *handle, const uint8_t *text, si
     return markdown_core_session_append(subject->session, text, length, document);
 }
 
-static markdown_core_status session_flush(void *handle, const markdown_core_document **document) {
-    session_subject *subject = (session_subject *)handle;
-    *document = NULL;
-    return markdown_core_session_flush(subject->session, document);
-}
-
 static const uint8_t *session_text(const void *handle, size_t *length) {
     session_subject *subject = (session_subject *)handle;
     *length = markdown_core_session_text_size(subject->session);
@@ -826,7 +814,6 @@ static void session_reread(const void *handle, size_t *from, size_t *to) {
 const ih_subject_class ih_session = {.name = "session",
                                      .open = session_open,
                                      .append = session_append,
-                                     .flush = session_flush,
                                      .text = session_text,
                                      .close = session_close,
 #ifndef MARKDOWN_CORE_BENCH_SESSION_EDITLESS
@@ -841,7 +828,6 @@ typedef struct reparse_subject {
     ih_unit unit;
     ih_text text;
     markdown_core_document *document;
-    bool flushed;
 } reparse_subject;
 
 bool ih_reparse_extend(void *handle, const uint8_t *text, size_t length) {
@@ -883,26 +869,9 @@ static void *reparse_open(ih_unit unit, const uint8_t *text, size_t length, cons
 static markdown_core_status reparse_append(void *handle, const uint8_t *text, size_t length,
                                            const markdown_core_document **document) {
     *document = NULL;
-    if (((reparse_subject *)handle)->flushed) {
-        return MARKDOWN_CORE_SESSION_FLUSHED;
-    }
     return ih_reparse_extend(handle, text, length) && ih_reparse_parse(handle, document)
                ? MARKDOWN_CORE_OK
                : MARKDOWN_CORE_ALLOCATION_FAILED;
-}
-
-/* Like every step, the flush parses the whole text. */
-static markdown_core_status reparse_flush(void *handle, const markdown_core_document **document) {
-    reparse_subject *subject = (reparse_subject *)handle;
-    *document = NULL;
-    if (subject->flushed) {
-        return MARKDOWN_CORE_SESSION_FLUSHED;
-    }
-    if (!ih_reparse_parse(handle, document)) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    subject->flushed = true;
-    return MARKDOWN_CORE_OK;
 }
 
 /* The UTF-8 offset of `position` in the subject's unit, or false where it
@@ -918,9 +887,6 @@ static bool reparse_offset(const reparse_subject *subject, size_t position, size
 markdown_core_status ih_reparse_replace(void *handle, size_t start, size_t end, const uint8_t *text, size_t length) {
     reparse_subject *subject = (reparse_subject *)handle;
     size_t from, to;
-    if (!subject->flushed) {
-        return IH_STREAMING;
-    }
     if (start > end || !reparse_offset(subject, start, &from) || !reparse_offset(subject, end, &to)) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
@@ -956,7 +922,6 @@ static void reparse_close(void *handle) {
 const ih_subject_class ih_reparse = {.name = "reparse",
                                      .open = reparse_open,
                                      .append = reparse_append,
-                                     .flush = reparse_flush,
                                      .text = reparse_text,
                                      .close = reparse_close,
                                      .edit = reparse_edit};

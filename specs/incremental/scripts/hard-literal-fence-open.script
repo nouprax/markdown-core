@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-fence-open hard
-flush
 edit 54 54 78
 edit 54 55 -
 edit 53 53 7e7e7e7e0a

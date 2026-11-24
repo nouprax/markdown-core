@@ -5930,6 +5930,25 @@ static size_t S_leap_first(const markdown_core_parser *parser, const markdown_co
     return first;
 }
 
+/* The indent the reading gave the line `read`, `delta` bytes on, before
+ * its content's first byte `first` (S_leap_first): the columns of the
+ * spaces and tabs from where its own bytes begin, as a line mark keeps it
+ * (markdown_core_text_indent). */
+static int S_leap_indent(const markdown_core_parser *parser, const markdown_core_input_line *read, int64_t delta,
+                         size_t first) {
+    const unsigned char *source = parser->input.source;
+    const size_t own = read->start + read->own;
+    int column = 0;
+    for (size_t at = read->start; at < own; at++) {
+        column = source[(int64_t)at + delta] == '\t' ? column + TAB_STOP - column % TAB_STOP : column + 1;
+    }
+    const int from = column;
+    for (size_t at = own; at < first; at++) {
+        column = source[(int64_t)at + delta] == '\t' ? column + TAB_STOP - column % TAB_STOP : column + 1;
+    }
+    return column - from;
+}
+
 /* THE MARKS OF A LEAP: a block the leap enters whose last reading left it
  * no marks (THE PREFIX OF A PARAGRAPH) has them made from its content,
  * which it holds whole, and its lines, one for each line, where the line
@@ -5954,12 +5973,12 @@ static bool S_leap_index(markdown_core_parser *parser, markdown_core_node *block
     for (size_t n = first; n < line; n++) {
         const markdown_core_input_line *read = markdown_core_input_line_at(input, n);
         const size_t next = S_line_ends(text, size, at, 1, cr);
+        const size_t begin = S_leap_first(parser, read, 0);
         if (!S_append_content_mark(
                 parser, &block->content_map,
-                (markdown_core_line_mark){
-                    (bufsize_t)at, (int)n + input->first_line,
-                    (bufsize_t)(n == first && leap->prose ? (size_t)block->place.start : S_leap_first(parser, read, 0)),
-                    1, 1, parser->at.read.indent})) {
+                (markdown_core_line_mark){(bufsize_t)at, (int)n + input->first_line,
+                                          (bufsize_t)(n == first && leap->prose ? (size_t)block->place.start : begin),
+                                          1, 1, S_leap_indent(parser, read, 0, begin)})) {
             return false;
         }
         at = next == SIZE_MAX ? size : next;
@@ -5983,12 +6002,13 @@ static bool S_leap_index(markdown_core_parser *parser, markdown_core_node *block
         const markdown_core_input_line read = S_lines_back_at(&input->lines, k);
         const size_t next = S_line_ends(text, size, at, 1, cr);
         if (read.start >= edit->to) {
+            const size_t begin = S_leap_first(parser, &read, edit->delta);
             const markdown_core_line_mark mark = {(bufsize_t)at,
                                                   (int)(line + k) + input->first_line,
-                                                  (bufsize_t)S_leap_first(parser, &read, edit->delta),
+                                                  (bufsize_t)begin,
                                                   1,
                                                   1,
-                                                  parser->at.read.indent};
+                                                  S_leap_indent(parser, &read, edit->delta, begin)};
             if (count && leap->marks[count - 1].content_offset == mark.content_offset) {
                 leap->marks[count - 1] = mark;
             } else {
@@ -7991,12 +8011,14 @@ static bool S_label_flips(markdown_core_parser *parser, const unsigned char *key
            !*failed;
 }
 
-bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t start, markdown_core_strbuf *altered) {
+size_t markdown_core_parser_reading_from(const markdown_core_parser *parser) { return parser->roster.from; }
+
+bool markdown_core_parser_altered_labels(markdown_core_parser *parser, markdown_core_strbuf *altered) {
     const markdown_core_edit *edit = parser->stream->edit;
+    const uint32_t start = parser->roster.from;
     const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
     markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
-    bool ok = markdown_core_roster_made(&parser->roster, (uint32_t)start, &made) &&
-              markdown_core_roster_lost(&parser->roster, &lost);
+    bool ok = markdown_core_roster_made(&parser->roster, &made) && markdown_core_roster_lost(&parser->roster, &lost);
     markdown_core_strbuf_clear(altered);
     /* Both are in byte order: a merge keeps what one holds and the other
      * does not. */
@@ -8012,7 +8034,7 @@ bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t st
             const unsigned char *key = order < 0 ? made.ptr + left : lost.ptr + other;
             const bufsize_t size = order < 0 ? left_size : other_size;
             bool failed = false;
-            if (S_label_flips(parser, key, size - 1, order < 0, (uint32_t)start, to, &failed)) {
+            if (S_label_flips(parser, key, size - 1, order < 0, start, to, &failed)) {
                 markdown_core_strbuf_put(altered, key, size);
             }
             ok = !failed;
@@ -10639,13 +10661,16 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
         lookahead->opener->element->edit->stops && lookahead->depth == 1 &&
         lookahead->saved.block_root == parser->root) {
         S_reach_opener(parser, lookahead);
-    } else if (markdown_core_parser_reaches(parser) && lookahead->line > lookahead->saved.read.number + 1 &&
+    } else if (markdown_core_parser_reaches(parser) &&
+               (lookahead->line > lookahead->saved.read.number + 1 || lookahead->ended) &&
                lookahead->saved.block_root == parser->root &&
                !(lookahead->closed && lookahead->opener && lookahead->opener->element->edit &&
                  lookahead->opener->element->edit->shuts)) {
         /* A reading below the root that found its closer decided no more
          * than at the root, while the prefixes of its lines stand
-         * (session.c, session_shut). */
+         * (session.c, session_shut). One that met the text's end read past
+         * it, though it read no line after its own: more text decides it
+         * again. */
         S_reach_lookahead(parser, lookahead);
     }
     lookahead->active = false;

@@ -8,15 +8,10 @@ import MarkdownCoreC
 /// each step; it borrows nothing from the session, so it is safe to hold, copy
 /// and send across isolation boundaries.
 ///
-/// Until ``flush()``, each document is a snapshot of the text so far: a
-/// lookup of a reference, footnote or specimen sees only the definitions that
-/// start before the inline root asking.
-///
-/// The caller ends the text with ``flush()``, which returns the final
-/// document; nothing ends a session implicitly. Afterwards ``document`` and
-/// ``text`` stay readable, ``append(_:)`` and ``flush()`` throw
-/// ``ErrorCode/sessionFlushed``, and ``edit(from:to:with:)`` replaces any
-/// part of the text: streaming and editing are the session's two phases.
+/// Every document a session returns equals ``Document/parse(_:unit:)`` of
+/// its ``text`` in everything but ids. Each step is an ``append(_:)``, which
+/// adds text at the end, or an ``edit(from:to:with:)``, which replaces any
+/// part of the text: an append is an edit at the text's end.
 ///
 /// A session has one writer. It is not `Sendable`.
 public final class MarkdownSession {
@@ -27,8 +22,7 @@ public final class MarkdownSession {
     /// The document parsed from the current ``text``.
     public private(set) var document: Document
 
-    /// Parses `source` into a new session, as its first append; its
-    /// ``document`` is a snapshot.
+    /// Parses `source` into a new session.
     ///
     /// - Parameters:
     ///   - source: the Markdown to start from. It is read as UTF-8.
@@ -72,10 +66,9 @@ public final class MarkdownSession {
     /// Appends `text` and parses the result.
     ///
     /// - Parameter text: the Markdown to append. It is read as UTF-8.
-    /// - Returns: the new ``document``, a snapshot.
+    /// - Returns: the new ``document``.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
-    ///   when an allocation fails or the text would exceed 1 GiB of UTF-8,
-    ///   and with ``ErrorCode/sessionFlushed`` after ``flush()``.
+    ///   when an allocation fails or the text would exceed 1 GiB of UTF-8.
     @discardableResult
     public func append(_ text: String) throws -> Document {
         var native: OpaquePointer?
@@ -83,20 +76,6 @@ public final class MarkdownSession {
         let status = appended.withUTF8 { bytes in
             markdown_core_session_append(session, bytes.baseAddress, bytes.count, &native)
         }
-        return try publish(status, native)
-    }
-
-    /// Ends the text and returns the final document, which equals
-    /// ``Document/parse(_:unit:)`` of ``text`` in everything but ids.
-    ///
-    /// - Returns: the final ``document``.
-    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
-    ///   when an allocation fails, and with ``ErrorCode/sessionFlushed``
-    ///   when the session was already flushed.
-    @discardableResult
-    public func flush() throws -> Document {
-        var native: OpaquePointer?
-        let status = markdown_core_session_flush(session, &native)
         return try publish(status, native)
     }
 
@@ -118,8 +97,7 @@ public final class MarkdownSession {
     ///   - end: where it ends; `start` itself inserts `text` there.
     ///   - text: the Markdown to write in its place. It is read as UTF-8.
     /// - Returns: the new ``document``.
-    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/sessionStreaming``
-    ///   before ``flush()``, with ``ErrorCode/outOfBounds`` when a cursor
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when a cursor
     ///   stands nowhere in the text or `end` is before `start`, and with ``ErrorCode/allocationFailed`` when
     ///   an allocation fails or the text would exceed 1 GiB of UTF-8. A
     ///   failed allocation fails the session's parse, and every later edit

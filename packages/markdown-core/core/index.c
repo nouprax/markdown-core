@@ -1007,6 +1007,14 @@ static size_t rest_at(rest_search *search, size_t line) {
         const size_t at = (size_t)(base + width->start), end = (size_t)(base + width->end);
         markdown_core_node *child = holder->children[first - 1];
         if (end <= start && at + child->closed <= past) {
+            /* A child whose close read the line was open as the line's
+             * reading began, and a reading of the line that read past the
+             * edit may have closed it (a definition body's blank line):
+             * the line is read again with the child open. */
+            if (line && at + child->closed > start &&
+                markdown_core_parser_line_looked(parser, line + 1, past > edit->from ? past : edit->from) <= line) {
+                return line - 1;
+            }
             break;
         }
         if (level == MARKDOWN_CORE_REST_DEPTH) {

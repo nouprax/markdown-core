@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-quoted-item-pre hard
-flush
 edit 105 105 78
 edit 105 106 -
 edit 104 104 3c2f7072653e0a3e202020

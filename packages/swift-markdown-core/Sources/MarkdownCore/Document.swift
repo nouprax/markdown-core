@@ -12,11 +12,6 @@ public enum ErrorCode: Sendable, Hashable {
     /// A value was read as another kind. It is the engine's code, shared by
     /// every binding; typed Swift nodes never reach it.
     case kindMismatch
-    /// A ``MarkdownSession`` was asked to append or flush after it was
-    /// flushed.
-    case sessionFlushed
-    /// A ``MarkdownSession`` was asked to edit before it was flushed.
-    case sessionStreaming
 }
 
 /// The library's one error: a call that cannot answer without crashing or

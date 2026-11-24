@@ -161,9 +161,9 @@ test("scripts survive their text format unchanged", () => {
 test("every identity case states what each append or edit keeps or changes", () => {
     for (const { name, text, script } of identityScripts()) {
         assert.equal(Buffer.from(text).toString("utf8"), text, name);
-        const edits = script.steps[0].kind === "flush";
+        const edits = script.steps[0].kind === "edit";
         assert.equal(script.family, edits ? "ids" : "identity", name);
-        for (const step of script.steps.slice(edits ? 1 : 0)) {
+        for (const step of script.steps) {
             assert.equal(step.kind, edits ? "edit" : "append", name);
             if (!edits) assert.ok(step.text.length, `${name}: an empty append`);
             assert.ok(step.expect?.length, `${name}: a step without expectations`);
@@ -171,17 +171,16 @@ test("every identity case states what each append or edit keeps or changes", () 
     }
 });
 
-test("an edit script flushes before its first edit and edits inside the text", () => {
+test("an edit script edits inside the text", () => {
     const document = smallest("prose", "utf8");
     const scripts = editScripts(document);
     assert.deepEqual([...new Set(scripts.map((script) => script.family))].sort(), [...EDIT_FAMILIES].sort());
     assert.equal(scripts.filter((script) => script.family === "random").length, RANDOM_SEEDS);
     const cases = [...scripts.map((script) => ({ script, text: document.text })), ...hardScripts()];
     for (const { script, text: opened } of cases) {
-        assert.equal(script.steps[0].kind, "flush", script.name);
-        assert.ok(script.steps.length > 1, script.name);
+        assert.ok(script.steps.length > 0, script.name);
         let text = Buffer.from(opened);
-        for (const step of script.steps.slice(1)) {
+        for (const step of script.steps) {
             assert.equal(step.kind, "edit", script.name);
             assert.ok(step.start <= step.end && step.end <= text.length, script.name);
             const boundaries = scalarBoundaries(text);
@@ -194,7 +193,7 @@ test("an edit script flushes before its first edit and edits inside the text", (
 test("each undo edit is followed by its inverse and by itself again", () => {
     const document = smallest("prose", "ascii");
     for (const script of editScripts(document, ["undo"])) {
-        const edits = script.steps.slice(1);
+        const edits = script.steps;
         assert.equal(edits.length % 3, 0, script.name);
         let text = Buffer.from(document.text);
         for (let index = 0; index < edits.length; index += 3) {
@@ -211,15 +210,11 @@ test("each undo edit is followed by its inverse and by itself again", () => {
     }
 });
 
-test("the refused edits stream first, then fall inside the wide scalar in both units", () => {
+test("the refused edits fall past the text and inside the wide scalar in both units", () => {
     const text = `ab\u{20000}\n`;
     const script = rejectionScript(text);
     const kinds = script.steps.map((step) => step.kind);
-    assert.deepEqual(kinds.slice(0, 3), ["reject", "reject", "flush"]);
-    assert.deepEqual(
-        script.steps.slice(0, 2).map((step) => step.status),
-        ["streaming", "streaming"]
-    );
+    assert.ok(script.steps.filter((step) => step.kind === "reject").every((step) => step.status === "out-of-bounds"));
     assert.ok(script.steps.some((step) => step.unit === "utf8" && step.start === 3));
     assert.ok(script.steps.some((step) => step.unit === "utf16" && step.start === 3));
     assert.deepEqual(kinds.slice(-2), ["edit", "edit"]);
@@ -329,9 +324,8 @@ test("the edit workloads run every family but undo with one seed, and a shape's 
             stepwise ? ["random-1"] : []
         );
         for (const script of workload.scripts) {
-            assert.equal(script.steps[0].kind, "flush", `${workload.name} ${script.name}`);
             assert.ok(
-                script.steps.slice(1).every((step) => step.kind === "edit"),
+                script.steps.every((step) => step.kind === "edit"),
                 `${workload.name} ${script.name}`
             );
         }

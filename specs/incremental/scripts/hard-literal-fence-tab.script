@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-fence-tab hard
-flush
 edit 71 71 78
 edit 71 72 -
 edit 70 70 6060600a

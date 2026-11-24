@@ -9,15 +9,10 @@ import kotlin.jvm.JvmOverloads
  * session has never issued. Every column a scope query of its documents takes
  * or returns counts in [unit].
  *
- * Until [flush], each document is a snapshot of the text so far: a lookup
- * of a reference, footnote or specimen sees only the definitions that start
- * before the inline root asking.
- *
- * The caller ends the text with [flush], which returns the final
- * document; nothing ends a session implicitly. Afterwards [document] and
- * [text] stay readable, [append] and [flush] throw [MarkdownCoreException]
- * with [ErrorCode.SESSION_FLUSHED], and [edit] replaces any part of the text:
- * streaming and editing are the session's two phases.
+ * Every document a session returns equals [Document.parse] of its [text] in
+ * everything but identifiers. Each step is an [append], which adds text at
+ * the end, or an [edit], which replaces any part of the text: an append is
+ * an edit at the text's end.
  *
  * The session also answers queries of its documents: the [path] of nodes
  * that hold a byte, and the [scope] of a node's fields and its [markers].
@@ -54,25 +49,12 @@ public class MarkdownSession
         /**
          * Appends [text] and parses the result.
          *
-         * @return the new [document], a snapshot.
+         * @return the new [document].
          * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
          *   engine cannot allocate, the text would exceed 1 GiB of UTF-8, or the
-         *   tree a byte array's capacity; [ErrorCode.SESSION_FLUSHED] after
-         *   [flush].
+         *   tree a byte array's capacity.
          */
         public fun append(text: String): Document = step { append(text.encodeToByteArray()) }
-
-        /**
-         * Ends the text and returns the final document, which equals
-         * [Document.parse] of [text] in everything but identifiers.
-         *
-         * @return the final [document].
-         * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
-         *   engine cannot allocate or the tree exceeds a byte array's capacity;
-         *   [ErrorCode.SESSION_FLUSHED] when the session was already
-         *   flushed.
-         */
-        public fun flush(): Document = step { end() }
 
         /**
          * Replaces the text from the cursor [start] to the cursor [end] with
@@ -90,8 +72,7 @@ public class MarkdownSession
          * inserts [text] there.
          *
          * @return the new [document].
-         * @throws MarkdownCoreException [ErrorCode.SESSION_STREAMING] before
-         *   [flush]; [ErrorCode.OUT_OF_BOUNDS] when a cursor stands nowhere in
+         * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when a cursor stands nowhere in
          *   the text, its line or column is below 1, or [end] is before
          *   [start]; and
          *   [ErrorCode.ALLOCATION_FAILED] when the engine cannot allocate, the

@@ -15,7 +15,7 @@
  * alphabets. A stream is a rule over the document (the chunkings of section
  * 3.2), so a stream never repeats the document's bytes. A script is a
  * document a session opens on and the steps that follow it: the edit
- * families of section 3.3, which flush and then edit, the scripted
+ * families of section 3.3, the scripted
  * identity cases (4.5), the hard cases of plan 12.7 and the refused edits
  * (4.13).
  *
@@ -34,8 +34,8 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const CORRECTNESS_SET = "specs/incremental";
 const CANONICAL = "specs/canonical-ast";
 
-export const WORKLOAD_VERSION = "incremental-workloads-v4";
-export const SCRIPT_HEADER = "markdown-core incremental script 2";
+export const WORKLOAD_VERSION = "incremental-workloads-v5";
+export const SCRIPT_HEADER = "markdown-core incremental script 3";
 export const MANIFEST_HEADER = "markdown-core incremental manifest 2";
 export const SIZES = Object.freeze([16384, 65536, 262144, 1048576]);
 export const STREAM_FAMILIES = Object.freeze(["tokens", "scalars", "rows", "splits"]);
@@ -586,8 +586,8 @@ function snap(buffer, at) {
 /**
  * A script: the steps a subject takes after it opens on its document. It
  * keeps the text each step applies to, so each edit's offsets are computed
- * against the text before that edit. A session streams until it flushes
- * and takes edits only after (plan 12.3), so an edit script flushes first.
+ * against the text before that edit. An append is an edit at the text's
+ * end, so a script mixes the two freely.
  */
 class Script {
     constructor(name, family, text) {
@@ -599,10 +599,6 @@ class Script {
     append(text) {
         this.steps.push({ kind: "append", text });
         this.buffer = Buffer.concat([this.buffer, Buffer.from(text)]);
-        return this;
-    }
-    flush() {
-        this.steps.push({ kind: "flush" });
         return this;
     }
     edit(start, end, text) {
@@ -669,8 +665,8 @@ const TYPING_STEPS = 64;
 const FAR_STEPS = 64;
 const PASTE_BYTES = 2048;
 
-/** A script of `family` on `text` that has flushed, ready for its edits. */
-const editing = (name, family, text) => new Script(name, family, text).flush();
+/** A script of `family` on `text`, ready for its edits. */
+const editing = (name, family, text) => new Script(name, family, text);
 
 /** The scalars a script types, spelled in the document's alphabet. */
 const typed = (letters, index) => letters[(index * 7 + 3) % letters.length];
@@ -748,7 +744,7 @@ function linesScripts(document) {
             const line = pick(merges, fraction);
             script.remove(line.start, line.next);
         }
-        if (script.steps.length > 1) scripts.push(script);
+        if (script.steps.length) scripts.push(script);
     }
     return scripts;
 }
@@ -962,7 +958,7 @@ function randomScript(document, letters, seed) {
 }
 
 /**
- * Every edit script of one document, each flushing before its first edit.
+ * Every edit script of one document.
  * `families` narrows the set, and `random` runs `seeds` seeds.
  */
 export function editScripts(document, families = EDIT_FAMILIES, seeds = RANDOM_SEEDS) {
@@ -980,7 +976,7 @@ export function editScripts(document, families = EDIT_FAMILIES, seeds = RANDOM_S
     if (wanted.has("ranges") || all) base.push(rangesScript(document, letters));
     if (wanted.has("far") || all) base.push(farScript(document, letters));
     if (wanted.has("declarations") || all) base.push(declarationsScript(document, letters));
-    const scripts = base.filter((script) => script && script.steps.length > 1);
+    const scripts = base.filter((script) => script && script.steps.length);
     const result = scripts.filter((script) => wanted.has(script.family));
     if (all) result.push(...scripts.map((script) => undoScript(script, document.text)));
     if (wanted.has("random"))
@@ -997,17 +993,15 @@ export function editScripts(document, families = EDIT_FAMILIES, seeds = RANDOM_S
  * id; `retired KIND AT` an old node nothing continues; `changed KIND AT` a
  * node whose value changed, and `only` that no node outside the `changed`
  * lines changed. Positions are the byte offset where a node's source starts,
- * in the text before the step for `retired` and after it otherwise. The
- * append cases stream; the edit cases flush first.
+ * in the text before the step for `retired` and after it otherwise.
  */
 export function identityScripts() {
     const cases = [];
-    /* The edit cases are the `ids` family: they run once the session takes
-     * edits (plan 12.9), and the append cases run now. */
+    /* The cases that open with an edit are the `ids` family. */
     const add = (name, text, build) => {
         const script = new Script(`identity-${name}`, "identity", text);
         build(script);
-        if (script.steps[0].kind === "flush") script.family = "ids";
+        if (script.steps[0].kind === "edit") script.family = "ids";
         cases.push({ name: `identity-${name}`, text, script });
     };
     add("type-at-paragraph-end", "alpha beta\n\n", (s) =>
@@ -1063,45 +1057,38 @@ export function identityScripts() {
         );
     }
     add("type-at-paragraph-start", "alpha beta\n\ngamma delta\n", (s) =>
-        s.flush().insert(0, "x").expect("kept", "Paragraph", 0, 0).expect("kept", "Paragraph", 12, 13)
+        s.insert(0, "x").expect("kept", "Paragraph", 0, 0).expect("kept", "Paragraph", 12, 13)
     );
     add("insert-before-paragraph", "alpha\n", (s) =>
-        s.flush().insert(0, "new\n\n").expect("new", "Paragraph", 0).expect("kept", "Paragraph", 0, 5)
+        s.insert(0, "new\n\n").expect("new", "Paragraph", 0).expect("kept", "Paragraph", 0, 5)
     );
-    add("delete-first-word", "alpha beta\n", (s) => s.flush().remove(0, 6).expect("kept", "Paragraph", 0, 0));
+    add("delete-first-word", "alpha beta\n", (s) => s.remove(0, 6).expect("kept", "Paragraph", 0, 0));
     add("delete-sibling", "one\n\ntwo\n\nthree\n", (s) =>
         s
-            .flush()
             .remove(5, 10)
             .expect("kept", "Paragraph", 0, 0)
             .expect("retired", "Paragraph", 5)
             .expect("kept", "Paragraph", 10, 5)
     );
     add("merge-paragraphs", "one\n\ntwo\n", (s) =>
-        s.flush().remove(4, 5).expect("kept", "Paragraph", 0, 0).expect("retired", "Paragraph", 5)
+        s.remove(4, 5).expect("kept", "Paragraph", 0, 0).expect("retired", "Paragraph", 5)
     );
     add("paragraph-to-setext", "title\n", (s) =>
-        s.flush().insert(6, "===\n").expect("new", "Heading", 0).expect("retired", "Paragraph", 0)
+        s.insert(6, "===\n").expect("new", "Heading", 0).expect("retired", "Paragraph", 0)
     );
     add("paragraph-into-quote", "text\n", (s) =>
-        s
-            .flush()
-            .insert(0, "> ")
-            .expect("new", "Callout", 0)
-            .expect("new", "Paragraph", 2)
-            .expect("retired", "Paragraph", 0)
+        s.insert(0, "> ").expect("new", "Callout", 0).expect("new", "Paragraph", 2).expect("retired", "Paragraph", 0)
     );
     /* Deleting the outer note's closer moves the inner note to the
      * paragraph, a new owner; deleting its opener then moves the inner note
      * within the paragraph. */
     add("unwrap-nested-note", "a^[b ^[c] d] e\n", (s) =>
-        s.flush().remove(11, 12).expect("new", "Footnote", 5).remove(1, 3).expect("kept", "Footnote", 5, 3)
+        s.remove(11, 12).expect("new", "Footnote", 5).remove(1, 3).expect("kept", "Footnote", 5, 3)
     );
     {
         const text = Array.from({ length: 200 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`).join("");
         add("line-at-top", text, (s) =>
             s
-                .flush()
                 .insert(0, "new line\n")
                 .expect("changed", "Document", 0)
                 .expect("changed", "Paragraph", 0)
@@ -1114,7 +1101,7 @@ export function identityScripts() {
      * the heading, so a new anchor changes only the heading and the
      * Document. */
     add("heading-anchor-targets", "# Target {#one}\n\nsee [a][Target] and [b][Target]\n", (s) =>
-        s.flush().edit(11, 14, "two").expect("changed", "Document", 0).expect("changed", "Heading", 0).expect("only")
+        s.edit(11, 14, "two").expect("changed", "Document", 0).expect("changed", "Heading", 0).expect("only")
     );
     {
         const paragraphs = Array.from({ length: 1000 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);
@@ -1122,7 +1109,6 @@ export function identityScripts() {
         const at = bytes(paragraphs.slice(0, 4).join(""));
         add("typing-paragraph-5-of-1000", text, (s) =>
             s
-                .flush()
                 .insert(at + 1, "x")
                 .expect("changed", "Document", 0)
                 .expect("changed", "Paragraph", at)
@@ -1654,8 +1640,8 @@ export function hardScripts() {
 
 /**
  * The refused edits of 4.13, against a document that ends in a four-byte
- * scalar, so an offset can fall inside one in either unit: an edit while the
- * subject streams, and after the flush a range past the end, a reversed
+ * scalar, so an offset can fall inside one in either unit: a range past the
+ * end, a reversed
  * range, and an offset inside that scalar at one of its continuation bytes
  * in UTF-8 and between its two units in UTF-16. An edit that holds follows
  * them all.
@@ -1665,8 +1651,6 @@ export function rejectionScript(text) {
     const buffer = Buffer.from(text);
     const wide = scalarBoundaries(buffer).find((at, index, all) => all[index + 1] - at === 4);
     const lengths = { utf8: buffer.length, utf16: text.length };
-    for (const unit of Object.keys(lengths)) script.reject(unit, "streaming", 0, 0, "a");
-    script.flush();
     for (const [unit, length] of Object.entries(lengths)) {
         script.reject(unit, "out-of-bounds", length + 1, length + 1, "a");
         script.reject(unit, "out-of-bounds", 0, length + 1, "a");
@@ -1692,7 +1676,6 @@ export function formatScripts(scripts) {
         lines.push(`script ${script.name} ${script.family}`);
         for (const step of script.steps) {
             if (step.kind === "append") lines.push(`append ${hex(step.text)}`);
-            else if (step.kind === "flush") lines.push("flush");
             else if (step.kind === "edit") lines.push(`edit ${step.start} ${step.end} ${hex(step.text)}`);
             else lines.push(`reject ${step.unit} ${step.status} ${step.start} ${step.end} ${hex(step.text)}`);
             for (const expectation of step.expect ?? []) lines.push(`expect ${expectation}`);
@@ -1716,9 +1699,6 @@ export function parseScripts(text) {
         } else if (kind === "append") {
             assert.ok(steps && fields.length === 1, `malformed append: ${line}`);
             steps.push({ kind, text: unhex(fields[0]) });
-        } else if (kind === "flush") {
-            assert.ok(steps && !fields.length, `malformed flush: ${line}`);
-            steps.push({ kind });
         } else if (kind === "edit") {
             assert.ok(steps && fields.length === 3, `malformed edit: ${line}`);
             steps.push({ kind, start: Number(fields[0]), end: Number(fields[1]), text: unhex(fields[2]) });

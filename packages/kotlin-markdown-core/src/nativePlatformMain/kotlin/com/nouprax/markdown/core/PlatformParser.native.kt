@@ -14,7 +14,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_wire_markers
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_append
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_edit
-import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_flush
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_new
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.COpaquePointerVar
@@ -125,7 +124,6 @@ private class CSession(
     override fun append(text: ByteArray): Document =
         publish(text.withAddress { markdown_core_wire_session_append(session?.reinterpret(), it, text.size.convert()) })
 
-    override fun end(): Document = publish(markdown_core_wire_session_flush(session?.reinterpret()))
 
     override fun edit(
         startLine: Int,

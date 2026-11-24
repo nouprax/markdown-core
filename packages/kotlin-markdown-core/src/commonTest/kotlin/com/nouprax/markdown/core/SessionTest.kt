@@ -111,26 +111,14 @@ class SessionTest {
     }
 
     @Test
-    fun flushReturnsTheFinalDocumentAndEndsTheSession() {
+    fun everyDocumentOfASessionIsAParseOfItsText() {
         for (unit in listOf(TextUnit.UTF8, TextUnit.UTF16)) {
             MarkdownSession("[a]\n\n", unit).use { session ->
-                val snapshot = session.append("[a]: /url\n")
-                // A snapshot's lookup sees only the definitions written before it.
-                assertNotEquals(Document.parse(session.text, unit).dump(session.text), snapshot.dump(session.text))
-                val final = session.flush()
-                val text = session.text
-                assertEquals(final, session.document)
-                assertEquals(Document.parse(text, unit).dump(text), final.dump(text))
-                assertEquals(
-                    ErrorCode.SESSION_FLUSHED,
-                    assertFailsWith<MarkdownCoreException> { session.append("more") }.code,
-                )
-                assertEquals(
-                    ErrorCode.SESSION_FLUSHED,
-                    assertFailsWith<MarkdownCoreException> { session.flush() }.code,
-                )
-                assertEquals(text, session.text)
-                assertEquals(final, session.document)
+                assertEquals(Document.parse(session.text, unit).dump(session.text), session.document.dump(session.text))
+                // A use before its definition resolves once the definition is appended.
+                val appended = session.append("[a]: /url\n")
+                assertEquals(appended, session.document)
+                assertEquals(Document.parse(session.text, unit).dump(session.text), appended.dump(session.text))
             }
         }
     }
@@ -139,7 +127,6 @@ class SessionTest {
     fun anEditAtEachCursorAndItsUndoHoldTheEditOracle() {
         for (unit in listOf(TextUnit.UTF8, TextUnit.UTF16)) {
             MarkdownSession(SWEEP, unit).use { session ->
-                session.flush()
                 cursors(SWEEP).forEachIndexed { index, place ->
                     val written = writes[index % writes.size]
                     val document = session.edit(place, place, written)
@@ -159,7 +146,6 @@ class SessionTest {
         // 🚀 is four UTF-8 bytes and two UTF-16 units.
         for ((unit, column) in listOf(TextUnit.UTF8 to 5, TextUnit.UTF16 to 3)) {
             MarkdownSession("🚀 one\n\ntwo\n", unit).use { session ->
-                session.flush()
                 session.edit(Position(1, column), Position(1, column + 4), "*won*")
                 assertEquals("🚀*won*\n\ntwo\n", session.text)
                 assertEquals(Document.parse(session.text, unit).dump(session.text), session.document.dump(session.text))
@@ -170,7 +156,7 @@ class SessionTest {
     @Test
     fun aNodeTheEditDidNotReachIsTheOldNodeAndOneItReadAgainKeepsItsIdentifier() {
         MarkdownSession("# Title\n\nfirst\n\nsecond\n").use { session ->
-            val before = session.flush()
+            val before = session.document
             val after = session.edit(Position(5, 7), Position(5, 7), " one")
             assertEquals("# Title\n\nfirst\n\nsecond one\n", session.text)
             assertEquals(before.content[0], after.content[0])
@@ -181,7 +167,7 @@ class SessionTest {
     }
 
     @Test
-    fun anEditBeforeFlushOutOfBoundsOrBackwardsThrowsAndLeavesTheSessionAlone() {
+    fun anEditOutOfBoundsOrBackwardsThrowsAndLeavesTheSessionAlone() {
         MarkdownSession("- text\n").use { session ->
             val start = Position(1, 1)
             val inside = Position(1, 4)
@@ -192,9 +178,8 @@ class SessionTest {
                 to: Position,
             ) = assertFailsWith<MarkdownCoreException> { session.edit(from, to, "") }.code
 
-            assertEquals(ErrorCode.SESSION_STREAMING, refused(start, start))
             session.append("more\n")
-            val final = session.flush()
+            val final = session.document
             assertEquals(ErrorCode.OUT_OF_BOUNDS, refused(inside, start))
             assertEquals(ErrorCode.OUT_OF_BOUNDS, refused(nowhere, nowhere))
             assertEquals(ErrorCode.OUT_OF_BOUNDS, refused(Position(0, 1), start))
@@ -209,7 +194,6 @@ class SessionTest {
         session.close()
         session.close()
         assertFailsWith<IllegalStateException> { session.append("more") }
-        assertFailsWith<IllegalStateException> { session.flush() }
         assertFailsWith<IllegalStateException> { session.edit(Position(1, 1), Position(1, 1), "") }
         assertFailsWith<IllegalStateException> { session.text }
         assertEquals(1, session.document.content.size)

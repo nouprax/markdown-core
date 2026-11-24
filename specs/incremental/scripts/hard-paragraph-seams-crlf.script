@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-seams-crlf hard
-flush
 edit 94 94 79
 edit 94 95 -
 edit 91 91 78

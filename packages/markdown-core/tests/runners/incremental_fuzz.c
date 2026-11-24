@@ -5,8 +5,8 @@
  * An input is a u32 document length, that many document bytes, and then the
  * steps: each reads a u8 whose value modulo 32 is the length of its text,
  * which follows. Read once, every step is an append. Read again, a step is an
- * append until one whose u8 has its high bit set, and an edit from there on (plan 12.3: a flush comes before the first,
- * and no append after it): an edit reads a u16 start and a u8 width before its text, and replaces the bytes of the text
+ * append until one whose u8 has its high bit set, and an edit from there on (no append
+ * after the first edit): an edit reads a u16 start and a u8 width before its text, and replaces the bytes of the text
  * before it from the start, modulo the text's length and one, as far as the width reaches, each end moved back to the
  * start of the scalar it lies in (snap); an edit no cursor names in UTF-16 is passed over (named). The texts are views
  * of the input, and their bytes are never checked for being well formed, so an append or an edit may split a scalar. */

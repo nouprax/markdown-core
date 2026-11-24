@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-html-comment hard
-flush
 edit 57 57 78
 edit 57 58 -
 edit 56 56 2d2d3e0a

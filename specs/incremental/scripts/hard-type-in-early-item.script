@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-type-in-early-item hard
-flush
 edit 15 15 78
 expect within 6 19
 edit 15 16 -

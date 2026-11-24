@@ -5,7 +5,7 @@
  *
  * A workload's costs are its windows' costs, read from each of the runner's
  * per-window dumps: a session's window is the whole of its calls into
- * `bench_apply_step` and `bench_flush`, a `reparse` window is the parse
+ * `bench_apply_step`, a `reparse` window is the parse
  * inside them, and a `binding` window is what its messages add to the
  * session's steps. Every rule compares Ir; data references are reported
  * beside it.
@@ -14,19 +14,15 @@
 import { baseName, costRecord, foldClones, stageCalls } from "./callgrind.mjs";
 import { STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
-/** The steps' entries, as stream_runner.c names them: a chunk and the flush. */
-export const STEP_ENTRIES = Object.freeze(["bench_apply_step", "bench_flush"]);
+/** The steps' entries, as stream_runner.c names them: a chunk. */
+export const STEP_ENTRIES = Object.freeze(["bench_apply_step"]);
 /**
  * The MCB3 entries the `binding` subject steps its session through, and the
  * release of each message (wire/markdown_core_wire.h).
  */
-export const BINDING_ENTRIES = Object.freeze([
-    "markdown_core_wire_session_append",
-    "markdown_core_wire_session_flush",
-    "markdown_core_wire_free"
-]);
+export const BINDING_ENTRIES = Object.freeze(["markdown_core_wire_session_append", "markdown_core_wire_free"]);
 /** The session's own steps inside those entries: the S column's work. */
-export const SESSION_STEPS = Object.freeze(["markdown_core_session_append", "markdown_core_session_flush"]);
+export const SESSION_STEPS = Object.freeze(["markdown_core_session_append"]);
 /** The session's edit, inside the runner's step: the S column of the edit workloads. */
 export const SESSION_EDIT = "markdown_core_session_edit";
 /** The most windows a stream 6.3 does not measure at every step is split into (5.1). */
@@ -67,8 +63,8 @@ function windowRecord(profile, steps, edges, inside = []) {
 }
 
 /**
- * A session window's cost: the whole of its steps. An append is the
- * session's streaming parse, and the session is opened before the runner
+ * A session window's cost: the whole of its steps. An append is an edit at
+ * the text's end, and the session is opened before the runner
  * zeroes the counts, so no window creates it (5.1).
  */
 export function stepCost(profile) {
@@ -125,8 +121,7 @@ export function bindingCost(profile) {
 /**
  * The chunk windows of 5.1: one per step for a `stepwise` stream, which 6.3
  * measures at every step (decision G17), and otherwise at most 1,024; window
- * k of W ends after step floor((k + 1) n / W). The flush's window follows
- * the last.
+ * k of W ends after step floor((k + 1) n / W).
  */
 export function windowEnds(steps, stepwise) {
     const windows = stepwise ? steps : Math.min(steps, WINDOWS);
@@ -135,11 +130,10 @@ export function windowEnds(steps, stepwise) {
 
 /**
  * Whether a measured workload's windows are its steps, which is when `reparse`
- * ran every step and 6.3 compares the session with it: its chunk windows and
- * the flush's.
+ * ran every step and 6.3 compares the session with it.
  */
 export function everyStep(row) {
-    return row.windows.length === row.steps + 1;
+    return row.windows.length === row.steps;
 }
 
 /** Nearest-rank percentile of a non-empty list. */
@@ -166,7 +160,7 @@ export function summary(values) {
  * 6.2 for a stream of `length` bytes: with m(p) the highest cost of every
  * window that ends at or before byte p, m(n/4) and m(n) are each at most 1.25
  * times m(n/16). `windows` lists each chunk window's end byte and Ir, in
- * order; the flush is bounded by 6.3 (decision G16).
+ * order.
  */
 export function flatStream(windows, length) {
     const highest = (point) =>
@@ -179,8 +173,8 @@ export function flatStream(windows, length) {
 }
 
 /**
- * 6.3, for a stream `reparse` ran at every step: its steps, the flush
- * included, cost at most 1.25 times `reparse` on the same steps, in total
+ * 6.3, for a stream `reparse` ran at every step: its steps cost at most
+ * 1.25 times `reparse` on the same steps, in total
  * (decision G15). The stream's ratio when it is above the limit.
  */
 export function neverWorse(steps, reparse) {

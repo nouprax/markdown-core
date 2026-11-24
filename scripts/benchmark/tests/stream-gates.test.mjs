@@ -111,39 +111,17 @@ const costs = (values) => values.map((ir) => stepCost(window(ir)).Ir);
 test("a session window's cost is the inclusive cost of its calls into a step entry", () => {
     assert.deepEqual(stepCost(window(8000)), { calls: 1, Ir: 8000, Dr: 2000, Dw: 1000 });
     assert.deepEqual(stepCost(window(8000, { calls: 3 })), { calls: 3, Ir: 8000, Dr: 2000, Dw: 1000 });
-    assert.deepEqual(stepCost(window(8000, { entry: "bench_flush'main" })), {
-        calls: 1,
-        Ir: 8000,
-        Dr: 2000,
-        Dw: 1000
-    });
 });
 
 test("a reparse window counts the two parse stages of its Document.parse and nothing around them", () => {
     /* 3,000 reading the source and 1,600 building the tree, the nested read
      * included once; creation, start, release and the free are left out. */
     assert.deepEqual(parseCost(reparse(), BOUNDARIES), { calls: 1, Ir: 4600, Dr: 1150, Dw: 575 });
-    assert.deepEqual(parseCost(reparse({ entry: "bench_flush'main" }), BOUNDARIES), {
-        calls: 1,
-        Ir: 4600,
-        Dr: 1150,
-        Dw: 575
-    });
 });
 
 test("a binding window counts its messages' encode and release, and neither the session's step nor the subject", () => {
     /* 16 in the entry, 2,400 encoding and 88 releasing the message. */
     assert.deepEqual(bindingCost(binding()), { calls: 1, Ir: 2504, Dr: 626, Dw: 313 });
-    assert.deepEqual(
-        bindingCost(
-            binding({
-                entry: "bench_flush'main",
-                wire: "markdown_core_wire_session_flush",
-                session: "markdown_core_session_flush"
-            })
-        ),
-        { calls: 1, Ir: 2504, Dr: 626, Dw: 313 }
-    );
 });
 
 test("a window that never entered the step, never parsed, or counted nothing, is refused", () => {
@@ -219,7 +197,7 @@ test("S / R and B / S come from the streams 6.3 measures, and a long stream's S 
         oneshot: { ir: 1 }
     });
     const [group] = groupWindows(
-        [row(2, [10, 10, 10], [11, 12, 10], [3, 3, 3]), row(WINDOWS + 1, [10, 10], [500, 900], null)],
+        [row(3, [10, 10, 10], [11, 12, 10], [3, 3, 3]), row(WINDOWS + 1, [10, 10], [500, 900], null)],
         () => "all"
     );
     assert.equal(group.totalRatio, 33 / 30);
@@ -236,7 +214,7 @@ test("S / R and B / S come from the streams 6.3 measures, and a long stream's S 
     const [stepwise] = groupWindows(
         [
             row(
-                WINDOWS + 1,
+                WINDOWS + 2,
                 every,
                 every.map((cost, step) => (step ? cost : 30)),
                 null
@@ -249,12 +227,12 @@ test("S / R and B / S come from the streams 6.3 measures, and a long stream's S 
     assert.equal(stepwise.bindingRatio, null);
 });
 
-test("a row's windows are its steps when its R ran every step and the flush", () => {
-    assert.equal(everyStep({ steps: 2, windows: [1, 1, 1] }), true);
-    assert.equal(everyStep({ steps: WINDOWS + 1, windows: Array.from({ length: WINDOWS + 1 }, () => 1) }), false);
+test("a row's windows are its steps when its R ran every step", () => {
+    assert.equal(everyStep({ steps: 2, windows: [1, 1] }), true);
+    assert.equal(everyStep({ steps: WINDOWS + 1, windows: Array.from({ length: WINDOWS }, () => 1) }), false);
 });
 
-test("6.3 rejects a stream whose total, the flush included, is above 1.25 times reparse's", () => {
+test("6.3 rejects a stream whose total is above 1.25 times reparse's", () => {
     assert.deepEqual(neverWorse(costs([125, 125]), costs([100, 100])), []);
     /* A step above the margin is the stream's to pay for, not a failure. */
     assert.deepEqual(neverWorse(costs([200, 50]), costs([100, 100])), []);
@@ -262,9 +240,9 @@ test("6.3 rejects a stream whose total, the flush included, is above 1.25 times 
         neverWorse(costs([126, 125]), costs([100, 100])).map((entry) => entry.ratio),
         [1.255]
     );
-    /* The flush is the last window: a stream of 1,024 chunks has 1,025. */
-    const full = Array.from({ length: WINDOWS + 1 }, () => 100);
-    const room = 1.25 * 100 * (WINDOWS + 1) - 100 * WINDOWS;
+    /* A stream of 1,024 chunks has 1,024 windows. */
+    const full = Array.from({ length: WINDOWS }, () => 100);
+    const room = 1.25 * 100 * WINDOWS - 100 * (WINDOWS - 1);
     assert.deepEqual(neverWorse([...full.slice(0, -1), room], full), []);
     assert.equal(neverWorse([...full.slice(0, -1), room + 1], full).length, 1);
     assert.throws(() => neverWorse([1], [1, 2]), /different step counts/);

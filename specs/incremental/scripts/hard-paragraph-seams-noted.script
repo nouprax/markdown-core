@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-paragraph-seams-noted hard
-flush
 edit 102 102 79
 edit 102 103 -
 edit 99 99 78

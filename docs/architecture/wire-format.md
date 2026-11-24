@@ -29,7 +29,6 @@ call returns.
 uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                         markdown_core_session **session);
 uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
-uint8_t *markdown_core_wire_session_flush(markdown_core_session *session);
 uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, markdown_core_position start,
                                          markdown_core_position end, const uint8_t *text, size_t size);
 ```
@@ -63,11 +62,9 @@ a reader that received only a pointer knows where the message ends.
 
 - Status 1 is a failure. The body is one `u32`, the facade's
   `markdown_core_status` (`ALLOCATION_FAILED` 1, `OUT_OF_BOUNDS` 2,
-  `KIND_MISMATCH` 3, `SESSION_FLUSHED` 4, `SESSION_STREAMING` 5), and the
-  message ends. A parse fails only with `ALLOCATION_FAILED`, which also
-  reports a document too large for the message length; a session's append
-  or flush after its flush fails with `SESSION_FLUSHED`, and its edit before
-  its flush with `SESSION_STREAMING`. An edit whose cursor stands nowhere in
+  `KIND_MISMATCH` 3), and the message ends. A parse fails only with
+  `ALLOCATION_FAILED`, which also reports a document too large for the
+  message length. An edit whose cursor stands nowhere in
   the text, or whose end is before its start, fails with `OUT_OF_BOUNDS`.
 - Status 0 is a document. The body is a sequence of node records in
   **post-order**, ending with the `Document`'s record, followed by the

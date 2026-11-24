@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-unclosed-properties hard
-flush
 edit 128 128 78
 expect within 120 141
 edit 128 129 -

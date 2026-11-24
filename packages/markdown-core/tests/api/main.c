@@ -2342,7 +2342,7 @@ static void lazy_literal_failure_writes_nothing(test_batch_runner *runner) {
     markdown_core_session *session;
     const markdown_core_document *document;
     EXPECT_OK(markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session));
-    EXPECT_OK(markdown_core_session_flush(session, &document));
+    document = markdown_core_session_document(session);
     const markdown_core_position at = {200, 8}, end = {200, 9};
     EXPECT_OK(markdown_core_session_edit(session, at, end, (const uint8_t *)"x", 1, &document));
     const markdown_core_node *code = markdown_core_node_children(markdown_core_document_root(document)).items[0];
@@ -2373,7 +2373,7 @@ static void void_source_continues(test_batch_runner *runner) {
     const markdown_core_document *document;
     EXPECT_OK(
         markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session));
-    EXPECT_OK(markdown_core_session_flush(session, &document));
+    document = markdown_core_session_document(session);
     markdown_core_nodes children = markdown_core_node_children(markdown_core_document_root(document));
     const markdown_core_extent empty =
         children.count == 4 ? markdown_core_node_extent(children.items[2]) : (markdown_core_extent){0, 1};
@@ -2398,7 +2398,7 @@ static void stray_byte_columns(test_batch_runner *runner) {
         markdown_core_session *session;
         const markdown_core_document *document;
         EXPECT_OK(markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, units[i], &session));
-        EXPECT_OK(markdown_core_session_flush(session, &document));
+        document = markdown_core_session_document(session);
         const markdown_core_position first = {1, 1};
         INT_EQ(runner, markdown_core_session_edit(session, first, first, (const uint8_t *)"a", 1, &document),
                MARKDOWN_CORE_OK, "an edit at a line's stray first byte inserts before it, unit %zu", i);
@@ -10274,35 +10274,21 @@ static void session_appends(test_batch_runner *runner) {
     OK(runner, lent.length == sizeof(source) + 2 && memcmp(lent.data, text, lent.length) == 0,
        "the lent text is the text");
     markdown_core_string line = {0};
-    OK(runner,
-       markdown_core_session_lines(session) == 0 &&
-           markdown_core_session_line(session, 1, &line) == MARKDOWN_CORE_SESSION_STREAMING,
-       "a streaming session lends no line");
     const markdown_core_document *final = NULL;
-    OK(runner,
-       markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && final &&
-           final == markdown_core_session_document(session),
-       "flush answers the session's final document");
+    OK(runner, document == markdown_core_session_document(session), "an append answers the session's document");
     OK(runner,
        markdown_core_session_lines(session) == 4 && markdown_core_session_line(session, 3, &line) == MARKDOWN_CORE_OK &&
            line.length == 8 && memcmp(line.data, "two \xf0\xa0\x80\x80", 8) == 0 &&
            line.data == markdown_core_session_source(session).data + 5 &&
            markdown_core_session_line(session, 2, &line) == MARKDOWN_CORE_OK && line.length == 0 &&
            markdown_core_session_line(session, 4, &line) == MARKDOWN_CORE_OK && line.length == 3,
-       "a flushed session lends each line without its ending");
+       "a session lends each line without its ending");
     OK(runner,
        markdown_core_session_line(session, 0, &line) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
            markdown_core_session_line(session, 5, &line) == MARKDOWN_CORE_OUT_OF_BOUNDS,
        "a line the text does not have is OUT_OF_BOUNDS");
-    document = NULL;
-    OK(runner,
-       markdown_core_session_append(session, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_SESSION_FLUSHED &&
-           !document && markdown_core_session_text_size(session) == sizeof(source) + 2,
-       "an append after flush is SESSION_FLUSHED and takes nothing");
-    OK(runner, markdown_core_session_flush(session, &document) == MARKDOWN_CORE_SESSION_FLUSHED && !document,
-       "a second flush is SESSION_FLUSHED");
     OK(runner, facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0) != NULL,
-       "the final document stays readable");
+       "the document stays readable");
     markdown_core_session_close(session);
 
     /* Every line ending ends a line, and one at the text's end leaves an
@@ -10312,8 +10298,8 @@ static void session_appends(test_batch_runner *runner) {
     OK(runner,
        markdown_core_session_new((const uint8_t *)endings, sizeof(endings) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                  &session) == MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK,
-       "a session of three line endings flushes");
+           (final = markdown_core_session_document(session)) != NULL,
+       "a session opens on three line endings");
     if (session) {
         markdown_core_string a = {0}, b = {0}, c = {0}, last = {0};
         OK(runner,
@@ -10327,8 +10313,8 @@ static void session_appends(test_batch_runner *runner) {
         markdown_core_session_close(session);
     }
 
-    /* A snapshot's lookup sees the definitions written before its root, and
-     * the final document's every one (plan 5.5, 5.10). */
+    /* Every document's lookup sees every definition, the ones written after
+     * the root asking too. */
     static const char later[] = "[x]\n\n[x]: /u\n";
     session = NULL;
     OK(runner,
@@ -10338,15 +10324,10 @@ static void session_appends(test_batch_runner *runner) {
     if (!session) {
         return;
     }
-    const markdown_core_node *use =
-        facade_child(facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0), 0);
-    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_TEXT,
-       "a snapshot leaves a use before its definition as text");
-    final = NULL;
-    OK(runner, markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK, "the session flushes");
-    use = final ? facade_child(facade_child(markdown_core_document_root(final), 0), 0) : NULL;
+    final = markdown_core_session_document(session);
+    const markdown_core_node *use = facade_child(facade_child(markdown_core_document_root(final), 0), 0);
     OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_LINK,
-       "the final document resolves a use before its definition");
+       "the document resolves a use before its definition");
     markdown_core_session_close(session);
 }
 
@@ -10389,7 +10370,7 @@ static void session_edits_storage(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool edited = markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                             &session) == MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                  (document = markdown_core_session_document(session)) != NULL;
     size_t early = 0;
     const markdown_core_position at = {5, 1}, past = {5, 2};
     for (int edit = 0; edited && edit < 1000; edit++) {
@@ -10423,7 +10404,7 @@ static void session_edits_refresh_storage(test_batch_runner *runner) {
         const markdown_core_document *document = NULL;
         if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            (document = markdown_core_session_document(session)) == NULL) {
             held = false;
             markdown_core_session_close(session);
             break;
@@ -10470,7 +10451,7 @@ static void session_edits_uses(test_batch_runner *runner) {
         const markdown_core_document *document = NULL;
         bool edited = markdown_core_session_new((const uint8_t *)edit->source, strlen(edit->source),
                                                 MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+                      (document = markdown_core_session_document(session)) != NULL &&
                       markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
                                                  strlen(edit->text), &document) == MARKDOWN_CORE_OK;
         size_t from = 0, to = 0;
@@ -10498,7 +10479,7 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         const markdown_core_position at = {4, 10};
         bool edited = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                                 &session) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+                      (document = markdown_core_session_document(session)) != NULL &&
                       markdown_core_session_edit(session, at, at, (const uint8_t *)typed[t], strlen(typed[t]),
                                                  &document) == MARKDOWN_CORE_OK;
         OK(runner, edited && session_as_parsed(session), "typing \"%s\" after the identifier reads as a parse does",
@@ -10516,7 +10497,7 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         const bool edited =
             markdown_core_session_new((const uint8_t *)rejected, strlen(rejected), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+            (document = markdown_core_session_document(session)) != NULL &&
             markdown_core_session_edit(session, from, to, (const uint8_t *)"t", 1, &document) == MARKDOWN_CORE_OK;
         OK(runner, edited && session_as_parsed(session), "an identifier line after a comment writes nothing of it");
         markdown_core_session_close(session);
@@ -10532,7 +10513,7 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         const bool edited =
             markdown_core_session_new((const uint8_t *)numbered, strlen(numbered), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+            (document = markdown_core_session_document(session)) != NULL &&
             markdown_core_session_edit(session, from, to, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
         OK(runner, edited && session_as_parsed(session), "a specimen after a comment that stops being one");
         markdown_core_session_close(session);
@@ -10548,7 +10529,7 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         const bool edited =
             markdown_core_session_new((const uint8_t *)looked, strlen(looked), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+            (document = markdown_core_session_document(session)) != NULL &&
             markdown_core_session_edit(session, at, at, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_OK;
         OK(runner, edited && session_as_parsed(session), "typing before a comment a list item follows");
         markdown_core_session_close(session);
@@ -10557,7 +10538,7 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                           &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                (document = markdown_core_session_document(session)) != NULL;
     for (uint32_t line = 1; same && line <= 6; line++) {
         for (uint32_t column = 1; same && column <= 10; column++) {
             const markdown_core_position at = {line, column};
@@ -10586,7 +10567,7 @@ static void session_edits_after_nested_opener(test_batch_runner *runner) {
         const markdown_core_document *document = NULL;
         same = markdown_core_session_new((const uint8_t *)sources[i], strlen(sources[i]), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                          &session) == MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+               (document = markdown_core_session_document(session)) != NULL &&
                markdown_core_session_edit(session, ends[i], ends[i], (const uint8_t *)closers[i], strlen(closers[i]),
                                           &document) == MARKDOWN_CORE_OK &&
                session_as_parsed(session);
@@ -10606,7 +10587,7 @@ static void session_edits_keep_term_look(test_batch_runner *runner) {
     const bool same =
         markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
             MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        (document = markdown_core_session_document(session)) != NULL &&
         markdown_core_session_edit(session, (markdown_core_position){1, 5}, (markdown_core_position){1, 6},
                                    (const uint8_t *)"d", 1, &document) == MARKDOWN_CORE_OK &&
         session_as_parsed(session) &&
@@ -10646,7 +10627,7 @@ static void session_edits_wide_list(test_batch_runner *runner) {
     bool same =
         !text.oom &&
         markdown_core_session_new(text.ptr, text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+        (document = markdown_core_session_document(session)) != NULL;
     typedef struct {
         markdown_core_position from, to;
         const char *text;
@@ -10709,7 +10690,7 @@ static void session_edits_allocations(test_batch_runner *runner) {
             const markdown_core_document *document = NULL;
             if (markdown_core_session_new((const uint8_t *)edit->source, strlen(edit->source),
                                           MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK ||
-                markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+                (document = markdown_core_session_document(session)) == NULL) {
                 held = false;
                 markdown_core_session_close(session);
                 payload_probe_disarm();
@@ -10747,7 +10728,7 @@ static void session_edits_replaced_label(test_batch_runner *runner) {
     const bool edited =
         markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                   &session) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        (document = markdown_core_session_document(session)) != NULL &&
         markdown_core_session_edit(session, name, after, (const uint8_t *)"c", 1, &document) == MARKDOWN_CORE_OK;
     OK(runner, edited && session_as_parsed(session), "renaming a label that holds a NUL reads its use again");
     markdown_core_session_close(session);
@@ -10764,7 +10745,7 @@ static void session_edits_nested_notes(test_batch_runner *runner) {
     const bool edited =
         markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                   &session) == MARKDOWN_CORE_OK &&
-        markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
+        (document = markdown_core_session_document(session)) != NULL &&
         markdown_core_session_edit(session, line, next, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
     OK(runner, edited && session_as_parsed(session),
        "taking a line out of a definition's paragraph reads its inline note as a parse does");
@@ -10791,7 +10772,7 @@ static void session_edits_long_headings(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool edited = markdown_core_session_new(text.ptr, (size_t)text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                       MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                  (document = markdown_core_session_document(session)) != NULL;
     for (int edit = 0; edited && edit < 6; edit++) {
         const markdown_core_position at = {(uint32_t)(100 + edit / 2), 2}, past = {(uint32_t)(100 + edit / 2), 3};
         edited = (edit % 2 ? markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document)
@@ -10938,7 +10919,7 @@ static void heading_seams_end_keeps_ids(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool ok = markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                   MARKDOWN_CORE_OK &&
-              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+              (document = markdown_core_session_document(session)) != NULL;
     const markdown_core_position at = {76, 1}, past = {76, 2};
     ok = ok && markdown_core_session_edit(session, at, past, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
     const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 0) : NULL;
@@ -10964,7 +10945,7 @@ static void heading_long_authored_anchor(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool ok = markdown_core_session_new((const uint8_t *)text, (size_t)size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                   MARKDOWN_CORE_OK &&
-              markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+              (document = markdown_core_session_document(session)) != NULL;
     const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
     bool shown = root != NULL;
     static const char *const ends[] = {"-1", "", "-2"};
@@ -11004,7 +10985,7 @@ static void session_edits_compaction(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool edited = markdown_core_session_new(source.ptr, (size_t)source.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                       MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                  (document = markdown_core_session_document(session)) != NULL;
     const uint64_t first = edited ? markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) : 0;
     /* Lines 1 to 400 are the first forty items, and the edit takes the
      * rest away. */
@@ -11020,7 +11001,7 @@ static void session_edits_compaction(test_batch_runner *runner) {
         markdown_core_session *again = NULL;
         const markdown_core_document *read = NULL;
         if (markdown_core_session_new(text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &again) == MARKDOWN_CORE_OK &&
-            markdown_core_session_flush(again, &read) == MARKDOWN_CORE_OK) {
+            (read = markdown_core_session_document(again)) != NULL) {
             fresh = properties_live_bytes - held;
         }
         markdown_core_session_close(again);
@@ -11037,8 +11018,7 @@ static void session_edits_compaction(test_batch_runner *runner) {
     markdown_core_strbuf_free(&source);
 }
 
-/* An edit after the flush: refused while the session streams and at a cursor
- * that stands nowhere, and otherwise the parse of the new text, keeping the
+/* An edit: refused at a cursor that stands nowhere, and otherwise the parse of the new text, keeping the
  * ids of what it did not change (plan 12.3). */
 /* THE NAMES AN EDIT MOVES (names.c): an edit names again only the groups
  * of the stems it touched, and the anchors every heading then shows are a
@@ -11056,7 +11036,7 @@ static void session_edits_name_headings(test_batch_runner *runner) {
     const markdown_core_document *document = NULL;
     bool same = markdown_core_session_new((const uint8_t *)text, sizeof(text) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                           &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK && session_as_parsed(session);
+                (document = markdown_core_session_document(session)) != NULL && session_as_parsed(session);
     size_t lines = 1;
     for (size_t i = 0; i + 1 < sizeof(text); i++) {
         lines += text[i] == '\n';
@@ -11110,7 +11090,7 @@ static void session_edits_name_headings(test_batch_runner *runner) {
                     const markdown_core_position from = {first, 1}, to = {last, 1};
                     kept = markdown_core_session_new((const uint8_t *)texts[x], length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                                      &own) == MARKDOWN_CORE_OK &&
-                           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK;
+                           (read = markdown_core_session_document(own)) != NULL;
                     const markdown_core_status status =
                         kept ? markdown_core_session_edit(own, from, to, (const uint8_t *)put[p], strlen(put[p]), &read)
                              : MARKDOWN_CORE_OK;
@@ -11131,7 +11111,7 @@ static void session_edits_name_headings(test_batch_runner *runner) {
     OK(runner,
        markdown_core_session_new((const uint8_t *)wide, sizeof(wide) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &own) ==
                MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK &&
+           (read = markdown_core_session_document(own)) != NULL &&
            markdown_core_session_edit(own, from, to, (const uint8_t *)"a", 1, &read) == MARKDOWN_CORE_OK &&
            session_as_parsed(own),
        "a heading whose base ends in a number past any size keeps a fresh parse's anchor");
@@ -11174,8 +11154,8 @@ static void session_edits_literal_blocks(test_batch_runner *runner) {
         OK(runner,
            markdown_core_session_new(text.ptr, (size_t)text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                    MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-           "a session flushes the block");
+               (document = markdown_core_session_document(session)) != NULL,
+           "a session streams the block");
         markdown_core_strbuf_free(&text);
         if (!session) {
             continue;
@@ -11226,12 +11206,7 @@ static void session_edits(test_batch_runner *runner) {
         return;
     }
     const markdown_core_position at = {3, 6};
-    OK(runner,
-       markdown_core_session_edit(session, at, at, (const uint8_t *)"s", 1, &document) ==
-               MARKDOWN_CORE_SESSION_STREAMING &&
-           !document,
-       "an edit before the flush is SESSION_STREAMING");
-    OK(runner, markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK, "the session flushes");
+    document = markdown_core_session_document(session);
     const markdown_core_node *root = markdown_core_document_root(document);
     const uint64_t first = markdown_core_node_id(facade_child(root, 0));
     const uint64_t second = markdown_core_node_id(facade_child(root, 1));
@@ -11281,8 +11256,8 @@ static void session_edits(test_batch_runner *runner) {
     OK(runner,
        markdown_core_session_new((const uint8_t *)middle, sizeof(middle) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-       "a session flushes three paragraphs");
+           (document = markdown_core_session_document(session)) != NULL,
+       "a session streams three paragraphs");
     if (!session) {
         return;
     }
@@ -11317,8 +11292,8 @@ static void session_edits(test_batch_runner *runner) {
     OK(runner,
        markdown_core_session_new((const uint8_t *)held, sizeof(held) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-       "a session flushes headings, definitions and links");
+           (document = markdown_core_session_document(session)) != NULL,
+       "a session streams headings, definitions and links");
     if (!session) {
         return;
     }
@@ -11350,8 +11325,8 @@ static void session_edits(test_batch_runner *runner) {
     OK(runner,
        markdown_core_session_new((const uint8_t *)cut, sizeof(cut) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                MARKDOWN_CORE_OK &&
-           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
-       "a session flushes a heading whose definitions were cut");
+           (document = markdown_core_session_document(session)) != NULL,
+       "a session streams a heading whose definitions were cut");
     if (!session) {
         return;
     }
@@ -11371,7 +11346,7 @@ static void session_edits(test_batch_runner *runner) {
         session = NULL;
         if (markdown_core_session_new((const uint8_t *)kept, sizeof(kept) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            (document = markdown_core_session_document(session)) == NULL) {
             clean = false;
         } else {
             const markdown_core_position into = {5, 1};
@@ -11398,7 +11373,7 @@ static void session_edits(test_batch_runner *runner) {
         const markdown_core_position into = {8, 1};
         if (markdown_core_session_new((const uint8_t *)labeled, sizeof(labeled) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            (document = markdown_core_session_document(session)) == NULL) {
             sound = false;
         } else {
             payload_fail_at = payload_allocations + fail;
@@ -11426,7 +11401,7 @@ static void session_edits(test_batch_runner *runner) {
         const markdown_core_position into = {3, 1};
         if (markdown_core_session_new((const uint8_t *)spliced, sizeof(spliced) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                       &session) != MARKDOWN_CORE_OK ||
-            markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+            (document = markdown_core_session_document(session)) == NULL) {
             sound = false;
         } else {
             payload_fail_at = payload_allocations + fail;
@@ -11456,7 +11431,7 @@ static void session_edits(test_batch_runner *runner) {
     session = NULL;
     bool fresh = markdown_core_session_new((const uint8_t *)twice, sizeof(twice) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                            &session) == MARKDOWN_CORE_OK &&
-                 markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                 (document = markdown_core_session_document(session)) != NULL;
     const markdown_core_position seed = {3, 2};
     fresh = fresh &&
             markdown_core_session_edit(session, seed, seed, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK;
@@ -11522,8 +11497,7 @@ static void session_snapshot_anchors(test_batch_runner *runner) {
         OK(runner, anchor_is(first_heading(markdown_core_session_document(session)), "x-1"), "snapshot: %s",
            cases[i].message);
         const markdown_core_document *final = NULL;
-        OK(runner,
-           markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && anchor_is(first_heading(final), "x-1"),
+        OK(runner, (final = markdown_core_session_document(session)) != NULL && anchor_is(first_heading(final), "x-1"),
            "final: %s", cases[i].message);
         markdown_core_session_close(session);
     }
@@ -11543,7 +11517,7 @@ static uint8_t *dump_of(const markdown_core_document *document, const char *sour
 
 /* Whether a session opened with the first `cut` bytes of `source` and fed
  * the rest in chunks of `chunk` bytes, or line by line when it is 0,
- * flushes to the dump of a fresh parse of it. */
+ * ends with the dump of a fresh parse of it. */
 static bool splits_as_a_parse(const char *source, size_t cut, size_t chunk) {
     const size_t length = strlen(source);
     size_t expected_length = 0, actual_length = 0;
@@ -11567,7 +11541,7 @@ static bool splits_as_a_parse(const char *source, size_t cut, size_t chunk) {
         at += step;
     }
     const markdown_core_document *final = NULL;
-    uint8_t *actual = appended && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK
+    uint8_t *actual = appended && (final = markdown_core_session_document(session)) != NULL
                           ? dump_of(final, source, length, &actual_length)
                           : NULL;
     const bool same =
@@ -11580,14 +11554,14 @@ static bool splits_as_a_parse(const char *source, size_t cut, size_t chunk) {
 }
 
 /* The same of a session opened empty. */
-static bool flushes_as_a_parse(const char *source, size_t chunk) { return splits_as_a_parse(source, 0, chunk); }
+static bool streams_as_a_parse(const char *source, size_t chunk) { return splits_as_a_parse(source, 0, chunk); }
 
 /* A STREAMED SESSION FINALIZES TO WHAT A FRESH PARSE OF ITS TEXT IS (plan
  * 5.4, 5.10). The text arrives byte by byte, three bytes at a time and line
  * by line. A block that completes at a commit sees only the definitions
  * written before it, so each use below is defined after it, past enough
  * paragraphs that the use's block completes at a commit before the
- * definition arrives; flush looks the use up again. The uses sit in each
+ * definition arrives; the append that writes it looks the use up again. The uses sit in each
  * holder of inline content: a paragraph, a heading and its trailing
  * attributes, a callout title, a definition term, a table caption, a pipe
  * cell and a grid cell, a list item inside a quote, and a heading inside a
@@ -11595,7 +11569,7 @@ static bool flushes_as_a_parse(const char *source, size_t chunk) { return splits
  * whether its use resolves comes before a heading of the resolved text. A
  * grid table followed by a paragraph of several lines appends to the
  * paragraph's content after the table's cells. */
-static void session_flush_matches_a_parse(test_batch_runner *runner) {
+static void session_stream_matches_a_parse(test_batch_runner *runner) {
 #define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
     static const char *const sources[] = {
         "See [x], [^n] and @s." FILLER "[x]: /u\n\n[^n]: note\n\n(@s) sample\n",
@@ -11633,7 +11607,7 @@ static void session_flush_matches_a_parse(test_batch_runner *runner) {
     static const size_t chunks[] = {1, 3, 0};
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
         for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-            OK(runner, flushes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s flushes as a parse: %s",
+            OK(runner, streams_as_a_parse(sources[i], chunks[c]), "a session streamed in %s reads as a parse: %s",
                chunks[c] == 1   ? "bytes"
                : chunks[c] == 3 ? "three bytes"
                                 : "lines",
@@ -11664,7 +11638,7 @@ static void session_walks_through_definition_bodies(test_batch_runner *runner) {
                 same = splits_as_a_parse(sources[i], cut, chunks[c]);
             }
         }
-        OK(runner, same, "a session split through a definition's body flushes as a parse, at byte %zu: %s",
+        OK(runner, same, "a session split through a definition's body reads as a parse, at byte %zu: %s",
            same ? length : cut - 1, sources[i]);
     }
 }
@@ -11716,7 +11690,7 @@ static void session_snapshot_names(test_batch_runner *runner) {
             markdown_core_document_free(parsed);
         }
         const markdown_core_document *final = NULL;
-        OK(runner, same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK,
+        OK(runner, same && (final = markdown_core_session_document(session)) != NULL,
            "every snapshot names its headings as a parse of its text, up to byte %zu of %zu: %s", at, length, source);
         markdown_core_session_close(session);
     }
@@ -11864,7 +11838,7 @@ static void session_edits_cross_tables(test_batch_runner *runner) {
                     const markdown_core_position from = {first, 1}, to = {last, 1};
                     kept = markdown_core_session_new((const uint8_t *)texts[x], length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                                      &own) == MARKDOWN_CORE_OK &&
-                           markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK;
+                           (read = markdown_core_session_document(own)) != NULL;
                     const markdown_core_status status =
                         kept ? markdown_core_session_edit(own, from, to, (const uint8_t *)put[p], strlen(put[p]), &read)
                              : MARKDOWN_CORE_OK;
@@ -11933,7 +11907,7 @@ static void session_snapshot_tables(test_batch_runner *runner) {
         }
         const markdown_core_document *final = NULL;
         markdown_core_document *parsed = NULL;
-        same = same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK &&
+        same = same && (final = markdown_core_session_document(session)) != NULL &&
                markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK &&
                tables_agree(final, parsed, source, length);
         OK(runner, same, "every snapshot's tables are a parse's of its text, up to byte %zu of %zu: %s", at, length,
@@ -12003,7 +11977,7 @@ static void session_snapshot_lists(test_batch_runner *runner) {
                 same = markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) ==
                        MARKDOWN_CORE_OK;
             } else {
-                same = markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                same = (document = markdown_core_session_document(session)) != NULL;
             }
             const size_t parsed_length = at < length ? at + 1 : length;
             markdown_core_document *parsed = NULL;
@@ -12042,7 +12016,7 @@ static bool dumps_as_a_parse(const markdown_core_document *document, const char 
     return same;
 }
 
-/* A paragraph typed at its end, a few bytes an edit, on a flushed session,
+/* A paragraph typed at its end, a few bytes an edit, on a session,
  * dumps after every edit as a parse of the text so far does (blocks.c, THE
  * SEAMS): the reading parses its content from a seam inside its last line
  * while the edit only goes on from where the content ended, and from a seam
@@ -12075,7 +12049,7 @@ static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runne
         markdown_core_session *session = NULL;
         const markdown_core_document *document = NULL;
         bool ok = markdown_core_session_new(NULL, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                  (document = markdown_core_session_document(session)) != NULL;
         size_t at = 0, k = 0;
         markdown_core_position end = {1, 1};
         while (ok && at < length) {
@@ -12108,7 +12082,7 @@ static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runne
         markdown_core_session *session = NULL;
         const markdown_core_document *document = NULL;
         bool ok = markdown_core_session_new(NULL, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
-                  markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
+                  (document = markdown_core_session_document(session)) != NULL;
         markdown_core_position end = {1, 1};
         for (size_t k = 0; ok && k < 6 && pieces[s][k]; k++) {
             const size_t size = strlen(pieces[s][k]);
@@ -12131,8 +12105,7 @@ static void session_typed_paragraph_end_matches_a_parse(test_batch_runner *runne
 
 /* Whether `source`, appended in pieces that end at each of the `count`
  * offsets `ends`, in order, gives after each append a snapshot whose dump is
- * a fresh parse's of the same text, and a flushed document whose dump is a
- * parse's of all of it; `at` is how many bytes were appended when it
+ * a fresh parse's of the same text; `at` is how many bytes were appended when it
  * stopped. */
 static bool pieces_dump_as_parses(const char *source, const size_t *ends, size_t count, size_t *at) {
     markdown_core_session *session = NULL;
@@ -12147,8 +12120,7 @@ static bool pieces_dump_as_parses(const char *source, const size_t *ends, size_t
         *at = ends[i];
     }
     const markdown_core_document *final = NULL;
-    same = same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK &&
-           dumps_as_a_parse(final, source, *at);
+    same = same && (final = markdown_core_session_document(session)) != NULL && dumps_as_a_parse(final, source, *at);
     markdown_core_session_close(session);
     return same;
 }
@@ -12200,12 +12172,10 @@ static void session_snapshot_openers(test_batch_runner *runner) {
     }
 }
 
-/* A SETTLED LOOKUP IS ASKED AGAIN AT THE FINALIZE (step 8, THE SETTLE
- * POINT): the text arrives byte by byte and flushes to a fresh parse's
- * dump. The paragraph settles a reference or note that finds nothing, and
- * the definition that ends the text, which only the flush completes,
- * defines it. */
-static void session_settled_lookups_at_flush(test_batch_runner *runner) {
+/* A SETTLED LOOKUP IS ASKED AGAIN (step 8, THE SETTLE POINT): the text
+ * arrives byte by byte and ends with a fresh parse's dump. The paragraph settles a reference or note that finds
+ * nothing, and the definition that ends the text, which only the last append completes, defines it. */
+static void session_settled_lookups_at_end(test_batch_runner *runner) {
     static const char *const sources[] = {
         "[x]\na\nb\n\n[x]: /u",
         "a [x] b\nc\nd\ne\n\n[x]: /u \"t\"",
@@ -12213,8 +12183,8 @@ static void session_settled_lookups_at_flush(test_batch_runner *runner) {
         "[^n] a\nb\nc\n\n[^n]: note",
     };
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        OK(runner, flushes_as_a_parse(sources[i], 1),
-           "a settled lookup is asked again at the flush, as a parse of the text: %s", sources[i]);
+        OK(runner, streams_as_a_parse(sources[i], 1),
+           "a settled lookup is asked again at the end, as a parse of the text: %s", sources[i]);
     }
 }
 
@@ -12311,7 +12281,7 @@ static void session_held_scalars(test_batch_runner *runner) {
  * the quote, and the quote's paragraph, which spans it, takes its places from
  * where the reading found the line's own bytes. The text arrives byte by
  * byte, in the two pieces the lazy line ends, and whole, and each snapshot
- * and the flushed document dump as a parse of its text does. */
+ * dumps as a parse of its text does. */
 static void session_decisions_keep_lines(test_batch_runner *runner) {
     static const char *const sources[] = {">_\n:\n>a\n", ">_\r:\r>a"};
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
@@ -12469,8 +12439,8 @@ static char *with_field(const char *pattern, const char *field) {
  * root of each directive completes as its closing line closes it, after the
  * roots that completed while it was open; a directive's label looks the late
  * definition up beside the roots inside it. Each text arrives byte by byte,
- * three bytes at a time and line by line, and its flush dumps as a parse
- * of the same text does. The headings look no definition up, so every
+ * three bytes at a time and line by line, and its last document dumps as a
+ * parse of the same text does. The headings look no definition up, so every
  * snapshot of their text dumps as a parse of the text so far does. */
 static void session_roots_at_every_depth(test_batch_runner *runner) {
 #define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
@@ -12486,10 +12456,10 @@ static void session_roots_at_every_depth(test_batch_runner *runner) {
     for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
         const char *const unit = chunks[c] == 1 ? "bytes" : chunks[c] == 3 ? "three bytes" : "lines";
         for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-            OK(runner, flushes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s flushes as a parse: %s",
-               unit, sources[i]);
+            OK(runner, streams_as_a_parse(sources[i], chunks[c]), "a session streamed in %s reads as a parse: %s", unit,
+               sources[i]);
         }
-        OK(runner, flushes_as_a_parse(headings, chunks[c]), "a session streamed in %s flushes as a parse: %s", unit,
+        OK(runner, streams_as_a_parse(headings, chunks[c]), "a session streamed in %s reads as a parse: %s", unit,
            headings);
     }
     size_t at = 0;
@@ -12504,8 +12474,8 @@ static void session_roots_at_every_depth(test_batch_runner *runner) {
  * code, a reference, an inline note holding a reference, and an anchor. While its
  * block stays open over many appends, every snapshot holds it as a fresh
  * parse of the text so far does when each reference is defined before it.
- * When each is defined after it, the flush looks the field's references
- * up again and gives what a parse of the whole text gives: with the block
+ * When each is defined after it, the append that defines them looks the
+ * field's references up again and gives what a parse of the whole text gives: with the block
  * closed and published before the definition arrives, and with the block
  * still open when the text ends, the definition inside it -- in a quote, a
  * definition's body, an unclosed directive and a list item. */
@@ -12545,8 +12515,8 @@ static void session_opener_fields(test_batch_runner *runner) {
     for (size_t i = 0; i < sizeof(defined_after) / sizeof(defined_after[0]); i++) {
         char *source = with_field(defined_after[i], field);
         for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-            OK(runner, source && flushes_as_a_parse(source, chunks[c]),
-               "a session streamed in %s flushes a long field defined after it as a parse: %s",
+            OK(runner, source && streams_as_a_parse(source, chunks[c]),
+               "a session streamed in %s reads a long field defined after it as a parse: %s",
                chunks[c] == 1   ? "bytes"
                : chunks[c] == 7 ? "seven bytes"
                                 : "lines",
@@ -12605,11 +12575,14 @@ static void node_view_views(test_batch_runner *runner) {
     markdown_core_document_free(kept);
 }
 
-/* The allocator-seam sweep (plan 8, gates 4.7): an append and a flush
- * fail at every allocation, report ALLOCATION_FAILED, and the session frees
- * everything it holds. */
+/* The allocator-seam sweep (plan 8, gates 4.7): an append refused at any
+ * allocation reports ALLOCATION_FAILED, or, where the storage it was refused
+ * only spares work later (the widths of a nest, made again when asked), the
+ * document a parse of its text has; and the session frees everything it
+ * holds. */
 static void session_allocation_failures(test_batch_runner *runner) {
     static const char source[] = "# Head\n\nSome *text* [a][r].\n\n- item\n- item\n\n[r]: /url\n";
+    static const char whole[] = "# Head\n\nSome *text* [a][r].\n\n- item\n- item\n\n[r]: /url\nmore *text*\n";
     payload_probe_arm();
     size_t needed = 0;
     int failed = 1;
@@ -12630,36 +12603,14 @@ static void session_allocation_failures(test_batch_runner *runner) {
             needed = payload_allocations - before;
             failed &= status == MARKDOWN_CORE_OK;
         } else {
-            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
+            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED ||
+                      (status == MARKDOWN_CORE_OK && dumps_as_a_parse(document, whole, sizeof(whole) - 1));
         }
         markdown_core_session_close(session);
         failed &= payload_live == 0;
     }
-    OK(runner, needed > 0 && failed, "an append fails at each of its %zu allocations and leaks nothing", needed);
-    needed = 0;
-    failed = 1;
-    for (size_t fail = 0; fail == 0 || fail <= needed; fail++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                      &session) != MARKDOWN_CORE_OK) {
-            failed = 0;
-            break;
-        }
-        size_t before = payload_allocations;
-        payload_fail_at = fail ? before + fail : 0;
-        markdown_core_status status = markdown_core_session_flush(session, &document);
-        payload_fail_at = 0;
-        if (!fail) {
-            needed = payload_allocations - before;
-            failed &= status == MARKDOWN_CORE_OK;
-        } else {
-            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
-        }
-        markdown_core_session_close(session);
-        failed &= payload_live == 0;
-    }
-    OK(runner, needed > 0 && failed, "a flush fails at each of its %zu allocations and leaks nothing", needed);
+    OK(runner, needed > 0 && failed,
+       "an append refused at each of its %zu allocations fails or parses, and leaks nothing", needed);
     payload_probe_disarm();
 }
 
@@ -12849,14 +12800,14 @@ int main(void) {
     session_snapshot_tables(runner);
     session_snapshot_lists(runner);
     session_snapshot_openers(runner);
-    session_settled_lookups_at_flush(runner);
+    session_settled_lookups_at_end(runner);
     session_snapshot_candidates(runner);
     session_held_scalars(runner);
     session_decisions_keep_lines(runner);
     session_accept_after_commit_writes(runner);
     session_opener_fields(runner);
     node_view_views(runner);
-    session_flush_matches_a_parse(runner);
+    session_stream_matches_a_parse(runner);
     session_typed_paragraph_end_matches_a_parse(runner);
     session_walks_through_definition_bodies(runner);
     session_roots_at_every_depth(runner);

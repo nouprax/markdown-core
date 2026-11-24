@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-literal-item-fence hard
-flush
 edit 77 77 78
 edit 77 78 -
 edit 76 76 6060600a2020

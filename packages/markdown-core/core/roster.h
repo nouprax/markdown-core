@@ -144,6 +144,9 @@ typedef struct markdown_core_roster {
      * makes; and whether the back is hidden from lookups, from the reopen
      * that makes it to the splice that takes it back. */
     bool placed, hidden;
+    /* Where the last edit's reading began (markdown_core_roster_reopen):
+     * what it declares starts there or past it. */
+    uint32_t from;
     /* How many bytes the log's records take, and how many of them are of
      * records gone, which an edit replaced or a withdrawal withdrew. */
     size_t bytes, dead;
@@ -335,10 +338,10 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
  * lookups see the back again. A `place` past every declaration lets the
  * whole back go, as a reading that took nothing back does. */
 void markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta);
-/* The keys of the declarations of the front, but anchors, that start from
- * `start` on, each once and in byte order, each with its NUL, into
- * `labels`. False when storage could not be had. */
-bool markdown_core_roster_made(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels);
+/* The keys of the declarations of the front, but anchors, that start
+ * where the last reading began or past it, each once and in byte order,
+ * each with its NUL, into `labels`. False when storage could not be had. */
+bool markdown_core_roster_made(const markdown_core_roster *roster, markdown_core_strbuf *labels);
 /* The keys of the declarations, but anchors, the last splice let go, as
  * markdown_core_roster_made writes them. False when storage could not be
  * had. */

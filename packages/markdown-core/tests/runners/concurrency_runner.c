@@ -452,7 +452,7 @@ static int case_literal(void) {
     const markdown_core_document *document;
     if (markdown_core_session_new((const uint8_t *)text, size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) !=
             MARKDOWN_CORE_OK ||
-        markdown_core_session_flush(session, &document) != MARKDOWN_CORE_OK) {
+        !(document = markdown_core_session_document(session))) {
         fprintf(stderr, "concurrency: literal session failed\n");
         return 1;
     }

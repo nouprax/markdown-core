@@ -112,11 +112,6 @@ static jbyteArray JNICALL native_session_append(JNIEnv *environment, jobject rec
     return message_array(environment, message);
 }
 
-static jbyteArray JNICALL native_session_flush(JNIEnv *environment, jobject receiver, jlong session) {
-    (void)receiver;
-    return message_array(environment, markdown_core_wire_session_flush(session_address(session)));
-}
-
 static jbyteArray JNICALL native_session_edit(JNIEnv *environment, jobject receiver, jlong session, jint start_line,
                                               jint start_column, jint end_line, jint end_column, jbyteArray text) {
     markdown_core_position from = {start_line, start_column}, to = {end_line, end_column};
@@ -183,7 +178,6 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"parsePayload", "([B)[B", (void *)native_parse},
         {"sessionNewPayload", "([BZ[J)[B", (void *)native_session_new},
         {"sessionAppendPayload", "(J[B)[B", (void *)native_session_append},
-        {"sessionFlushPayload", "(J)[B", (void *)native_session_flush},
         {"sessionEditPayload", "(JIIII[B)[B", (void *)native_session_edit},
         {"sessionText", "(J)[B", (void *)native_session_text},
         {"sessionClose", "(J)V", (void *)native_session_close},

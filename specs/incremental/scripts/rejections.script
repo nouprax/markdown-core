@@ -1,8 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script rejections rejections
-reject utf8 streaming 0 0 61
-reject utf16 streaming 0 0 61
-flush
 reject utf8 out-of-bounds 178 178 61
 reject utf8 out-of-bounds 0 178 61
 reject utf8 out-of-bounds 2 1 61

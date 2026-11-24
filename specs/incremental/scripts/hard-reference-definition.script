@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-reference-definition hard
-flush
 edit 26 29 74776f
 expect within 0 31
 edit 21 22 71

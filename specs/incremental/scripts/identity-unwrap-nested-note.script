@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script identity-unwrap-nested-note ids
-flush
 edit 11 12 -
 expect new Footnote 5
 edit 1 3 -

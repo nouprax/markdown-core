@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-footnote-definition hard
-flush
 edit 24 24 0a5b5e6e5d3a20626f64790a
 expect within 0 48
 edit 27 28 6d

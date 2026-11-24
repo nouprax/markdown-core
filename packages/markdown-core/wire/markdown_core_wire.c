@@ -931,12 +931,6 @@ uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const
     return step_message(status, document);
 }
 
-uint8_t *markdown_core_wire_session_flush(markdown_core_session *session) {
-    const markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_session_flush(session, &document);
-    return step_message(status, document);
-}
-
 uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, markdown_core_position start,
                                          markdown_core_position end, const uint8_t *text, size_t size) {
     const markdown_core_document *document = NULL;

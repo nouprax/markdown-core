@@ -1,6 +1,5 @@
-markdown-core incremental script 2
+markdown-core incremental script 3
 script hard-automatic-anchor hard
-flush
 edit 7 7 73
 expect within 0 10
 edit 7 8 -
