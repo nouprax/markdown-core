@@ -124,7 +124,6 @@ private class CSession(
     override fun append(text: ByteArray): Document =
         publish(text.withAddress { markdown_core_wire_session_append(session?.reinterpret(), it, text.size.convert()) })
 
-
     override fun edit(
         startLine: Int,
         startColumn: Int,

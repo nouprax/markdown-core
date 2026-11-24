@@ -43,7 +43,6 @@ private class JniSession(
 
     override fun append(text: ByteArray): Document = publish(JniParser.sessionAppendPayload(session[0], text))
 
-
     override fun edit(
         startLine: Int,
         startColumn: Int,
