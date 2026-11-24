@@ -16,8 +16,8 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
                                                      markdown_core_node *parent, markdown_core_reader *reader);
 /* A line that would open a paragraph in `parent`: an identifier alone on it
- * names the pending block, and true when the line opens nothing -- the
- * identifier attached, or the call asked to be a candidate. */
+ * names the pending block, and true when the line opens nothing: the
+ * identifier attached. */
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                 markdown_core_reader *reader);
@@ -26,12 +26,4 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
  * whatever its prefixes. */
 bool markdown_core_block_identifier_writes(const markdown_core_element_instance *self, const unsigned char *line,
                                            size_t length);
-/* The candidate of the identifier line (blocks.c, THE CANDIDATES), the
- * paragraph element's hooks (element.h). */
-markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,
-                                                                      markdown_core_parser *parser, void *state,
-                                                                      const markdown_core_candidate_line *line,
-                                                                      bool *ends);
-bool markdown_core_block_identifier_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *container, markdown_core_reader *reader, void *record);
 #endif

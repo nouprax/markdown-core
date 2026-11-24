@@ -111,29 +111,4 @@ markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parse
  * children could not grow. */
 markdown_core_node *markdown_core_parser_open_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                     markdown_core_node *child);
-/* THE CALL (parser.h), inlined at each opener with its element's `reads`,
- * the hook its candidates are decided by: most calls are refused by their
- * reading's first test, which then costs no frame of the engine's. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_candidate_decision
-    markdown_core_parser_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                              bool (*reads)(const markdown_core_element_instance *, markdown_core_parser *,
-                                            struct markdown_core_node *, markdown_core_reader *, void *),
-                              struct markdown_core_node *container, markdown_core_reader *reader,
-                              markdown_core_node_type child, void *record, bool ends) {
-    assert(reads == owner->element->candidate->reads);
-    if (markdown_core_parser_candidate_meets(parser, owner, container)) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
-    }
-    markdown_core_parser_clear_end_read(parser);
-    const bool claims = reads(owner, parser, container, reader, record);
-    if (parser->error) {
-        return MARKDOWN_CORE_CANDIDATE_REJECT;
-    }
-    if (markdown_core_parser_end_read(parser)) {
-        markdown_core_parser_request_candidate(parser, owner, container, child, record, ends);
-        return MARKDOWN_CORE_CANDIDATE_WAIT;
-    }
-    return claims ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
-}
-
 #endif

@@ -73,11 +73,6 @@ static const markdown_core_follow PARAGRAPH_FOLLOWS[] = {
     {0},
 };
 
-static const markdown_core_candidate_ops PARAGRAPH_CANDIDATE = {
-    .feed = markdown_core_block_feed_identifier_line,
-    .reads = markdown_core_block_identifier_reads,
-};
-
 static const markdown_core_open_ops PARAGRAPH_OPENS = {
     .text = open_text,
 };
@@ -96,7 +91,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .edit = &PARAGRAPH_EDIT,
     .follows = PARAGRAPH_FOLLOWS,
     .content = &PARAGRAPH_CONTENT,
-    .candidate = &PARAGRAPH_CANDIDATE,
     .opens = &PARAGRAPH_OPENS,
     .lines = &PARAGRAPH_LINES,
 };

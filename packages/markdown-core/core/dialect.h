@@ -351,11 +351,10 @@ typedef struct markdown_core_dialect {
     markdown_core_kind_record kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
     /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
-     * of records, and of the largest record a candidate keeps (element.h,
-     * markdown_core_candidate_ops, `size`). */
+     * of records and of one bracket's. */
     const markdown_core_element_instance *const *instance_table;
     unsigned instance_bits;
-    size_t run_state_size, candidate_state_size, bracket_size;
+    size_t run_state_size, bracket_size;
     /* The dialect's rules for closing a bracket (element.h,
      * markdown_core_close_rule): first the `shared` rules every bracket no
      * `mine` rule claims meets, by precedence and then descriptor order,

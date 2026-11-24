@@ -138,27 +138,7 @@ static void free_html_block(markdown_core_node_pool *pool, markdown_core_node *n
     markdown_core_chunk_free(&node->as.html_block->literal);
 }
 
-static bool view_html_block(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                            bool failed) {
-    (void)pool;
-    (void)node;
-    (void)failed;
-    markdown_core_literal_view(&copy->as.html_block->literal);
-    return true;
-}
-
-static bool own_html_block(markdown_core_node *copy, const markdown_core_node *node) {
-    return markdown_core_chunk_own(&copy->as.html_block->literal, &node->as.html_block->literal);
-}
-
-static void adopt_html_block(markdown_core_node *view, markdown_core_node *node) {
-    markdown_core_chunk_adopt(&view->as.html_block->literal, &node->as.html_block->literal);
-}
-
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_HTML_BLOCK = {
     .size = sizeof(markdown_core_html_block),
     .free = free_html_block,
-    .view = view_html_block,
-    .own = own_html_block,
-    .adopt = adopt_html_block,
 };

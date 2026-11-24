@@ -12,26 +12,9 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
                                                                markdown_core_reader *reader, bool compact);
 static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                block_start_context *context, block_start *start);
-/* THE CANDIDATES of the element (blocks.c, THE CANDIDATES), each record
- * naming its call: the term's, on a line that would open a paragraph, and a
- * body's on a blank line, which keeps the body's continuation. */
-enum { DEFINITION_TERM, DEFINITION_BLANK };
-typedef struct {
-    int call, continuation;
-    /* What the call read: the body's next line, and whether the term's
-     * list is compact. */
-    int line;
-    bool compact;
-} definition_candidate;
-
 /* THE BODY'S READING of a blank line in `parent`: whether the next line that
  * is not blank is indented to `continuation`, which line that is in
  * `*line`. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_reads(const markdown_core_element_instance *self,
-                                                                             markdown_core_parser *parser,
-                                                                             markdown_core_node *container,
-                                                                             markdown_core_reader *reader,
-                                                                             void *record);
 static bool definition_body_continues(markdown_core_parser *parser, markdown_core_node *parent, int continuation,
                                       int *line) {
     markdown_core_block_lookahead lookahead;
@@ -46,7 +29,7 @@ static bool definition_body_continues(markdown_core_parser *parser, markdown_cor
     return continues;
 }
 
-/* A BODY TAKES A BLANK LINE its reading admits (markdown_core_parser_call). */
+/* A BODY TAKES A BLANK LINE its reading admits. */
 static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *body, markdown_core_reader *reader) {
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
@@ -57,12 +40,11 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
-    definition_candidate call = {DEFINITION_BLANK, body->as.definition_body->continuation, 0, false};
-    if (markdown_core_parser_call(parser, self, definition_reads, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, &call,
-                                  false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+    int line = 0;
+    if (!definition_body_continues(parser, parent, body->as.definition_body->continuation, &line) || parser->error) {
         return false;
     }
-    body->as.definition_body->continuation_line = call.line;
+    body->as.definition_body->continuation_line = line;
     return true;
 }
 
@@ -77,7 +59,7 @@ static inline bool markdown_core_block_definition_marker(markdown_core_reader *r
 
 /* A definition marker is ':' or '~' followed by a space, a tab or the line
  * end. Asking whether the NEXT line carries one used to mean opening a full
- * lookahead transaction -- chain walk, reserve, snapshot, then a line pulled
+ * lookahead transaction -- chain walk, reserve, mark, then a line pulled
  * at 548 Ir -- on every line of every document, because a definition TERM is
  * arbitrary prose and nothing about the term's own line can rule the grammar
  * out. This is that question answered from raw source first, as the
@@ -290,56 +272,18 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
     return markdown_core_reader_indented(reader, container->as.definition_body->continuation, true);
 }
 
-/* THE TERM, the paragraph opener's call (markdown_core_parser_call): a
- * line its reading admits opens a definition, with the line as its term. */
+/* THE TERM, the paragraph opener's last call: a line its reading admits
+ * opens a definition, with the line as its term. */
 static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
                                          markdown_core_parser *parser, markdown_core_node *parent,
                                          markdown_core_reader *reader) {
     (void)indented;
-    definition_candidate call = {DEFINITION_TERM, 0, 0, false};
-    if (markdown_core_parser_call(parser, self, definition_reads, parent, reader, MARKDOWN_CORE_NODE_DEFINITION_LIST,
-                                  &call, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+    bool compact = false;
+    if (!definition_term_admits(self, parser, parent, reader) ||
+        !definition_term_reads(self, parser, parent, reader, &compact) || parser->error) {
         return NULL;
     }
-    return markdown_core_block_open_definition(self->state, parser, parent, reader, call.compact);
-}
-
-/* THE FEED of the element's candidates (element.h). The term's reading is
- * decided by the first line after one blank line at most, which the text
- * has finished, or by a second blank line; a body's, by the first line
- * after the blank lines, which tells its indentation as soon as it is
- * read. */
-static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, void *state,
-                                                   const markdown_core_candidate_line *line, bool *ends) {
-    (void)self;
-    (void)parser;
-    const definition_candidate *candidate = state;
-    if (candidate->call == DEFINITION_TERM && line->blanks > 1) {
-        return MARKDOWN_CORE_CANDIDATE_ENDS;
-    }
-    if (!line->reader) {
-        *ends = false;
-        return MARKDOWN_CORE_CANDIDATE_CONTINUES;
-    }
-    return candidate->call == DEFINITION_TERM && line->unfinished ? MARKDOWN_CORE_CANDIDATE_WAITS
-                                                                  : MARKDOWN_CORE_CANDIDATE_ENDS;
-}
-
-/* THE CALL'S READING (element.h, `reads`): the term's of the reader's
- * line, and a body's of the next line that is not blank, from the
- * continuation it had, which nothing after the call writes. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_reads(const markdown_core_element_instance *self,
-                                                                             markdown_core_parser *parser,
-                                                                             markdown_core_node *container,
-                                                                             markdown_core_reader *reader,
-                                                                             void *record) {
-    definition_candidate *call = record;
-    if (call->call == DEFINITION_TERM) {
-        return definition_term_admits(self, parser, container, reader) &&
-               definition_term_reads(self, parser, container, reader, &call->compact);
-    }
-    return definition_body_continues(parser, container, call->continuation, &call->line);
+    return markdown_core_block_open_definition(self->state, parser, parent, reader, compact);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -417,12 +361,6 @@ static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
     .yields = yields,
 };
 
-static const markdown_core_candidate_ops DEFINITION_LIST_CANDIDATE = {
-    .feed = feed_candidate,
-    .reads = definition_reads,
-    .size = sizeof(definition_candidate),
-};
-
 static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
     .indent = 3,
     .scan = markdown_core_definition_list_scan,
@@ -441,7 +379,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .edit = &DEFINITION_LIST_EDIT,
     .state_size = sizeof(markdown_core_definition_list_work),
     .name = "definition_list",
-    .candidate = &DEFINITION_LIST_CANDIDATE,
     .opens = &DEFINITION_LIST_OPENS,
     .lines = &DEFINITION_LIST_LINES,
 };

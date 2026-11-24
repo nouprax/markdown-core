@@ -797,13 +797,6 @@ bool markdown_core_names_reopen(markdown_core_parser *parser, uint32_t start) {
     state->edit->lost_count = 0;
     state->count = state->parsed = low;
     state->spliced = false;
-    size_t renamed = 0;
-    for (size_t i = 0; i < state->renamed_count; i++) {
-        if (state->renamed[i] < low) {
-            state->renamed[renamed++] = state->renamed[i];
-        }
-    }
-    state->renamed_count = renamed;
     if (state->named > low) {
         state->named = low;
     }
@@ -879,9 +872,6 @@ void markdown_core_names_release(markdown_core_names *state) {
     stems_free(state->edit);
     state->edit = NULL;
     markdown_core_key_index_free(&state->taken);
-    markdown_core_free(state->renamed);
-    state->renamed = NULL;
-    state->renamed_count = state->renamed_capacity = 0;
     state->records_at = state->records_read = state->named = 0;
 }
 
@@ -905,20 +895,15 @@ void markdown_core_names_release(markdown_core_names *state) {
  * name, and does not read the suffix, below which later entries can hold
  * names it may take.
  *
- * A streaming parse keeps the index across snapshots, with where its reading
- * of the roster's ANCHOR records stands and how many entries it named.
- * Each snapshot first reads the records committed since the last and names
- * the entries commits parsed since, then names its tail in an overlay (A
- * SNAPSHOT'S NAMES). The finalize, and a parse that takes no snapshot, start
- * the index empty and read every record, and then every entry, which
- * displaces no one. Until some entry asks for a name, no record is read. */
+ * A parse's finish starts the index empty and reads every record, and then
+ * every entry, which displaces no one; an edit renames only what it touched
+ * (THE NAMES AN EDIT MOVES). Until some entry asks for a name, no record is
+ * read. */
 typedef struct {
     markdown_core_parser *parser;
     markdown_core_names *state;
-    /* The index the pass writes, the committed names or a snapshot's
-     * overlay; and the committed names beneath an overlay, or NULL. */
+    /* The index the pass writes. */
     markdown_core_key_index *index;
-    const markdown_core_key_index *beneath;
     /* Whether the pass starts empty, which reads only the declarations that
      * stand: the names they reserve are what reading every record would
      * leave, before any entry takes one. */
@@ -928,19 +913,10 @@ typedef struct {
     markdown_core_strbuf name;
 } name_pass;
 
-/* The suffix of the name an entry holds in an index: its committed one,
- * but in a snapshot's overlay the one the snapshot gave a committed entry
- * it renamed (A COMMITTED NAME UNDER ANOTHER). */
-static inline uint32_t holder_suffix(const markdown_core_names *state, const markdown_core_named *entry, bool overlay) {
-    return overlay && entry->renamed ? name_of(state, entry)->suffix : entry->suffix;
-}
-
-/* What the index of the names taken compares: the name looked for, and
- * whether the slots are the overlay's. */
+/* What the index of the names taken compares: the name looked for. */
 typedef struct {
     markdown_core_names *state;
     const name_view *name;
-    bool overlay;
 } name_probe;
 
 /* A name and a holder's of one size whose bases are of one size too are
@@ -955,7 +931,7 @@ static bool name_holds(const void *probe, const markdown_core_key_index_slot *sl
     const markdown_core_named *holder = named_at(look->state, slot->extra - 1);
     const markdown_core_name *value = name_of(look->state, holder);
     const markdown_core_strbuf *base = &value->base;
-    const uint32_t suffix = holder_suffix(look->state, holder, look->overlay);
+    const uint32_t suffix = holder->suffix;
     if (base->size == name->size) {
         if (suffix != name->suffix) {
             return false;
@@ -978,69 +954,29 @@ static bool name_holds(const void *probe, const markdown_core_key_index_slot *sl
 
 /* The occupied entry for the name in the index the pass writes, or NULL. */
 static markdown_core_key_index_slot *name_seek(name_pass *pass, const name_view *name) {
-    const name_probe probe = {pass->state, name, pass->beneath != NULL};
+    const name_probe probe = {pass->state, name};
     assert(name->hashed);
     return markdown_core_key_index_seek(pass->index, name->hash, name->pieces.size, name_holds, &probe);
 }
 
 /* The entry for the name among the names taken, occupied or vacant, in the
- * index the pass writes: an overlay first takes the committed entry of a
- * name it has none for. NULL when the index could not grow. */
+ * index the pass writes. NULL when the index could not grow. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_key_index_slot *name_entry(name_pass *pass,
                                                                                                 const name_view *name) {
     pass->state->work += (size_t)name->pieces.size + 1;
     assert(name->hashed);
     const uint64_t hash = name->hash;
-    name_probe probe = {pass->state, name, pass->beneath != NULL};
-    markdown_core_key_index_slot *entry =
-        markdown_core_key_index_place(pass->index, hash, name->pieces.size, name_holds, &probe);
-    if (entry && !entry->key && pass->beneath) {
-        probe.overlay = false;
-        const markdown_core_key_index_slot *committed =
-            markdown_core_key_index_seek(pass->beneath, hash, name->pieces.size, name_holds, &probe);
-        if (committed) {
-            markdown_core_key_index_commit(pass->index, entry, committed->key);
-            entry->value = committed->value;
-            entry->extra = committed->extra;
-        }
-    }
-    return entry;
-}
-
-/* A COMMITTED NAME UNDER ANOTHER. A snapshot that displaces a
- * committed entry gives its node the suffix the overlay gives it, and its
- * entry keeps the committed one. The snapshot lists the entry; the next
- * one gives the node its committed suffix back unless it displaces the
- * entry too. */
-static bool rename_committed(markdown_core_parser *parser, markdown_core_names *state, size_t at) {
-    markdown_core_named *entry = named_at(state, at);
-    if (entry->renamed) {
-        return true;
-    }
-    uint32_t *renamed =
-        markdown_core_reserve(state->renamed, &state->renamed_capacity, state->renamed_count + 1, sizeof(*renamed));
-    if (!renamed) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    state->renamed = renamed;
-    renamed[state->renamed_count++] = (uint32_t)at;
-    entry->renamed = true;
-    return true;
+    const name_probe probe = {pass->state, name};
+    return markdown_core_key_index_place(pass->index, hash, name->pieces.size, name_holds, &probe);
 }
 
 /* Entry `at` takes the name of its base and `suffix`: its node shows it,
- * and its entry keeps it unless an overlay names a committed entry (A
- * COMMITTED HEADING UNDER ANOTHER NAME). False with the parse failed. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool name_take(name_pass *pass, size_t at, uint32_t suffix) {
+ * and its entry keeps it. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void name_take(name_pass *pass, size_t at, uint32_t suffix) {
     markdown_core_names *state = pass->state;
     markdown_core_named *entry = named_at(state, at);
     name_show(name_of(state, entry), suffix);
-    if (pass->beneath && at < state->named) {
-        return rename_committed(pass->parser, state, at);
-    }
     entry->suffix = suffix;
-    return true;
 }
 
 /* The entry `entry`, vacant or held by a later entry, names entry
@@ -1060,8 +996,7 @@ static inline size_t claim_name(name_pass *pass, size_t at, markdown_core_key_in
 /* Entry `at`, after every entry the pass named, takes the first name of
  * its sequence that is vacant: `name`, the name of its base,
  * then the base with the suffix the base's entry keeps, which it advances,
- * so a run of entries projecting to one name tries each suffix once. Such a
- * entry is not committed under an overlay. */
+ * so a run of entries projecting to one name tries each suffix once. */
 static void take_last(name_pass *pass, size_t at, name_view *name) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_key_index *index = pass->index;
@@ -1071,8 +1006,7 @@ static void take_last(name_pass *pass, size_t at, name_view *name) {
     size_t suffix = 0;
     while (candidate && candidate->key) {
         /* A lookup that adds an entry can move the base's: a vacant
-         * candidate, which ends the search, and in an overlay a name it
-         * takes from the committed index. */
+         * candidate, which ends the search. */
         if (index->capacity != capacity) {
             name_suffix(name, 0);
             projected = name_seek(pass, name);
@@ -1086,12 +1020,10 @@ static void take_last(name_pass *pass, size_t at, name_view *name) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    assert(!(pass->beneath && at < pass->state->named));
-    if (name_take(pass, at, (uint32_t)suffix)) {
-        const size_t holder = claim_name(pass, at, candidate);
-        assert(!holder);
-        (void)holder;
-    }
+    name_take(pass, at, (uint32_t)suffix);
+    const size_t holder = claim_name(pass, at, candidate);
+    assert(!holder);
+    (void)holder;
 }
 
 /* Entry `at`, displaced from the name it holds, takes the first name past
@@ -1103,7 +1035,7 @@ static void displace(name_pass *pass, size_t at) {
     for (size_t holder = at + 1; holder && !parser->error;) {
         at = holder - 1;
         const markdown_core_named *entry = named_at(state, at);
-        size_t suffix = holder_suffix(state, entry, pass->beneath != NULL);
+        size_t suffix = entry->suffix;
         name_view name;
         name_value(&name, name_of(state, entry), separator_of(state));
         markdown_core_key_index_slot *candidate;
@@ -1115,7 +1047,8 @@ static void displace(name_pass *pass, size_t at) {
                 return;
             }
         } while (candidate->key && (!candidate->extra || candidate->extra <= at + 1));
-        holder = name_take(pass, at, (uint32_t)suffix) ? claim_name(pass, at, candidate) : 0;
+        name_take(pass, at, (uint32_t)suffix);
+        holder = claim_name(pass, at, candidate);
     }
 }
 
@@ -1138,7 +1071,6 @@ static void read_record(name_pass *pass, const markdown_core_roster_record *reco
     markdown_core_pieces_add(&name.pieces, label.data, label.len);
     name_hashed(&name, separator_of(pass->state));
     if (record->withdraws) {
-        assert(!pass->beneath);
         if (!record->live) {
             pass->state->work += (size_t)label.len + 1;
             markdown_core_key_index_remove(index, name_seek(pass, &name));
@@ -1252,49 +1184,9 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
     }
 }
 
-/* A SNAPSHOT'S NAMES. The snapshot's tail -- the ANCHOR records its
- * completion made, then the entries it parsed, the pending block's copy
- * among them -- takes its names in an overlay over the committed names, which
- * stay as the commits left them. A reservation can displace committed
- * entries, which show the names the overlay gives them (A COMMITTED HEADING
- * UNDER ANOTHER NAME); then each committed entry the last snapshot renamed
- * and this one did not shows its committed name again, and the ones this one
- * renamed are the list. */
-static void name_snapshot(name_pass *pass, markdown_core_roster_cursor cursor) {
-    markdown_core_parser *parser = pass->parser;
-    markdown_core_names *state = pass->state;
-    const size_t total = names_total(state);
-    markdown_core_key_index overlay;
-    if (!markdown_core_key_index_init(&overlay, cursor.left + total - state->named)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    pass->index = &overlay;
-    pass->beneath = &state->taken;
-    const size_t earlier = state->renamed_count;
-    read_records(pass, &cursor, parser->roster.count);
-    name_headings(pass, state->named, total);
-    for (size_t i = 0; i < earlier && !parser->error; i++) {
-        markdown_core_named *entry = named_at(state, state->renamed[i]);
-        if (!entry->renamed) {
-            name_show(name_of(state, entry), entry->suffix);
-        }
-    }
-    size_t count = 0;
-    for (size_t i = earlier; i < state->renamed_count; i++) {
-        named_at(state, state->renamed[i])->renamed = false;
-        state->renamed[count++] = state->renamed[i];
-    }
-    state->renamed_count = count;
-    markdown_core_key_index_free(&overlay);
-    pass->index = &state->taken;
-    pass->beneath = NULL;
-}
-
 /* The committed names let go, for a pass that starts empty, which names
  * every entry again. */
 static void names_reset(markdown_core_names *state) {
-    state->renamed_count = 0;
     markdown_core_key_index_free(&state->taken);
     state->records_at = state->records_read = state->named = 0;
 }
@@ -1792,27 +1684,24 @@ static void edit_rename(name_pass *pass) {
 
 /* Each entry's anchor (THE COMMITTED NAMES): an authored one stays, and a
  * computed one is the entry's base and the suffix chosen; only an entry
- * whose name changes is written. A snapshot moves the committed names on,
- * by the records and the entries its commit added before the oldest
- * candidate's mark, and names the rest over them, its tail among them; the
- * finalize names everything from an empty index. */
+ * whose name changes is written. An edit renames what it touched (THE
+ * NAMES AN EDIT MOVES); a parse names everything from an empty index. */
 void markdown_core_names_finish(markdown_core_parser *parser) {
     markdown_core_names *state = &parser->names;
     /* No node asked for a name: there is nothing to name. */
     if (!state->entries.count && !state->edit) {
         return;
     }
-    const bool snapshot = parser->snapshot;
     names_follow(state);
     /* A dialect that spells no names names no node (names.h): its entries
      * still serve their owners' readings, and an edit's old tail goes. */
     if (!state->spelling) {
-        if (state->edit && !snapshot && !back_drop(state)) {
+        if (state->edit && !back_drop(state)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         return;
     }
-    if (state->edit && !snapshot) {
+    if (state->edit) {
         name_pass pass = {.parser = parser, .state = state, .name = MARKDOWN_CORE_BUF_INIT()};
         if (!back_drop(state)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1823,15 +1712,10 @@ void markdown_core_names_finish(markdown_core_parser *parser) {
         return;
     }
     const size_t total = names_total(state);
-    size_t committed = total, committed_records = parser->roster.count;
-    if (snapshot) {
-        committed = markdown_core_parser_kept_names(parser, &committed_records);
-    } else {
-        names_reset(state);
-    }
+    names_reset(state);
     if (!state->taken.size) {
         /* Nothing is named yet: the authored entries ask for no name. */
-        while (state->named < committed && named_at(state, state->named)->authored) {
+        while (state->named < total && named_at(state, state->named)->authored) {
             state->named++;
         }
         size_t first = state->named;
@@ -1854,17 +1738,13 @@ void markdown_core_names_finish(markdown_core_parser *parser) {
     pass.parser = parser;
     pass.state = state;
     pass.index = &state->taken;
-    pass.beneath = NULL;
-    pass.fresh = !snapshot;
+    pass.fresh = true;
     pass.name = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
-    read_records(&pass, &cursor, snapshot ? committed_records : roster->count);
+    read_records(&pass, &cursor, roster->count);
     state->records_at = cursor.at;
     state->records_read = records - cursor.left;
-    name_headings(&pass, state->named, committed);
-    state->named = committed;
-    if (snapshot && !parser->error) {
-        name_snapshot(&pass, cursor);
-    }
+    name_headings(&pass, state->named, total);
+    state->named = total;
     markdown_core_strbuf_free(&pass.name);
 }
 typedef struct {

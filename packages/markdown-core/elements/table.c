@@ -591,28 +591,6 @@ static void opaque_free(markdown_core_node_pool *pool, markdown_core_node *node)
     free_node_table(node->opaque);
 }
 
-static bool opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                        bool failed) {
-    (void)pool;
-    markdown_core_table *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
-    if (!made) {
-        copy->opaque = NULL;
-        return false;
-    }
-    *made = *(const markdown_core_table *)node->opaque;
-    made->views_columns = made->columns != NULL;
-    copy->opaque = made;
-    return true;
-}
-
-static void opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
-    markdown_core_table *made = view->opaque, *table = node->opaque;
-    if (made->views_columns && made->columns == table->columns && !table->views_columns) {
-        made->views_columns = false;
-        table->views_columns = true;
-    }
-}
-
 /* A reopen at the old row `next` counts what the rows before it invented
  * again, as the row holds it; one past its last row, which its close
  * counted, keeps the count it closed with. */
@@ -663,8 +641,6 @@ static const markdown_core_edit_ops TABLE_EDIT = {
 static const markdown_core_record_ops TABLE_PAYLOAD = {
     .init = opaque_alloc,
     .free = opaque_free,
-    .view = opaque_view,
-    .adopt = opaque_adopt,
 };
 
 static const markdown_core_contain_ops TABLE_CONTAIN = {

@@ -436,19 +436,7 @@ static void free_footnote(markdown_core_node_pool *pool, markdown_core_node *nod
     }
 }
 
-static bool view_footnote(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                          bool failed) {
-    (void)node;
-    markdown_core_optional_chunk *label = &copy->as.footnote->label;
-    bool copied = true;
-    if (label->has_value && (failed || !(copied = markdown_core_node_label_copy(pool, &label->value)))) {
-        *label = markdown_core_optional_chunk_absent();
-    }
-    return copied;
-}
-
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_FOOTNOTE = {
     .size = sizeof(markdown_core_footnote_value),
     .free = free_footnote,
-    .view = view_footnote,
 };

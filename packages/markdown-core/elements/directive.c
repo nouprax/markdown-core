@@ -171,25 +171,6 @@ static void directive_opaque_free(markdown_core_node_pool *pool, markdown_core_n
     node->opaque = NULL;
 }
 
-static bool directive_opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy,
-                                  const markdown_core_node *node, bool failed) {
-    (void)pool;
-    node_directive *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
-    if (!made) {
-        copy->opaque = NULL;
-        return false;
-    }
-    *made = *(const node_directive *)node->opaque;
-    markdown_core_chunk_view(&made->name);
-    copy->opaque = made;
-    return true;
-}
-
-static void directive_opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
-    node_directive *made = view->opaque, *directive = node->opaque;
-    markdown_core_chunk_adopt(&made->name, &directive->name);
-}
-
 /* Where the attribute block at `*pos` closes is the attribute grammar's to
  * say (services.h); a dialect without it has none. What it recognized stays
  * in `parsed`, which lets it go either way. */
@@ -768,8 +749,6 @@ static const markdown_core_edit_ops DIRECTIVE_EDIT = {
 static const markdown_core_record_ops DIRECTIVE_PAYLOAD = {
     .init = directive_opaque_alloc,
     .free = directive_opaque_free,
-    .view = directive_opaque_view,
-    .adopt = directive_opaque_adopt,
     .visit = visit_owned_subtrees,
 };
 

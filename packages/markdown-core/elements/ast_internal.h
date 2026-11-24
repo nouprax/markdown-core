@@ -30,13 +30,6 @@ struct markdown_core_document {
  * result. It works in the parser's scratch. False when an allocation
  * failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser);
-/* PUBLISHING A CANDIDATE (ast.c) for `root`, an inline root a snapshot
- * published, itself or, a callout's title or a definition's term, as its
- * holder that starts at `holder_start`: the candidate takes `root`'s id, and
- * ids, extents and runs continuing `root`'s subtree. False when an
- * allocation failed. */
-bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core_node *candidate,
-                                     markdown_core_node *root, uint32_t holder_start);
 /* A DOCUMENT REOPENED FOR AN EDIT (ast.c): the flushed `root` keeps its
  * children before `child` and lets the others go, its metadata with them
  * when `child` is 0, each an old node the next publish matches against,

@@ -113,22 +113,14 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
-/* THE BOUNDARY AFTER AN IDENTIFIER LINE, the call's reading (element.h,
- * `reads`): the identifier line on the reader names the pending block in
- * `container` (parser.h, THE BUILDERS), which nothing after the call writes,
- * when the line after it is blank or the input ends. In a commit more text
- * may follow the reading waits where the text read so far ends
- * (markdown_core_parser_lookahead_wait): reaching it with no blank line
- * read reads the end. A line the reading returns is not blank, however much
- * of it the text has finished. The text ending after the identifier line
- * is a boundary, so the call says it could claim there. */
-bool markdown_core_block_identifier_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *container, markdown_core_reader *reader, void *record) {
-    (void)self;
-    (void)record;
+/* THE BOUNDARY AFTER AN IDENTIFIER LINE: the identifier line on the reader
+ * names the pending block in `container` (parser.h, THE BUILDERS), which
+ * nothing after it writes, when the line after it is blank or the input
+ * ends. */
+static bool S_identifier_bounded(markdown_core_parser *parser, markdown_core_node *container,
+                                 markdown_core_reader *reader) {
     markdown_core_reader_write(reader, markdown_core_reader_last(reader, parser, container));
-    if (markdown_core_parser_candidate_final(parser) &&
-        markdown_core_reader_byte(reader, parser, markdown_core_reader_after(reader, parser)) < 0) {
+    if (markdown_core_reader_byte(reader, parser, markdown_core_reader_after(reader, parser)) < 0) {
         return true;
     }
     markdown_core_block_lookahead lookahead;
@@ -136,19 +128,14 @@ bool markdown_core_block_identifier_reads(const markdown_core_element_instance *
     if (!markdown_core_parser_lookahead_begin(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
-    markdown_core_parser_lookahead_wait(&lookahead);
-    const bool line = markdown_core_parser_lookahead_next(&lookahead, &blank_lines) != NULL;
-    if (!line && !blank_lines && (lookahead.exhausted || lookahead.waited)) {
-        markdown_core_parser_see_end(parser);
-    }
+    markdown_core_parser_lookahead_next(&lookahead, &blank_lines);
     markdown_core_parser_lookahead_end(&lookahead);
     return blank_lines > 0;
 }
 
 /* THE IDENTIFIER LINE, the text opener's call (paragraph.c) on a line that
- * would open a paragraph in `parent` (markdown_core_parser_call): an
- * identifier alone on the line names the block before it when the boundary
- * follows it. A call that waits takes the line as its candidate would. */
+ * would open a paragraph in `parent`: an identifier alone on the line names
+ * the block before it when the boundary follows it. */
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                 markdown_core_reader *reader) {
@@ -168,12 +155,8 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         !markdown_core_block_ends_with_blank_line(owner)) {
         return false;
     }
-    const markdown_core_candidate_decision decision = markdown_core_parser_call(
-        parser, self, markdown_core_block_identifier_reads, parent, reader, MARKDOWN_CORE_NODE_PARAGRAPH, NULL, true);
-    if (decision == MARKDOWN_CORE_CANDIDATE_WAIT) {
-        return true;
-    }
-    if (decision != MARKDOWN_CORE_CANDIDATE_ACCEPT || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (!S_identifier_bounded(parser, parent, reader) || parser->error ||
+        !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
@@ -188,18 +171,4 @@ bool markdown_core_block_identifier_writes(const markdown_core_element_instance 
                                            size_t length) {
     (void)self;
     return length && memchr(line, '#', length) != NULL;
-}
-
-/* THE FEED of the identifier line's candidate (element.h): the first line
- * after it, or the blank lines before one, decides its boundary. */
-markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,
-                                                                      markdown_core_parser *parser, void *state,
-                                                                      const markdown_core_candidate_line *line,
-                                                                      bool *ends) {
-    (void)self;
-    (void)parser;
-    (void)state;
-    (void)line;
-    (void)ends;
-    return MARKDOWN_CORE_CANDIDATE_ENDS;
 }

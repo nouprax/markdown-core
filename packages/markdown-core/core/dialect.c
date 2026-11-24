@@ -47,9 +47,8 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     const markdown_core_document_ops *document = element->document;
-    return document && document->init && document->read && document->publish && document->candidate &&
-           document->reopen && document->splice && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) &&
-           S_finish_kind_indexable(document->kind);
+    return document && document->init && document->read && document->publish && document->reopen && document->splice &&
+           MARKDOWN_CORE_NODE_TYPE_BLOCK_P(document->kind) && S_finish_kind_indexable(document->kind);
 }
 
 /* The completion's hooks of an element that declares none (the Null Object
@@ -673,10 +672,6 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
         instance->bracket_offset = dialect->bracket_size;
         dialect->bracket_size += markdown_core_state_align(element->bracket_size);
-        const size_t candidate = element->candidate ? markdown_core_state_align(element->candidate->size) : 0;
-        if (dialect->candidate_state_size < candidate) {
-            dialect->candidate_state_size = candidate;
-        }
         size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {
             assert(table[at]->element != element);

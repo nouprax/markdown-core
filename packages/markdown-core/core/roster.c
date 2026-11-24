@@ -27,11 +27,9 @@ static inline markdown_core_key_index_slot *S_slot(markdown_core_roster *roster,
     return markdown_core_key_index_entry_hashed(&roster->index, S_hash(key, length), key, length);
 }
 
-/* THE LOG'S RECORD STORAGE. A record lives until the roster is freed, a
- * rollback pops it or a compaction copies it, and pops come newest first,
- * so records are carved one after another from blocks the roster owns: a
- * rollback releases the blocks opened after its mark and resumes the mark's
- * block where the mark left it. A block starts small, so a parse that
+/* THE LOG'S RECORD STORAGE. A record lives until the roster is freed or a
+ * compaction copies it, so records are carved one after another from
+ * blocks the roster owns. A block starts small, so a parse that
  * declares a few labels costs one small allocation, and doubles up to a cap,
  * so a document with many definitions pays for its records in a few
  * allocations rather than one each. A record larger than the next block gets
@@ -330,8 +328,8 @@ bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_ro
         S_places_insert(places, S_front_after(places, start), (markdown_core_roster_place){start, record}, true)) {
         return true;
     }
-    /* The log as it was; the record's bytes stay carved until a rollback
-     * or a compaction. */
+    /* The log as it was; the record's bytes stay carved until a
+     * compaction. */
     if (record->id != MARKDOWN_CORE_ROSTER_UNPLACED) {
         S_unnumber(roster, record);
     }
@@ -562,66 +560,6 @@ bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_co
     stored[length] = '\0';
     *normal = (markdown_core_chunk){stored, length, 0};
     return true;
-}
-
-markdown_core_roster_mark markdown_core_roster_mark_now(const markdown_core_roster *roster) {
-    return (markdown_core_roster_mark){roster->count,      roster->blocks, roster->block_used,
-                                       roster->block_size, roster->bytes,  roster->dead};
-}
-
-/* The front's entry of the declaration `record`, which an edit's reading
- * declared, goes. */
-static void S_unplace(markdown_core_roster *roster, markdown_core_roster_record *record) {
-    markdown_core_tree *places = &roster->spaces[record->key[0]].places;
-    const size_t at = S_rank(roster, record);
-    assert(at < places->front);
-    S_unnumber(roster, record);
-    markdown_core_tree_erase(places, at, 1);
-}
-
-void markdown_core_roster_rollback(markdown_core_roster *roster, markdown_core_roster_mark mark) {
-    assert(mark.count <= roster->count);
-    while (roster->count > mark.count) {
-        markdown_core_roster_record *record = roster->records[--roster->count];
-        const markdown_core_roster_kind kind = (markdown_core_roster_kind)record->key[0];
-        markdown_core_roster_space *space = &roster->spaces[kind];
-        space->records--;
-        assert(!record->gone);
-        /* A record the index never took leaves only the log. */
-        if (roster->count < space->cursor) {
-            space->indexed--;
-        }
-        if (record->withdraws) {
-            /* The declaration it withdrew stands again, where it stood. */
-            markdown_core_roster_record *withdrawn = record->before;
-            withdrawn->withdrawn = false;
-            markdown_core_key_index_slot *slot = S_slot(roster, withdrawn->key, withdrawn->key_len);
-            /* A removal leaves room for what it removed. */
-            assert(slot);
-            S_link(roster, slot, withdrawn);
-            continue;
-        }
-        if (record->linked) {
-            S_unlink(roster, record);
-        }
-        if (roster->placed) {
-            S_unplace(roster, record);
-        }
-    }
-    for (size_t kind = 0; kind < roster->kinds; kind++) {
-        if (roster->spaces[kind].cursor > roster->count) {
-            roster->spaces[kind].cursor = roster->count;
-        }
-    }
-    while (roster->blocks != mark.blocks) {
-        markdown_core_roster_block *block = roster->blocks;
-        roster->blocks = block->head.next;
-        markdown_core_free(block);
-    }
-    roster->block_used = mark.block_used;
-    roster->block_size = mark.block_size;
-    roster->bytes = mark.bytes;
-    roster->dead = mark.dead;
 }
 
 /* Two places in order of where they start, then of the log, which holds

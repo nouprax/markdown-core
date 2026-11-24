@@ -91,29 +91,6 @@ static void formula_opaque_free(markdown_core_node_pool *pool, markdown_core_nod
     markdown_core_free(formula);
 }
 
-static bool formula_opaque_view(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                                bool failed) {
-    (void)pool;
-    node_formula *made = failed ? NULL : markdown_core_realloc(NULL, sizeof(*made));
-    if (!made) {
-        copy->opaque = NULL;
-        return false;
-    }
-    *made = *(const node_formula *)node->opaque;
-    /* A pending literal stays pending, joined of the content the view
-     * reads, its own when it is. */
-    if (made->literal.data) {
-        markdown_core_chunk_view(&made->literal);
-    }
-    copy->opaque = made;
-    return true;
-}
-
-static void formula_opaque_adopt(markdown_core_node *view, markdown_core_node *node) {
-    node_formula *made = view->opaque, *formula = node->opaque;
-    markdown_core_chunk_adopt(&made->literal, &formula->literal);
-}
-
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     markdown_core_chunk_free(&formula->literal);
@@ -788,8 +765,6 @@ static bool formula_revert(const markdown_core_element_instance *self, markdown_
 static const markdown_core_record_ops FORMULA_PAYLOAD = {
     .init = formula_opaque_alloc,
     .free = formula_opaque_free,
-    .view = formula_opaque_view,
-    .adopt = formula_opaque_adopt,
 };
 
 static const markdown_core_contain_ops FORMULA_CONTAIN = {

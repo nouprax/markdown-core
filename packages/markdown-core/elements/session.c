@@ -58,7 +58,7 @@ static const char *session_source(const markdown_core_session *session) {
  * parse keeps its state, which the edits read and the close releases. A
  * read that fails fails the parse, which then publishes nothing. */
 static markdown_core_status session_finish(markdown_core_session *session) {
-    markdown_core_parser_commit(session->committed, session_source(session), session->text.count, true);
+    markdown_core_parser_commit(session->committed, session_source(session), session->text.count);
     markdown_core_node *root = markdown_core_parser_flush(session->committed);
     session->document.root = root;
     return root ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;

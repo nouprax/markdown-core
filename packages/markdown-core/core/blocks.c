@@ -67,7 +67,7 @@ static inline int S_append_input_marks(markdown_core_parser *parser, markdown_co
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_process_held_line(markdown_core_parser *parser,
                                                                     const unsigned char *buffer, bufsize_t bytes,
-                                                                    const markdown_core_line_stop *from, bool hold);
+                                                                    const markdown_core_line_stop *from);
 static inline const unsigned char *S_input_line_content(markdown_core_parser *parser, markdown_core_input_line *line,
                                                         bufsize_t *length);
 
@@ -258,17 +258,6 @@ static void S_release_input(markdown_core_parser_input *input) {
 }
 
 static void S_release_stream(markdown_core_parser *parser);
-static void S_take_back(markdown_core_parser *parser, bool release);
-static void S_candidate_make(markdown_core_parser *parser);
-static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t index);
-static void S_candidate_see(markdown_core_parser *parser, size_t m, size_t index);
-static void S_candidates_release(markdown_core_parser *parser);
-static bool S_feed(markdown_core_parser *parser, int through, const unsigned char *limit);
-static bool S_candidates_end(markdown_core_parser *parser);
-static bool S_candidates_see_end(markdown_core_parser *parser, size_t *m, size_t *index);
-static markdown_core_node *const *S_candidate_path(const markdown_core_parser *parser, const markdown_core_node *parent,
-                                                   int *depth);
-static void S_meet_from_stop(markdown_core_parser *parser);
 static void S_complete_settled(markdown_core_parser *parser);
 
 /* The stack the stage's walks borrow, and what the walks keep for every
@@ -333,7 +322,7 @@ static void S_stage_flush(markdown_core_parser *parser) {
         return;
     }
     S_stage(parser, STAGE_FINISH);
-    if (!parser->snapshot && !markdown_core_parser_takes_edits(parser)) {
+    if (!markdown_core_parser_takes_edits(parser)) {
         S_stage(parser, STAGE_RELEASE);
     }
 }
@@ -341,10 +330,6 @@ static void S_stage_flush(markdown_core_parser *parser) {
 static void S_tail_leave(markdown_core_parser *parser, const markdown_core_node *root);
 
 static void S_parser_dispose(markdown_core_parser *parser) {
-    if (parser->stream) {
-        S_take_back(parser, false);
-        S_candidates_release(parser);
-    }
     const markdown_core_dialect *dialect = parser->dialect;
     for (size_t i = 0; i < dialect->element_count; i++) {
         const markdown_core_element_instance *instance = &dialect->instances[i];
@@ -454,7 +439,6 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
 
     parser->revision = revision;
     parser->pool = revision->pool;
-    parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
     parser->room_at = UINT32_MAX;
     parser->room_holder = NULL;
     markdown_core_strbuf_init(&parser->curline, 256);
@@ -478,16 +462,10 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     document = make_document(parser);
     parser->root = document;
     parser->at.block_root = parser->at.current = document;
-    /* WHAT A STREAMING PARSE KEEPS (parser.h, markdown_core_stream), released
-     * with the parse's state: the lending's storage, the records and the
-     * nodes they own, the committed definitions and the records of the
-     * lookups that found nothing. Every parse streams: a one-shot parse is
-     * a stream whose first commit is its whole text, and its finalize. */
-    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream) + parser->dialect->candidate_state_size);
-    if (parser->stream) {
-        markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
-        markdown_core_strbuf_init(&parser->stream->settled.labels, 0);
-    }
+    /* WHAT A PARSE KEEPS (parser.h, markdown_core_stream), released with
+     * the parse's state: the records and the nodes they own, the committed
+     * definitions and what its edits keep. */
+    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream));
 
     /* A transaction that could not build its initial structures is poisoned:
      * source processing becomes a no-op and the parse reports failure. Only a
@@ -1512,10 +1490,6 @@ static inline void S_places_add_own(markdown_core_places *places, uint32_t start
     }
 }
 
-/* Where a read of the settled paragraph's content stands before its last
- * mark, `mark` of its map, at content offset `from`, with `places` read
- * before it, ending at `at`: where the next read goes on (THE SETTLE
- * POINT). False, with the parse failed, when storage could not be had. */
 /* Where a read of an inline root's content goes on (S_read_content): the
  * places `places` read the content before the mark `mark` of its map, which
  * starts at content offset `from`, the last of them ending at `at`. */
@@ -1535,22 +1509,6 @@ typedef struct {
     int64_t shift;
 } read_resume;
 
-static bool S_keep_read(markdown_core_parser *parser, markdown_core_settled *settled,
-                        const markdown_core_places *places, uint32_t mark, bufsize_t from, uint32_t at) {
-    const size_t bytes = sizeof(*places) + places->count * sizeof(*places->items);
-    markdown_core_places *kept = markdown_core_realloc(settled->places, bytes);
-    if (!kept) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    memcpy(kept, places, bytes);
-    settled->places = kept;
-    settled->mark = mark;
-    settled->from = from;
-    settled->at = at;
-    return true;
-}
-
 /* AN INLINE ROOT'S CONTENT BECOMES THE INPUT ITS NODES ARE PLACED IN
  * (markdown_core_inline_start_inlines). The `length` bytes its parse reads
  * keep their map to the source in the root's places: one place per run of
@@ -1568,8 +1526,7 @@ static bool S_keep_read(markdown_core_parser *parser, markdown_core_settled *set
  * the content it was read as. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_content(markdown_core_parser *parser,
                                                                            markdown_core_node *node, bufsize_t length,
-                                                                           const read_resume *resume,
-                                                                           markdown_core_settled *settled) {
+                                                                           const read_resume *resume) {
     const markdown_core_content_map map = node->content_map;
     if (map.first == MARKDOWN_CORE_IDENTITY_MARK) {
         return;
@@ -1594,10 +1551,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_content(markd
     /* The node's own lines, when it has places of them; one line without. */
     markdown_core_places *const lines = node->source.places;
     const uint32_t line_count = lines ? lines->count : 0;
-    /* A read the settled paragraph kept goes on where it stopped: at the
-     * mark the last read ended in, which the content's text keeps as it
-     * grows (THE SETTLE POINT); and so does one that keeps what an edit's
-     * last reading read before a seam (THE PREFIX OF A PARAGRAPH). */
+    /* A read that keeps what an edit's last reading read before a seam
+     * goes on where it stopped (THE PREFIX OF A PARAGRAPH). */
     const markdown_core_places *kept = resume && !lines ? resume->places : NULL;
     if (kept && (resume->mark >= (uint32_t)map.count ||
                  parser->line_marks.values[map.first + resume->mark].content_offset != resume->from)) {
@@ -1627,11 +1582,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_content(markd
     }
     for (; from < end; mark++) {
         const bufsize_t to = mark + 1 < past && mark[1].content_offset < end ? mark[1].content_offset : end;
-        if (settled && !lines && to == end &&
-            !S_keep_read(parser, settled, places, (uint32_t)(mark - parser->line_marks.values - map.first), from, at)) {
-            markdown_core_node_pool_bytes_free(parser->pool, places);
-            return;
-        }
         const uint32_t start = (uint32_t)(mark->source + (from - mark->content_offset) * mark->source_step);
         const uint32_t stop = start + (uint32_t)((to - from - 1) * mark->source_step + mark->source_width);
         const uint32_t size = (uint32_t)(to - from);
@@ -1705,7 +1655,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_content(markd
 }
 
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
-    S_read_content(parser, node, length, NULL, NULL);
+    S_read_content(parser, node, length, NULL);
 }
 
 /* `cut` bytes are cut off the FRONT of `node`'s text, leaving `remaining`
@@ -1790,8 +1740,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_settle_failed(markdown_core_pa
 /* A BLOCK SETTLES (docs/plans/2026-09-29-incremental-parsing.md, 5.2) into
  * `parent`, the block that holds it, once its own children have: it is one
  * of the parent's children already, and joins the completion queue with its
- * parent. It takes the parser's `settle_flags` -- COMMITTED in a commit,
- * which a snapshot reads and never writes. A parent of a kind that folds its
+ * parent. It is COMMITTED. A parent of a kind that folds its
  * children takes what it reads of the child at once (S_fold).
  * Nothing writes it after this but completion, which makes its inline content
  * and asks the finish steps of its kind (markdown-core-element-api.h, THE
@@ -1801,7 +1750,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle(markdown_co
                                                                      markdown_core_node *node,
                                                                      markdown_core_node *parent,
                                                                      const markdown_core_kind_record *kind) {
-    node->flags |= parser->settle_flags;
+    node->flags |= MARKDOWN_CORE_NODE__COMMITTED;
     if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
         parent->flags = S_fold(kind, parent, parent->flags, node->flags);
     }
@@ -1885,11 +1834,10 @@ void markdown_core_block_settle_before(markdown_core_parser *parser, markdown_co
 
 /* A field root settles as its block installs it: the line that wrote it is
  * read, so nothing writes it after this but its completion, which joins the
- * queue on its own, and a snapshot's view of the block holds it as it is
- * (markdown_core_node_view). */
+ * queue on its own. */
 void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_core_node *field,
                                       markdown_core_node *holder) {
-    field->flags |= parser->settle_flags;
+    field->flags |= MARKDOWN_CORE_NODE__COMMITTED;
     S_complete_later(parser, field, holder);
 }
 
@@ -2052,21 +2000,6 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_close(markdown_core_pars
     }
 }
 
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_lend_below(markdown_core_parser *parser, markdown_core_node *block);
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_candidate_drops(markdown_core_parser *parser,
-                                                                  const markdown_core_node *block);
-
-/* The current block, its range settled, closes: its pending child settles
- * into it, it closes, and it leaves the stack to be the pending child of the
- * block below, or, when it yields no node of its own, leaves that block's
- * children. A block a snapshot lent waits for the take-back (THE LENDING),
- * one a candidate lent for its decision (THE CANDIDATES), and the block the
- * lending reaches next is lent as it closes. */
-/* What `gone`, a block that yields no node, read, a block of `parent`
- * holds: the first of its children from where the reading began on, of
- * those it read (S_reads_kept), as
- * the reading of a paragraph its definitions were cut from began at the
- * first (THE BLOCK OF A LINE), or the last before it, or `parent`. */
 /* How many of `parent`'s first children an edit's reading kept, whose
  * places their publish gave and no reading since (ast.c, THE RECORDS): those
  * of the root or of a block of the chain before the reading's first, and
@@ -2087,6 +2020,11 @@ static size_t S_reads_kept(const markdown_core_parser *parser, const markdown_co
     return 0;
 }
 
+/* What `gone`, a block that yields no node, read, a block of `parent`
+ * holds: the first of its children from where the reading began on, of
+ * those it read (S_reads_kept), as
+ * the reading of a paragraph its definitions were cut from began at the
+ * first (THE BLOCK OF A LINE), or the last before it, or `parent`. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reads_pass(markdown_core_parser *parser,
                                                              const markdown_core_node *gone,
                                                              markdown_core_node *parent) {
@@ -2105,13 +2043,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reads_pass(markdown_core_parse
     }
 }
 
+/* The current block, its range settled, closes: its pending child settles
+ * into it, it closes, and it leaves the stack to be the pending child of the
+ * block below, or, when it yields no node of its own, leaves that block's
+ * children. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(markdown_core_parser *parser) {
     markdown_core_node *closing = parser->at.current;
     markdown_core_node *parent = markdown_core_scaffold_parent(closing);
     assert(closing->flags & MARKDOWN_CORE_NODE__OPEN);
-    if (closing == parser->stream->boundary) {
-        S_lend_below(parser, closing);
-    }
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, closing);
     S_settle_pending_as(parser, closing, kind);
     S_shut(parser, closing);
@@ -2133,11 +2072,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
         if (closing->closed || closing->look) {
             S_reads_pass(parser, closing, parent);
         }
-        if (!(closing->flags & MARKDOWN_CORE_NODE__LENT)) {
-            markdown_core_parser_release_node(parser, closing);
-        } else {
-            S_candidate_drops(parser, closing);
-        }
+        markdown_core_parser_release_node(parser, closing);
     }
 }
 
@@ -2660,8 +2595,8 @@ static bool S_settle_scaffold(markdown_core_parser *parser, markdown_core_node *
     return S_settle_scaffold_after(parser, node, 0, false);
 }
 
-/* The same of a root that holds its settled nodes, which takes its scaffold
- * after them (THE SETTLE POINT). */
+/* The same of a root that holds the nodes before its seam, which takes its
+ * scaffold after them (THE SEAMS). */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_settle_scaffold_held(markdown_core_parser *parser,
                                                                        markdown_core_node *node) {
     return S_settle_scaffold_after(parser, node, node->child_count, true);
@@ -2707,8 +2642,7 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
 
 /* The explicit anchor `node` holds reserved as starting at `start`: the
  * anchor its attributes write, as the headings compute theirs elsewhere
- * (node.h, markdown_core_heading). A node reserves it once it is complete,
- * and a block the snapshot ends without closing (S_close_tail) as it ends.
+ * (node.h, markdown_core_heading). A node reserves it once it is complete.
  * False when storage could not be had. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(markdown_core_parser *parser,
                                                                              const markdown_core_node *node,
@@ -2720,108 +2654,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
     return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start);
 }
 
-/* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8). A
- * snapshot reads the open paragraph's content again on every append, and
- * what it makes of the content before the paragraph's settle point is what
- * it made before: the top-level nodes there were made by tokens no reading
- * of which reached the end of the content, and nothing read before the
- * point holds anything open past it (parser.h, markdown_core_inline_settle).
- * The paragraph's content grows only at its end while it stays the same
- * paragraph -- the same block with the same id, its text read from the same
- * offset, and no shorter than the read before, which covers every byte a
- * token before the point read -- so the stream keeps those nodes (parser.h,
- * markdown_core_settled): the paragraph's next completion in a snapshot
- * takes them as its first children and parses from the point, and so does
- * the commit's that completes it, after which the tree owns them. A node
- * that settles is COMMITTED, so the publish makes it FINAL (ast.c, THE
- * FINAL PREFIX), never walks it again and leaves it its id (plan 5.9).
+/* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8) of
+ * an inline root's content: a start of a top-level token no reading of
+ * which reached the end of the content, before which nothing read holds
+ * anything open past it (parser.h, markdown_core_inline_settle). What a
+ * parse makes of the content before such a point is what any parse of the
+ * content that goes on past it makes, so an edit's reading parses a
+ * paragraph from one, a seam, and keeps the nodes before it (THE SEAMS).
  *
- * A read's point is the latest start it listed that is no later than its
- * earliest undecided start and at which a top-level node starts whose node
- * before it is no Text: a node starting there began with a token, and
- * neither consolidation nor a scanner that takes back the bytes of the Text
- * before it (an address's scheme) reaches across a node that is no Text.
- *
- * A node that settles owns the bytes its record views: the content buffer
- * it was read from moves as the paragraph grows. What a completion does
- * besides making the nodes is the stream's to do again for those it keeps:
- * the explicit anchors below them are reserved at every completion, as a
- * snapshot's roster goes with the snapshot, and the lookups they made
- * that found nothing are the paragraph's when the commit completes it (A
- * LOOKUP THAT FOUND NOTHING). The finalize's completion, which sees every
- * definition, asks them again, and reads the content whole when one finds a
- * definition. */
+ * A point is a start listed no later than the earliest undecided start at
+ * which a top-level node starts whose node before it is no Text: a node
+ * starting there began with a token, and neither consolidation nor a
+ * scanner that takes back the bytes of the Text before it (an address's
+ * scheme) reaches across a node that is no Text. */
 
-static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_roster_kind kind,
-                          const unsigned char *label, bufsize_t size, uint32_t at);
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at);
 static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_roster_kind kind, const unsigned char *label,
                   bufsize_t size);
-
-/* Whether `node`'s completion settles its content: a snapshot's, of a
- * paragraph it lent, read on its own lines, while no candidate waits. */
-static inline bool S_settles(const markdown_core_parser *parser, const markdown_core_node *node) {
-    return parser->stream->snapshot_mark &&
-           (markdown_core_parser_kind(parser, node)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) &&
-           (node->flags & MARKDOWN_CORE_NODE__LENT) && !node->source.places && !markdown_core_parser_undecided(parser);
-}
-
-/* The settled record emptied, the nodes it held its owner's. */
-static void S_settled_clear(markdown_core_settled *settled) {
-    settled->address = settled->root = NULL;
-    settled->taken = false;
-    markdown_core_array_truncate(&settled->nodes, 0);
-    settled->point = 0;
-    settled->miss_count = settled->miss_total = 0;
-    markdown_core_strbuf_truncate(&settled->labels, 0);
-    settled->anchored_count = 0;
-    settled->open_count = 0;
-    settled->fixed = (markdown_core_settled_step){0};
-    settled->step_count = 0;
-    settled->bound = 0;
-    markdown_core_free(settled->places);
-    settled->places = NULL;
-}
-
-/* The settled nodes let go, unless the tree holds them, and the record
- * emptied. */
-static void S_settled_release(markdown_core_parser *parser, markdown_core_settled *settled) {
-    for (size_t i = 0; !settled->taken && i < settled->nodes.count; i++) {
-        markdown_core_parser_release_node(parser, settled->nodes.values[i]);
-    }
-    S_settled_clear(settled);
-}
-
-/* The settled nodes of the paragraph `node` leave it, and the record is
- * emptied: the paragraph goes on, but its content no longer goes on from
- * them, so what it holds now is read whole, and continues them as the last
- * publish placed them (markdown_core_publish_keep_left). */
-static void S_settled_leave(markdown_core_parser *parser, markdown_core_settled *settled,
-                            const markdown_core_node *node) {
-    if (!markdown_core_publish_keep_left(parser, node, node, settled->nodes.values, (uint32_t)settled->nodes.count,
-                                         0)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    S_settled_clear(settled);
-}
-
-/* Whether the settled nodes are of `node`, whose content is `size` bytes. */
-static inline bool S_settled_holds(const markdown_core_settled *settled, const markdown_core_node *node,
-                                   bufsize_t size) {
-    return settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind &&
-           settled->offset == node->content_map.offset && size >= settled->size;
-}
-
-/* The explicit anchors below the settled nodes reserved as starting at
- * `start`. False when storage could not be had. */
-static bool S_settled_anchors(markdown_core_parser *parser, const markdown_core_settled *settled, uint32_t start) {
-    for (size_t i = 0; i < settled->anchored_count; i++) {
-        if (!S_reserve_anchor(parser, settled->anchored[i], start)) {
-            return false;
-        }
-    }
-    return true;
-}
 
 /* The node in `*slot` pushed on the stack `context` holds, linked through
  * the nodes' scaffolds, which a complete node no longer uses. */
@@ -2834,346 +2683,11 @@ static int S_settled_push(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* The node `node` settles, and with it every node below it, the field roots
- * of its inline nodes included: each owns the bytes its record views, and
- * one that holds an explicit anchor is listed with the settled ones, after
- * the first `*anchored`. False when storage could not be had. */
-static bool S_settled_own(const markdown_core_dialect *dialect, markdown_core_settled *settled,
-                          markdown_core_node *node, size_t *anchored) {
-    markdown_core_node *stack = node;
-    bool owned = true;
-    while (stack) {
-        markdown_core_node *below = stack;
-        stack = markdown_core_scaffold_of(below)->next;
-        markdown_core_scaffold_of(below)->next = NULL;
-        if (!owned) {
-            continue;
-        }
-        owned = markdown_core_node_own_viewed(below);
-        if (owned && below->attributes.anchor.len) {
-            markdown_core_node **nodes =
-                markdown_core_reserve(settled->anchored, &settled->anchored_capacity, *anchored + 1, sizeof(*nodes));
-            owned = nodes != NULL;
-            if (owned) {
-                settled->anchored = nodes;
-                nodes[(*anchored)++] = below;
-            }
-        }
-        if (owned) {
-            markdown_core_visit_inline_subtrees(dialect, below, S_settled_push, &stack);
-            for (uint32_t i = 0; i < below->child_count; i++) {
-                S_settled_push(&below->children[i], &stack);
-            }
-        }
-    }
-    return owned;
-}
-
-/* The end of the labels of the settled lookups that found nothing. */
-static inline size_t S_settled_labels(const markdown_core_settled *settled) {
-    return settled->miss_count ? (size_t)(settled->misses[settled->miss_count - 1].label_start +
-                                          settled->misses[settled->miss_count - 1].label_size)
-                               : 0;
-}
-
-/* A lookup the snapshot's reading of the settling paragraph found nothing
- * for, listed after the settled ones. False when storage could not be
- * had. */
-static bool S_settled_miss(markdown_core_settled *settled, markdown_core_roster_kind kind,
-                           const markdown_core_chunk *label, uint32_t at, bool found) {
-    markdown_core_settled_miss *misses =
-        markdown_core_reserve(settled->misses, &settled->miss_capacity, settled->miss_total + 1, sizeof(*misses));
-    if (!misses) {
-        return false;
-    }
-    settled->misses = misses;
-    misses[settled->miss_total++] = (markdown_core_settled_miss){kind, settled->labels.size, label->len, at, found};
-    markdown_core_strbuf_put(&settled->labels, label->data, label->len);
-    settled->settle.misses++;
-    return !settled->labels.oom;
-}
-
 /* The bytes of `node`'s content its inline parse reads. */
 static inline bufsize_t S_content_bytes(const markdown_core_node *node) {
     markdown_core_chunk content = markdown_core_node_text(node);
     markdown_core_chunk_rtrim(&content);
     return content.len;
-}
-
-/* Whether a lookup the settled nodes made that found nothing finds a
- * definition at the finalize's completion, which sees every definition: the
- * content then no longer goes on from them. A commit's completion keeps the
- * lookups for the finalize instead (S_settled_take). */
-static bool S_settled_found(markdown_core_parser *parser, const markdown_core_settled *settled) {
-    for (size_t i = 0; !parser->snapshot && i < settled->miss_count; i++) {
-        const markdown_core_settled_miss *miss = &settled->misses[i];
-        if (miss->found) {
-            continue;
-        }
-        const markdown_core_chunk label = {(unsigned char *)settled->labels.ptr + miss->label_start, miss->label_size,
-                                           0};
-        bool failed = false;
-        const bool found = markdown_core_parser_find_definition(parser, miss->kind, &label, miss->at, &failed) != NULL;
-        if (failed) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-        if (found || failed) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* THE CONSTRUCTS GIVEN UP BEFORE THE POINT (node.h, OPENER): what the
- * run of the paragraph `node` gave up before the settle point is as
- * settled as the nodes before it, and the settled record keeps it: the
- * entries of the run's openers, not those a line of the block phase gave
- * up, which the paragraph keeps as its lines do. */
-static inline bool S_open_run(const markdown_core_written *field, bool run) {
-    return field->how == MARKDOWN_CORE_FIELD_OPENER ? !(field->slot & 1)
-                                                    : field->how == MARKDOWN_CORE_FIELD_OPEN && run;
-}
-
-/* The record keeps the run's entries of `node` that start before the
- * point, with the fields their openers wrote. False when storage could
- * not be had. */
-static bool S_settled_opens_take(markdown_core_settled *settled, const markdown_core_node *node) {
-    settled->open_count = 0;
-    const markdown_core_fields *fields = node->fields;
-    bool run = false, kept = false;
-    for (uint32_t i = 0; fields && i < fields->count; i++) {
-        const markdown_core_written *field = &fields->items[i];
-        run = S_open_run(field, run);
-        if (field->how == MARKDOWN_CORE_FIELD_OPENER) {
-            kept = run && field->raw && (bufsize_t)field->start < settled->point;
-        }
-        if (!run || !kept) {
-            continue;
-        }
-        markdown_core_written *opens =
-            markdown_core_reserve(settled->opens, &settled->open_capacity, settled->open_count + 1, sizeof(*opens));
-        if (!opens) {
-            return false;
-        }
-        settled->opens = opens;
-        opens[settled->open_count++] = *field;
-    }
-    return true;
-}
-
-/* The record keeps none of the run's entries from `point` on. */
-static void S_settled_opens_cut(markdown_core_settled *settled, bufsize_t point) {
-    uint32_t count = 0;
-    bool kept = false;
-    for (uint32_t i = 0; i < settled->open_count; i++) {
-        const markdown_core_written *field = &settled->opens[i];
-        if (field->how == MARKDOWN_CORE_FIELD_OPENER) {
-            kept = (bufsize_t)field->start < point;
-        }
-        if (kept) {
-            settled->opens[count++] = *field;
-        }
-    }
-    settled->open_count = count;
-}
-
-/* The paragraph `node`, which a parse from the point completes, holds the
- * run's entries the record keeps in place of any it held. False, with the
- * parse failed, when storage could not be had. */
-static bool S_settled_opens_put(markdown_core_parser *parser, const markdown_core_settled *settled,
-                                markdown_core_node *node) {
-    markdown_core_fields *fields = node->fields;
-    uint32_t count = 0;
-    bool run = false;
-    for (uint32_t i = 0; fields && i < fields->count; i++) {
-        run = S_open_run(&fields->items[i], run);
-        if (!run) {
-            fields->items[count++] = fields->items[i];
-        }
-    }
-    if (fields) {
-        fields->count = count;
-    }
-    if (!settled->open_count) {
-        return true;
-    }
-    markdown_core_written *room = markdown_core_node_field_room(parser->pool, node, settled->open_count);
-    if (!room) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    memcpy(room, settled->opens, settled->open_count * sizeof(*room));
-    node->fields->count += settled->open_count;
-    return true;
-}
-
-/* The commit completes the settled paragraph `node`, whose content is
- * `size` bytes: the settled nodes are its first children, the tree's from
- * now on, the lookups they made that found nothing its own, their anchors
- * reserved, and its content parsed from the point. While a candidate waits,
- * an accept may put the paragraph back as the candidate's mark found it,
- * open, and the nodes come back to the stream (S_candidate_take_back): the
- * stream keeps them as taken until no candidate waits. */
-static void S_settled_take(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size) {
-    markdown_core_settled *settled = &parser->stream->settled;
-    markdown_core_node **items = markdown_core_node_pool_bytes(
-        parser->pool, (size_t)markdown_core_node_array_capacity((uint32_t)settled->nodes.count) * sizeof(*items));
-    if (!items) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    memcpy(items, settled->nodes.values, settled->nodes.count * sizeof(*items));
-    node->children = items;
-    node->child_count = (uint32_t)settled->nodes.count;
-    const bool undecided = markdown_core_parser_undecided(parser);
-    /* A lookup's record keeps where the root lies once its content is read.
-     * Only a snapshot's completion records one (markdown_core_parser_find_definition). */
-    markdown_core_parser_read_content(parser, node, size);
-    for (size_t i = 0; !parser->error && i < settled->miss_count; i++) {
-        const markdown_core_settled_miss *miss = &settled->misses[i];
-        const markdown_core_chunk label = {(unsigned char *)settled->labels.ptr + miss->label_start, miss->label_size,
-                                           0};
-        /* A finalize asked again those that found nothing, which noted
-         * their uses (S_settled_found). */
-        const bool kept =
-            !parser->snapshot ? !miss->found || markdown_core_parser_note_use(parser, miss->kind, &label, miss->at)
-            : miss->found
-                ? S_use(parser->stream->edit, S_use_place(parser, node, miss->at), miss->kind, label.data, label.len)
-                : S_record_miss(parser, node, miss->kind, label.data, label.len, miss->at);
-        if (!kept) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-    }
-    if (!parser->error && !S_settled_anchors(parser, settled, node->place.start)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    if (!parser->error && S_settled_opens_put(parser, settled, node)) {
-        settled->settle.from = settled->point;
-        markdown_core_parse_inlines_settle(parser, node, &settled->settle);
-    }
-    if (undecided && !parser->error) {
-        settled->taken = true;
-    } else {
-        S_settled_clear(settled);
-    }
-}
-
-/* THE LAST LINES REMAIN OPEN. The line the text ends in, which the content
- * holds as far as it goes, can still turn out to start a block that
- * interrupts the paragraph -- a definition's label once its colon comes --
- * and a later line can take the line before it -- a delimiter row makes it
- * a table's head -- while the last line holds only bytes some element
- * `claims` (element.h). A paragraph that loses its first line is no longer
- * one, and its nodes go with it; one that loses a later line goes on
- * without it, and nothing FINAL may lie on it. So the FINAL bound of a
- * snapshot's read lies before a last line after the first, and, while that
- * line is claimed, before the one before it unless that one is the first,
- * and before the white space ending the line before them, which the
- * content loses with them (A SETTLED LINE THAT LEAVES). */
-static bufsize_t S_settle_bound(const markdown_core_parser *parser, const markdown_core_node *node, bufsize_t size) {
-    /* A paragraph whose content marks all name one source line has no
-     * line after its first: nothing to scan. */
-    const markdown_core_content_map *map = &node->content_map;
-    if (map->count <= 1 ||
-        parser->line_marks.values[map->first].line == parser->line_marks.values[map->first + map->count - 1].line) {
-        return size;
-    }
-    const unsigned char *text = markdown_core_node_text(node).data;
-    bufsize_t at = size;
-    bool claimed = true;
-    while (at > 0 && !markdown_core_is_line_end(text[at - 1])) {
-        at--;
-        claimed = claimed && parser->dialect->claims[text[at]];
-    }
-    if (!at) {
-        return size;
-    }
-    while (at > 0 && markdown_core_is_whitespace(text[at - 1])) {
-        at--;
-    }
-    bufsize_t before = at;
-    while (claimed && before > 0 && !markdown_core_is_line_end(text[before - 1])) {
-        before--;
-    }
-    if (claimed && before > 0) {
-        at = before;
-        while (at > 0 && markdown_core_is_whitespace(text[at - 1])) {
-            at--;
-        }
-    }
-    return at;
-}
-
-/* A SETTLED LINE THAT LEAVES. A read settles the content up to its point,
- * as far as the text goes (THE SETTLE POINT), but a publish makes FINAL only
- * the settled nodes before the FINAL bound (THE LAST LINES REMAIN OPEN):
- * those after it keep their ids from one publish to the next and promise
- * nothing (ast.c, THE FINAL PREFIX). When a line leaves the paragraph, its
- * content is what it was up to that line, and the settled nodes go back to
- * where they stood when a read settled them at a point the content still
- * holds: what settled after leaves, owned by the record the last publish
- * kept of it, and the read goes on from that point. The FINAL ones never
- * leave, as the bound lies before every line that can. */
-static void S_settled_cut(markdown_core_parser *parser, markdown_core_settled *settled, const markdown_core_node *node,
-                          bufsize_t size) {
-    size_t k = settled->step_count;
-    while (k && settled->steps[k - 1].point > size) {
-        k--;
-    }
-    const markdown_core_settled_step to = k ? settled->steps[k - 1] : settled->fixed;
-    if (to.point > size) {
-        return;
-    }
-    markdown_core_publish_cede(parser, node, settled->nodes.values + to.count,
-                               (uint32_t)settled->nodes.count - to.count);
-    markdown_core_array_truncate(&settled->nodes, to.count);
-    settled->point = to.point;
-    settled->miss_count = settled->miss_total = to.misses;
-    markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
-    settled->anchored_count = to.anchored;
-    settled->step_count = k;
-    settled->size = size;
-    S_settled_opens_cut(settled, to.point);
-}
-
-/* A snapshot completes the paragraph `node`, whose content is `size` bytes:
- * it takes the settled nodes as its first children when they are its, and
- * parses its content from the point, listing where the next point may be
- * when the read `settles`. A read that does not settle leaves the held nodes
- * as they are: they are the published document's, which made them FINAL. */
-static void S_settled_read(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size, bool settles) {
-    markdown_core_settled *settled = &parser->stream->settled;
-    if (!settled->address) {
-        settled->address = node;
-        settled->id = node->id;
-        settled->kind = node->kind;
-    }
-    settled->root = node;
-    settled->offset = node->content_map.offset;
-    if (settles) {
-        settled->size = size;
-        settled->bound = S_settle_bound(parser, node, size);
-    }
-    settled->miss_total = settled->miss_count;
-    markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
-    if (settled->nodes.count) {
-        node->children = settled->nodes.values;
-        node->child_count = (uint32_t)settled->nodes.count;
-    }
-    if (!S_settled_anchors(parser, settled, node->place.start)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    const read_resume resume = {
-        .places = settled->places, .mark = settled->mark, .from = settled->from, .at = settled->at};
-    S_read_content(parser, node, size, &resume, settled);
-    if (!parser->error && S_settled_opens_put(parser, settled, node)) {
-        settled->settle.from = settled->point;
-        markdown_core_parse_inlines_settle(parser, node, &settled->settle);
-        if (!settles) {
-            settled->settle.count = 0;
-        }
-    }
 }
 
 /* The content of `node` whole, its parts joined when it keeps them apart
@@ -3264,7 +2778,7 @@ void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_nod
     S_pane_owe(parser, node);
     edit->leap->armed = false;
     edit->leap->node = NULL;
-    parser->stream->settled.address = NULL;
+    parser->stream->reopened = NULL;
 }
 
 /* THE OLD TAIL OF A PARAGRAPH an edit's reading reopened at a seam: its old
@@ -3622,7 +3136,7 @@ static void S_seam_read(markdown_core_parser *parser, markdown_core_node *node, 
             }
         }
     }
-    S_read_content(parser, node, size, resume.places || resume.back ? &resume : NULL, NULL);
+    S_read_content(parser, node, size, resume.places || resume.back ? &resume : NULL);
     S_leap_unread(leap);
 }
 
@@ -3744,8 +3258,7 @@ static void S_seam_opens_back(markdown_core_parser *parser, markdown_core_node *
  * listing where the next seams may be, up to a seam of the back it meets
  * (THE OLD TAIL OF A PARAGRAPH); or whole, the seam let go, when the
  * paragraph is no longer as the seam found it -- its content no longer
- * reaches past the seam -- or when a candidate waits, which may put the
- * reading back. A parse that meets a seam before an opener it leaves
+ * reaches past the seam. A parse that meets a seam before an opener it leaves
  * unpaired, which a closer past the seam may take, reads again to the
  * end. */
 static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node) {
@@ -3758,7 +3271,7 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
      * the publish named it by back as completion ends (S_revert_end). */
     const markdown_core_revert *revert = &edit->revert;
     const uint64_t id = revert->node == node ? revert->id : node->id;
-    const bool lists = id == leap->id && S_seams(parser, node) && !markdown_core_parser_undecided(parser);
+    const bool lists = id == leap->id && S_seams(parser, node);
     assert(!leap->kept || node->child_count == leap->count);
     if (leap->kept && lists) {
         node->child_count = leap->seam.index;
@@ -3780,7 +3293,7 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
         S_pane_owe(parser, node);
         leap->armed = false;
         leap->node = NULL;
-        stream->settled.address = NULL;
+        stream->reopened = NULL;
         if (!parser->error) {
             markdown_core_parse_inlines(parser, node, true);
         }
@@ -3869,7 +3382,7 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     if (!leap || !leap->active || leap->node != node) {
         return true;
     }
-    stream->settled.address = NULL;
+    stream->reopened = NULL;
     leap->active = leap->armed = false;
     /* The seams' measures stand from the first child on only while the
      * measure of the seam the parse began at does (S_seam_measure). */
@@ -4077,13 +3590,12 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     return owned;
 }
 
-/* The inline content of the paragraph `node` read with the settled nodes,
- * or read to settle (THE SETTLE POINT). */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_parser *parser, markdown_core_node *node,
-                                                                bool settles) {
-    markdown_core_settled *settled = &parser->stream->settled;
+/* The inline content of the paragraph `node` an edit's reading reopened at
+ * a seam (THE SEAMS), read from the seam while its leap is armed. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_reopened(markdown_core_parser *parser,
+                                                                 markdown_core_node *node) {
     const markdown_core_edit *edit = parser->stream->edit;
-    if (!settles && edit && edit->leap && edit->leap->armed && edit->leap->node == node) {
+    if (edit && edit->leap && edit->leap->armed && edit->leap->node == node) {
         S_seam_parse(parser, node);
         return;
     }
@@ -4093,44 +3605,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_pa
     if (parser->error || !S_content_whole(parser, node)) {
         return;
     }
-    const bufsize_t size = S_content_bytes(node);
-    const bool same =
-        settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind;
-    if (same && settled->offset == node->content_map.offset && size < settled->size) {
-        S_settled_cut(parser, settled, node, size);
-    }
-    if (same && !S_settled_holds(settled, node, size)) {
-        S_settled_leave(parser, settled, node);
-    } else if (settled->address && !S_settled_holds(settled, node, size)) {
-        S_settled_release(parser, settled);
-    }
-    if (parser->error) {
-        return;
-    }
-    /* The commit's completion takes the nodes; a snapshot's reads with them,
-     * and settles more of the content only when it may (S_settles). */
-    const bool commits = !parser->stream->snapshot_mark;
-    if (settled->nodes.count && commits && (node->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-        if (!S_settled_found(parser, settled)) {
-            S_settled_take(parser, node, size);
-        } else if (!parser->error) {
-            S_settled_leave(parser, settled, node);
-            markdown_core_parse_inlines(parser, node, true);
-        }
-    } else if (settles || (settled->nodes.count && !commits)) {
-        S_settled_read(parser, node, size, settles);
-    } else {
-        S_settled_release(parser, settled);
-        markdown_core_parse_inlines(parser, node, true);
-    }
+    markdown_core_parse_inlines(parser, node, true);
 }
 
 /* The inline content of the queued root `node` parsed. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdown_core_parser *parser,
                                                                          markdown_core_node *node) {
-    const bool settles = S_settles(parser, node);
-    if (settles || parser->stream->settled.address == node) {
-        S_parse_settled(parser, node, settles);
+    if (parser->stream->reopened == node) {
+        S_parse_reopened(parser, node);
     } else if (S_content_whole(parser, node)) {
         /* A paragraph that keeps its runs takes its lines' places back
          * (THE PANE). */
@@ -4214,83 +3696,6 @@ static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32
     return low < past && (bufsize_t)node->children[low]->place.start == start ? low : past;
 }
 
-/* The settling paragraph `node` is complete: its nodes before the point its
- * read leaves settle. False when storage could not be had. */
-static bool S_settle_more(markdown_core_parser *parser, markdown_core_node *node) {
-    markdown_core_settled *settled = &parser->stream->settled;
-    const markdown_core_inline_settle *settle = &settled->settle;
-    const uint32_t held = (uint32_t)settled->nodes.count;
-    for (size_t k = settle->count; k-- > 0;) {
-        const markdown_core_settle_start *start = &settle->starts[k];
-        if (start->start > settle->undecided || start->start > settled->size) {
-            continue;
-        }
-        const uint32_t at = S_child_at(node, held, node->child_count, start->start);
-        if (at == node->child_count || (at && node->children[at - 1]->kind == parser->dialect->plain)) {
-            continue;
-        }
-        /* The point the read began at: nothing more settles. */
-        if (at == held) {
-            return true;
-        }
-        if (node->children != settled->nodes.values) {
-            if (!markdown_core_array_append(&settled->nodes, node->children + held, (size_t)(at - held))) {
-                return false;
-            }
-        } else {
-            markdown_core_array_take(&settled->nodes, at);
-        }
-        size_t anchored = settled->anchored_count;
-        for (uint32_t i = held; i < at; i++) {
-            node->children[i]->flags |= MARKDOWN_CORE_NODE__COMMITTED;
-            if (!S_settled_own(parser->dialect, settled, node->children[i], &anchored)) {
-                return false;
-            }
-        }
-        settled->anchored_count = anchored;
-        /* The notes the settled nodes hold commit with them. */
-        for (size_t n = 0; n < settle->note_count; n++) {
-            if ((bufsize_t)settle->notes[n]->place.start < start->start) {
-                settle->notes[n]->flags |= MARKDOWN_CORE_NODE__COMMITTED;
-            }
-        }
-        settled->point = start->start;
-        if (!S_settled_opens_take(settled, node)) {
-            return false;
-        }
-        settled->miss_count += start->misses;
-        markdown_core_settled_step *steps =
-            markdown_core_reserve(settled->steps, &settled->step_room, settled->step_count + 1, sizeof(*steps));
-        if (!steps) {
-            return false;
-        }
-        settled->steps = steps;
-        steps[settled->step_count++] = (markdown_core_settled_step){(uint32_t)settled->nodes.count, settled->point,
-                                                                    settled->miss_count, settled->anchored_count};
-        return true;
-    }
-    return true;
-}
-
-/* The same, and the settled nodes before the FINAL bound become the ones a
- * publish makes FINAL (A SETTLED LINE THAT LEAVES). */
-static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node) {
-    if (!S_settle_more(parser, node)) {
-        return false;
-    }
-    markdown_core_settled *settled = &parser->stream->settled;
-    size_t k = 0;
-    while (k < settled->step_count && settled->steps[k].point <= settled->bound) {
-        k++;
-    }
-    if (k) {
-        settled->fixed = settled->steps[k - 1];
-        settled->step_count -= k;
-        memmove(settled->steps, settled->steps + k, settled->step_count * sizeof(*settled->steps));
-    }
-    return true;
-}
-
 /* Whether the paragraph `node` keeps its old tail aside (THE OLD TAIL OF A
  * PARAGRAPH). */
 static inline bool S_seam_kept(const markdown_core_parser *parser, const markdown_core_node *node) {
@@ -4336,23 +3741,17 @@ static markdown_core_node **S_seam_room(markdown_core_parser *parser, markdown_c
     return items;
 }
 
-/* The scaffold of the root `node`, `count` nodes, after the nodes it holds
- * already: the settled ones a snapshot's read keeps in the stream's storage,
- * which grows to hold them all, or those a commit's took, in storage of the
- * pool's (THE SETTLE POINT). NULL when storage could not be had. */
+/* The scaffold of the root `node`, `count` nodes, after the nodes before
+ * its seam it holds already, in storage of the pool's (THE SEAMS). NULL
+ * when storage could not be had. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node **S_settle_after(markdown_core_parser *parser,
                                                                                markdown_core_node *node,
                                                                                uint32_t count) {
-    markdown_core_settled *settled = &parser->stream->settled;
     const markdown_core_edit *edit = parser->stream->edit;
     if (edit && edit->leap && edit->leap->kept && node == edit->leap->node) {
         return S_seam_room(parser, node, count);
     }
     const uint32_t total = node->child_count + count;
-    if (node->children == settled->nodes.values) {
-        return markdown_core_array_reserve_past(&settled->nodes, node->child_count, total) ? settled->nodes.values
-                                                                                           : NULL;
-    }
     /* Storage with room past the held nodes keeps them where they are, as a
      * paragraph reopened at a seam holds its old children's (THE SEAMS). */
     if (markdown_core_bytes_size(node->children) >= (size_t)total * sizeof(*node->children)) {
@@ -4541,9 +3940,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                               : S_settle_scaffold(parser, node))) {
                         break;
                     }
-                    if (parsed && (node == parser->stream->settled.root || node == parser->stream->settled.address) &&
-                        !(node == parser->stream->settled.root ? S_settle_end(parser, node)
-                                                               : S_seam_end(parser, node))) {
+                    if (parsed && node == parser->stream->reopened && !S_seam_end(parser, node)) {
                         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                         break;
                     }
@@ -4660,27 +4057,10 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     parser->input_enclosing = enclosing;
 }
 
-/* A commit reads its lines (S_parse_source) until a request ends it at an
- * opener's call, where the candidate is made and the reading goes on, and
- * the last commit decides the candidates its lines leave (THE CANDIDATES):
- * an accept reads the commit's lines again from its candidate's call. */
-bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, bool ends) {
-    markdown_core_stream *stream = parser->stream;
+/* A commit reads the lines of its text (S_parse_source). */
+bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length) {
     if (!parser->error) {
-        S_take_back(parser, false);
-        stream->ends = ends;
-        stream->fed = 0;
-    }
-    while (!parser->error) {
         S_parse_source(parser, (const unsigned char *)source, length);
-        if (parser->error) {
-            break;
-        }
-        if (stream->requested) {
-            S_candidate_make(parser);
-        } else if (!ends || !stream->mark_count || !S_candidates_end(parser)) {
-            break;
-        }
     }
     return !parser->error;
 }
@@ -5202,8 +4582,8 @@ static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) 
  * the reading of an edit's new text takes the old root's children from one
  * on back whole, where the new text reads as the old did from there on: at
  * the start of a line, past the edit, where an old child starts on a line
- * of its own, the reading stands in the root with no block open and no
- * candidate live, and no reading of the old text that began past the rest
+ * of its own, the reading stands in the root with no block open, and no
+ * reading of the old text that began past the rest
  * point read across the line from before it. What reads backwards across a
  * line -- a block identifier, a caption, writing the block before -- writes
  * only leaders their follows declare `closed` (element.h, markdown_core_follow), and a
@@ -6156,8 +5536,8 @@ static markdown_core_leap *S_leap_need(markdown_core_edit *edit) {
  * reaches past the seam, and the reading parses from the last seam it does
  * reach past (S_seam_shrink). A settle start inside the content's last
  * line is a seam too, an INNER one, which stands only for an edit from
- * where the content ended on: the content goes on from it as a snapshot's
- * goes on from its settle point, and holds all of the old content, or the
+ * where the content ended on: the content goes on from it as from any
+ * settle point (THE SETTLE POINT), and holds all of the old content, or the
  * reading lets it go (S_seam_holds). A paragraph whose content holds an
  * explicit anchor or an inline note, which the roster and the committed
  * tables list where the paragraph starts or where the note does, has none:
@@ -6206,8 +5586,8 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line, size_t from) 
         S_leap_unread(leap);
     }
     /* The seams inside the content's last line stand only for an edit from
-     * where the content ended on, which the content goes on from as it
-     * would from a snapshot's settle point (THE SETTLE POINT). */
+     * where the content ended on, which the content goes on from as from
+     * any settle point (THE SETTLE POINT). */
     if (from < own + leap->ends.source) {
         while (leap->seam_count && leap->seams[leap->seam_count - 1].inner) {
             leap->seam_count--;
@@ -6522,8 +5902,8 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
  * new text `source` from there with the ordinary commit. The children of
  * the root that start before the line stay, closed, settled and complete,
  * and the reading stands where a parse of the text before the line, all of
- * its blocks closed, stands: the root open and current, nothing pending and
- * no candidate live. The rest goes with the children after it -- the lines
+ * its blocks closed, stands: the root open and current, nothing pending.
+ * The rest goes with the children after it -- the lines
  * from the line on, their facts and normalized bytes, the declarations,
  * the headings and the definitions listed from there (the document's
  * reopen), the lookups the commits found nothing for, which the flush has
@@ -6543,7 +5923,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit->index = index;
     stream->edit->base = (uint32_t)root->extent.lead;
     markdown_core_parser_input *input = &parser->input;
-    assert(!parser->root && !parser->error && !stream->mark_count && !stream->held);
+    assert(!parser->root && !parser->error && !stream->held);
     assert(line <= S_lines_count(&input->lines));
     const size_t start = line < S_lines_count(&input->lines) ? S_lines_start(&input->lines, line) : input->scanned;
     /* Where the reading stands: the line's start, or inside it, where the
@@ -6652,23 +6032,14 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         }
         assert(blank != SIZE_MAX);
     }
-    S_settled_release(parser, &stream->settled);
+    stream->reopened = NULL;
     /* The paragraph's completion parses its content from the seam (THE
-     * SEAMS), as the stream's settled paragraph's does from its point. */
+     * SEAMS). */
     if (prose) {
-        stream->settled.address = leaf;
+        stream->reopened = leaf;
         stream->edit->leap->armed = true;
         stream->edit->leap->taken = markdown_core_tree_from(&stream->edit->uses, own, 0, stream->edit->uses.front);
     }
-    for (size_t i = 0; i < stream->miss_root_count; i++) {
-        if (stream->miss_roots[i].position.places) {
-            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
-        }
-    }
-    stream->miss_count = stream->miss_root_count = stream->miss_published = 0;
-    stream->miss_root = NULL;
-    markdown_core_strbuf_clear(&stream->miss_labels);
-    stream->defined_count = 0;
     /* What the readings from the rest point on read goes with them (node.h,
      * `look`): the document's prefix's, read from its start, when the
      * reading is from there, and a block's of the chain that starts there. */
@@ -6711,7 +6082,6 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->edit_to = (uint32_t)to;
     stream->edit_delta = delta;
     stream->stop = (markdown_core_line_stop){0};
-    stream->ends = false;
     parser->block_input_count = parser->block_input_cursor = 0;
 
     /* A look from before the rest point that stopped inside its line
@@ -6788,8 +6158,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     }
     if (inside) {
         /* The line's reading stands where it gave its text to the chain's
-         * last block, which it opened: the reading goes on there, as from
-         * where a commit stopped in the line a session holds (A REST
+         * last block, which it opened: the reading goes on there (A REST
          * INSIDE A LINE). */
         parser->at.read.number++;
         stream->stop = (markdown_core_line_stop){
@@ -6799,9 +6168,6 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
             .far = (bufsize_t)decided,
             .own = (uint32_t)line_own,
             .past = looked,
-            .step = MARKDOWN_CORE_LINE_AT_TEXT,
-            .all_matched = true,
-            .opened = true,
         };
         stream->held = true;
     }
@@ -7131,7 +6497,7 @@ static bool S_stands(markdown_core_parser *parser, size_t start, size_t index) {
     const markdown_core_node *back = nested ? markdown_core_edit_nested(edit, edit->nest_level, edit->nest_index)
                                      : edit->next < edit->count ? markdown_core_edit_old(edit, parser->root, edit->next)
                                                                 : NULL;
-    if (stream->mark_count || stream->requested || stream->held || (nested && (!index || !holder->child_count))) {
+    if (stream->held || (nested && (!index || !holder->child_count))) {
         return false;
     }
     const size_t old = (size_t)((int64_t)start - edit->delta);
@@ -7502,7 +6868,7 @@ static bool S_leap_meets(const markdown_core_parser *parser, const markdown_core
     const markdown_core_stream *stream = parser->stream;
     const markdown_core_edit *edit = stream->edit;
     const markdown_core_leap *leap = edit->leap;
-    if (first == SIZE_MAX || (leap->prose && !leap) || block == stream->boundary || S_old_reads(parser, old, old)) {
+    if (first == SIZE_MAX || (leap->prose && !leap) || S_old_reads(parser, old, old)) {
         return false;
     }
     /* Every reading of the edit's began before the line (THE REACH). */
@@ -7909,8 +7275,7 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
     /* The block the reading lands in is still the leaf it reopened: a
      * paragraph a line made another block, as a table, takes no old line
      * back. */
-    if (parser->at.current == block && S_leaf(parser, block) && !parser->at.pending && !stream->mark_count &&
-        !stream->requested && !stream->held) {
+    if (parser->at.current == block && S_leaf(parser, block) && !parser->at.pending && !stream->held) {
         const size_t old = (size_t)((int64_t)start - edit->delta);
         const size_t k = S_lines_back_from(lines, old);
         const bool here = k < leap->last && S_lines_back_start(lines, k) == old;
@@ -8354,9 +7719,7 @@ static void S_line_reads(markdown_core_parser *parser, int line, size_t start, s
 }
 
 /* The look of the line that ends goes where its line says, and so does
- * one a reading that went back before its line meets, as a candidate's
- * decision does: what a rollback puts back it puts back with the mark
- * (S_restore). A look of a line the input no longer holds, as a reading
+ * one a reading that went back before its line meets. A look of a line the input no longer holds, as a reading
  * that read it was let go after its last line, goes with that reading. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_look_settle(markdown_core_parser *parser) {
     markdown_core_edit *edit = parser->stream->edit;
@@ -8447,176 +7810,6 @@ size_t markdown_core_parser_line_looked(const markdown_core_parser *parser, size
     return markdown_core_tree_past(&parser->input.lines, past, 0, lines);
 }
 
-/* THE SNAPSHOT (docs/plans/2026-09-29-incremental-parsing.md, 5.3; step 7,
- * 4.4): the committed parse, read on to the end of the text and published in
- * place, then put back as its commit left it. Its work is the tail's -- the
- * rest of the line the commit holds, the lines after the call of a
- * candidate it accepts (THE CANDIDATES), the open blocks they reach and the
- * pending block -- and never the committed blocks', which it reads and does
- * not write. Everything it writes in the
- * parser it puts back (S_snapshot_mark); the blocks it writes it lends.
- *
- * THE LENDING. What the snapshot reads changes no open block below its STOP:
- * the block the held line stopped in, when that line is the last of the
- * text; the root, when a line follows the commit's; and the current block,
- * when no line is left. The snapshot LENDS the stop, every block open above
- * it and the pending block (S_lend): a lent block's state goes to a slot of
- * its own, and its address holds a VIEW of it (markdown_core_node_view),
- * which the snapshot reads, writes, closes and publishes in its place -- a
- * view holds its block's children array, content buffer and field nodes,
- * and adds to them only past what the block holds. The lending REACHES the
- * open block below the stop, into which the lent blocks settle, and keeps
- * what it held -- its child count, its last child, its flags, its end and
- * its anchor, which a paragraph closing as its first child can give it (its
- * ROOM, S_room) -- as the snapshot adds children past them or replaces the
- * last. A block the lending reaches that the snapshot closes after all, as
- * a block start none of the blocks above it can hold takes its place, is
- * lent as it closes, and the lending reaches the block below it
- * (S_lend_below). The open blocks below the one the lending reaches end
- * where the text ends without closing, and the snapshot writes only what
- * they publish (S_close_tail): their ends and what they take from their
- * folds, which it reads without writing their flags; the publish gives
- * them their extents and runs. The published document reads the views
- * until the next TAKE-BACK, at the next commit, at the finalize or at the
- * release (S_take_back): each lent block takes its own state back with the
- * storage its view grew, each room what it held, and the nodes the snapshot
- * made are the publish's records' from then on (ast.c, THE RECORDS).
- *
- * THE MARK: what a reading so far says, which a reading put back to the
- * mark finds as the mark found it -- where the reading stands, the input's
- * index, the content map's last mark, the roster, the completion queue,
- * the names and the cell inputs. */
-typedef struct markdown_core_parser_mark {
-    markdown_core_parser_at at;
-    bool mapped;
-    size_t line_count, fact_count, scanned;
-    markdown_core_normalized_line *normalized;
-    size_t line_mark_count;
-    markdown_core_line_mark last_mark;
-    markdown_core_roster_mark roster;
-    size_t names_count, names_parsed;
-    markdown_core_node *completion_first, *completion_last;
-    size_t block_input_count, block_input_cursor;
-    size_t ran, cut_count, cut_low;
-    /* The look of the line in hand that waits for its line's end. */
-    markdown_core_place look;
-    int look_line;
-} S_snapshot_mark;
-
-/* A snapshot takes a mark and rolls back to it on every append, so the
- * mark, the restore and the rollback stay in their callers; a candidate's
- * making and undo share them. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdown_core_parser *parser,
-                                                                   S_snapshot_mark *mark) {
-    *mark = (S_snapshot_mark){
-        .at = parser->at,
-        .mapped = parser->input.mapped,
-        .line_count = parser->input.lines.front,
-        .fact_count = parser->input.fact_count,
-        .scanned = parser->input.scanned,
-        .normalized = parser->input.normalized,
-        .line_mark_count = parser->line_marks.count,
-        .roster = markdown_core_roster_mark_now(&parser->roster),
-        .names_count = parser->names.count,
-        .names_parsed = parser->names.parsed,
-        .completion_first = parser->completion_first,
-        .completion_last = parser->completion_last,
-        .block_input_count = parser->block_input_count,
-        .block_input_cursor = parser->block_input_cursor,
-        .ran = parser->stream && parser->stream->edit ? parser->stream->edit->ran : 0,
-        .cut_count = parser->stream && parser->stream->edit ? parser->stream->edit->cuts.count : 0,
-        .cut_low = parser->stream && parser->stream->edit ? parser->stream->edit->cut_low : 0,
-    };
-    if (parser->line_marks.count) {
-        mark->last_mark = parser->line_marks.values[parser->line_marks.count - 1];
-    }
-    if (parser->stream && parser->stream->edit) {
-        mark->look = parser->stream->edit->look;
-        mark->look_line = parser->stream->edit->look_line;
-    }
-}
-
-/* Puts back the parser's state as `mark` found it: where the reading stood,
- * the content map, the roster, the names, the completion queue and the
- * cell inputs. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_core_parser *parser,
-                                                                      const S_snapshot_mark *mark) {
-    parser->at = mark->at;
-    parser->input.last_line_ready = false;
-    markdown_core_array_truncate(&parser->line_marks, mark->line_mark_count);
-    if (mark->line_mark_count) {
-        *markdown_core_array_write(&parser->line_marks, mark->line_mark_count - 1) = mark->last_mark;
-    }
-    markdown_core_roster_rollback(&parser->roster, mark->roster);
-    parser->names.count = mark->names_count;
-    parser->names.parsed = mark->names_parsed;
-    parser->completion_first = mark->completion_first;
-    parser->completion_last = mark->completion_last;
-    if (mark->completion_last) {
-        markdown_core_scaffold_of(mark->completion_last)->next = NULL;
-    }
-    parser->block_input_count = mark->block_input_count;
-    parser->block_input_cursor = mark->block_input_cursor;
-    if (parser->stream && parser->stream->edit) {
-        markdown_core_edit *edit = parser->stream->edit;
-        edit->ran = mark->ran;
-        markdown_core_array_truncate(&edit->cuts, mark->cut_count);
-        edit->cut_low = mark->cut_low;
-        /* A look that waited at the mark waits again: a snapshot that
-         * ended its line gave it to a view the take-back lets go. */
-        edit->look = mark->look;
-        edit->look_line = mark->look_line;
-    }
-}
-
-/* The container and table facts of input lines `first` up to `end`, which
- * name blocks a reading made, gone, and the facts past the first
- * `fact_count` with them. */
-static void S_drop_facts(markdown_core_parser_input *input, size_t first, size_t end, size_t fact_count) {
-    /* The lines in the runs of their leaves (markdown_core_tree_run). */
-    markdown_core_input_line *line = NULL;
-    size_t run = 0;
-    for (size_t i = first; i < end; i++, run--) {
-        line = run ? line + 1 : markdown_core_tree_run(&input->lines, i, sizeof(*line), &run);
-        markdown_core_line_facts *facts = markdown_core_input_facts(input, line);
-        if (!facts) {
-            continue;
-        }
-        if (line->facts > fact_count) {
-            line->facts = 0;
-        } else {
-            facts->container = NULL;
-            facts->table_container = NULL;
-        }
-    }
-}
-
-/* Puts back what the snapshot wrote in the parser: its state (S_restore)
- * and the input's index -- the lines it scanned, whether they map their
- * source, the facts it gave lines the commit had scanned, the normalized
- * lines it made. The container and table
- * facts of those lines go too: they name blocks the snapshot made, which
- * the next take-back unhooks. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_rollback(markdown_core_parser *parser,
-                                                                       const S_snapshot_mark *mark) {
-    S_restore(parser, mark);
-    markdown_core_parser_input *input = &parser->input;
-    input->mapped = mark->mapped;
-    while (input->normalized != mark->normalized) {
-        markdown_core_normalized_line *line = input->normalized;
-        input->normalized = line->next;
-        input->facts[line->fact - 1].normalized = NULL;
-        markdown_core_free(line);
-    }
-    /* The lines past the commit's line that the commit had scanned, and the
-     * line it holds, which the snapshot read on. */
-    const size_t first = (size_t)(mark->at.read.number + 1 - input->first_line) - (parser->stream->held ? 1 : 0);
-    S_drop_facts(input, first, mark->line_count, mark->fact_count);
-    markdown_core_tree_erase(&input->lines, mark->line_count, input->lines.front - mark->line_count);
-    input->fact_count = mark->fact_count;
-    input->scanned = mark->scanned;
-}
-
 void markdown_core_parser_release_records(markdown_core_parser *parser, markdown_core_tail_records *records) {
     for (size_t i = 0; i < records->count; i++) {
         if (records->items[i].node) {
@@ -8679,23 +7872,10 @@ static void S_release_tail(markdown_core_parser *parser) {
 static void S_release_stream(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     S_release_tail(parser);
-    markdown_core_free(stream->lends);
-    markdown_core_free(stream->rooms);
     markdown_core_parser_release_records(parser, &stream->records);
     markdown_core_free(stream->records.items);
     markdown_core_publish_release_committed(stream->committed);
     markdown_core_free(stream->committed);
-    markdown_core_free(stream->kept);
-    markdown_core_free(stream->own_tables);
-    markdown_core_free(stream->defined);
-    markdown_core_free(stream->misses);
-    markdown_core_strbuf_free(&stream->miss_labels);
-    for (size_t i = 0; i < stream->miss_root_count; i++) {
-        if (stream->miss_roots[i].position.places) {
-            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
-        }
-    }
-    markdown_core_free(stream->miss_roots);
     if (stream->edit) {
         markdown_core_free(stream->edit->children);
         markdown_core_free(stream->edit->chain);
@@ -8730,390 +7910,8 @@ static void S_release_stream(markdown_core_parser *parser) {
         S_uses_unindex(stream->edit);
         markdown_core_free(stream->edit);
     }
-    markdown_core_settled *settled = &stream->settled;
-    S_settled_release(parser, settled);
-    markdown_core_array_free(&settled->nodes);
-    markdown_core_free(settled->steps);
-    markdown_core_free(settled->opens);
-    markdown_core_free(settled->misses);
-    markdown_core_strbuf_free(&settled->labels);
-    markdown_core_free(settled->anchored);
-    markdown_core_free(settled->settle.starts);
-    markdown_core_free(settled->settle.notes);
     markdown_core_free(stream);
     parser->stream = NULL;
-}
-
-/* Lends `block` (THE LENDING) into the lends `*lends` holds, `*count` of
- * them with room for `*capacity`: its state moves to a slot of its own, the
- * backup, and its address takes a view of it, linked as the block was.
- * False, with the parse failed, when storage could not be had. */
-static bool S_lend_to(markdown_core_parser *parser, markdown_core_lend **lends, size_t *count, size_t *capacity,
-                      markdown_core_node *block) {
-    markdown_core_lend *grown = markdown_core_reserve(*lends, capacity, *count + 1, sizeof(*grown));
-    if (grown) {
-        *lends = grown;
-    }
-    markdown_core_node *backup = grown ? markdown_core_node_view(parser->pool, block) : NULL;
-    if (!backup) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    grown[(*count)++] = (markdown_core_lend){block, backup, markdown_core_parser_last_child(block), false};
-    markdown_core_node_swap(block, backup);
-    *markdown_core_scaffold_of(block) = *markdown_core_scaffold_of(backup);
-    block->flags |= MARKDOWN_CORE_NODE__LENT;
-    return true;
-}
-
-/* The same for the snapshot. */
-static bool S_lend(markdown_core_parser *parser, markdown_core_node *block) {
-    markdown_core_stream *stream = parser->stream;
-    return S_lend_to(parser, &stream->lends, &stream->lend_count, &stream->lend_capacity, block);
-}
-
-/* The room of `node`, the block the lending reaches (THE LENDING): what it
- * holds as the lending reaches it. False, with the parse failed, when
- * storage could not be had. */
-static bool S_room(markdown_core_parser *parser, markdown_core_node *node) {
-    markdown_core_stream *stream = parser->stream;
-    markdown_core_room *grown =
-        markdown_core_reserve(stream->rooms, &stream->room_capacity, stream->room_count + 1, sizeof(*grown));
-    if (!grown) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    stream->rooms = grown;
-    grown[stream->room_count++] = (markdown_core_room){node,
-                                                       markdown_core_parser_last_child(node),
-                                                       node->child_count,
-                                                       node->place.end,
-                                                       node->flags,
-                                                       node->attributes.anchor};
-    return true;
-}
-
-/* The block the lending reaches, which the snapshot closes, lent: the
- * lending reaches the block below it next, or nothing past the root. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_lend_below(markdown_core_parser *parser, markdown_core_node *block) {
-    markdown_core_stream *stream = parser->stream;
-    stream->boundary = markdown_core_scaffold_parent(block);
-    if (S_lend(parser, block) && stream->boundary) {
-        S_room(parser, stream->boundary);
-    }
-}
-
-/* The snapshot's stop (THE LENDING), reading `length` bytes of text. */
-static markdown_core_node *S_stop(const markdown_core_parser *parser, size_t length) {
-    const markdown_core_parser_input *input = &parser->input;
-    if (parser->stream->held) {
-        const markdown_core_input_line *line =
-            markdown_core_input_line_at(input, parser->at.read.number - input->first_line);
-        return markdown_core_input_line_next(parser, line) >= length ? parser->stream->stop.container : parser->root;
-    }
-    const size_t index = (size_t)(parser->at.read.number + 1 - input->first_line);
-    const size_t start =
-        index < input->lines.front ? markdown_core_input_line_at(input, index)[0].start : input->scanned;
-    return start < length ? parser->root : parser->at.current;
-}
-
-/* The lending as the snapshot starts: the room of the block the lending
- * reaches, below the stop, and the stop, the blocks open above it and the
- * pending block lent. False, with the parse failed, when storage could not
- * be had. */
-static bool S_lend_tail(markdown_core_parser *parser, size_t length) {
-    markdown_core_stream *stream = parser->stream;
-    markdown_core_node *stop = S_stop(parser, length);
-    stream->boundary = stop == parser->root ? NULL : markdown_core_scaffold_parent(stop);
-    if (stream->boundary && !S_room(parser, stream->boundary)) {
-        return false;
-    }
-    if (parser->at.pending && !S_lend(parser, parser->at.pending)) {
-        return false;
-    }
-    for (markdown_core_node *node = parser->at.current;; node = markdown_core_scaffold_parent(node)) {
-        if (!S_lend(parser, node)) {
-            return false;
-        }
-        if (node == stop) {
-            return true;
-        }
-    }
-}
-
-/* The content buffer of a lent block, which its view holds and may have
- * grown, the block's own again, holding the block's bytes; one the view took
- * for a block that held none goes. The view holds none. */
-static void S_take_back_content(markdown_core_node *view, markdown_core_node *block) {
-    if (markdown_core_strbuf_owns(&block->content)) {
-        markdown_core_strbuf_take_storage(&block->content, &view->content);
-    } else if (markdown_core_strbuf_owns(&view->content)) {
-        markdown_core_strbuf_free(&view->content);
-    }
-    markdown_core_strbuf_init_zeroed(&view->content);
-}
-
-/* The same of its children array, holding the block's children again, the
- * last of them `last`. */
-static void S_take_back_children(markdown_core_parser *parser, markdown_core_node *view, markdown_core_node *block,
-                                 markdown_core_node *last) {
-    if (block->children) {
-        block->children = view->children;
-        if (block->child_count) {
-            block->children[block->child_count - 1] = last;
-        }
-    } else if (view->children && view->children != parser->stream->settled.nodes.values) {
-        markdown_core_node_pool_bytes_free(parser->pool, view->children);
-    }
-}
-
-/* The children `node` holds that a reading added after it found the node
- * holding `count`, the last of them `last`, from the one at `from` on: every
- * one from the place of that last on but the last itself, which a block
- * that settled before it may have moved on (markdown_core_block_settle_before),
- * released. */
-static void S_release_added(markdown_core_parser *parser, const markdown_core_node *node, uint32_t from,
-                            const markdown_core_node *last) {
-    for (uint32_t i = from; i < node->child_count; i++) {
-        if (node->children[i] != last) {
-            markdown_core_parser_release_node(parser, node->children[i]);
-        }
-    }
-}
-
-/* Where the children a reading added to a node that held `count` start,
- * the last of those it held included. */
-static inline uint32_t S_added_from(uint32_t count) { return count ? count - 1 : 0; }
-
-/* A node the snapshot made that the take-back unhooks: one its publish
- * placed is its record's (ast.c, THE RECORDS); one no publish places is a
- * group of its holder's relations -- a definition's body, a callout's title
- * -- and goes, what it groups being their records'. */
-static void S_unhook(markdown_core_parser *parser, markdown_core_node *node) {
-    if (!node->id) {
-        node->child_count = 0;
-        markdown_core_parser_release_node(parser, node);
-    }
-}
-
-/* The same of the children a snapshot added, as S_release_added finds them. */
-static void S_unhook_added(markdown_core_parser *parser, const markdown_core_node *node, uint32_t from,
-                           const markdown_core_node *last) {
-    for (uint32_t i = from; i < node->child_count; i++) {
-        if (node->children[i] != last) {
-            S_unhook(parser, node->children[i]);
-        }
-    }
-}
-
-static int S_unhook_field(markdown_core_node **slot, void *context) {
-    S_unhook(context, *slot);
-    *slot = NULL;
-    return 1;
-}
-
-/* A lent block takes its state back (THE LENDING): its address holds it
- * again, with the id the publish gave its view, and the view goes. A view whose kind the snapshot changed is a node
- * the snapshot made: the block takes back its content, and the view is its
- * record's, or goes with a failed snapshot. With `release`, the nodes the
- * view holds that the block does not go first. */
-static void S_take_back_lend(markdown_core_parser *parser, const markdown_core_lend *entry, bool release) {
-    markdown_core_node *const address = entry->address, *const backup = entry->backup;
-    if (address->kind != backup->kind) {
-        assert(!backup->child_count);
-        S_take_back_content(address, backup);
-        markdown_core_node_swap(address, backup);
-        markdown_core_tail_records *records = &parser->stream->records;
-        for (size_t i = 0; !release && i < records->count; i++) {
-            if (records->items[i].node == address) {
-                records->items[i].node = backup;
-                return;
-            }
-        }
-        markdown_core_parser_release_node(parser, backup);
-        return;
-    }
-    /* The settled nodes a lent paragraph holds first are the stream's (THE
-     * SETTLE POINT). */
-    const markdown_core_settled *settled = &parser->stream->settled;
-    uint32_t from = S_added_from(backup->child_count);
-    if (address == settled->address && settled->nodes.count > from) {
-        from = (uint32_t)settled->nodes.count;
-    }
-    if (release) {
-        S_release_added(parser, address, from, entry->last);
-    } else {
-        markdown_core_node_view_taken(address, backup, S_unhook_field, parser);
-        S_unhook_added(parser, address, from, entry->last);
-    }
-    S_take_back_children(parser, address, backup, entry->last);
-    S_take_back_content(address, backup);
-    markdown_core_node_view_let_go(release ? parser->pool : NULL, address, backup);
-    backup->id = address->id;
-    markdown_core_node_swap(address, backup);
-    markdown_core_parser_release_node(parser, backup);
-}
-
-/* An open block below the lent ones takes back what it held (THE LENDING),
- * and keeps the runs the publish gave it: the children a reading gave it
- * are its caller's to let go first. */
-static void S_take_back_room(const markdown_core_room *room) {
-    markdown_core_node *node = room->node;
-    node->child_count = room->count;
-    if (room->count) {
-        node->children[room->count - 1] = room->last;
-    }
-    const markdown_core_node_internal_flags published = MARKDOWN_CORE_NODE__PUBLISHED | MARKDOWN_CORE_NODE__FINAL;
-    node->flags = (markdown_core_node_internal_flags)((room->flags & ~published) | (node->flags & published));
-    node->place.end = room->end;
-    if (node->attributes.anchor.data != room->anchor.data) {
-        markdown_core_chunk_free(&node->attributes.anchor);
-        node->attributes.anchor = room->anchor;
-    }
-}
-
-/* THE TAKE-BACK (THE LENDING): the lent blocks, the last lent first, and
- * then the rooms, the last reached first, each unhooking what the snapshot
- * gave it. With `release`, a snapshot that failed lets the nodes it made
- * go. */
-static void S_take_back(markdown_core_parser *parser, bool release) {
-    markdown_core_stream *stream = parser->stream;
-    for (size_t i = stream->lend_count; i-- > 0;) {
-        S_take_back_lend(parser, &stream->lends[i], release);
-    }
-    for (size_t i = stream->room_count; i-- > 0;) {
-        const markdown_core_room *room = &stream->rooms[i];
-        (release ? S_release_added : S_unhook_added)(parser, room->node, S_added_from(room->count), room->last);
-        S_take_back_room(room);
-    }
-    stream->lend_count = stream->room_count = 0;
-    stream->boundary = NULL;
-}
-
-/* The end of the text as the snapshot reads it: every block above the
- * block the lending reaches closes and settles into it, the blocks of the
- * cells queued for them are read, and the open blocks from there down to
- * the root end there without closing (THE LENDING) -- each takes its end
- * and what its close hook makes of its children, reserves its explicit
- * anchor as a complete block does, and folds into the block below as its
- * children fold, which gives the block below the flags it ends with and
- * what it publishes of them, and writes none of its flags -- and join no
- * queue. With nothing below the stop, the document closes. */
-static void S_close_tail(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    markdown_core_node *boundary = stream->boundary;
-    if (!boundary) {
-        S_close_document(parser);
-        return;
-    }
-    markdown_core_parser_close_below(parser, boundary);
-    S_settle_pending(parser, boundary);
-    S_parse_block_inputs(parser);
-    const uint32_t end = (uint32_t)parser->at.last_line_end;
-    markdown_core_node_internal_flags flags = boundary->flags;
-    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, boundary);
-    for (markdown_core_node *node = boundary;;) {
-        markdown_core_node *const below = markdown_core_scaffold_parent(node);
-        node->place.end = end;
-        (void)S_close_hook(parser, kind, node, below);
-        if (parser->error || !S_reserve_anchor(parser, node, node->place.start)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        if (!below) {
-            return;
-        }
-        kind = markdown_core_parser_block_kind(parser, below);
-        flags = kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)
-                    ? S_fold(kind, below, below->flags, flags)
-                    : below->flags;
-        node = below;
-    }
-}
-
-/* THE LOOK: a reading that commits nothing, which the snapshot and the
- * locate's look share. It begins at a mark, with nothing settling as
- * committed; it reads the text through `length` bytes of `source` and ends
- * it there (S_close_tail), completing what settled; and it ends back at the
- * mark, the lent blocks' views read until the take-back. Where it begins,
- * what it lends and what it makes of the reading are its caller's. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_look_begin(markdown_core_parser *parser,
-                                                                         S_snapshot_mark *mark) {
-    S_mark(parser, mark);
-    parser->settle_flags = 0;
-    parser->snapshot = true;
-}
-
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_look_read(markdown_core_parser *parser,
-                                                                        const char *source, size_t length) {
-    S_parse_source(parser, (const unsigned char *)source, length);
-    if (!parser->error) {
-        S_close_tail(parser);
-    }
-    if (!parser->error) {
-        S_complete_settled(parser);
-    }
-}
-
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_look_end(markdown_core_parser *parser,
-                                                                       const S_snapshot_mark *mark) {
-    S_rollback(parser, mark);
-    parser->stream->claimant = NULL;
-    parser->stream->snapshot_mark = NULL;
-    parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
-    parser->snapshot = false;
-}
-
-markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length) {
-    if (parser->error) {
-        return NULL;
-    }
-    markdown_core_stream *const stream = parser->stream;
-    S_snapshot_mark mark = {0};
-    S_look_begin(parser, &mark);
-    markdown_core_node *result = NULL;
-    /* A SNAPSHOT SEES A CANDIDATE END (THE CANDIDATES): the commit puts
-     * back what it read since the call and holds there, its calls waiting,
-     * and the snapshot reads the lines anew, where the call accepted
-     * claims. */
-    size_t accepted_mark, accepted_call;
-    if (stream->mark_count && S_candidates_see_end(parser, &accepted_mark, &accepted_call)) {
-        S_rollback(parser, &mark);
-        S_candidate_see(parser, accepted_mark, accepted_call);
-        S_mark(parser, &mark);
-    }
-    stream->snapshot_mark = &mark;
-
-    const bool lent = !parser->error && S_lend_tail(parser, length);
-    if (lent) {
-        S_look_read(parser, source, length);
-        const markdown_core_element_instance *document = parser->dialect->document_structure;
-        S_stage_flush(parser);
-        if (!parser->error) {
-            document->element->document->publish(document, parser);
-        }
-        if (!parser->error) {
-            result = parser->root;
-            parser->stream->miss_published = parser->stream->miss_root_count;
-            /* The settling paragraph keeps the id the publish gave it. */
-            if (stream->settled.root) {
-                stream->settled.id = stream->settled.root->id;
-            }
-        }
-    }
-    if (!result) {
-        S_take_back(parser, true);
-    }
-    /* Settled nodes this snapshot's document does not hold are no
-     * paragraph's to take: what it published continues them no more. Those
-     * the commit took are the tree's once no candidate waits. */
-    if (!stream->settled.root && stream->settled.address &&
-        !(stream->settled.taken && markdown_core_parser_undecided(parser))) {
-        S_settled_release(parser, &stream->settled);
-    }
-    stream->settled.root = NULL;
-    S_look_end(parser, &mark);
-    return result;
 }
 
 /* Materializing a normalized view is an allocation boundary, separate from
@@ -9290,13 +8088,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
 /* External speculative readers share the driver's scanner. The driver calls
  * the static inline body directly, including when it advances the frontier. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index) {
-    markdown_core_input_line *found = S_extend_source_lines(parser, index);
-    /* A line asked past the last one, or the last one before it is complete,
-     * is a reading of the input's end. */
-    if (found ? found->start >= parser->input.complete : !parser->error) {
-        markdown_core_parser_see_end(parser);
-    }
-    return found;
+    return S_extend_source_lines(parser, index);
 }
 
 markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
@@ -9383,13 +8175,13 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_scan_last_line(markdown_core_p
     return true;
 }
 
-/* Reads input line `index`, from its start or from `from`, holding it with
- * `hold` (THE LINE A SESSION HOLDS). */
+/* Reads input line `index`, from its start or from `from` (A REST INSIDE A
+ * LINE). */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown_core_parser *parser,
                                                                         const unsigned char *source, size_t length,
                                                                         markdown_core_input_line *found,
                                                                         const markdown_core_line_stop *from,
-                                                                        const bool hold, const bool at_root) {
+                                                                        const bool at_root) {
     bufsize_t content_length;
     const unsigned char *content = S_input_line_content(parser, found, &content_length);
     if (!content) {
@@ -9407,8 +8199,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown
         parser->at.read.end =
             markdown_core_parser_mapped_source_end(parser, parser->at.read.number + 1, content_length);
     }
-    if (from || hold) {
-        S_process_held_line(parser, content, content_length, from, hold);
+    if (from) {
+        S_process_held_line(parser, content, content_length, from);
     } else {
         S_process_line(parser, content, content_length);
     }
@@ -9421,21 +8213,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown
     }
 }
 
-/* The commit stops in the root, before line 1: the reading of the envelope
- * requested it (THE CANDIDATES). */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_stop_at_root(markdown_core_parser *parser) {
-    parser->stream->stop = (markdown_core_line_stop){.container = parser->root};
-}
-
-/* How a step of the driver out of its line loop leaves the call: reading
- * lines on, reading again from the envelope, where a candidate's accept put
- * the commit back, or stopped. */
-typedef enum { S_DRIVER_READS_ON, S_DRIVER_RESTARTS, S_DRIVER_STOPS } S_driver_step;
-
-/* THE LINE A SESSION HOLDS, read on from where the last commit stopped in
- * it, and held again when the text still ends in it. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_driver_step
-    S_read_held_line(markdown_core_parser *parser, const unsigned char *source, size_t length, size_t limit) {
+/* THE LINE AN EDIT'S READING STANDS INSIDE (A REST INSIDE A LINE), read on
+ * from where the reading stands. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_read_held_line(markdown_core_parser *parser,
+                                                                 const unsigned char *source, size_t length) {
     markdown_core_stream *const stream = parser->stream;
     const size_t index = (size_t)(parser->at.read.number - parser->input.first_line);
     /* An edit's reading that stands inside the line has not read it in
@@ -9444,42 +8225,12 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_driver_step
                                           ? markdown_core_input_line_at(&parser->input, index)
                                           : S_extend_source_lines(parser, index);
     if (!found) {
-        return S_DRIVER_STOPS;
+        return false;
     }
-    bool hold = false;
-    if (!parser->snapshot) {
-        if (stream->mark_count &&
-            S_feed(parser, parser->at.read.number, source + markdown_core_input_line_next(parser, found))) {
-            return S_DRIVER_RESTARTS;
-        }
-        found = markdown_core_input_line_at(&parser->input, index);
-        stream->held = false;
-        hold = found->start >= limit;
-    }
+    stream->held = false;
     const markdown_core_line_stop from = stream->stop;
-    S_meet_from_stop(parser);
-    S_read_line(parser, source, length, found, &from, hold, true);
-    /* A line held again ends the commit, and so does a request. */
-    return hold || stream->requested ? S_DRIVER_STOPS : S_DRIVER_READS_ON;
-}
-
-/* The line that starts where a commit more text may follow stops, input
- * line `index`, read and held: true when a candidate's accept put the commit
- * back instead. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_hold_next_line(markdown_core_parser *parser,
-                                                                 const unsigned char *source, size_t length,
-                                                                 size_t index) {
-    markdown_core_input_line *found = S_extend_source_lines(parser, index);
-    if (found && parser->stream->mark_count) {
-        if (S_feed(parser, parser->at.read.number + 1, source + markdown_core_input_line_next(parser, found))) {
-            return true;
-        }
-        found = markdown_core_input_line_at(&parser->input, index);
-    }
-    if (found) {
-        S_read_line(parser, source, length, found, NULL, true, true);
-    }
-    return false;
+    S_read_line(parser, source, length, found, &from, true);
+    return true;
 }
 
 /* THE PREFIX'S LINES: the document's read before line 1 took `taken`
@@ -9503,14 +8254,12 @@ static void S_read_taken(markdown_core_parser *parser, size_t taken) {
  * text is installed at its first commit and grows at its end from one commit
  * to the next, so its lines keep their geometry and facts and the driver
  * continues from the line it stopped before; the envelope at its start is
- * read with its first line, by the call before it, which stops in the root
- * at line 0 (THE CANDIDATES). A commit more text may follow reads the lines
- * the text has finished, to `limit`, and holds the line that starts there
- * once a line before it has been read with the envelope; the next reads on
- * in it first (THE LINE A SESSION HOLDS). What a call does once -- find
- * where the complete text ends, stop in the root, read on in the held line
- * and hold the next -- is out of line, so the loop that reads each line has
- * the driver's frame to itself. */
+ * read by the call before its first line. An edit's reading reads to
+ * `limit`, the line of the old child it may take back next, and first reads
+ * on in the line it stands inside (A REST INSIDE A LINE). What a call does
+ * once -- find where the complete text ends, read on in that line -- is out
+ * of line, so the loop that reads each line has the driver's frame to
+ * itself. */
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
     assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     bool at_root = markdown_core_parser_block_root(parser) == parser->root;
@@ -9542,20 +8291,14 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
         return;
     }
 bound:;
-    const size_t final = markdown_core_parser_candidate_final(parser) ? length : parser->input.complete;
-    size_t limit = final;
+    size_t limit = length;
     /* An edit's reading stops at the line of the old child it may take back
      * next (THE SPLICE). */
     if (stream && stream->edit && stream->edit->point < limit) {
         limit = stream->edit->point;
     }
-read:
     if (at_root && !parser->at.read.number && limit) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
-        if (stream) {
-            S_meet_from_stop(parser);
-        }
-        parser->at.asks = parser->at.step_asks = 0;
         /* The reader stands at the input's start, before line 1. */
         parser->at.read.start = parser->at.read.end = parser->at.read.offset = 0;
         const size_t taken = document->element->document->read(document, parser, &parser->at.read);
@@ -9563,39 +8306,26 @@ read:
             S_read_taken(parser, taken);
         }
         S_reader_close(parser);
-        if (stream && stream->requested) {
-            S_stop_at_root(parser);
-            return;
-        }
     }
     if (stream && stream->held) {
         /* The line held is read on whatever the edit's point is: that is a
          * line's start, which the reading meets past the line (A REST
          * INSIDE A LINE). */
-        const S_driver_step step = S_read_held_line(parser, source, length, final);
-        if (step == S_DRIVER_RESTARTS) {
-            goto read;
-        }
-        if (step == S_DRIVER_STOPS) {
+        if (!S_read_held_line(parser, source, length)) {
             return;
         }
     }
-    /* THE FEED (THE CANDIDATES): the candidates see each line first. */
     while (!parser->error) {
         size_t index = (size_t)(parser->at.read.number + 1 - parser->input.first_line);
         markdown_core_input_line *found =
             index < parser->input.lines.front ? markdown_core_input_line_at(&parser->input, index) : NULL;
         const size_t start = found ? found->start : parser->input.scanned;
         if (start >= limit) {
-            if (stream && stream->edit && limit == stream->edit->point && limit < final) {
+            if (stream && stream->edit && limit == stream->edit->point && limit < length) {
                 if (S_resume(parser, start, index)) {
                     return;
                 }
                 goto bound;
-            }
-            if (stream && !parser->snapshot && start == limit && start < length && parser->at.read.number &&
-                S_hold_next_line(parser, source, length, index)) {
-                goto read;
             }
             break;
         }
@@ -9603,16 +8333,7 @@ read:
         if (!found) {
             break;
         }
-        if (stream && stream->mark_count) {
-            if (S_feed(parser, parser->at.read.number + 1, source + markdown_core_input_line_next(parser, found))) {
-                goto read;
-            }
-            found = markdown_core_input_line_at(&parser->input, index);
-        }
-        S_read_line(parser, source, length, found, NULL, false, at_root);
-        if (stream && stream->requested) {
-            break;
-        }
+        S_read_line(parser, source, length, found, NULL, at_root);
     }
 }
 
@@ -9998,7 +8719,7 @@ static inline void S_reader_close(markdown_core_parser *parser) {
  * a footnote or specimen's four columns, and the list's rule for consecutive
  * blank lines. `check_open_blocks` asks it walking down the open spine, and
  * the block-start lookahead asks the same question of the same containers on
- * later lines, so a candidate's decision and the parse that follows it cannot
+ * later lines, so a lookahead's decision and the parse that follows it cannot
  * disagree about which lines a container owns.
  *
  * Returns false when the line does not carry the container's prefix. `taken`
@@ -10015,17 +8736,9 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, const markd
            structure->lines->prefix(structure, parser, container, reader, joining, taken);
 }
 
-/* Whether the step just taken on the line a session holds read only bytes
- * the line already has (THE LINE A SESSION HOLDS): none past the last the
- * line has, and nothing past the line. */
-static inline bool S_step_decided(const markdown_core_reader *reader) {
-    return reader->far < reader->line.len && !reader->past;
-}
-
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     markdown_core_parser *parser, const markdown_core_kind_record *kind, markdown_core_node *container,
-    markdown_core_reader *reader, bool *should_continue, markdown_core_node **closing, markdown_core_node **taker,
-    const markdown_core_reader *before, bool *held) {
+    markdown_core_reader *reader, bool *should_continue, markdown_core_node **closing, markdown_core_node **taker) {
     const markdown_core_element_instance *structure = kind->structure;
     int matched;
 
@@ -10034,13 +8747,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     }
 
     matched = structure->lines->matches(structure, parser, reader, container);
-    /* On the line a session holds, a match that read what more text can
-     * change is not taken: the reader goes back to before it. */
-    if (before && !S_step_decided(reader)) {
-        *reader = *before;
-        *held = true;
-        return false;
-    }
     if (matched && structure->lines->pending) {
         *closing = matched == MARKDOWN_CORE_BLOCK_PENDING_CLOSE ? container : NULL;
     } else if (matched && S_kind_accepts_lines(kind, container)) {
@@ -10065,16 +8771,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
     return false;
 }
 
-/* Whether the call just made asked to be a candidate (THE CANDIDATES). */
-static inline bool S_requested(const markdown_core_parser *parser) { return parser->stream->requested; }
-
 /* Matches the line against the open blocks below `from`, the block root on a
- * new line. On the line a session holds, `hold`, it stops before the
- * first step that would read past the line's bytes, sets `*held` and
- * returns the last block matched. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
-    markdown_core_node *check_open_blocks(markdown_core_parser *parser, markdown_core_reader *reader, bool *all_matched,
-                                          markdown_core_node *from, const bool hold, bool *held) {
+ * new line. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *check_open_blocks(
+    markdown_core_parser *parser, markdown_core_reader *reader, bool *all_matched, markdown_core_node *from) {
     bool should_continue = true;
     *all_matched = false;
     markdown_core_node *container = from;
@@ -10089,53 +8789,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
          * spine, each naming the line by number, as matching a container can
          * read lines ahead, which can move the line table. */
         markdown_core_parser_rewritten_line(parser, parser->at.read.number)->own = (uint32_t)parser->at.read.offset;
-        parser->at.step_asks = parser->at.asks;
-        markdown_core_node *const above = container;
         container = container->children[container->child_count - 1];
 
         markdown_core_reader_find(reader);
 
         const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-        /* On the line a session holds, where a step that read what more
-         * text can change goes back to. */
-        markdown_core_reader room;
-        const markdown_core_reader *before = NULL;
-        if (hold) {
-            if (!S_step_decided(reader)) {
-                *held = true;
-                return above;
-            }
-            room = *reader;
-            before = &room;
-        }
         const markdown_core_element_instance *structure = kind->structure;
         if (structure && structure->lines->matches) {
-            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker, before,
-                                     held)) {
-                if (hold && *held) {
-                    return above;
-                }
+            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker)) {
                 goto done;
             }
         } else {
             bool taken = false;
             if (structure && structure->lines->blank && parser->at.read.blank &&
                 !structure->lines->blank(structure, parser, container, reader)) {
-                /* A blank line's acceptance asked to be a candidate (THE
-                 * CANDIDATES): the line holds at the call. */
-                if (S_requested(parser)) {
-                    *held = true;
-                    return above;
-                }
                 goto done;
             }
-            const bool prefixed = S_container_prefix_matches(parser, structure, container, reader, NULL, &taken);
-            if (before && !S_step_decided(reader)) {
-                *reader = *before;
-                *held = true;
-                return above;
-            }
-            if (!prefixed) {
+            if (!S_container_prefix_matches(parser, structure, container, reader, NULL, &taken)) {
                 goto done;
             }
             if (taken) {
@@ -10247,17 +8917,6 @@ static bool S_lookahead_extras_accept_blank(const markdown_core_block_lookahead 
     return true;
 }
 
-/* Line `line` of the active input for a candidate's reading, which reads no
- * end (markdown_core_block_lookahead). */
-static inline markdown_core_input_line *S_source_line_unread(markdown_core_parser *parser, int line) {
-    if (line < parser->input.first_line || parser->error) {
-        return NULL;
-    }
-    const size_t index = (size_t)(line - parser->input.first_line);
-    return index < parser->input.lines.front ? markdown_core_input_line_at(&parser->input, index)
-                                             : S_extend_source_lines(parser, index);
-}
-
 /* Room for a lookahead on a path of `depth` containers. A lookahead starts
  * in a room no other one reads, so the room grows anew. */
 static bool S_lookahead_room_grow(markdown_core_parser *parser, int depth) {
@@ -10314,53 +8973,25 @@ static markdown_core_node *S_joined(const markdown_core_parser *parser, markdown
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead) {
     /* The containers the lookahead matches are the stack up to the one the
-     * block joins: a candidate's decision reads on the path its line keeps
-     * (THE CANDIDATES), and every other reading builds its path from it. */
+     * block joins. */
     markdown_core_node *parent = S_joined(parser, parent_container, child);
     int depth = 0;
-    markdown_core_node *const *path = S_candidate_path(parser, parent, &depth);
-    if (!path) {
-        for (markdown_core_node *node = parent; node; node = markdown_core_parser_builder_below(parser, node)) {
-            depth++;
-        }
+    for (markdown_core_node *node = parent; node; node = markdown_core_parser_builder_below(parser, node)) {
+        depth++;
     }
     if (!S_lookahead_room(parser, depth)) {
         return false;
     }
-    if (!path) {
-        markdown_core_node **built = parser->lookahead_path;
-        int at = depth;
-        for (markdown_core_node *node = parent; node; node = markdown_core_parser_builder_below(parser, node)) {
-            built[--at] = node;
-        }
-        path = built;
+    markdown_core_node **path = parser->lookahead_path;
+    int at = depth;
+    for (markdown_core_node *node = parent; node; node = markdown_core_parser_builder_below(parser, node)) {
+        path[--at] = node;
     }
     S_lookahead_start(parser, path, depth, parser->at.lookahead_cursor, parser->at.read.number + 1, lookahead);
     return true;
 }
 
-/* A reading that waits stops before line `line`, at `start`, which the text
- * has not finished: the line is unread, and its chain's flags are as the
- * line found them. */
-static void S_lookahead_wait(markdown_core_block_lookahead *lookahead, int line, const unsigned char *start) {
-    markdown_core_parser *parser = lookahead->parser;
-    for (int i = lookahead->from; i < lookahead->depth; i++) {
-        markdown_core_node *node = lookahead->path[i];
-        const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, node)->structure;
-        const unsigned mask = structure ? structure->lines->speculative : 0;
-        node->flags = (markdown_core_node_internal_flags)((node->flags & ~mask) |
-                                                          (parser->lookahead_containers[i].line_flags & mask));
-    }
-    S_lookahead_close_run(lookahead, line, start);
-    lookahead->cursor = start;
-    lookahead->line = line;
-    lookahead->waited = true;
-}
-
-/* The next line of `lookahead`, which is a reading that can wait,
- * `can_wait`, when its `limit` is set (markdown_core_block_lookahead). */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_lookahead_next(
-    markdown_core_block_lookahead *lookahead, int *blank_lines, const bool can_wait) {
+markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines) {
     markdown_core_parser *parser = lookahead->parser;
 
     *blank_lines = 0;
@@ -10368,14 +8999,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         return NULL;
     }
     while (lookahead->cursor && !parser->error) {
-        if (!can_wait && markdown_core_parser_input_ends(parser, lookahead->cursor)) {
+        if (markdown_core_parser_input_ends(parser, lookahead->cursor)) {
             break;
-        }
-        if (can_wait && lookahead->cursor >= lookahead->limit) {
-            /* A reading that can wait waits here, as it is. */
-            S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
-            lookahead->exhausted = true;
-            return NULL;
         }
         const unsigned char *start = lookahead->cursor;
         const unsigned char *next;
@@ -10391,8 +9016,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         bool blank;
         int i;
 
-        markdown_core_input_line *geometry =
-            can_wait ? S_source_line_unread(parser, this_line) : markdown_core_parser_source_line(parser, this_line);
+        markdown_core_input_line *geometry = markdown_core_parser_source_line(parser, this_line);
         if (!geometry) {
             return NULL;
         }
@@ -10440,17 +9064,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         parser->at.read.blank = false;
         parser->at.read.split = false;
 
-        /* A line the text has not finished, read by a reading that waits,
-         * matches each prefix only as far as its bytes decide, and resumes
-         * only past prefixes they decided. */
-        const bool finished = start < markdown_core_parser_complete_end(parser);
-        const bool unfinished = can_wait && lookahead->waits && !finished;
         entry = markdown_core_parser_get_line_facts(parser, this_line);
         if (!entry && parser->error) {
             return NULL;
         }
         if (entry && entry->container && entry->depth < lookahead->depth &&
-            lookahead->path[entry->depth] == entry->container && (!unfinished || entry->decided)) {
+            lookahead->path[entry->depth] == entry->container) {
             resumed = true;
             from = entry->depth + 1;
             if (entry->taken) {
@@ -10464,8 +9083,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             }
         }
         /* The containers the line matches keep their flags as a line first
-         * matched them, for `end`, and as the line found them, for a line it
-         * waits before. */
+         * matched them, for `end`. */
         lookahead->from = from;
         markdown_core_lookahead_container *const containers = parser->lookahead_containers;
         for (i = from; i < lookahead->touched; i++) {
@@ -10474,25 +9092,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         if (from < lookahead->touched) {
             lookahead->touched = from;
         }
-        if (unfinished) {
-            for (i = from; i < lookahead->depth; i++) {
-                containers[i].line_flags = lookahead->path[i]->flags;
-            }
-        }
         resumed_offset = parser->at.read.offset;
         for (i = from; i < lookahead->depth && carried && !taken; i++) {
             markdown_core_node *container = lookahead->path[i];
             markdown_core_reader_find(reader);
             const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-            if (unfinished && !S_step_decided(reader)) {
-                S_lookahead_wait(lookahead, this_line, start);
-                return NULL;
-            }
             const markdown_core_element_instance *structure = kind->structure;
-            markdown_core_reader before = {0};
-            if (unfinished) {
-                before = *reader;
-            }
             if (structure && structure->lines->matches) {
                 int match =
                     structure->lines->continues ? structure->lines->continues(structure, parser, reader, container) : 0;
@@ -10503,13 +9108,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             } else {
                 carried = S_container_prefix_matches(parser, structure, container, reader,
                                                      markdown_core_parser_lookahead_parent(lookahead), &taken);
-            }
-            /* A match on a line the text has not finished that read what
-             * more text can change waits for it. */
-            if (unfinished && !S_step_decided(reader)) {
-                *reader = before;
-                S_lookahead_wait(lookahead, this_line, start);
-                return NULL;
             }
         }
         /* The work of this visit is the prefix bytes it had to match itself:
@@ -10524,10 +9122,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             markdown_core_reader_find(reader);
         }
         blank = taken || parser->at.read.blank;
-        if (unfinished && !taken && blank) {
-            S_lookahead_wait(lookahead, this_line, start);
-            return NULL;
-        }
 
         /* Element callbacks may append optional facts and move their vector.
          * A line number, not the earlier borrow, survives that boundary. */
@@ -10544,7 +9138,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             entry->offset = parser->at.read.offset;
             entry->column = parser->at.read.column;
             entry->split = parser->at.read.split;
-            entry->decided = finished || unfinished;
             entry->taken = taken;
             entry->blank = blank;
         }
@@ -10554,9 +9147,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
             if (!lookahead->run_start) {
                 lookahead->run_start = this_line;
             }
-            if (resumed && entry->run_end > this_line + 1 &&
-                (!can_wait || parser->input.source + entry->run_end_at <= lookahead->limit) &&
-                S_lookahead_extras_accept_blank(lookahead, from)) {
+            if (resumed && entry->run_end > this_line + 1 && S_lookahead_extras_accept_blank(lookahead, from)) {
                 *blank_lines += entry->run_end - this_line - 1;
                 lookahead->cursor = parser->input.source + entry->run_end_at;
                 lookahead->line = entry->run_end;
@@ -10567,7 +9158,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
         reader->number = this_line;
         reader->start = (bufsize_t)geometry->start;
         reader->end = (bufsize_t)geometry->end;
-        lookahead->incomplete = start >= markdown_core_parser_complete_end(parser);
         return reader;
     }
     S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
@@ -10576,22 +9166,17 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_reader *S_l
     return NULL;
 }
 
-markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines) {
-    return lookahead->limit ? S_lookahead_next(lookahead, blank_lines, true)
-                            : S_lookahead_next(lookahead, blank_lines, false);
-}
-
 /* How far a lookahead read, for the reading that ran it (THE READER
  * CLOSES): to the start of the line it stopped before -- a line a
  * container's prefix turned away was read through its terminator -- or past
- * the text's end, which it met or waits at, as it does when the last line
+ * the text's end, which it met, as it does when the last line
  * it read is unterminated. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_lookahead_seen(markdown_core_parser *parser,
                                                                  const markdown_core_block_lookahead *lookahead) {
     size_t size;
     const unsigned char *source = markdown_core_parser_input_text(parser, &size);
     size_t end = size + 1;
-    if (lookahead->cursor && !lookahead->ended && !lookahead->exhausted && !lookahead->waited &&
+    if (lookahead->cursor && !lookahead->ended &&
         !(lookahead->cursor == source + size && size && source[size - 1] != '\n' && source[size - 1] != '\r')) {
         end = (size_t)(lookahead->cursor - source);
     }
@@ -10606,7 +9191,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_
     size_t end;
     const unsigned char *source = markdown_core_parser_input_text(parser, &end);
     const size_t size = end;
-    if (lookahead->cursor && !lookahead->ended && !lookahead->waited) {
+    if (lookahead->cursor && !lookahead->ended) {
         /* A line a container's prefix turned away was read through its
          * terminator, and no further: the last line, unterminated, read to
          * the text's end. */
@@ -10710,901 +9295,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_line_take(markdown
     return true;
 }
 
-/* THE CANDIDATES (parser.h, markdown_core_parser_request_candidate). A call
- * whose reading waited where the text read so far ends, in a commit more
- * text may follow, asks to be a CANDIDATE: the commit holds the line at the
- * call (THE LINE A SESSION HOLDS) -- the document's prefix, called before
- * line 1, stops in the root at line 0 and holds none -- and reads on from the
- * call, which declines: one parse of the text the commit has, which ends
- * before the construct does, reads it so. Every later line the commit reads
- * is the candidate's to see first: each one its holder's prefixes carry is
- * FED to its owner (markdown_core_candidate_ops, `feed`), until one ends the
- * construct, and the engine DECIDES, asking the call's reading again (the candidate's `reads`). An ACCEPT puts the
- * commit back at the call, where the call reads the lines anew and claims
- * them. A REJECT keeps what the commit read. A decision that read where the
- * text ends WAITS for more text, which it reads once each commit.
- *
- * A LINE'S MARK. The first call of a line MARKS the commit's state where it
- * holds: what settled completes, and the mark keeps the parser's state
- * with what the elements' records keep (THE MARK), the misses, and every
- * open block, the root included, and the pending
- * block, LENT (THE LENDING) from the root up, as what the commit reads after
- * the call can close any of them; and the mark's PATH, the open blocks from
- * the root to the container the call was asked in. Each later call of the
- * line asked in that container or below it joins the mark, its path reaching
- * the container; a call the path does not reach takes a mark of its own. An
- * accept of any call of a mark puts the commit back at the mark -- its state
- * as marked, each lent block its own state again, and what the commit read
- * since released, the records the last publish kept naming what it placed of
- * it (ast.c, THE RECORDS) -- and holds the line at the mark's first call. The
- * commit reads the line anew from there, and the calls before the one
- * accepted MEET it again (markdown_core_parser_candidate_meets), in the order
- * they were made: each declines as it did, its container and its path the
- * ones read anew, and the call accepted then claims. A rejected call stays
- * in its mark, DECIDED, for a reading anew to meet; a mark whose every call is
- * decided goes, and each block it lent keeps what the commit read: its view
- * takes what it views (markdown_core_node_view_adopt). The feed and the
- * decisions read on the mark's path, so no call's reading walks the blocks
- * below its holder again.
- *
- * A mark taken after another lies inside the other's lines: marks are kept
- * outermost first, an accept puts back every mark taken after its own, and a
- * block two marks lent, at the same depth in both, holds the outer one's view
- * in the inner one's backup. The commit's reading of a candidate's lines is
- * the one a snapshot publishes, unless the snapshot sees the construct end:
- * then it puts the commit back at the call's mark as an accept does, every
- * call of the mark waiting as the commit fed it, as only a commit decides a
- * call, and reads the lines anew to its text's end, where the calls before
- * the one accepted meet it and that one, the CLAIMANT, claims. The commit
- * reads the lines anew from the mark, where every call of it meets the
- * reading, and feeds each call from the line it was fed through. */
-struct markdown_core_candidate {
-    const markdown_core_element_instance *owner;
-    /* The block the opener's reading read below, `depth` in its mark's path,
-     * the depth there of the container the call was asked in, and where the
-     * commit stopped at the call. */
-    markdown_core_node *holder;
-    size_t depth, container_depth;
-    markdown_core_line_stop stop;
-    /* What a reading anew meets the call by, with its owner and its line:
-     * its number among the line's asks; and the kind of the block it would
-     * open. */
-    size_t ask;
-    markdown_core_node_type child;
-    /* The call after it in its mark, past which the next that waits stands:
-     * decided calls on the way are stepped over once (S_call_next). */
-    size_t next;
-    /* The size of the text a decision that waits read. */
-    size_t size;
-    /* The call's line, 0 for the document's prefix, and the last line
-     * fed. */
-    int line, fed;
-    /* Whether the call could claim the lines fed were the text to end
-     * after them, whether a line ended the construct, and whether its
-     * decision rejected it. */
-    bool ends, ended, decided;
-    /* Where the reading stood as a decision began. */
-    markdown_core_parser_at saved;
-};
-
-/* A LINE'S MARK: the state, the misses and the lent blocks, the root first,
- * the pending block last, so a block's lend stands at its depth; the path;
- * the calls, the first that waits and how many wait; and in `states`, bytes
- * the mark owns, the record each call keeps (markdown_core_candidate_ops,
- * `size`), the call's at its index in room for the dialect's largest;
- * `state_capacity` counts bytes. */
-struct markdown_core_candidate_mark {
-    S_snapshot_mark state;
-    size_t miss_count, miss_label_size, miss_root_count;
-    markdown_core_lend *lends;
-    size_t lend_count, lend_capacity;
-    markdown_core_node **path;
-    size_t path_capacity;
-    struct markdown_core_candidate *calls;
-    size_t call_count, call_capacity, first, live;
-    unsigned char *states;
-    size_t state_capacity;
-};
-
-size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_t *records) {
-    const markdown_core_stream *stream = parser->stream;
-    assert(parser->snapshot && stream->snapshot_mark);
-    const S_snapshot_mark *mark = stream->mark_count ? &stream->marks[0].state : stream->snapshot_mark;
-    *records = mark->roster.count;
-    return mark->names_parsed;
-}
-
-/* The record the call at `index` of `mark` keeps. */
-static inline void *S_call_state(const markdown_core_parser *parser, const struct markdown_core_candidate_mark *mark,
-                                 size_t index) {
-    const size_t size = parser->dialect->candidate_state_size;
-    return size ? mark->states + index * size : NULL;
-}
-
-void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                                            markdown_core_node *container, markdown_core_node_type child,
-                                            const void *state, bool ends) {
-    markdown_core_stream *stream = parser->stream;
-    assert(stream && !markdown_core_parser_candidate_final(parser) && !stream->requested);
-    stream->requested = true;
-    stream->request_owner = owner;
-    stream->request_container = container;
-    stream->request_child = child;
-    assert(parser->at.asks);
-    stream->request_ask = parser->at.asks - 1;
-    /* An element whose calls ask for candidates answers them. */
-    assert(owner->element->candidate);
-    if (owner->element->candidate->size) {
-        memcpy(stream->candidate_room, state, owner->element->candidate->size);
-    }
-    stream->request_ends = ends;
-}
-
-/* The call of `mark` after the one at `index` that waits, or the mark's call
- * count: the calls decided on the way are stepped over from then on. */
-static size_t S_call_next(struct markdown_core_candidate_mark *mark, size_t index) {
-    size_t next = mark->calls[index].next;
-    while (next < mark->call_count && mark->calls[next].decided) {
-        next = mark->calls[next].next;
-    }
-    mark->calls[index].next = next;
-    return next;
-}
-
-/* The holder of a call asked in `path[at]` that would open a block of
- * `child`: the nearest container on the path that can hold it, which is
- * where `markdown_core_parser_add_child` backs up to. Its depth. */
-static size_t S_holder_depth(const markdown_core_parser *parser, markdown_core_node *const *path, size_t at,
-                             markdown_core_node_type child) {
-    while (path[at] != parser->at.block_root && !markdown_core_node_can_contain_type(path[at], child)) {
-        at--;
-    }
-    return at;
-}
-
-/* Whether `container` is `path[from]` of `mark` or lies below it, the path
- * then reaching it: its depth there is `*at`. */
-static bool S_path_reach(markdown_core_parser *parser, struct markdown_core_candidate_mark *mark, size_t from,
-                         markdown_core_node *container, size_t *at) {
-    size_t steps = 0;
-    const markdown_core_node *node = container;
-    for (; node && node != mark->path[from]; node = markdown_core_parser_builder_below(parser, node)) {
-        steps++;
-    }
-    if (!node) {
-        return false;
-    }
-    markdown_core_node **path =
-        markdown_core_reserve(mark->path, &mark->path_capacity, from + steps + 1, sizeof(*mark->path));
-    if (!path) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    mark->path = path;
-    markdown_core_node *step = container;
-    for (size_t i = from + steps; i > from; i--) {
-        path[i] = step;
-        step = markdown_core_scaffold_parent(step);
-    }
-    *at = from + steps;
-    return true;
-}
-
-/* Whether `call` was made at `stop` of line `line`: a reading that holds
- * there asks no later call of the line. */
-static bool S_made_at(const struct markdown_core_candidate *call, const markdown_core_line_stop *stop, int line) {
-    return call->line == line && call->ask >= stop->asks;
-}
-
-/* A reading that starts where the commit holds its line, or at the
- * document's prefix, meets the calls of the last mark made there or after
- * it on the line, in the order they were made: every call of a mark an
- * accept put back, and otherwise the last ones made, at the stop itself. */
-static void S_meet_from_stop(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    stream->meet_mark = stream->mark_count;
-    if (!stream->mark_count) {
-        return;
-    }
-    struct markdown_core_candidate_mark *mark = &stream->marks[stream->mark_count - 1];
-    size_t first = mark->call_count;
-    if (stream->anew) {
-        first = 0;
-        stream->anew = parser->snapshot;
-    } else {
-        while (first && S_made_at(&mark->calls[first - 1], &stream->stop, parser->at.read.number)) {
-            first--;
-        }
-    }
-    if (first < mark->call_count) {
-        stream->meet_mark = stream->mark_count - 1;
-        stream->meet_call = first;
-        stream->meet_depth = mark->calls[first].container_depth;
-    }
-}
-
-/* The next call a reading meets is the next one made on its line, from
- * where the reading started (S_meet_from_stop), up to a snapshot's
- * CLAIMANT, which claims. A commit's reading takes the call's container and
- * path anew; a snapshot's writes no call. */
-bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                                     markdown_core_node *container, size_t ask) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *mark = &stream->marks[stream->meet_mark];
-    if (stream->meet_call >= mark->call_count) {
-        return false;
-    }
-    struct markdown_core_candidate *call = &mark->calls[stream->meet_call];
-    if (call == stream->claimant || call->line != parser->at.read.number || call->ask != ask) {
-        return false;
-    }
-    assert(call->owner == owner);
-    (void)owner;
-    stream->meet_call++;
-    if (parser->snapshot) {
-        return true;
-    }
-    size_t at;
-    if (!S_path_reach(parser, mark, stream->meet_depth, container, &at)) {
-        assert(parser->error);
-        return true;
-    }
-    call->stop.container = container;
-    call->container_depth = at;
-    call->depth = S_holder_depth(parser, mark->path, at, call->child);
-    call->holder = mark->path[call->depth];
-    stream->meet_depth = at;
-    /* A mark whose calls are all decided, kept for its line read anew, goes
-     * once the reading meets its last call. */
-    if (stream->meet_call == mark->call_count && !mark->live) {
-        stream->mark_count--;
-    }
-    return true;
-}
-
-markdown_core_reader *markdown_core_parser_candidate_start(markdown_core_parser *parser,
-                                                           markdown_core_node **container) {
-    struct markdown_core_candidate *candidate = parser->stream->deciding;
-    candidate->saved = parser->at;
-    /* A call before line 1 reads from the input's start, with no line in
-     * hand (element.h, markdown_core_document_ops, `read`). */
-    if (candidate->line < parser->input.first_line) {
-        static const unsigned char none[1] = {0};
-        parser->reading = true;
-        parser->at.read = (markdown_core_reader){
-            .line = {(unsigned char *)none, 0, 0}, .blank = true, .rests = parser->at.read.rests};
-        parser->at.lookahead_cursor = parser->input.source;
-        *container = candidate->stop.container;
-        return &parser->at.read;
-    }
-    markdown_core_input_line *found =
-        markdown_core_input_line_at(&parser->input, candidate->line - parser->input.first_line);
-    bufsize_t length;
-    const unsigned char *content = S_input_line_content(parser, found, &length);
-    if (!content) {
-        return NULL;
-    }
-    if (!S_line_in_hand(parser, candidate->line) && !S_line_take(parser, candidate->line, content, length)) {
-        return NULL;
-    }
-    parser->reading = true;
-    parser->at.read.number = candidate->line;
-    parser->at.read.offset = candidate->stop.offset;
-    parser->at.read.column = candidate->stop.column;
-    parser->at.read.split = candidate->stop.split;
-    parser->at.read.nonspace = 0;
-    parser->at.read.nonspace_column = 0;
-    parser->at.thematic_break_kill_pos = 0;
-    parser->at.lookahead_cursor = parser->input.source + markdown_core_input_line_next(parser, found);
-    parser->at.read.start = (bufsize_t)found->start;
-    parser->at.read.end = (bufsize_t)found->end;
-    parser->at.read.line = (markdown_core_chunk){.data = parser->curline.ptr, .len = parser->curline.size, .alloc = 0};
-    parser->at.read.far = 0;
-    markdown_core_reader_find(&parser->at.read);
-    *container = candidate->stop.container;
-    return &parser->at.read;
-}
-
-void markdown_core_parser_candidate_end(markdown_core_parser *parser) {
-    S_reader_close(parser);
-    parser->at = parser->stream->deciding->saved;
-    parser->reading = false;
-}
-
-/* The path a candidate's decision reads on: its mark's, from the root to
- * `parent`, the holder of the call being decided, `*depth` blocks; NULL for
- * every other reading. */
-static markdown_core_node *const *S_candidate_path(const markdown_core_parser *parser, const markdown_core_node *parent,
-                                                   int *depth) {
-    const markdown_core_stream *stream = parser->stream;
-    if (!stream->deciding || parent != stream->deciding->holder) {
-        return NULL;
-    }
-    *depth = (int)stream->deciding->depth + 1;
-    return stream->decision_mark->path;
-}
-
-/* THE DECIDED CONTENT (parser.h): the first mark's holders, found by
- * depth, as it lent every open block from the root up and the pending block
- * last. */
-bool markdown_core_parser_undecided(const markdown_core_parser *parser) {
-    const markdown_core_stream *stream = parser->stream;
-    return stream->mark_count && stream->marks[0].lend_count;
-}
-
-bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t depth, const markdown_core_node *block,
-                                 markdown_core_holder *entry) {
-    const struct markdown_core_candidate_mark *first = &parser->stream->marks[0];
-    if (depth >= first->lend_count || first->lends[depth].address != block) {
-        return false;
-    }
-    const markdown_core_lend *lend = &first->lends[depth];
-    *entry = (markdown_core_holder){block, lend->last, lend->backup, lend->backup->child_count, (uint32_t)depth};
-    return true;
-}
-
-/* The open blocks lent to `mark` from the root up, the pending block last,
- * each a view no publish placed. The path holds them, the root first.
- * False, with the parse failed, when storage could not be had. */
-static bool S_mark_lend(markdown_core_parser *parser, struct markdown_core_candidate_mark *mark) {
-    size_t depth = 0;
-    for (markdown_core_node *node = parser->at.current; node; node = markdown_core_scaffold_parent(node)) {
-        depth++;
-    }
-    markdown_core_node **path = markdown_core_reserve(mark->path, &mark->path_capacity, depth, sizeof(*path));
-    if (!path) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    mark->path = path;
-    size_t at = depth;
-    for (markdown_core_node *node = parser->at.current; node; node = markdown_core_scaffold_parent(node)) {
-        path[--at] = node;
-    }
-    for (size_t i = 0; i < depth; i++) {
-        if (!S_lend_to(parser, &mark->lends, &mark->lend_count, &mark->lend_capacity, path[i])) {
-            return false;
-        }
-    }
-    return !parser->at.pending ||
-           S_lend_to(parser, &mark->lends, &mark->lend_count, &mark->lend_capacity, parser->at.pending);
-}
-
-/* The mark the first call of a line takes, the call asked in `container`,
- * whose depth in its path is `*at`; NULL, with the parse failed, when
- * storage could not be had. Each entry of the marks keeps its storage for
- * the next mark made there. */
-static struct markdown_core_candidate_mark *S_mark_make(markdown_core_parser *parser, markdown_core_node *container,
-                                                        size_t *at) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *marks =
-        markdown_core_reserve(stream->marks, &stream->mark_capacity, stream->mark_count + 1, sizeof(*marks));
-    if (!marks) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    stream->marks = marks;
-    if (stream->mark_count == stream->mark_made) {
-        memset(&marks[stream->mark_made++], 0, sizeof(*marks));
-    }
-    struct markdown_core_candidate_mark *mark = &marks[stream->mark_count];
-    /* Room for the record of the call the mark is made for. */
-    const size_t room = parser->dialect->candidate_state_size;
-    if (room) {
-        unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity, room, 1);
-        if (!states) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return NULL;
-        }
-        mark->states = states;
-    }
-    stream->mark_count++;
-    mark->miss_count = stream->miss_count;
-    mark->miss_label_size = (size_t)stream->miss_labels.size;
-    mark->miss_root_count = stream->miss_root_count;
-    mark->lend_count = mark->call_count = mark->first = mark->live = 0;
-    S_mark(parser, &mark->state);
-    if (!S_mark_lend(parser, mark)) {
-        return NULL;
-    }
-    *at = 0;
-    for (const markdown_core_node *node = container; node != parser->root; node = markdown_core_scaffold_parent(node)) {
-        (*at)++;
-    }
-    assert(mark->path[*at] == container);
-    return mark;
-}
-
-/* The candidate the opener asked for, made at the line its commit holds:
- * the call joins its line's mark, or takes one. */
-static void S_candidate_make(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    stream->requested = false;
-    if (!markdown_core_parser_complete(parser)) {
-        return;
-    }
-    markdown_core_node *const container = stream->request_container;
-    assert(stream->stop.container == container && stream->stop.asks <= stream->request_ask);
-    struct markdown_core_candidate_mark *mark = stream->mark_count ? &stream->marks[stream->mark_count - 1] : NULL;
-    assert(!mark || mark->live);
-    size_t at = 0;
-    if (!mark || mark->calls[mark->call_count - 1].line != parser->at.read.number ||
-        !S_path_reach(parser, mark, mark->calls[mark->call_count - 1].container_depth, container, &at)) {
-        mark = parser->error ? NULL : S_mark_make(parser, container, &at);
-        if (!mark) {
-            return;
-        }
-    }
-    struct markdown_core_candidate *calls =
-        markdown_core_reserve(mark->calls, &mark->call_capacity, mark->call_count + 1, sizeof(*calls));
-    if (!calls) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    mark->calls = calls;
-    const size_t size = parser->dialect->candidate_state_size;
-    if (size) {
-        unsigned char *states =
-            markdown_core_reserve(mark->states, &mark->state_capacity, (mark->call_count + 1) * size, 1);
-        if (!states) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        mark->states = states;
-        memcpy(S_call_state(parser, mark, mark->call_count), stream->candidate_room, size);
-    }
-    const size_t index = mark->call_count++;
-    const size_t depth = S_holder_depth(parser, mark->path, at, stream->request_child);
-    struct markdown_core_candidate *candidate = &calls[index];
-    *candidate = (struct markdown_core_candidate){
-        .owner = stream->request_owner,
-        .holder = mark->path[depth],
-        .depth = depth,
-        .container_depth = at,
-        .stop = stream->stop,
-        .ask = stream->request_ask,
-        .child = stream->request_child,
-        .next = index + 1,
-        .line = parser->at.read.number,
-        .fed = parser->at.read.number,
-        .ends = stream->request_ends,
-    };
-    mark->live++;
-}
-
-/* Where the line after line `line` starts: the text's start after line 0,
- * where the document's prefix is read. */
-static size_t S_line_next(const markdown_core_parser *parser, int line) {
-    return line ? markdown_core_input_line_next(
-                      parser, markdown_core_input_line_at(&parser->input, line - parser->input.first_line))
-                : 0;
-}
-
-/* Feeds `candidate`, a call of `mark`, the lines its holder carries after the
- * last it was fed, up to `limit`, as more text may follow when `waits`:
- * CONTINUES once they are fed, ENDS at the first line that ends the
- * construct -- one the holder does not carry ends it -- and WAITS at a line
- * the text has not finished whose bytes do not tell. Blank lines before the
- * limit are fed as a line the text read so far does not have, and fed again
- * with the line after them. */
-static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parser,
-                                                     const struct markdown_core_candidate_mark *mark,
-                                                     struct markdown_core_candidate *candidate, void *state,
-                                                     const unsigned char *limit, bool waits) {
-    markdown_core_block_lookahead lookahead;
-    if (!S_lookahead_room(parser, (int)candidate->depth + 1)) {
-        return MARKDOWN_CORE_CANDIDATE_ENDS;
-    }
-    S_lookahead_start(parser, mark->path, (int)candidate->depth + 1,
-                      parser->input.source + S_line_next(parser, candidate->fed), candidate->fed + 1, &lookahead);
-    lookahead.limit = limit;
-    lookahead.waits = waits;
-    const markdown_core_element_instance *owner = candidate->owner;
-    markdown_core_candidate_step step = MARKDOWN_CORE_CANDIDATE_CONTINUES;
-    for (;;) {
-        markdown_core_candidate_line line = {0};
-        bool ends = candidate->ends;
-        if ((line.reader = markdown_core_parser_lookahead_next(&lookahead, &line.blanks))) {
-            line.unfinished = waits && lookahead.incomplete;
-            step = owner->element->candidate->feed(owner, parser, state, &line, &ends);
-            if (step != MARKDOWN_CORE_CANDIDATE_CONTINUES) {
-                break;
-            }
-            candidate->fed = lookahead.line - 1;
-            candidate->ends = ends;
-            continue;
-        }
-        if (parser->error || (!lookahead.exhausted && !lookahead.waited)) {
-            step = MARKDOWN_CORE_CANDIDATE_ENDS;
-        } else if (line.blanks) {
-            line = (markdown_core_candidate_line){.blanks = line.blanks};
-            step = owner->element->candidate->feed(owner, parser, state, &line, &ends);
-            if (step == MARKDOWN_CORE_CANDIDATE_CONTINUES) {
-                candidate->ends = ends;
-                if (lookahead.waited) {
-                    step = MARKDOWN_CORE_CANDIDATE_WAITS;
-                }
-            }
-        } else if (lookahead.waited) {
-            step = MARKDOWN_CORE_CANDIDATE_WAITS;
-        } else {
-            candidate->fed = lookahead.line - 1;
-        }
-        break;
-    }
-    markdown_core_parser_lookahead_end(&lookahead);
-    return step;
-}
-
-/* The decision of the call at `index` of the mark at `m`, which asks whether
- * it read the end: one that read where more text may follow waits. */
-static markdown_core_candidate_decision S_candidate_decide(markdown_core_parser *parser, size_t m, size_t index) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate *candidate = &stream->marks[m].calls[index];
-    const markdown_core_element_instance *owner = candidate->owner;
-    markdown_core_parser_clear_end_read(parser);
-    stream->deciding = candidate;
-    stream->decision_mark = &stream->marks[m];
-    markdown_core_node *container;
-    markdown_core_reader *reader = markdown_core_parser_candidate_start(parser, &container);
-    markdown_core_candidate_decision decision = MARKDOWN_CORE_CANDIDATE_REJECT;
-    if (reader) {
-        decision = owner->element->candidate->reads(owner, parser, container, reader,
-                                                    S_call_state(parser, &stream->marks[m], index))
-                       ? MARKDOWN_CORE_CANDIDATE_ACCEPT
-                       : MARKDOWN_CORE_CANDIDATE_REJECT;
-        markdown_core_parser_candidate_end(parser);
-    }
-    stream->deciding = NULL;
-    stream->decision_mark = NULL;
-    if (markdown_core_parser_end_read(parser)) {
-        decision = MARKDOWN_CORE_CANDIDATE_WAIT;
-    }
-    return parser->error ? MARKDOWN_CORE_CANDIDATE_REJECT : decision;
-}
-
-/* A lent block takes its state as the mark found it back: its address holds
- * it again, with the scaffold it has now, and the view goes with what it
- * holds that the block does not -- the children it added since and the
- * fields it took. What the next publish matches of them the records the
- * last publish kept name (ast.c, THE RECORDS). A view whose kind the commit
- * changed is a node the commit made, and the block it was comes back
- * continuing nothing (ast.c, PUBLISHING IN PLACE). */
-static void S_candidate_take_back(markdown_core_parser *parser, const markdown_core_lend *entry) {
-    markdown_core_node *const address = entry->address, *const backup = entry->backup;
-    const markdown_core_scaffold scaffold = *markdown_core_scaffold_of(address);
-    if (address->kind != backup->kind) {
-        assert(!backup->child_count);
-        S_take_back_content(address, backup);
-        markdown_core_node_swap(address, backup);
-        *markdown_core_scaffold_of(address) = scaffold;
-        address->id = 0;
-        markdown_core_parser_release_node(parser, backup);
-        return;
-    }
-    /* The settled nodes the commit took come back to the stream (THE
-     * SETTLE POINT). */
-    markdown_core_settled *settled = &parser->stream->settled;
-    uint32_t from = S_added_from(backup->child_count);
-    if (address == settled->address && settled->taken) {
-        settled->taken = false;
-        from = settled->nodes.count > from ? (uint32_t)settled->nodes.count : from;
-    }
-    S_release_added(parser, address, from, entry->last);
-    S_take_back_children(parser, address, backup, entry->last);
-    S_take_back_content(address, backup);
-    markdown_core_node_view_let_go(parser->pool, address, backup);
-    backup->id = address->id;
-    markdown_core_node_swap(address, backup);
-    *markdown_core_scaffold_of(address) = scaffold;
-    markdown_core_parser_release_node(parser, backup);
-}
-
-/* The commit back at the mark at `m`, every mark taken after it put back
- * first, holding the line at the mark's first call to read it anew. */
-static void S_candidate_put_back(markdown_core_parser *parser, size_t m) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    for (size_t i = mark->miss_root_count; i < stream->miss_root_count; i++) {
-        if (stream->miss_roots[i].position.places) {
-            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
-        }
-    }
-    stream->miss_count = mark->miss_count;
-    markdown_core_strbuf_truncate(&stream->miss_labels, (bufsize_t)mark->miss_label_size);
-    stream->miss_root_count = mark->miss_root_count;
-    if (stream->miss_published > stream->miss_root_count) {
-        stream->miss_published = stream->miss_root_count;
-    }
-    stream->miss_root = NULL;
-    S_restore(parser, &mark->state);
-    /* The lines read anew start at the mark's line; the prefix's, before
-     * line 1, holds no line, and the driver reads it again first. */
-    const struct markdown_core_candidate *first = &mark->calls[0];
-    markdown_core_parser_input *input = &parser->input;
-    const int line = first->line ? first->line : input->first_line;
-    S_drop_facts(input, (size_t)(line - input->first_line), input->lines.front, input->fact_count);
-    stream->stop = first->stop;
-    stream->held = first->line > 0;
-    stream->fed = first->line;
-    for (size_t i = stream->mark_count; i-- > m;) {
-        struct markdown_core_candidate_mark *undone = &stream->marks[i];
-        for (size_t k = 0; k < undone->lend_count; k++) {
-            S_candidate_take_back(parser, &undone->lends[k]);
-        }
-        undone->lend_count = 0;
-    }
-    stream->mark_count = m + 1;
-}
-
-/* The mark at `m` marked and lent again while one of its calls waits; with
- * none, it stays while it keeps a decided call for the reading anew to meet,
- * lending nothing. */
-static void S_mark_anew(markdown_core_parser *parser, size_t m) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    if (mark->live) {
-        S_mark_lend(parser, mark);
-    } else if (!mark->call_count) {
-        stream->mark_count = m;
-    }
-}
-
-/* AN ACCEPT: the commit back at the mark at `m` (S_candidate_put_back),
- * where the calls before the one at `index` meet the reading anew, and the
- * call accepted claims: it and the calls after it go. */
-static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t index) {
-    S_candidate_put_back(parser, m);
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    for (size_t k = index; k < mark->call_count; k++) {
-        mark->live -= !mark->calls[k].decided;
-    }
-    mark->call_count = index;
-    if (mark->first > index) {
-        mark->first = index;
-    }
-    stream->anew = index > 0;
-    S_mark_anew(parser, m);
-}
-
-/* A SNAPSHOT'S ACCEPT: the commit back at the mark at `m`
- * (S_candidate_put_back), every call of it waiting as the commit fed it, as
- * only a commit decides a call; the snapshot's reading anew meets each call
- * before the one at `index`, the CLAIMANT, which claims. */
-static void S_candidate_see(markdown_core_parser *parser, size_t m, size_t index) {
-    S_candidate_put_back(parser, m);
-    markdown_core_stream *stream = parser->stream;
-    stream->claimant = &stream->marks[m].calls[index];
-    stream->anew = true;
-    S_mark_anew(parser, m);
-}
-
-/* The lend of the block a lend of the mark at `m` names, at the same depth,
- * by the mark at `other`, or NULL. */
-static markdown_core_lend *S_mark_lend_of(markdown_core_stream *stream, size_t other, size_t k,
-                                          const markdown_core_node *address) {
-    if (other >= stream->mark_count) {
-        return NULL;
-    }
-    struct markdown_core_candidate_mark *mark = &stream->marks[other];
-    return k < mark->lend_count && mark->lends[k].address == address ? &mark->lends[k] : NULL;
-}
-
-/* What the mark at `m` lent stays as the commit read it: each view takes
- * what it views and its backup goes. The view the next mark kept of a block
- * in its own backup takes it, when there is one. A view no other mark lends
- * is lent no more, the one the next mark keeps too. A view that left its
- * holder's children as it closed goes with the last mark that lent it. */
-static void S_mark_unlend(markdown_core_parser *parser, size_t m) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    for (size_t k = 0; k < mark->lend_count; k++) {
-        markdown_core_lend *entry = &mark->lends[k];
-        markdown_core_node *const address = entry->address;
-        markdown_core_lend *inner = S_mark_lend_of(stream, m + 1, k, address);
-        markdown_core_lend *outer = m ? S_mark_lend_of(stream, m - 1, k, address) : NULL;
-        markdown_core_node *const view = inner ? inner->backup : address;
-        markdown_core_node_view_adopt(parser->pool, view, entry->backup);
-        markdown_core_parser_release_node(parser, entry->backup);
-        if (!outer) {
-            view->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__LENT;
-        }
-        if (inner) {
-            continue;
-        }
-        if (entry->dropped) {
-            if (outer) {
-                outer->dropped = true;
-            } else {
-                markdown_core_parser_release_node(parser, address);
-            }
-        }
-    }
-    mark->lend_count = 0;
-}
-
-/* A look of a reading from line `line`, which starts at `start`, read
- * past its end (THE BLOCK OF A LINE). */
-static void S_reach_line(markdown_core_parser *parser, int line, size_t start, size_t end) {
-    if (!markdown_core_parser_reaches(parser) || end <= start) {
-        return;
-    }
-    markdown_core_parser_ran(parser, end);
-    markdown_core_parser_look_cut(parser, start, end);
-    S_line_reads(parser, line, start, end);
-}
-
-/* A REJECT: the call at `index` of the mark at `m` is decided, and what the
- * commit read stays. The mark goes with its last call that waits, its
- * storage kept at the end of the marks. */
-static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t index, size_t end, bool last) {
-    markdown_core_stream *stream = parser->stream;
-    struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    const int line = mark->calls[index].line;
-    const markdown_core_parser_input *input = &parser->input;
-    const size_t start = line ? markdown_core_input_line_at(input, line - input->first_line)[0].start : 0;
-    /* A decision as the text ends that noted its opener read to the end
-     * (AN OPENER READ TO THE END). */
-    size_t at;
-    if (!last || !stream->edit || !stream->edit->opener_count ||
-        !S_opener_find(stream->edit, mark->calls[index].owner, start, &at)) {
-        S_reach_line(parser, line, start, end);
-    }
-    mark->calls[index].decided = true;
-    mark->live--;
-    if (index == mark->first) {
-        mark->first = S_call_next(mark, index);
-    }
-    if (mark->live) {
-        return;
-    }
-    S_mark_unlend(parser, m);
-    const struct markdown_core_candidate_mark gone = *mark;
-    memmove(mark, mark + 1, (stream->mark_count - m - 1) * sizeof(*mark));
-    stream->marks[--stream->mark_count] = gone;
-    /* The reading meets no call of a mark that went. */
-    if (stream->meet_mark > m) {
-        stream->meet_mark--;
-    } else if (stream->meet_mark == m) {
-        stream->meet_mark = stream->mark_count;
-    }
-}
-
-/* Every mark let go as the parse is released, the last taken first, each
- * as the last one, as a reject of its last call lets it go, and the marks'
- * storage with them. */
-static void S_candidates_release(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    for (; stream->mark_count; stream->mark_count--) {
-        S_mark_unlend(parser, stream->mark_count - 1);
-    }
-    for (size_t i = 0; i < stream->mark_made; i++) {
-        markdown_core_free(stream->marks[i].lends);
-        markdown_core_free(stream->marks[i].path);
-        markdown_core_free(stream->marks[i].calls);
-        markdown_core_free(stream->marks[i].states);
-    }
-    markdown_core_free(stream->marks);
-    stream->marks = NULL;
-    stream->mark_made = stream->mark_capacity = 0;
-}
-
-/* A lent block that left its holder's children as it closed: in a commit,
- * a mark lent it, and the last that lent anything did, at its depth, which
- * keeps it until its calls are decided. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_candidate_drops(markdown_core_parser *parser,
-                                                                  const markdown_core_node *block) {
-    if (!parser->snapshot) {
-        markdown_core_stream *stream = parser->stream;
-        size_t m = stream->mark_count;
-        while (!stream->marks[--m].lend_count) {
-        }
-        struct markdown_core_candidate_mark *mark = &stream->marks[m];
-        size_t k = mark->lend_count;
-        while (mark->lends[--k].address != block) {
-        }
-        mark->lends[k].dropped = true;
-    }
-}
-
-/* THE FEED: every call that waits, outermost first, fed the lines up to
- * `through`, the line the driver reads next, which ends where `limit` is,
- * once: a commit feeds through each line once, and after an accept from
- * the line it reads anew. True when an accept put the commit back at a
- * mark. */
-static bool S_feed(markdown_core_parser *parser, int through, const unsigned char *limit) {
-    markdown_core_stream *stream = parser->stream;
-    if (parser->snapshot || through <= stream->fed) {
-        return false;
-    }
-    for (size_t m = 0; m < stream->mark_count && !parser->error;) {
-        struct markdown_core_candidate_mark *mark = &stream->marks[m];
-        bool gone = false;
-        for (size_t k = mark->first; k < mark->call_count && !parser->error && !gone;) {
-            struct markdown_core_candidate *candidate = &mark->calls[k];
-            if (candidate->ended ? candidate->size == parser->input.size
-                                 : candidate->fed >= through ||
-                                       S_candidate_feed(parser, mark, candidate, S_call_state(parser, mark, k), limit,
-                                                        !stream->ends) != MARKDOWN_CORE_CANDIDATE_ENDS) {
-                k = S_call_next(mark, k);
-                continue;
-            }
-            candidate->ended = true;
-            switch (S_candidate_decide(parser, m, k)) {
-            case MARKDOWN_CORE_CANDIDATE_ACCEPT:
-                S_candidate_undo(parser, m, k);
-                return true;
-            case MARKDOWN_CORE_CANDIDATE_REJECT:
-                gone = mark->live == 1;
-                S_candidate_drop(parser, m, k, (size_t)(limit - parser->input.source), false);
-                if (!gone) {
-                    k = S_call_next(mark, k);
-                }
-                break;
-            case MARKDOWN_CORE_CANDIDATE_WAIT:
-                candidate->size = parser->input.size;
-                k = S_call_next(mark, k);
-                break;
-            }
-        }
-        m += !gone;
-    }
-    stream->fed = through;
-    return false;
-}
-
-/* The candidates as the last commit's text ends, each decided, outermost
- * first. True when an accept put the commit back at a mark. */
-static bool S_candidates_end(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    while (stream->mark_count && !parser->error) {
-        const size_t first = stream->marks[0].first;
-        assert(first < stream->marks[0].call_count);
-        if (S_candidate_decide(parser, 0, first) == MARKDOWN_CORE_CANDIDATE_ACCEPT) {
-            S_candidate_undo(parser, 0, first);
-            return true;
-        }
-        /* The call decided as the text ends read its end: text after it
-         * may decide it again. */
-        size_t end;
-        markdown_core_parser_input_text(parser, &end);
-        S_candidate_drop(parser, 0, first, end + 1, true);
-    }
-    return false;
-}
-
-/* A SNAPSHOT SEES A CANDIDATE END: each call that waits, outermost first, is
- * fed the lines to the end of the text on a copy, and one whose construct
- * the opener could claim there is decided as the text ends. True, with the
- * mark and the call, for the first that accepts. */
-static bool S_candidates_see_end(markdown_core_parser *parser, size_t *m, size_t *index) {
-    markdown_core_stream *stream = parser->stream;
-    for (size_t i = 0; i < stream->mark_count; i++) {
-        struct markdown_core_candidate_mark *mark = &stream->marks[i];
-        for (size_t k = mark->first; k < mark->call_count && !parser->error; k = S_call_next(mark, k)) {
-            bool possible = mark->calls[k].ended;
-            if (!possible) {
-                struct markdown_core_candidate fed = mark->calls[k];
-                void *state = S_call_state(parser, mark, k);
-                if (state) {
-                    state = memcpy(stream->candidate_room, state, parser->dialect->candidate_state_size);
-                }
-                const markdown_core_candidate_step step =
-                    S_candidate_feed(parser, mark, &fed, state, parser->input.source + parser->input.size, false);
-                possible =
-                    step == MARKDOWN_CORE_CANDIDATE_ENDS || (step == MARKDOWN_CORE_CANDIDATE_CONTINUES && fed.ends);
-            }
-            if (possible && S_candidate_decide(parser, i, k) == MARKDOWN_CORE_CANDIDATE_ACCEPT) {
-                *m = i;
-                *index = k;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 /* THE LINE NAMES ITS CANDIDATES; THE DISPATCHER DOES NOT ASK EVERY OWNER.
  *
  * A family's gates are projected into one list of owners per KEY, in the
@@ -11675,18 +9365,6 @@ static bool scan_element_start(markdown_core_parser *parser, block_start_context
     return false;
 }
 
-/* Whether the block start at the line's first non-space byte, on the line a
- * session holds, may be taken from bytes the line already has (THE LINE A
- * SESSION HOLDS): an interrupter decides and opens in one call, so a line
- * one is asked on holds before the start; the scans are asked and the start
- * taken when the one that claims the line read only bytes it has. */
-static bool S_start_interrupts(const markdown_core_parser *parser, const markdown_core_reader *reader) {
-    size_t count;
-    S_gate_candidates(parser->dialect, MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
-                      S_gate_key(reader, reader->nonspace, reader->indent), &count);
-    return count != 0;
-}
-
 /* Where the line machine stands as it opens blocks: whether the line may
  * still be lazy, and how many blocks this line has asked to open. */
 typedef struct {
@@ -11694,21 +9372,18 @@ typedef struct {
     size_t depth;
 } S_opens;
 
-/* Opens the blocks the line starts in `*container`. On the line a session
- * holds, `hold`, it stops before the first start that would read past the
- * line's bytes and sets `*held`, as it does at an opener's call that asked
- * to be a candidate; `*opens` says where it stands. */
+/* Opens the blocks the line starts in `*container`, from where `opens`
+ * says the line stands. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(markdown_core_parser *parser,
                                                                             markdown_core_node **container,
                                                                             markdown_core_reader *reader,
-                                                                            bool all_matched, S_opens *opens,
-                                                                            const bool hold, bool *held) {
+                                                                            bool all_matched, S_opens opens) {
     /* Two facts keep a line from interrupting text: `paragraph`, the matched
      * container is a paragraph the line would continue, and `maybe_lazy`, the
      * current block would take the line lazily. Only the first turn has
      * either: a block opened here holds the rest of the line. */
-    bool maybe_lazy = opens->maybe_lazy;
-    size_t depth = opens->depth;
+    bool maybe_lazy = opens.maybe_lazy;
+    size_t depth = opens.depth;
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, *container);
     /* The instance's dialect is sealed: read its families through one local. */
     const markdown_core_dialect *const dialect = parser->dialect;
@@ -11734,34 +9409,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                                        .all_matched = all_matched,
                                        .depth = depth + 1,
                                        .thematic_kill = parser->at.thematic_break_kill_pos};
-        parser->at.step_asks = parser->at.asks;
-        markdown_core_reader room;
-        const markdown_core_reader *before = NULL;
-        if (hold) {
-            if (!S_step_decided(reader) || S_start_interrupts(parser, reader)) {
-                *opens = (S_opens){maybe_lazy, depth};
-                *held = true;
-                return;
-            }
-            room = *reader;
-            before = &room;
-        }
         scan_element_start(parser, &context, &start);
         if (parser->error) {
-            return;
-        }
-        /* A start no scan claims is asked of the openers, which decide and
-         * open in one call; a claim that read what more text can change is
-         * not taken. Either holds before the start. */
-        if (hold && start.open && start.reads) {
-            markdown_core_reader probe = *reader;
-            start.reads(start.owner, &probe, &start);
-            reader->far = probe.far;
-        }
-        if (before && (!start.open || !S_step_decided(reader))) {
-            *reader = *before;
-            *opens = (S_opens){maybe_lazy, depth};
-            *held = true;
             return;
         }
         depth++;
@@ -11789,15 +9438,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                 *container = opened;
                 return;
             }
-            if (S_requested(parser)) {
-                goto requested;
-            }
         }
 
         if (start.open) {
             const bool opened = start.open(start.owner, parser, container, reader, &start);
-            /* An open reads only what its scan decided from. */
-            assert(!hold || S_step_decided(reader));
             S_reader_close(parser);
             if (!opened) {
                 return;
@@ -11829,9 +9473,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                     }
                     break;
                 }
-                if (S_requested(parser)) {
-                    goto requested;
-                }
             }
 
             if (!new_container) {
@@ -11852,9 +9493,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                             *container = new_container;
                             return;
                         }
-                        if (S_requested(parser)) {
-                            goto requested;
-                        }
                     }
                 }
                 break;
@@ -11874,19 +9512,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
 
         maybe_lazy = false;
     }
-    *opens = (S_opens){maybe_lazy, depth};
-    return;
-requested:
-    /* An opener asked for its call to be a candidate (THE CANDIDATES): the
-     * line holds at the call. */
-    *opens = (S_opens){maybe_lazy, depth - 1};
-    *held = true;
 }
 
 /* What remains at parser->at.read.offset is a text line: adds the text to the
  * appropriate container. False when the block that would take it did not
- * open: the parse failed, or the text opener's call asked to be a
- * candidate (THE CANDIDATES). */
+ * open: the parse failed. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_container(
     markdown_core_parser *parser, markdown_core_node *container, markdown_core_node *last_matched_container,
     markdown_core_reader *reader) {
@@ -11976,61 +9606,18 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
     return true;
 }
 
-/* THE LINE A SESSION HOLDS. A commit more text may follow reads the lines
- * the text has finished and then, of the line it has not, each step whose
- * decision reads only bytes the line has
- * (docs/plans/2026-09-29-incremental-parsing.md, 5.1): matching an open
- * block, and opening a block a scan claims. The step runs, and the reader
- * says how far it read (reader.h, `far`): a step that read too far is not
- * taken, the reader going back to before it; a step's decision writes only
- * the reader, and an open reads only what its scan read. The line's last
- * byte is the end of the text or the last before its terminator, and a step
- * that reads it reads what more text can change, so the commit stops before
- * it, and before the text the line leaves to its leaf, and keeps where it
- * stopped (parser.h, markdown_core_line_stop). The next reading of the line
- * starts there: a snapshot's, which reads the rest of it as the line the
- * text ends with, and the next commit's, which reads on as far as the
- * line's bytes decide, or to the line's end once the text has finished
- * it. Every step of the line is taken once, in the commit that
- * decides it, as a parse of any longer text takes it. */
-
-/* Keeps where the line machine stopped in the line a session holds: once
- * a commit, out of line as the driver's steps out of its line loop are
- * (THE DRIVER). */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_hold(markdown_core_parser *parser, markdown_core_line_step step,
-                                                       markdown_core_node *container, bool all_matched, bool opened,
-                                                       S_opens opens) {
-    parser->stream->stop = (markdown_core_line_stop){
-        .container = container,
-        .depth = opens.depth,
-        .asks = parser->at.step_asks,
-        .offset = parser->at.read.offset,
-        .column = parser->at.read.column,
-        .far = parser->at.read.far,
-        .own = markdown_core_parser_visited_line(parser, parser->at.read.number)->own,
-        .step = step,
-        .all_matched = all_matched,
-        .opened = opened,
-        .maybe_lazy = opens.maybe_lazy,
-        .split = parser->at.read.split,
-    };
-    parser->stream->held = true;
-}
-
 /* THE LINE MACHINE (http://spec.commonmark.org/0.24/#phase-1-block-structure)
- * reads the line in `buffer` from its start, or from `from`, where a commit
- * stopped in it; with `hold`, it stops before the first step that reads past
- * the line's bytes (THE LINE A SESSION HOLDS). */
+ * reads the line in `buffer` from its start, or from `from`, where an edit's
+ * reading stands inside it (A REST INSIDE A LINE): there the line has
+ * matched every open block and opened the block that takes its text, which
+ * is left to add. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markdown_core_parser *parser,
                                                                            const unsigned char *buffer, bufsize_t bytes,
-                                                                           const markdown_core_line_stop *from,
-                                                                           const bool hold) {
+                                                                           const markdown_core_line_stop *from) {
     markdown_core_node *last_matched_container;
     bool all_matched = true;
     markdown_core_node *container;
     markdown_core_reader *const reader = &parser->at.read;
-    S_opens opens;
-    bool held = false;
 
     if (parser->error || parser->root == NULL) {
         return;
@@ -12061,11 +9648,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     reader->line = (markdown_core_chunk){parser->curline.ptr, parser->curline.size, 0};
     reader->far = from ? from->far : 0;
 
-    parser->at.asks = parser->at.step_asks = from ? from->asks : 0;
     if (from) {
         parser->at.read.offset = from->offset;
         parser->at.read.column = from->column;
-        parser->at.read.split = from->split;
         markdown_core_parser_rewritten_line(parser, parser->at.read.number)->own = from->own;
     } else {
         parser->at.read.number = line;
@@ -12076,35 +9661,19 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
         parser->at.thematic_break_kill_pos = 0;
     }
 
-    if (!from || from->step == MARKDOWN_CORE_LINE_AT_MATCH) {
+    if (!from) {
         last_matched_container =
-            check_open_blocks(parser, reader, &all_matched,
-                              from ? from->container : markdown_core_parser_block_root(parser), hold, &held);
-        if (held) {
-            S_hold(parser, MARKDOWN_CORE_LINE_AT_MATCH, last_matched_container, false, false, (S_opens){false, 0});
-            goto finished;
-        }
+            check_open_blocks(parser, reader, &all_matched, markdown_core_parser_block_root(parser));
         if (!last_matched_container) {
             goto finished;
         }
         container = last_matched_container;
-        opens = (S_opens){S_may_be_lazy(parser, container), 0};
+        open_new_blocks(parser, &container, reader, all_matched, (S_opens){S_may_be_lazy(parser, container), 0});
     } else {
         /* A line that has opened a block is no lazy line: the block it
          * reaches is not the last it matched. */
         container = from->container;
-        last_matched_container = from->opened ? NULL : container;
-        all_matched = from->all_matched;
-        opens = (S_opens){from->maybe_lazy, from->depth};
-    }
-
-    if (!from || from->step != MARKDOWN_CORE_LINE_AT_TEXT) {
-        open_new_blocks(parser, &container, reader, all_matched, &opens, hold, &held);
-        if (held) {
-            S_hold(parser, MARKDOWN_CORE_LINE_AT_OPEN, container, all_matched, container != last_matched_container,
-                   opens);
-            goto finished;
-        }
+        last_matched_container = NULL;
     }
 
     if (container == NULL || parser->error) {
@@ -12115,26 +9684,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
         goto finished;
     }
 
-    parser->at.step_asks = parser->at.asks;
-    /* The text a held line leaves to its leaf is read to the line's end. */
-    if (hold) {
-        held = true;
-        S_hold(parser, MARKDOWN_CORE_LINE_AT_TEXT, container, all_matched, container != last_matched_container, opens);
-        goto finished;
-    }
-
-    /* The text opener asked for its call to be a candidate (THE
-     * CANDIDATES): the line holds at the call, in the block it was asked
-     * in, where the blocks the line did not match have closed. */
-    if (!add_text_to_container(parser, container, last_matched_container, reader) && S_requested(parser)) {
-        held = true;
-        container = markdown_core_parser_current(parser);
-        S_hold(parser, MARKDOWN_CORE_LINE_AT_TEXT, container, all_matched, container != last_matched_container, opens);
-    } else if (parser->line_open_count && !parser->error) {
+    add_text_to_container(parser, container, last_matched_container, reader);
+    if (parser->line_open_count && !parser->error) {
         S_line_opens_keep(parser, markdown_core_parser_current(parser));
     }
-    if (held) {
-    } else if (reader->rests && !parser->claimed_cursor && !parser->error) {
+    if (reader->rests && !parser->claimed_cursor && !parser->error) {
         /* How far the line's reading read as it gave its text away (A REST
          * INSIDE A LINE), and whether it looked past the line's end, as a
          * term does at the next line's marker: what it read there an edit
@@ -12142,8 +9696,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
          * where it did. A reading that goes on inside the line looked
          * where the line's first reading did, which it does not do again. */
         const markdown_core_edit *edit = parser->stream->edit;
-        const bool looked = (edit->look.end && edit->look_line == parser->at.read.number) ||
-                            (from && from->step == MARKDOWN_CORE_LINE_AT_TEXT && from->past);
+        const bool looked = (edit->look.end && edit->look_line == parser->at.read.number) || (from && from->past);
         markdown_core_parser_rewritten_line(parser, line)->decided =
             (uint32_t)reader->far | (looked ? MARKDOWN_CORE_LINE_PAST : 0);
     }
@@ -12151,13 +9704,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
 finished:
     /* Block scopes cover the complete physical line, including closing
      * delimiters and attribute containers. Inline content trimming never
-     * changes this source boundary. A held line has not ended, and its
-     * looks wait for its block. */
-    if (!held) {
-        parser->at.last_line_end = parser->at.read.end;
-        if (parser->stream && parser->stream->edit && parser->stream->edit->look.end) {
-            S_line_look_settle(parser);
-        }
+     * changes this source boundary. */
+    parser->at.last_line_end = parser->at.read.end;
+    if (parser->stream && parser->stream->edit && parser->stream->edit->look.end) {
+        S_line_look_settle(parser);
     }
     parser->reading = false;
 }
@@ -12165,13 +9715,13 @@ finished:
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_line(markdown_core_parser *parser,
                                                                            const unsigned char *buffer,
                                                                            bufsize_t bytes) {
-    S_line_machine(parser, buffer, bytes, NULL, false);
+    S_line_machine(parser, buffer, bytes, NULL);
 }
 
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_process_held_line(markdown_core_parser *parser,
                                                                     const unsigned char *buffer, bufsize_t bytes,
-                                                                    const markdown_core_line_stop *from, bool hold) {
-    S_line_machine(parser, buffer, bytes, from, hold);
+                                                                    const markdown_core_line_stop *from) {
+    S_line_machine(parser, buffer, bytes, from);
 }
 
 /* COMPLETION: every queued block, in the order it joined, as one walk over
@@ -12191,345 +9741,6 @@ static void S_complete_settled(markdown_core_parser *parser) {
     S_stage(parser, STAGE_PREPARE);
     if (!parser->error) {
         S_complete_queue(parser);
-    }
-}
-
-bool markdown_core_parser_complete(markdown_core_parser *parser) {
-    if (!parser->error) {
-        parser->snapshot = true;
-        parser->stream->miss_root = NULL;
-        S_parse_block_inputs(parser);
-        if (!parser->error) {
-            S_complete_settled(parser);
-        }
-        parser->snapshot = false;
-    }
-    return !parser->error;
-}
-
-/* Where `root` lies as the block phase left it, kept in `position`: its
- * place and a copy of its places, in storage of the pool's. */
-static bool S_miss_position(markdown_core_parser *parser, const markdown_core_node *root,
-                            markdown_core_miss_position *position) {
-    markdown_core_places *places = NULL;
-    if (root->source.places) {
-        const size_t bytes =
-            sizeof(markdown_core_places) + root->source.places->count * sizeof(markdown_core_source_place);
-        places = markdown_core_node_pool_bytes(parser->pool, bytes);
-        if (!places) {
-            return false;
-        }
-        memcpy(places, root->source.places, bytes);
-    }
-    *position = (markdown_core_miss_position){root->place, places};
-    return true;
-}
-
-static int S_take_field(markdown_core_node **slot, void *context) {
-    markdown_core_node ***taken = context;
-    assert(!*taken);
-    *taken = slot;
-    return 1;
-}
-
-/* The slot of the field root `block` holds, or NULL when it holds none: a
- * block holds one at most, its opener's or its caption
- * (markdown_core_block_settle_field). */
-static markdown_core_node **S_field_slot(const markdown_core_dialect *dialect, markdown_core_node *block) {
-    markdown_core_node **slot = NULL;
-    markdown_core_visit_inline_subtrees(dialect, block, S_take_field, &slot);
-    return slot;
-}
-
-/* THE RECORD OF AN INLINE ROOT A LOOKUP FOUND NOTHING FOR (parser.h,
- * markdown_core_miss_root), made at its first such lookup: the block that is
- * the root, or that holds it, the block the queue links it to, and where the
- * root lies. Its completion has not changed where it lies, and nothing does
- * before the publish measures it; a block keeps its address for life. False
- * when it could not be made. */
-static bool S_miss_root(markdown_core_parser *parser, markdown_core_node *root) {
-    assert(S_kind_contains_inlines(markdown_core_parser_kind(parser, root), root));
-    markdown_core_node *holder = markdown_core_scaffold_parent(root);
-    markdown_core_node **slot = holder ? S_field_slot(parser->dialect, holder) : NULL;
-    const bool field = slot && *slot == root;
-    markdown_core_miss_root *roots =
-        markdown_core_reserve(parser->stream->miss_roots, &parser->stream->miss_root_capacity,
-                              parser->stream->miss_root_count + 1, sizeof(*roots));
-    if (!roots) {
-        return false;
-    }
-    parser->stream->miss_roots = roots;
-    markdown_core_miss_root *record = &roots[parser->stream->miss_root_count];
-    *record = (markdown_core_miss_root){.node = field ? holder : root, .holder = holder, .field = field};
-    if (!S_miss_position(parser, root, &record->position)) {
-        return false;
-    }
-    parser->stream->miss_root_count++;
-    parser->stream->miss_root = root;
-    return true;
-}
-
-const markdown_core_roster_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
-                                                                         markdown_core_roster_kind kind,
-                                                                         const markdown_core_chunk *label, uint32_t at,
-                                                                         const markdown_core_roster_record *record,
-                                                                         bool *failed) {
-    markdown_core_node *root = parser->completing;
-    const bool found = record && markdown_core_roster_starts_before(&parser->roster, record, root->place.start);
-    /* A parse that takes edits lists what found a definition too: each is
-     * a use of its label (markdown_core_edit, `uses`). */
-    if (found && !parser->stream->edit) {
-        return record;
-    }
-    /* Only a committed root is asked again: a snapshot's own are gone with
-     * it, but for the lookups of the open paragraph it settles, whose
-     * settled nodes stay (THE SETTLE POINT). */
-    if (!(root->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-        if (root == parser->stream->settled.root && !S_settled_miss(&parser->stream->settled, kind, label, at, found)) {
-            *failed = true;
-        }
-        return found ? record : NULL;
-    }
-    /* A committed root's lookup that found a definition is a use now: no
-     * finalize asks it again. */
-    *failed = found ? !S_use(parser->stream->edit, S_use_place(parser, root, at), kind, label->data, label->len)
-                    : !S_record_miss(parser, root, kind, label->data, label->len, at);
-    return found && !*failed ? record : NULL;
-}
-
-/* A lookup of the committed root `root` that found nothing for `label`, of
- * `size` bytes, at `at` of its content, recorded for the finalize. False
- * when storage could not be had. */
-static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_roster_kind kind,
-                          const unsigned char *label, bufsize_t size, uint32_t at) {
-    markdown_core_definition_miss *misses = markdown_core_reserve(
-        parser->stream->misses, &parser->stream->miss_capacity, parser->stream->miss_count + 1, sizeof(*misses));
-    if (misses) {
-        parser->stream->misses = misses;
-    }
-    if (!misses || (parser->stream->miss_root != root && !S_miss_root(parser, root))) {
-        return false;
-    }
-    misses[parser->stream->miss_count++] = (markdown_core_definition_miss){parser->stream->miss_root_count - 1, kind,
-                                                                           parser->stream->miss_labels.size, size};
-    markdown_core_strbuf_put(&parser->stream->miss_labels, label, size);
-    /* A parse that takes edits keeps it as a use too, in the order of the
-     * commits, which is where the roots start: a finalize that completes
-     * the root again looks the same labels up. */
-    return !parser->stream->miss_labels.oom &&
-           (!parser->stream->edit || S_use(parser->stream->edit, S_use_place(parser, root, at), kind, label, size));
-}
-
-/* The nodes of what completion made of a root, gathered as their anchors
- * are withdrawn. */
-typedef struct {
-    markdown_core_parser *parser;
-    size_t count;
-} completion_collect;
-
-static int S_collect_completed(markdown_core_node **slot, void *context) {
-    completion_collect *collect = context;
-    if (!*slot) {
-        return 1;
-    }
-    markdown_core_node **stack =
-        markdown_core_parser_walk_stack(collect->parser, collect->count + 1, sizeof(markdown_core_node *));
-    if (!stack) {
-        return 0;
-    }
-    stack[collect->count++] = *slot;
-    return 1;
-}
-
-/* The explicit anchor `node` reserved, withdrawn as starting at `start`. */
-static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_node *node, uint32_t start) {
-    const markdown_core_chunk *anchor = &node->attributes.anchor;
-    if (!anchor->len) {
-        return true;
-    }
-    return markdown_core_roster_withdraw(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len,
-                                         start);
-}
-
-/* THE ANCHORS COMPLETING A ROOT RESERVED, withdrawn as starting at `start`,
- * where the root starts: the root's own and those of every node of its
- * inline content, the field roots of its inline nodes included. */
-static void S_withdraw_completion(markdown_core_parser *parser, markdown_core_node *root, uint32_t start) {
-    completion_collect collect = {.parser = parser};
-    bool withdrawn = S_withdraw_anchor(parser, root, start);
-    for (uint32_t i = 0; withdrawn && i < root->child_count; i++) {
-        withdrawn = S_collect_completed(&root->children[i], &collect);
-    }
-    while (withdrawn && collect.count) {
-        markdown_core_node *node = ((markdown_core_node **)parser->walk_stack)[--collect.count];
-        withdrawn = S_withdraw_anchor(parser, node, start) &&
-                    markdown_core_visit_inline_subtrees(parser->dialect, node, S_collect_completed, &collect);
-        for (uint32_t i = 0; withdrawn && i < node->child_count; i++) {
-            withdrawn = S_collect_completed(&node->children[i], &collect);
-        }
-    }
-    if (!withdrawn) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-}
-
-/* A root completed anew: its candidate, and the record of the root. */
-typedef struct {
-    markdown_core_node *candidate;
-    const markdown_core_miss_root *record;
-} S_completion_anew;
-
-/* The root `record` names. */
-static markdown_core_node *S_record_root(const markdown_core_dialect *dialect, const markdown_core_miss_root *record) {
-    return record->field ? *S_field_slot(dialect, record->node) : record->node;
-}
-
-/* The candidate of the root `record` names (markdown_core_node_candidate),
- * at the position the record kept, joins the completion queue with the block
- * the root settled into or the block that holds it, once the anchors the
- * root's completion reserved are withdrawn; the element of a kind whose
- * inline content is parsed before the walk parses it first. NULL, with the
- * parse failed, when no candidate could be made. */
-static markdown_core_node *S_complete_anew(markdown_core_parser *parser, markdown_core_miss_root *record) {
-    markdown_core_node *root = S_record_root(parser->dialect, record);
-    S_withdraw_completion(parser, root, record->position.place.start);
-    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, root);
-    markdown_core_node *candidate = parser->error ? NULL : markdown_core_node_candidate(parser->pool, root);
-    if (!candidate) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    candidate->place = record->position.place;
-    candidate->source.places = record->position.places;
-    record->position.places = NULL;
-    if (kind->flags & MARKDOWN_CORE_KIND_DEFERRED) {
-        parser->completing = candidate;
-        kind->structure->element->finish->reparse(kind->structure, parser, candidate);
-    }
-    S_complete_later(parser, candidate, record->holder);
-    return candidate;
-}
-
-/* THE DEFINITIONS A ROOT COMPLETED AGAIN MAKES AGAIN. The candidate makes
- * the root's inline content anew. The definitions the published document
- * holds as COMMITTED in that content (parser.h, `committed`) lie in its
- * source, at the place the root's record kept, and go as the candidate is
- * published, which lists the ones it makes there; the root's own entry
- * stays, naming the object that holds its state. A table finds the ones a
- * place holds by where they start, and each one going is emptied; what the
- * candidates list joins the tables once every candidate is placed
- * (S_keep_defined), so no candidate empties another's. */
-static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_root *record,
-                               const markdown_core_node *root) {
-    if (!markdown_core_publish_withdraw(parser, record->position.place, root)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-}
-
-/* The definitions the candidates listed, in the committed tables: each
- * where it starts, in place of one emptied there. */
-static void S_keep_defined(markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->stream->defined_count && !parser->error; i++) {
-        const markdown_core_defined *defined = &parser->stream->defined[i];
-        if (!markdown_core_publish_define(parser, defined->table, defined->node, defined->start)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-    }
-    parser->stream->defined_count = 0;
-}
-
-/* A candidate completed takes its root's place. A root a snapshot
- * published complete is in the published document as a publish left it,
- * which no later publish walks again (ast.c, THE FINAL PREFIX): the
- * candidate is published against it (the document's `candidate`),
- * its nodes matched to the root's. Any other root the finalize's publish
- * walks, the candidate with it. A block root takes the candidate's state in
- * its own slot, with its id, and the candidate's slot its old state; a field
- * root's block holds the candidate in the root's field. The storage the
- * candidate borrowed from the root's is the candidate's
- * (markdown_core_node_take_borrowed), and the root's old state goes. */
-static void S_complete_place(markdown_core_parser *parser, const S_completion_anew *anew, bool published) {
-    markdown_core_node *candidate = anew->candidate;
-    const markdown_core_miss_root *record = anew->record;
-    markdown_core_node *root = S_record_root(parser->dialect, record);
-    S_withdraw_defined(parser, record, root);
-    if (published) {
-        const markdown_core_element_instance *document = parser->dialect->document_structure;
-        document->element->document->candidate(document, parser, candidate, root, record->node->place.start);
-    }
-    if (parser->error) {
-        markdown_core_node_pool_release(parser->pool, candidate);
-        return;
-    }
-    if (record->field) {
-        *S_field_slot(parser->dialect, record->node) = candidate;
-        markdown_core_node_take_borrowed(candidate, root);
-        markdown_core_node_pool_release(parser->pool, root);
-        return;
-    }
-    const uint64_t id = root->id;
-    markdown_core_node_swap(root, candidate);
-    root->id = id;
-    markdown_core_node_take_borrowed(root, candidate);
-    markdown_core_node_pool_release(parser->pool, candidate);
-}
-
-/* A LOOKUP THAT FOUND NOTHING at a commit's completion is asked anew as
- * the finalize ends the completion, with every definition visible (plan
- * 5.10): a root one of whose lookups finds a definition now is completed
- * anew as a candidate, what the block phase made of it, at the position its
- * record kept, with every block the finalize completes. The candidate then
- * takes the root's place (S_complete_place). */
-static void S_complete_misses(markdown_core_parser *parser) {
-    S_completion_anew *anew = markdown_core_alloc(parser->stream->miss_root_count, sizeof(*anew));
-    if (!anew) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    markdown_core_edit *const edit = parser->stream->edit;
-    if (edit) {
-        edit->anew = true;
-    }
-    size_t count = 0;
-    for (size_t miss = 0, record = 0; record < parser->stream->miss_root_count && !parser->error; record++) {
-        bool found = false;
-        /* The lookups asked again are no root's to note: the commits noted
-         * them (S_record_miss). */
-        parser->completing = NULL;
-        for (; miss < parser->stream->miss_count && parser->stream->misses[miss].root == record; miss++) {
-            const markdown_core_definition_miss *at = &parser->stream->misses[miss];
-            const markdown_core_chunk label = {parser->stream->miss_labels.ptr + at->label_start, at->label_length, 0};
-            bool failed = false;
-            found = found || markdown_core_parser_find_definition(parser, at->kind, &label, 0, &failed);
-            if (failed) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                break;
-            }
-        }
-        markdown_core_node *candidate =
-            found && !parser->error ? S_complete_anew(parser, &parser->stream->miss_roots[record]) : NULL;
-        if (candidate) {
-            anew[count++] = (S_completion_anew){candidate, &parser->stream->miss_roots[record]};
-        }
-    }
-    if (!parser->error && parser->completion_first) {
-        S_complete_queue(parser);
-    }
-    size_t placed = 0;
-    for (; placed < count && !parser->error; placed++) {
-        S_complete_place(parser, &anew[placed],
-                         (size_t)(anew[placed].record - parser->stream->miss_roots) < parser->stream->miss_published);
-    }
-    /* A candidate a failure left unplaced is no root's. */
-    for (; placed < count; placed++) {
-        markdown_core_node_pool_release(parser->pool, anew[placed].candidate);
-    }
-    markdown_core_free(anew);
-    if (edit) {
-        edit->anew = false;
-    }
-    if (!parser->error && count) {
-        S_keep_defined(parser);
     }
 }
 
@@ -12724,7 +9935,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (parser->root == NULL || parser->error) {
         return NULL;
     }
-    S_take_back(parser, false);
 
     S_close_document(parser);
     if (parser->stream->edit && parser->stream->edit->depth) {
@@ -12736,9 +9946,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (!parser->error && parser->stream->edit) {
         S_revert_end(&parser->stream->edit->revert);
         S_seam_measure(parser);
-    }
-    if (!parser->error && !parser->snapshot && parser->stream->miss_count) {
-        S_complete_misses(parser);
     }
 
     /* The document's finalization reads the finished tree: the headings take
@@ -12798,7 +10005,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         edit->leap->rest = 0;
         edit->leap->kept = false;
     }
-    if (edit && !parser->snapshot && !parser->error && !S_uses_flush(parser)) {
+    if (edit && !parser->error && !S_uses_flush(parser)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     if (edit) {
@@ -12834,9 +10041,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
                 edit->leap->armed = edit->leap->active = false;
                 edit->leap->seam_count = edit->leap->back_count = 0;
                 edit->leap->node = NULL;
-                if (!parser->stream->settled.root && parser->stream->settled.address) {
-                    parser->stream->settled.address = NULL;
-                }
+                parser->stream->reopened = NULL;
             }
         }
     }

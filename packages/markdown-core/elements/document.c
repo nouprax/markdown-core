@@ -35,62 +35,15 @@ static void publish_document(const markdown_core_element_instance *self, markdow
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-static void publish_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              markdown_core_node *candidate, markdown_core_node *root, uint32_t holder_start) {
-    (void)self;
-    if (!markdown_core_publish_candidate(parser, candidate, root, holder_start)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-}
-/* The prefix's candidate: whether its envelope opened, as its feed read,
- * and the fence its reading found closing it. */
-typedef struct {
-    bool opened;
-    size_t fence;
-} document_call;
-
-/* THE CALL'S READING (element.h, `reads`): an envelope that closes. */
-static bool document_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *container, markdown_core_reader *reader, void *record) {
-    (void)container;
-    document_call *call = record;
-    return markdown_core_properties_closed(self->state, parser, reader, self, &call->fence);
-}
-
-/* THE PREFIX, the call before line 1 (markdown_core_parser_call): an
- * envelope that closes is read as the document's properties. */
+/* THE PREFIX, read before line 1: an envelope that closes is read as the
+ * document's properties. */
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_reader *reader) {
-    document_call call = {false, 0};
-    if (markdown_core_parser_call(parser, self, document_reads, parser->root, reader, MARKDOWN_CORE_NODE_METADATA,
-                                  &call, false) != MARKDOWN_CORE_CANDIDATE_ACCEPT) {
+    size_t fence = 0;
+    if (!markdown_core_properties_closed(self->state, parser, reader, self, &fence) || parser->error) {
         return 0;
     }
-    return markdown_core_properties_parse(self->state, parser, reader, call.fence);
-}
-
-/* THE FEED of the prefix's candidate: the first line opens the envelope
- * when it is a fence, which the candidate's record keeps, and ends the
- * construct otherwise; after it, a fence line closes the envelope and ends
- * the construct, and any other line goes on with it, a line the text has
- * not finished once its bytes rule a fence out. An envelope its text leaves
- * open is not claimed. */
-static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, void *state,
-                                                   const markdown_core_candidate_line *line, bool *ends) {
-    (void)self;
-    (void)parser;
-    bool *opened = &((document_call *)state)->opened;
-    const int fence = line->reader ? markdown_core_properties_fence(markdown_core_reader_rest(line->reader, 0)) : -1;
-    if (line->unfinished && fence > 0) {
-        return MARKDOWN_CORE_CANDIDATE_WAITS;
-    }
-    if (*opened ? fence == 3 : line->blanks || fence != 3) {
-        return MARKDOWN_CORE_CANDIDATE_ENDS;
-    }
-    *opened = true;
-    *ends = false;
-    return MARKDOWN_CORE_CANDIDATE_CONTINUES;
+    return markdown_core_properties_parse(self->state, parser, reader, fence);
 }
 
 static const markdown_core_edit_ops DOCUMENT_EDIT = {
@@ -104,13 +57,6 @@ static const markdown_core_document_ops DOCUMENT_OPS = {
     .reopen = reopen_document,
     .splice = splice_document,
     .publish = publish_document,
-    .candidate = publish_candidate,
-};
-
-static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
-    .feed = feed_candidate,
-    .reads = document_reads,
-    .size = sizeof(document_call),
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
@@ -119,11 +65,10 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .facets = MARKDOWN_CORE_PROPERTIES_FACETS,
     .edit = &DOCUMENT_EDIT,
     .document = &DOCUMENT_OPS,
-    .candidate = &DOCUMENT_CANDIDATE,
 };
 
-/* A document's definition tables, but a snapshot's, which it borrows (ast.c,
- * A SNAPSHOT'S TABLES). Out of line, so that the free of every other kind
+/* A document's definition tables, but a session's, which it borrows (ast.c,
+ * A SESSION'S DOCUMENT). Out of line, so that the free of every other kind
  * keeps its own registers. */
 MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown_core_document_value *document) {
     if (document->committed) {
@@ -132,11 +77,9 @@ MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown
     markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
     for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
         markdown_core_free((void *)tables[i]->all.nodes);
-        markdown_core_free(tables[i]->all.places);
         markdown_core_free((void *)tables[i]->labeled);
     }
     markdown_core_free((void *)document->reference_targets.nodes);
-    markdown_core_free(document->reference_targets.places);
 }
 
 /* The document's record (markdown_core_record_ops): its definition tables,

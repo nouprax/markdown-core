@@ -21,25 +21,6 @@ typedef enum {
     MARKDOWN_CORE_INLINE_FALLBACK
 } markdown_core_inline_precedence;
 
-/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; the candidate's `feed`):
- * the reader on it past the prefixes of the candidate's holder, NULL when
- * the lines read so far end after the blank lines; the blank lines before
- * it; and whether the text has not finished it, whose bytes past the
- * prefixes are read only as far as they decide. */
-typedef struct {
-    markdown_core_reader *reader;
-    int blanks;
-    bool unfinished;
-} markdown_core_candidate_line;
-
-/* What a line tells a candidate (blocks.c, THE CANDIDATES; the
- * candidate's `feed`). */
-typedef enum {
-    MARKDOWN_CORE_CANDIDATE_CONTINUES,
-    MARKDOWN_CORE_CANDIDATE_ENDS,
-    MARKDOWN_CORE_CANDIDATE_WAITS
-} markdown_core_candidate_step;
-
 typedef enum {
     MARKDOWN_CORE_CONTENT_CONTAINER,
     MARKDOWN_CORE_CONTENT_PROSE,
@@ -163,19 +144,6 @@ typedef struct markdown_core_block_gate {
  *   or leaves it NULL when storage could not be had.
  * - `free`: releases what the record owns. Its node-valued fields were taken
  *   by the walk first (`visit`), and it must not destroy them.
- * - `view`: `copy`'s record, a byte copy of `node`'s, becomes a VIEW of it
- *   (markdown_core_node_view): it views each part whose holder marks what it
- *   owns and owns none of it, and copies what has no mark (a label in the
- *   pool's storage, at most a label's length). With `failed` it copies
- *   nothing, leaving those parts empty, so releasing the view gives back
- *   exactly what it took. False when a copy could not be had; a payload's
- *   leaves `copy->opaque` NULL.
- * - `own`: a candidate's record, a view of `node`'s, takes copies of the
- *   bytes it still views. False, the rest left viewed, when storage could
- *   not be had.
- * - `adopt`: `view`'s record, a view of `node`'s, takes the storage of
- *   `node`'s it still reads; `node`'s then owns none of it. Required with
- *   `view` of a payload.
  * - `viewed`: the record of an inline that views the content it was read
  *   from takes copies of those bytes. False when storage could not be had.
  * - `visit`: the node-valued fields the record holds, each an independent
@@ -187,9 +155,6 @@ typedef struct markdown_core_record_ops {
     size_t size;
     void (*init)(markdown_core_node *node);
     void (*free)(markdown_core_node_pool *pool, markdown_core_node *node);
-    bool (*view)(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node, bool failed);
-    bool (*own)(markdown_core_node *copy, const markdown_core_node *node);
-    void (*adopt)(markdown_core_node *view, markdown_core_node *node);
     bool (*viewed)(markdown_core_node *node);
     int (*visit)(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context);
 } markdown_core_record_ops;
@@ -204,8 +169,8 @@ static inline const markdown_core_record_ops *markdown_core_record_for_kind(mark
 
 /* THE PARSE'S STAGES, which any element may take part in (blocks.c): the
  * engine asks every element of the dialect that declares one, in
- * descriptor order. `prepare` comes before completion, `finish` at a
- * snapshot's end and at the flush, once the tree is complete and before it
+ * descriptor order. `prepare` comes before completion, `finish` at the
+ * parse's end and at each edit's, once the tree is complete and before it
  * is published, when the parse has not failed; `release` lets what the
  * element keeps of the parse go -- at the parse's release, and at a flush
  * that is its last; an edit's `reopen`, after the document's, keeps what
@@ -222,9 +187,8 @@ typedef struct markdown_core_stage_ops {
 
 /* THE DOCUMENT'S LIFECYCLE: what the parse asks of the one element of a
  * dialect that owns the document, at each of its steps: `init` as the
- * parse opens, `read` before the first line, `publish` at a flush,
- * `candidate` for a candidate completed again, and an edit's `reopen` and
- * `splice` of the published tree. Every one is required: registration
+ * parse opens, `read` before the first line, `publish` once the text is
+ * read, and an edit's `reopen` and `splice` of the published tree. Every one is required: registration
  * refuses an owner that leaves out one. */
 typedef struct markdown_core_document_ops {
     /* The kind of the root node the document is: the engine's root role
@@ -233,21 +197,12 @@ typedef struct markdown_core_document_ops {
     void (*init)(const markdown_core_element_instance *, markdown_core_parser *);
     /* Reads what the document's input opens with, before its first line,
      * through the reader, which stands at the input's start with no line in
-     * hand. In a commit more text may follow, a call whose reading read the
-     * end asks to be a candidate (blocks.c, THE CANDIDATES): it stops in the
-     * root at line 0, and its candidate is fed the lines from line 1. It
-     * answers the bytes it took, whole lines through the last one's line
+     * hand. It answers the bytes it took, whole lines through the last one's line
      * ending, or 0: the engine reads on at the line after them. */
     size_t (*read)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_reader *);
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A candidate the finalize completed again for an inline root a
-     * snapshot published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
-     * against that root, whose holder starts where the offset says
-     * (markdown_core_publish_candidate). A failure fails the parse. */
-    void (*candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                      markdown_core_node *, uint32_t);
     /* An edit reopens the flushed document `root` (blocks.c, THE REOPEN):
      * its children from `child` on go, and every state the document keeps
      * of them -- what its publish matches against, its definitions -- stays
@@ -368,9 +323,7 @@ typedef struct markdown_core_fold_ops {
      * that what the block reads as it closes or completes is there without a
      * walk of its children. It writes nothing of the block but the values
      * the block publishes from the flags it returns: a commit writes the
-     * result as the block's flags, and a snapshot that ends the open blocks
-     * below its stop folds each into the block below without writing their
-     * flags (blocks.c, THE LENDING). */
+     * result as the block's flags. */
     markdown_core_node_internal_flags (*child)(const markdown_core_element_instance *, markdown_core_node *,
                                                markdown_core_node_internal_flags, markdown_core_node_internal_flags);
     /* The block kinds the fold hook is asked at, kinds whose structure is
@@ -506,33 +459,6 @@ typedef struct markdown_core_inline_ops {
     const char *dispatch;    /* offered to `match`, and owns a delimiter tag */
     const char *transparent; /* scan_delimiter looks through it; ASCII */
 } markdown_core_inline_ops;
-
-/* THE CANDIDATE: what the engine asks of an element whose calls ask for
- * candidates (blocks.c, THE CANDIDATES) as the lines after a call come. */
-typedef struct markdown_core_candidate_ops {
-    /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
-     * (markdown_core_parser_request_candidate) is fed each later line its
-     * candidate's holder carries (markdown_core_candidate_line). It answers
-     * that the line continues the construct, and then in `*ends` whether
-     * the call could claim the lines through it were the text to end after
-     * it; that the construct ended before it; or that the unfinished line
-     * does not tell yet. It keeps what it read in the candidate's record
-     * (`size`), which it writes only for a line it answers
-     * goes on. `reads` is THE CALL'S READING (markdown_core_parser_call):
-     * whether the call in `container` on the reader's line claims, read
-     * with the record, into which it may write what it read. The engine
-     * asks it as the call reads and, to decide a candidate, again as the
-     * call would read now; a reading that read the end where more text may
-     * follow (markdown_core_parser_see_end) decides nothing, whatever it
-     * answers. */
-    markdown_core_candidate_step (*feed)(const markdown_core_element_instance *, markdown_core_parser *, void *,
-                                         const markdown_core_candidate_line *, bool *);
-    bool (*reads)(const markdown_core_element_instance *, markdown_core_parser *, struct markdown_core_node *,
-                  markdown_core_reader *, void *);
-    /* The bytes of the record each of its candidates keeps, which its
-     * call gives and `feed` writes; zero declares none. */
-    size_t size;
-} markdown_core_candidate_ops;
 
 /* THE OPENING: how a block of the element's opens on a line the open
  * containers left -- found by `scan` (a block start) or `open`, `last` just
@@ -969,10 +895,7 @@ struct markdown_core_element {
     const markdown_core_space *const *spaces;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
-     * IT"); zero declares none (a candidate's record is the candidate's,
-     * markdown_core_candidate_ops). A record says nothing a reading put back
-     * to a mark takes back (blocks.c, THE MARK): what the reading so far
-     * says lives in the engine's services. */
+     * IT"); zero declares none. */
     size_t state_size, run_state_size;
     /* A record in each bracket a run opens (bracket.h,
      * markdown_core_bracket_record), zeroed as it opens. */
@@ -1003,9 +926,6 @@ struct markdown_core_element {
     /* How a block of the element's opens (markdown_core_open_ops), or NULL
      * when none does. */
     const markdown_core_open_ops *opens;
-    /* What a candidate of the element's is asked as later lines come
-     * (markdown_core_candidate_ops), or NULL when its calls ask for none. */
-    const markdown_core_candidate_ops *candidate;
     /* How an open block of the element's takes its lines and closes
      * (markdown_core_line_ops), or NULL; the instance holds the empty
      * table then. */

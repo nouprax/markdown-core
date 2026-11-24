@@ -3625,42 +3625,22 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
        record && record->start == 10 && markdown_core_roster_starts_before(&roster, record, 11) &&
            !markdown_core_roster_starts_before(&roster, record, 10),
        "the key's earliest declaration answers");
-    markdown_core_roster_mark mark = markdown_core_roster_mark_now(&roster);
-    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 2), "a declaration after the mark");
-    markdown_core_roster_rollback(&roster, mark);
-    record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
-    OK(runner, record && record->start == 10 && !markdown_core_roster_starts_before(&roster, record, 10),
-       "a rollback takes the earlier start back with the record");
     OK(runner, !failed, "and no lookup failed");
     markdown_core_roster_free(&roster);
 }
 
-/* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- each key's
- * declarations that stand, as a list of where they start, and every step
- * that changed one, which a rollback undoes newest first -- is driven
- * through the same random declarations, withdrawals, marks and rollbacks,
- * and after a random third of the steps every key of a random set of the
- * kinds is compared: whether it is declared, where its earliest declaration
- * starts and how many of its declarations stand. A withdrawal withdraws the
- * declaration that starts where it does, or the key's last when none does.
- * The index takes a kind's records only when a lookup or a withdrawal of
- * that kind asks, so the steps between two comparisons, and the kinds a
- * comparison skips, leave records it never took, and the rollbacks pop
- * records it took and records it did not. Labels come from a small set, so
- * keys are declared again and again, and from a growing one, so the index
- * grows and removals cross the slots growth moved. A rollback to the first
- * mark releases every block the records were carved from. */
+/* THE LOG AND THE INDEX ANSWER AS A MODEL. A model -- each key's
+ * declarations that stand, as a list of where they start -- is driven
+ * through the same random declarations and withdrawals, and after a random third of the steps every key of a random set
+ * of the kinds is compared: whether it is declared, where its earliest declaration starts and how many of its
+ * declarations stand. A withdrawal withdraws the declaration that starts where it does, or the key's last when none
+ * does. The index takes a kind's records only when a lookup or a withdrawal of that kind asks, so the steps between two
+ * comparisons, and the kinds a comparison skips, leave records it never took. Labels come from a small set, so keys are
+ * declared again and again, and from a growing one, so the index grows and removals cross the slots growth moved. */
 typedef struct {
     uint32_t *starts;
     size_t count, capacity;
 } roster_model_key;
-
-/* A step of the model: what it declared, or the start it withdrew. */
-typedef struct {
-    unsigned kind, label;
-    uint32_t start;
-    bool withdraws;
-} roster_model_step;
 
 static void roster_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
@@ -3677,56 +3657,31 @@ static size_t roster_model_withdrawn(const roster_model_key *key, uint32_t start
     return latest;
 }
 
-static void roster_rollback_matches_a_model(test_batch_runner *runner) {
+static void roster_matches_a_model(test_batch_runner *runner) {
     /* The kinds: the engine's ANCHOR, filed under a measure, and three
      * spaces after it. */
-    enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
+    enum { STEPS = 6000, KINDS = 4, SHARED = 23 };
     payload_probe_arm();
     markdown_core_roster roster;
     markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
-    roster_model_step *model = malloc(STEPS * sizeof(*model));
     roster_model_key *keys = calloc((size_t)KINDS * (SHARED + STEPS), sizeof(*keys));
-    size_t model_count = 0, fresh = SHARED, mark_count = 0;
-    markdown_core_roster_mark marks[MARKS];
-    size_t model_marks[MARKS];
+    size_t records = 0, fresh = SHARED;
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
     bool agrees = true;
-    size_t untaken = 0, taken = 0, withdrawals = 0;
+    size_t untaken = 0, withdrawals = 0;
     for (size_t step = 0; step < STEPS && agrees; step++) {
         random ^= random << 13;
         random ^= random >> 7;
         random ^= random << 17;
         unsigned choice = (unsigned)(random % 100);
-        if (choice < 6 && mark_count < MARKS) {
-            model_marks[mark_count] = model_count;
-            marks[mark_count++] = markdown_core_roster_mark_now(&roster);
-        } else if (choice < 10 && mark_count) {
-            size_t to = (size_t)(random >> 32) % mark_count;
-            for (size_t popped = model_marks[to]; popped < roster.count; popped++) {
-                const bool indexed = popped < roster.spaces[roster.records[popped]->key[0]].cursor;
-                taken += indexed;
-                untaken += !indexed;
-            }
-            markdown_core_roster_rollback(&roster, marks[to]);
-            while (model_count > model_marks[to]) {
-                const roster_model_step *undone = &model[--model_count];
-                roster_model_key *key = &keys[undone->kind * (SHARED + STEPS) + undone->label];
-                if (undone->withdraws) {
-                    key->starts[key->count++] = undone->start;
-                } else {
-                    for (size_t i = key->count; i-- > 0;) {
-                        if (key->starts[i] == undone->start) {
-                            key->starts[i] = key->starts[--key->count];
-                            break;
-                        }
-                    }
-                }
-            }
-            mark_count = to;
-        } else {
-            roster_model_step record = {(unsigned)((random >> 40) % KINDS),
-                                        choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++,
-                                        (uint32_t)(random >> 44), false};
+        {
+            struct {
+                unsigned kind, label;
+                uint32_t start;
+                bool withdraws;
+            } record = {(unsigned)((random >> 40) % KINDS),
+                        choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44),
+                        false};
             roster_model_key *key = &keys[record.kind * (SHARED + STEPS) + record.label];
             /* A declared key is withdrawn about a third of the times a
              * shared label comes up, so declarations stand and fall again
@@ -3742,9 +3697,6 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
                                                                      (bufsize_t)strlen(text), record.start);
             if (record.withdraws) {
                 const size_t at = roster_model_withdrawn(key, record.start);
-                /* The step keeps the start it withdrew, which its undoing
-                 * declares again. */
-                record.start = key->starts[at];
                 key->starts[at] = key->starts[--key->count];
             } else {
                 if (key->count == key->capacity) {
@@ -3754,9 +3706,12 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
                 key->starts[key->count++] = record.start;
             }
             withdrawals += record.withdraws;
-            model[model_count++] = record;
+            records++;
         }
-        agrees = agrees && roster.count == model_count;
+        agrees = agrees && roster.count == records;
+        for (size_t at = 0; at < roster.count; at++) {
+            untaken += at >= roster.spaces[roster.records[at]->key[0]].cursor;
+        }
         const bool compare = (random >> 52) % 3 == 0 || step == STEPS - 1;
         /* The kinds compared: a random set, so one kind's records are taken
          * while another's wait; every kind at the last step. */
@@ -3803,16 +3758,9 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
             }
         }
     }
-    OK(runner, agrees, "the roster answers as the model after declarations, withdrawals, marks and rollbacks");
+    OK(runner, agrees, "the roster answers as the model after declarations and withdrawals");
     OK(runner, withdrawals, "declarations were withdrawn (%zu)", withdrawals);
-    OK(runner, untaken && taken, "rollbacks popped records the index took and records it never took (%zu, %zu)", taken,
-       untaken);
-    if (mark_count == 0 || agrees) {
-        markdown_core_roster_rollback(&roster, (markdown_core_roster_mark){0});
-    }
-    INT_EQ(runner, (int)roster.count, 0, "a rollback to the start empties the log");
-    INT_EQ(runner, (int)roster.index.size, 0, "and the index");
-    OK(runner, roster.blocks == NULL, "and releases every block");
+    OK(runner, untaken, "comparisons left records the index never took (%zu)", untaken);
     markdown_core_roster_free(&roster);
     INT_EQ(runner, payload_live, 0, "the roster releases everything it holds");
     payload_probe_disarm();
@@ -3820,7 +3768,6 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
         free(keys[i].starts);
     }
     free(keys);
-    free(model);
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --
@@ -6450,71 +6397,6 @@ static void comment_block_linear_work(test_batch_runner *runner) {
     }
 }
 
-/* A transaction's line facts outlive the text they were read from: a
- * session's text moves when it grows, and the next commit reads the facts an
- * earlier one recorded. Nested candidates over a blank run are the shape
- * whose later scans step over the run the first scan recorded. A session's
- * first commit reads every line but the last from a copy of the text that is
- * then overwritten, and the finalize's commit reads the whole text from
- * another copy; the document is the one parsed whole. */
-static void line_facts_survive_moved_text(test_batch_runner *runner) {
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-    const size_t depth = 16;
-    for (size_t i = 1; i <= depth; i++) {
-        for (size_t j = 1; j < i; j++) {
-            markdown_core_strbuf_puts(&source, "  ");
-        }
-        markdown_core_strbuf_puts(&source, "- %%\n");
-    }
-    for (size_t i = 0; i < depth; i++) {
-        for (size_t j = 0; j < depth; j++) {
-            markdown_core_strbuf_puts(&source, "\n");
-        }
-        for (size_t j = 0; j < depth; j++) {
-            markdown_core_strbuf_puts(&source, "  ");
-        }
-        markdown_core_strbuf_puts(&source, "x\n");
-    }
-    const size_t size = (size_t)source.size;
-    size_t last_line = size - 1;
-    while (source.ptr[last_line - 1] != '\n') {
-        last_line--;
-    }
-    char *before = malloc(size), *after = malloc(size);
-    markdown_core_parser *parser = markdown_core_core_parser(NULL, NULL);
-    markdown_core_node_pool pool = {0};
-    markdown_core_revision revision = {.pool = &pool};
-    markdown_core_node *moved = NULL;
-    if (before && after && parser) {
-        memcpy(before, source.ptr, size);
-        markdown_core_parser_start(parser, &revision);
-        markdown_core_parser_commit(parser, before, last_line, false);
-        memcpy(after, source.ptr, size);
-        memset(before, 'x', size);
-        markdown_core_parser_commit(parser, after, size, true);
-        moved = markdown_core_parser_finalize(parser);
-    }
-    markdown_core_node *whole = markdown_core_parse_document((const char *)source.ptr, size);
-    OK(runner, moved && whole, "both parses succeed");
-    if (moved && whole) {
-        INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_PARAGRAPH), count_kind(whole, MARKDOWN_CORE_NODE_PARAGRAPH),
-               "the commits after the text moved read the paragraphs a whole parse reads");
-        INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_LIST_ITEM), count_kind(whole, MARKDOWN_CORE_NODE_LIST_ITEM),
-               "the commits after the text moved read the items a whole parse reads");
-    }
-    if (moved) {
-        markdown_core_node_pool_release(&pool, moved);
-    }
-    markdown_core_node_free(whole);
-    if (parser) {
-        markdown_core_parser_destroy(parser);
-    }
-    markdown_core_node_pool_dispose(&pool);
-    free(before);
-    free(after);
-    markdown_core_strbuf_free(&source);
-}
-
 /* O3: the `%%` forms produce the `Comment` kind M0 added, on the engine's own
  * accessors, with the type strings and positions the HTML forms have. */
 static void percent_comment_nodes(test_batch_runner *runner) {
@@ -8440,8 +8322,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             memset(bytes, 'a', sizeof(bytes));
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
-            /* The whole text: no commit follows. */
-            markdown_core_stream whole = {.ends = true};
+            markdown_core_stream whole = {0};
             markdown_core_parser reader = {.stream = &whole};
             reader.input.lines = markdown_core_tree_make(&markdown_core_input_lines);
             reader.input.source = bytes;
@@ -8466,7 +8347,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
-    markdown_core_stream whole = {.ends = true};
+    markdown_core_stream whole = {0};
     markdown_core_parser parser = {.stream = &whole};
     parser.input.lines = markdown_core_tree_make(&markdown_core_input_lines);
     parser.input.source = source;
@@ -12327,88 +12208,6 @@ static void session_accept_after_commit_writes(test_batch_runner *runner) {
     }
 }
 
-/* Where the bytes a block owns of each part a view of it views are: its
- * attributes' anchor, classes and records, its record's string and its
- * payload's storage. */
-typedef struct {
-    const void *anchor, *classes, *records, *text, *payload;
-} owned_parts;
-
-static owned_parts parts_of(const markdown_core_node *node) {
-    owned_parts parts = {node->attributes.anchor.data, node->attributes.classes, node->attributes.records, NULL, NULL};
-    switch (node->kind) {
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        parts.text = node->as.code->info.value.data;
-        break;
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        parts.text = node->as.callout->variant.value.data;
-        break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        parts.text = node->as.list->task_marker.value.data;
-        break;
-    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
-        parts.payload = markdown_core_elements_get_directive_name(node);
-        break;
-    case MARKDOWN_CORE_NODE_TABLE:
-        parts.payload = ((const markdown_core_table *)node->opaque)->columns;
-        break;
-    default:
-        break;
-    }
-    return parts;
-}
-
-/* Whether each part `a` holds is at the bytes `b` holds it at when `viewed`,
- * and at bytes of its own otherwise. */
-static bool parts_alike(const owned_parts *a, const owned_parts *b, bool viewed) {
-    const void *const x[] = {a->anchor, a->classes, a->records, a->text, a->payload};
-    const void *const y[] = {b->anchor, b->classes, b->records, b->text, b->payload};
-    for (size_t i = 0; i < sizeof(x) / sizeof(x[0]); i++) {
-        if (x[i] && (x[i] == y[i]) != viewed) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool chunks_equal(markdown_core_chunk a, markdown_core_chunk b) {
-    return a.len == b.len && (!a.len || memcmp(a.data, b.data, (size_t)a.len) == 0);
-}
-
-/* Whether `a` holds what `b` does in each part a view views. */
-static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b) {
-    const markdown_core_attributes *x = &a->attributes, *y = &b->attributes;
-    bool same = a->kind == b->kind && chunks_equal(x->anchor, y->anchor) && x->class_count == y->class_count &&
-                x->record_count == y->record_count;
-    for (uint32_t i = 0; same && i < x->class_count; i++) {
-        same = chunks_equal(x->classes[i], y->classes[i]);
-    }
-    for (uint32_t i = 0; same && i < x->record_count; i++) {
-        same = chunks_equal(x->records[i].name, y->records[i].name) &&
-               chunks_equal(x->records[i].value, y->records[i].value);
-    }
-    if (!same) {
-        return false;
-    }
-    switch (a->kind) {
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        return chunks_equal(a->as.code->info.value, b->as.code->info.value);
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        return chunks_equal(a->as.callout->variant.value, b->as.callout->variant.value);
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        return chunks_equal(a->as.list->task_marker.value, b->as.list->task_marker.value);
-    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
-        return strcmp(markdown_core_elements_get_directive_name(a), markdown_core_elements_get_directive_name(b)) == 0;
-    case MARKDOWN_CORE_NODE_TABLE: {
-        const markdown_core_table *t = a->opaque, *u = b->opaque;
-        return t->column_count == u->column_count &&
-               memcmp(t->columns, u->columns, t->column_count * sizeof(*t->columns)) == 0;
-    }
-    default:
-        return true;
-    }
-}
-
 /* `pattern` with each `%s` in it the field `field`, in a new string the
  * caller frees. */
 static char *with_field(const char *pattern, const char *field) {
@@ -12526,55 +12325,6 @@ static void session_opener_fields(test_batch_runner *runner) {
     }
 }
 
-/* A VIEW VIEWS WHAT ITS BLOCK OWNS (markdown_core_node_view; blocks.c, THE
- * LENDING): it holds the block's bytes of each part, and the block's
- * children array, content buffer and field nodes, and letting it go and
- * releasing it leaves the block whole. */
-static void node_view_views(test_batch_runner *runner) {
-    static const char source[] = "```js {#c .x key=v}\ncode\n```\n\n"
-                                 ":::note[label]{#d .y k=w}\nbody\n:::\n\n"
-                                 "> [!NOTE] Title\n> callout\n\n"
-                                 "- [x] done\n\n"
-                                 "| a | b |\n|:-|-:|\n| 1 | 2 |\n";
-    enum { BLOCKS = 5 };
-    markdown_core_document *viewed = NULL, *kept = NULL;
-    if (markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &viewed) != MARKDOWN_CORE_OK ||
-        markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &kept) != MARKDOWN_CORE_OK) {
-        OK(runner, false, "the viewed blocks parse");
-        markdown_core_document_free(viewed);
-        return;
-    }
-    const markdown_core_node *blocks[BLOCKS], *alike[BLOCKS];
-    for (size_t i = 0; i < BLOCKS; i++) {
-        blocks[i] = child_at(markdown_core_document_root(viewed), i);
-        alike[i] = child_at(markdown_core_document_root(kept), i);
-        if (blocks[i]->kind == MARKDOWN_CORE_NODE_LIST) {
-            blocks[i] = child_at(blocks[i], 0);
-            alike[i] = child_at(alike[i], 0);
-        }
-    }
-    markdown_core_node_pool pool = {0};
-    for (size_t i = 0; i < BLOCKS; i++) {
-        const owned_parts original = parts_of(blocks[i]);
-        markdown_core_node *view = markdown_core_node_view(&pool, blocks[i]);
-        const owned_parts parts = view ? parts_of(view) : (owned_parts){0};
-        OK(runner,
-           view && parts_alike(&original, &parts, true) && parts_equal(view, alike[i]) &&
-               view->children == blocks[i]->children && view->child_count == blocks[i]->child_count &&
-               view->content.ptr == blocks[i]->content.ptr,
-           "a view of block %zu holds its block's bytes of each part and its storage", i);
-        if (view) {
-            markdown_core_node_view_let_go(&pool, view, blocks[i]);
-            markdown_core_node_pool_release(&pool, view);
-        }
-        OK(runner, parts_equal(blocks[i], alike[i]) && blocks[i]->child_count == alike[i]->child_count,
-           "letting a view of block %zu go leaves its block whole", i);
-    }
-    markdown_core_node_pool_dispose(&pool);
-    markdown_core_document_free(viewed);
-    markdown_core_document_free(kept);
-}
-
 /* The allocator-seam sweep (plan 8, gates 4.7): an append refused at any
  * allocation reports ALLOCATION_FAILED, or, where the storage it was refused
  * only spares work later (the widths of a nest, made again when asked), the
@@ -12636,7 +12386,7 @@ int main(void) {
     roster_records_are_carved_from_its_blocks(runner);
     key_tree_matches_a_sorted_model(runner);
     roster_kinds_and_starts(runner);
-    roster_rollback_matches_a_model(runner);
+    roster_matches_a_model(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_nul(runner);
@@ -12691,7 +12441,6 @@ int main(void) {
     span_and_script_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);
-    line_facts_survive_moved_text(runner);
     percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
@@ -12806,7 +12555,6 @@ int main(void) {
     session_decisions_keep_lines(runner);
     session_accept_after_commit_writes(runner);
     session_opener_fields(runner);
-    node_view_views(runner);
     session_stream_matches_a_parse(runner);
     session_typed_paragraph_end_matches_a_parse(runner);
     session_walks_through_definition_bodies(runner);

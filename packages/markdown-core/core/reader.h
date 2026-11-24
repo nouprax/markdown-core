@@ -9,8 +9,7 @@
 
 /* THE READER (docs/plans no-flush.md, 10.12): the one view a reading has
  * of the text. The engine makes it as a reading begins -- a step of the
- * line in hand, a look at the lines after it, a candidate's feed and
- * decision, a block's close, a read of a block's content -- and hands it
+ * line in hand, a look at the lines after it, a block's close, a read of a block's content -- and hands it
  * to every hook that reads; a hook reads the text only through it, and
  * the engine records what the reading read as it ends the reader.
  *

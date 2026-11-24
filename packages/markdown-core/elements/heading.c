@@ -693,49 +693,8 @@ static void free_heading(markdown_core_node_pool *pool, markdown_core_node *node
     }
 }
 
-static bool view_heading(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                         bool failed) {
-    (void)node;
-    markdown_core_heading *heading = copy->as.heading;
-    bool copied = true;
-    if (heading->label.len && (failed || !(copied = markdown_core_node_label_copy(pool, &heading->label)))) {
-        heading->label = (markdown_core_chunk){0};
-    }
-    heading->name.shown = NULL;
-    if (markdown_core_strbuf_owns(&heading->name.base)) {
-        markdown_core_strbuf_borrow(&heading->name.base);
-    }
-    return copied;
-}
-
-static bool own_heading(markdown_core_node *copy, const markdown_core_node *node) {
-    markdown_core_strbuf *base = &copy->as.heading->name.base;
-    if (!markdown_core_strbuf_borrows(base) || base->ptr != node->as.heading->name.base.ptr) {
-        return true;
-    }
-    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT();
-    markdown_core_strbuf_set(&own, base->ptr, base->size);
-    if (own.oom) {
-        markdown_core_strbuf_free(&own);
-        return false;
-    }
-    *base = own;
-    return true;
-}
-
-static void adopt_heading(markdown_core_node *view, markdown_core_node *node) {
-    if (markdown_core_strbuf_borrows(&view->as.heading->name.base) &&
-        view->as.heading->name.base.ptr == node->as.heading->name.base.ptr) {
-        view->as.heading->name.base = node->as.heading->name.base;
-        markdown_core_strbuf_borrow(&node->as.heading->name.base);
-    }
-}
-
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_HEADING = {
     .size = sizeof(markdown_core_heading),
     .init = init_heading,
     .free = free_heading,
-    .view = view_heading,
-    .own = own_heading,
-    .adopt = adopt_heading,
 };

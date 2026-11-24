@@ -117,30 +117,10 @@ static void free_literal(markdown_core_node_pool *pool, markdown_core_node *node
     markdown_core_chunk_free(node->as.literal);
 }
 
-static bool view_literal(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                         bool failed) {
-    (void)pool;
-    (void)node;
-    (void)failed;
-    markdown_core_literal_view(copy->as.literal);
-    return true;
-}
-
-static bool own_literal(markdown_core_node *copy, const markdown_core_node *node) {
-    return markdown_core_chunk_own(copy->as.literal, node->as.literal);
-}
-
-static void adopt_literal(markdown_core_node *view, markdown_core_node *node) {
-    markdown_core_chunk_adopt(view->as.literal, node->as.literal);
-}
-
 static bool viewed_literal(markdown_core_node *node) { return markdown_core_chunk_own_viewed(node->as.literal); }
 
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_LITERAL = {
     .size = sizeof(markdown_core_chunk),
     .free = free_literal,
-    .view = view_literal,
-    .own = own_literal,
-    .adopt = adopt_literal,
     .viewed = viewed_literal,
 };

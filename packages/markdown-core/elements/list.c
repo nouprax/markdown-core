@@ -229,8 +229,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
  * (blocks.c, S_fold): one that BLANK_SPACED marks makes the list loose, and
  * one whose last line, or the last child it sees, ends blank makes it loose
  * once another item follows. The list is laid out as each item folds, so it
- * is laid out as it closes and as a snapshot ends it open, its last item
- * having folded into it. */
+ * is laid out as it closes, its last item having folded into it. */
 static markdown_core_node_internal_flags fold_child(const markdown_core_element_instance *self,
                                                     markdown_core_node *node, markdown_core_node_internal_flags flags,
                                                     markdown_core_node_internal_flags child) {
@@ -431,27 +430,7 @@ static void free_item(markdown_core_node_pool *pool, markdown_core_node *node) {
     markdown_core_optional_chunk_free(&node->as.list->task_marker);
 }
 
-static bool view_item(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                      bool failed) {
-    (void)pool;
-    (void)node;
-    (void)failed;
-    markdown_core_chunk_view(&copy->as.list->task_marker.value);
-    return true;
-}
-
-static bool own_item(markdown_core_node *copy, const markdown_core_node *node) {
-    return markdown_core_chunk_own(&copy->as.list->task_marker.value, &node->as.list->task_marker.value);
-}
-
-static void adopt_item(markdown_core_node *view, markdown_core_node *node) {
-    markdown_core_chunk_adopt(&view->as.list->task_marker.value, &node->as.list->task_marker.value);
-}
-
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST_ITEM = {
     .size = sizeof(markdown_core_list),
     .free = free_item,
-    .view = view_item,
-    .own = own_item,
-    .adopt = adopt_item,
 };

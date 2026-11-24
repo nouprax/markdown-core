@@ -36,16 +36,15 @@ extern "C" {
  * one that starts where the withdrawal does: that declaration is withdrawn,
  * and a key is declared while one of its declarations stands.
  *
- * THE LOG is what a rollback pops back to a mark and what the names read
- * (names.c, THE COMMITTED NAMES); a record lives in it, where its label is
- * the roster's own copy, until a rollback pops it or the roster is
- * compacted. The log holds no node.
+ * THE LOG is what the names read (names.c, THE COMMITTED NAMES); a record
+ * lives in it, where its label is the roster's own copy, until the roster
+ * is compacted. The log holds no node.
  *
  * THE INDEX maps a kind and a label to the key's declarations that stand, in
  * a list through the records in the order of where they start, the first
  * the earliest. So a lookup answers whether the key is declared at all and
  * whether some declaration of it starts before a position, and a
- * declaration the list holds leaves it, which a withdrawal, a rollback or an
+ * declaration the list holds leaves it, which a withdrawal or an
  * edit that replaced its text does, without looking at any other key. A
  * declaration only appends to the log: a lookup of a kind has the index
  * take that kind's records beyond it, in log order, room for all of them
@@ -155,13 +154,6 @@ typedef struct markdown_core_roster {
     markdown_core_strbuf lost;
 } markdown_core_roster;
 
-/* A point the log can roll back to. */
-typedef struct {
-    size_t count;
-    markdown_core_roster_block *blocks;
-    size_t block_used, block_size, bytes, dead;
-} markdown_core_roster_mark;
-
 /* A roster of `kinds` kinds, the first no kind's (dialect.h,
  * `space_count`).
  * False when storage could not be had, and the parse that holds it fails;
@@ -270,26 +262,6 @@ typedef struct {
     size_t at, left;
 } markdown_core_roster_cursor;
 
-/* A reading of `kind`'s records from the start of the log. */
-static inline markdown_core_roster_cursor markdown_core_roster_records(const markdown_core_roster *roster,
-                                                                       markdown_core_roster_kind kind) {
-    markdown_core_roster_cursor cursor = {kind, 0, roster->spaces[kind].records};
-    return cursor;
-}
-
-/* The cursor's next record, or NULL when none of its kind is left. */
-static inline const markdown_core_roster_record *markdown_core_roster_next(const markdown_core_roster *roster,
-                                                                           markdown_core_roster_cursor *cursor) {
-    if (!cursor->left) {
-        return NULL;
-    }
-    while (roster->records[cursor->at]->key[0] != (unsigned char)cursor->kind) {
-        cursor->at++;
-    }
-    cursor->left--;
-    return roster->records[cursor->at++];
-}
-
 /* The cursor's next record before position `end` of the log, or NULL, with
  * the cursor at `end`, when none of its kind is left before it. */
 static inline const markdown_core_roster_record *
@@ -319,12 +291,6 @@ static inline bool markdown_core_roster_seen(const markdown_core_roster *roster,
                                              const markdown_core_roster_record *record) {
     return markdown_core_roster_stands(record) && !(roster->hidden && markdown_core_roster_back(roster, record));
 }
-
-/* The point the log is at now. */
-markdown_core_roster_mark markdown_core_roster_mark_now(const markdown_core_roster *roster);
-/* Pop every record appended after `mark`, last first, each undone, and
- * release the storage they were carved from. */
-void markdown_core_roster_rollback(markdown_core_roster *roster, markdown_core_roster_mark mark);
 
 /* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's declarations that start there or past it go to the
  * back, which lookups do not see until the splice; the first edit places
@@ -359,9 +325,7 @@ bool markdown_core_roster_declared_outside(markdown_core_roster *roster, markdow
                                            const unsigned char *label, bufsize_t length, uint32_t from, uint32_t to,
                                            bool *failed);
 /* The log holds only the declarations that stand, in storage of their
- * size, and each kind's places shrink to what they hold. A parse that keeps
- * snapshots, whose names read the log by position (names.c), never
- * compacts. False, with the roster as it was, when storage could not be
+ * size, and each kind's places shrink to what they hold. False, with the roster as it was, when storage could not be
  * had. */
 bool markdown_core_roster_compact(markdown_core_roster *roster);
 

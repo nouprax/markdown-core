@@ -199,27 +199,7 @@ static void free_specimen(markdown_core_node_pool *pool, markdown_core_node *nod
     markdown_core_optional_chunk_free(&node->as.specimen->label);
 }
 
-static bool view_specimen(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
-                          bool failed) {
-    (void)pool;
-    (void)node;
-    (void)failed;
-    markdown_core_chunk_view(&copy->as.specimen->label.value);
-    return true;
-}
-
-static bool own_specimen(markdown_core_node *copy, const markdown_core_node *node) {
-    return markdown_core_chunk_own(&copy->as.specimen->label.value, &node->as.specimen->label.value);
-}
-
-static void adopt_specimen(markdown_core_node *view, markdown_core_node *node) {
-    markdown_core_chunk_adopt(&view->as.specimen->label.value, &node->as.specimen->label.value);
-}
-
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_SPECIMEN = {
     .size = sizeof(markdown_core_specimen_value),
     .free = free_specimen,
-    .view = view_specimen,
-    .own = own_specimen,
-    .adopt = adopt_specimen,
 };

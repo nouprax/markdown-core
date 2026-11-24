@@ -14,7 +14,7 @@
 /* THE NAMES SERVICE (names.c): the engine names every node an element asks
  * a name for, as anchors.md says -- the base its text projects to, or the
  * base, a hyphen and a suffix -- past the explicit anchors the roster
- * reserves, across snapshots, the flush and edits. The element knows its
+ * reserves, across a parse and its edits. The element knows its
  * node's grammar: where the node keeps its name, and what its text projects
  * to. The service knows the rest: the order of the nodes, the names taken,
  * and the names an edit moves. */
@@ -54,16 +54,14 @@ typedef struct markdown_core_name_ops {
  * says its attributes wrote its anchor. `named` says its node holds the
  * base its text projects to, which its inline content made again since
  * does not; `suffix` is the suffix of the name the names committed for it,
- * which its node shows but while a snapshot gives it another (names.c, A
- * COMMITTED NAME UNDER ANOTHER), and `renamed` says the snapshot under way
- * did. `stem` is its base's stem, its place plus one, once an edit keeps
+ * which its node shows. `stem` is its base's stem, its place plus one, once an edit keeps
  * them (names.c, THE NAMES AN EDIT MOVES), and `id` its number there, which
  * says where its entry is (`where`). */
 typedef struct markdown_core_named {
     markdown_core_node *node;
     uint32_t start, suffix, stem, id;
     uint8_t owner;
-    bool authored, named, renamed;
+    bool authored, named;
 } markdown_core_named;
 
 /* THE STEMS (names.c, THE NAMES AN EDIT MOVES): a name that is the base of
@@ -158,9 +156,7 @@ typedef struct markdown_core_name_edit {
  *
  * Then the committed names (names.c, THE COMMITTED NAMES): the names
  * taken, where the reading of the roster's ANCHOR records stands and how
- * many it read, how many entries are named, and the committed entries that
- * show another name, from the last snapshot and then from the one under
- * way; the projection and lookup work the assignment of their anchors did,
+ * many it read, and how many entries are named; the projection and lookup work the assignment of their anchors did,
  * for its complexity gate; what only an edit keeps of the names, made at its
  * first reopen; and the dialect's name owners (dialect.h, `namers`). */
 typedef struct markdown_core_names {
@@ -170,8 +166,6 @@ typedef struct markdown_core_names {
     bool spliced;
     markdown_core_key_index taken;
     size_t records_at, records_read, named;
-    uint32_t *renamed;
-    size_t renamed_count, renamed_capacity;
     size_t work;
     markdown_core_name_edit *edit;
     const struct markdown_core_element_instance *const *owners;
@@ -217,7 +211,7 @@ bool markdown_core_name_anchor(markdown_core_name *name, const markdown_core_nam
                                markdown_core_chunk *anchor);
 
 /* THE ENGINE'S SIDE (blocks.c, THE STAGES): the names start with the parse,
- * finish at a snapshot's end and at the flush, let go at the release, and
+ * finish at the parse's end, let go at the release, and
  * follow an edit's reopen at `start` and splice at `point`; false when
  * storage could not be had. */
 void markdown_core_names_init(markdown_core_names *names, const struct markdown_core_element_instance *const *owners,
