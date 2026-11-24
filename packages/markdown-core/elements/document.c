@@ -68,18 +68,16 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
 };
 
 /* A document's definition tables, but a session's, which it borrows (ast.c,
- * A SESSION'S DOCUMENT). Out of line, so that the free of every other kind
+ * A DOCUMENT'S TABLES). Out of line, so that the free of every other kind
  * keeps its own registers. */
 MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown_core_document_value *document) {
-    if (document->committed) {
+    if (!document->owns) {
         return;
     }
-    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
-    for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
-        markdown_core_free((void *)tables[i]->all.nodes);
-        markdown_core_free((void *)tables[i]->labeled);
-    }
-    markdown_core_free((void *)document->reference_targets.nodes);
+    markdown_core_publish_release_committed(document->committed);
+    markdown_core_free(document->committed);
+    document->committed = NULL;
+    document->owns = false;
 }
 
 /* The document's record (markdown_core_record_ops): its definition tables,

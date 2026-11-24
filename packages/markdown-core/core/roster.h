@@ -54,15 +54,16 @@ extern "C" {
  * lookup of its kind never is. A withdrawal has the index take its kind's
  * records up to it as it is appended.
  *
- * THE PLACES. A parse an edit reads again holds each kind's declarations in
- * a tree (tree.h) whose focus is the edit: the declarations before where
+ * THE PLACES. Each kind's declarations are in a tree (tree.h), in order
+ * of where they start, placed as they are declared; its focus is an
+ * edit's: the declarations before where
  * the reading starts in the front, and the rest in the back, which the
  * reading does not see, until it takes the old text back from a place (THE
  * SPLICE, blocks.c), the back's declarations before that place going with
  * the text they were in. A placed record's number says where its entry is
  * (`where`), which holds where it starts: in the text, or, in the back, in
- * the text before the edit until the splice. A parse no edit read has no
- * places, and its records hold where they start in the text. */
+ * the text before the edit until the splice. A withdrawal is placed
+ * nowhere, and holds where it starts in the text. */
 #define MARKDOWN_CORE_ROSTER_UNPLACED UINT32_MAX
 
 /* A kind: the engine's ANCHOR, or a number the dialect gave a space its
@@ -139,10 +140,9 @@ typedef struct markdown_core_roster {
     uint32_t free;
     /* Where a lookup assembles its key. */
     markdown_core_strbuf key;
-    /* Whether the kinds hold their declarations in places, which an edit
-     * makes; and whether the back is hidden from lookups, from the reopen
-     * that makes it to the splice that takes it back. */
-    bool placed, hidden;
+    /* Whether the back is hidden from lookups, from the reopen that makes
+     * it to the splice that takes it back. */
+    bool hidden;
     /* Where the last edit's reading began (markdown_core_roster_reopen):
      * what it declares starts there or past it. */
     uint32_t from;
@@ -298,10 +298,6 @@ static inline bool markdown_core_roster_seen(const markdown_core_roster *roster,
  * had. */
 bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
 
-/* A parse that takes edits places each declaration as it declares it, from
- * the empty text on (session.c, THE TEXT IS AN EDIT): the roster holds
- * none yet. */
-void markdown_core_roster_edits(markdown_core_roster *roster);
 /* THE SPLICE (blocks.c): the back's declarations that start before `place`
  * of the text before the edit go with the text the edit replaced, their
  * keys kept for markdown_core_roster_lost, the end moves by `delta`, and

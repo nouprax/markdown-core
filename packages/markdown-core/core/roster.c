@@ -183,7 +183,7 @@ void markdown_core_roster_free(markdown_core_roster *roster) {
  * does goes after it. */
 static inline bool S_precedes(const markdown_core_roster *roster, const markdown_core_roster_record *left,
                               const markdown_core_roster_record *right) {
-    return roster->placed ? S_rank(roster, left) < S_rank(roster, right) : left->start < right->start;
+    return S_rank(roster, left) < S_rank(roster, right);
 }
 
 /* A list's last declaration, which its first holds in `before`. */
@@ -315,10 +315,7 @@ bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_ro
     if (length <= 0) {
         return true;
     }
-    if (!roster->placed) {
-        return S_append(roster, kind, label, length, start, false);
-    }
-    /* A parse an edit reads places it as it declares it. */
+    /* Each declaration is placed as it is declared. */
     markdown_core_tree *places = &roster->spaces[kind].places;
     if (!S_append(roster, kind, label, length, start, false)) {
         return false;
@@ -493,9 +490,6 @@ const markdown_core_roster_record *markdown_core_roster_held_at(const markdown_c
                                                                 markdown_core_roster_kind kind,
                                                                 const unsigned char *label, bufsize_t length, bool back,
                                                                 uint32_t start) {
-    if (!roster->placed) {
-        return NULL;
-    }
     markdown_core_tree *places = (markdown_core_tree *)&roster->spaces[kind].places;
     const size_t high = back ? places->count : places->front;
     for (size_t i = markdown_core_tree_from(places, start, back ? places->front : 0, high);
@@ -562,13 +556,7 @@ bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_co
     return true;
 }
 
-void markdown_core_roster_edits(markdown_core_roster *roster) {
-    assert(!roster->count);
-    roster->placed = true;
-}
-
 bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
-    assert(roster->placed);
     if (roster->dead > roster->bytes - roster->dead + 4096 && !markdown_core_roster_compact(roster)) {
         return false;
     }
@@ -727,9 +715,6 @@ bool markdown_core_roster_declared_outside(markdown_core_roster *roster, markdow
 }
 
 bool markdown_core_roster_compact(markdown_core_roster *roster) {
-    if (!roster->placed) {
-        return true;
-    }
     const size_t kinds = roster->kinds;
     /* The places keep only the declarations that stand. */
     size_t count = 0;

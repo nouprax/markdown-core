@@ -332,9 +332,9 @@ typedef struct markdown_core_stream {
     bool held;
     /* THE RECORDS (ast.c). */
     markdown_core_tail_records records;
-    /* The definitions a session's document holds as committed (ast.c, A
-     * SESSION'S DOCUMENT): made when the first is kept (ast.c,
-     * committed_need). */
+    /* The definitions the document holds (ast.c, A DOCUMENT'S TABLES):
+     * made at the first publish (ast.c, committed_need); a parse that takes
+     * no edits gives them to its document. */
     markdown_core_committed_tables *committed;
     /* THE EDIT the next publish follows (blocks.c, THE REOPEN): it replaced
      * the old text from `edit_from` to `edit_to` and moved what follows by

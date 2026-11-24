@@ -3424,8 +3424,9 @@ enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = R
 
 /* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
- * log's array and the index each double -- rather than one each, and all of
- * them go with the roster. */
+ * log's array, the index and the places' numbers each double -- and one per
+ * leaf of the places' tree, which an append fills, rather than one each, and
+ * all of them go with the roster. */
 static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner) {
     enum { COUNT = 4096 };
     payload_probe_arm();
@@ -3439,9 +3440,11 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
                                                             (bufsize_t)strlen(label), (uint32_t)i);
     }
     OK(runner, declared && roster.count == COUNT, "every declaration is a record");
-    /* Twelve doublings reach COUNT; each of the three structures doubles
-     * at most once per doubling. */
-    OK(runner, payload_allocations <= 3 * 13, "%d records took %zu allocations", COUNT, payload_allocations);
+    /* Twelve doublings reach COUNT; each of the four structures doubles
+     * at most once per doubling, and the places fill their leaves. */
+    const size_t leaves = COUNT / MARKDOWN_CORE_TREE_LEAF + 1;
+    OK(runner, payload_allocations <= 4 * 13 + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 2,
+       "%d records took %zu allocations", COUNT, payload_allocations);
     bool failed = false;
     markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
     const markdown_core_roster_record *found =

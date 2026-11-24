@@ -192,44 +192,22 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* A TABLE of a published document, borrowed from the tree: `count` nodes,
- * every one of which `nodes` holds, or, in a session's document, which
- * borrows the committed tables, none of which it holds (NULL). */
-typedef struct markdown_core_node_table {
-    const struct markdown_core_node **nodes;
-    size_t count;
-} markdown_core_node_table;
-
-/* A DEFINITION TABLE of a published document: every Footnote, every
- * Specimen, or every Reference, in source order. */
-typedef struct markdown_core_definitions {
-    markdown_core_node_table all;
-    /* The labeled ones by label, in source order among equal labels: the
-     * Footnotes and Specimens a lookup by label answers from, every one, or
-     * none in a session's document. A label a
-     * reference occurrence names resolves through the reference targets. */
-    const struct markdown_core_node **labeled;
-    size_t labeled_count;
-} markdown_core_definitions;
-
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
  * Footnote, specimen and Reference definitions stay in the tree where they
- * were written; publishing the document records its definition tables here,
- * and the nodes reference occurrences resolve to, by label: for each label,
- * the first Reference declaring it, or, when none does, the first Heading
- * whose text declares it. A session's document borrows the committed
- * parse's tables, `committed`, whole; NULL in any other, which owns them. */
+ * were written; publishing the document keeps its definition tables in the
+ * committed tables (parser.h), and the nodes reference occurrences resolve
+ * to, by label: for each label, the first Reference declaring it, or, when
+ * none does, the first Heading whose text declares it. A session's document
+ * borrows the committed parse's tables; any other document owns them
+ * (`owns`). */
 typedef struct {
     struct markdown_core_node *metadata;
-    markdown_core_definitions footnotes;
-    markdown_core_definitions specimens;
-    markdown_core_definitions references;
-    markdown_core_node_table reference_targets;
-    const struct markdown_core_committed_tables *committed;
+    struct markdown_core_committed_tables *committed;
+    bool owns;
 } markdown_core_document_value;
 
-/* The document's definition tables freed, but a session's, which it
- * borrows; the value still names them. */
+/* The document's definition tables freed when it owns them, as any but a
+ * session's does. */
 void markdown_core_node_free_tables(markdown_core_document_value *document);
 
 /* A node's source extent in UTF-8 bytes (the published form of its place). */

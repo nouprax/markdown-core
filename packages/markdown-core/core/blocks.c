@@ -7485,7 +7485,6 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     edit->point = SIZE_MAX;
     edit->indexed = true;
     stream->edit = edit;
-    markdown_core_roster_edits(&parser->roster);
     parser->at.read.rests = true;
     /* Room for the cuts up front: the reopen keeps one in it (THE CUTS). */
     return markdown_core_array_reserve(&edit->cuts, 4);

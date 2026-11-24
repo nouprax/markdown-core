@@ -622,9 +622,13 @@ static void S_raise(markdown_core_tree *tree, void *split, size_t made, S_inner 
 
 void *markdown_core_tree_insert(markdown_core_tree *tree, size_t index, const void *entry, bool front) {
     assert(index <= tree->count);
-    /* An entry that joins the front at the end goes in as an append. */
-    if (front && index == tree->count && tree->spare) {
+    /* An entry that joins the front at the end goes in as an append, which
+     * fills the last leaf before it opens another. */
+    if (front && index == tree->count && tree->front == tree->count) {
         void *pushed = markdown_core_tree_push(tree, tree->ops->size);
+        if (!pushed) {
+            return NULL;
+        }
         memcpy(pushed, entry, tree->ops->size);
         S_moved(tree, tree->last, tree->last->count - 1, tree->last->count);
         return pushed;
