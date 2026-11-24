@@ -45,9 +45,8 @@ function valid({ line, column }: Position): boolean {
  * immutable value that borrows nothing.
  *
  * Every document a session returns equals `Document.parse` of its `text` in
- * everything but ids. Each step is an append, which adds text at the end, or
- * an edit, which replaces any part of the text: an append is an edit at the
- * text's end.
+ * everything but ids. Each step is an edit, which replaces any part of the
+ * text; adding text at the end is an edit there.
  *
  * The session also answers queries about its document: the `path` of nodes
  * that hold a byte, and the `scope` of a node's fields and its `markers`. Each asks the engine's parse

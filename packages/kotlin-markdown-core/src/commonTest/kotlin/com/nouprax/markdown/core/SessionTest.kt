@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
 /** A session's document is the document of its text, whatever steps led there. */
