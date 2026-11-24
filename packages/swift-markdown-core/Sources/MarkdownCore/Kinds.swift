@@ -145,7 +145,9 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
     public var description: String { Self.names[Int(rawValue) - 1] }
 }
 
-extension Slot {
+/// The slots of the canonical AST contract: the fields whose source holds a
+/// name, a key or a path, which ``Slot/Kind`` names.
+public enum Slot {
     /// A slot's kind: the role of a field whose source holds a name, a key or
     /// a path an editor can complete, as the contract's `slots` lists them.
     /// The raw value is the slot kind's ordinal there, which C's

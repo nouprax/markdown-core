@@ -250,24 +250,7 @@ static const markdown_core_line_ops CALLOUT_LINES = {
     .text = callout_text,
 };
 
-/* A callout's variant's writing (markdown_core_write_ops): ASCII letters,
- * numerals, underscores and hyphens, and the `]` after them while the
- * marker is open on the line. */
-static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    markdown_core_spelling *out, bool *held) {
-    *held = markdown_core_write_word(value, size, "_-") && markdown_core_write_plain(out, value, size, "", site->row);
-    const bool shut = site->closed && site->end < site->size && site->line[site->end] == ']';
-    out->closer = shut ? "" : "]";
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_write_ops CALLOUT_WRITES = {
-    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_VARIANT),
-    .spell = S_spell,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
-    .writes = &CALLOUT_WRITES,
     .edit = &CALLOUT_EDIT,
     .state_size = sizeof(markdown_core_callout_work),
     .name = "callout",

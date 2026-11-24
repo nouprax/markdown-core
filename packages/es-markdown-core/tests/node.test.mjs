@@ -1,20 +1,10 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-    Document,
-    MarkdownCoreError,
-    MarkdownSession,
-    MarkupDumper,
-    Metadata,
-    Slot,
-    markupEquals,
-    walk
-} from "../dist/index.js";
+import { Document, MarkdownCoreError, MarkdownSession, MarkupDumper, markupEquals, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
-import { Server, ServerError } from "../dist/lsp.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
 import { Decoder } from "../dist/wire/node-decoder.js";
 import { emptyVisitor } from "./visitor.mjs";
@@ -746,59 +736,16 @@ function tables(document, text) {
     );
 }
 
-/** A context's openers and slots: what the edit oracle compares of it. */
-function contextFields(context) {
-    const opener = ({ kind, scope }) => ({ kind, scope });
-    return {
-        blocks: context.blocks.map(opener),
-        inlines: context.inlines.map(opener),
-        slots: context.slots.map(({ kind, owner, before, after, closed, prefix }) => ({
-            kind,
-            owner,
-            before,
-            after,
-            closed,
-            prefix: [...prefix]
-        }))
-    };
-}
-
 /**
  * The edit oracle (incremental plan 12.7) on the edited `session`: its
- * document dumps as a fresh parse of its text, its definition tables hold the
- * fresh parse's, and its context after every slot cue of the ASCII text is
- * that of a session opened on the text.
+ * document dumps as a fresh parse of its text, and its definition tables hold
+ * the fresh parse's.
  */
 function assertOracle(session, unit, label) {
     const text = session.text;
     const fresh = Document.parse(text, { unit });
     assert.equal(session.document.dump(text), fresh.dump(text), label);
     assert.deepEqual(tables(session.document, text), tables(fresh, text), label);
-    const opened = new MarkdownSession(text, { unit });
-    try {
-        opened.flush();
-        let line = 1;
-        let column = 1;
-        for (const character of text) {
-            if (character === "\n") {
-                line++;
-                column = 1;
-            } else {
-                column++;
-            }
-            if (!Slot.cues.includes(character)) continue;
-            const place = { line, column };
-            session.locate(place);
-            opened.locate(place);
-            assert.deepEqual(
-                contextFields(session.context),
-                contextFields(opened.context),
-                `${label} at ${line}:${column}`
-            );
-        }
-    } finally {
-        opened.dispose();
-    }
 }
 
 test("api: an edit at every cursor, and its undoing, hold the edit oracle", () => {
@@ -871,18 +818,11 @@ test("errors: an edit before flush, out of bounds or backwards throws and change
         assert.throws(() => session.edit(start, start, "x"), { code: "sessionStreaming" });
         session.append("more\n");
         const final = session.flush();
-        session.locate(inside);
-        const open = session.context;
-        assert.ok(open.blocks.length > 0);
         assert.throws(() => session.edit(inside, start, ""), { code: "outOfBounds" });
         assert.throws(() => session.edit(nowhere, nowhere, ""), { code: "outOfBounds" });
         assert.throws(() => session.edit({ line: 0, column: 1 }, start, ""), { code: "outOfBounds" });
         assert.equal(session.text, "- text\nmore\n");
         assert.equal(session.document, final);
-        assert.equal(session.context, open);
-        // An edit that runs empties the context, since it changes the text.
-        session.edit(start, start, "a ");
-        assert.equal(session.context.blocks.length, 0);
     } finally {
         session.dispose();
     }
@@ -897,86 +837,6 @@ test("errors: a disposed session takes no further call", () => {
     assert.throws(() => session.edit({ line: 1, column: 1 }, { line: 1, column: 1 }, ""), Error);
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
-});
-
-test("api: a session's context lists what the text before the cursor leaves open, and its slots spell", () => {
-    const session = new MarkdownSession("[[No\n");
-    session.flush();
-    session.locate({ line: 1, column: 5 });
-    const context = session.context;
-    assert.deepEqual(context.blocks, [{ kind: "paragraph", scope: scope(1, 1, 1, 4) }]);
-    assert.deepEqual(
-        context.inlines.map((opener) => opener.kind),
-        ["crossLink", null, null]
-    );
-    const [slot] = context.slots;
-    assert.equal(context.slots.length, 1);
-    assert.equal(slot.kind, "dest");
-    assert.equal(slot.owner, "crossLink");
-    assert.deepEqual(
-        [slot.before, slot.after, slot.closed, slot.prefix],
-        [scope(1, 3, 1, 4), scope(1, 5, 1, 4), false, []]
-    );
-    // The closer follows the value and the caret stands before it, in columns
-    // of the session's unit.
-    assert.deepEqual(session.spell(slot, "é🚀"), { text: "é🚀]]", cursor: 3 });
-    assert.deepEqual(session.spell(slot, ["x", "a|b"]), [{ text: "x]]", cursor: 1 }, null]);
-    const bytes = new MarkdownSession("[[No\n", { unit: "utf8" });
-    bytes.locate({ line: 1, column: 5 });
-    assert.deepEqual(bytes.spell(bytes.context.slots[0], "é🚀"), { text: "é🚀]]", cursor: 6 });
-    bytes.dispose();
-    session.dispose();
-});
-
-test("api: the context is the session's state, which a locate replaces and text clears", () => {
-    const session = new MarkdownSession("[[No");
-    assert.deepEqual(session.context, { blocks: [], inlines: [], slots: [] });
-    session.locate({ line: 1, column: 5 });
-    const [slot] = session.context.slots;
-    assert.equal(session.context, session.context);
-    session.locate({ line: 1, column: 1 });
-    assert.deepEqual(session.context.slots, []);
-    assert.throws(() => session.spell(slot, "x"), { code: "outOfBounds" });
-    session.locate({ line: 1, column: 5 });
-    const [next] = session.context.slots;
-    assert.throws(() => session.locate({ line: 3, column: 1 }), { code: "outOfBounds" });
-    assert.equal(session.context.slots[0], next);
-    session.append("te]]\n");
-    assert.deepEqual(session.context.slots, []);
-    assert.throws(() => session.spell(next, "x"), { code: "outOfBounds" });
-    session.locate({ line: 1, column: 5 });
-    assert.equal(session.context.slots[0].closed, true);
-    session.flush();
-    assert.deepEqual(session.context.slots, []);
-    session.locate({ line: 1, column: 5 });
-    const [last] = session.context.slots;
-    assert.throws(() => session.flush(), { code: "sessionFlushed" });
-    assert.equal(session.context.slots[0], last);
-    assert.deepEqual(session.spell(last, "x"), { text: "x", cursor: 1 });
-    const other = new MarkdownSession("[[No te]]\n");
-    other.locate({ line: 1, column: 5 });
-    assert.throws(() => other.spell(last, "x"), { code: "outOfBounds" });
-    other.dispose();
-    session.dispose();
-});
-
-test("api: the lexicons are the dialect's metadata fields and slot cues", () => {
-    assert.deepEqual(Metadata.fields, [
-        "name",
-        "title",
-        "subtitle",
-        "time",
-        "date",
-        "authors",
-        "keywords",
-        "abstract",
-        "state",
-        "comment"
-    ]);
-    assert.ok(Slot.cues.includes("[") && Slot.cues.includes("(") && Slot.cues.includes("\n"));
-    assert.deepEqual([...Slot.cues].sort(), Slot.cues);
-    assert.ok(Slot.cues.every((cue) => cue.length === 1));
-    assert.equal(Slot.cues, Slot.cues);
 });
 
 test("api: a session's path, field and marker queries divide a node's own source", () => {
@@ -1015,10 +875,8 @@ test("errors: the session's queries reject a position, node or slot kind they ca
         { line: 1.5, column: 1 },
         { line: 1, column: 2 ** 31 }
     ]) {
-        assert.throws(() => session.locate(position), { code: "outOfBounds" });
         assert.throws(() => session.path(position), { code: "outOfBounds" });
     }
-    assert.throws(() => session.locate({ line: 3, column: 1 }), { code: "outOfBounds" });
     const other = new MarkdownSession("*a*\n");
     // The same id, in a document that holds another node with it.
     assert.throws(() => session.markers(other.document.content[0].content[0]), { code: "outOfBounds" });
@@ -1028,17 +886,13 @@ test("errors: the session's queries reject a position, node or slot kind they ca
     session.dispose();
 });
 
-test("errors: a disposed session answers no query and its slots spell nothing", () => {
+test("errors: a disposed session answers no query", () => {
     const session = new MarkdownSession("[[No\n");
-    session.locate({ line: 1, column: 5 });
-    const [slot] = session.context.slots;
     const node = session.document.content[0];
     session.dispose();
-    assert.throws(() => session.locate({ line: 1, column: 5 }), /disposed/);
     assert.throws(() => session.path({ line: 1, column: 1 }), /disposed/);
     assert.throws(() => session.scope(node, null), /disposed/);
     assert.throws(() => session.markers(node), /disposed/);
-    assert.throws(() => session.spell(slot, "x"), /disposed/);
 });
 
 function scope(startLine, startColumn, endLine, endColumn) {
@@ -2393,60 +2247,5 @@ test("api: a session's documents count columns in its unit", () => {
         } finally {
             session.dispose();
         }
-    }
-});
-
-test("api: the language server checks an update's edits whole, and a refused one leaves the document as it was", () => {
-    const server = new Server();
-    try {
-        assert.equal(server.phase, "fresh");
-        assert.throws(() => server.open("file:///a.md", 1, "x"), { name: "ServerError", code: "notInitialized" });
-        assert.deepEqual(server.initialize(["utf8"]).unit, "utf8");
-        assert.equal(server.phase, "active");
-        server.open("file:///a.md", 1, "one\n");
-        const start = { line: 0, character: 3 };
-        const append = { scope: { start, end: start }, text: " two" };
-        const backwards = { scope: { start, end: { line: 0, character: 0 } }, text: "" };
-        assert.throws(() => server.update("file:///a.md", 2, [append, backwards]), {
-            code: "invalidParams",
-            value: -32602
-        });
-        assert.equal(server.complete("file:///a.md", start).version, 1);
-        server.update("file:///a.md", 3, [append, { text: "whole" }]);
-        assert.deepEqual(server.complete("file:///a.md", start), { version: 3, count: 0 });
-        server.close("file:///a.md");
-        assert.throws(() => server.complete("file:///a.md", start), ServerError);
-        assert.throws(() => server.initialize([]), { code: "invalidRequest" });
-        server.shutdown();
-        assert.equal(server.phase, "halted");
-    } finally {
-        server.dispose();
-    }
-    server.dispose();
-    assert.throws(() => server.phase, { message: "The server is disposed." });
-});
-
-test("errors: the language server refuses a version or position the protocol does not hold there", () => {
-    const server = new Server();
-    try {
-        server.initialize(["utf16"]);
-        for (const version of [1.5, 2 ** 31, -(2 ** 31) - 1, Number.NaN]) {
-            assert.throws(() => server.open("file:///a.md", version, ""), { code: "invalidParams" });
-        }
-        server.open("file:///a.md", -(2 ** 31), "a\n");
-        for (const position of [
-            { line: -1, character: 0 },
-            { line: 0, character: 2 ** 32 },
-            { line: 0.5, character: 0 }
-        ]) {
-            assert.throws(() => server.complete("file:///a.md", position), { code: "invalidParams" });
-        }
-        // The protocol's bound stands at the text's end.
-        assert.equal(
-            server.complete("file:///a.md", { line: 2 ** 32 - 1, character: 2 ** 32 - 1 }).version,
-            -(2 ** 31)
-        );
-    } finally {
-        server.dispose();
     }
 });

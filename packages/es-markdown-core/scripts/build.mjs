@@ -71,7 +71,6 @@ const elements = [
     "properties.c",
     "yaml.c",
     "session.c",
-    "context.c",
     "parts.c",
     "specimen.c",
     "strikethrough.c",
@@ -81,8 +80,6 @@ const elements = [
     "tasklist.c",
     "topic.c"
 ].map((file) => path.join(root, "packages/markdown-core/elements", file));
-// The language engine, which the `./lsp` entry point binds.
-const lsp = ["server.c", "text.c"].map((file) => path.join(root, "packages/markdown-core/lsp", file));
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
@@ -95,34 +92,18 @@ const exported = [
     "markdown_core_wire_session_append",
     "markdown_core_wire_session_flush",
     "markdown_core_wire_session_edit",
-    "markdown_core_wire_dialect",
-    "markdown_core_wire_locate",
-    "markdown_core_wire_spell",
     "markdown_core_wire_field",
     "markdown_core_wire_markers",
     "markdown_core_wire_free",
     "markdown_core_session_text_size",
     "markdown_core_session_text",
-    "markdown_core_session_close",
-    "markdown_core_lsp_server_new",
-    "markdown_core_lsp_server_free",
-    "markdown_core_lsp_server_phase",
-    "markdown_core_lsp_initialize",
-    "markdown_core_lsp_shutdown",
-    "markdown_core_lsp_open",
-    "markdown_core_lsp_update",
-    "markdown_core_lsp_close",
-    "markdown_core_lsp_complete",
-    "markdown_core_lsp_list_version",
-    "markdown_core_lsp_list_count",
-    "markdown_core_lsp_list_free"
+    "markdown_core_session_close"
 ].map((name) => `_${name}`);
 const result = spawnSync(
     "emcc",
     [
         ...core,
         ...elements,
-        ...lsp,
         path.join(root, "packages/markdown-core/wire/markdown_core_wire.c"),
         "-O3",
         "-std=c99",
@@ -140,12 +121,10 @@ const result = spawnSync(
         `-sEXPORTED_FUNCTIONS=${JSON.stringify(exported)}`,
         "-DMARKDOWN_CORE_STATIC_DEFINE",
         "-DMARKDOWN_CORE_ELEMENTS_STATIC_DEFINE",
-        "-DMARKDOWN_CORE_LSP_STATIC_DEFINE",
         `-I${path.join(root, "packages/markdown-core/core")}`,
         `-I${path.join(root, "packages/markdown-core/elements")}`,
         `-I${path.join(root, "packages/markdown-core/include")}`,
         `-I${path.join(root, "packages/markdown-core/core/include")}`,
-        `-I${path.join(root, "packages/markdown-core/lsp/include")}`,
         "-o",
         output
     ],

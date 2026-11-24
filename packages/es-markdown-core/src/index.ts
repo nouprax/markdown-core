@@ -64,8 +64,6 @@ export type { MarkupVisitor, MarkupVisitPhase } from "./visitor/markup-visitor.j
 
 export { Attributes } from "./markup/attributes.js";
 export type { Record } from "./markup/attributes.js";
-export { Metadata } from "./markup/metadata.js";
+export type { Metadata } from "./markup/metadata.js";
 export type { MetadataValue, MetadataScalar, MetadataListItem } from "./markup/metadata.js";
-export { Slot } from "./markup/context.js";
-export type { Context, Edit, Opener } from "./markup/context.js";
 export type { SlotKind } from "./wire/kinds.js";

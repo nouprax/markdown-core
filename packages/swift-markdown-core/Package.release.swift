@@ -13,9 +13,9 @@ import PackageDescription
 // to put "and not the tests" that a `swift build` of the archive would see.
 //
 // The paths are the archive's layout, which is this repository's layout with
-// everything but `core`, `elements`, `include`, `lsp`, `Sources/MarkdownCore`
-// and `Sources/MarkdownCoreLSP` removed -- so they are the root manifest's
-// paths unchanged, and the two files can be diffed.
+// everything but `core`, `elements`, `include` and `Sources/MarkdownCore`
+// removed -- so they are the root manifest's paths unchanged, and the two
+// files can be diffed.
 let package = Package(
     name: "swift-markdown-core",
     platforms: [
@@ -24,7 +24,6 @@ let package = Package(
     ],
     products: [
         .library(name: "MarkdownCore", targets: ["MarkdownCore"]),
-        .library(name: "MarkdownCoreLSP", targets: ["MarkdownCoreLSP"]),
     ],
     targets: [
         .target(
@@ -93,7 +92,6 @@ let package = Package(
                 "elements/properties.c",
                 "elements/yaml.c",
                 "elements/session.c",
-                "elements/context.c",
                 "elements/parts.c",
                 "elements/specimen.c",
                 "elements/strikethrough.c",
@@ -117,27 +115,6 @@ let package = Package(
             name: "MarkdownCore",
             dependencies: ["MarkdownCoreC"],
             path: "packages/swift-markdown-core/Sources/MarkdownCore"
-        ),
-        // The language engine (docs/plans/2026-10-23-lsp-completion-engine.md,
-        // 4.1): its C library and its Swift binding, a second product.
-        .target(
-            name: "MarkdownCoreLSPC",
-            dependencies: ["MarkdownCoreC"],
-            path: "packages/markdown-core/lsp",
-            sources: [
-                "server.c",
-                "text.c",
-            ],
-            publicHeadersPath: "include",
-            cSettings: [
-                .define("MARKDOWN_CORE_STATIC_DEFINE"),
-                .define("MARKDOWN_CORE_LSP_STATIC_DEFINE"),
-            ]
-        ),
-        .target(
-            name: "MarkdownCoreLSP",
-            dependencies: ["MarkdownCore", "MarkdownCoreLSPC"],
-            path: "packages/swift-markdown-core/Sources/MarkdownCoreLSP"
         ),
     ],
     cLanguageStandard: .c99

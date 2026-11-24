@@ -49,30 +49,13 @@ typedef struct {
     size_t from, to;
 } markdown_core_metadata_place;
 
-/* The places, and what the reader answers of one line, `line`, of the
- * payload: whether a member holds it, a bracketed value it leaves open or
- * a line it owns after it that holds more than a comment, so that a name
- * written there would not begin a member of its own lines. */
+/* The places the parse records, in order. */
 typedef struct {
     markdown_core_metadata_place *items;
     size_t count, capacity;
-    size_t line;
-    bool held;
 } markdown_core_metadata_places;
 
-/* Reads the places of the envelope `text`, `length` bytes from its opening
- * fence through its closing one, in order, into `places`, whose items the
- * caller frees; false when an allocation failed. */
-bool markdown_core_metadata_places_read(const unsigned char *text, size_t length,
-                                        markdown_core_metadata_places *places);
-/* Whether a plain scalar of `size` bytes of `text` resolves to text, not
- * to null, a boolean or a number. */
-bool markdown_core_metadata_text(const unsigned char *text, size_t size);
-
-/* What the context reads of an envelope at a cursor, and how a value is
- * written in a member (write.h), the document element's. */
+/* The facets of the document element's Metadata. */
 extern const markdown_core_facet MARKDOWN_CORE_PROPERTIES_FACETS[];
-markdown_core_status markdown_core_properties_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                                    markdown_core_spelling *out, bool *held);
 
 #endif

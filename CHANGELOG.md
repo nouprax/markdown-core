@@ -6,6 +6,20 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Remove the language engine and the editor queries built beside the
+  parser: the `markdown-core-lsp` library and the `markdown-core-server`
+  adapter; the context queries (`markdown_core_session_locate`,
+  `markdown_core_session_context` and its accessors), the slot spelling
+  (`markdown_core_slot_spell`, the insertion type), the lexicon queries
+  (`markdown_core_metadata_field_count`/`_at`, `markdown_core_slot_cues`) and
+  the elements' write interface; the wire's dialect, locate and spell
+  queries; and every binding of them: Swift's `MarkdownCoreLSP` product and
+  `Context`, Kotlin's `com.nouprax.markdown.core.lsp` package, `Context`,
+  `Opener`, `Slot` and `Metadata.fields`, and ECMAScript's `./lsp` entry
+  point, `Context`, `Slot` and `Metadata.fields`. Language features will be
+  built on the parser's AST as their one source of truth. The AST queries
+  stay: a session's `path`, `scope` (fields by slot kind) and `markers`.
+
 - Android requires API 24 (Android 7.0) or later, up from API 21, matching
   the Google Play services and AndroidX floor; CI tests it on an API 24
   emulator. The build moves to AGP 9.5.2.

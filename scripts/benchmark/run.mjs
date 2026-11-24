@@ -139,11 +139,6 @@ export const PARSE_BOUNDARIES = Object.freeze(STAGES.map((stage) => ENGINES["mar
  * measured per append rather than per stage. */
 export const STREAM_RUNNER = "packages/markdown-core/benchmarks/markdown_core_stream_runner";
 
-/* The completion latency benchmark's runner (completion.mjs): the language
- * engine, measured per completion request. Only that driver builds it, and
- * never for a base revision: the report has no gate (plan D5). */
-export const COMPLETION_RUNNER = "packages/markdown-core/benchmarks/markdown_core_completion_runner";
-
 /* The stage runners. */
 const STAGE_RUNNERS = Object.fromEntries(
     Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
@@ -1431,7 +1426,7 @@ export function markdownReport(report) {
 
 /**
  * The measurement build, shared by every driver that measures this
- * repository's runners (this one, streams.mjs and completion.mjs): the
+ * repository's runners (this one and streams.mjs): the
  * profile preset built from scratch with the pinned references, every
  * measured binary checked for one compiler and the pinned flags, and the
  * identity a report states -- toolchain, compile lines, dispatch, runtime

@@ -90,27 +90,7 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .cuts = true,
 };
 
-/* A block identifier's writing (markdown_core_write_ops): ASCII letters,
- * numerals and hyphens, and the `#` after them while it is open. */
-static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    markdown_core_spelling *out, bool *held) {
-    *held = markdown_core_write_word(value, size, "-") && markdown_core_write_plain(out, value, size, "", site->row);
-    out->closer = site->closed ? "" : "#";
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_node_kind PARAGRAPH_OWNERS[] = {MARKDOWN_CORE_KIND_PARAGRAPH, MARKDOWN_CORE_KIND_LIST_ITEM,
-                                                           MARKDOWN_CORE_KIND_LIST,      MARKDOWN_CORE_KIND_CALLOUT,
-                                                           MARKDOWN_CORE_KIND_TABLE,     MARKDOWN_CORE_KIND_NONE};
-
-static const markdown_core_write_ops PARAGRAPH_WRITES = {
-    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_ID),
-    .owners = PARAGRAPH_OWNERS,
-    .spell = S_spell,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .writes = &PARAGRAPH_WRITES,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .name = "paragraph",
     .edit = &PARAGRAPH_EDIT,

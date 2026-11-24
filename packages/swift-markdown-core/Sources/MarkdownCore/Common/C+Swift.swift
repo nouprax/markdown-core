@@ -88,3 +88,25 @@ extension markdown_core_optional_string {
         has_value ? value.required : nil
     }
 }
+
+extension Slot.Kind {
+    var native: markdown_core_slot_kind {
+        markdown_core_slot_kind(rawValue: UInt32(rawValue))
+    }
+}
+
+extension Scope {
+    init(_ scope: markdown_core_scope) {
+        self.init(start: Position(scope.start), end: Position(scope.end))
+    }
+}
+
+extension Position {
+    init(_ position: markdown_core_position) {
+        self.init(line: position.line, column: position.column)
+    }
+
+    var native: markdown_core_position {
+        markdown_core_position(line: line, column: column)
+    }
+}

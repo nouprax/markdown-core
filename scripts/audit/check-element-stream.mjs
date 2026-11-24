@@ -11,7 +11,7 @@
  * element reads the line's facts (`indent`, `nonspace`, ...) but never its
  * bytes (`line`) or how far it was read (`far`) by field.
  *
- * The services that still live beside the elements (ast, session, context,
+ * The services that still live beside the elements (ast, session,
  * parts) are not elements and are not judged here; they move into core.
  *
  *   node scripts/audit/check-element-stream.mjs
@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dir = path.join(root, "packages/markdown-core/elements");
-const services = new Set(["ast.c", "session.c", "context.c", "parts.c"]);
+const services = new Set(["ast.c", "session.c", "parts.c"]);
 
 const strip = (s) =>
     s

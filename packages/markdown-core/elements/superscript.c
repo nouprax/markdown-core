@@ -28,21 +28,7 @@ const markdown_core_facet MARKDOWN_CORE_SUPERSCRIPT_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
-/* A run of `^` right after the slot keeps its flank (markdown_core_write_runs). */
-static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    const markdown_core_spelling *spelled, bool *kept) {
-    (void)value;
-    (void)size;
-    *kept = markdown_core_write_runs(site, spelled, "^");
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_write_ops SUPERSCRIPT_WRITES = {
-    .keeps = S_keeps,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SUPERSCRIPT = {
-    .writes = &SUPERSCRIPT_WRITES,
     .facets = MARKDOWN_CORE_SUPERSCRIPT_FACETS,
     .name = "superscript",
     .inlines = &SUPERSCRIPT_INLINES,

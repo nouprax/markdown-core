@@ -561,7 +561,9 @@ function swift({ kinds, slots }) {
         "    /// `markdown_core_node_kind_name` answers it.\n" +
         "    public var description: String { Self.names[Int(rawValue) - 1] }\n" +
         "}\n\n" +
-        "extension Slot {\n" +
+        "/// The slots of the canonical AST contract: the fields whose source holds a\n" +
+        "/// name, a key or a path, which ``Slot/Kind`` names.\n" +
+        "public enum Slot {\n" +
         "    /// A slot's kind: the role of a field whose source holds a name, a key or\n" +
         "    /// a path an editor can complete, as the contract's `slots` lists them.\n" +
         "    /// The raw value is the slot kind's ordinal there, which C's\n" +

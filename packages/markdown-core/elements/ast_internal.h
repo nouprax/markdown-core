@@ -221,30 +221,6 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
 
-/* THE LOCUS OF A LOCATE (session.c, THE WINDOW): `lines`, some lines of
- * the text, through the one after the cursor's; `window`, the blocks that
- * hold the cursor, or none, for the whole tree. */
-typedef struct markdown_core_locus {
-    markdown_core_source_lines lines;
-    markdown_core_window window;
-    /* The line that holds `offset`, a byte before `lines`, counted from 0
-     * in the text, and where it starts. */
-    void (*line)(void *owner, size_t offset, size_t *line, size_t *start);
-    void *owner;
-} markdown_core_locus;
-
-/* A session's context state (context.c, THE SESSION'S CONTEXT): a new
- * empty context, or NULL when the allocation failed; a fresh context at
- * `position` of `document`, parsed from `length` bytes of `source`, read in
- * `locus`; `fresh` taken into `context`, which holds what it held until
- * then; and the empty context `context` becomes again. */
-markdown_core_context *markdown_core_context_new(void);
-markdown_core_status markdown_core_context_read(const markdown_core_document *document, const uint8_t *source,
-                                                size_t length, markdown_core_position position,
-                                                const markdown_core_locus *locus, markdown_core_context **context);
-void markdown_core_context_take(markdown_core_context *context, markdown_core_context *fresh);
-void markdown_core_context_clear(markdown_core_context *context);
-
 #ifdef __cplusplus
 }
 #endif

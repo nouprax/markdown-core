@@ -492,8 +492,8 @@ MARKDOWN_CORE_API size_t markdown_core_session_lines(const markdown_core_session
  * MARKDOWN_CORE_OUT_OF_BOUNDS for a line the text does not have. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_line(const markdown_core_session *session, size_t line,
                                                                   markdown_core_string *text);
-/** Destroys the session: its text, its parse state, its documents and its
- * context go with it, and nothing it lent may be read afterwards. A session
+/** Destroys the session: its text, its parse state and its documents go
+ * with it, and nothing it lent may be read afterwards. A session
  * may be closed at any point of its life, flushed or not. */
 MARKDOWN_CORE_API void markdown_core_session_close(markdown_core_session *session);
 
@@ -597,138 +597,6 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_cor
 /** The slot kind's name in the canonical AST contract. OUT_OF_BOUNDS for a
  * value that is not a markdown_core_slot_kind. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_slot_kind_name(markdown_core_slot_kind kind, const char **name);
-
-/** LEXICONS (docs/plans/2026-10-23-lsp-completion-engine.md, 3.4): the
- * names and the characters the dialect fixes, so that an editor reads them
- * from the parser and does not repeat them. Each borrows from the library
- * and lives as long as it.
- *
- * `markdown_core_metadata_field_count` is the number of field names the
- * properties envelope reads, and `markdown_core_metadata_field_at` sets
- * `*name` to the `index`th of them, in the order of the dialect spec:
- * `name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`,
- * `abstract`, `state` and `comment`. The envelope drops a member with any
- * other name. OUT_OF_BOUNDS for an index at or past the count.
- *
- * `markdown_core_slot_cues` answers the bytes after which a slot may begin
- * with nothing written yet, in ascending order: the last byte of a slot's
- * opener, such as the second `[` of `[[`, the `(` of `](`, the `.` of `{.`
- * or the `!` of `> [!`; a separator before a field, such as the space
- * before an attribute record, the `=` before its value or the `,` in a
- * properties list; and a line ending, before a properties member's name.
- * An editor that asks for completions when one of them is typed asks
- * wherever a slot opens empty. A container's prefix, such as a quote's
- * `>`, is not a cue, since a field that goes on past it began on an
- * earlier line. */
-MARKDOWN_CORE_API size_t markdown_core_metadata_field_count(void);
-MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_field_at(size_t index, markdown_core_string *name);
-MARKDOWN_CORE_API markdown_core_string markdown_core_slot_cues(void);
-
-/** CONTEXT QUERIES (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1).
- * The syntactic context at a cursor is the open state of a parse of the
- * text before it, confirmed against the document parsed from the whole
- * text.
- *
- * `markdown_core_document_context` takes `document`, parsed from `length`
- * bytes of `source`, and a cursor `position`, which stands between bytes:
- * its column may also stand at its line's end or at the source's end. It
- * parses the source before the cursor, which the document does not hold,
- * and `*context` receives a new context, which markdown_core_context_free
- * releases; it owns every string it hands out. OUT_OF_BOUNDS when the
- * position names no place of the source or its line or column is below 1.
- *
- * A context lists
- * - its BLOCKS: the blocks the parse of the text before the cursor leaves
- *   open as that text ends, outermost first, each with its kind and the
- *   scope of its opening line up to the cursor;
- * - its INLINES: the constructs the text before the cursor leaves open in
- *   the inline content that holds it, earliest first, each with the kind it
- *   opens, NONE when that is still open too (a `[` may open a link, a span
- *   or a cite), and the scope of its opening syntax, which the document
- *   confirms as a slot's opener is confirmed;
- * - its SLOTS: the fields an open construct reads at the cursor, which the
- *   document confirms (markdown_core_slot). */
-typedef struct markdown_core_context markdown_core_context;
-typedef struct markdown_core_opener {
-    markdown_core_node_kind kind;
-    markdown_core_scope scope;
-} markdown_core_opener;
-/** A SLOT: the field of slot kind `kind` of a construct of kind `owner` that
- * the cursor may be writing. `before` is the field's source from its start
- * to the cursor and `after` its continuation from the cursor, as the
- * construct's own grammar reads it; neither leaves the cursor's line.
- * `closed` is whether the document finishes the construct after the cursor;
- * otherwise the document reads its opener as text. `prefix_count` earlier
- * fields the slot depends on, such as the path before a cross link's
- * anchor, are read with markdown_core_context_slot_prefix_at, as written. */
-typedef struct markdown_core_slot {
-    markdown_core_slot_kind kind;
-    markdown_core_node_kind owner;
-    markdown_core_scope before;
-    markdown_core_scope after;
-    bool closed;
-    size_t prefix_count;
-} markdown_core_slot;
-
-MARKDOWN_CORE_API markdown_core_status markdown_core_document_context(const markdown_core_document *document,
-                                                                      const uint8_t *source, size_t length,
-                                                                      markdown_core_position position,
-                                                                      markdown_core_context **context);
-MARKDOWN_CORE_API size_t markdown_core_context_block_count(const markdown_core_context *context);
-MARKDOWN_CORE_API markdown_core_status markdown_core_context_block_at(const markdown_core_context *context,
-                                                                      size_t index, markdown_core_opener *block);
-MARKDOWN_CORE_API size_t markdown_core_context_inline_count(const markdown_core_context *context);
-MARKDOWN_CORE_API markdown_core_status markdown_core_context_inline_at(const markdown_core_context *context,
-                                                                       size_t index, markdown_core_opener *opener);
-MARKDOWN_CORE_API size_t markdown_core_context_slot_count(const markdown_core_context *context);
-MARKDOWN_CORE_API markdown_core_status markdown_core_context_slot_at(const markdown_core_context *context, size_t index,
-                                                                     markdown_core_slot *slot);
-/** The `index`th earlier field slot `slot` depends on, as written. It borrows
- * from the context. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_context_slot_prefix_at(const markdown_core_context *context,
-                                                                            size_t slot, size_t index,
-                                                                            markdown_core_string *prefix);
-MARKDOWN_CORE_API void markdown_core_context_free(markdown_core_context *context);
-
-/** THE SESSION'S CONTEXT: the context a session keeps as its state at its
- * cursor. `markdown_core_session_locate` moves the cursor to `position` of
- * the session's current text and updates the state in place to the context
- * there, as markdown_core_document_context reads it; OUT_OF_BOUNDS and
- * ALLOCATION_FAILED leave the state as it was. `markdown_core_session_context`
- * lends the state for the session's whole life: the context accessors and
- * markdown_core_slot_spell read it as it stands, and the strings they hand
- * out stand until the next locate, append or flush. It holds no blocks,
- * inlines or slots before the first locate, and an append or the flush
- * empty it again. It is never passed to markdown_core_context_free. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_session_locate(markdown_core_session *session,
-                                                                    markdown_core_position position);
-MARKDOWN_CORE_API const markdown_core_context *markdown_core_session_context(const markdown_core_session *session);
-
-/** AN INSERTION: `size` bytes at `text` that replace a slot's `before` and
- * `after`, and `cursor`, the bytes of `text` before the caret. */
-typedef struct markdown_core_insertion {
-    const uint8_t *text;
-    size_t size;
-    size_t cursor;
-} markdown_core_insertion;
-
-/** The parser's spelling of `value`, `size` bytes of UTF-8, in slot `slot`
- * of `context` (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1).
- * `*insertion` receives a new insertion, which markdown_core_insertion_free
- * releases, whose text writes the value in the field's own syntax: it
- * escapes what the field reads as syntax, and writes in `<...>`, in braces
- * or in quotes a value whose bare spelling the field does not read whole.
- * When the construct is not closed, the text goes on with the shortest
- * closer that finishes it, such as `]]`, `)` or `}`, and `cursor` stands
- * after the value, before the closer. `*insertion` receives NULL when the
- * field holds the value in no spelling there: a line ending, a `|` in a
- * cross target, a space in a key, or a byte that would end or begin a
- * construct around the slot, such as a `]` inside an open link's text.
- * OUT_OF_BOUNDS when `slot` names no slot of the context. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_slot_spell(const markdown_core_context *context, size_t slot,
-                                                                const uint8_t *value, size_t size,
-                                                                markdown_core_insertion **insertion);
-MARKDOWN_CORE_API void markdown_core_insertion_free(markdown_core_insertion *insertion);
 
 /** A SEQUENCE OF NODES: `count` nodes at `items`, in order, borrowed from the
  * document. An empty one may have no `items`. */

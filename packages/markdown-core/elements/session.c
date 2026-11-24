@@ -32,14 +32,7 @@
  * revision lends the session's pool and counts the ids it issued. The
  * document is the committed parse's tree, published in place (ast.c,
  * PUBLISHING IN PLACE), and the session lends it until the next append or
- * the flush; the flush returns the last document.
- *
- * THE CONTEXT is the session's state at its cursor: the context query at the
- * position it was last located at, which every read of the context and every
- * spelling reads in place (context.c, THE SESSION'S CONTEXT). The session
- * lends it for its whole life. It is empty until the first locate, and an
- * append or the flush, which change the document, empty it again. A fresh
- * parse's session has none. */
+ * the flush; the flush returns the last document. */
 /* What only an edit keeps, made at the first: the child index (index.h),
  * and the bytes of the text the last edit read again. A session that is
  * never edited holds none of it. */
@@ -57,8 +50,6 @@ struct markdown_core_session {
     markdown_core_node_pool pool;
     markdown_core_revision revision;
     markdown_core_document document;
-    markdown_core_context *context;
-    bool located;
     bool flushed;
     session_edits *edits;
 };
@@ -136,7 +127,6 @@ static void session_close(markdown_core_session *session) {
         markdown_core_index_free(&session->edits->index);
         markdown_core_free(session->edits);
     }
-    markdown_core_context_free(session->context);
 }
 
 /* Opens a zeroed session in place: makes its parser, takes the source and,
@@ -156,24 +146,13 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     return status;
 }
 
-/* Empties the context a locate left, so a step that never follows one
- * costs no more than it did. */
-static void session_forget(markdown_core_session *session) {
-    if (session->located) {
-        markdown_core_context_clear(session->context);
-        session->located = false;
-    }
-}
-
 markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size, markdown_core_text_unit unit,
                                                markdown_core_session **session) {
     markdown_core_session *made = markdown_core_alloc(1, sizeof(*made));
     if (!made) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    made->context = markdown_core_context_new();
-    markdown_core_status status =
-        made->context ? session_open(made, source, size, unit) : MARKDOWN_CORE_ALLOCATION_FAILED;
+    markdown_core_status status = session_open(made, source, size, unit);
     if (status == MARKDOWN_CORE_OK) {
         /* Only a session takes edits; a one-off parse keeps no reach. */
         status = markdown_core_parser_edits(made->committed) ? session_snapshot(made) : MARKDOWN_CORE_ALLOCATION_FAILED;
@@ -192,7 +171,6 @@ markdown_core_status markdown_core_session_append(markdown_core_session *session
     if (session->flushed) {
         return MARKDOWN_CORE_SESSION_FLUSHED;
     }
-    session_forget(session);
     markdown_core_status status = session_take(session, text, size);
     if (status == MARKDOWN_CORE_OK) {
         status = session_snapshot(session);
@@ -208,7 +186,6 @@ markdown_core_status markdown_core_session_flush(markdown_core_session *session,
     if (session->flushed) {
         return MARKDOWN_CORE_SESSION_FLUSHED;
     }
-    session_forget(session);
     markdown_core_status status = session_flush(session);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
@@ -466,7 +443,6 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (!markdown_core_index_make(&session->edits->index, session->committed, session->document.root)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    session_forget(session);
     markdown_core_rest rest;
     const markdown_core_rest_edit ask = {
         .line = (size_t)start.line - 1, .from = from, .to = to, .text = text, .length = length, .prose = true};
@@ -540,144 +516,6 @@ void markdown_core_session_reread(const markdown_core_session *session, size_t *
     const session_edits *edits = session->edits;
     *from = edits ? edits->reread_from : 0;
     *to = edits ? edits->reread_to : 0;
-}
-
-/* The line that holds `offset`, counted from 0, and where it starts, for
- * the locus of a locate (ast_internal.h). */
-static void session_locus_line(void *owner, size_t offset, size_t *line, size_t *start) {
-    const markdown_core_session *session = owner;
-    *line = markdown_core_parser_line_of(session->committed, offset);
-    *start = session_line_start(session, *line);
-}
-
-static markdown_core_status session_locate_flushed(markdown_core_session *session, markdown_core_position position,
-                                                   markdown_core_context **context);
-
-/* A text no flushed session holds -- a session's text while it streams --
- * is read whole: its context is the document's that a parse of it makes. */
-static markdown_core_status session_locate_whole(const uint8_t *source, size_t size, markdown_core_text_unit unit,
-                                                 markdown_core_position position, markdown_core_context **context) {
-    markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_document_parse_in(source, size, unit, &document);
-    if (status == MARKDOWN_CORE_OK) {
-        status = markdown_core_document_context(document, source, size, position, context);
-    }
-    markdown_core_document_free(document);
-    return status;
-}
-
-markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
-    markdown_core_context *fresh = NULL;
-    const markdown_core_status status =
-        session->flushed ? session_locate_flushed(session, position, &fresh)
-                         : session_locate_whole((const uint8_t *)session_source(session), session->text.count,
-                                                session->document.unit, position, &fresh);
-    if (status == MARKDOWN_CORE_OK) {
-        markdown_core_context_take(session->context, fresh);
-        session->located = true;
-    }
-    return status;
-}
-
-static markdown_core_status session_locate_flushed(markdown_core_session *session, markdown_core_position position,
-                                                   markdown_core_context **context) {
-    /* THE WINDOW: the query reads the blocks that hold the cursor (context.c,
-     * THE CONTEXT FROM THE DOCUMENT), so it keeps to them, down the tree
-     * from the root, from the session's widths: at each level the children
-     * from the one before the first that ends past the cursor through the
-     * last that starts at or before it, and down into the one child that
-     * holds the cursor with none of its siblings touching it, a block of
-     * blocks. Its lines
-     * are those from the deepest level's first child's through the one
-     * after the cursor's, from the session's line table. */
-    const markdown_core_node *root = session->document.root;
-    size_t start, end, cursor;
-    if (position.line < 1 || position.column < 1 ||
-        !markdown_core_parser_line_span(session->committed, (size_t)position.line - 1, &start, &end) ||
-        !session_offset(session, position, &cursor)) {
-        return MARKDOWN_CORE_OUT_OF_BOUNDS;
-    }
-    if (!session->edits && !(session->edits = markdown_core_alloc(1, sizeof(*session->edits)))) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    if (!markdown_core_index_make(&session->edits->index, session->committed, root)) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    markdown_core_locus locus = {.line = session_locus_line, .owner = session};
-    const markdown_core_node *holder = root;
-    const markdown_core_widths *nest = &session->edits->index.widths;
-    int64_t base = root->extent.lead;
-    size_t level = 0, first_line = 0;
-    while (holder->child_count && level < MARKDOWN_CORE_WINDOW_DEPTH) {
-        markdown_core_window_level *at = &locus.window.levels[level];
-        at->holder = holder;
-        at->first = at->last = markdown_core_widths_child(nest, holder, base, cursor);
-        /* Children that touch (a row's padded cells, which stand where its
-         * last ends) start at one place, and the one before the first that
-         * ends past the cursor may hold it too. */
-        while (at->first > 0 &&
-               markdown_core_widths_window(nest, holder, (uint32_t)base, at->first - 1).end >= cursor) {
-            at->first--;
-        }
-        while (at->last + 1 < holder->child_count &&
-               markdown_core_widths_start(nest, holder, base, at->last + 1) <= cursor) {
-            at->last++;
-        }
-        at->start = (uint32_t)markdown_core_widths_start(nest, holder, base, at->first);
-        first_line = markdown_core_parser_line_of(session->committed, at->start);
-        level++;
-        /* The one child that holds the cursor inside it. */
-        uint32_t inside = UINT32_MAX;
-        for (uint32_t child = at->first; child <= at->last; child++) {
-            const markdown_core_place place = markdown_core_widths_window(nest, holder, (uint32_t)base, child);
-            if (place.start < cursor && cursor < place.end) {
-                inside = inside == UINT32_MAX ? child : UINT32_MAX - 1;
-            } else if (place.start <= cursor && cursor <= place.end) {
-                inside = UINT32_MAX - 1;
-            }
-        }
-        /* An inline root's children are read whole. */
-        const markdown_core_node *block = inside < UINT32_MAX - 1 ? holder->children[inside] : NULL;
-        if (!block || !block->child_count ||
-            (block->children[0]->kind & MARKDOWN_CORE_NODE_TYPE_INLINE) == MARKDOWN_CORE_NODE_TYPE_INLINE) {
-            break;
-        }
-        const size_t from = markdown_core_widths_start(nest, holder, base, inside);
-        at->first = at->last = inside;
-        at->start = (uint32_t)from;
-        holder = holder->children[inside];
-        base = markdown_core_holder_base(holder, from);
-        if (!(nest = session_nest(session, holder))) {
-            return MARKDOWN_CORE_ALLOCATION_FAILED;
-        }
-    }
-    locus.window.depth = level;
-    /* From the document's start, the lines reach the first child's too,
-     * past the envelope, whose members a cursor in it reads. */
-    size_t last = (size_t)position.line - 1, next, after;
-    if (level == 1 && !locus.window.levels[0].first) {
-        first_line = 0;
-        const size_t opening = markdown_core_parser_line_of(session->committed, widths_start(nest, root, 0));
-        last = opening > last ? opening : last;
-    }
-    first_line = first_line < (size_t)position.line - 1 ? first_line : (size_t)position.line - 1;
-    const bool more = markdown_core_parser_line_span(session->committed, last + 1, &next, &after);
-    locus.lines = (markdown_core_source_lines){.count = last + 1 + more - first_line, .base = first_line};
-    locus.lines.starts = markdown_core_alloc(locus.lines.count, sizeof(*locus.lines.starts));
-    if (!locus.lines.starts) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    for (size_t i = 0; i < locus.lines.count; i++) {
-        markdown_core_parser_line_span(session->committed, first_line + i, &locus.lines.starts[i], &after);
-    }
-    markdown_core_status status = markdown_core_context_read(
-        &session->document, (const uint8_t *)session_source(session), session->text.count, position, &locus, context);
-    markdown_core_free(locus.lines.starts);
-    return status;
-}
-
-const markdown_core_context *markdown_core_session_context(const markdown_core_session *session) {
-    return session->context;
 }
 
 const markdown_core_document *markdown_core_session_document(const markdown_core_session *session) {

@@ -103,40 +103,14 @@ private func tables(_ document: Document, _ text: String) throws -> [[String]] {
     ]
 }
 
-/// A slot's fields: what a context compares of it.
-private func fields(_ slot: Slot) -> String {
-    "\(slot.kind) \(slot.owner) \(slot.before) \(slot.after) \(slot.closed) \(slot.prefix)"
-}
-
 /// The edit oracle (incremental plan 12.7) on the edited `session`: its
-/// document dumps as a fresh parse of its text, its definition tables hold
-/// the fresh parse's, and its context after every slot cue of the ASCII text
-/// is that of a session opened on the text.
+/// document dumps as a fresh parse of its text, and its definition tables
+/// hold the fresh parse's.
 private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label: String) throws {
     let text = session.text
     let fresh = try Document.parse(text, unit: unit)
     #expect(try session.document.dump(in: text) == fresh.dump(in: text), "\(label)")
     #expect(try tables(session.document, text) == tables(fresh, text), "\(label)")
-    let opened = try MarkdownSession(text, unit: unit)
-    try opened.flush()
-    var line: Int32 = 1
-    var column: Int32 = 1
-    for character in text.utf8 {
-        if character == UInt8(ascii: "\n") {
-            line += 1
-            column = 1
-        } else {
-            column += 1
-        }
-        guard Slot.cues.contains(Character(Unicode.Scalar(character))) else { continue }
-        let place = Position(line: line, column: column)
-        try session.locate(place)
-        try opened.locate(place)
-        let mine = session.context
-        let theirs = opened.context
-        #expect(mine.blocks == theirs.blocks && mine.inlines == theirs.inlines, "\(label) at \(place)")
-        #expect(mine.slots.map(fields) == theirs.slots.map(fields), "\(label) at \(place)")
-    }
 }
 
 @Suite("session edits") struct SessionEditSuite {
@@ -196,18 +170,11 @@ private func expectOracle(_ session: MarkdownSession, _ unit: TextUnit, _ label:
         #expect(code { try session.edit(from: start, to: start, with: "x") } == .sessionStreaming)
         try session.append("more\n")
         let final = try session.flush()
-        try session.locate(inside)
-        let open = session.context.blocks
-        #expect(!open.isEmpty)
         #expect(code { try session.edit(from: inside, to: start, with: "") } == .outOfBounds)
         #expect(code { try session.edit(from: nowhere, to: nowhere, with: "") } == .outOfBounds)
         #expect(code { try session.edit(from: Position(line: 0, column: 1), to: start, with: "") } == .outOfBounds)
         #expect(session.text == "- text\nmore\n")
         #expect(session.document == final)
-        #expect(session.context.blocks == open)
-        // An edit that runs empties the context, since it changes the text.
-        try session.edit(from: start, to: start, with: "a ")
-        #expect(session.context.blocks.isEmpty)
     }
 }
 

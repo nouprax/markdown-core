@@ -244,21 +244,7 @@ static void S_release(const markdown_core_element_instance *self, markdown_core_
 static const markdown_core_skip_ops CODE_SPANS = {.skip = S_skip, .release = S_release};
 static const markdown_core_service CODE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_CODE_SPANS, &CODE_SPANS}, {0}};
 
-/* A field that keeps its bytes, or escapes them, holds no code span's backtick, which the text around it may pair with.
- */
-static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    const markdown_core_spelling *spelled, bool *kept) {
-    (void)site;
-    *kept = spelled->tokens == MARKDOWN_CORE_TOKENS_FREE || !markdown_core_write_holds(value, size, "`");
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_write_ops CODE_WRITES = {
-    .keeps = S_keeps,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
-    .writes = &CODE_WRITES,
     .provides = CODE_SERVICES,
     .facets = MARKDOWN_CORE_CODE_FACETS,
     .run_state_size = sizeof(markdown_core_backticks),

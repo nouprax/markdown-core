@@ -19,16 +19,15 @@ import kotlin.jvm.JvmOverloads
  * with [ErrorCode.SESSION_FLUSHED], and [edit] replaces any part of the text:
  * streaming and editing are the session's two phases.
  *
- * The session also answers the queries of an editor: the [context] at its
- * cursor, which [locate] moves, the [path] of nodes that hold a byte, and the
- * [scope] of a node's fields and its [markers]. Each asks the engine's parse
- * of the session's text, which the session holds, so none parses the text
- * again or takes the source, and the documents stay values.
+ * The session also answers queries of its documents: the [path] of nodes
+ * that hold a byte, and the [scope] of a node's fields and its [markers].
+ * Each asks the engine's parse of the session's text, which the session
+ * holds, so none parses the text again or takes the source, and the
+ * documents stay values.
  *
- * A session has one writer at a time. [close] releases the engine's session,
- * its context with it: a step, a query, a spelling or a read of [text] after
- * it throws [IllegalStateException], and every document it returned stays a
- * complete value.
+ * A session has one writer at a time. [close] releases the engine's session:
+ * a step, a query or a read of [text] after it throws [IllegalStateException],
+ * and every document it returned stays a complete value.
  *
  * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the engine
  *   cannot allocate, or [source] exceeds 1 GiB of UTF-8 or its tree a byte
@@ -43,19 +42,6 @@ public class MarkdownSession
     ) : AutoCloseable {
         private val session = newPlatformSession(source.encodeToByteArray(), unit)
         private var closed = false
-
-        /** Counts the steps that replace [context]: a slot spells only in the turn that read it. */
-        private var turn = 0
-
-        /**
-         * The syntactic context at the session's cursor, which [locate]
-         * moves: the session's state, which it updates in place. It is a
-         * context with nothing open until the first locate, and an append,
-         * [flush] or [edit] empties it again, since they change the text it
-         * was read from.
-         */
-        public var context: Context = blank
-            private set
 
         /** The document the latest step published: parsed from [source], or from the last append. */
         public val document: Document
@@ -107,7 +93,7 @@ public class MarkdownSession
          * @throws MarkdownCoreException [ErrorCode.SESSION_STREAMING] before
          *   [flush]; [ErrorCode.OUT_OF_BOUNDS] when a cursor stands nowhere in
          *   the text, its line or column is below 1, or [end] is before
-         *   [start], which leaves [context] as it was; and
+         *   [start]; and
          *   [ErrorCode.ALLOCATION_FAILED] when the engine cannot allocate, the
          *   text would exceed 1 GiB of UTF-8, or the tree a byte array's
          *   capacity. A failed allocation fails the session's parse, and every
@@ -122,79 +108,10 @@ public class MarkdownSession
                 throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
             }
             val encoded = text.encodeToByteArray()
-            return step(editRefusals) {
+            return step {
                 edit(start.line, start.column, end.line, end.column, encoded)
             }
         }
-
-        /**
-         * Moves the session's cursor to [position] of [text], which stands
-         * between characters: its column may also stand at its line's end or
-         * at the text's end. It counts columns in the session's [unit]. The
-         * session's [context] becomes the context there.
-         *
-         * The query parses the text before the cursor and confirms what it
-         * leaves open against the session's current [document], whose engine
-         * parse the session holds. A snapshot confirms as it resolves: a label
-         * sees only the definitions before the inline root asking.
-         *
-         * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when the
-         *   position names no place of the text or its line or column is
-         *   below 1, which leaves [context] as it was, and
-         *   [ErrorCode.ALLOCATION_FAILED] when an allocation fails, which
-         *   clears it.
-         */
-        public fun locate(position: Position) {
-            if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
-            try {
-                val message = open().locate(position.line, position.column)
-                // A failure's answer throws here, before the turn moves on.
-                context = AnswerDecoder.context(message, this, turn + 1)
-                turn++
-            } catch (failure: MarkdownCoreException) {
-                // The engine may have moved its context before its answer
-                // failed to allocate, so no slot read before stays good.
-                if (failure.code == ErrorCode.ALLOCATION_FAILED) {
-                    turn++
-                    context = blank
-                }
-                throw failure
-            }
-        }
-
-        /**
-         * The parser's spelling of each of [values] in [slot] of [context], in
-         * order.
-         *
-         * A spelling writes the value in the field's own syntax: it escapes
-         * what the field reads as syntax, and writes in `<...>`, in braces or
-         * in quotes a value whose bare spelling the field does not read whole.
-         * It is null for a value the field holds in no spelling there, such as
-         * a line ending, a `|` in a cross target or a space in a key.
-         *
-         * The session spells from its context as the last locate left it, so
-         * a spelling parses nothing.
-         *
-         * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [slot]
-         *   is not a slot of [context]: another session's, or one a later
-         *   locate, append or flush replaced the context of, and
-         *   [ErrorCode.ALLOCATION_FAILED] when an allocation fails.
-         * @throws IllegalStateException when the session is closed.
-         */
-        public fun spell(
-            slot: Slot,
-            values: kotlin.collections.List<String>,
-        ): kotlin.collections.List<Slot.Insertion?> {
-            val platform = open()
-            if (slot.session !== this || slot.turn != turn) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
-            return values.map { AnswerDecoder.insertion(platform.spell(slot.index, it.encodeToByteArray()), unit) }
-        }
-
-        /** The parser's spelling of [value] in [slot] of [context], as the list form spells each value. */
-        public fun spell(
-            slot: Slot,
-            value: String,
-        ): Slot.Insertion? = spell(slot, listOf(value))[0]
 
         /**
          * Every node of [document] one of whose source ranges holds the byte
@@ -252,7 +169,7 @@ public class MarkdownSession
         public fun markers(node: Markup): kotlin.collections.List<Scope> =
             parts(node) { line, column -> markers(node.id.value, line, column) }
 
-        /** Releases the engine's session and its context; a second call does nothing. */
+        /** Releases the engine's session; a second call does nothing. */
         override fun close() {
             if (!closed) {
                 closed = true
@@ -260,30 +177,8 @@ public class MarkdownSession
             }
         }
 
-        /**
-         * A step of the text. A step empties the engine's context whether or
-         * not it succeeds, and so [context], unless it fails with one of
-         * [kept], which refuse before the engine reads anything: an append or
-         * flush of a flushed session by default.
-         */
-        private inline fun step(
-            kept: Set<ErrorCode> = flushRefusals,
-            run: PlatformSession.() -> Document,
-        ): Document {
-            val platform = open()
-            var refused = false
-            try {
-                return platform.run()
-            } catch (failure: MarkdownCoreException) {
-                refused = failure.code in kept
-                throw failure
-            } finally {
-                if (!refused) {
-                    turn++
-                    context = blank
-                }
-            }
-        }
+        /** A step of the text. */
+        private inline fun step(run: PlatformSession.() -> Document): Document = open().run()
 
         /**
          * A field or marker query of [node] against the engine's parse, which
@@ -307,9 +202,3 @@ public class MarkdownSession
             return session
         }
     }
-
-/** The failures of an append or flush that leave the context: the session was already flushed. */
-private val flushRefusals = setOf(ErrorCode.SESSION_FLUSHED)
-
-/** The failures of an edit that leave the context: the session still streams, or a cursor is out of bounds. */
-private val editRefusals = setOf(ErrorCode.SESSION_STREAMING, ErrorCode.OUT_OF_BOUNDS)

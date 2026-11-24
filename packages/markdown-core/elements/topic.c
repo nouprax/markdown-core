@@ -209,37 +209,12 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
     return words->text(words->context, (const unsigned char *)"#", 1) && markdown_core_words_literal(node, words);
 }
 
-/* A name reads as far as name_end reads it, and holds a word character. */
-static bufsize_t S_field_end(uint8_t before, const unsigned char *data, bufsize_t length) {
-    (void)before;
-    bool word = false;
-    const bufsize_t end = name_end(data, length, &word);
-    return word ? end : 0;
-}
-
 const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_TOPIC, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
-/* WRITING (write.h): a topic's name keeps its bytes, and reads as name_end
- * reads it. */
-static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    markdown_core_spelling *out, bool *held) {
-    *held = size > 0 && markdown_core_write_plain(out, value, size, " \t#", site->row);
-    return *held ? markdown_core_write_reads(site, out, S_field_end, held) : MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_node_kind TOPIC_OWNERS[] = {MARKDOWN_CORE_KIND_TOPIC, MARKDOWN_CORE_KIND_NONE};
-
-static const markdown_core_write_ops TOPIC_WRITES = {
-    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_NAME),
-    .owners = TOPIC_OWNERS,
-    .spell = S_spell,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
-    .writes = &TOPIC_WRITES,
     .facets = MARKDOWN_CORE_TOPIC_FACETS,
     .name = "topic",
     .run_state_size = sizeof(topic_run),

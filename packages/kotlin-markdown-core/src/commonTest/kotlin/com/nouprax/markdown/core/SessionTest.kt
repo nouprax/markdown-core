@@ -3,10 +3,7 @@ package com.nouprax.markdown.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
 
 /** A session's document is the document of its text, whatever steps led there. */
 private fun assertParsesItsText(session: MarkdownSession) {
@@ -46,15 +43,10 @@ private fun tables(
         document.references.map { document.dump(it, text) },
     )
 
-/** A slot's fields: what a context compares of it. */
-private fun fields(slot: Slot): String =
-    "${slot.kind} ${slot.owner} ${slot.before} ${slot.after} ${slot.closed} ${slot.prefix}"
-
 /**
  * The edit oracle (incremental plan 12.7) on the edited [session]: its
- * document dumps as a fresh parse of its text, its definition tables hold the
- * fresh parse's, and its context after every slot cue of the ASCII text is
- * that of a session opened on the text.
+ * document dumps as a fresh parse of its text, and its definition tables hold
+ * the fresh parse's.
  */
 private fun assertOracle(
     session: MarkdownSession,
@@ -65,28 +57,6 @@ private fun assertOracle(
     val fresh = Document.parse(text, unit)
     assertEquals(fresh.dump(text), session.document.dump(text), label)
     assertEquals(tables(fresh, text), tables(session.document, text), label)
-    MarkdownSession(text, unit).use { opened ->
-        opened.flush()
-        var line = 1
-        var column = 1
-        for (character in text) {
-            if (character == '\n') {
-                line++
-                column = 1
-            } else {
-                column++
-            }
-            if (character !in Slot.cues) continue
-            val place = Position(line, column)
-            session.locate(place)
-            opened.locate(place)
-            val mine = session.context
-            val theirs = opened.context
-            assertEquals(theirs.blocks, mine.blocks, "$label at $place")
-            assertEquals(theirs.inlines, mine.inlines, "$label at $place")
-            assertEquals(theirs.slots.map(::fields), mine.slots.map(::fields), "$label at $place")
-        }
-    }
 }
 
 class SessionTest {
@@ -225,18 +195,11 @@ class SessionTest {
             assertEquals(ErrorCode.SESSION_STREAMING, refused(start, start))
             session.append("more\n")
             val final = session.flush()
-            session.locate(inside)
-            val open = session.context
-            assertTrue(open.blocks.isNotEmpty())
             assertEquals(ErrorCode.OUT_OF_BOUNDS, refused(inside, start))
             assertEquals(ErrorCode.OUT_OF_BOUNDS, refused(nowhere, nowhere))
             assertEquals(ErrorCode.OUT_OF_BOUNDS, refused(Position(0, 1), start))
             assertEquals("- text\nmore\n", session.text)
             assertEquals(final, session.document)
-            assertSame(open, session.context)
-            // An edit that runs empties the context, since it changes the text.
-            session.edit(start, start, "a ")
-            assertTrue(session.context.blocks.isEmpty())
         }
     }
 

@@ -26,17 +26,6 @@ public final class MarkdownSession {
     public let unit: TextUnit
     /// The document parsed from the current ``text``.
     public private(set) var document: Document
-    /// The syntactic context at the session's cursor, which
-    /// ``locate(_:)`` moves: the session's state, which it updates in place.
-    /// It is ``Context`` with nothing open until the first locate, and an
-    /// append, ``flush()`` or edit empties it again, since they change the
-    /// text it was read from.
-    public internal(set) var context = Context.blank
-    /// Counts the steps that replace ``context``: a slot spells only in the
-    /// turn that read it.
-    var turn = 0
-    /// Names the session to its slots.
-    let token = Token()
 
     /// Parses `source` into a new session, as its first append; its
     /// ``document`` is a snapshot.
@@ -131,8 +120,7 @@ public final class MarkdownSession {
     /// - Returns: the new ``document``.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/sessionStreaming``
     ///   before ``flush()``, with ``ErrorCode/outOfBounds`` when a cursor
-    ///   stands nowhere in the text or `end` is before `start`, which leaves
-    ///   ``context`` as it was, and with ``ErrorCode/allocationFailed`` when
+    ///   stands nowhere in the text or `end` is before `start`, and with ``ErrorCode/allocationFailed`` when
     ///   an allocation fails or the text would exceed 1 GiB of UTF-8. A
     ///   failed allocation fails the session's parse, and every later edit
     ///   throws it again.
@@ -146,23 +134,12 @@ public final class MarkdownSession {
         let status = written.withUTF8 { buffer in
             markdown_core_session_edit(session, start.native, end.native, buffer.baseAddress, buffer.count, &native)
         }
-        return try publish(status, native, kept: [MARKDOWN_CORE_SESSION_STREAMING, MARKDOWN_CORE_OUT_OF_BOUNDS])
+        return try publish(status, native)
     }
 
     /// Builds the document a step returned, which borrows from the session
     /// until its next step.
-    private func publish(
-        _ status: markdown_core_status,
-        _ native: OpaquePointer?,
-        kept: [markdown_core_status] = [MARKDOWN_CORE_SESSION_FLUSHED]
-    ) throws -> Document {
-        // A step empties the native context, whether or not it succeeds,
-        // unless it refused before it read anything: an append or flush of
-        // a flushed session, or an edit of a streaming one or out of bounds.
-        if !kept.contains(status) {
-            turn += 1
-            context = .blank
-        }
+    private func publish(_ status: markdown_core_status, _ native: OpaquePointer?) throws -> Document {
         guard status == MARKDOWN_CORE_OK, let native else { throw MarkdownCoreError(status) }
         document = try Document(native: native, unit: unit)
         return document

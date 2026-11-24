@@ -113,21 +113,10 @@ static const markdown_core_candidate_ops DOCUMENT_CANDIDATE = {
     .size = sizeof(document_call),
 };
 
-static const markdown_core_node_kind DOCUMENT_OWNERS[] = {MARKDOWN_CORE_KIND_METADATA, MARKDOWN_CORE_KIND_NONE};
-
-/* How a member of the properties envelope is written (properties.c). */
-static const markdown_core_write_ops DOCUMENT_WRITES = {
-    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_FIELD) | MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_VALUE),
-    .owners = DOCUMENT_OWNERS,
-    .alone = true,
-    .spell = markdown_core_properties_spell,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .state_size = sizeof(markdown_core_properties_work),
     .name = "document",
     .facets = MARKDOWN_CORE_PROPERTIES_FACETS,
-    .writes = &DOCUMENT_WRITES,
     .edit = &DOCUMENT_EDIT,
     .document = &DOCUMENT_OPS,
     .candidate = &DOCUMENT_CANDIDATE,

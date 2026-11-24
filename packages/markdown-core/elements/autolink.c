@@ -900,21 +900,7 @@ static const markdown_core_inline_ops AUTOLINK_INLINES = {
     .dispatch = "<:w",
 };
 
-/* A field that keeps its bytes holds no autolink's bracket, which the text around it may pair with. */
-static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    const markdown_core_spelling *spelled, bool *kept) {
-    (void)site;
-    *kept = spelled->tokens != MARKDOWN_CORE_TOKENS_RAW ||
-            (!markdown_core_write_holds(value, size, "<") && !markdown_core_write_holds(value, size, ">"));
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_write_ops AUTOLINK_WRITES = {
-    .keeps = S_keeps,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
-    .writes = &AUTOLINK_WRITES,
     .needs = AUTOLINK_NEEDS,
     .name = "autolink",
     .state_size = sizeof(markdown_core_autolink_work),

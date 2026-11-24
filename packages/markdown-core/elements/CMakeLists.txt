@@ -34,7 +34,6 @@ set(LIBRARY_SOURCES
     html_scanners.c
     houdini_html_u.c
     session.c
-    context.c
     parts.c
     insertion.c
     line_break.c

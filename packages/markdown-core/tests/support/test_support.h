@@ -153,9 +153,6 @@ char *ts_repeat(const char *unit, size_t count, size_t *length);
 /* Monotonic clock in nanoseconds for relative benchmark measurements. */
 uint64_t ts_monotonic_ns(void);
 
-/* Whether two contexts list the same blocks, inlines and slots. */
-bool ts_same_context(const markdown_core_context *a, const markdown_core_context *b);
-
 #ifdef __cplusplus
 }
 #endif

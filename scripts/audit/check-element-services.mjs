@@ -15,16 +15,11 @@
  * every header and source named `<stem>_<anything>` beside a `<stem>.h` that
  * E owns (its state). A source belongs to the elements whose descriptors it
  * defines. Files owned by no element (services.h, the composition root, the
- * AST and context services) are not elements and are not judged here.
+ * AST and session services) are not elements and are not judged here.
  *
  * THE GENERATED SCANNERS BELONG TO NO ELEMENT. A `*_scanners.h` declares
  * pure functions from bytes to a match length, generated from its `.re`: no
  * instance, no state, no hook.
- *
- * THE CONTEXT IS NO ELEMENT, AND NAMES NONE. The context finds the slot at a
- * cursor and asks the dialect's elements how a value is written in it (the
- * write interface, core/write.h), so its sources (`NEUTRAL`) name no
- * element's symbol and include no element's header.
  *
  * AND THE AUDIT MUST SEE SOMETHING: every element header must contribute
  * symbols and an element source must be judged, or it fails closed.
@@ -104,9 +99,6 @@ for (const file of headers) {
     }
 }
 
-/* (THE CONTEXT IS NO ELEMENT) sources judged as owning no element. */
-const NEUTRAL = new Set(["context.c"]);
-
 const findings = [];
 let judged = 0;
 for (const file of sources) {
@@ -116,7 +108,7 @@ for (const file of sources) {
         (m) => m[1]
     );
     if (self.length === 0) self = stemOwner(file) ?? [];
-    if (self.length === 0 && !NEUTRAL.has(file)) continue;
+    if (self.length === 0) continue;
     judged++;
     const mine = (owner) => owner.some((symbol) => self.includes(symbol));
     if (/\b\w+_PEERS\[\]/.test(text)) findings.push(`${file}: declares peers; an element asks services`);

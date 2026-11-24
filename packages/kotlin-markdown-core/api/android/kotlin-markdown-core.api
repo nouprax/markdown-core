@@ -112,12 +112,6 @@ public final class com/nouprax/markdown/core/Comment : com/nouprax/markdown/core
 	public fun getRuns ()Ljava/util/List;
 }
 
-public final class com/nouprax/markdown/core/Context {
-	public final fun getBlocks ()Ljava/util/List;
-	public final fun getInlines ()Ljava/util/List;
-	public final fun getSlots ()Ljava/util/List;
-}
-
 public final class com/nouprax/markdown/core/CrossEmbedded : com/nouprax/markdown/core/Markup {
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
@@ -476,16 +470,12 @@ public final class com/nouprax/markdown/core/MarkdownSession : java/lang/AutoClo
 	public fun close ()V
 	public final fun edit (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 	public final fun flush ()Lcom/nouprax/markdown/core/Document;
-	public final fun getContext ()Lcom/nouprax/markdown/core/Context;
 	public final fun getDocument ()Lcom/nouprax/markdown/core/Document;
 	public final fun getText ()Ljava/lang/String;
 	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
-	public final fun locate (Lcom/nouprax/markdown/core/Position;)V
 	public final fun markers (Lcom/nouprax/markdown/core/Markup;)Ljava/util/List;
 	public final fun path (Lcom/nouprax/markdown/core/Position;)Ljava/util/List;
 	public final fun scope (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/SlotKind;)Ljava/util/List;
-	public final fun spell (Lcom/nouprax/markdown/core/Slot;Ljava/lang/String;)Lcom/nouprax/markdown/core/Slot$Insertion;
-	public final fun spell (Lcom/nouprax/markdown/core/Slot;Ljava/util/List;)Ljava/util/List;
 }
 
 public abstract class com/nouprax/markdown/core/Markup {
@@ -579,7 +569,6 @@ public final class com/nouprax/markdown/core/MarkupVisitorKt {
 }
 
 public final class com/nouprax/markdown/core/Metadata : com/nouprax/markdown/core/Markup {
-	public static final field Companion Lcom/nouprax/markdown/core/Metadata$Companion;
 	public final fun getAbstract ()Lcom/nouprax/markdown/core/MetadataValue;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
@@ -595,10 +584,6 @@ public final class com/nouprax/markdown/core/Metadata : com/nouprax/markdown/cor
 	public final fun getSubtitle ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getTime ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getTitle ()Lcom/nouprax/markdown/core/MetadataValue;
-}
-
-public final class com/nouprax/markdown/core/Metadata$Companion {
-	public final fun getFields ()Ljava/util/List;
 }
 
 public abstract interface class com/nouprax/markdown/core/MetadataListItem {
@@ -741,16 +726,6 @@ public final class com/nouprax/markdown/core/NodeKind : java/lang/Enum {
 	public static fun values ()[Lcom/nouprax/markdown/core/NodeKind;
 }
 
-public final class com/nouprax/markdown/core/Opener {
-	public final fun component1 ()Lcom/nouprax/markdown/core/NodeKind;
-	public final fun component2 ()Lcom/nouprax/markdown/core/Scope;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getKind ()Lcom/nouprax/markdown/core/NodeKind;
-	public final fun getScope ()Lcom/nouprax/markdown/core/Scope;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public abstract interface class com/nouprax/markdown/core/OrderedListDelimiter {
 }
 
@@ -885,30 +860,6 @@ public final class com/nouprax/markdown/core/Scope {
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getEnd ()Lcom/nouprax/markdown/core/Position;
 	public final fun getStart ()Lcom/nouprax/markdown/core/Position;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/Slot {
-	public static final field Companion Lcom/nouprax/markdown/core/Slot$Companion;
-	public final fun getAfter ()Lcom/nouprax/markdown/core/Scope;
-	public final fun getBefore ()Lcom/nouprax/markdown/core/Scope;
-	public final fun getClosed ()Z
-	public final fun getKind ()Lcom/nouprax/markdown/core/SlotKind;
-	public final fun getOwner ()Lcom/nouprax/markdown/core/NodeKind;
-	public final fun getPrefix ()Ljava/util/List;
-}
-
-public final class com/nouprax/markdown/core/Slot$Companion {
-	public final fun getCues ()Ljava/util/List;
-}
-
-public final class com/nouprax/markdown/core/Slot$Insertion {
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component2 ()I
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getCursor ()I
-	public final fun getText ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1067,107 +1018,5 @@ public final class com/nouprax/markdown/core/Topic : com/nouprax/markdown/core/M
 	public fun getId-cjMMCNQ ()J
 	public final fun getName ()Ljava/lang/String;
 	public fun getRuns ()Ljava/util/List;
-}
-
-public final class com/nouprax/markdown/core/lsp/Capabilities {
-	public fun <init> (Lcom/nouprax/markdown/core/TextUnit;Ljava/lang/String;)V
-	public final fun component1 ()Lcom/nouprax/markdown/core/TextUnit;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun copy (Lcom/nouprax/markdown/core/TextUnit;Ljava/lang/String;)Lcom/nouprax/markdown/core/lsp/Capabilities;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/lsp/Capabilities;Lcom/nouprax/markdown/core/TextUnit;Ljava/lang/String;ILjava/lang/Object;)Lcom/nouprax/markdown/core/lsp/Capabilities;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getCues ()Ljava/lang/String;
-	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/lsp/Completions {
-	public fun <init> (II)V
-	public final fun component1 ()I
-	public final fun component2 ()I
-	public final fun copy (II)Lcom/nouprax/markdown/core/lsp/Completions;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/lsp/Completions;IIILjava/lang/Object;)Lcom/nouprax/markdown/core/lsp/Completions;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getCount ()I
-	public final fun getVersion ()I
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/lsp/Edit {
-	public fun <init> (Lcom/nouprax/markdown/core/lsp/Scope;Ljava/lang/String;)V
-	public final fun component1 ()Lcom/nouprax/markdown/core/lsp/Scope;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun copy (Lcom/nouprax/markdown/core/lsp/Scope;Ljava/lang/String;)Lcom/nouprax/markdown/core/lsp/Edit;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/lsp/Edit;Lcom/nouprax/markdown/core/lsp/Scope;Ljava/lang/String;ILjava/lang/Object;)Lcom/nouprax/markdown/core/lsp/Edit;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getScope ()Lcom/nouprax/markdown/core/lsp/Scope;
-	public final fun getText ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/lsp/Phase : java/lang/Enum {
-	public static final field ACTIVE Lcom/nouprax/markdown/core/lsp/Phase;
-	public static final field FRESH Lcom/nouprax/markdown/core/lsp/Phase;
-	public static final field HALTED Lcom/nouprax/markdown/core/lsp/Phase;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/lsp/Phase;
-	public static fun values ()[Lcom/nouprax/markdown/core/lsp/Phase;
-}
-
-public final class com/nouprax/markdown/core/lsp/Position {
-	public fun <init> (II)V
-	public final fun component1 ()I
-	public final fun component2 ()I
-	public final fun copy (II)Lcom/nouprax/markdown/core/lsp/Position;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/lsp/Position;IIILjava/lang/Object;)Lcom/nouprax/markdown/core/lsp/Position;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getCharacter ()I
-	public final fun getLine ()I
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/lsp/Scope {
-	public fun <init> (Lcom/nouprax/markdown/core/lsp/Position;Lcom/nouprax/markdown/core/lsp/Position;)V
-	public final fun component1 ()Lcom/nouprax/markdown/core/lsp/Position;
-	public final fun component2 ()Lcom/nouprax/markdown/core/lsp/Position;
-	public final fun copy (Lcom/nouprax/markdown/core/lsp/Position;Lcom/nouprax/markdown/core/lsp/Position;)Lcom/nouprax/markdown/core/lsp/Scope;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/lsp/Scope;Lcom/nouprax/markdown/core/lsp/Position;Lcom/nouprax/markdown/core/lsp/Position;ILjava/lang/Object;)Lcom/nouprax/markdown/core/lsp/Scope;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getEnd ()Lcom/nouprax/markdown/core/lsp/Position;
-	public final fun getStart ()Lcom/nouprax/markdown/core/lsp/Position;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/lsp/Server : java/lang/AutoCloseable {
-	public fun <init> ()V
-	public fun close ()V
-	public final fun close (Ljava/lang/String;)V
-	public final fun complete (Ljava/lang/String;Lcom/nouprax/markdown/core/lsp/Position;)Lcom/nouprax/markdown/core/lsp/Completions;
-	public final fun getPhase ()Lcom/nouprax/markdown/core/lsp/Phase;
-	public final fun initialize (Ljava/util/List;)Lcom/nouprax/markdown/core/lsp/Capabilities;
-	public final fun open (Ljava/lang/String;ILjava/lang/String;)V
-	public final fun shutdown ()V
-	public final fun update (Ljava/lang/String;ILjava/util/List;)V
-}
-
-public final class com/nouprax/markdown/core/lsp/ServerException : java/lang/RuntimeException {
-	public fun <init> (Lcom/nouprax/markdown/core/lsp/ServerException$Code;)V
-	public final fun getCode ()Lcom/nouprax/markdown/core/lsp/ServerException$Code;
-}
-
-public final class com/nouprax/markdown/core/lsp/ServerException$Code : java/lang/Enum {
-	public static final field INTERNAL_ERROR Lcom/nouprax/markdown/core/lsp/ServerException$Code;
-	public static final field INVALID_PARAMS Lcom/nouprax/markdown/core/lsp/ServerException$Code;
-	public static final field INVALID_REQUEST Lcom/nouprax/markdown/core/lsp/ServerException$Code;
-	public static final field NOT_INITIALIZED Lcom/nouprax/markdown/core/lsp/ServerException$Code;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public final fun getValue ()I
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/lsp/ServerException$Code;
-	public static fun values ()[Lcom/nouprax/markdown/core/lsp/ServerException$Code;
 }
 

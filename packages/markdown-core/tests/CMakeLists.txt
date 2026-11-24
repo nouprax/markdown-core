@@ -1,7 +1,7 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec elements regression pathological fuzz packaging lsp
+#   api facade consumer spec elements regression pathological fuzz packaging
 #
 # The default correctness preset excludes conformance. Performance measurement
 # is not in this graph at all: the stage benchmark lives in ../benchmarks and
@@ -100,9 +100,6 @@ function(markdown_core_add_runner name)
 endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
-markdown_core_add_runner(context_runner runners/context_runner.c)
-markdown_core_add_runner(queries_runner runners/queries_runner.c)
-markdown_core_add_runner(oracle_runner runners/oracle_runner.c runners/samples.c)
 markdown_core_add_runner(field_runner runners/field_runner.c runners/samples.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 
@@ -151,11 +148,6 @@ endif()
 add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
-
-# The language engine and its JSON-RPC adapter, which link the static parser
-# as the engine does, so the runner takes nothing from the test support.
-add_executable(lsp_runner runners/lsp_runner.c)
-target_link_libraries(lsp_runner libmarkdown-core-adapter)
 
 # The MCB2 encoder the ES and Kotlin bindings decode, over the same corpus.
 add_executable(wire_test wire.c)
@@ -344,91 +336,19 @@ markdown_core_add_test(elements_formula_conflicts elements 120 spec_runner --spe
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-formula-conflicts.txt")
 markdown_core_add_test(elements_directive elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-directive.txt")
-# elements: the context query at each example's cursor (completion plan 3.1).
-# Its fixture lives apart from the spec fixtures: its examples render the
-# context, not the document.
-set(MARKDOWN_CORE_CONTEXT_FIXTURE "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/context.txt")
-markdown_core_add_test(elements_context elements 120 context_runner --spec "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
-# elements: the context query at every position of every example.
-file(GLOB _markdown_core_context_sweep CONFIGURE_DEPENDS "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/*.txt")
-markdown_core_add_test(
-    elements_context_sweep
-    elements
-    600
-    context_runner
-    --sweep
-    "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
-    ${_markdown_core_context_sweep})
-# elements: the corpus every binding renders its queries against
-# (specs/context), current with the C queries over the context fixture.
-markdown_core_add_test(
-    elements_queries
-    elements
-    120
-    queries_runner
-    --check
-    "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
-    "${CMAKE_SOURCE_DIR}/specs/context/queries.json")
-# elements: the context's slots against the document the whole text parses
-# to, at every position of every example and of the generated nestings; the
-# exceptions name what the oracle cannot judge, each with its reason.
-markdown_core_add_test(
-    elements_context_oracle
-    elements
-    900
-    oracle_runner
-    --exceptions
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/oracle-exceptions.txt"
-    --generate
-    ${_markdown_core_context_sweep}
-    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: every example's fixtures, which the field oracle also reads.
+file(GLOB _markdown_core_field_sweep CONFIGURE_DEPENDS "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/*.txt")
 # elements: each node's fields and markers against the parse, at every node
-# of every example and of the generated nestings (completion plan 3.3,
-# step 2d); the exceptions name what the oracle cannot judge.
+# of every example and of the generated nestings; the exceptions name what the oracle cannot judge.
 markdown_core_add_test(
     elements_fields
     elements
     600
     field_runner
     --exceptions
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/field-exceptions.txt"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fields/exceptions.txt"
     --generate
-    ${_markdown_core_context_sweep}
-    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
-# elements: each slot's spelling of a set of values, applied and parsed,
-# against the sentinel's: the value lands in the sentinel's field, whole,
-# and nothing else changes; a value the slot refuses is one its grammar
-# cannot hold there (completion plan 3.1, step 2c).
-markdown_core_add_test(
-    elements_context_spell
-    elements
-    1800
-    oracle_runner
-    --spell
-    --generate
-    ${_markdown_core_context_sweep}
-    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
-# lsp: the language engine (completion plan, section 8): the protocol
-# transcripts through the JSON-RPC adapter, the JSON reader, the base framing, the
-# synchronization oracle, and the server executable on its own stdio.
-file(GLOB _markdown_core_lsp_transcripts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/specs/lsp/transcripts/*.json")
-markdown_core_add_test(lsp_transcripts lsp 120 lsp_runner --transcripts ${_markdown_core_lsp_transcripts})
-markdown_core_add_test(lsp_json lsp 60 lsp_runner --json)
-markdown_core_add_test(lsp_frames lsp 60 lsp_runner --frames)
-markdown_core_add_test(lsp_sync lsp 300 lsp_runner --sync)
-foreach(_markdown_core_serve_case shutdown eof broken)
-    markdown_core_add_test(
-        lsp_serve_${_markdown_core_serve_case}
-        lsp
-        60
-        ${CMAKE_COMMAND}
-        -DSERVER=$<TARGET_FILE:markdown-core-server>
-        -DRUNNER=$<TARGET_FILE:lsp_runner>
-        -DCASE=${_markdown_core_serve_case}
-        -DWORK=${CMAKE_CURRENT_BINARY_DIR}
-        -P
-        "${CMAKE_CURRENT_SOURCE_DIR}/lsp/serve.cmake")
-endforeach()
+    ${_markdown_core_field_sweep})
 # elements: the YAML parser's events for the frozen readings of the libyaml
 # rework it replaced, and its nesting and name limits.
 if(MARKDOWN_CORE_STATIC)

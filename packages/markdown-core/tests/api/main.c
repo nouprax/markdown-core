@@ -10487,9 +10487,8 @@ static void session_edits_uses(test_batch_runner *runner) {
 /* A block identifier after a nested list names the list from where the
  * list starts, past its line's indentation: no edit of the identifier's
  * line reads from the list's first item, which would keep the name the
- * list had, and no locate there does either (session.c, session_rest_in).
- * A locate at any place leaves the session as it was: every edit after it
- * reads as a parse does. */
+ * list had (session.c, session_rest_in). An empty edit at any place reads
+ * as a parse does. */
 static void session_edits_nested_identifier(test_batch_runner *runner) {
     static const char source[] = "- outer\n  - inner\n\n  #inner#\n\n  rest\n";
     static const char *const typed[] = {"", "x"};
@@ -10500,7 +10499,6 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         bool edited = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
                                                 &session) == MARKDOWN_CORE_OK &&
                       markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-                      markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK &&
                       markdown_core_session_edit(session, at, at, (const uint8_t *)typed[t], strlen(typed[t]),
                                                  &document) == MARKDOWN_CORE_OK;
         OK(runner, edited && session_as_parsed(session), "typing \"%s\" after the identifier reads as a parse does",
@@ -10563,181 +10561,16 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
     for (uint32_t line = 1; same && line <= 6; line++) {
         for (uint32_t column = 1; same && column <= 10; column++) {
             const markdown_core_position at = {line, column};
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            if (located == MARKDOWN_CORE_OUT_OF_BOUNDS) {
+            const markdown_core_status edited =
+                markdown_core_session_edit(session, at, at, (const uint8_t *)"", 0, &document);
+            if (edited == MARKDOWN_CORE_OUT_OF_BOUNDS) {
                 continue;
             }
-            same = located == MARKDOWN_CORE_OK &&
-                   markdown_core_session_edit(session, at, at, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
-                   session_as_parsed(session);
+            same = edited == MARKDOWN_CORE_OK && session_as_parsed(session);
         }
     }
-    OK(runner, same, "an edit after a locate anywhere reads as a parse does");
+    OK(runner, same, "an empty edit anywhere reads as a parse does");
     markdown_core_session_close(session);
-}
-
-/* Whether the session's context at its cursor is the document query's at
- * `at` of a fresh parse of its text. */
-static bool session_as_queried(markdown_core_session *session, markdown_core_position at) {
-    const size_t size = markdown_core_session_text_size(session);
-    uint8_t *text = malloc(size + 1);
-    if (!text) {
-        return false;
-    }
-    markdown_core_session_text(session, text);
-    markdown_core_document *fresh = facade_parse(text, size);
-    markdown_core_context *queried = NULL;
-    const markdown_core_context *located = markdown_core_session_context(session);
-    bool same = fresh && markdown_core_document_context(fresh, text, size, at, &queried) == MARKDOWN_CORE_OK &&
-                markdown_core_context_block_count(queried) == markdown_core_context_block_count(located) &&
-                markdown_core_context_inline_count(queried) == markdown_core_context_inline_count(located) &&
-                markdown_core_context_slot_count(queried) == markdown_core_context_slot_count(located);
-    for (size_t i = 0; same && i < markdown_core_context_block_count(queried); i++) {
-        markdown_core_opener left, right;
-        same = markdown_core_context_block_at(queried, i, &left) == MARKDOWN_CORE_OK &&
-               markdown_core_context_block_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
-               !memcmp(&left.scope, &right.scope, sizeof(left.scope));
-    }
-    for (size_t i = 0; same && i < markdown_core_context_inline_count(queried); i++) {
-        markdown_core_opener left, right;
-        same = markdown_core_context_inline_at(queried, i, &left) == MARKDOWN_CORE_OK &&
-               markdown_core_context_inline_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
-               !memcmp(&left.scope, &right.scope, sizeof(left.scope));
-    }
-    for (size_t i = 0; same && i < markdown_core_context_slot_count(queried); i++) {
-        markdown_core_slot left, right;
-        same = markdown_core_context_slot_at(queried, i, &left) == MARKDOWN_CORE_OK &&
-               markdown_core_context_slot_at(located, i, &right) == MARKDOWN_CORE_OK && left.kind == right.kind &&
-               left.owner == right.owner && !memcmp(&left.before, &right.before, sizeof(left.before)) &&
-               !memcmp(&left.after, &right.after, sizeof(left.after)) && left.closed == right.closed;
-    }
-    markdown_core_context_free(queried);
-    if (fresh) {
-        markdown_core_document_free(fresh);
-    }
-    free(text);
-    return same;
-}
-
-/* A table's head row and its content rows are two relations of its
- * children, the content going on from where the head ends: a locate in a
- * content row reads a window of the table's rows that starts past the
- * head, which measures its first row from where the window says it starts
- * (ast.c, markdown_core_walk_next). At every place of the text, the
- * session's context is the document query's, the code span a row leaves
- * open among it. */
-static void session_locates_table_rows(test_batch_runner *runner) {
-    static const char source[] = "e||\n-|-\n/\n`\nle\"\n| [r] | x |\n\n[r]: /u\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                          &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    markdown_core_position at = {1, 1};
-    for (const char *c = source; same && *c; c++) {
-        const markdown_core_status located = markdown_core_session_locate(session, at);
-        same = located == MARKDOWN_CORE_OK && session_as_queried(session, at);
-        if (*c == '\n') {
-            at = (markdown_core_position){at.line + 1, 1};
-        } else {
-            at.column++;
-        }
-    }
-    OK(runner, same, "a locate in a table's content rows is the document query, at %d:%d", at.line, at.column);
-    markdown_core_session_close(session);
-}
-
-/* An opener the text leaves open notes no reach (blocks.c, AN OPENER READ
- * TO THE END), and the text before a cursor may end in a stop line of it
- * that the whole line is not: `%%` and a tab before `x`, or `---` before
- * `-`. At every place of each text, the session's context is the document
- * query's. */
-static void session_locates_unclosed_openers(test_batch_runner *runner) {
-    static const char *const sources[] = {
-        "%%\n\na\n\nb\n\nc\n\n%%\tx\n",
-        "---\n\na\n\nb\n\nc\n\n----\n",
-        "lead\n\n%%\n\na\n\n- b\n\n  %% x\n\n> %%\n",
-    };
-    bool same = true;
-    markdown_core_position at = {1, 1};
-    size_t which = 0;
-    for (size_t i = 0; same && i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[which = i];
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                         &session) == MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-        at = (markdown_core_position){1, 1};
-        for (const char *c = source; same && *c; c++) {
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            same = located == MARKDOWN_CORE_OK && session_as_queried(session, at);
-            if (*c == '\n') {
-                at = (markdown_core_position){at.line + 1, 1};
-            } else {
-                at.column++;
-            }
-        }
-        markdown_core_session_close(session);
-    }
-    OK(runner, same, "a locate after an unclosed opener is the document query, text %zu at %d:%d", which, at.line,
-       at.column);
-}
-
-/* An edit under an unclosed opener whose look for its closer read the
- * lines to the text's end in leaps no old line of the leaf it reopened:
- * the lines read in are the new text's, and a locate after the edit at
- * each place of the text is the document query (THE LEAP). */
-static void session_locates_after_looked_edit(test_batch_runner *runner) {
-    static const char source[] = "a\n%%\nb\ny\nm\n|\n- b\n\n";
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document = NULL;
-    bool same = markdown_core_session_new((const uint8_t *)source, strlen(source), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                          &session) == MARKDOWN_CORE_OK &&
-                markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
-                markdown_core_session_edit(session, (markdown_core_position){3, 1}, (markdown_core_position){4, 1},
-                                           (const uint8_t *)"|", 1, &document) == MARKDOWN_CORE_OK;
-    markdown_core_position at = {1, 1};
-    for (const char *c = "a\n%%\n|y\nm\n|\n- b\n\n"; same && *c; c++) {
-        same = markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK && session_as_queried(session, at);
-        if (*c == '\n') {
-            at = (markdown_core_position){at.line + 1, 1};
-        } else {
-            at.column++;
-        }
-    }
-    markdown_core_session_close(session);
-    OK(runner, same, "a locate after an edit under an unclosed opener is the document query, at %d:%d", at.line,
-       at.column);
-}
-
-/* A heading the stream read before the definition its link names is read
- * again once the definition is known (blocks.c, A LOOKUP THAT FOUND
- * NOTHING): the candidate keeps the fields its attribute tail wrote, so a
- * locate at each place of the flushed text is the document query. */
-static void session_locates_in_completed_heading(test_batch_runner *runner) {
-    static const char *const sources[] = {"# [a] {#i}\n\n[a]: /url\n", "[a]{k=1}\n- \n[a]: /url\n"};
-    bool same = true;
-    markdown_core_position at = {1, 1};
-    for (size_t i = 0; same && i < sizeof(sources) / sizeof(sources[0]); i++) {
-        markdown_core_session *session = NULL;
-        const markdown_core_document *document = NULL;
-        same = markdown_core_session_new((const uint8_t *)sources[i], strlen(sources[i]), MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                         &session) == MARKDOWN_CORE_OK &&
-               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-        at = (markdown_core_position){1, 1};
-        for (const char *c = sources[i]; same && *c; c++) {
-            same = markdown_core_session_locate(session, at) == MARKDOWN_CORE_OK && session_as_queried(session, at);
-            if (*c == '\n') {
-                at = (markdown_core_position){at.line + 1, 1};
-            } else {
-                at.column++;
-            }
-        }
-        markdown_core_session_close(session);
-    }
-    OK(runner, same, "a locate in a heading read again for its definition is the document query, at %d:%d", at.line,
-       at.column);
 }
 
 /* A nested opener a candidate rejected as the text ended read the end: a
@@ -10814,17 +10647,6 @@ static void session_edits_wide_list(test_batch_runner *runner) {
         !text.oom &&
         markdown_core_session_new(text.ptr, text.size, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
         markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
-    static const uint32_t lines[] = {2, 40, 42, 64, 65, 66, 105, 106, 107, 129, 130, 131, 170, 182, 200, 211, 250, 288};
-    static const uint32_t columns[] = {3, 9, 20, 26};
-    for (size_t l = 0; same && l < sizeof(lines) / sizeof(lines[0]); l++) {
-        for (size_t c = 0; same && c < sizeof(columns) / sizeof(columns[0]); c++) {
-            const markdown_core_position at = {lines[l], columns[c]};
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            same = located == MARKDOWN_CORE_OUT_OF_BOUNDS ||
-                   (located == MARKDOWN_CORE_OK && session_as_queried(session, at));
-        }
-    }
-    OK(runner, same, "a locate in a long list is the document query");
     typedef struct {
         markdown_core_position from, to;
         const char *text;
@@ -10838,14 +10660,7 @@ static void session_edits_wide_list(test_batch_runner *runner) {
     };
     for (size_t e = 0; same && e < sizeof(edits) / sizeof(edits[0]); e++) {
         const list_edit *edit = &edits[e];
-        for (size_t l = 0; same && l < sizeof(lines) / sizeof(lines[0]); l += 3) {
-            const markdown_core_position at = {lines[l], 9};
-            const markdown_core_status located = markdown_core_session_locate(session, at);
-            same = located == MARKDOWN_CORE_OUT_OF_BOUNDS ||
-                   (located == MARKDOWN_CORE_OK && session_as_queried(session, at));
-        }
-        same = same && markdown_core_session_locate(session, edit->from) == MARKDOWN_CORE_OK &&
-               markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
+        same = markdown_core_session_edit(session, edit->from, edit->to, (const uint8_t *)edit->text,
                                           strlen(edit->text), &document) == MARKDOWN_CORE_OK &&
                session_as_parsed(session);
         OK(runner, same, "edit %zu of a long list reads as a parse does", e);
@@ -13023,10 +12838,6 @@ int main(void) {
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
-    session_locates_table_rows(runner);
-    session_locates_unclosed_openers(runner);
-    session_locates_after_looked_edit(runner);
-    session_locates_in_completed_heading(runner);
     session_edits_after_nested_opener(runner);
     session_edits_keep_term_look(runner);
     session_edits_wide_list(runner);

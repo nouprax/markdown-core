@@ -72,31 +72,7 @@ static const markdown_core_inline_ops ENTITIES_INLINES = {
 };
 
 static const markdown_core_decoder ENTITIES_DECODER = {.read = S_read, .decode = S_decode};
-/* An `&` a spelling writes that would begin what reads as a character
- * reference, `&`, a `#` or not, letters and numerals and a `;`: written as
- * a reference to itself, `&amp;`. */
-static size_t S_guard(uint8_t *out, const uint8_t *value, size_t size, size_t at) {
-    if (value[at] != '&') {
-        return 0;
-    }
-    size_t i = at + 1;
-    i += i < size && value[i] == '#';
-    const size_t first = i;
-    while (i < size &&
-           ((value[i] >= '0' && value[i] <= '9') || ((value[i] | 0x20) >= 'a' && (value[i] | 0x20) <= 'z'))) {
-        i++;
-    }
-    if (!(i > first && i < size && value[i] == ';')) {
-        return 0;
-    }
-    memcpy(out, "&amp;", 5);
-    return 5;
-}
-
-static const markdown_core_reference_writing ENTITIES_WRITING = {.guard = S_guard};
-static const markdown_core_service ENTITIES_SERVICES[] = {{MARKDOWN_CORE_SERVICE_REFERENCES, &ENTITIES_DECODER},
-                                                          {MARKDOWN_CORE_SERVICE_REFERENCE_WRITING, &ENTITIES_WRITING},
-                                                          {0}};
+static const markdown_core_service ENTITIES_SERVICES[] = {{MARKDOWN_CORE_SERVICE_REFERENCES, &ENTITIES_DECODER}, {0}};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ENTITIES = {
     .name = "entities",

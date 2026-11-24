@@ -1538,70 +1538,6 @@ static void check_reread(run *state, const char *where, size_t step, void *subje
     }
 }
 
-/* How many slot cues each edit checks spread over the text, besides those
- * in the bytes it wrote. */
-#define CUE_SAMPLE 4
-#define CUE_WRITTEN 8
-
-/* Whether a cursor may stand after byte `at` of `model`, a slot cue: not
- * between the CR and the LF of a CRLF, nor before a continuation byte, where
- * no position stands. */
-static bool cue_after(const ih_text *model, markdown_core_string cues, size_t at) {
-    return memchr(cues.data, model->bytes[at], cues.length) &&
-           !(model->bytes[at] == '\r' && at + 1 < model->length && model->bytes[at + 1] == '\n') &&
-           ih_utf8_boundary(model->bytes, model->length, at + 1);
-}
-
-/* 4.1 at the slot cues: after an edit, the subject's context after a cue
- * is the context of the document parsed from its whole text, at the cues in
- * the bytes it wrote, up to CUE_WRITTEN of them, and at CUE_SAMPLE more
- * spread over the text. */
-static void check_cues(run *state, const char *where, size_t step, ih_unit unit, void *subject, const ih_text *model,
-                       const ih_step *edit) {
-    const markdown_core_string cues = markdown_core_slot_cues();
-    markdown_core_document *fresh = NULL;
-    size_t count = 0, written = 0, seen = 0;
-    if (!state->subject->locate || !model->length) {
-        return;
-    }
-    for (size_t at = 0; at < model->length; at++) {
-        count += cue_after(model, cues, at);
-    }
-    if (!count) {
-        return;
-    }
-    if (markdown_core_document_parse_in(model->bytes, model->length, unit_of(unit), &fresh) != MARKDOWN_CORE_OK) {
-        fail(state, "harness", "%s step %zu: the fresh parse failed", where, step);
-        return;
-    }
-    const size_t stride = count / CUE_SAMPLE + 1, end = edit->start + edit->length;
-    for (size_t at = 0; at < model->length && !stopped(state); at++) {
-        if (!cue_after(model, cues, at)) {
-            continue;
-        }
-        const bool inside = at >= edit->start && at < end && written < CUE_WRITTEN;
-        const bool picked = seen++ % stride == step % stride;
-        if (!inside && !picked) {
-            continue;
-        }
-        written += inside;
-        markdown_core_position position;
-        const markdown_core_context *mine = NULL;
-        markdown_core_context *theirs = NULL;
-        markdown_core_status status = state->subject->locate(subject, at + 1, &position, &mine);
-        if (status != MARKDOWN_CORE_OK || !mine ||
-            markdown_core_document_context(fresh, model->bytes, model->length, position, &theirs) != MARKDOWN_CORE_OK) {
-            fail(state, status == MARKDOWN_CORE_ALLOCATION_FAILED ? "harness" : "4.1",
-                 "%s step %zu: the context at %d:%d failed", where, step, position.line, position.column);
-        } else if (!ts_same_context(mine, theirs)) {
-            fail(state, "4.1", "%s step %zu: the context at %d:%d differs from the expected document's", where, step,
-                 position.line, position.column);
-        }
-        markdown_core_context_free(theirs);
-    }
-    markdown_core_document_free(fresh);
-}
-
 /* A position of the text model in `unit`. */
 static size_t position_in(const ih_text *model, ih_unit unit, size_t offset) {
     return unit == IH_UTF16 ? ih_utf16_units(model->bytes, offset) : offset;
@@ -1692,9 +1628,6 @@ static bool check_edit(run *state, const char *where, size_t step, ih_unit unit,
     *previous = after;
     if (!stopped(state)) {
         check_reread(state, where, step, subject, entry, model);
-    }
-    if (!stopped(state)) {
-        check_cues(state, where, step, unit, subject, model, entry);
     }
     free(joined);
     return true;

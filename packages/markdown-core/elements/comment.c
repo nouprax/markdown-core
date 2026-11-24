@@ -324,20 +324,7 @@ static markdown_core_node *S_make_html(const markdown_core_element_instance *sel
 static const markdown_core_make_ops COMMENT_HTML = {.make = S_make_html};
 static const markdown_core_service COMMENT_SERVICES[] = {{MARKDOWN_CORE_SERVICE_HTML_COMMENTS, &COMMENT_HTML}, {0}};
 
-/* A field that keeps its bytes, or escapes them, holds no comment's `%%`, which the text around it may pair with. */
-static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    const markdown_core_spelling *spelled, bool *kept) {
-    (void)site;
-    *kept = spelled->tokens == MARKDOWN_CORE_TOKENS_FREE || !markdown_core_write_holds(value, size, "%%");
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_write_ops COMMENT_WRITES = {
-    .keeps = S_keeps,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
-    .writes = &COMMENT_WRITES,
     .provides = COMMENT_SERVICES,
     .facets = MARKDOWN_CORE_COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),

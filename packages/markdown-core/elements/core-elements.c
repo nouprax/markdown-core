@@ -74,57 +74,6 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     return CORE_ELEMENTS;
 }
 
-/* The bytes after which a slot of the dialect may begin empty
- * (markdown_core_slot_cues), each a byte its writers' syntax puts before a
- * slot. The context oracle finds each of them, and no other, before a slot
- * that begins at the cursor. */
-static const char CUES[] = "\t\n\r !\"#'(,.:;<=@[^`{~";
-
-markdown_core_string markdown_core_slot_cues(void) {
-    return (markdown_core_string){(const uint8_t *)CUES, sizeof(CUES) - 1};
-}
-
-/* THE WRITERS (write.h): a writing service is the last element's of the
- * dialect that provides it; a slot's writer the element whose `writes`
- * name the slot's kind and its owner, else one that names its kind and no
- * owners. */
-const void *markdown_core_write_service(const char *name) {
-    const void *found = NULL;
-    for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
-        for (const markdown_core_service *at = CORE_ELEMENTS[i]->provides; at && at->name; at++) {
-            if (!strcmp(at->name, name)) {
-                found = at->ops;
-            }
-        }
-    }
-    return found;
-}
-
-const markdown_core_write_ops *markdown_core_writes(size_t index, bool *more) {
-    *more = index < CORE_ELEMENT_COUNT;
-    return *more ? CORE_ELEMENTS[index]->writes : NULL;
-}
-
-const markdown_core_write_ops *markdown_core_writer(markdown_core_slot_kind slot, markdown_core_node_kind owner) {
-    const markdown_core_write_ops *any = NULL;
-    for (size_t i = 0; i < CORE_ELEMENT_COUNT; i++) {
-        const markdown_core_write_ops *ops = CORE_ELEMENTS[i]->writes;
-        if (!ops || !(ops->slots & MARKDOWN_CORE_SLOT_BIT(slot))) {
-            continue;
-        }
-        if (!ops->owners) {
-            any = ops;
-            continue;
-        }
-        for (const markdown_core_node_kind *at = ops->owners; *at != MARKDOWN_CORE_KIND_NONE; at++) {
-            if (*at == owner) {
-                return ops;
-            }
-        }
-    }
-    return any;
-}
-
 /* The facets each element of the core dialect declares (element.h,
  * `facets`), which the table below reads by kind. */
 extern const markdown_core_facet MARKDOWN_CORE_ATTRIBUTES_FACETS[];

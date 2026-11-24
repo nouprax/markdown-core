@@ -194,83 +194,13 @@ static bool S_words(const markdown_core_node *node, const markdown_core_words *w
            (!cross->anchor.has_value || words->text(words->context, cross->anchor.value.data, cross->anchor.value.len));
 }
 
-/* An anchor after `#^` is a block identifier: ASCII letters, digits and
- * hyphens. Other fields stop only at a bracket, a separator or a line. */
-static bufsize_t S_field_end(uint8_t before, const unsigned char *data, bufsize_t length) {
-    if (before != '^') {
-        return -1;
-    }
-    bufsize_t end = 0;
-    while (end < length && ((data[end] >= 'a' && data[end] <= 'z') || (data[end] >= 'A' && data[end] <= 'Z') ||
-                            (data[end] >= '0' && data[end] <= '9') || data[end] == '-')) {
-        end++;
-    }
-    return end;
-}
-
 const markdown_core_facet MARKDOWN_CORE_CROSS_LINK_FACETS[] = {
     {.kind = MARKDOWN_CORE_KIND_CROSS_LINK, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_CROSS_EMBEDDED, .words = S_words},
     {.kind = MARKDOWN_CORE_KIND_NONE},
 };
 
-/* WRITING (write.h): a cross target keeps its bytes, and a cross link's
- * part on the line ends at a `|`. */
-
-static markdown_core_slot_kind S_prefix(markdown_core_slot_kind slot) {
-    return slot == MARKDOWN_CORE_SLOT_ANCHOR ? MARKDOWN_CORE_SLOT_DEST : MARKDOWN_CORE_SLOT_NONE;
-}
-
-/* What ends a part, a bracket or a line ending it cannot hold, and a final
- * backslash would escape the separator after it. A path holds no `#`; a
- * heading's parts are not empty, and a leading `^` marks a block's
- * identifier, which the anchor drops. */
-static markdown_core_status S_spell(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    markdown_core_spelling *out, bool *held) {
-    out->tokens = MARKDOWN_CORE_TOKENS_RAW;
-    out->closer = site->closed ? "" : "]]";
-    *held = size > 0 && value[size - 1] != '\\' && markdown_core_write_plain(out, value, size, "|[]", site->row);
-    if (site->kind == MARKDOWN_CORE_SLOT_DEST) {
-        *held = *held && !memchr(value, '#', size);
-        return MARKDOWN_CORE_OK;
-    }
-    *held = *held && value[0] != '#' && value[size - 1] != '#' && value[0] != '^';
-    for (size_t i = 0; *held && i + 1 < size; i++) {
-        *held = !(value[i] == '#' && value[i + 1] == '#');
-    }
-    return *held ? markdown_core_write_reads(site, out, S_field_end, held) : MARKDOWN_CORE_OK;
-}
-
-/* Whether the spelling holds no `|` where the line opens a cross link
- * before the slot, whose part it would end. */
-static markdown_core_status S_keeps(const markdown_core_site *site, const uint8_t *value, size_t size,
-                                    const markdown_core_spelling *spelled, bool *kept) {
-    (void)value;
-    (void)size;
-    size_t cross = 0;
-    for (size_t i = 0; i + 1 < site->start && i + 1 < site->size; i++) {
-        if (site->line[i] == site->line[i + 1] && (site->line[i] == '[' || site->line[i] == ']')) {
-            cross = site->line[i] == '[' ? cross + 1 : cross ? cross - 1 : 0;
-            i++;
-        }
-    }
-    *kept = !cross || !memchr(spelled->text, '|', spelled->size);
-    return MARKDOWN_CORE_OK;
-}
-
-static const markdown_core_node_kind CROSS_LINK_OWNERS[] = {MARKDOWN_CORE_KIND_CROSS_LINK,
-                                                            MARKDOWN_CORE_KIND_CROSS_EMBEDDED, MARKDOWN_CORE_KIND_NONE};
-
-static const markdown_core_write_ops CROSS_LINK_WRITES = {
-    .slots = MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_DEST) | MARKDOWN_CORE_SLOT_BIT(MARKDOWN_CORE_SLOT_ANCHOR),
-    .owners = CROSS_LINK_OWNERS,
-    .prefix = S_prefix,
-    .spell = S_spell,
-    .keeps = S_keeps,
-};
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
-    .writes = &CROSS_LINK_WRITES,
     .needs = CROSS_LINK_NEEDS,
     .facets = MARKDOWN_CORE_CROSS_LINK_FACETS,
     .name = "cross_link",

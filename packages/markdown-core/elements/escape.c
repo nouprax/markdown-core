@@ -162,16 +162,7 @@ static const markdown_core_inline_ops ESCAPE_INLINES = {
 
 static const markdown_core_decoder ESCAPE_DECODER = {.strip = S_strip};
 
-/* A byte a spelling writes literal: a backslash before it. */
-static size_t S_guard(uint8_t *out, uint8_t c) {
-    out[0] = '\\';
-    out[1] = c;
-    return 2;
-}
-
-static const markdown_core_escape_writing ESCAPE_WRITING = {.guard = S_guard};
-static const markdown_core_service ESCAPE_SERVICES[] = {
-    {MARKDOWN_CORE_SERVICE_ESCAPES, &ESCAPE_DECODER}, {MARKDOWN_CORE_SERVICE_ESCAPE_WRITING, &ESCAPE_WRITING}, {0}};
+static const markdown_core_service ESCAPE_SERVICES[] = {{MARKDOWN_CORE_SERVICE_ESCAPES, &ESCAPE_DECODER}, {0}};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_ESCAPE = {
     .provides = ESCAPE_SERVICES,

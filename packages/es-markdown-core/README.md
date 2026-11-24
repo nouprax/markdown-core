@@ -218,68 +218,22 @@ session.edit({ line: 3, column: 6 }, { line: 3, column: 6 }, " line"); // "first
 session.dispose();
 ```
 
-A session also answers an editor's queries from the engine's parse of its
-text, which it holds, so no query parses the text again or takes the source.
-An editor holds one flushed session per open text and edits it as the text
-changes.
+A session also answers queries about its document from the engine's parse of
+its text, which it holds, so no query parses the text again or takes the
+source.
 
 ```js
 const session = new MarkdownSession("See [[Field notes]]\n");
 session.flush();
-session.locate({ line: 1, column: 12 });       // the session's cursor moves there
-const [slot] = session.context.slots;          // a "dest" of a "crossLink"
-session.spell(slot, "Old notes");              // { text: "Old notes", cursor: 9 }
 const link = session.path({ line: 1, column: 8 }).at(-1); // the cross link, under the root and paragraph
 session.scope(link, "dest");                   // [1:7..1:17]
 session.markers(link);                         // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
 session.dispose();
 ```
 
-The `context` is the session's state at its cursor: `locate` moves the cursor
-and updates it in place to the blocks and inline constructs the text before
-the cursor leaves open and the `Slot`s the cursor may be writing, and adding
-text, `flush()` or an edit clears it. `session.spell(slot, value)` writes a value in
-a slot of the current context in the slot's own syntax, with the closer an
-open construct needs, as an `Edit` whose caret counts columns in the
-session's unit; a slot of a context a later step replaced throws
-`outOfBounds`. Nothing is handed out to free: the context lives and goes with
-the session. `scope` takes
-a `SlotKind`, or null for the fields no slot kind names, and `scope` and
-`markers` take a node of the current document, or one an append left
-unchanged. `Metadata.fields` names the properties fields and `Slot.cues` the
-characters after which a slot may begin empty, an editor's completion
-triggers.
-
-## Language server
-
-The `@nouprax/es-markdown-core/lsp` entry point is the language engine, the
-semantics of the Language Server Protocol 3.17 over the parser, called in
-process: each method of `Server` is one protocol method, and answers as the
-C engine and the JSON-RPC adapter `markdown-core-server` do. Completion
-answers an empty list until the providers land.
-
-```js
-import { Server, ServerError } from "@nouprax/es-markdown-core/lsp";
-
-const server = new Server();
-const { unit, cues } = server.initialize(["utf16"]);   // the protocol's default
-server.open("file:///note.md", 1, "# Title\n\n[a](");
-const end = { line: 2, character: 4 };
-server.update("file:///note.md", 2, [{ scope: { start: end, end }, text: "/url)" }]);
-const { version, count } = server.complete("file:///note.md", end);   // version === 2
-server.close("file:///note.md");
-server.shutdown();
-server.dispose();
-```
-
-Positions count from 0 in the negotiated `unit`; an edit with no `scope`
-replaces the whole text. A method that fails throws `ServerError`, whose
-`code` is `"notInitialized"`, `"invalidRequest"`, `"invalidParams"` or
-`"internalError"` and whose `value` is the protocol's number. A version that
-is not an int32, or a line or character that is not a uint32, is
-`"invalidParams"`. An update checks every edit before the first applies, so
-a refused one leaves the document as it was. `dispose()` releases the
-server's WebAssembly state.
+`scope` takes a `SlotKind`, or null for the fields no slot kind names, and
+`scope` and `markers` take a node of the current document, or one an append
+left unchanged.
 
 ## Errors
 
