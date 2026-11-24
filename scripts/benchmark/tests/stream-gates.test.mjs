@@ -268,7 +268,7 @@ test("6.4 rejects a p95, maximum or total above 1.02 times the base", () => {
     );
 });
 
-test("length ratios divide each shape's session Ir per edit by its smallest size's, alphabets pooled", () => {
+test("length ratios divide each shape's median and first session Ir per edit by its smallest size's, alphabets pooled", () => {
     const script = (family, edits, session) => ({
         name: family,
         family,
@@ -288,8 +288,8 @@ test("length ratios divide each shape's session Ir per edit by its smallest size
             shape: "prose",
             family: "typing",
             sizes: [
-                { size: 16384, ir: 3, ratio: 1 },
-                { size: 262144, ir: 4.5, ratio: 1.5 }
+                { size: 16384, p50: 3, first: 3, ratio: 1, firstRatio: 1 },
+                { size: 262144, p50: 4.5, first: 4.5, ratio: 1.5, firstRatio: 1.5 }
             ]
         }
     ]);

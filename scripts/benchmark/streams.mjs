@@ -71,6 +71,7 @@ import {
     groupEdits,
     groupWindows,
     lengthRatios,
+    lengthTable,
     neverWorse,
     parseCost,
     REGRESSION_LIMIT,
@@ -316,12 +317,15 @@ const EDIT_COST = Object.freeze({
  */
 function measureEdits(profile, out, workload) {
     const most = workload.stepwise ? WINDOWS : EDIT_WINDOWS;
+    const subjects = workload.alone ? ["session"] : EDIT_SUBJECTS;
     const measured = Object.fromEntries(
-        EDIT_SUBJECTS.map((subject) => [subject, measureEditsOf(profile, out, workload, subject, most)])
+        subjects.map((subject) => [subject, measureEditsOf(profile, out, workload, subject, most)])
     );
-    const scripts = measured.reparse.map((script, index) => ({
+    /* A workload the session measures alone has no R windows. */
+    const scripts = measured.session.map((script, index) => ({
         ...script,
-        session: { windows: measured.session[index].windows }
+        windows: measured.reparse ? measured.reparse[index].windows : null,
+        session: { windows: script.windows }
     }));
     return { stepwise: workload.stepwise, scripts };
 }
@@ -536,8 +540,9 @@ export function markdownReport(report) {
         "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     );
-    for (const group of groupEdits(report.edits, (row, script) =>
-        JSON.stringify([row.source, script.family, row.size])
+    for (const group of groupEdits(
+        report.edits.filter((row) => row.scripts.every((script) => script.windows)),
+        (row, script) => JSON.stringify([row.source, script.family, row.size])
     )) {
         const [source, family, size] = JSON.parse(group.key);
         lines.push(
@@ -553,28 +558,14 @@ export function markdownReport(report) {
             ].join(" | ")} |`
         );
     }
-    const lengths = lengthRatios(report.edits);
-    const sizes = [...new Set(lengths.flatMap((row) => row.sizes.map((entry) => entry.size)))].sort((a, b) => a - b);
     lines.push(
         "",
         "## Length ratios",
         "",
-        `S's Ir per edit of each shape, every alphabet pooled, at each size, and each larger size's over the smallest's: \`typing\` and \`far\` edit the document, and \`tail\` opens on all of it but its last ${number(TAIL_BYTES)} bytes and appends them back in token chunks. A cost the document's length leaves as it is keeps its ratios near 1. No gate holds them.`,
+        `S's Ir per edit of each shape, every alphabet pooled, at each size, and each larger size's over the smallest's: the median edit, and each script's first, which meets what the session makes at its first edit. \`typing\` and \`far\` edit the document, and \`tail\` opens on all of it but its last ${number(TAIL_BYTES)} bytes and appends them back in token chunks. A cost the document's length leaves as it is keeps its ratios near 1. No gate holds them.`,
         "",
-        `| Shape | Family | ${[...sizes.map(number), ...sizes.slice(1).map((size) => `${number(size)} / ${number(sizes[0])}`)].join(" | ")} |`,
-        `| --- | --- | ${Array.from({ length: 2 * sizes.length - 1 }, () => "---:").join(" | ")} |`
+        ...lengthTable(lengthRatios(report.edits))
     );
-    for (const row of lengths) {
-        const at = (size) => row.sizes.find((entry) => entry.size === size);
-        lines.push(
-            `| ${[
-                row.shape,
-                row.family,
-                ...sizes.map((size) => (at(size) ? number(Math.round(at(size).ir)) : "")),
-                ...sizes.slice(1).map((size) => (at(size) ? `${at(size).ratio.toFixed(2)}×` : ""))
-            ].join(" | ")} |`
-        );
-    }
     lines.push(
         "",
         "## Bindings' C side",
@@ -698,6 +689,7 @@ async function measureSet(options) {
                 document: workload.document.path,
                 scripts: workload.path,
                 stepwise: workload.stepwise,
+                alone: Boolean(workload.alone),
                 expected: workload.scripts.map((script) => ({
                     name: script.name,
                     family: script.family,

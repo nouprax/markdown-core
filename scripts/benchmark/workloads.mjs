@@ -1854,8 +1854,9 @@ export function correctnessSet() {
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all. The
  * `lengths` set is the shapes' edit workloads alone, at the sizes of
- * `LENGTH_SIZES` the shape has, every size running `typing` and `far` in at
- * most `EDIT_WINDOWS` windows, and its tail: what the length ratios read.
+ * `LENGTH_SIZES` the shape has, every size running `typing` and `far`, and
+ * its tail, at one window per edit, measured by the session alone: what the
+ * length ratios read, a script's first edit apart from the rest.
  */
 export const BENCHMARK_SETS = Object.freeze(["all", "corpus", "lengths"]);
 /* The sizes the `lengths` set measures each shape at. */
@@ -1906,11 +1907,18 @@ export function benchmarkWorkloads(set = "all") {
             for (const alphabet of Object.keys(alphabets))
                 for (const size of shapeSizes(shape).filter((entry) => LENGTH_SIZES.includes(entry))) {
                     const document = shapeDocument(shape, alphabet, size);
-                    documents.push(document);
-                    edited(document, false);
                     const tail = tailWorkload(document);
-                    documents.push(tail.document);
-                    edits.push(tail);
+                    documents.push(document, tail.document);
+                    edits.push(
+                        {
+                            document,
+                            name: `${document.name}.edits`,
+                            scripts: editScripts(document, LARGE_EDITS, 1),
+                            stepwise: true,
+                            alone: true
+                        },
+                        { ...tail, stepwise: true, alone: true }
+                    );
                 }
         return { documents, workloads, edits: edits.filter((entry) => entry.scripts.length) };
     }

@@ -191,8 +191,11 @@ test("the stream table reports the R, S and B columns by family and size, pooled
         /\| Shapes \| typing \| 65,536 \| 1 \| 64 \| 4 \| 31 \| 33 \| 33 \| 126 \| 11 \| 13 \| 13 \| 46 \|/
     );
     assert.match(body, /3 edit workloads/);
-    assert.match(body, /\| Shape \| Family \| 16,384 \| 65,536 \| 65,536 \/ 16,384 \|/);
-    assert.match(body, /\| prose \| tail \| 2 \| 3 \| 1\.25× \|/);
+    assert.match(
+        body,
+        /\| Shape \| Family \| p50 16,384 \| p50 65,536 \| 65,536 \/ 16,384 \| first 16,384 \| first 65,536 \| 65,536 \/ 16,384 \|/
+    );
+    assert.match(body, /\| prose \| tail \| 2 \| 3 \| 1\.25× \| 2 \| 3 \| 1\.25× \|/);
     assert.doesNotMatch(body, /\| prose \| typing \|/);
     assert.doesNotMatch(body, /a\.tokens|a\.edits|typing-word|prose-ascii/);
     const unbased = streams();

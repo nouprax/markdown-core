@@ -313,9 +313,12 @@ export const RATIO_FAMILIES = Object.freeze(["typing", "far", "tail"]);
 /**
  * The length ratios of the edit workloads: per shape and family of
  * `RATIO_FAMILIES`, S's Ir per edit at each size, every alphabet pooled --
- * the session's total over the edits it took -- and its ratio to the
- * smallest size's. The grammar corpus has no size, and a shape measured at
- * one size has no ratio; both are left out. No gate holds them (plan D5).
+ * each window's cost over the edits it holds, which is one where the
+ * workload runs one window per edit -- as the median over the windows, and
+ * the mean of each script's first window, where an edit meets what the
+ * session makes at its first edit; and each one's ratio to the smallest
+ * size's. The grammar corpus has no size, and a shape measured at one size
+ * has no ratio; both are left out. No gate holds them (plan D5).
  */
 export function lengthRatios(results) {
     const cells = new Map();
@@ -325,9 +328,10 @@ export function lengthRatios(results) {
             if (!RATIO_FAMILIES.includes(script.family) || !script.session) continue;
             const key = JSON.stringify([row.source, script.family]);
             const sizes = cells.get(key) ?? new Map();
-            const cell = sizes.get(row.size) ?? { edits: 0, ir: 0 };
-            cell.edits += script.edits;
-            cell.ir += total(script.session.windows);
+            const cell = sizes.get(row.size) ?? { each: [], first: [] };
+            const per = script.edits / script.session.windows.length;
+            cell.each.push(...script.session.windows.map((cost) => cost / per));
+            cell.first.push(script.session.windows[0] / per);
             sizes.set(row.size, cell);
             cells.set(key, sizes);
         }
@@ -335,7 +339,62 @@ export function lengthRatios(results) {
     return [...cells].flatMap(([key, sizes]) => {
         if (sizes.size < 2) return [];
         const [shape, family] = JSON.parse(key);
-        const each = [...sizes].sort((a, b) => a[0] - b[0]).map(([size, cell]) => ({ size, ir: cell.ir / cell.edits }));
-        return [{ shape, family, sizes: each.map((entry) => ({ ...entry, ratio: entry.ir / each[0].ir })) }];
+        const each = [...sizes]
+            .sort((a, b) => a[0] - b[0])
+            .map(([size, cell]) => ({ size, p50: median(cell.each), first: total(cell.first) / cell.first.length }));
+        return [
+            {
+                shape,
+                family,
+                sizes: each.map((entry) => ({
+                    ...entry,
+                    ratio: entry.p50 / each[0].p50,
+                    firstRatio: entry.first / each[0].first
+                }))
+            }
+        ];
     });
+}
+
+/* The middle of `values`, the mean of the two middle ones when they are even. */
+function median(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const half = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[half] : (sorted[half - 1] + sorted[half]) / 2;
+}
+
+/**
+ * The length ratios as a Markdown table, the shapes' names as `lengthRatios`
+ * read them: per shape and family the median Ir per edit at each size and
+ * its ratio to the smallest size's, then the same of the first edits.
+ */
+export function lengthTable(lengths) {
+    const sizes = [...new Set(lengths.flatMap((row) => row.sizes.map((entry) => entry.size)))].sort((a, b) => a - b);
+    const number = (value) => Math.round(value).toLocaleString("en-US");
+    const over = (size) => `${number(size)} / ${number(sizes[0])}`;
+    const heads = [
+        ...sizes.map((size) => `p50 ${number(size)}`),
+        ...sizes.slice(1).map(over),
+        ...sizes.map((size) => `first ${number(size)}`),
+        ...sizes.slice(1).map(over)
+    ];
+    const lines = [
+        `| Shape | Family | ${heads.join(" | ")} |`,
+        `| --- | --- | ${heads.map(() => "---:").join(" | ")} |`
+    ];
+    for (const row of lengths) {
+        const at = (size) => row.sizes.find((entry) => entry.size === size);
+        const cell = (size, read) => (at(size) ? read(at(size)) : "");
+        lines.push(
+            `| ${[
+                row.shape,
+                row.family,
+                ...sizes.map((size) => cell(size, (entry) => number(entry.p50))),
+                ...sizes.slice(1).map((size) => cell(size, (entry) => `${entry.ratio.toFixed(2)}×`)),
+                ...sizes.map((size) => cell(size, (entry) => number(entry.first))),
+                ...sizes.slice(1).map((size) => cell(size, (entry) => `${entry.firstRatio.toFixed(2)}×`))
+            ].join(" | ")} |`
+        );
+    }
+    return lines;
 }

@@ -407,3 +407,16 @@ test("a marker that belongs after a block's first line goes after it, also for a
         [9, 9, 9]
     );
 });
+
+test("the lengths set is the shapes' typing, far and tail edits up to 256 KiB, one window per edit, the session alone", () => {
+    const { workloads, edits } = benchmarkWorkloads("lengths");
+    assert.deepEqual(workloads, []);
+    assert.ok(edits.length);
+    for (const workload of edits) {
+        assert.ok(workload.document.shape && workload.document.size <= 262144, workload.name);
+        assert.ok(workload.stepwise && workload.alone, workload.name);
+        for (const script of workload.scripts) assert.ok(["typing", "far", "tail"].includes(script.family));
+    }
+    assert.ok(edits.some((workload) => workload.name === "prose-ascii-256k-tail.edits"));
+    assert.ok(!edits.some((workload) => workload.document.size > 262144));
+});

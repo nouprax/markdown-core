@@ -9,6 +9,7 @@ import {
     groupEdits,
     groupWindows,
     lengthRatios,
+    lengthTable,
     REGRESSION_LIMIT,
     SHAPE_NAMES,
     WINDOWS
@@ -369,23 +370,12 @@ export function streamSection(report) {
         })
     );
     const lengths = lengthRatios(report.edits);
-    const sizes = [...new Set(lengths.flatMap((row) => row.sizes.map((entry) => entry.size)))].sort((a, b) => a - b);
     if (lengths.length) {
         lines.push(
             "",
-            "Length ratios: S's Ir per edit of each shape at each size, every alphabet pooled, and each larger size's over the smallest's; `tail` appends a document's last bytes back to the rest of it in token chunks; no gate.",
+            "Length ratios: S's Ir per edit of each shape at each size, every alphabet pooled, the median edit and each script's first, and each larger size's over the smallest's; `tail` appends a document's last bytes back to the rest of it in token chunks; no gate.",
             "",
-            `| Shape | Family | ${[...sizes.map(number), ...sizes.slice(1).map((size) => `${number(size)} / ${number(sizes[0])}`)].join(" | ")} |`,
-            `| --- | --- | ${Array.from({ length: 2 * sizes.length - 1 }, () => "---:").join(" | ")} |`,
-            ...lengths.map((row) => {
-                const at = (size) => row.sizes.find((entry) => entry.size === size);
-                return `| ${[
-                    row.shape,
-                    row.family,
-                    ...sizes.map((size) => (at(size) ? number(Math.round(at(size).ir)) : "")),
-                    ...sizes.slice(1).map((size) => (at(size) ? `${at(size).ratio.toFixed(2)}×` : ""))
-                ].join(" | ")} |`;
-            })
+            ...lengthTable(lengths)
         );
     }
     return lines.join("\n");
