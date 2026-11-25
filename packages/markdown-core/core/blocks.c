@@ -4271,11 +4271,10 @@ static void S_release_tail(markdown_core_parser *parser);
 static void S_tail_out(markdown_core_parser *parser, const markdown_core_node *root, uint32_t end);
 
 /* The old tail, from the root's child `child` and input line `line`, the
- * rest point `start`, kept aside before the reopen lets it go, and the uses
- * from `own` on, where the uses are (S_use_place): a paragraph's past its
- * seam (THE SEAMS). False when storage could not be had. */
+ * rest point `start`, kept aside before the reopen lets it go. False when
+ * storage could not be had. */
 static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *root, uint32_t child, size_t line,
-                        uint32_t prior, size_t start, size_t own, size_t to, int64_t delta) {
+                        uint32_t prior, size_t start, size_t to, int64_t delta) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_edit *edit = stream->edit;
     markdown_core_parser_input *input = &parser->input;
@@ -4425,7 +4424,6 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     edit->nested = NULL;
     edit->nested_capacity = 0;
     (void)markdown_core_roster_compact(&parser->roster);
-    markdown_core_publish_compact_tables(parser->stream->tables);
 }
 
 /* The kind `block` became as it closed read its lines as one whose kind
@@ -5556,9 +5554,11 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->leap->spliced = 0;
         stream->edit->leap->rest = 0;
     }
+    /* The roster reads again from where the paragraph starts, but for the
+     * paragraph's uses before its seam, which stay in the front; those past
+     * it go to the back nearest the focus (THE OLD TAIL OF A PARAGRAPH). */
     if ((prose && !S_seam_pick(parser, line, from)) ||
-        !S_edit_keep(parser, root, child, line, prior, start, own + (prose ? stream->edit->leap->seam.source : 0),
-                     past > to ? past : to, delta) ||
+        !S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->document->reopen(document, parser, root, child, (uint32_t)own) ||
         !S_stage_edit(parser, false, (uint32_t)own) ||
         !markdown_core_roster_reopen(&parser->roster, (uint32_t)own,

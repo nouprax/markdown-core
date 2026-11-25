@@ -230,9 +230,9 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
 /* A DOCUMENT'S TABLES (ast.c): the definitions the published document
  * holds -- Footnotes, Specimens, References, Headings -- are the roster's
  * declarations of their nodes, a shelf of each kind (roster.h, THE PLACES),
- * which the document reads as the roster keeps them; and the reference
- * targets by label, which a document lists in the order of their labels,
- * an entry's pointer the label's definition. */
+ * which the document reads as the roster keeps them, and its reference
+ * labels, which the roster keeps in order (roster.h, THE LABELS IN
+ * ORDER). */
 enum { MARKDOWN_CORE_DEFINITION_TABLES = 4 };
 
 typedef struct markdown_core_tables {
@@ -242,21 +242,10 @@ typedef struct markdown_core_tables {
     markdown_core_roster held;
     /* The roster kind of each table's labels. */
     unsigned kinds[MARKDOWN_CORE_DEFINITION_TABLES];
-    markdown_core_tree targets;
-    /* The targets' own copies of their keys, which an entry and the
-     * separators above it borrow (tree.h) while the tables outlive any one
-     * definition: carved from blocks newest first, `live` bytes of them
-     * an entry holds and `dead` none does, which the tables let go once
-     * they are made again. */
-    void *label_blocks;
-    size_t label_used, label_room, label_live, label_dead;
 } markdown_core_tables;
 
 /* The tables' storage let go, and the roster they hold. */
 void markdown_core_publish_release_tables(markdown_core_tables *tables);
-/* The tables held in no more storage than they need, after a reading of
- * the whole text (markdown_core_parser_compact). */
-void markdown_core_publish_compact_tables(markdown_core_tables *tables);
 
 /* WHERE AN EDIT'S READING STANDS INSIDE A LINE (blocks.c, A REST INSIDE A
  * LINE): the line has matched every open block and opened `container`,

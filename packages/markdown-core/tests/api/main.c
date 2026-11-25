@@ -3425,8 +3425,9 @@ enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = R
 /* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
  * journal, the index and the places' numbers each double -- and one per
- * leaf of the places' tree, which an append fills, rather than one each, and
- * all of them go with the roster. */
+ * leaf of the places' tree, which an append fills, and of the labels in
+ * order, which splits fill half, rather than one each, and all of them go
+ * with the roster. */
 static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner) {
     enum { COUNT = 4096 };
     payload_probe_arm();
@@ -3443,10 +3444,10 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
     /* Twelve doublings reach COUNT; each of the three arrays doubles at most
      * once per doubling, the blocks double up to their cap and then take
      * one per cap's bytes (roster.c, ROSTER_BLOCK_MAX_BYTES), and the places
-     * fill their leaves. */
-    const size_t leaves = COUNT / MARKDOWN_CORE_TREE_LEAF + 1;
+     * fill their leaves, and the labels in order half of theirs. */
+    const size_t leaves = 3 * (COUNT / MARKDOWN_CORE_TREE_LEAF + 1);
     const size_t blocks = 5 + roster.bytes / (16 * 1024) + 1;
-    OK(runner, payload_allocations <= 3 * 13 + blocks + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 2,
+    OK(runner, payload_allocations <= 3 * 13 + blocks + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 4,
        "%d records took %zu allocations", COUNT, payload_allocations);
     bool failed = false;
     markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
@@ -3650,7 +3651,8 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
  * edit every key of a random set of the kinds is compared: whether it is
  * declared, where its earliest declaration starts and how many stand; and
  * the journal must hold just the keys whose being declared the edit
- * flipped, among others it touched. Labels come from a small set, so keys
+ * flipped, among others it touched, and the labels in order each kind's
+ * declared keys. Labels come from a small set, so keys
  * are declared again and again, and from a growing one, so the index
  * grows. */
 typedef struct {
@@ -3809,6 +3811,27 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         if (ROSTER_RANDOM() % 16 == 0) {
             agrees = agrees && markdown_core_roster_compact(&roster);
             compactions++;
+        }
+        /* The labels in order: each kind's declared keys, each once, in
+         * the order of their keys. */
+        for (unsigned kind = 0; kind < KINDS && agrees && edit % 32 == 0; kind++) {
+            size_t declared = 0, count;
+            for (size_t label = 0; label < fresh; label++) {
+                declared += keys[kind * LABELS + label].count > 0;
+            }
+            const size_t first = markdown_core_roster_labels_of(
+                &roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind), &count);
+            agrees = count == declared;
+            for (size_t i = 1; i < count && agrees; i++) {
+                const markdown_core_roster_label *prior = markdown_core_roster_label_at(&roster, first + i - 1);
+                const markdown_core_roster_label *next = markdown_core_roster_label_at(&roster, first + i);
+                const int order = memcmp(prior->key, next->key,
+                                         (size_t)(prior->key_len < next->key_len ? prior->key_len : next->key_len));
+                agrees = next->first && (order < 0 || (!order && prior->key_len < next->key_len));
+            }
+            if (!agrees) {
+                fprintf(stderr, "roster labels in order diverge at edit %zu on kind %u\n", edit, kind);
+            }
         }
         const unsigned compared = edit == EDITS - 1 ? (1u << KINDS) - 1 : (unsigned)(ROSTER_RANDOM() % (1u << KINDS));
         for (unsigned kind = 0; kind < KINDS && agrees; kind++) {

@@ -242,6 +242,28 @@ static void S_descend(const markdown_core_tree *tree, size_t index, S_path *path
     path->before = before;
 }
 
+static void S_rewrite(const markdown_core_tree *tree, void *node, uint32_t height, void (*write)(void *, void *),
+                      void *context) {
+    if (!height) {
+        S_leaf *leaf = node;
+        for (uint32_t i = 0; i < leaf->count; i++) {
+            write(S_entry(tree, leaf, i), context);
+        }
+        return;
+    }
+    S_inner *inner = node;
+    for (uint32_t i = 0; i < inner->count; i++) {
+        write(S_key(tree, inner, i), context);
+        S_rewrite(tree, inner->children[i], height - 1, write, context);
+    }
+}
+
+void markdown_core_tree_rewrite(markdown_core_tree *tree, void (*write)(void *entry, void *context), void *context) {
+    if (tree->root) {
+        S_rewrite(tree, tree->root, tree->levels, write, context);
+    }
+}
+
 void markdown_core_tree_free(markdown_core_tree *tree) {
     /* A tree with no nodes is as an empty tree is made. */
     if (!tree->root) {

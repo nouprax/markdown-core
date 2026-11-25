@@ -38,7 +38,10 @@ extern "C" {
  * lookup answers with: so a lookup answers whether the label is declared at
  * all and by which declaration first, and a declaration leaves its label's
  * list without a look at any other label. The index maps a key to its
- * label, from the declaration that first names it on.
+ * label, from the declaration or use that first names it on; and THE
+ * LABELS IN ORDER, the labels that are declared, in the order of their keys
+ * (map.h), a tree (tree.h) a document lists a kind's labels from, as a
+ * reader of reference labels does (ast.c, A DOCUMENT'S TABLES).
  *
  * THE PLACES. Each shelf's declarations are in a tree (tree.h), in order
  * of where they start, placed as they are declared. A shelf is a kind and
@@ -167,6 +170,9 @@ typedef struct markdown_core_roster {
     /* Each key's label, in `value`; the index borrows the key bytes from
      * it. */
     markdown_core_key_index index;
+    /* THE LABELS IN ORDER: an entry (map.h, a key entry) of each declared
+     * label, its key borrowed from it and the label its `value`. */
+    markdown_core_tree labels;
     markdown_core_roster_block *blocks;
     size_t block_used, block_size;
     /* Where each placed declaration of a number has its entry (tree.h, A
@@ -284,6 +290,14 @@ const markdown_core_roster_record *markdown_core_roster_find_label(markdown_core
  * when it normalizes to nothing. False when storage could not be had. */
 bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_core_node_pool *pool,
                                        const markdown_core_chunk *label, markdown_core_chunk *normal);
+
+/* THE LABELS IN ORDER: those of `kind`, `*count` of them, from the rank
+ * it returns. */
+size_t markdown_core_roster_labels_of(const markdown_core_roster *roster, markdown_core_roster_kind kind,
+                                      size_t *count);
+
+/* The declared label at rank `rank` of the labels in order. */
+const markdown_core_roster_label *markdown_core_roster_label_at(const markdown_core_roster *roster, size_t rank);
 
 /* A label's text, borrowed from the roster. */
 static inline markdown_core_chunk markdown_core_roster_text(const markdown_core_roster_label *label) {

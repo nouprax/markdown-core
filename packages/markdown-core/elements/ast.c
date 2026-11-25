@@ -1857,8 +1857,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(pub
 /* THE DEFINITION TABLES (parser.h, A DOCUMENT'S TABLES): the definitions a
  * document holds are the roster's declarations of their nodes, a shelf of
  * each kind (roster.h, THE PLACES), which an edit moves as it moves the
- * roster. The tables keep only what the roster cannot answer: the
- * reference targets in the order of their labels. */
+ * roster, and a reference label's target is its label's first Reference,
+ * or first Heading, of the roster's declared labels in order (roster.h,
+ * THE LABELS IN ORDER). */
 
 /* The roster space of each definition table's labels, whose kind the
  * tables hold (`kinds`), and the kind of node each lists. */
@@ -1877,11 +1878,9 @@ static const markdown_core_roster_shelf *table_shelf(const markdown_core_tables 
 
 /* The definition a reference label names: the first Reference that
  * declares it, or, when none does, the first Heading, of the roster's
- * declarations of the label, which are in order of where they start. */
-static const markdown_core_node *target_of(const markdown_core_tables *tables, const unsigned char *label,
-                                           bufsize_t length) {
-    const markdown_core_roster_record *first =
-        markdown_core_roster_seek(tables->roster, tables->kinds[TABLE_REFERENCES], label, length);
+ * declarations of the label from `first`, which are in order of where they
+ * start. */
+static const markdown_core_node *target_from(const markdown_core_roster_record *first) {
     for (const markdown_core_roster_record *record = first; record; record = record->after) {
         if (record->node->kind == MARKDOWN_CORE_NODE_REFERENCE) {
             return record->node;
@@ -1890,127 +1889,9 @@ static const markdown_core_node *target_of(const markdown_core_tables *tables, c
     return first ? first->node : NULL;
 }
 
-/* THE TARGETS: the reference labels a definition declares, in the order of
- * their keys (map.h), a tree of keys (tree.h), which a reader of a
- * document seeks with no change to it. */
-static bool labels_before(const void *a, const void *b) { return markdown_core_key_before(a, b); }
-
-static const markdown_core_tree_ops labels_ops = {
-    sizeof(markdown_core_key_entry), NULL, labels_before, NULL, NULL, NULL};
-
-/* The entry of `key`'s key, or NULL, with the rank of that key into
- * `*rank` when `rank` is not NULL. */
-static const markdown_core_key_entry *labels_find(const markdown_core_tree *tree, const markdown_core_key_entry *key,
-                                                  size_t *rank) {
-    const size_t at = markdown_core_tree_seek(tree, key);
-    if (rank) {
-        *rank = at;
-    }
-    if (at == tree->count) {
-        return NULL;
-    }
-    const markdown_core_key_entry *entry = markdown_core_tree_peek(tree, at);
-    return markdown_core_key_same(entry, key) ? entry : NULL;
-}
-
-/* THE TARGETS' KEYS (parser.h, `label_blocks`). */
-typedef struct label_block {
-    struct label_block *next;
-    size_t room;
-    unsigned char bytes[];
-} label_block;
-
-static void tables_keys_free(markdown_core_tables *tables) {
-    for (label_block *block = tables->label_blocks; block;) {
-        label_block *next = block->next;
-        markdown_core_free(block);
-        block = next;
-    }
-    tables->label_blocks = NULL;
-    tables->label_used = tables->label_room = tables->label_live = tables->label_dead = 0;
-}
-
-/* `length` bytes of the tables' own, or NULL when storage could not be had. */
-static unsigned char *tables_carve(markdown_core_tables *tables, size_t length) {
-    label_block *block = tables->label_blocks;
-    if (!block || tables->label_room - tables->label_used < length) {
-        size_t room = block ? block->room * 2 : 1024;
-        room = room > 16384 ? 16384 : room;
-        room = room < length ? length : room;
-        label_block *made = markdown_core_realloc(NULL, sizeof(*made) + room);
-        if (!made) {
-            return NULL;
-        }
-        made->next = block;
-        made->room = room;
-        tables->label_blocks = block = made;
-        tables->label_used = 0;
-        tables->label_room = room;
-    }
-    unsigned char *bytes = block->bytes + tables->label_used;
-    tables->label_used += length;
-    return bytes;
-}
-
-/* `entry` with a copy of its key the tables own, or false when storage
- * could not be had. */
-static bool tables_own(markdown_core_tables *tables, markdown_core_key_entry *entry) {
-    if (entry->key_len > 0) {
-        unsigned char *bytes = tables_carve(tables, (size_t)entry->key_len);
-        if (!bytes) {
-            return false;
-        }
-        memcpy(bytes, entry->key, (size_t)entry->key_len);
-        entry->key = bytes;
-    }
-    tables->label_live += (size_t)entry->key_len;
-    return true;
-}
-
-/* The reference label `label` names its definition, as the roster has it
- * now: the target's entry made, moved on or let go. False when storage
- * could not be had. */
-static bool tables_retarget(markdown_core_tables *tables, const unsigned char *label, bufsize_t length) {
-    const markdown_core_node *target = target_of(tables, label, length);
-    markdown_core_key_entry key = {markdown_core_key_head(label, length), label, length, 0, target};
-    size_t rank;
-    markdown_core_key_entry *held = (markdown_core_key_entry *)(uintptr_t)labels_find(&tables->targets, &key, &rank);
-    if (held && target) {
-        held->value = target;
-        return true;
-    }
-    if (held) {
-        tables->label_live -= (size_t)length;
-        tables->label_dead += (size_t)length;
-        markdown_core_tree_erase(&tables->targets, rank, 1);
-        return true;
-    }
-    return !target || (tables_own(tables, &key) && markdown_core_tree_insert(&tables->targets, rank, &key, false));
-}
-
-/* The targets made again in storage of their size, beside the old, which
- * stay when storage could not be had. */
-static void tables_relabel(markdown_core_tables *tables) {
-    markdown_core_tables fresh = *tables;
-    fresh.targets = markdown_core_tree_make(&labels_ops);
-    fresh.label_blocks = NULL;
-    fresh.label_used = fresh.label_room = fresh.label_live = fresh.label_dead = 0;
-    bool ok = true;
-    for (size_t i = 0; ok && i < tables->targets.count; i++) {
-        markdown_core_key_entry entry = *(const markdown_core_key_entry *)markdown_core_tree_peek(&tables->targets, i);
-        ok = tables_own(&fresh, &entry) && markdown_core_tree_insert(&fresh.targets, i, &entry, false);
-    }
-    markdown_core_tables *const kept = ok ? tables : &fresh;
-    markdown_core_tree_free(&kept->targets);
-    tables_keys_free(kept);
-    if (ok) {
-        tables->targets = fresh.targets;
-        tables->label_blocks = fresh.label_blocks;
-        tables->label_used = fresh.label_used;
-        tables->label_room = fresh.label_room;
-        tables->label_live = fresh.label_live;
-        tables->label_dead = 0;
-    }
+static const markdown_core_node *target_of(const markdown_core_tables *tables, const unsigned char *label,
+                                           bufsize_t length) {
+    return target_from(markdown_core_roster_seek(tables->roster, tables->kinds[TABLE_REFERENCES], label, length));
 }
 
 #ifndef NDEBUG
@@ -2047,11 +1928,6 @@ static void tables_check(const markdown_core_tables *tables, const publish_walk 
         (void)shelf;
         (void)seen;
     }
-    for (size_t i = 0; i < tables->targets.count; i++) {
-        const markdown_core_key_entry *entry = markdown_core_tree_peek(&tables->targets, i);
-        assert(entry->value == target_of(tables, entry->key, entry->key_len));
-        (void)entry;
-    }
 }
 #else
 #define tables_check(tables, walk, whole) ((void)(tables), (void)(walk), (void)(whole))
@@ -2070,23 +1946,14 @@ static markdown_core_tables *tables_need(markdown_core_parser *parser) {
         for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
             stream->tables->kinds[table] = markdown_core_dialect_space_kind(parser->dialect, table_spaces[table]);
         }
-        stream->tables->targets = markdown_core_tree_make(&labels_ops);
     }
     return stream->tables;
-}
-
-void markdown_core_publish_compact_tables(markdown_core_tables *tables) {
-    if (tables) {
-        tables_relabel(tables);
-    }
 }
 
 void markdown_core_publish_release_tables(markdown_core_tables *tables) {
     if (!tables) {
         return;
     }
-    markdown_core_tree_free(&tables->targets);
-    tables_keys_free(tables);
     if (tables->roster == &tables->held) {
         markdown_core_roster_free(&tables->held);
     }
@@ -2127,9 +1994,8 @@ static void publish_end(const publish_walk *walk, markdown_core_parser *parser) 
     parser->content_place_capacity = walk->places.capacity;
 }
 
-/* A DOCUMENT'S TABLES: the document reads the roster, whose places an
- * edit moves, and the targets, which every publish brings up to date for
- * the reference labels the reading declared or let go. A session's
+/* A DOCUMENT'S TABLES: the document reads the roster, whose places and
+ * labels an edit moves. A session's
  * document borrows them whole until the next edit moves them (A DOCUMENT
  * REOPENED FOR AN EDIT); a parse that takes no edits publishes once, and
  * its document takes them from the parse, the roster with them (`owns`).
@@ -2141,22 +2007,6 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
     }
     const markdown_core_edit *edit = parser->stream->edit;
     markdown_core_roster *roster = &parser->roster;
-    /* The reference labels the transaction made or let go (roster.h, THE
-     * JOURNAL). */
-    size_t count;
-    markdown_core_roster_label *const *journal = markdown_core_roster_journal(roster, &count);
-    bool ok = true;
-    for (size_t i = 0; ok && i < count; i++) {
-        if (journal[i]->key[0] == (unsigned char)tables->kinds[TABLE_REFERENCES]) {
-            ok = tables_retarget(tables, journal[i]->key + 1, journal[i]->key_len - 1);
-        }
-    }
-    if (!ok) {
-        return false;
-    }
-    if (tables->label_dead > 4096 && tables->label_dead > tables->label_live) {
-        tables_relabel(tables);
-    }
     tables_check(tables, walk, !edit);
     value->tables = tables;
     value->owns = !edit;
@@ -3935,19 +3785,24 @@ const markdown_core_node *markdown_core_document_reference_for(const markdown_co
 }
 
 size_t markdown_core_document_reference_label_count(const markdown_core_document *document) {
-    return document_tables(document)->targets.count;
+    const markdown_core_tables *tables = document_tables(document);
+    size_t count;
+    (void)markdown_core_roster_labels_of(tables->roster, tables->kinds[TABLE_REFERENCES], &count);
+    return count;
 }
 
 markdown_core_status markdown_core_document_reference_label_at(const markdown_core_document *document, size_t index,
                                                                markdown_core_string *label,
                                                                const markdown_core_node **target) {
-    const markdown_core_tree *targets = &document_tables(document)->targets;
-    if (index >= targets->count) {
+    const markdown_core_tables *tables = document_tables(document);
+    size_t count;
+    const size_t first = markdown_core_roster_labels_of(tables->roster, tables->kinds[TABLE_REFERENCES], &count);
+    if (index >= count) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    const markdown_core_key_entry *entry = markdown_core_tree_peek(targets, index);
-    *label = (markdown_core_string){entry->key, (size_t)entry->key_len};
-    *target = entry->value;
+    const markdown_core_roster_label *named = markdown_core_roster_label_at(tables->roster, first + index);
+    *label = (markdown_core_string){named->key + 1, (size_t)named->key_len - 1};
+    *target = target_from(named->first);
     return MARKDOWN_CORE_OK;
 }
 

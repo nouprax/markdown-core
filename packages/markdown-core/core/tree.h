@@ -113,6 +113,11 @@ static inline markdown_core_tree markdown_core_tree_make(const markdown_core_tre
 
 void markdown_core_tree_free(markdown_core_tree *tree);
 
+/* Every entry written by `write`, and every copy of one the inner nodes
+ * keep, as `write` keeps their order: a tree whose entries borrow storage
+ * that moves names it anew. */
+void markdown_core_tree_rewrite(markdown_core_tree *tree, void (*write)(void *entry, void *context), void *context);
+
 /* The entries the tree's leaves have room for. */
 size_t markdown_core_tree_room(const markdown_core_tree *tree);
 
