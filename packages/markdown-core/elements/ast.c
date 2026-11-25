@@ -461,6 +461,8 @@ static inline bool is_link(const markdown_core_node *node) {
  * its relation ends, or the owner's begins). */
 typedef struct {
     markdown_core_relation_cursor cursor;
+    /* The node, the parent of the nodes of its relations (THE PARENTS). */
+    markdown_core_node *node;
     markdown_core_node **item, **end;
     uint32_t start, source_start, anchor, source;
     /* For a definition, where the body before the next ends, which the
@@ -1096,6 +1098,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_fresh(publish_walk *walk
         content = frame->content;
         /* Every node it publishes is new and closed (PUBLISHING IN PLACE). */
         assert(!child->id && !(child->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED)));
+        child->parent = frame->node;
         if (!publish_node(walk, child, slot, &hand, content, &child_placed)) {
             return false;
         }
@@ -1126,6 +1129,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_fresh(publish_walk *walk
         if (more) {
             frame->cursor = cursor;
         }
+        frame->node = child;
         hand = first;
         publish_enter(frame, &child_placed, &hand, content);
     }
@@ -1150,7 +1154,6 @@ typedef enum { OLD_NONE, OLD_RECORDS, OLD_LIVE } publish_old;
 
 typedef struct {
     publish_frame walk;
-    markdown_core_node *node;
     markdown_core_relation_cursor old_cursor;
     markdown_core_relation old_relation;
     /* The old relation's field, or INT_MAX when the old node has no more. */
@@ -1712,7 +1715,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             frame = &frames[count++];
             frame->walk.cursor = cursor;
             frame->walk.more = more;
-            frame->node = node;
+            frame->walk.node = node;
             frame->published = published;
             frame->old = (uint8_t)old_entries;
             frame->record = held;
@@ -1783,6 +1786,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
                 continue;
             }
             markdown_core_node *child = *hand.item++;
+            child->parent = frame->walk.node;
             slot = slot_of(child);
             shape = (relation_shape)(slot & SLOT_SHAPE);
             content = frame->walk.content;
@@ -1819,6 +1823,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
                 publish_relation items;
                 const markdown_core_node *items_holder;
                 if (publish_first(child, shape, &from.cursor, &items, &items_holder, &from.more)) {
+                    from.node = child;
                     publish_enter(&from, &placed, &items, content);
                     publish_above(&walk->stack, count * sizeof(*frame));
                     if (!publish_fresh(walk, &from, &items)) {
@@ -1847,7 +1852,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(pub
                                                                              const publish_relation *start,
                                                                              uint32_t held) {
     if (!root->id) {
-        const publish_frame from = {.more = false};
+        const publish_frame from = {.node = NULL, .more = false};
         publish_relation items = {&root, &root + 1, start->anchor, start->source};
         return publish_fresh(walk, &from, &items);
     }
@@ -1931,6 +1936,51 @@ static void tables_check(const markdown_core_tables *tables, const publish_walk 
 }
 #else
 #define tables_check(tables, walk, whole) ((void)(tables), (void)(walk), (void)(whole))
+#endif
+
+/* THE PARENTS (node.h, `parent`): the walk writes each node it passes the
+ * node whose relation it is in, the node of its frame; a FINAL node keeps
+ * what the publish that placed it wrote, as it stays in the relation it
+ * was in, and so does everything below it. */
+#ifndef NDEBUG
+/* Every node of the tree from `root` names the node whose relation holds
+ * it as its parent. */
+static void parents_check(const markdown_core_node *root) {
+    const markdown_core_node **stack = NULL;
+    size_t count = 0, room = 0;
+    const markdown_core_node *node = root;
+    for (;;) {
+        markdown_core_relation_cursor cursor;
+        markdown_core_relation relation;
+        markdown_core_relations_begin(&cursor, node);
+        while (markdown_core_relations_next(&cursor, &relation)) {
+            for (size_t i = 0; i < relation.count; i++) {
+                const markdown_core_node *item = relation.items[i];
+                if (!item) {
+                    continue;
+                }
+                assert(item->parent == node);
+                if (count == room) {
+                    room = room ? room * 2 : 64;
+                    const markdown_core_node **more = realloc(stack, room * sizeof(*stack));
+                    if (!more) {
+                        free(stack);
+                        return;
+                    }
+                    stack = more;
+                }
+                stack[count++] = item;
+            }
+        }
+        if (!count) {
+            break;
+        }
+        node = stack[--count];
+    }
+    free(stack);
+}
+#else
+#define parents_check(root) ((void)(root))
 #endif
 
 /* The stream's tables, made when it has none. NULL when storage could not
@@ -2089,6 +2139,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         }
         const publish_relation start = {0};
         ok = publish_in_place(&walk, root, &start, old) && commit_tables(parser, &walk, value);
+    }
+    if (ok) {
+        parents_check(root);
     }
     if (ok) {
         parser->revision->last_id = walk.next_id;

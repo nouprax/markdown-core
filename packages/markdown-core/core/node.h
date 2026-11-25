@@ -420,9 +420,15 @@ typedef union {
 struct markdown_core_node {
     /* The node's children in order, `child_count` of them, in storage the
      * node owns (THE CAPACITY OF A NODE ARRAY, markdown_core_node_push_child).
-     * A node holds no pointer to its parent or its siblings: whatever holds a
-     * node holds it in an array or a field. */
+     * A node holds no pointer to its siblings: whatever holds a node holds it
+     * in an array or a field. */
     struct markdown_core_node **children;
+    /* THE PARENT: the node whose relation holds it in the published tree --
+     * a child's block, a field root's node, a body's definition -- which the
+     * publish that places it writes (elements/ast.c, THE PARENTS); NULL for
+     * the root and for a node no publish placed. A reading never reads it:
+     * while it builds, the scaffold links what it builds. */
+    struct markdown_core_node *parent;
     uint32_t child_count;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
