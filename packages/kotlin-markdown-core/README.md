@@ -146,8 +146,9 @@ in the same relation, or from the start of the owner's source for a
 relation's first node; every other run's lead is from the end of the run
 before. A node's source starts where its first run starts and ends where its
 last ends, and the source between two runs is not the node's, such as a
-container's prefix between the lines of a block inside it; runs that touch
-are one run. Scopes, one per run in source order, are computed on request
+container's prefix between the lines of a block inside it; runs touch only
+where they read their content differently, such as a heading's marker before
+its text. Scopes, one per range of touching runs in source order, are computed on request
 from the runs and the source the document was parsed from; extents take no
 part:
 

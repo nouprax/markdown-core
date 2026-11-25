@@ -110,10 +110,16 @@ struct CanonicalWalk {
         places.removeAll(keepingCapacity: true)
         guard let runs = item.record?.runs else { return }
         var cursor = item.start - Int(runs[0].lead)
+        // Runs that touch are one range: they stand apart only where they
+        // read their content differently.
         for run in runs {
             let start = cursor + Int(run.lead)
             cursor = start + Int(run.span)
-            places.append((start, cursor))
+            if !places.isEmpty && run.lead == 0 && run.span > 0 {
+                places[places.count - 1].end = cursor
+            } else {
+                places.append((start, cursor))
+            }
         }
     }
 

@@ -6650,8 +6650,8 @@ static bool S_leap_runs(markdown_core_parser *parser, markdown_core_node *block,
     size_t before = low ? low_start - (size_t)(int64_t)runs->items[low].lead : 0;
     for (size_t i = 0; i < made; i++) {
         if (i && places[i].start > end) {
-            window[written++] =
-                (markdown_core_run){(int32_t)((int64_t)run_start - (int64_t)before), (uint32_t)(end - run_start)};
+            window[written++] = (markdown_core_run){(int32_t)((int64_t)run_start - (int64_t)before),
+                                                    (uint32_t)(end - run_start), (uint32_t)(end - run_start)};
             before = end;
             run_start = places[i].start;
         }
@@ -6660,8 +6660,8 @@ static bool S_leap_runs(markdown_core_parser *parser, markdown_core_node *block,
     if (past == count) {
         end = block->place.end;
     }
-    window[written++] =
-        (markdown_core_run){(int32_t)((int64_t)run_start - (int64_t)before), (uint32_t)(end - run_start)};
+    window[written++] = (markdown_core_run){(int32_t)((int64_t)run_start - (int64_t)before),
+                                            (uint32_t)(end - run_start), (uint32_t)(end - run_start)};
     markdown_core_free(places);
     if (!low) {
         window[0].lead = runs->items[0].lead;

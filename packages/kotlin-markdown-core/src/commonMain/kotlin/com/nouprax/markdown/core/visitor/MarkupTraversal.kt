@@ -153,11 +153,22 @@ internal class MarkupTraversal(
         places.clear()
         // [start] is where the first run starts.
         var at = start - runs[0].lead
+        // Runs that touch are one range: they stand apart only where they
+        // read their content differently.
+        var open = -1L
+        var close = -1L
         for (run in runs) {
             at += run.lead
-            places.add(at, at + run.span.toLong())
+            if (open >= 0 && run.lead == 0 && run.span > 0u) {
+                close = at + run.span.toLong()
+            } else {
+                if (open >= 0) places.add(open, close)
+                open = at
+                close = at + run.span.toLong()
+            }
             at += run.span.toLong()
         }
+        if (open >= 0) places.add(open, close)
         return places
     }
 

@@ -4763,7 +4763,7 @@ static markdown_core_node *published_node_new(markdown_core_node_type type, uint
     markdown_core_runs *runs = markdown_core_node_pool_bytes(&pool, sizeof(*runs) + sizeof(markdown_core_run));
     markdown_core_node_pool_dispose(&pool);
     runs->count = 1;
-    runs->items[0] = (markdown_core_run){0, span};
+    runs->items[0] = (markdown_core_run){0, span, span};
     node->source.runs = runs;
     return node;
 }

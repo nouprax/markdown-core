@@ -33,7 +33,8 @@ public data class Extent(
  * length. Every node has at least one run. A node's source starts where its
  * first run starts and ends where its last ends; between them its runs cover
  * exactly its own source, so the source between two runs is not the node's,
- * and runs that touch are one run.
+ * and runs touch only where they read their content differently (a
+ * heading's marker before its text, a tab's expansion), which a scope joins.
  */
 public data class Run(
     public val lead: Int,

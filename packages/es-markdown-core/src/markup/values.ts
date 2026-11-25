@@ -49,7 +49,9 @@ export interface Extent {
  * run's start, and `span` its length. Every node has at least one run. A
  * node's source starts where its first run starts and ends where its last
  * ends; between them the runs cover exactly the node's own source, so the
- * source between two runs is not the node's, and runs that touch are one run.
+ * source between two runs is not the node's, and runs touch only where they
+ * read their content differently (a heading's marker before its text, a tab's
+ * expansion), which a scope joins.
  * A block's runs run from its start to its end; an inline node's are the
  * source from where its root read its first content byte to where it read its
  * last, less the gaps between its root's runs.

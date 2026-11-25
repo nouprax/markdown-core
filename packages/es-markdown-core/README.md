@@ -165,8 +165,10 @@ same relation, or from the start of the owner's source for a relation's first
 node; every other run's lead is from the end of the run before. A node's
 source starts where its first run starts and ends where its last ends, and the
 bytes between two runs are not the node's, such as the `> ` prefixes between
-the lines of a paragraph in a block quote; runs that touch are one run, so a
-block whose own source is its range has one run, its range. A table's rows, in
+the lines of a paragraph in a block quote; runs touch only where they read
+their content differently, such as a heading's marker before its text, and a
+scope joins them, so a block whose own source is its range has one scope, its
+range. A table's rows, in
 head then content order, are one relation, so the extent and the first
 run of its first body row lead from the end of its last head row.
 `document.scope(node, source)` answers one scope per run of the node, in

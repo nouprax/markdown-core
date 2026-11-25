@@ -152,13 +152,18 @@ typedef struct markdown_core_extent {
 /** A RUN of a node's own source: a source range whose `lead` is from the
  * end of the previous run, or, for the first, from where the source of the
  * node before it in its relation ends, or where its owner's begins, and whose
- * `span` is its length. Every node has runs; the source between two runs is
- * not the node's. */
+ * `span` is its length. `length` is how many bytes of inline content the run
+ * reads: `span` when each content byte is its source byte, or the run's
+ * whole source stands for each of them (a tab's expansion, a decoded
+ * escape); a node that reads no inline content has `span`. Every node has
+ * runs; the source between two runs is not the node's, and two runs touch
+ * only where they read their content differently (a heading's marker before
+ * its text, a tab's expansion), which a node's ranges join. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
     int32_t lead;
-    uint32_t span;
+    uint32_t span, length;
 } markdown_core_run;
 #endif
 

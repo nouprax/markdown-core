@@ -10,15 +10,20 @@ export interface Place {
  * A node's source ranges, in source order: its runs, the first leading from
  * `anchor`, where the source of the node before it in its relation ends, or
  * where its owner's source starts, and every other from the end of the run
- * before it.
+ * before it. Runs that touch are one range: they stand apart only where they
+ * read their content differently.
  */
 export function placesOf(node: Markup, anchor: number): Place[] {
     let at = anchor;
-    return node.runs.map(({ lead, span }) => {
+    const places: { start: number; end: number }[] = [];
+    for (const { lead, span } of node.runs) {
         const start = at + lead;
         at = start + span;
-        return { start, end: at };
-    });
+        const last = places[places.length - 1];
+        if (last && lead === 0 && span > 0) last.end = at;
+        else places.push({ start, end: at });
+    }
+    return places;
 }
 
 /** Where `node`'s source ends: the end of its last run, measured as

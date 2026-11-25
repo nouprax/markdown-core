@@ -99,7 +99,8 @@ public struct Extent: Sendable, Hashable {
 /// where its first run starts and ends where its last ends, so a block's source
 /// and its range start and end together. Between them its runs cover exactly
 /// its own source: the source between two runs is not the node's, and runs
-/// that touch are one run. An inline node's runs are its window of the source
+/// touch only where they read their content differently (a heading's marker
+/// before its text, a tab's expansion), which a scope joins. An inline node's runs are its window of the source
 /// less the gaps between its root's runs.
 public struct Run: Sendable, Hashable {
     /// The signed byte distance from the end of the run before, or from the

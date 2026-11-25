@@ -675,7 +675,9 @@ typedef char runs_fit_in_places[sizeof(markdown_core_run) <= sizeof(markdown_cor
  * touch joined; the first measured from `anchor`, each other from the end of
  * the run before. A node takes its places' list as its runs, written in
  * place: a run is no larger than a place, and the first place opens no run,
- * so each run lands on places already read. The list's bytes are copied, as
+ * so each run lands on places already read; one that reads inline content
+ * takes a list of its own, as it may open a run before its first place and
+ * after its last (THE COORDINATES OF A NODE). The list's bytes are copied, as
  * its storage changes what it holds. A node that reads its places through a
  * field (`shared`: a callout's title, a definition's term, which settled as
  * its line was read and which every publish of an open block reads again)
@@ -685,14 +687,20 @@ static bool publish_place_runs(publish_walk *walk, markdown_core_node *node, mar
                                markdown_core_place place, uint32_t anchor, bool shared) {
     const unsigned char *const read = (const unsigned char *)*held;
     const uint32_t places = (*held)->count;
+    /* A node that reads no inline content reads none of its places. */
+    const bool reads = (*held)->content > 0;
     assert(places > 0);
-    unsigned char *const list =
-        shared ? markdown_core_node_pool_bytes(walk->pool, runs_bytes(places)) : (unsigned char *)*held;
+    /* One that reads them opens a run of its own before its first and
+     * after its last, which its places' list has no room for. */
+    const bool apart = shared || reads;
+    unsigned char *const list = apart
+                                    ? markdown_core_node_pool_bytes(walk->pool, runs_bytes(reads ? places + 2 : places))
+                                    : (unsigned char *)*held;
     if (!list) {
         return false;
     }
-    uint32_t count = 0, start = place.start, end = place.start, from = anchor;
-    bool first = true;
+    uint32_t count = 0, start = place.start, end = place.start, from = anchor, length = 0;
+    bool first = true, copied = true;
     for (uint32_t i = 0; i < places; i++) {
         markdown_core_source_place item;
         memcpy(&item, read + offsetof(markdown_core_places, items) + i * sizeof(item), sizeof(item));
@@ -707,26 +715,81 @@ static bool publish_place_runs(publish_walk *walk, markdown_core_node *node, mar
             item.start = clipped_start;
             item.end = clipped_end;
         }
-        /* A place apart from the one before ends a run. */
-        if (item.start > end && !first) {
-            const markdown_core_run run = {(int32_t)((int64_t)start - from), end - start};
+        /* A place apart from the one before ends a run, and so does one
+         * that touches it when either reads its content otherwise than
+         * byte for byte: a run is one place again (THE COORDINATES OF A
+         * NODE). */
+        const bool item_copied = !reads || item.end - item.start == item.length;
+        /* The source of its own before the first place it reads, as a
+         * heading's marker, reads none of its content. */
+        if (first && reads && item.start > start) {
+            const markdown_core_run run = {(int32_t)((int64_t)start - from), item.start - start, 0};
+            memcpy(list + offsetof(markdown_core_runs, items) + count++ * sizeof(run), &run, sizeof(run));
+            from = end = start = item.start;
+        }
+        if (!first && (item.start > end || !copied || !item_copied)) {
+            const markdown_core_run run = {(int32_t)((int64_t)start - from), end - start, reads ? length : end - start};
             memcpy(list + offsetof(markdown_core_runs, items) + count++ * sizeof(run), &run, sizeof(run));
             from = end;
             start = item.start;
+            length = 0;
         }
         first = false;
+        copied = item_copied;
+        length += item.length;
         end = item.end > end ? item.end : end;
     }
     assert(end <= place.end);
-    const markdown_core_run run = {(int32_t)((int64_t)start - from), place.end - start};
+    /* And after the last, the same. */
+    if (reads && end < place.end && !first) {
+        const markdown_core_run run = {(int32_t)((int64_t)start - from), end - start, length};
+        memcpy(list + offsetof(markdown_core_runs, items) + count++ * sizeof(run), &run, sizeof(run));
+        from = start = end;
+        length = 0;
+    }
+    const markdown_core_run run = {(int32_t)((int64_t)start - from), place.end - start,
+                                   !reads ? place.end - start : length};
     memcpy(list + offsetof(markdown_core_runs, items) + count++ * sizeof(run), &run, sizeof(run));
     memcpy(list + offsetof(markdown_core_runs, count), &count, sizeof(count));
     if (!shared) {
+        if (reads) {
+            markdown_core_node_pool_bytes_free(walk->pool, *held);
+        }
         *held = NULL;
     }
     assert(!node->source.runs);
     node->source.runs = (markdown_core_runs *)list;
     return true;
+}
+
+/* THE COORDINATES OF A NODE. A node's runs are its own source and the
+ * content bytes each reads, so that a root's runs are its places again: a
+ * publish joins two places that touch only when both read their content
+ * byte for byte (publish_place_runs), so each run is one place or places
+ * of one reading, and an inline node's runs say how much of its root's
+ * content each reads (inline_runs). A root completed again in place reads
+ * its places from its runs (markdown_core_node_places_of). */
+
+markdown_core_places *markdown_core_node_places_of(markdown_core_node_pool *pool, const markdown_core_node *node,
+                                                   uint32_t start) {
+    const markdown_core_runs *runs = node->source.runs;
+    markdown_core_places *places =
+        markdown_core_node_pool_bytes(pool, sizeof(*places) + (size_t)runs->count * sizeof(*places->items));
+    if (!places) {
+        return NULL;
+    }
+    int64_t at = (int64_t)start - runs->items[0].lead;
+    uint32_t content = 0;
+    for (uint32_t i = 0; i < runs->count; i++) {
+        const markdown_core_run run = runs->items[i];
+        at += run.lead;
+        places->items[i] = (markdown_core_source_place){(uint32_t)at, (uint32_t)(at + run.span), run.length};
+        content += run.length;
+        at += run.span;
+    }
+    places->count = runs->count;
+    places->content = content;
+    return places;
 }
 
 /* The runs of a block without places: its range, measured from `anchor`.
@@ -738,7 +801,8 @@ static inline bool publish_range_run(markdown_core_node_pool *pool, markdown_cor
         return false;
     }
     runs->count = 1;
-    runs->items[0] = (markdown_core_run){(int32_t)((int64_t)place.start - anchor), place.end - place.start};
+    runs->items[0] =
+        (markdown_core_run){(int32_t)((int64_t)place.start - anchor), place.end - place.start, place.end - place.start};
     assert(!node->source.runs);
     node->source.runs = runs;
     return true;
@@ -752,12 +816,14 @@ static inline bool publish_range_run(markdown_core_node_pool *pool, markdown_cor
 typedef struct {
     const content_place *at, *to;
     uint32_t first, end;
+    /* The content range itself. */
+    markdown_core_place content;
 } inline_span;
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) inline_span
     inline_span_of(const content_places *table, markdown_core_place place) {
     const content_place *const past = table->items + table->count;
-    inline_span span = {.at = content_place_at(table, place.start)};
+    inline_span span = {.at = content_place_at(table, place.start), .content = place};
     const content_place *const at = span.at;
     span.first = place.start >= at->content + at->length ? at->end
                  : content_place_copied(at)              ? at->start + (place.start - at->content)
@@ -778,6 +844,41 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) inline_span
     return span;
 }
 
+#ifndef NDEBUG
+/* A root's runs read its content as the places the walk holds did: every
+ * content byte is read from the same source (THE COORDINATES OF A NODE). */
+static void coordinates_check(publish_walk *walk, const markdown_core_node *node, uint32_t start) {
+    /* Storage of its own, apart from the parse's, which a check takes none
+     * of. */
+    const markdown_core_runs *runs = node->source.runs;
+    content_places table = {malloc(runs->count * sizeof(content_place)), runs->count, runs->count};
+    if (!table.items) {
+        return;
+    }
+    int64_t at = (int64_t)start - runs->items[0].lead;
+    uint32_t content = 0;
+    for (uint32_t i = 0; i < runs->count; i++) {
+        at += runs->items[i].lead;
+        table.items[i] =
+            (content_place){content, runs->items[i].length, (uint32_t)at, (uint32_t)(at + runs->items[i].span)};
+        content += runs->items[i].length;
+        at += runs->items[i].span;
+    }
+    const content_place *last = &walk->places.items[walk->places.count - 1];
+    const uint32_t read = last->content + last->length < content ? last->content + last->length : content;
+    for (uint32_t byte = 0; byte < read; byte++) {
+        const markdown_core_place one = {byte, byte + 1};
+        const inline_span was = inline_span_of(&walk->places, one), is = inline_span_of(&table, one);
+        assert(was.first == is.first && was.end == is.end);
+        (void)was;
+        (void)is;
+    }
+    free(table.items);
+}
+#else
+#define coordinates_check(walk, node, start) ((void)(walk), (void)(node), (void)(start))
+#endif
+
 /* An inline node's runs, read as `span` says in the root whose places
  * `table` holds: the source from where its first content byte was read to
  * where its last was, or the empty source where its start was read when it
@@ -791,7 +892,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_place
     inline_runs(const content_places *table, inline_span span, uint32_t anchor, markdown_core_runs *runs) {
     const content_place *const past = table->items + table->count;
     const uint32_t first = span.first, end = span.end;
-    uint32_t count = 0, from = anchor, start = first, last = first;
+    uint32_t count = 0, from = anchor, start = first, last = first, read = span.content.start;
     const content_place *p = span.at;
     while (p + 1 < past && p->end <= start) {
         p++;
@@ -802,9 +903,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_place
             continue;
         }
         if (gap > start) {
+            /* The content it reads ends where the place's does. */
+            const uint32_t read_end = p->content + p->length;
+            const uint32_t to = read_end < span.content.end ? (read_end > read ? read_end : read) : span.content.end;
             if (runs) {
-                runs->items[count] = (markdown_core_run){(int32_t)((int64_t)start - from), gap - start};
+                runs->items[count] = (markdown_core_run){(int32_t)((int64_t)start - from), gap - start, to - read};
             }
+            read = to;
             count++;
             from = last = gap;
         }
@@ -813,7 +918,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_place
     if (start < end || !count) {
         last = start < end ? end : start;
         if (runs) {
-            runs->items[count] = (markdown_core_run){(int32_t)((int64_t)start - from), last - start};
+            runs->items[count] = (markdown_core_run){(int32_t)((int64_t)start - from), last - start,
+                                                     span.content.end > read ? span.content.end - read : 0};
         }
         count++;
     }
@@ -964,6 +1070,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
         if (places ? !publish_place_runs(walk, node, held, place, hand->source, shared)
                    : !publish_range_run(walk->pool, node, place, hand->source)) {
             return false;
+        }
+        if (placed->root) {
+            coordinates_check(walk, node, place.start);
         }
     }
     if (node->fields) {
@@ -2856,13 +2965,21 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
     walk->ranges = grown;
     /* The window starts where the first run does. */
     int64_t at = (int64_t)item->place.start - runs->items[0].lead;
+    size_t made = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
         const markdown_core_run run = runs->items[i];
         at += run.lead;
-        walk->ranges[i] = (markdown_core_place){(uint32_t)at, (uint32_t)(at + run.span)};
+        /* Runs that touch are one range of source: they stand apart only
+         * where they read their content differently (THE COORDINATES OF A
+         * NODE). */
+        if (made && run.lead == 0 && run.span) {
+            walk->ranges[made - 1].end = (uint32_t)(at + run.span);
+        } else {
+            walk->ranges[made++] = (markdown_core_place){(uint32_t)at, (uint32_t)(at + run.span)};
+        }
         at += run.span;
     }
-    *count = runs->count;
+    *count = made;
     *ranges = walk->ranges;
     return true;
 }

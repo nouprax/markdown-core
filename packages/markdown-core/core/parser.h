@@ -219,6 +219,11 @@ void markdown_core_parser_release_records(markdown_core_parser *parser, markdown
 void markdown_core_publish_cede(markdown_core_parser *parser, const markdown_core_node *root,
                                 markdown_core_node *const *nodes, uint32_t count);
 
+/* The places of the published node `node` whose source starts at `start`,
+ * read from its runs (elements/ast.c, THE COORDINATES OF A NODE), in
+ * storage of `pool`; NULL when it could not be had. */
+markdown_core_places *markdown_core_node_places_of(markdown_core_node_pool *pool, const markdown_core_node *node,
+                                                   uint32_t start);
 /* The same of the `count` nodes `nodes` the content of `root` lets go, of
  * its relation `holder` holds -- its children's when that is `root`, or a
  * field root's -- the first of which the last publish measured from
