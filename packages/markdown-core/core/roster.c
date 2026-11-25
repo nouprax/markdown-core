@@ -575,7 +575,6 @@ static bool S_same_label(const void *probe, const markdown_core_key_index_slot *
 const markdown_core_roster_record *markdown_core_roster_seek(const markdown_core_roster *roster,
                                                              markdown_core_roster_kind kind, const unsigned char *label,
                                                              bufsize_t length) {
-    assert(!roster->hidden);
     if (length <= 0 || length == INT32_MAX || !roster->made[kind]) {
         return NULL;
     }
@@ -699,7 +698,8 @@ const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster
     }
     *placed = at == front ? MARKDOWN_CORE_ROSTER_APPENDED : MARKDOWN_CORE_ROSTER_AMONG;
     S_use_link(roster, record);
-    return markdown_core_roster_declared(roster, named) ? named->first : NULL;
+    record->found = markdown_core_roster_declared(roster, named);
+    return record->found ? named->first : NULL;
 }
 
 size_t markdown_core_roster_uses_from(const markdown_core_roster *roster, size_t place) {
@@ -793,7 +793,6 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, u
         markdown_core_tree_focus(places, back ? markdown_core_tree_from(places, at, places->front, places->count)
                                               : markdown_core_tree_from(places, at, 0, places->front));
     }
-    roster->hidden = true;
     return true;
 }
 
@@ -809,7 +808,6 @@ bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int
         }
         markdown_core_tree_shift(places, front, delta);
     }
-    roster->hidden = false;
     return ok;
 }
 

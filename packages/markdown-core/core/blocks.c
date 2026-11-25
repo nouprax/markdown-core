@@ -6951,23 +6951,7 @@ static int S_place_order(const void *a, const void *b) {
     return (left > other) - (left < other);
 }
 
-/* Whether `place` lies in one of the `count` spans, pairs of offsets in
- * order. */
-static bool S_spans_hold(const size_t *spans, size_t count, size_t place) {
-    size_t low = 0, high = count;
-    while (low < high) {
-        const size_t middle = low + (high - low) / 2;
-        if (spans[2 * middle + 1] <= place) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low < count && spans[2 * low] <= place;
-}
-
-bool markdown_core_parser_altered_uses(markdown_core_parser *parser, const size_t *spans, size_t count, size_t **places,
-                                       size_t *place_count) {
+bool markdown_core_parser_altered_uses(markdown_core_parser *parser, size_t **places, size_t *place_count) {
     const markdown_core_roster *roster = &parser->roster;
     *places = NULL;
     *place_count = 0;
@@ -6976,14 +6960,12 @@ bool markdown_core_parser_altered_uses(markdown_core_parser *parser, const size_
     markdown_core_roster_label *const *journal = markdown_core_roster_journal(roster, &labels);
     for (size_t i = 0; ok && i < labels; i++) {
         const markdown_core_roster_label *label = journal[i];
-        if (label->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR || label->was == (label->first != NULL)) {
-            continue;
-        }
+        const bool declared = label->first != NULL;
         for (const markdown_core_roster_record *use = label->uses; ok && use; use = use->after) {
-            const size_t start = markdown_core_roster_start(roster, use);
-            if (!S_spans_hold(spans, count, start)) {
+            if (use->found == declared) {
                 continue;
             }
+            const size_t start = markdown_core_roster_start(roster, use);
             size_t *more = markdown_core_reserve(*places, &room, *place_count + 1, sizeof(*more));
             ok = more != NULL;
             if (ok) {

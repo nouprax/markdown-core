@@ -65,9 +65,11 @@ extern "C" {
  * inline root whose completion made it, at the byte of the text the lookup
  * reads (blocks.c, WHERE A USE IS), in a shelf of its own, the uses' (kind
  * none, node none), which the focus cuts and the splice takes back as it
- * does every shelf. A label lists its uses, declared or not, so a label
- * whose being declared an edit flipped names the roots whose lookups of it
- * may now answer otherwise (markdown_core_parser_altered_uses). The text a
+ * does every shelf. A label lists its uses, declared or not, and each use
+ * keeps the answer its lookup was given, so the roots whose lookups would
+ * now answer otherwise are those of the uses, of the labels a transaction
+ * changed, whose answer is not the label's (markdown_core_parser_altered_uses):
+ * one rule, wherever and whenever in the transaction the lookup was made. The text a
  * use was in goes as a declaration's does, and the reading of an edit lets
  * go of those of the content it parses again (THE SEAMS, blocks.c).
  *
@@ -126,8 +128,9 @@ typedef struct markdown_core_roster_record {
     /* Its number in `where`, or MARKDOWN_CORE_ROSTER_UNPLACED. */
     uint32_t id;
     /* Whether its label lists it, and whether the text it was in is gone,
-     * which an edit replaced. */
-    bool linked, gone;
+     * which an edit replaced; of a use, whether its lookup found the label
+     * declared (THE USES), the answer it was given. */
+    bool linked, gone, found;
     /* The shelf that places it. */
     uint8_t shelf;
 } markdown_core_roster_record;
@@ -182,9 +185,6 @@ typedef struct markdown_core_roster {
     uint32_t free;
     /* Where a lookup assembles its key. */
     markdown_core_strbuf key;
-    /* Whether the back is hidden from lookups, from the reopen that makes
-     * it to the splice that takes it back. */
-    bool hidden;
     /* THE JOURNAL: the labels the transaction `epoch` changed, in the order
      * it first changed them; `closed` once it flushed, so that the next
      * change starts the next. */
@@ -260,8 +260,7 @@ const markdown_core_roster_record *markdown_core_roster_find_name(markdown_core_
                                                                   markdown_core_measure measure, bool *failed);
 
 /* The earliest declaration of `kind` for `label`, in the kind's normal
- * form, that stands, or NULL, of a roster whose back is not hidden: the
- * label's next is its `after`. It reads and changes nothing else. */
+ * form, that stands, or NULL: the label's next is its `after`. It reads and changes nothing else. */
 const markdown_core_roster_record *markdown_core_roster_seek(const markdown_core_roster *roster,
                                                              markdown_core_roster_kind kind, const unsigned char *label,
                                                              bufsize_t length);
@@ -332,11 +331,14 @@ static inline bool markdown_core_roster_back(const markdown_core_roster *roster,
     return back;
 }
 
-/* Whether the label is declared and a lookup sees it: its first
- * declaration, in the back, is hidden from the reopen to the splice. */
+/* Whether the label is declared: a declaration of it stands, in the front
+ * or in the back. A lookup an edit's reading makes may see one the splice
+ * then lets go, as it may miss one the reading declares after it: the
+ * answer its use keeps says which (THE USES). */
 static inline bool markdown_core_roster_declared(const markdown_core_roster *roster,
                                                  const markdown_core_roster_label *label) {
-    return label->first && !(roster->hidden && markdown_core_roster_back(roster, label->first));
+    (void)roster;
+    return label->first != NULL;
 }
 
 /* THE JOURNAL: its labels, `*count` of them. */
@@ -350,8 +352,7 @@ static inline markdown_core_roster_label *const *markdown_core_roster_journal(co
 static inline void markdown_core_roster_close(markdown_core_roster *roster) { roster->closed = true; }
 
 /* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's
- * declarations that start there or past it go to the back, which lookups
- * do not see until the splice, and the uses that start at `uses` or past
+ * declarations that start there or past it go to the back, and the uses that start at `uses` or past
  * it; a roster that holds more dead bytes than live compacts first. False,
  * with the roster as it was, when storage could not be had. */
 bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, uint32_t uses);
@@ -359,8 +360,7 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, u
 /* THE SPLICE (blocks.c): the back's records that start before `place` of
  * the text before the edit go with the text the edit replaced, but the
  * first `held` uses of the back, which the reading kept (THE OLD TAIL OF A
- * PARAGRAPH, blocks.c); the end moves by `delta`, and lookups see the back
- * again. A `place` past every record lets the whole back go, as a reading
+ * PARAGRAPH, blocks.c), and the end moves by `delta`. A `place` past every record lets the whole back go, as a reading
  * that took nothing back does. False when the journal could not take a
  * label. */
 bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta, size_t held);

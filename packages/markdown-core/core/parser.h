@@ -1779,14 +1779,11 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
  * begin at, or UINT32_MAX when it took none back into that block. */
 uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level);
 /* THE USES OF ALTERED LABELS: one past where each use (roster.h, THE
- * USES) of a label but an anchor the last transaction declared where it
- * was not before, or left undeclared where it was (THE JOURNAL), lies, of
- * those that lie in one of the `count` spans of the text, pairs of offsets,
- * in order and each once, in `*places`, which the caller frees. Only a
- * lookup of these labels may answer otherwise than it did. False when
- * storage could not be had. */
-bool markdown_core_parser_altered_uses(markdown_core_parser *parser, const size_t *spans, size_t count, size_t **places,
-                                       size_t *place_count);
+ * USES) of a label the last transaction changed (THE JOURNAL) lies whose
+ * answer is not the label's now, in order and each once, in `*places`,
+ * which the caller frees: the lookups that would answer otherwise than
+ * they did, and no other. False when storage could not be had. */
+bool markdown_core_parser_altered_uses(markdown_core_parser *parser, size_t **places, size_t *place_count);
 /* Where the text an edit's back is measured from ends (THE BACK). */
 static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
     return (uint32_t)parser->input.back_end;

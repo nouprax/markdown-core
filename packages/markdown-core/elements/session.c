@@ -300,16 +300,16 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
     return status;
 }
 
-/* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): a lookup of
- * the children an edit kept, before its rest point and from where it took
- * the old children back, answers otherwise only for a label the edit made
- * declared or left undeclared. Every lookup is a use of its label by the
- * inline root that made it (roster.h, THE USES), so the blocks that hold a
- * use of one are known (markdown_core_parser_altered_uses), and only they are read again, as
- * an edit of nothing just past where the root starts reads them when it
- * takes no old child back before the last, which completes their content
- * against the definitions the edit left and keeps the identity of every
- * node. */
+/* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): every lookup
+ * is a use of its label by the inline root that made it, and keeps the
+ * answer it was given (roster.h, THE USES). At the end of the edit, the
+ * uses of the labels it changed whose answer is not the label's now are
+ * the lookups that would answer otherwise (markdown_core_parser_altered_uses),
+ * wherever and whenever in the edit they were made, and only their blocks
+ * are read again, as an edit of nothing just past where the root starts
+ * reads them when it takes no old child back before the last, which
+ * completes their content against the definitions the edit left and keeps
+ * the identity of every node. */
 
 static int session_size_order(const void *a, const void *b) {
     const size_t left = *(const size_t *)a, other = *(const size_t *)b;
@@ -402,10 +402,7 @@ static markdown_core_status session_change(markdown_core_session *session, size_
     }
     const uint32_t child = rest.child;
     const size_t line = rest.line;
-    /* The text before the rest point stays, past the line's start when the
-     * reading stands inside the line (A REST INSIDE A LINE). */
     const size_t line_start = session_line_start(session, line);
-    const size_t rest_start = rest.depth && rest.inside ? rest.mid : line_start;
     if (session->text.count > session->edits->peak) {
         session->edits->peak = session->text.count;
     }
@@ -433,17 +430,11 @@ static markdown_core_status session_change(markdown_core_session *session, size_
         }
         edits->peak = session->text.count;
     }
-    /* The children before the rest point stay, and so do those the reading
-     * took back after the edit: their lookups of a label the edit altered
-     * are made again (THE DEFINITIONS AN EDIT ALTERED). */
-    const size_t resumed = markdown_core_parser_resumed(session->committed);
-    if (status == MARKDOWN_CORE_OK && !compact && (child || resumed)) {
-        /* What the reading kept of a paragraph it read again from where the
-         * paragraph starts, before the rest point, is read again as the
-         * children before it are (THE LEAP). */
-        const size_t spans[] = {0, rest_start, resumed, session->text.count};
+    /* A lookup whose answer the edit altered is made again, wherever it was
+     * made (THE DEFINITIONS AN EDIT ALTERED). */
+    if (status == MARKDOWN_CORE_OK && !compact) {
         size_t *places, place_count;
-        if (!markdown_core_parser_altered_uses(session->committed, spans, resumed ? 2 : 1, &places, &place_count)) {
+        if (!markdown_core_parser_altered_uses(session->committed, &places, &place_count)) {
             /* The children that stay may read otherwise, and no edit after
              * this one may take them as they are. */
             markdown_core_node_pool_release(&session->pool, session->document.root);
