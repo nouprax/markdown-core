@@ -1166,8 +1166,7 @@ static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_stat
     if (!stops->count || stops->end - stops->items[stops->count - 1].offset != pos) {
         return false;
     }
-    if (inline_state->settle->note_count ||
-        parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records != stops->anchors) {
+    if (inline_state->settle->note_count || parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR] != stops->anchors) {
         stops->count = 0;
         return false;
     }

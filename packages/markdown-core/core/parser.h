@@ -1855,18 +1855,11 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
 /* The child of the chain's block `level` the old children it took back
  * begin at, or UINT32_MAX when it took none back into that block. */
 uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level);
-/* Where the last reading of an edit began: its rest point, or where the
- * paragraph the rest point is in starts, which it reads again whole (THE
- * LEAP). */
-size_t markdown_core_parser_reading_from(const markdown_core_parser *parser);
-/* THE LABELS AN EDIT ALTERED: the keys, as markdown_core_roster_made
- * writes them, that the declarations of the text the last reading of an
- * edit read, from where it began (markdown_core_parser_reading_from) up to where it took the old
- * children back, hold and those of the old text it replaced did not, or the
- * other way round, and that are declared now where they were not before, or
- * the other way round. The children before and after keep their
- * declarations, so only a lookup of these keys may answer otherwise. False
- * when storage could not be had. */
+/* THE LABELS AN EDIT ALTERED: the keys, with their kinds' bytes, as a list
+ * of keys (buffer.h), of the labels but anchors the last transaction
+ * declared where they were not before, or left undeclared where they were
+ * (roster.h, THE JOURNAL). Only a lookup of these keys may answer otherwise
+ * than it did. False when storage could not be had. */
 bool markdown_core_parser_altered_labels(markdown_core_parser *parser, markdown_core_strbuf *altered);
 /* THE USES OF ALTERED LABELS (markdown_core_edit, `uses`): one past where
  * each inline root starts that looked up one of the `altered` keys, as

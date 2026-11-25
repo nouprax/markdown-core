@@ -2141,22 +2141,16 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
     }
     const markdown_core_edit *edit = parser->stream->edit;
     markdown_core_roster *roster = &parser->roster;
-    for (uint32_t table = 0; table < TABLE_COUNT; table++) {
-        if (!markdown_core_roster_index(roster, tables->kinds[table])) {
-            return false;
+    /* The reference labels the transaction made or let go (roster.h, THE
+     * JOURNAL). */
+    size_t count;
+    markdown_core_roster_label *const *journal = markdown_core_roster_journal(roster, &count);
+    bool ok = true;
+    for (size_t i = 0; ok && i < count; i++) {
+        if (journal[i]->key[0] == (unsigned char)tables->kinds[TABLE_REFERENCES]) {
+            ok = tables_retarget(tables, journal[i]->key + 1, journal[i]->key_len - 1);
         }
     }
-    markdown_core_strbuf keys = MARKDOWN_CORE_BUF_INIT();
-    bool ok = markdown_core_roster_touched(roster, tables->kinds[TABLE_REFERENCES], &keys);
-    bufsize_t size;
-    for (bufsize_t at = 0; ok;) {
-        const unsigned char *key = markdown_core_strbuf_key(&keys, &at, &size);
-        if (!key) {
-            break;
-        }
-        ok = tables_retarget(tables, key + 1, size - 1);
-    }
-    markdown_core_strbuf_free(&keys);
     if (!ok) {
         return false;
     }
@@ -2172,7 +2166,6 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
         tables->roster = &tables->held;
         *roster = (markdown_core_roster){0};
         markdown_core_strbuf_init(&roster->key, 0);
-        markdown_core_strbuf_init(&roster->lost, 0);
         parser->stream->tables = NULL;
     }
     return true;

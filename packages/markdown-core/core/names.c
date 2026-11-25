@@ -833,7 +833,7 @@ void markdown_core_names_release(markdown_core_names *state) {
     stems_free(state->edit);
     state->edit = NULL;
     markdown_core_key_index_free(&state->taken);
-    state->records_at = state->records_read = state->named = 0;
+    state->named = 0;
 }
 
 /* THE COMMITTED NAMES. An entry's anchor is the first name of its sequence
@@ -842,7 +842,7 @@ void markdown_core_names_release(markdown_core_names *state) {
  * are one index. A name's entry holds who takes it, in `extra`: zero for an
  * explicit anchor, an entry's place among the entries plus one otherwise;
  * and in `value` the suffix an entry projecting to the name tries next. An
- * anchor's entry keys the label of the roster record that reserves it; a
+ * anchor's entry keys the roster's label that reserves it; an
  * entry's is read from the entry, its node's base and its suffix.
  *
  * An entry takes the first name of its sequence, from where it starts, that
@@ -1013,31 +1013,16 @@ static void displace(name_pass *pass, size_t at) {
     }
 }
 
-/* The record's name reserved: a vacant name becomes the record's, and one a
- * entry holds is taken from it, which goes on along its sequence. A
- * withdrawal that leaves no declaration of its name standing frees the
- * name: a declaration of it came before, which entered it. A pass that
- * starts empty reads neither a withdrawal nor what one withdrew, nor a
- * declaration an edit replaced or one its reading does not see, which an
- * edit's log holds where it was made (roster.h). */
-static void read_record(name_pass *pass, const markdown_core_roster_record *record) {
+/* The anchor's name reserved: a vacant name becomes the anchor's, and one
+ * an entry holds is taken from it, which goes on along its sequence. */
+static void read_anchor(name_pass *pass, const markdown_core_roster_label *anchor) {
     markdown_core_parser *parser = pass->parser;
-    const markdown_core_chunk label = markdown_core_roster_label(record);
+    const markdown_core_chunk label = markdown_core_roster_text(anchor);
     markdown_core_key_index *index = pass->index;
-    if (pass->fresh && !markdown_core_roster_seen(&parser->roster, record)) {
-        return;
-    }
     name_view name;
     markdown_core_pieces_clear(&name.pieces);
     markdown_core_pieces_add(&name.pieces, label.data, label.len);
     name_hashed(&name, separator_of(pass->state));
-    if (record->withdraws) {
-        if (!record->live) {
-            pass->state->work += (size_t)label.len + 1;
-            markdown_core_key_index_remove(index, name_seek(pass, &name));
-        }
-        return;
-    }
     markdown_core_key_index_slot *entry = name_entry(pass, &name);
     if (!entry) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1057,13 +1042,13 @@ static void read_record(name_pass *pass, const markdown_core_roster_record *reco
     displace(pass, holder);
 }
 
-/* The cursor's records before position `end` of the log, reserved in log
- * order. */
-static void read_records(name_pass *pass, markdown_core_roster_cursor *cursor, size_t end) {
-    const markdown_core_roster *roster = &pass->parser->roster;
-    for (const markdown_core_roster_record *record;
-         !pass->parser->error && (record = markdown_core_roster_next_before(roster, cursor, end));) {
-        read_record(pass, record);
+/* Every explicit anchor's name reserved, in the order of where they
+ * start. */
+static void read_anchors(name_pass *pass) {
+    const markdown_core_roster_shelf *shelf = markdown_core_roster_shelf_of(
+        &pass->parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, (uint16_t)MARKDOWN_CORE_NODE_NONE);
+    for (size_t i = 0; shelf && i < shelf->places.count && !pass->parser->error; i++) {
+        read_anchor(pass, markdown_core_roster_shelf_at(shelf, i)->label);
     }
 }
 
@@ -1149,7 +1134,7 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
  * every entry again. */
 static void names_reset(markdown_core_names *state) {
     markdown_core_key_index_free(&state->taken);
-    state->records_at = state->records_read = state->named = 0;
+    state->named = 0;
 }
 
 /* Whether an entry that starts before `place` holds the name of the stem
@@ -1597,16 +1582,16 @@ static void edit_rename(name_pass *pass) {
         }
         entry->stem = id;
     }
-    markdown_core_strbuf anchors = MARKDOWN_CORE_BUF_INIT();
-    if (!parser->error && !markdown_core_roster_anchors(&parser->roster, names->rest, &anchors)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    bufsize_t size;
-    for (bufsize_t at = 0; !parser->error;) {
-        const unsigned char *key = markdown_core_strbuf_key(&anchors, &at, &size);
-        if (!key) {
-            break;
+    /* The anchors the edit made or let go (roster.h, THE JOURNAL). */
+    size_t anchors;
+    markdown_core_roster_label *const *journal = markdown_core_roster_journal(&parser->roster, &anchors);
+    for (size_t i = 0; i < anchors && !parser->error; i++) {
+        if (journal[i]->key[0] != (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR) {
+            continue;
         }
+        const markdown_core_chunk text = markdown_core_roster_text(journal[i]);
+        const unsigned char *key = text.data;
+        const bufsize_t size = text.len;
         markdown_core_pieces label;
         markdown_core_pieces_clear(&label);
         markdown_core_pieces_add(&label, key, size);
@@ -1630,7 +1615,6 @@ static void edit_rename(name_pass *pass) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
-    markdown_core_strbuf_free(&anchors);
     if (!parser->error) {
         kin_rename(pass);
     }
@@ -1690,11 +1674,13 @@ void markdown_core_names_finish(markdown_core_parser *parser) {
             return;
         }
     }
-    const markdown_core_roster *roster = &parser->roster;
-    const size_t records = roster->spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records;
-    markdown_core_roster_cursor cursor = {MARKDOWN_CORE_ROSTER_ANCHOR, state->records_at,
-                                          records - state->records_read};
-    if (!state->taken.capacity && !markdown_core_key_index_init(&state->taken, total + cursor.left)) {
+    size_t anchors = 0;
+    const markdown_core_roster_shelf *shelf =
+        markdown_core_roster_shelf_of(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, (uint16_t)MARKDOWN_CORE_NODE_NONE);
+    if (shelf) {
+        anchors = shelf->places.count;
+    }
+    if (!state->taken.capacity && !markdown_core_key_index_init(&state->taken, total + anchors)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
@@ -1704,9 +1690,7 @@ void markdown_core_names_finish(markdown_core_parser *parser) {
     pass.index = &state->taken;
     pass.fresh = true;
     pass.name = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
-    read_records(&pass, &cursor, roster->count);
-    state->records_at = cursor.at;
-    state->records_read = records - cursor.left;
+    read_anchors(&pass);
     name_headings(&pass, state->named, total);
     state->named = total;
     markdown_core_strbuf_free(&pass.name);

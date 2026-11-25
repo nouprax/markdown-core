@@ -165,7 +165,7 @@ typedef struct markdown_core_names {
     size_t end;
     bool spliced;
     markdown_core_key_index taken;
-    size_t records_at, records_read, named;
+    size_t named;
     size_t work;
     markdown_core_name_edit *edit;
     const struct markdown_core_element_instance *const *owners;

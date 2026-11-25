@@ -111,7 +111,7 @@ pinned UnicodeData SHA-256 and Node Unicode version. Builds need no download.
 A spelling is taken when the roster holds it as an explicit anchor or a
 heading before was given it. When some heading's anchor is to be computed,
 finalization's own exact-string index holds both: it first takes every
-explicit anchor, reading the roster's anchor records in log order under the
+explicit anchor, reading the roster's anchor declarations in the order of where they start, under the
 roster's copy of their bytes, and then each spelling a heading is given.
 Each occupied base has one increasing suffix cursor stored directly in its
 index slot. Every candidate, the base first, costs one entry lookup, which

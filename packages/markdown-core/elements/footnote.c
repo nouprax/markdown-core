@@ -295,7 +295,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
             markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_FOOTNOTE, opener->position + 1, end);
             /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
-            const markdown_core_chunk defined = markdown_core_roster_label(definition);
+            const markdown_core_chunk defined = markdown_core_roster_label_of(definition);
             unsigned char *id = markdown_core_alloc(1, (size_t)defined.len + 1);
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;

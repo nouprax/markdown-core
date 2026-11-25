@@ -2687,8 +2687,8 @@ static bool S_seam_stops(markdown_core_parser *parser, markdown_core_node *node)
         leap->back_count = 0;
     }
     if (leap->back_count) {
-        leap->stops = (markdown_core_seam_stops){
-            leap->backs, leap->back_count, parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records, size, false};
+        leap->stops = (markdown_core_seam_stops){leap->backs, leap->back_count,
+                                                 parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR], size, false};
         return true;
     }
     /* None to meet: the old children past the seam and their uses go. */
@@ -3186,7 +3186,7 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
         return;
     }
     leap->held = node->child_count;
-    leap->anchors = parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records;
+    leap->anchors = parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR];
     leap->uses = edit->uses.front;
     leap->active = true;
     leap->settle.from = leap->seam.offset;
@@ -3294,7 +3294,7 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
     leap->open_count = 0;
     S_uses_drop(edit, leap->rest);
     leap->rest = 0;
-    if (parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records != leap->anchors || settle->note_count) {
+    if (parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR] != leap->anchors || settle->note_count) {
         leap->seam_count = leap->back_count = 0;
         return true;
     }
@@ -6087,7 +6087,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->nest_on = false;
         markdown_core_tree_erase(&input->lines, input->lines.front, S_lines_back_count(&input->lines));
         S_uses_drop(stream->edit, S_uses_back(&stream->edit->uses));
-        markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
+        if (!markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
     }
     /* A chain whose deepest block reads literal lines rests at a later line
      * of it (THE LEAP). */
@@ -6214,7 +6216,9 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
     edit->line = index;
     S_openers_cut(edit, old, delta);
     S_uses_trim(edit, old);
-    markdown_core_roster_splice(&parser->roster, old, delta);
+    if (!markdown_core_roster_splice(&parser->roster, old, delta)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     S_lines_slide(&input->lines, delta);
     input->back_end = (size_t)((int64_t)input->back_end + delta);
     markdown_core_tree_shift(&edit->uses, edit->uses.front, delta);
@@ -7279,62 +7283,17 @@ uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t
     return parser->stream->edit->tails[level];
 }
 
-/* Whether the key `key`, `size` bytes with its kind's byte, which the
- * reading from `start` up to `to` declared and the old text it replaced did
- * not (`made`), or the other way round, is now declared, or not, where it
- * was not, or was, before: the answer of a lookup of it flips only then. A
- * key the reading made was declared before when a declaration outside what
- * it read declares it now; one it lost is declared now when any does. */
-static bool S_label_flips(markdown_core_parser *parser, const unsigned char *key, bufsize_t size, bool made,
-                          uint32_t start, uint32_t to, bool *failed) {
-    const markdown_core_roster_kind kind = (markdown_core_roster_kind)key[0];
-    if (!made) {
-        return !markdown_core_roster_find(&parser->roster, kind, key + 1, size - 1, failed) && !*failed;
-    }
-    return !markdown_core_roster_declared_outside(&parser->roster, kind, key + 1, size - 1, start, to, failed) &&
-           !*failed;
-}
-
-size_t markdown_core_parser_reading_from(const markdown_core_parser *parser) { return parser->roster.from; }
-
 bool markdown_core_parser_altered_labels(markdown_core_parser *parser, markdown_core_strbuf *altered) {
-    const markdown_core_edit *edit = parser->stream->edit;
-    const uint32_t start = parser->roster.from;
-    const uint32_t to = edit->resumed ? (uint32_t)edit->resumed : UINT32_MAX;
-    markdown_core_strbuf made = MARKDOWN_CORE_BUF_INIT(), lost = MARKDOWN_CORE_BUF_INIT();
-    bool ok = markdown_core_roster_made(&parser->roster, &made) && markdown_core_roster_lost(&parser->roster, &lost);
     markdown_core_strbuf_clear(altered);
-    /* Both are in byte order: a merge keeps what one holds and the other
-     * does not. */
-    bufsize_t left = 0, other = 0, left_size = 0, other_size = 0;
-    const unsigned char *made_key = markdown_core_strbuf_key(&made, &left, &left_size);
-    const unsigned char *lost_key = markdown_core_strbuf_key(&lost, &other, &other_size);
-    while (ok && (made_key || lost_key)) {
-        int order = !made_key ? 1 : !lost_key ? -1 : 0;
-        if (!order) {
-            const bufsize_t common = left_size < other_size ? left_size : other_size;
-            order = memcmp(made_key, lost_key, (size_t)common);
-            order = order ? order : (left_size > other_size) - (left_size < other_size);
-        }
-        if (order) {
-            const unsigned char *key = order < 0 ? made_key : lost_key;
-            const bufsize_t size = order < 0 ? left_size : other_size;
-            bool failed = false;
-            if (S_label_flips(parser, key, size, order < 0, start, to, &failed)) {
-                markdown_core_strbuf_put_key(altered, key, size);
-            }
-            ok = !failed;
-        }
-        if (order <= 0) {
-            made_key = markdown_core_strbuf_key(&made, &left, &left_size);
-        }
-        if (order >= 0) {
-            lost_key = markdown_core_strbuf_key(&lost, &other, &other_size);
+    size_t count;
+    markdown_core_roster_label *const *labels = markdown_core_roster_journal(&parser->roster, &count);
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_roster_label *label = labels[i];
+        if (label->key[0] != (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR && label->was != (label->first != NULL)) {
+            markdown_core_strbuf_put_key(altered, label->key, label->key_len);
         }
     }
-    markdown_core_strbuf_free(&made);
-    markdown_core_strbuf_free(&lost);
-    return ok && !altered->oom;
+    return !altered->oom;
 }
 
 static int S_place_order(const void *a, const void *b) {
@@ -9783,6 +9742,13 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         S_seam_measure(parser);
     }
 
+    /* A reading that took nothing back read every declaration again: the
+     * back's go before the names and the publish read the roster (names.c,
+     * ast.c, A DOCUMENT'S TABLES). */
+    if (parser->stream->edit && !parser->stream->edit->resumed &&
+        !markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     /* The document's finalization reads the finished tree: the headings take
      * their anchors once every explicit anchor has been reserved, which
      * completion did at each node's ENTER. */
@@ -9792,12 +9758,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
      * The children an edit took back stand as their publish left them, and
      * only the first moves, from the child before it (THE SPLICE). */
     markdown_core_edit *const edit = parser->stream->edit;
-    /* A reading that took nothing back read every declaration again: the
-     * back's go before the publish reads the roster (ast.c, A DOCUMENT'S
-     * TABLES). */
-    if (edit && !edit->resumed) {
-        markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0);
-    }
     if (!parser->error) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         const uint32_t children = parser->root->child_count;
@@ -9885,6 +9845,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             }
         }
     }
+    /* The transaction is over: what it changed was read (THE JOURNAL). */
+    markdown_core_roster_close(&parser->roster);
     S_release_walk(parser);
     if (parser->error) {
         goto failed;

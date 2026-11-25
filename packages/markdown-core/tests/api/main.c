@@ -3424,7 +3424,7 @@ enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = R
 
 /* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
- * log's array, the index and the places' numbers each double -- and one per
+ * journal, the index and the places' numbers each double -- and one per
  * leaf of the places' tree, which an append fills, rather than one each, and
  * all of them go with the roster. */
 static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner) {
@@ -3439,21 +3439,24 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
         declared = declared && markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, (const unsigned char *)label,
                                                             (bufsize_t)strlen(label), (uint32_t)i, NULL);
     }
-    OK(runner, declared && roster.count == COUNT, "every declaration is a record");
-    /* Twelve doublings reach COUNT; each of the four structures doubles
-     * at most once per doubling, and the places fill their leaves. */
+    OK(runner, declared && roster.made[ROSTER_TEST_KIND] == COUNT, "every declaration is a record");
+    /* Twelve doublings reach COUNT; each of the three arrays doubles at most
+     * once per doubling, the blocks double up to their cap and then take
+     * one per cap's bytes (roster.c, ROSTER_BLOCK_MAX_BYTES), and the places
+     * fill their leaves. */
     const size_t leaves = COUNT / MARKDOWN_CORE_TREE_LEAF + 1;
-    OK(runner, payload_allocations <= 4 * 13 + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 2,
+    const size_t blocks = 5 + roster.bytes / (16 * 1024) + 1;
+    OK(runner, payload_allocations <= 3 * 13 + blocks + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 2,
        "%d records took %zu allocations", COUNT, payload_allocations);
     bool failed = false;
     markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
     const markdown_core_roster_record *found =
         markdown_core_roster_find_label(&roster, ROSTER_TEST_KIND, &lookup, &failed);
-    markdown_core_chunk name = found ? markdown_core_roster_label(found) : (markdown_core_chunk){0};
+    markdown_core_chunk name = found ? markdown_core_roster_label_of(found) : (markdown_core_chunk){0};
     OK(runner, !failed && name.len == 10 && !memcmp(name.data, "label 4095", 10),
        "a carved record is found by its label's normal form");
     markdown_core_roster_free(&roster);
-    INT_EQ(runner, payload_live, 0, "the roster's blocks, log and index are all released");
+    INT_EQ(runner, payload_live, 0, "the roster's blocks, journal and index are all released");
     payload_probe_disarm();
 }
 
@@ -3624,122 +3627,129 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
        "a reference label is no footnote");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
     const markdown_core_roster_record *record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
-    OK(runner,
-       record && !markdown_core_roster_starts_before(&roster, record, 40) &&
-           markdown_core_roster_starts_before(&roster, record, 41),
+    OK(runner, record && markdown_core_roster_start(&roster, record) == 40,
        "a declaration starts where its definition starts");
     OK(runner,
        markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL) &&
            markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL),
        "the key is declared twice more");
     record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
-    OK(runner,
-       record && record->start == 10 && markdown_core_roster_starts_before(&roster, record, 11) &&
-           !markdown_core_roster_starts_before(&roster, record, 10),
+    OK(runner, record && markdown_core_roster_start(&roster, record) == 10 && record->label->count == 3,
        "the key's earliest declaration answers");
     OK(runner, !failed, "and no lookup failed");
     markdown_core_roster_free(&roster);
 }
 
-/* THE LOG AND THE INDEX ANSWER AS A MODEL. A model -- each key's
+/* THE LABELS AND THE JOURNAL ANSWER AS A MODEL. A model -- each key's
  * declarations that stand, as a list of where they start -- is driven
- * through the same random declarations and withdrawals, and after a random third of the steps every key of a random set
- * of the kinds is compared: whether it is declared, where its earliest declaration starts and how many of its
- * declarations stand. A withdrawal withdraws the declaration that starts where it does, or the key's last when none
- * does. The index takes a kind's records only when a lookup or a withdrawal of that kind asks, so the steps between two
- * comparisons, and the kinds a comparison skips, leave records it never took. Labels come from a small set, so keys are
- * declared again and again, and from a growing one, so the index grows and removals cross the slots growth moved. */
+ * through the same random edits: each reopens at a random start, declares a
+ * few labels in the text it reads, and splices the old text back from a
+ * random place past it, which lets the old declarations between go and
+ * moves the rest; now and then the roster compacts between edits. After each
+ * edit every key of a random set of the kinds is compared: whether it is
+ * declared, where its earliest declaration starts and how many stand; and
+ * the journal must hold just the keys whose being declared the edit
+ * flipped, among others it touched. Labels come from a small set, so keys
+ * are declared again and again, and from a growing one, so the index
+ * grows. */
 typedef struct {
     uint32_t *starts;
     size_t count, capacity;
+    bool was;
 } roster_model_key;
 
 static void roster_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
-/* The start the model's key withdraws for a withdrawal at `start`: that
- * start when a declaration stands there, else the latest. */
-static size_t roster_model_withdrawn(const roster_model_key *key, uint32_t start) {
-    size_t latest = 0;
-    for (size_t i = 0; i < key->count; i++) {
-        if (key->starts[i] == start) {
-            return i;
-        }
-        latest = key->starts[i] > key->starts[latest] ? i : latest;
-    }
-    return latest;
-}
-
 static void roster_matches_a_model(test_batch_runner *runner) {
     /* The kinds: the engine's ANCHOR, filed under a measure, and three
      * spaces after it. */
-    enum { STEPS = 6000, KINDS = 4, SHARED = 23 };
+    enum { EDITS = 1500, KINDS = 4, SHARED = 23, LABELS = SHARED + 4 * EDITS };
     payload_probe_arm();
     markdown_core_roster roster;
     markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
-    roster_model_key *keys = calloc((size_t)KINDS * (SHARED + STEPS), sizeof(*keys));
-    size_t records = 0, fresh = SHARED;
+    roster_model_key *keys = calloc((size_t)KINDS * LABELS, sizeof(*keys));
+    size_t fresh = SHARED, flips = 0, compactions = 0;
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
+#define ROSTER_RANDOM() (random ^= random << 13, random ^= random >> 7, random ^= random << 17, random)
+    /* The text's length, which each edit changes. */
+    uint32_t length = 1u << 16;
     bool agrees = true;
-    size_t untaken = 0, withdrawals = 0;
-    for (size_t step = 0; step < STEPS && agrees; step++) {
-        random ^= random << 13;
-        random ^= random >> 7;
-        random ^= random << 17;
-        unsigned choice = (unsigned)(random % 100);
-        {
-            struct {
-                unsigned kind, label;
-                uint32_t start;
-                bool withdraws;
-            } record = {(unsigned)((random >> 40) % KINDS),
-                        choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44),
-                        false};
-            roster_model_key *key = &keys[record.kind * (SHARED + STEPS) + record.label];
-            /* A declared key is withdrawn about a third of the times a
-             * shared label comes up, so declarations stand and fall again
-             * and again. */
-            record.withdraws = choice < 30 && key->count > 0;
+    for (size_t edit = 0; edit < EDITS && agrees; edit++) {
+        for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
+            keys[i].was = keys[i].count > 0;
+        }
+        const uint32_t from = (uint32_t)(ROSTER_RANDOM() % length);
+        const uint32_t read = (uint32_t)(ROSTER_RANDOM() % 512);
+        const uint32_t old = from + (uint32_t)(ROSTER_RANDOM() % (length - from + 1));
+        agrees = markdown_core_roster_reopen(&roster, from);
+        /* The text the reading read, from `from` up to `from + read`, in
+         * which it declares; the old text from `old` on comes back after
+         * it. */
+        const unsigned made = (unsigned)(ROSTER_RANDOM() % 5);
+        for (unsigned k = 0; k < made && agrees; k++) {
+            const unsigned choice = (unsigned)(ROSTER_RANDOM() % 100);
+            const unsigned kind = (unsigned)(ROSTER_RANDOM() % KINDS);
+            const unsigned label = choice < 70 ? (unsigned)(ROSTER_RANDOM() % SHARED) : (unsigned)fresh++;
+            const uint32_t start = from + (read ? (uint32_t)(ROSTER_RANDOM() % read) : 0);
+            roster_model_key *key = &keys[kind * LABELS + label];
             char text[16];
-            roster_label_text(record.label, text, sizeof(text));
-            const markdown_core_roster_kind kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + record.kind);
-            agrees = record.withdraws ? markdown_core_roster_withdraw(&roster, kind, (const unsigned char *)text,
-                                                                      (bufsize_t)strlen(text), record.start)
-                                      : markdown_core_roster_declare(&roster, kind, (const unsigned char *)text,
-                                                                     (bufsize_t)strlen(text), record.start, NULL);
-            if (record.withdraws) {
-                const size_t at = roster_model_withdrawn(key, record.start);
-                key->starts[at] = key->starts[--key->count];
-            } else {
-                if (key->count == key->capacity) {
-                    key->capacity = key->capacity ? 2 * key->capacity : 4;
-                    key->starts = realloc(key->starts, key->capacity * sizeof(*key->starts));
-                }
-                key->starts[key->count++] = record.start;
+            roster_label_text(label, text, sizeof(text));
+            agrees =
+                markdown_core_roster_declare(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
+                                             (const unsigned char *)text, (bufsize_t)strlen(text), start, NULL);
+            if (key->count == key->capacity) {
+                key->capacity = key->capacity ? 2 * key->capacity : 4;
+                key->starts = realloc(key->starts, key->capacity * sizeof(*key->starts));
             }
-            withdrawals += record.withdraws;
-            records++;
+            /* Marked as new until the splice moves the old. */
+            key->starts[key->count++] = start | UINT32_C(0x80000000);
         }
-        agrees = agrees && roster.count == records;
-        for (size_t at = 0; at < roster.count; at++) {
-            untaken += at >= roster.spaces[roster.records[at]->key[0]].cursor;
+        const int64_t delta = (int64_t)(from + read) - (int64_t)old;
+        agrees = agrees && markdown_core_roster_splice(&roster, old, delta);
+        length = (uint32_t)((int64_t)length + delta);
+        for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
+            roster_model_key *key = &keys[i];
+            size_t kept = 0;
+            for (size_t m = 0; m < key->count; m++) {
+                const uint32_t start = key->starts[m];
+                if (start & UINT32_C(0x80000000)) {
+                    key->starts[kept++] = start & ~UINT32_C(0x80000000);
+                } else if (start < from) {
+                    key->starts[kept++] = start;
+                } else if (start >= old) {
+                    key->starts[kept++] = (uint32_t)((int64_t)start + delta);
+                }
+            }
+            key->count = kept;
         }
-        const bool compare = (random >> 52) % 3 == 0 || step == STEPS - 1;
-        /* The kinds compared: a random set, so one kind's records are taken
-         * while another's wait; every kind at the last step. */
-        const unsigned compared = step == STEPS - 1 ? (1u << KINDS) - 1 : (unsigned)(random >> 56) % (1u << KINDS);
-        for (unsigned kind = 0; kind < KINDS && agrees && compare; kind++) {
+        /* The journal holds every key that flipped. */
+        size_t journal_count;
+        markdown_core_roster_label *const *journal = markdown_core_roster_journal(&roster, &journal_count);
+        size_t flipped = 0, listed = 0;
+        for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
+            flipped += keys[i].was != (keys[i].count > 0);
+        }
+        for (size_t i = 0; i < journal_count; i++) {
+            listed += journal[i]->was != (journal[i]->first != NULL);
+        }
+        if (agrees && listed != flipped) {
+            fprintf(stderr, "roster journal at edit %zu lists %zu flips, the model %zu\n", edit, listed, flipped);
+        }
+        agrees = agrees && listed == flipped;
+        flips += flipped;
+        markdown_core_roster_close(&roster);
+        if (ROSTER_RANDOM() % 16 == 0) {
+            agrees = agrees && markdown_core_roster_compact(&roster);
+            compactions++;
+        }
+        const unsigned compared = edit == EDITS - 1 ? (1u << KINDS) - 1 : (unsigned)(ROSTER_RANDOM() % (1u << KINDS));
+        for (unsigned kind = 0; kind < KINDS && agrees; kind++) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
-            const markdown_core_roster_kind compared_kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind);
             for (unsigned label = 0; label < fresh && agrees; label++) {
-                const roster_model_key *key = &keys[kind * (SHARED + STEPS) + label];
-                /* Only a label some step declared can answer; the rest are
-                 * sampled every few steps, which is enough to see a key
-                 * left behind. */
-                if (!key->count && label >= SHARED && (label + step) % 64) {
+                const roster_model_key *key = &keys[kind * LABELS + label];
+                if (!key->count && label >= SHARED && (label + edit) % 64) {
                     continue;
                 }
                 uint32_t earliest = UINT32_MAX;
@@ -3749,40 +3759,26 @@ static void roster_matches_a_model(test_batch_runner *runner) {
                 char text[16];
                 roster_label_text(label, text, sizeof(text));
                 bool failed = false;
-                const markdown_core_roster_record *found = markdown_core_roster_find(
-                    &roster, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
-                /* An anchor's key is filed under its measure (roster.c,
-                 * S_hash), any other's under its bytes read in parts. */
-                markdown_core_key_stream stream;
-                markdown_core_key_stream_start(&stream);
-                if (found) {
-                    markdown_core_key_stream_add(&stream, found->key, (size_t)found->key_len);
-                }
-                const markdown_core_key_index_slot *slot =
-                    !found ? NULL
-                           : markdown_core_key_index_find_hashed(
-                                 &roster.index,
-                                 found->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
-                                     ? markdown_core_key_index_hash(
-                                           markdown_core_measure_of(found->key, (size_t)found->key_len))
-                                     : markdown_core_key_stream_end(&stream),
-                                 found->key, found->key_len);
-                agrees =
-                    !failed && (found != NULL) == (key->count > 0) &&
-                    (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
+                const markdown_core_roster_record *found =
+                    markdown_core_roster_find(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
+                                              (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
+                agrees = !failed && (found != NULL) == (key->count > 0) &&
+                         (!found || (markdown_core_roster_start(&roster, found) == earliest &&
+                                     found->label->count == key->count));
                 if (!agrees) {
-                    fprintf(stderr, "roster diverges at step %zu on kind %u label %u\n", step, kind, label);
+                    fprintf(stderr, "roster diverges at edit %zu on kind %u label %u\n", edit, kind, label);
                 }
             }
         }
     }
-    OK(runner, agrees, "the roster answers as the model after declarations and withdrawals");
-    OK(runner, withdrawals, "declarations were withdrawn (%zu)", withdrawals);
-    OK(runner, untaken, "comparisons left records the index never took (%zu)", untaken);
+#undef ROSTER_RANDOM
+    OK(runner, agrees, "the roster answers as the model after edits and compactions");
+    OK(runner, flips, "edits flipped keys (%zu)", flips);
+    OK(runner, compactions, "the roster compacted (%zu)", compactions);
     markdown_core_roster_free(&roster);
     INT_EQ(runner, payload_live, 0, "the roster releases everything it holds");
     payload_probe_disarm();
-    for (size_t i = 0; i < (size_t)KINDS * (SHARED + STEPS); i++) {
+    for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
         free(keys[i].starts);
     }
     free(keys);
@@ -5282,11 +5278,8 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = ATTRIBUTE_WORK(parser);
     work->anchors = parser->names.work;
-    work->definitions = 0;
-    for (size_t i = 0; i < parser->roster.count; i++) {
-        work->definitions += parser->roster.records[i]->key[0] ==
-                             markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE);
-    }
+    work->definitions =
+        parser->roster.made[markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE)];
     work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
     work->nonblank = parser->nonblank_work;
     work->definition_lists =

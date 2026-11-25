@@ -861,7 +861,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         }
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->label = record ? markdown_core_roster_label(record) : markdown_core_chunk_literal("");
+    candidate->label = record ? markdown_core_roster_label_of(record) : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
