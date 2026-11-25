@@ -1296,13 +1296,7 @@ markdown_core_folds *markdown_core_index_folds(markdown_core_index *index, const
 bool markdown_core_index_mend(markdown_core_index *index, const markdown_core_node *root, size_t first, uint32_t tail,
                               size_t count, int64_t delta) {
     index->root = root;
-    if (!widths_mend(index, &index->widths, root, first, tail, count, delta)) {
-        return false;
-    }
-#ifndef NDEBUG
-    markdown_core_index_check(index);
-#endif
-    return true;
+    return widths_mend(index, &index->widths, root, first, tail, count, delta);
 }
 
 #ifndef NDEBUG

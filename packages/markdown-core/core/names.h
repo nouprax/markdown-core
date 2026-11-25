@@ -13,8 +13,8 @@
 
 /* THE NAMES SERVICE (names.c): the engine names every node an element asks
  * a name for, as anchors.md says -- the base its text projects to, or the
- * base, a hyphen and a suffix -- past the explicit anchors the roster
- * reserves, across a parse and its edits. The element knows its
+ * base, a hyphen and a suffix -- past the explicit anchors the symbols
+ * reserve, across a parse and its edits. The element knows its
  * node's grammar: where the node keeps its name, and what its text projects
  * to. The service knows the rest: the order of the nodes, the names taken,
  * and the names an edit moves. */
@@ -155,7 +155,7 @@ typedef struct markdown_core_name_edit {
  * ended. A parse no edit reopened keeps no back.
  *
  * Then the committed names (names.c, THE COMMITTED NAMES): the names
- * taken, where the reading of the roster's ANCHOR records stands and how
+ * taken, where the reading of the symbols' ANCHOR definitions stands and how
  * many it read, and how many entries are named; the projection and lookup work the assignment of their anchors did,
  * for its complexity gate; what only an edit keeps of the names, made at its
  * first reopen; and the dialect's name owners (dialect.h, `namers`). */

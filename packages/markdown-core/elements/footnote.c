@@ -16,10 +16,10 @@ const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .f
 enum { FOOTNOTE_LABELS };
 static const markdown_core_space *const FOOTNOTE_SPACES[] = {[FOOTNOTE_LABELS] = &MARKDOWN_CORE_FOOTNOTE_SPACE, NULL};
 
-static const markdown_core_roster_record *
-markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
-                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
-                                         bufsize_t after_close);
+static const markdown_core_mention *markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
+                                                                             markdown_core_inline_state *inline_state,
+                                                                             bufsize_t label_start,
+                                                                             bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close);
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -28,19 +28,19 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
  * defines no such label that the call's root sees. The record's label IS the call's normal form -- the
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
-static const markdown_core_roster_record *
-markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
-                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
-                                         bufsize_t after_close) {
+static const markdown_core_mention *markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
+                                                                             markdown_core_inline_state *inline_state,
+                                                                             bufsize_t label_start,
+                                                                             bufsize_t after_close) {
     if (after_close - label_start < 2) {
         return NULL;
     }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
-     * aliases, so the only allocation in here is the roster's own
+     * aliases, so the only allocation in here is the labels' own
      * normalization. */
     markdown_core_chunk label = markdown_core_inline_take(inline_state, label_start + 1, after_close - label_start - 2);
     bool failed = false;
-    const markdown_core_roster_record *record = markdown_core_parser_find_definition(
+    const markdown_core_mention *record = markdown_core_parser_find_definition(
         inline_state->owner_parser, self->spaces[FOOTNOTE_LABELS], &label,
         markdown_core_inline_state_root_offset(inline_state, label_start), &failed);
     if (failed) {
@@ -254,7 +254,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
         bool caret_written = opener->position < markdown_core_inline_size(inline_state) &&
                              markdown_core_inline_char_at(inline_state, opener->position) == '^' &&
                              (literal->len > 1 || markdown_core_scaffold_next(label));
-        const markdown_core_roster_record *definition =
+        const markdown_core_mention *definition =
             caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
                           : NULL;
         if (caret_written && !definition) {
@@ -295,7 +295,7 @@ static bool markdown_core_footnote_close_reference(const markdown_core_element_i
             markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_FOOTNOTE, opener->position + 1, end);
             /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
-            const markdown_core_chunk defined = markdown_core_roster_label_of(definition);
+            const markdown_core_chunk defined = markdown_core_mention_name(definition);
             unsigned char *id = markdown_core_alloc(1, (size_t)defined.len + 1);
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;

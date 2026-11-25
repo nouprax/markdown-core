@@ -744,7 +744,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     markdown_core_chunk url_chunk = MARKDOWN_CORE_CHUNK_EMPTY, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    const markdown_core_roster_record *record = NULL;
+    const markdown_core_mention *record = NULL;
     int found_label;
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
@@ -861,7 +861,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         }
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->label = record ? markdown_core_roster_label_of(record) : markdown_core_chunk_literal("");
+    candidate->label = record ? markdown_core_mention_name(record) : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }

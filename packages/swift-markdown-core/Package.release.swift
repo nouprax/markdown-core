@@ -39,7 +39,7 @@ let package = Package(
                 "core/utf8.c",
                 "core/buffer.c",
                 "core/names.c",
-                "core/roster.c",
+                "core/labels.c",
                 "core/map.c",
                 "core/tree.c",
                 "core/index.c",

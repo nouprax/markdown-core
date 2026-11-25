@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include "array.h"
 #include "tree.h"
-#include "roster.h"
+#include "labels.h"
 #include "names.h"
 #include "stack.h"
 #include "node.h"
@@ -233,23 +233,23 @@ bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdow
                                      uint32_t source);
 
 /* A DOCUMENT'S TABLES (ast.c): the definitions the published document
- * holds -- Footnotes, Specimens, References, Headings -- are the roster's
- * declarations of their nodes, a shelf of each kind (roster.h, THE PLACES),
- * which the document reads as the roster keeps them, and its reference
- * labels, which the roster keeps in order (roster.h, THE LABELS IN
- * ORDER). */
+ * holds -- Footnotes, Specimens, References, Headings -- are the labels'
+ * definitions of their nodes, a sequence of each kind (labels.h, THE
+ * SEQUENCES), which the document reads as the labels keep them, and its
+ * reference labels, which the labels keep in order (labels.h, THE NAMES
+ * IN ORDER). */
 enum { MARKDOWN_CORE_DEFINITION_TABLES = 4 };
 
 typedef struct markdown_core_tables {
-    /* The roster the tables read: the parse's, or `held`, once a document
-     * took it from a parse that takes no edits. */
-    markdown_core_roster *roster;
-    markdown_core_roster held;
-    /* The roster kind of each table's labels. */
+    /* The labels the tables read: the parse's, or `held`, once a document
+     * took them from a parse that takes no edits. */
+    markdown_core_labels *labels;
+    markdown_core_labels held;
+    /* The space of each table's labels. */
     unsigned kinds[MARKDOWN_CORE_DEFINITION_TABLES];
 } markdown_core_tables;
 
-/* The tables' storage let go, and the roster they hold. */
+/* The tables' storage let go, and the labels they hold. */
 void markdown_core_publish_release_tables(markdown_core_tables *tables);
 
 /* WHERE AN EDIT'S READING STANDS INSIDE A LINE (blocks.c, A REST INSIDE A
@@ -337,7 +337,7 @@ typedef struct markdown_core_parser_at {
      * block identifier its anchor and end, a caption its table -- and nothing
      * writes a settled block but completion, which makes its inline
      * content. The document and the cell inputs share this parser and all
-     * document rosters. Input roots stay owned by the AST; the queue only
+     * document labels. Input roots stay owned by the AST; the queue only
      * borrows them until their block content is read. */
     struct markdown_core_node *block_root, *current, *pending;
     /* The line being read (reader.h, THE READER): the driver records its
@@ -693,11 +693,12 @@ struct markdown_core_parser {
     /* What the parse keeps as a stream (markdown_core_stream), made as the
      * parse starts. */
     markdown_core_stream *stream;
-    /* Every definition and explicit anchor the parse declared (roster.h):
+    /* Every definition, explicit anchor and reference the parse made
+     * (labels.h):
      * the block phase declares definitions as it reads them, the headings
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
-    markdown_core_roster roster;
+    markdown_core_labels labels;
     /* What the block starts of the line in hand began and gave up
      * (markdown_core_field_opener with no node), placed in the source, which the
      * block that takes the line's text keeps (node.h, OPENER). */
@@ -1089,11 +1090,6 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
 
 /* Whether a block that closed has settled: every one has but the pending
  * block, which a later line can still write. */
-/* How many entries of the names (names.h) were read by their owners, as
- * the earliest mark the reading can go back to found them, and the roster's
- * records then in `*records`. */
-size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_t *records);
-
 static inline bool markdown_core_parser_settled(const markdown_core_parser *parser, const markdown_core_node *node) {
     return node != parser->at.pending;
 }
@@ -1586,15 +1582,15 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* THE DECLARATION (roster.h): `node`, a definition, defines `label` in
+/* THE DEFINITION (labels.h): `node`, a definition, defines `label` in
  * `kind`'s space from `start` on, in the space's form, as the lookup above
  * reads it: a reference or footnote label normalized into `*normal`, in
  * storage the node that holds it owns, a specimen label as written, when
- * `normal` may be NULL. The node owns the declaration, which goes when
- * it does (roster.h, THE OWNERS). An empty label defines nothing,
- * and the document lists the node all the same (roster.h, THE PLACES).
+ * `normal` may be NULL. The node owns the definition, which goes when
+ * it does. An empty label defines nothing, and the document lists the
+ * node all the same (labels.h, THE SEQUENCES).
  * False, with the parse failed, when storage could not be had. */
-bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
+bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_label_space kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
                                   markdown_core_node *node);
 /* The byte of the text that offset `at` of the content of the block being
@@ -1604,26 +1600,24 @@ bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_ro
 uint32_t markdown_core_parser_source_at(markdown_core_parser *parser, uint32_t at);
 /* Whether `kind`'s labels are in the reference-label normal form (element.h,
  * markdown_core_space `folds`); the engine's ANCHOR's are not. */
-static inline bool markdown_core_parser_folds(const markdown_core_parser *parser, markdown_core_roster_kind kind) {
+static inline bool markdown_core_parser_folds(const markdown_core_parser *parser, markdown_core_label_space kind) {
     const markdown_core_space *space = parser->dialect->spaces[kind];
     return space && space->folds;
 }
 /* THE DEFINITION LOOKUP of inline content: the record of `kind` that
  * declares `label`, as written, for the block being completed, or NULL.
  * Reference and footnote labels are looked up in their normal form, and a
- * specimen label as its bytes (roster.h): every declaration answers. `at`
+ * specimen label as its bytes (labels.h): every definition answers. `at`
  * is where the lookup is in the content of the block being completed (its
  * inline root's offset, markdown_core_inline_state_root_offset), where the
- * lookup is a use of the label by the root (roster.h, THE USES). `*failed`
+ * lookup is a reference to the label by the root (labels.h). `*failed`
  * is set when storage could not be had, and the answer is then NULL. */
-const markdown_core_roster_record *markdown_core_parser_look_up(markdown_core_parser *parser,
-                                                                markdown_core_roster_kind kind,
-                                                                const markdown_core_chunk *label, uint32_t at,
-                                                                bool *failed);
-static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
-                                                                                      markdown_core_roster_kind kind,
-                                                                                      const markdown_core_chunk *label,
-                                                                                      uint32_t at, bool *failed) {
+const markdown_core_mention *markdown_core_parser_look_up(markdown_core_parser *parser, markdown_core_label_space kind,
+                                                          const markdown_core_chunk *label, uint32_t at, bool *failed);
+static inline const markdown_core_mention *markdown_core_parser_find_definition(markdown_core_parser *parser,
+                                                                                markdown_core_label_space kind,
+                                                                                const markdown_core_chunk *label,
+                                                                                uint32_t at, bool *failed) {
     return markdown_core_parser_look_up(parser, kind, label, at, failed);
 }
 
@@ -1766,8 +1760,8 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
 /* The child of the chain's block `level` the old children it took back
  * begin at, or UINT32_MAX when it took none back into that block. */
 uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level);
-/* THE USES OF ALTERED LABELS: one past where each use (roster.h, THE
- * USES) of a label the last transaction changed (THE JOURNAL) lies whose
+/* THE USES OF ALTERED LABELS: one past where each reference (labels.h)
+ * of a label the last transaction changed (THE ALTERED LABELS) lies whose
  * answer is not the label's now, in order and each once, in `*places`,
  * which the caller frees: the lookups that would answer otherwise than
  * they did, and no other. False when storage could not be had. */

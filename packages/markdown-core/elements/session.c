@@ -291,18 +291,14 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
          * from the last it read. */
         root = session->document.root;
         const uint32_t tail = resumed ? markdown_core_parser_tail(session->committed) : UINT32_MAX;
-        if (markdown_core_index_mend(&edits->index, root, child - (rest && rest->depth ? 1 : 0), tail, count, delta)) {
-#ifndef NDEBUG
-            session_walk_check(&edits->index.widths, root);
-#endif
-        }
+        (void)markdown_core_index_mend(&edits->index, root, child - (rest && rest->depth ? 1 : 0), tail, count, delta);
     }
     return status;
 }
 
 /* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): every lookup
  * is a use of its label by the inline root that made it, and keeps the
- * answer it was given (roster.h, THE USES). At the end of the edit, the
+ * answer it was given (labels.h). At the end of the edit, the
  * uses of the labels it changed whose answer is not the label's now are
  * the lookups that would answer otherwise (markdown_core_parser_altered_uses),
  * wherever and whenever in the edit they were made, and only their blocks
@@ -311,50 +307,20 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
  * completes their content against the definitions the edit left and keeps
  * the identity of every node. */
 
-static int session_size_order(const void *a, const void *b) {
-    const size_t left = *(const size_t *)a, other = *(const size_t *)b;
-    return (left > other) - (left < other);
-}
-
-/* The most readings one refresh makes: places further apart than the
- * others are read in readings of their own, and the rest share them, so
- * that a label many blocks name costs a few readings and not one each. */
-#define SESSION_PASSES 8
-
 /* The kept text read again at the `place_count` `places`, one past where
- * each use of an altered label lies, which it frees. The bytes read again
- * join those the edit read. */
+ * each use of an altered label lies, in order, which it frees: each
+ * reading reads the root of one place, and the places it read past need
+ * none of their own, so a label many roots name costs a reading per root
+ * and never the text between them. The bytes read again join those the
+ * edit read. */
 static markdown_core_status session_refresh(markdown_core_session *session, size_t *places, size_t place_count) {
     session_edits *edits = session->edits;
-    /* The widest gaps between places part the readings, the earlier of
-     * two as wide first: `cuts` holds the places they follow, widest
-     * first. */
-    size_t cuts[SESSION_PASSES - 1], cut_count = 0;
-    for (size_t i = 0; i + 1 < place_count; i++) {
-        const size_t width = places[i + 1] - places[i];
-        size_t at = cut_count;
-        while (at > 0 && places[cuts[at - 1] + 1] - places[cuts[at - 1]] < width) {
-            at--;
-        }
-        if (at == SESSION_PASSES - 1) {
-            continue;
-        }
-        cut_count -= cut_count == SESSION_PASSES - 1;
-        memmove(cuts + at + 1, cuts + at, (cut_count - at) * sizeof(*cuts));
-        cuts[at] = i;
-        cut_count++;
-    }
-    qsort(cuts, cut_count, sizeof(*cuts), session_size_order);
     markdown_core_status status = MARKDOWN_CORE_OK;
     size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
-    for (size_t first = 0, cut = 0; status == MARKDOWN_CORE_OK && first < place_count;) {
-        while (cut < cut_count && cuts[cut] < first) {
-            cut++;
-        }
-        const size_t last = cut < cut_count ? cuts[cut] : place_count - 1;
+    for (size_t at = 0; status == MARKDOWN_CORE_OK && at < place_count;) {
         /* An edit just past the opener: one at a block's start would be the
          * end of the block before. */
-        const size_t inside = places[first] + 1, past = places[last] + 1;
+        const size_t inside = places[at] + 1;
         markdown_core_rest rest;
         const markdown_core_rest_edit ask = {
             .line = markdown_core_parser_line_of(session->committed, inside), .from = inside, .to = inside};
@@ -363,11 +329,10 @@ static markdown_core_status session_refresh(markdown_core_session *session, size
             break;
         }
         status = session_reread(session, rest.child, rest.line, session_line_start(session, rest.line), inside, inside,
-                                0, past, false, &rest);
+                                0, inside, false, &rest);
         reread_from = edits->reread_from < reread_from ? edits->reread_from : reread_from;
         reread_to = edits->reread_to > reread_to ? edits->reread_to : reread_to;
-        /* The places the reading read past need no reading of their own. */
-        for (first = last + 1; first < place_count && places[first] < edits->reread_to; first++) {
+        for (at++; at < place_count && places[at] < edits->reread_to; at++) {
         }
     }
     markdown_core_free(places);
@@ -451,6 +416,15 @@ static markdown_core_status session_change(markdown_core_session *session, size_
         }
     }
     if (status == MARKDOWN_CORE_OK) {
+#ifndef NDEBUG
+        /* Once an edit, its readings all done: a check per reading would make
+         * the many readings of an altered definition's uses quadratic. */
+        if (edits->index.widths.made) {
+            markdown_core_index_check(&edits->index);
+            session_walk_check(&edits->index.widths, session->document.root);
+        }
+        markdown_core_publish_parents_check(session->document.root);
+#endif
         *document = &session->document;
     }
     return status;

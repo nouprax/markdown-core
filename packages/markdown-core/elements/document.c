@@ -5,7 +5,7 @@
 
 /* THE DOCUMENT LIFECYCLE. The document element owns the properties
  * grammar's work, its parse record, and publishes the tree; the
- * definitions the parse declares are the parse's roster (roster.h), and
+ * definitions the parse declares are the parse's symbols (labels.h), and
  * the headings name themselves in the parse's stages (element.h,
  * markdown_core_stage_ops). */
 static void init_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {

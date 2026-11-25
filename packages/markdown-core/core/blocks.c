@@ -20,7 +20,7 @@
 #include "parser.h"
 #include "node_type.h"
 #include "node.h"
-#include "roster.h"
+#include "labels.h"
 #include "seam.h"
 #include "index.h"
 #include "utf8.h"
@@ -315,7 +315,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
         parser->pool->drop = NULL;
         parser->pool->drop_context = NULL;
     }
-    markdown_core_roster_free(&parser->roster);
+    markdown_core_labels_free(&parser->labels);
     markdown_core_free(parser->line_opens);
     parser->line_opens = NULL;
     parser->line_open_count = 0;
@@ -410,10 +410,14 @@ void markdown_core_parser_destroy(markdown_core_parser *parser) {
 
 static inline bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t count);
 
-/* A node the pool lets go takes the records it owns with it (roster.h, THE
- * OWNERS). */
+/* A node the pool lets go takes the mentions it owns with it (labels.h). A
+ * parse whose document took its labels (ast.c, A DOCUMENT'S TABLES) holds
+ * none, and the node's are the document's, which go with it. */
 static void S_node_drop(void *context, markdown_core_node *node) {
-    markdown_core_roster_release(&((markdown_core_parser *)context)->roster, node);
+    markdown_core_labels *labels = &((markdown_core_parser *)context)->labels;
+    if (labels->count) {
+        markdown_core_labels_release(labels, node);
+    }
 }
 
 /* Starts a transaction that continues `revision` and borrows its pool. */
@@ -428,9 +432,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->room_holder = NULL;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
-    if (!markdown_core_roster_init(&parser->roster, parser->dialect->space_count)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
+    markdown_core_labels_init(&parser->labels);
     markdown_core_names_init(&parser->names, parser->dialect->namers, parser->dialect->spelling);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
@@ -2542,8 +2544,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
     if (!anchor->len) {
         return true;
     }
-    return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start,
-                                        NULL, (markdown_core_node *)node);
+    return markdown_core_labels_define(&parser->labels, MARKDOWN_CORE_LABEL_ANCHOR, anchor->data, anchor->len, start,
+                                       NULL, (markdown_core_node *)node);
 }
 
 /* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8) of
@@ -2562,13 +2564,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
 
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at);
 
-/* THE TEXT THAT LEFT (roster.h, THE OWNERS): an old node the reading
- * replaced, and every node it holds, take their records with them as the
- * reading ends, before the names and the tables read the roster, though
+/* THE TEXT THAT LEFT (labels.h): an old node the reading replaced, and
+ * every node it holds, take their mentions with them as the reading ends,
+ * before the names and the tables read the labels, though
  * the publish keeps the nodes until it has matched against them. */
 static int S_leave_push(markdown_core_node **slot, void *context) {
     markdown_core_parser *parser = context;
-    if (*slot && !markdown_core_array_push(&parser->roster.leaving, *slot)) {
+    if (*slot && !markdown_core_array_push(&parser->labels.left, *slot)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
@@ -2576,19 +2578,17 @@ static int S_leave_push(markdown_core_node **slot, void *context) {
 }
 
 static void S_leave(markdown_core_parser *parser, markdown_core_node *node) {
-    markdown_core_roster *roster = &parser->roster;
-    if (!roster->owner_count) {
+    markdown_core_labels *labels = &parser->labels;
+    if (!labels->count) {
         return;
     }
-    roster->leaving.count = 0;
+    labels->left.count = 0;
     if (!S_leave_push(&node, parser)) {
         return;
     }
-    while (roster->leaving.count && roster->owner_count) {
-        markdown_core_node *e = roster->leaving.values[--roster->leaving.count];
-        if (e->flags & MARKDOWN_CORE_NODE__LISTED) {
-            markdown_core_roster_release(roster, e);
-        }
+    while (labels->left.count && labels->count) {
+        markdown_core_node *e = labels->left.values[--labels->left.count];
+        markdown_core_labels_release(labels, e);
         const markdown_core_record_ops *record = markdown_core_record_for_kind((markdown_core_node_type)e->kind);
         if ((record->visit && !record->visit(e, S_leave_push, parser)) ||
             !markdown_core_visit_element_subtrees(e, S_leave_push, parser)) {
@@ -2614,7 +2614,7 @@ static void S_leave(markdown_core_parser *parser, markdown_core_node *node) {
  * markdown_core_publish_cede), the root's old tail's children before
  * `first`, and the chain's old children numbered before `taken`. */
 static void S_leave_old(markdown_core_parser *parser, uint32_t first, size_t taken) {
-    if (!parser->roster.owner_count) {
+    if (!parser->labels.count) {
         return;
     }
     const markdown_core_tail_records *records = &parser->stream->records;
@@ -2638,33 +2638,25 @@ static void S_leave_old(markdown_core_parser *parser, uint32_t first, size_t tak
     }
 }
 
-/* WHO OWNS A USE (roster.h, THE OWNERS): the child of its root its
- * completion made whose text holds it, as the root's EXIT finds them, its
- * text consolidated, their places offsets in its content, which the use's
- * source place is read against (S_use_place); the root when none does. A paragraph completed again
- * from a seam keeps the children before it, the last of them FINAL, and
- * their uses: those it makes are of the children past them. The uses
- * other roots made stay owed until theirs end. False when storage could
- * not be had. */
-static bool S_owe(markdown_core_parser *parser, markdown_core_node *root) {
-    size_t count;
-    markdown_core_roster_record **owed = markdown_core_roster_owed(&parser->roster, &count);
-    if (!count) {
-        return true;
-    }
+/* WHO OWNS A USE (labels.h): the child of its root its completion made
+ * whose text holds it, as the root's EXIT finds them, its text
+ * consolidated, their places offsets in its content, which the
+ * reference's location is read against (S_use_place); the root when none
+ * does. The root owns the references its completion made, which owe an
+ * owner, until then. A paragraph completed again from a seam keeps the
+ * children before it, the last of them FINAL, and their references: those
+ * it makes are of the children past them. */
+static void S_owe(markdown_core_parser *parser, markdown_core_node *root) {
     uint32_t first = root->child_count;
     while (first > 0 && !(root->children[first - 1]->flags & MARKDOWN_CORE_NODE__FINAL)) {
         first--;
     }
-    size_t kept = 0;
-    bool ok = true;
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_roster_record *record = owed[i];
-        if (record->node != root) {
-            owed[kept++] = record;
+    for (markdown_core_mention *mention = root->mentions, *next; mention; mention = next) {
+        next = mention->owned;
+        if (!mention->owed) {
             continue;
         }
-        const uint32_t start = markdown_core_roster_start(&parser->roster, record);
+        const uint32_t start = markdown_core_labels_start(&parser->labels, mention);
         uint32_t low = first, high = root->child_count;
         while (low < high) {
             const uint32_t mid = low + (high - low) / 2;
@@ -2674,10 +2666,8 @@ static bool S_owe(markdown_core_parser *parser, markdown_core_node *root) {
                 high = mid;
             }
         }
-        ok = markdown_core_roster_own(&parser->roster, record, low > first ? root->children[low - 1] : root) && ok;
+        markdown_core_labels_own(mention, low > first ? root->children[low - 1] : root);
     }
-    markdown_core_roster_owe(&parser->roster, kept, false);
-    return ok;
 }
 
 /* The node in `*slot` pushed on the stack `context` holds, linked through
@@ -2720,8 +2710,8 @@ static void S_pane_owe(markdown_core_parser *parser, markdown_core_node *node);
 static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32_t past, bufsize_t start);
 
 /* The paragraph `node`, which an edit's reading reopened at a seam, lets go
- * of the children it kept and of its old tail, and of the records of the
- * roster its text made, the front's and the back's: it reads its content
+ * of the children it kept and of its old tail, and of the labels'
+ * mentions its text made, the front's and the back's: it reads its content
  * whole (THE SEAMS). */
 static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) {
     markdown_core_edit *edit = parser->stream->edit;
@@ -2782,8 +2772,8 @@ void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_nod
 }
 
 /* THE OLD TAIL OF A PARAGRAPH an edit's reading reopened at a seam: its old
- * children past the seam stay in its storage, with the records of the
- * roster they own in the back, while the seams of the back are seams it
+ * children past the seam stay in its storage, with the labels' mentions
+ * they own in the back, while the seams of the back are seams it
  * may meet: those past where the reading leapt over the old lines of the
  * paragraph (THE LEAP), whose content from there on is the old content
  * from where it leapt, as the paragraph's content goes on to its old end.
@@ -3153,7 +3143,7 @@ static inline bool S_seam_holds(const markdown_core_leap *leap, const markdown_c
  * still reaches past: what its children read ends before the line ending
  * before it, which the content still holds as the old one did. The
  * children from that seam on go to the records, the old tail with them,
- * and so do the roster's records of their text, the front's and the
+ * and so do the labels' mentions of their text, the front's and the
  * back's. False,
  * with the paragraph as it was, when no seam is: it reads whole. */
 static bool S_seam_shrink(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size) {
@@ -3784,7 +3774,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
                                                              &lead);
     }
     /* An explicit anchor is reserved once the node is complete, where it
-     * starts, and the node owns it (roster.h, THE OWNERS): a node completed
+     * starts, and the node owns it (labels.h): a node completed
      * again reserves it again in its place. A FormulaBlock a fence became
      * holds no attributes; a Text holds none either, so the siblings
      * consolidation absorbs reserve none. */
@@ -3938,8 +3928,8 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                     if (node == tree->root && top) {
                         markdown_core_scaffold_of(node)->parent = NULL;
                     }
-                    if (node == tree->root && result != MARKDOWN_CORE_FINISH_FAILED && !S_owe(parser, node)) {
-                        result = MARKDOWN_CORE_FINISH_FAILED;
+                    if (node == tree->root && result != MARKDOWN_CORE_FINISH_FAILED) {
+                        S_owe(parser, node);
                     }
                     if (result == MARKDOWN_CORE_FINISH_FAILED) {
                         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -4107,35 +4097,34 @@ uint32_t markdown_core_parser_source_at(markdown_core_parser *parser, uint32_t a
     return (uint32_t)S_use_place(parser, root, at);
 }
 
-bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
+bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_label_space kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
                                   markdown_core_node *node) {
     if (markdown_core_parser_folds(parser, kind) && label->len) {
-        if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, label, normal)) {
+        if (!markdown_core_labels_normal_label(&parser->labels, parser->pool, label, normal)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
         label = normal;
     }
-    if (!markdown_core_roster_declare(&parser->roster, kind, label->data, label->len, start, node, node)) {
+    if (!markdown_core_labels_define(&parser->labels, kind, label->data, label->len, start, node, node)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     return true;
 }
 
-const markdown_core_roster_record *markdown_core_parser_look_up(markdown_core_parser *parser,
-                                                                markdown_core_roster_kind kind,
-                                                                const markdown_core_chunk *label, uint32_t at,
-                                                                bool *failed) {
+const markdown_core_mention *markdown_core_parser_look_up(markdown_core_parser *parser, markdown_core_label_space kind,
+                                                          const markdown_core_chunk *label, uint32_t at, bool *failed) {
     /* A lookup outside a root's completion is no root's use. */
     if (!parser->completing) {
         return markdown_core_parser_folds(parser, kind)
-                   ? markdown_core_roster_find_label(&parser->roster, kind, label, failed)
-                   : markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed);
+                   ? markdown_core_labels_find_label(&parser->labels, kind, label, failed)
+                   : markdown_core_labels_find(&parser->labels, kind, label->data, label->len, failed);
     }
-    return markdown_core_roster_use(&parser->roster, kind, label, markdown_core_parser_folds(parser, kind),
-                                    (uint32_t)S_use_place(parser, parser->completing, at), parser->completing, failed);
+    return markdown_core_labels_refer(&parser->labels, kind, label, markdown_core_parser_folds(parser, kind),
+                                      (uint32_t)S_use_place(parser, parser->completing, at), parser->completing,
+                                      failed);
 }
 
 /* AN OPENER READ TO THE END (element.h, `stops`): the reading of an
@@ -4213,7 +4202,7 @@ static inline void S_drop_lines(markdown_core_parser_input *input, size_t line) 
  * only leaders their follows declare `closed` (element.h, markdown_core_follow), and a
  * reading after one of those goes on as it is. The children taken back
  * stand as their publish left them, and so do their lines, what their
- * readings read (THE REACH), their roster records, their headings and
+ * readings read (THE REACH), their labels' mentions, their headings and
  * their definitions, moved by the edit's delta; their content
  * runs are their completion's, which is done, and go. The reopen keeps all of it aside (markdown_core_edit),
  * and the reading checks each child's line as it comes to it, the limit of
@@ -4472,7 +4461,6 @@ void markdown_core_parser_compact(markdown_core_parser *parser) {
     markdown_core_free(edit->nested);
     edit->nested = NULL;
     edit->nested_capacity = 0;
-    (void)markdown_core_roster_compact(&parser->roster);
 }
 
 /* The kind `block` became as it closed read its lines as one whose kind
@@ -5161,14 +5149,14 @@ static markdown_core_leap *S_leap_need(markdown_core_edit *edit) {
  * settle point (THE SETTLE POINT), and holds all of the old content, or the
  * reading lets it go (S_seam_holds). What the paragraph's completion
  * declared, its uses, its inline notes and its explicit anchors, lies where
- * it was read, and goes or stays with the text there, as every record of
- * the roster does. Every reopen but one of the same paragraph lets the
+ * it was read, and goes or stays with the text there, as every mention of
+ * the labels does. Every reopen but one of the same paragraph lets the
  * seams go.
  *
  * The children before the seam are the paragraph's FINAL prefix (ast.c, THE
  * CHAIN'S RECORDS), and the old ones after it the records' (THE RECORDS),
  * measured from where the prefix ends: the start of the seam's line. The
- * roster's focus moves to where the seam's text starts: the records of the
+ * labels' focus moves to where the seam's text starts: the mentions of the
  * prefix's text stay in the front, the others go to the back. The reopen,
  * at input line `line`, picks the seam, before the focus moves. False when storage could not be had. */
 static bool S_seam_pick(markdown_core_parser *parser, size_t line, size_t from) {
@@ -5595,19 +5583,18 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->leap->kept = stream->edit->leap->lands = false;
         stream->edit->leap->spliced = 0;
     }
-    /* The roster's focus stands where the reading begins, a paragraph's at
-     * its seam: the records past it are in the back, which the splice moves
-     * (THE OLD TAIL OF A PARAGRAPH). */
     if ((prose && !S_seam_pick(parser, line, from)) ||
         !S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->document->reopen(document, parser, root, child, (uint32_t)own) ||
-        !S_stage_edit(parser, false, (uint32_t)own) ||
-        !markdown_core_roster_reopen(&parser->roster,
-                                     (uint32_t)(own + (prose ? stream->edit->leap->seam.source : 0)))) {
+        !S_stage_edit(parser, false, (uint32_t)own)) {
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
+    /* The labels' focus stands where the reading begins, a paragraph's at
+     * its seam: the mentions past it are in the back, which the splice moves
+     * (THE OLD TAIL OF A PARAGRAPH). */
+    markdown_core_labels_reopen(&parser->labels, (uint32_t)(own + (prose ? stream->edit->leap->seam.source : 0)));
     /* A deepest block that read literal lines as another kind reads on as
      * that kind (THE FORMER KIND), once the publish's records hold it as
      * the node it was. */
@@ -5919,7 +5906,7 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
     edit->line = index;
     S_openers_cut(edit, old, delta);
     S_leave_old(parser, first, edit->taken);
-    markdown_core_roster_shift(&parser->roster, delta);
+    markdown_core_labels_shift(&parser->labels, delta);
     S_lines_slide(&input->lines, delta);
     input->back_end = (size_t)((int64_t)input->back_end + delta);
     /* The children join the root, which owns them once the document took
@@ -6983,20 +6970,19 @@ static int S_place_order(const void *a, const void *b) {
 }
 
 bool markdown_core_parser_altered_uses(markdown_core_parser *parser, size_t **places, size_t *place_count) {
-    const markdown_core_roster *roster = &parser->roster;
+    const markdown_core_labels *labels = &parser->labels;
     *places = NULL;
     *place_count = 0;
-    size_t room = 0, labels;
+    size_t room = 0, count;
     bool ok = true;
-    markdown_core_roster_label *const *journal = markdown_core_roster_journal(roster, &labels);
-    for (size_t i = 0; ok && i < labels; i++) {
-        const markdown_core_roster_label *label = journal[i];
-        const bool declared = label->first != NULL;
-        for (const markdown_core_roster_record *use = label->uses; ok && use; use = use->after) {
-            if (use->found == declared) {
+    markdown_core_label *const *altered = markdown_core_labels_altered(labels, &count);
+    for (size_t i = 0; ok && i < count; i++) {
+        const bool defined = altered[i]->first != NULL;
+        for (const markdown_core_mention *use = altered[i]->uses; ok && use; use = use->after) {
+            if (use->found == defined) {
                 continue;
             }
-            const size_t start = markdown_core_roster_start(roster, use);
+            const size_t start = markdown_core_labels_start(labels, use);
             size_t *more = markdown_core_reserve(*places, &room, *place_count + 1, sizeof(*more));
             ok = more != NULL;
             if (ok) {
@@ -9386,7 +9372,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     /* A reading that took nothing back read every declaration and lookup
      * again: the back's go before the names and the publish read the
-     * roster (names.c, ast.c, A DOCUMENT'S TABLES). */
+     * labels (names.c, ast.c, A DOCUMENT'S TABLES). */
     if (!parser->stream->edit || !parser->stream->edit->resumed) {
         S_leave_old(parser, UINT32_MAX, SIZE_MAX);
     }
@@ -9483,8 +9469,9 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             }
         }
     }
-    /* The transaction is over: what it changed was read (THE JOURNAL). */
-    markdown_core_roster_close(&parser->roster);
+    /* The transaction is over: what it changed was read (labels.h, THE
+     * CHANGES). */
+    markdown_core_labels_close(&parser->labels);
     S_release_walk(parser);
     if (parser->error) {
         goto failed;

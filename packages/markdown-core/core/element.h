@@ -851,7 +851,7 @@ static inline bool markdown_core_words_literal(const markdown_core_node *node, c
     return words->text(words->context, node->as.literal->data, node->as.literal->len);
 }
 
-/* A ROSTER SPACE (roster.h): a lookup space the labels an element declares
+/* A LABEL SPACE (labels.h): a lookup space the labels an element declares
  * are filed in and looked up from. A space is its `name`: every element
  * that declares or looks up labels in it names it in `spaces`, each with
  * its own descriptor, and registration refuses two that name one space
@@ -890,7 +890,7 @@ struct markdown_core_element {
      * any element may provide. */
     const markdown_core_service *provides;
     const char *const *needs;
-    /* The roster spaces the element declares or looks up labels in,
+    /* The label spaces the element declares or looks up labels in,
      * NULL-terminated (markdown_core_space); a space is its name, so every
      * element naming one names the same space. */
     const markdown_core_space *const *spaces;

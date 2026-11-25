@@ -251,9 +251,12 @@ class ScopeTest {
         val titled = "> [!NOTE] Ti*t*le\n> x\n"
         val document = Document.parse(titled)
         val callout = assertIs<Callout>(document.content.single())
-        // A block whose own source is its range has one run, its range.
+        // A block whose own source is its range has one run, its range; a
+        // callout's runs touch where they read its title's content
+        // differently from the source around it, and its scope joins them.
         assertEquals(listOf(Run(0, 21u)), document.runs)
-        assertEquals(listOf(Run(0, 21u)), callout.runs)
+        assertEquals(listOf(Run(0, 10u), Run(0, 7u), Run(0, 4u)), callout.runs)
+        assertEquals(listOf(Scope(Position(1, 1), Position(2, 3))), document.scope(callout, titled))
         // The title's first node leads from the start of the callout's
         // source, and each later one from where the source before it ends.
         val title = callout.title!!

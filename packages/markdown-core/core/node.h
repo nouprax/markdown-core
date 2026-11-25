@@ -194,7 +194,7 @@ typedef struct {
 
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
  * Footnote, specimen and Reference definitions stay in the tree where they
- * were written; the document's definition tables are the parse's roster
+ * were written; the document's definition tables are the parse's labels
  * (parser.h, A DOCUMENT'S TABLES), with the nodes reference occurrences
  * resolve to, by label: for each label, the first Reference declaring it,
  * or, when none does, the first Heading whose text declares it. A
@@ -365,9 +365,6 @@ enum markdown_core_node__internal_flags {
      * a link reference definition: whether a block ends with a blank line,
      * and whether another block follows it, are answered by the blocks
      * around it. */
-    /* The roster holds records the node owns (roster.h, THE OWNERS), which
-     * a release of it lets go. */
-    MARKDOWN_CORE_NODE__LISTED = (1 << 7),
     MARKDOWN_CORE_NODE__BLANK_TRANSPARENT = (1 << 8),
     /* A child the blank-line facts see has settled into the block, and
      * ENDS_BLANK holds that child's answer. */
@@ -430,6 +427,10 @@ struct markdown_core_node {
      * the root and for a node no publish placed. A reading never reads it:
      * while it builds, the scaffold links what it builds. */
     struct markdown_core_node *parent;
+    /* The definitions and references the node owns (labels.h, its
+     * mentions), linked through their `owned`, which a release of it lets
+     * go; NULL for most. */
+    struct markdown_core_mention *mentions;
     uint32_t child_count;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
@@ -834,8 +835,8 @@ typedef struct markdown_core_node_pool {
     markdown_core_slab_pool nodes;
     markdown_core_slab_pool resources;
     markdown_core_bytes_pool bytes;
-    /* What a release of a LISTED node tells the parse that lends the pool,
-     * or NULL (roster.h, THE OWNERS). */
+    /* What a release of a node that owns mentions (`mentions`) tells the
+     * parse that lends the pool, or NULL (labels.h). */
     void (*drop)(void *context, struct markdown_core_node *node);
     void *drop_context;
 } markdown_core_node_pool;

@@ -6,7 +6,7 @@
 #include "names.h"
 #include "parser.h"
 #include "pieces.h"
-#include "roster.h"
+#include "labels.h"
 
 /* The entries' tree (names.h): an entry's one place is where its
  * node starts, and an entry with a number tells where it is. */
@@ -842,7 +842,7 @@ void markdown_core_names_release(markdown_core_names *state) {
  * are one index. A name's entry holds who takes it, in `extra`: zero for an
  * explicit anchor, an entry's place among the entries plus one otherwise;
  * and in `value` the suffix an entry projecting to the name tries next. An
- * anchor's entry keys the roster's label that reserves it; an
+ * anchor's entry keys the label that reserves it; an
  * entry's is read from the entry, its node's base and its suffix.
  *
  * An entry takes the first name of its sequence, from where it starts, that
@@ -1015,9 +1015,9 @@ static void displace(name_pass *pass, size_t at) {
 
 /* The anchor's name reserved: a vacant name becomes the anchor's, and one
  * an entry holds is taken from it, which goes on along its sequence. */
-static void read_anchor(name_pass *pass, const markdown_core_roster_label *anchor) {
+static void read_anchor(name_pass *pass, const markdown_core_label *anchor) {
     markdown_core_parser *parser = pass->parser;
-    const markdown_core_chunk label = markdown_core_roster_text(anchor);
+    const markdown_core_chunk label = markdown_core_label_name(anchor);
     markdown_core_key_index *index = pass->index;
     name_view name;
     markdown_core_pieces_clear(&name.pieces);
@@ -1045,10 +1045,10 @@ static void read_anchor(name_pass *pass, const markdown_core_roster_label *ancho
 /* Every explicit anchor's name reserved, in the order of where they
  * start. */
 static void read_anchors(name_pass *pass) {
-    const markdown_core_roster_shelf *shelf = markdown_core_roster_shelf_of(
-        &pass->parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, (uint16_t)MARKDOWN_CORE_NODE_NONE);
-    for (size_t i = 0; shelf && i < shelf->places.count && !pass->parser->error; i++) {
-        read_anchor(pass, markdown_core_roster_shelf_at(shelf, i)->label);
+    const markdown_core_sequence *anchors = markdown_core_labels_sequence(
+        &pass->parser->labels, MARKDOWN_CORE_LABEL_ANCHOR, (uint16_t)MARKDOWN_CORE_NODE_NONE);
+    for (size_t i = 0; anchors && i < anchors->places.count && !pass->parser->error; i++) {
+        read_anchor(pass, markdown_core_sequence_at(anchors, i)->label);
     }
 }
 
@@ -1396,13 +1396,7 @@ static void kin_rename(name_pass *pass) {
         name_base(&name, &base, stem->measure, separator_of(state));
         for (;;) {
             name_suffix(&name, suffix);
-            bool failed = false;
-            const bool reserved =
-                markdown_core_roster_find_name(&parser->roster, &name.pieces, name.measure, &failed) != NULL;
-            if (failed) {
-                ok = false;
-                break;
-            }
+            const bool reserved = markdown_core_labels_find_name(&parser->labels, &name.pieces, name.measure) != NULL;
             if (!reserved && !name_held(state, cursor.stem, suffix, cursor.place)) {
                 break;
             }
@@ -1582,14 +1576,14 @@ static void edit_rename(name_pass *pass) {
         }
         entry->stem = id;
     }
-    /* The anchors the edit made or let go (roster.h, THE JOURNAL). */
+    /* The anchors the edit made or let go (labels.h, THE CHANGES). */
     size_t anchors;
-    markdown_core_roster_label *const *journal = markdown_core_roster_journal(&parser->roster, &anchors);
+    markdown_core_label *const *altered = markdown_core_labels_altered(&parser->labels, &anchors);
     for (size_t i = 0; i < anchors && !parser->error; i++) {
-        if (journal[i]->key[0] != (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR) {
+        if (altered[i]->key[0] != (unsigned char)MARKDOWN_CORE_LABEL_ANCHOR) {
             continue;
         }
-        const markdown_core_chunk text = markdown_core_roster_text(journal[i]);
+        const markdown_core_chunk text = markdown_core_label_name(altered[i]);
         const unsigned char *key = text.data;
         const bufsize_t size = text.len;
         markdown_core_pieces label;
@@ -1675,10 +1669,10 @@ void markdown_core_names_finish(markdown_core_parser *parser) {
         }
     }
     size_t anchors = 0;
-    const markdown_core_roster_shelf *shelf =
-        markdown_core_roster_shelf_of(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, (uint16_t)MARKDOWN_CORE_NODE_NONE);
-    if (shelf) {
-        anchors = shelf->places.count;
+    const markdown_core_sequence *reserved =
+        markdown_core_labels_sequence(&parser->labels, MARKDOWN_CORE_LABEL_ANCHOR, (uint16_t)MARKDOWN_CORE_NODE_NONE);
+    if (reserved) {
+        anchors = reserved->places.count;
     }
     if (!state->taken.capacity && !markdown_core_key_index_init(&state->taken, total + anchors)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

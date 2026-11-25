@@ -1422,7 +1422,7 @@ static void numeric_entities(test_batch_runner *runner) {
     test_md_paragraph_text(runner, "&#999999999;", "&#999999999;", "Overlong decimal entity stays literal");
     test_md_paragraph_text(runner, "&#x000000041;", "&#x000000041;", "Overlong hexadecimal entity stays literal");
     test_md_paragraph_text(runner, "a*\xC2\xA3*b", "a*\xC2\xA3*b",
-                           "Unicode symbols are punctuation for emphasis flanking");
+                           "Unicode labels are punctuation for emphasis flanking");
 }
 
 /* M0: an HTML comment is a `Comment` node of the dialect -- inline for the
@@ -3418,47 +3418,48 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* Roster kinds for the roster's own tests: spaces past the engine's
+/* Label spaces for the labels' own tests: spaces past the engine's
  * ANCHOR, as a dialect numbers its elements' (dialect.h, `spaces`). */
-enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = ROSTER_TEST_KIND + 3 };
+enum { LABELS_TEST_SPACE = MARKDOWN_CORE_LABEL_ANCHOR + 1 };
 
-/* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
- * declarations costs allocations logarithmic in its length -- the blocks, the
- * journal, the index and the places' numbers each double -- and one per
- * leaf of the places' tree, which an append fills, and of the labels in
- * order, which splits fill half, rather than one each, and all of them go
- * with the roster. */
-static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner) {
+/* THE LABELS' STORAGE: each label and each mention is an allocation of its
+ * own, and beside them a run of definitions costs allocations logarithmic
+ * in its length -- the index and the altered list double -- and one per leaf of
+ * the sequence's tree, which an append fills, and of the names in order,
+ * which splits fill half; all of them go with the labels. */
+static void labels_store_one_allocation_each(test_batch_runner *runner) {
     enum { COUNT = 4096 };
+    markdown_core_node *nodes = calloc(COUNT, sizeof(*nodes));
     payload_probe_arm();
-    markdown_core_roster roster;
-    markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
+    markdown_core_labels labels;
+    markdown_core_labels_init(&labels);
     char label[32];
-    bool declared = true;
+    bool defined = true;
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
-        declared = declared && markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, (const unsigned char *)label,
-                                                            (bufsize_t)strlen(label), (uint32_t)i, NULL, NULL);
+        defined = defined && markdown_core_labels_define(&labels, LABELS_TEST_SPACE, (const unsigned char *)label,
+                                                         (bufsize_t)strlen(label), (uint32_t)i, NULL, &nodes[i]);
     }
-    OK(runner, declared && roster.made[ROSTER_TEST_KIND] == COUNT, "every declaration is a record");
-    /* Twelve doublings reach COUNT; each of the three arrays doubles at most
-     * once per doubling, the blocks double up to their cap and then take
-     * one per cap's bytes (roster.c, ROSTER_BLOCK_MAX_BYTES), and the places
-     * fill their leaves, and the labels in order half of theirs. */
+    OK(runner, defined && labels.count == COUNT && labels.index.size == COUNT,
+       "every definition is a mention of a label of its own");
     const size_t leaves = 3 * (COUNT / MARKDOWN_CORE_TREE_LEAF + 1);
-    const size_t blocks = 5 + roster.bytes / (16 * 1024) + 1;
-    OK(runner, payload_allocations <= 3 * 13 + blocks + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 4,
-       "%d records took %zu allocations", COUNT, payload_allocations);
+    OK(runner, payload_allocations <= 2 * COUNT + 2 * 13 + leaves + leaves / MARKDOWN_CORE_TREE_FANOUT + 4,
+       "%d definitions took %zu allocations", COUNT, payload_allocations);
     bool failed = false;
     markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
-    const markdown_core_roster_record *found =
-        markdown_core_roster_find_label(&roster, ROSTER_TEST_KIND, &lookup, &failed);
-    markdown_core_chunk name = found ? markdown_core_roster_label_of(found) : (markdown_core_chunk){0};
-    OK(runner, !failed && name.len == 10 && !memcmp(name.data, "label 4095", 10),
-       "a carved record is found by its label's normal form");
-    markdown_core_roster_free(&roster);
-    INT_EQ(runner, payload_live, 0, "the roster's blocks, journal and index are all released");
+    const markdown_core_mention *found = markdown_core_labels_find_label(&labels, LABELS_TEST_SPACE, &lookup, &failed);
+    markdown_core_chunk name = found ? markdown_core_mention_name(found) : (markdown_core_chunk){0};
+    OK(runner, !failed && name.len == 10 && !memcmp(name.data, "label 4095", 10) && found->owner == &nodes[4095],
+       "a definition is found by its name's normal form, and names its owner");
+    markdown_core_labels_release(&labels, &nodes[4095]);
+    OK(runner,
+       !nodes[4095].mentions && labels.count == COUNT - 1 &&
+           !markdown_core_labels_find_label(&labels, LABELS_TEST_SPACE, &lookup, &failed),
+       "an owner let go takes its definition with it");
+    markdown_core_labels_free(&labels);
+    INT_EQ(runner, payload_live, 0, "the labels, their mentions, index and altered list are all released");
     payload_probe_disarm();
+    free(nodes);
 }
 
 /* Two byte strings in byte order, the shorter first on a common prefix,
@@ -3615,60 +3616,67 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
     payload_probe_disarm();
 }
 
-/* THE KINDS ARE SEPARATE LOOKUP SPACES, and a key's records answer for the
- * earliest of them: a label declared as a reference is not a footnote, and
- * a key declared twice starts where its earlier declaration starts. */
-static void roster_kinds_and_starts(test_batch_runner *runner) {
-    markdown_core_roster roster;
-    markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
+/* THE SPACES ARE SEPARATE LOOKUP SPACES, and a label's definitions
+ * answer with the earliest of them: a name defined as a reference is not a
+ * footnote, and a name defined twice more answers where its earliest
+ * definition is located. */
+static void labels_spaces_and_locations(test_batch_runner *runner) {
+    markdown_core_labels labels;
+    markdown_core_labels_init(&labels);
+    markdown_core_node nodes[3] = {0};
     const unsigned char *x = (const unsigned char *)"x";
     bool failed = false;
-    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40, NULL, NULL),
-       "a reference is declared");
-    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
+    OK(runner, markdown_core_labels_define(&labels, LABELS_TEST_SPACE, x, 1, 40, NULL, &nodes[0]),
+       "a reference is defined");
+    OK(runner, !markdown_core_labels_find(&labels, LABELS_TEST_SPACE + 1, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
-    const markdown_core_roster_record *record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
-    OK(runner, record && markdown_core_roster_start(&roster, record) == 40,
-       "a declaration starts where its definition starts");
+    OK(runner, !markdown_core_labels_find(&labels, LABELS_TEST_SPACE + 2, x, 1, &failed), "nor a specimen");
+    const markdown_core_mention *mention = markdown_core_labels_find(&labels, LABELS_TEST_SPACE, x, 1, &failed);
+    OK(runner, mention && markdown_core_labels_start(&labels, mention) == 40,
+       "a definition is located where its node starts");
     OK(runner,
-       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL, NULL) &&
-           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL, NULL),
-       "the key is declared twice more");
-    record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
-    OK(runner, record && markdown_core_roster_start(&roster, record) == 10 && record->label->count == 3,
-       "the key's earliest declaration answers");
+       markdown_core_labels_define(&labels, LABELS_TEST_SPACE, x, 1, 90, NULL, &nodes[1]) &&
+           markdown_core_labels_define(&labels, LABELS_TEST_SPACE, x, 1, 10, NULL, &nodes[2]),
+       "the name is defined twice more");
+    mention = markdown_core_labels_find(&labels, LABELS_TEST_SPACE, x, 1, &failed);
+    OK(runner, mention && markdown_core_labels_start(&labels, mention) == 10 && mention->label->count == 3,
+       "the name's earliest definition answers");
+    OK(runner,
+       markdown_core_labels_define(&labels, LABELS_TEST_SPACE, x, 1, 5, NULL, &nodes[1]) &&
+           mention->label->count == 3 && markdown_core_labels_start(&labels, mention->label->first) == 5,
+       "a node that defines again replaces its definition");
     OK(runner, !failed, "and no lookup failed");
-    markdown_core_roster_free(&roster);
+    markdown_core_labels_free(&labels);
 }
 
-/* THE LABELS AND THE JOURNAL ANSWER AS A MODEL. A model -- each key's
- * declarations that stand, as a list of where they start -- is driven
- * through the same random edits: each reopens at a random start, declares a
- * few labels in the text it reads, and splices the old text back from a
- * random place past it, which lets the old declarations between go and
- * moves the rest; it looks labels up there too, each a use, which go and
- * move the same way; now and then the roster compacts between edits. After each
- * edit every key of a random set of the kinds is compared: whether it is
- * declared, where its earliest declaration starts and how many stand; and
- * the journal must hold just the keys whose being declared the edit
- * flipped, among others it touched, and the labels in order each kind's
- * declared keys. Labels come from a small set, so keys
- * are declared again and again, and from a growing one, so the index
+/* THE LABELS AND THE ALTERED LABELS ANSWER AS A MODEL. A model -- each key's
+ * definitions, as a list of where they are located -- is driven through the
+ * same random edits: each reopens at a random start, defines a few names in
+ * the text it reads, and splices the old text back from a random place past
+ * it, which lets the old mentions between go with their owners and moves the
+ * rest; it looks names up there too, each a reference, which go and move
+ * the same way. After each edit every key of a random set of the spaces is
+ * compared: whether it is defined, where its earliest definition is located
+ * and how many there are; the altered labels must hold just the keys whose being
+ * defined the edit flipped, among others it touched, and the names in
+ * order each space's defined keys; and as the next edit begins, the index
+ * holds just the keys that have an entry. Names come from a small set, so
+ * keys are defined again and again, and from a growing one, so the index
  * grows. */
 typedef struct {
     uint32_t *starts;
     size_t count, capacity;
     bool was;
-    /* Its uses' starts, and what the roster's lists hold of them. */
+    /* Its references' locations, and what the labels' lists hold of
+     * them. */
     uint32_t *uses;
     size_t use_count, use_capacity, listed;
     uint64_t sum;
-} roster_model_key;
+} labels_model_key;
 
 /* A start kept, moved or let go as the splice of the text from `from` up to
  * `old` does, those marked new kept as they are; the count kept. */
-static size_t roster_model_splice(uint32_t *starts, size_t count, uint32_t from, uint32_t old, int64_t delta) {
+static size_t labels_model_splice(uint32_t *starts, size_t count, uint32_t from, uint32_t old, int64_t delta) {
     size_t kept = 0;
     for (size_t m = 0; m < count; m++) {
         const uint32_t start = starts[m];
@@ -3683,26 +3691,26 @@ static size_t roster_model_splice(uint32_t *starts, size_t count, uint32_t from,
     return kept;
 }
 
-static void roster_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
+static void labels_name_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
-static void roster_matches_a_model(test_batch_runner *runner) {
-    /* The kinds: the engine's ANCHOR, filed under a measure, and three
-     * spaces after it. */
+static void labels_match_a_model(test_batch_runner *runner) {
+    /* The spaces: the engine's ANCHOR, filed under a measure, and three
+     * after it. */
     enum { EDITS = 1500, KINDS = 4, SHARED = 23, LABELS = SHARED + 4 * EDITS };
     payload_probe_arm();
-    markdown_core_roster roster;
-    markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
-    roster_model_key *keys = calloc((size_t)KINDS * LABELS, sizeof(*keys));
-    /* Each record's owner, a node of its own, and where its text starts,
+    markdown_core_labels labels;
+    markdown_core_labels_init(&labels);
+    labels_model_key *keys = calloc((size_t)KINDS * LABELS, sizeof(*keys));
+    /* Each entry's owner, a node of its own, and where its text starts,
      * marked new until the splice: the splice lets go of the owners of the
-     * text it replaced (roster.h, THE OWNERS). */
+     * text it replaced. */
     markdown_core_node *nodes = calloc((size_t)EDITS * 11, sizeof(*nodes));
     markdown_core_node **owners = calloc((size_t)EDITS * 11, sizeof(*owners));
     uint32_t *owned = calloc((size_t)EDITS * 11, sizeof(*owned));
     size_t node_count = 0, owner_count = 0;
-    size_t fresh = SHARED, flips = 0, compactions = 0;
+    size_t fresh = SHARED, flips = 0;
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
-#define ROSTER_RANDOM() (random ^= random << 13, random ^= random >> 7, random ^= random << 17, random)
+#define LABELS_RANDOM() (random ^= random << 13, random ^= random >> 7, random ^= random << 17, random)
     /* The text's length, which each edit changes. */
     uint32_t length = 1u << 16;
     bool agrees = true;
@@ -3710,24 +3718,33 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
             keys[i].was = keys[i].count > 0;
         }
-        const uint32_t from = (uint32_t)(ROSTER_RANDOM() % length);
-        const uint32_t read = (uint32_t)(ROSTER_RANDOM() % 512);
-        const uint32_t old = from + (uint32_t)(ROSTER_RANDOM() % (length - from + 1));
-        agrees = markdown_core_roster_reopen(&roster, from);
+        const uint32_t from = (uint32_t)(LABELS_RANDOM() % length);
+        const uint32_t read = (uint32_t)(LABELS_RANDOM() % 512);
+        const uint32_t old = from + (uint32_t)(LABELS_RANDOM() % (length - from + 1));
+        markdown_core_labels_reopen(&labels, from);
+        /* The labels that hold no mention went as the edit began. */
+        size_t held = 0;
+        for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
+            held += keys[i].count || keys[i].use_count;
+        }
+        agrees = labels.index.size == held;
+        if (!agrees) {
+            fprintf(stderr, "labels index at edit %zu holds %zu keys, the model %zu\n", edit, labels.index.size, held);
+        }
         /* The text the reading read, from `from` up to `from + read`, in
          * which it declares; the old text from `old` on comes back after
          * it. */
-        const unsigned made = (unsigned)(ROSTER_RANDOM() % 5);
+        const unsigned made = (unsigned)(LABELS_RANDOM() % 5);
         for (unsigned k = 0; k < made && agrees; k++) {
-            const unsigned choice = (unsigned)(ROSTER_RANDOM() % 100);
-            const unsigned kind = (unsigned)(ROSTER_RANDOM() % KINDS);
-            const unsigned label = choice < 70 ? (unsigned)(ROSTER_RANDOM() % SHARED) : (unsigned)fresh++;
-            const uint32_t start = from + (read ? (uint32_t)(ROSTER_RANDOM() % read) : 0);
-            roster_model_key *key = &keys[kind * LABELS + label];
+            const unsigned choice = (unsigned)(LABELS_RANDOM() % 100);
+            const unsigned kind = (unsigned)(LABELS_RANDOM() % KINDS);
+            const unsigned label = choice < 70 ? (unsigned)(LABELS_RANDOM() % SHARED) : (unsigned)fresh++;
+            const uint32_t start = from + (read ? (uint32_t)(LABELS_RANDOM() % read) : 0);
+            labels_model_key *key = &keys[kind * LABELS + label];
             char text[16];
-            roster_label_text(label, text, sizeof(text));
-            agrees = markdown_core_roster_declare(
-                &roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind), (const unsigned char *)text,
+            labels_name_text(label, text, sizeof(text));
+            agrees = markdown_core_labels_define(
+                &labels, (markdown_core_label_space)(MARKDOWN_CORE_LABEL_ANCHOR + kind), (const unsigned char *)text,
                 (bufsize_t)strlen(text), start, NULL, &nodes[node_count]);
             owners[owner_count] = &nodes[node_count++];
             owned[owner_count++] = start | UINT32_C(0x80000000);
@@ -3738,22 +3755,20 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             /* Marked as new until the splice moves the old. */
             key->starts[key->count++] = start | UINT32_C(0x80000000);
         }
-        const unsigned looked = (unsigned)(ROSTER_RANDOM() % 6);
+        const unsigned looked = (unsigned)(LABELS_RANDOM() % 6);
         for (unsigned k = 0; k < looked && agrees; k++) {
-            const unsigned kind = 1 + (unsigned)(ROSTER_RANDOM() % (KINDS - 1));
-            const unsigned label = (unsigned)(ROSTER_RANDOM() % fresh);
-            const uint32_t start = from + (read ? (uint32_t)(ROSTER_RANDOM() % read) : 0);
-            roster_model_key *key = &keys[kind * LABELS + label];
+            const unsigned kind = 1 + (unsigned)(LABELS_RANDOM() % (KINDS - 1));
+            const unsigned label = (unsigned)(LABELS_RANDOM() % fresh);
+            const uint32_t start = from + (read ? (uint32_t)(LABELS_RANDOM() % read) : 0);
+            labels_model_key *key = &keys[kind * LABELS + label];
             char text[16];
-            roster_label_text(label, text, sizeof(text));
+            labels_name_text(label, text, sizeof(text));
             const markdown_core_chunk chunk = {(unsigned char *)text, (bufsize_t)strlen(text), 0};
             bool failed = false;
-            (void)markdown_core_roster_use(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
-                                           &chunk, false, start, NULL, &failed);
-            size_t owed;
-            markdown_core_roster_record **records = markdown_core_roster_owed(&roster, &owed);
-            agrees = !failed && owed == 1 && markdown_core_roster_own(&roster, records[0], &nodes[node_count]);
-            markdown_core_roster_owe(&roster, 0, false);
+            (void)markdown_core_labels_refer(&labels, (markdown_core_label_space)(MARKDOWN_CORE_LABEL_ANCHOR + kind),
+                                             &chunk, false, start, &nodes[node_count], &failed);
+            agrees = !failed && nodes[node_count].mentions && nodes[node_count].mentions->owed;
+            markdown_core_labels_own(nodes[node_count].mentions, &nodes[node_count]);
             owners[owner_count] = &nodes[node_count++];
             owned[owner_count++] = start | UINT32_C(0x80000000);
             if (key->use_count == key->use_capacity) {
@@ -3767,7 +3782,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         for (size_t m = 0; m < owner_count; m++) {
             const uint32_t start = owned[m];
             if (!(start & UINT32_C(0x80000000)) && start >= from && start < old) {
-                markdown_core_roster_release(&roster, owners[m]);
+                markdown_core_labels_release(&labels, owners[m]);
                 continue;
             }
             owners[kept] = owners[m];
@@ -3776,48 +3791,49 @@ static void roster_matches_a_model(test_batch_runner *runner) {
                                                          : start;
         }
         owner_count = kept;
-        markdown_core_roster_shift(&roster, delta);
+        markdown_core_labels_shift(&labels, delta);
         length = (uint32_t)((int64_t)length + delta);
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
-            roster_model_key *key = &keys[i];
-            key->count = roster_model_splice(key->starts, key->count, from, old, delta);
-            key->use_count = roster_model_splice(key->uses, key->use_count, from, old, delta);
+            labels_model_key *key = &keys[i];
+            key->count = labels_model_splice(key->starts, key->count, from, old, delta);
+            key->use_count = labels_model_splice(key->uses, key->use_count, from, old, delta);
         }
-        /* The journal holds every key that flipped. */
-        size_t journal_count;
-        markdown_core_roster_label *const *journal = markdown_core_roster_journal(&roster, &journal_count);
+        /* The changes hold every key that flipped. */
+        size_t altered_count;
+        markdown_core_label *const *altered = markdown_core_labels_altered(&labels, &altered_count);
         size_t flipped = 0, listed = 0;
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
             flipped += keys[i].was != (keys[i].count > 0);
         }
-        for (size_t i = 0; i < journal_count; i++) {
-            listed += journal[i]->was != (journal[i]->first != NULL);
+        for (size_t i = 0; i < altered_count; i++) {
+            listed += altered[i]->was != (altered[i]->first != NULL);
         }
         if (agrees && listed != flipped) {
-            fprintf(stderr, "roster journal at edit %zu lists %zu flips, the model %zu\n", edit, listed, flipped);
+            fprintf(stderr, "altered labels at edit %zu list %zu flips, the model %zu\n", edit, listed, flipped);
         }
         agrees = agrees && listed == flipped;
         flips += flipped;
-        /* Every use the shelf holds is its label's, which lists it; and
-         * each key's uses start where the model's do. */
+        /* Every reference the sequence holds is its label's, which lists
+         * it; and each key's references are located where the model's
+         * are. */
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
             keys[i].listed = 0;
             keys[i].sum = 0;
         }
-        const size_t uses = roster.use_shelf < 0 ? 0 : roster.shelves[roster.use_shelf]->places.count;
+        const markdown_core_tree *references = labels.uses < 0 ? NULL : &labels.sequences[labels.uses]->places;
+        const size_t uses = references ? references->count : 0;
         for (size_t i = 0; i < uses && agrees; i++) {
-            const markdown_core_roster_place *place =
-                markdown_core_tree_peek(&roster.shelves[roster.use_shelf]->places, i);
-            const markdown_core_roster_label *named = place->record->label;
-            const unsigned kind = (unsigned)named->key[0] - MARKDOWN_CORE_ROSTER_ANCHOR;
+            const markdown_core_mention_place *place = markdown_core_tree_peek(references, i);
+            const markdown_core_label *named = place->mention->label;
+            const unsigned kind = (unsigned)named->key[0] - MARKDOWN_CORE_LABEL_ANCHOR;
             const unsigned label = (unsigned)strtoul((const char *)named->key + 2, NULL, 10);
-            roster_model_key *key = &keys[kind * LABELS + label];
-            agrees = (i == 0 || place->start >= ((const markdown_core_roster_place *)markdown_core_tree_peek(
-                                                     &roster.shelves[roster.use_shelf]->places, i - 1))
-                                                    ->start);
+            labels_model_key *key = &keys[kind * LABELS + label];
+            agrees =
+                i == 0 || place->start >=
+                              ((const markdown_core_mention_place *)markdown_core_tree_peek(references, i - 1))->start;
             if (!key->listed++) {
                 size_t length = 0;
-                for (const markdown_core_roster_record *use = named->uses; use; use = use->after) {
+                for (const markdown_core_mention *use = named->uses; use; use = use->after) {
                     length++;
                 }
                 agrees = agrees && length == key->use_count;
@@ -3831,42 +3847,38 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             }
             agrees = keys[i].listed == keys[i].use_count && keys[i].sum == sum;
             if (!agrees) {
-                fprintf(stderr, "roster uses diverge at edit %zu on key %zu\n", edit, i);
+                fprintf(stderr, "labels' references diverge at edit %zu on key %zu\n", edit, i);
             }
         }
-        markdown_core_roster_close(&roster);
-        if (ROSTER_RANDOM() % 16 == 0) {
-            agrees = agrees && markdown_core_roster_compact(&roster);
-            compactions++;
-        }
-        /* The labels in order: each kind's declared keys, each once, in
-         * the order of their keys. */
+        markdown_core_labels_close(&labels);
+        /* The names in order: each space's defined keys, each once, in the
+         * order of their keys. */
         for (unsigned kind = 0; kind < KINDS && agrees && edit % 32 == 0; kind++) {
             size_t declared = 0, count;
             for (size_t label = 0; label < fresh; label++) {
                 declared += keys[kind * LABELS + label].count > 0;
             }
-            const size_t first = markdown_core_roster_labels_of(
-                &roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind), &count);
+            const size_t first = markdown_core_labels_names_of(
+                &labels, (markdown_core_label_space)(MARKDOWN_CORE_LABEL_ANCHOR + kind), &count);
             agrees = count == declared;
             for (size_t i = 1; i < count && agrees; i++) {
-                const markdown_core_roster_label *prior = markdown_core_roster_label_at(&roster, first + i - 1);
-                const markdown_core_roster_label *next = markdown_core_roster_label_at(&roster, first + i);
+                const markdown_core_label *prior = markdown_core_labels_name_at(&labels, first + i - 1);
+                const markdown_core_label *next = markdown_core_labels_name_at(&labels, first + i);
                 const int order = memcmp(prior->key, next->key,
                                          (size_t)(prior->key_len < next->key_len ? prior->key_len : next->key_len));
                 agrees = next->first && (order < 0 || (!order && prior->key_len < next->key_len));
             }
             if (!agrees) {
-                fprintf(stderr, "roster labels in order diverge at edit %zu on kind %u\n", edit, kind);
+                fprintf(stderr, "labels' names in order diverge at edit %zu on space %u\n", edit, kind);
             }
         }
-        const unsigned compared = edit == EDITS - 1 ? (1u << KINDS) - 1 : (unsigned)(ROSTER_RANDOM() % (1u << KINDS));
+        const unsigned compared = edit == EDITS - 1 ? (1u << KINDS) - 1 : (unsigned)(LABELS_RANDOM() % (1u << KINDS));
         for (unsigned kind = 0; kind < KINDS && agrees; kind++) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
             for (unsigned label = 0; label < fresh && agrees; label++) {
-                const roster_model_key *key = &keys[kind * LABELS + label];
+                const labels_model_key *key = &keys[kind * LABELS + label];
                 if (!key->count && label >= SHARED && (label + edit) % 64) {
                     continue;
                 }
@@ -3875,26 +3887,25 @@ static void roster_matches_a_model(test_batch_runner *runner) {
                     earliest = key->starts[i] < earliest ? key->starts[i] : earliest;
                 }
                 char text[16];
-                roster_label_text(label, text, sizeof(text));
+                labels_name_text(label, text, sizeof(text));
                 bool failed = false;
-                const markdown_core_roster_record *found =
-                    markdown_core_roster_find(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
+                const markdown_core_mention *found =
+                    markdown_core_labels_find(&labels, (markdown_core_label_space)(MARKDOWN_CORE_LABEL_ANCHOR + kind),
                                               (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
                 agrees = !failed && (found != NULL) == (key->count > 0) &&
-                         (!found || (markdown_core_roster_start(&roster, found) == earliest &&
+                         (!found || (markdown_core_labels_start(&labels, found) == earliest &&
                                      found->label->count == key->count));
                 if (!agrees) {
-                    fprintf(stderr, "roster diverges at edit %zu on kind %u label %u\n", edit, kind, label);
+                    fprintf(stderr, "labels diverge at edit %zu on space %u name %u\n", edit, kind, label);
                 }
             }
         }
     }
-#undef ROSTER_RANDOM
-    OK(runner, agrees, "the roster answers as the model after edits and compactions");
+#undef LABELS_RANDOM
+    OK(runner, agrees, "the labels answer as the model after edits");
     OK(runner, flips, "edits flipped keys (%zu)", flips);
-    OK(runner, compactions, "the roster compacted (%zu)", compactions);
-    markdown_core_roster_free(&roster);
-    INT_EQ(runner, payload_live, 0, "the roster releases everything it holds");
+    markdown_core_labels_free(&labels);
+    INT_EQ(runner, payload_live, 0, "the labels release everything they hold");
     payload_probe_disarm();
     for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
         free(keys[i].starts);
@@ -5400,8 +5411,10 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = ATTRIBUTE_WORK(parser);
     work->anchors = parser->names.work;
-    work->definitions =
-        parser->roster.made[markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE)];
+    const markdown_core_sequence *titles = markdown_core_labels_sequence(
+        &parser->labels, markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE),
+        MARKDOWN_CORE_NODE_HEADING);
+    work->definitions = titles ? titles->places.count : 0;
     work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
     work->nonblank = parser->nonblank_work;
     work->definition_lists =
@@ -7324,7 +7337,7 @@ static void heading_completion_invariants(test_batch_runner *runner) {
     }
 }
 
-static void heading_roster_invariants(test_batch_runner *runner) {
+static void heading_anchor_invariants(test_batch_runner *runner) {
     for (size_t count = 128; count <= 8192; count *= 2) {
         for (int reserve = 0; reserve < 2; reserve++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -7343,7 +7356,7 @@ static void heading_roster_invariants(test_batch_runner *runner) {
             inline_work work = {0};
             markdown_core_node *root =
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "heading roster handles dense future reservations");
+            OK(runner, root != NULL, "heading anchors handle dense future reservations");
             if (root) {
                 markdown_core_node *node = child_at(root, 0);
                 OK(runner, work.heading_collection_disposed, "the finished document holds no live heading parse state");
@@ -7359,7 +7372,7 @@ static void heading_roster_invariants(test_batch_runner *runner) {
                            "every generated suffix is the smallest available");
                 }
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
-                   "roster work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
+                   "anchor work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
                 bool named = true;
                 for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
                     markdown_core_node *node = last_child_of(root)->children[node_index];
@@ -12489,10 +12502,10 @@ int main(void) {
     unicode_classes_are_total(runner);
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
-    roster_records_are_carved_from_its_blocks(runner);
+    labels_store_one_allocation_each(runner);
     key_tree_matches_a_sorted_model(runner);
-    roster_kinds_and_starts(runner);
-    roster_matches_a_model(runner);
+    labels_spaces_and_locations(runner);
+    labels_match_a_model(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_nul(runner);
@@ -12521,7 +12534,7 @@ int main(void) {
     the_list_scanner_reads_a_numeral_by_its_first_bytes_class(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
-    heading_roster_invariants(runner);
+    heading_anchor_invariants(runner);
     reference_occurrences_hold_the_label_alone(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);

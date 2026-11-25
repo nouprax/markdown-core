@@ -122,9 +122,9 @@ which are places. After the exchanges the new tree holds only the new
 parse's storage and the retired tree only the old, and each is released as a
 whole.
 
-Roster records are not slots. A record lives until the roster is freed
-or a rollback pops it, newest first, so records are carved one after another
-from blocks the roster owns, rather than allocated one each.
+Label mentions are not slots. A mention, a definition or a reference of a
+label (`core/labels.h`), is an allocation of its own that its owner node
+holds, and goes when that node is let go.
 
 All block, inline, and manual construction uses the same node constructor.
 It takes one slot for the node and its kind's record, establishes defaults,
@@ -248,9 +248,9 @@ Cite's Citation owns as its `note` field, as it owns its affixes. Authored
 definitions are Footnote and Specimen blocks in the tree where they were
 read. In both cases the tree owns the node, including on parse failure.
 
-Calls resolve through the parse's roster (`core/roster.h`) while
-parsing: each footnote and specimen definition declares its label there as it
-is read, and a call asks whether its label is declared. The
+Calls resolve through the parse's labels (`core/labels.h`) while
+parsing: each footnote and specimen definition defines its label there as it
+is read, and a call asks whether its label is defined. The
 finish stage visits definitions where they are, like any other node.
 
 Publishing is one canonical walk. It numbers every node from 1, rewrites the

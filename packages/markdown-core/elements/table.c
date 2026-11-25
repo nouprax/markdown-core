@@ -4,7 +4,7 @@
 #include "element.h"
 #include <inlines.h>
 #include <parser.h>
-#include "roster.h"
+#include "labels.h"
 #include <assert.h>
 #include <string.h>
 #include <limits.h>

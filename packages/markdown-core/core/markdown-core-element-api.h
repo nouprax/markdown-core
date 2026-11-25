@@ -385,7 +385,7 @@ struct markdown_core_element_instance {
     /* The dialect that holds it, which answers what the dialect's other
      * kinds show (markdown_core_instance_facet). */
     const struct markdown_core_dialect *dialect;
-    /* The roster kinds of the descriptor's `spaces`, in its order
+    /* The label space numbers of the descriptor's `spaces`, in its order
      * (element.h, markdown_core_space). */
     const unsigned *spaces;
     /* Where the element's `mine` rules for closing a bracket lie among the

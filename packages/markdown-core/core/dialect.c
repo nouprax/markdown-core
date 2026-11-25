@@ -4,7 +4,7 @@
 #include "alloc.h"
 #include "block_internal.h"
 #include "dialect.h"
-#include "roster.h"
+#include "labels.h"
 
 /* Whether a descriptor is refused. The rule: an element takes part in the
  * finish stage through one step, asked in completion's walk where it can
@@ -720,12 +720,12 @@ static void S_resolve_needs(markdown_core_dialect *dialect, markdown_core_elemen
  * instance's namings resolved to the numbers, in its order. */
 static void S_number_spaces(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
                             const markdown_core_space **spaces, unsigned *namings) {
-    size_t kinds = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
-    spaces[0] = spaces[MARKDOWN_CORE_ROSTER_ANCHOR] = NULL;
+    size_t kinds = MARKDOWN_CORE_LABEL_ANCHOR + 1;
+    spaces[0] = spaces[MARKDOWN_CORE_LABEL_ANCHOR] = NULL;
     for (size_t i = 0; i < dialect->element_count; i++) {
         instances[i].spaces = namings;
         for (const markdown_core_space *const *space = instances[i].element->spaces; space && *space; space++) {
-            size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1;
+            size_t kind = MARKDOWN_CORE_LABEL_ANCHOR + 1;
             while (kind < kinds && !S_same_space(spaces[kind], *space)) {
                 kind++;
             }

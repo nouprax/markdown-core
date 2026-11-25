@@ -362,8 +362,8 @@ typedef struct markdown_core_dialect {
      * `mine_first`, `mine_count`), by precedence. */
     const struct markdown_core_closer *closers;
     size_t closer_count, shared;
-    /* THE ROSTER SPACES the elements name (element.h, markdown_core_space),
-     * by roster kind: `space_count` of them, the first two NULL, no
+    /* THE LABEL SPACES the elements name (element.h, markdown_core_space),
+     * by number: `space_count` of them, the first two NULL, no
      * kind's and the engine's ANCHOR. */
     const markdown_core_space *const *spaces;
     size_t space_count;
@@ -428,9 +428,9 @@ markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markd
     }
 }
 
-/* The roster kind the dialect numbered `space` (element.h,
+/* The number the dialect gave `space` (element.h,
  * markdown_core_space), or 0, no kind's, when no element of it names the
- * space: a kind no record has, which every lookup answers with none. */
+ * space: a space no label has, which every lookup answers with none. */
 static inline unsigned markdown_core_dialect_space_kind(const markdown_core_dialect *dialect,
                                                         const markdown_core_space *space) {
     for (size_t kind = 0; kind < dialect->space_count; kind++) {

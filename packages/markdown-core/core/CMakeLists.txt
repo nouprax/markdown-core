@@ -20,7 +20,7 @@ set(HEADERS
     follow.h
     slab.h
     metadata.h
-    roster.h
+    labels.h
     tree.h
     index.h
     map.h
@@ -49,7 +49,7 @@ set(LIBRARY_SOURCES
     utf8.c
     buffer.c
     names.c
-    roster.c
+    labels.c
     map.c
     tree.c
     index.c

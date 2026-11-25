@@ -1925,11 +1925,18 @@ test("api: a node's scopes are its own runs, one per run in source order", () =>
 
     // A callout's title is an inline root's content whose nodes have runs of
     // their own, leading from the start of the callout's source. Its content
-    // is a relation of its own, so its first block leads from there too.
+    // is a relation of its own, so its first block leads from there too. The
+    // callout's runs touch where they read the title's content differently
+    // from the source around it, and its scope joins them.
     const titled = "> [!note] T *u*\n> body\n";
     const callout = Document.parse(titled, { unit: "utf8" });
     const [note] = callout.content;
-    assert.deepEqual(note.runs, [{ lead: 0, span: 22 }]);
+    assert.deepEqual(note.runs, [
+        { lead: 0, span: 10 },
+        { lead: 0, span: 5 },
+        { lead: 0, span: 7 }
+    ]);
+    assert.deepEqual(callout.scope(note, titled), [scope(1, 1, 2, 6)]);
     assert.deepEqual(note.title[0].runs, [{ lead: 10, span: 2 }]);
     assert.deepEqual(callout.scope(note.title[1].content[0], titled), [scope(1, 14, 1, 14)]);
     assert.deepEqual(note.content[0].extent, { lead: 18, span: 4 });
@@ -1972,7 +1979,7 @@ test("api: a table's rows, in head then content order, are one relation", () => 
     assert.ok(document.dump(source).includes("TableBody children=2\n        ├── TableRow scope=3:1..3:5 "));
 });
 
-test("api: every node has runs, and its scopes are one per run in source order", () => {
+test("api: every node has runs, and its scopes are one per range of touching runs in source order", () => {
     const source =
         "# Heading\n\n> Quote *a\n> b*\n\n- [x] task ^[note]\n\n| a | b |\n| - | - |\n| c | d |\n\n" +
         ":::container[Title]{kind=demo}\nBody\n:::\n\n> [!note] T *u*\n> body\n\nTerm\n: body\n";
@@ -1986,7 +1993,8 @@ test("api: every node has runs, and its scopes are one per run in source order",
                 count += 1;
                 assert.ok(node.runs.length >= 1, node.kind);
                 const scopes = document.scope(node, source);
-                assert.equal(scopes.length, node.runs.length, node.kind);
+                const ranges = node.runs.filter(({ lead, span }, index) => index === 0 || lead !== 0 || span === 0);
+                assert.equal(scopes.length, ranges.length, node.kind);
                 for (let index = 1; index < scopes.length; index += 1) {
                     const before = scopes[index - 1].end;
                     const after = scopes[index].start;

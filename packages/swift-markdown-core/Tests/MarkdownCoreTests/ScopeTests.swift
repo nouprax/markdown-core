@@ -118,11 +118,12 @@ import Testing
                 + "└── Text scope=2:3..2:3 anchor=null attributes={} literal=\"c\" children=0\n"
         )
         // A continuation indent moves the runs, never the content's extents:
-        // the stripped space is the paragraph's own source, and the emphasis's
-        // second run starts at it.
+        // the stripped space is the paragraph's own source, a run that reads
+        // no content touching the line's content, and the emphasis's second
+        // run starts at it.
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
-        #expect(moved.runs == [Run(lead: 2, span: 5), Run(lead: 2, span: 5)])
+        #expect(moved.runs == [Run(lead: 2, span: 5), Run(lead: 2, span: 1), Run(lead: 0, span: 4)])
         #expect(moved != block)
         #expect(moved.content[1].extent == emphasis.extent)
         #expect(moved.content[1].runs == [Run(lead: 0, span: 3), Run(lead: 2, span: 3)])
@@ -155,9 +156,15 @@ import Testing
         let source = "> [!NOTE] Ti*t*le\n> x\n"
         let document = try Document.parse(source)
         let callout = try #require(document.content.first as? Callout)
-        // A block whose own source is its range has one run, its range.
+        // A block whose own source is its range has one run, its range; a
+        // callout's runs touch where they read its title's content
+        // differently from the source around it, and its scope joins them.
         #expect(document.runs == [Run(lead: 0, span: 21)])
-        #expect(callout.runs == [Run(lead: 0, span: 21)])
+        #expect(callout.runs == [Run(lead: 0, span: 10), Run(lead: 0, span: 7), Run(lead: 0, span: 4)])
+        #expect(
+            try document.scope(of: callout, in: source)
+                == [Scope(start: Position(line: 1, column: 1), end: Position(line: 2, column: 3))]
+        )
         // The title's nodes lead from the callout's start, then each from
         // where the source of the one before it ends.
         let title = try #require(callout.title)

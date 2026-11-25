@@ -21,7 +21,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/utf8.c"
     "${MARKDOWN_CORE_CORE_DIR}/buffer.c"
     "${MARKDOWN_CORE_CORE_DIR}/names.c"
-    "${MARKDOWN_CORE_CORE_DIR}/roster.c"
+    "${MARKDOWN_CORE_CORE_DIR}/labels.c"
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
     "${MARKDOWN_CORE_CORE_DIR}/tree.c"
     "${MARKDOWN_CORE_CORE_DIR}/index.c"
