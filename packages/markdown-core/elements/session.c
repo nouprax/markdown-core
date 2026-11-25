@@ -303,9 +303,9 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
 /* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): a lookup of
  * the children an edit kept, before its rest point and from where it took
  * the old children back, answers otherwise only for a label the edit made
- * declared or left undeclared (markdown_core_parser_altered_labels). Every
- * inline root's lookups are its uses (markdown_core_parser_uses_of), so the
- * blocks that hold a use of one are known, and only they are read again, as
+ * declared or left undeclared. Every lookup is a use of its label by the
+ * inline root that made it (roster.h, THE USES), so the blocks that hold a
+ * use of one are known (markdown_core_parser_altered_uses), and only they are read again, as
  * an edit of nothing just past where the root starts reads them when it
  * takes no old child back before the last, which completes their content
  * against the definitions the edit left and keeps the identity of every
@@ -321,19 +321,16 @@ static int session_size_order(const void *a, const void *b) {
  * that a label many blocks name costs a few readings and not one each. */
 #define SESSION_PASSES 8
 
-/* The kept text in `spans`, `count` pairs of offsets, read again where a
- * lookup of one of the `altered` labels may be made. The bytes read again
+/* The kept text read again at the `place_count` `places`, one past where
+ * each use of an altered label lies, which it frees. The bytes read again
  * join those the edit read. */
-static markdown_core_status session_refresh(markdown_core_session *session, const markdown_core_strbuf *altered,
-                                            const size_t *spans, size_t count) {
+static markdown_core_status session_refresh(markdown_core_session *session, size_t *places, size_t place_count) {
     session_edits *edits = session->edits;
-    size_t *places = NULL, place_count = 0;
-    const bool ok = markdown_core_parser_uses_of(session->committed, altered, spans, count, &places, &place_count);
     /* The widest gaps between places part the readings, the earlier of
      * two as wide first: `cuts` holds the places they follow, widest
      * first. */
     size_t cuts[SESSION_PASSES - 1], cut_count = 0;
-    for (size_t i = 0; ok && i + 1 < place_count; i++) {
+    for (size_t i = 0; i + 1 < place_count; i++) {
         const size_t width = places[i + 1] - places[i];
         size_t at = cut_count;
         while (at > 0 && places[cuts[at - 1] + 1] - places[cuts[at - 1]] < width) {
@@ -348,7 +345,7 @@ static markdown_core_status session_refresh(markdown_core_session *session, cons
         cut_count++;
     }
     qsort(cuts, cut_count, sizeof(*cuts), session_size_order);
-    markdown_core_status status = ok ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+    markdown_core_status status = MARKDOWN_CORE_OK;
     size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
     for (size_t first = 0, cut = 0; status == MARKDOWN_CORE_OK && first < place_count;) {
         while (cut < cut_count && cuts[cut] < first) {
@@ -441,19 +438,19 @@ static markdown_core_status session_change(markdown_core_session *session, size_
      * are made again (THE DEFINITIONS AN EDIT ALTERED). */
     const size_t resumed = markdown_core_parser_resumed(session->committed);
     if (status == MARKDOWN_CORE_OK && !compact && (child || resumed)) {
-        markdown_core_strbuf altered = MARKDOWN_CORE_BUF_INIT();
-        if (!markdown_core_parser_altered_labels(session->committed, &altered)) {
+        /* What the reading kept of a paragraph it read again from where the
+         * paragraph starts, before the rest point, is read again as the
+         * children before it are (THE LEAP). */
+        const size_t spans[] = {0, rest_start, resumed, session->text.count};
+        size_t *places, place_count;
+        if (!markdown_core_parser_altered_uses(session->committed, spans, resumed ? 2 : 1, &places, &place_count)) {
             /* The children that stay may read otherwise, and no edit after
              * this one may take them as they are. */
             markdown_core_node_pool_release(&session->pool, session->document.root);
             session->document.root = NULL;
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
-        } else if (altered.size) {
-            /* What the reading kept of a paragraph it read again from where
-             * the paragraph starts, before the rest point, is read again as
-             * the children before it are (THE LEAP). */
-            const size_t spans[] = {0, rest_start, resumed, session->text.count};
-            status = session_refresh(session, &altered, spans, resumed ? 2 : 1);
+        } else if (place_count) {
+            status = session_refresh(session, places, place_count);
             if (status != MARKDOWN_CORE_OK && session->document.root) {
                 /* The children that name an altered label read as they
                  * did, and no edit after this one may take them so. */
@@ -461,7 +458,6 @@ static markdown_core_status session_change(markdown_core_session *session, size_
                 session->document.root = NULL;
             }
         }
-        markdown_core_strbuf_free(&altered);
     }
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;

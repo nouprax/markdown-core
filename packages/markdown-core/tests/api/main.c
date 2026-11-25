@@ -3645,7 +3645,8 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
  * through the same random edits: each reopens at a random start, declares a
  * few labels in the text it reads, and splices the old text back from a
  * random place past it, which lets the old declarations between go and
- * moves the rest; now and then the roster compacts between edits. After each
+ * moves the rest; it looks labels up there too, each a use, which go and
+ * move the same way; now and then the roster compacts between edits. After each
  * edit every key of a random set of the kinds is compared: whether it is
  * declared, where its earliest declaration starts and how many stand; and
  * the journal must hold just the keys whose being declared the edit
@@ -3656,7 +3657,28 @@ typedef struct {
     uint32_t *starts;
     size_t count, capacity;
     bool was;
+    /* Its uses' starts, and what the roster's lists hold of them. */
+    uint32_t *uses;
+    size_t use_count, use_capacity, listed;
+    uint64_t sum;
 } roster_model_key;
+
+/* A start kept, moved or let go as the splice of the text from `from` up to
+ * `old` does, those marked new kept as they are; the count kept. */
+static size_t roster_model_splice(uint32_t *starts, size_t count, uint32_t from, uint32_t old, int64_t delta) {
+    size_t kept = 0;
+    for (size_t m = 0; m < count; m++) {
+        const uint32_t start = starts[m];
+        if (start & UINT32_C(0x80000000)) {
+            starts[kept++] = start & ~UINT32_C(0x80000000);
+        } else if (start < from) {
+            starts[kept++] = start;
+        } else if (start >= old) {
+            starts[kept++] = (uint32_t)((int64_t)start + delta);
+        }
+    }
+    return kept;
+}
 
 static void roster_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
@@ -3681,7 +3703,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         const uint32_t from = (uint32_t)(ROSTER_RANDOM() % length);
         const uint32_t read = (uint32_t)(ROSTER_RANDOM() % 512);
         const uint32_t old = from + (uint32_t)(ROSTER_RANDOM() % (length - from + 1));
-        agrees = markdown_core_roster_reopen(&roster, from);
+        agrees = markdown_core_roster_reopen(&roster, from, from);
         /* The text the reading read, from `from` up to `from + read`, in
          * which it declares; the old text from `old` on comes back after
          * it. */
@@ -3704,23 +3726,33 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             /* Marked as new until the splice moves the old. */
             key->starts[key->count++] = start | UINT32_C(0x80000000);
         }
+        const unsigned looked = (unsigned)(ROSTER_RANDOM() % 6);
+        for (unsigned k = 0; k < looked && agrees; k++) {
+            const unsigned kind = 1 + (unsigned)(ROSTER_RANDOM() % (KINDS - 1));
+            const unsigned label = (unsigned)(ROSTER_RANDOM() % fresh);
+            const uint32_t start = from + (read ? (uint32_t)(ROSTER_RANDOM() % read) : 0);
+            roster_model_key *key = &keys[kind * LABELS + label];
+            char text[16];
+            roster_label_text(label, text, sizeof(text));
+            const markdown_core_chunk chunk = {(unsigned char *)text, (bufsize_t)strlen(text), 0};
+            markdown_core_roster_placing placed;
+            bool failed = false;
+            (void)markdown_core_roster_use(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
+                                           &chunk, false, start, NULL, &placed, &failed);
+            agrees = !failed && placed != MARKDOWN_CORE_ROSTER_UNUSED;
+            if (key->use_count == key->use_capacity) {
+                key->use_capacity = key->use_capacity ? 2 * key->use_capacity : 4;
+                key->uses = realloc(key->uses, key->use_capacity * sizeof(*key->uses));
+            }
+            key->uses[key->use_count++] = start | UINT32_C(0x80000000);
+        }
         const int64_t delta = (int64_t)(from + read) - (int64_t)old;
-        agrees = agrees && markdown_core_roster_splice(&roster, old, delta);
+        agrees = agrees && markdown_core_roster_splice(&roster, old, delta, 0);
         length = (uint32_t)((int64_t)length + delta);
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
             roster_model_key *key = &keys[i];
-            size_t kept = 0;
-            for (size_t m = 0; m < key->count; m++) {
-                const uint32_t start = key->starts[m];
-                if (start & UINT32_C(0x80000000)) {
-                    key->starts[kept++] = start & ~UINT32_C(0x80000000);
-                } else if (start < from) {
-                    key->starts[kept++] = start;
-                } else if (start >= old) {
-                    key->starts[kept++] = (uint32_t)((int64_t)start + delta);
-                }
-            }
-            key->count = kept;
+            key->count = roster_model_splice(key->starts, key->count, from, old, delta);
+            key->use_count = roster_model_splice(key->uses, key->use_count, from, old, delta);
         }
         /* The journal holds every key that flipped. */
         size_t journal_count;
@@ -3737,6 +3769,42 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         }
         agrees = agrees && listed == flipped;
         flips += flipped;
+        /* Every use the shelf holds is its label's, which lists it; and
+         * each key's uses start where the model's do. */
+        for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
+            keys[i].listed = 0;
+            keys[i].sum = 0;
+        }
+        const size_t uses = markdown_core_roster_uses_front(&roster) + markdown_core_roster_uses_back(&roster);
+        for (size_t i = 0; i < uses && agrees; i++) {
+            const markdown_core_roster_place *place =
+                markdown_core_tree_peek(&roster.shelves[roster.use_shelf]->places, i);
+            const markdown_core_roster_label *named = place->record->label;
+            const unsigned kind = (unsigned)named->key[0] - MARKDOWN_CORE_ROSTER_ANCHOR;
+            const unsigned label = (unsigned)strtoul((const char *)named->key + 2, NULL, 10);
+            roster_model_key *key = &keys[kind * LABELS + label];
+            agrees = (i == 0 || place->start >= ((const markdown_core_roster_place *)markdown_core_tree_peek(
+                                                     &roster.shelves[roster.use_shelf]->places, i - 1))
+                                                    ->start);
+            if (!key->listed++) {
+                size_t length = 0;
+                for (const markdown_core_roster_record *use = named->uses; use; use = use->after) {
+                    length++;
+                }
+                agrees = agrees && length == key->use_count;
+            }
+            key->sum += place->start;
+        }
+        for (size_t i = 0; i < (size_t)KINDS * LABELS && agrees; i++) {
+            uint64_t sum = 0;
+            for (size_t m = 0; m < keys[i].use_count; m++) {
+                sum += keys[i].uses[m];
+            }
+            agrees = keys[i].listed == keys[i].use_count && keys[i].sum == sum;
+            if (!agrees) {
+                fprintf(stderr, "roster uses diverge at edit %zu on key %zu\n", edit, i);
+            }
+        }
         markdown_core_roster_close(&roster);
         if (ROSTER_RANDOM() % 16 == 0) {
             agrees = agrees && markdown_core_roster_compact(&roster);
@@ -3780,6 +3848,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
     payload_probe_disarm();
     for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
         free(keys[i].starts);
+        free(keys[i].uses);
     }
     free(keys);
 }

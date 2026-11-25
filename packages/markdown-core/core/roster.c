@@ -172,6 +172,7 @@ uint32_t markdown_core_roster_placed(const markdown_core_roster *roster, const m
 
 bool markdown_core_roster_init(markdown_core_roster *roster, size_t kinds) {
     *roster = (markdown_core_roster){0};
+    roster->use_shelf = -1;
     markdown_core_strbuf_init(&roster->key, 0);
     roster->made = markdown_core_alloc(kinds, sizeof(*roster->made));
     if (!roster->made) {
@@ -263,7 +264,9 @@ static void S_link(markdown_core_roster *roster, markdown_core_roster_record *re
     if (!first) {
         record->before = record->hint = record;
         label->first = record;
-        roster->dead -= S_label_size(label->key_len);
+        if (!label->uses) {
+            roster->dead -= S_label_size(label->key_len);
+        }
         return;
     }
     markdown_core_roster_record *at = first->hint ? first->hint : S_last(first);
@@ -295,8 +298,8 @@ static void S_link(markdown_core_roster *roster, markdown_core_roster_record *re
     first->hint = record;
 }
 
-/* The declaration leaves its label's list; a label none declares any more
- * is dead bytes until a compaction. */
+/* The declaration leaves its label's list; a label none declares or uses
+ * any more is dead bytes until a compaction. */
 static void S_unlink(markdown_core_roster *roster, markdown_core_roster_record *record) {
     markdown_core_roster_label *label = record->label;
     assert(record->linked && label->count);
@@ -304,7 +307,9 @@ static void S_unlink(markdown_core_roster *roster, markdown_core_roster_record *
     markdown_core_roster_record *first = label->first;
     if (!--label->count) {
         label->first = NULL;
-        roster->dead += S_label_size(label->key_len);
+        if (!label->uses) {
+            roster->dead += S_label_size(label->key_len);
+        }
         return;
     }
     /* The next search of the list is likely near the one that went. */
@@ -322,6 +327,38 @@ static void S_unlink(markdown_core_roster *roster, markdown_core_roster_record *
         record->after->before = prior;
     } else {
         first->before = prior;
+    }
+}
+
+/* The use joins its label's uses, first, and leaves them (THE USES). */
+static void S_use_link(markdown_core_roster *roster, markdown_core_roster_record *record) {
+    markdown_core_roster_label *label = record->label;
+    if (!label->uses && !label->first) {
+        roster->dead -= S_label_size(label->key_len);
+    }
+    record->linked = true;
+    record->before = NULL;
+    record->after = label->uses;
+    if (label->uses) {
+        label->uses->before = record;
+    }
+    label->uses = record;
+}
+
+static void S_use_unlink(markdown_core_roster *roster, markdown_core_roster_record *record) {
+    markdown_core_roster_label *label = record->label;
+    assert(record->linked);
+    record->linked = false;
+    if (record->before) {
+        record->before->after = record->after;
+    } else {
+        label->uses = record->after;
+    }
+    if (record->after) {
+        record->after->before = record->before;
+    }
+    if (!label->uses && !label->first) {
+        roster->dead += S_label_size(label->key_len);
     }
 }
 
@@ -459,15 +496,14 @@ const markdown_core_roster_record *markdown_core_roster_find_name(markdown_core_
     return S_seen(roster, markdown_core_key_index_seek(&roster->index, hash, name->size + 1, S_same_name, name));
 }
 
+static bool S_key(markdown_core_roster *roster, markdown_core_roster_kind kind, const markdown_core_chunk *label,
+                  bool folds, bool *failed);
+
 const markdown_core_roster_record *markdown_core_roster_find(markdown_core_roster *roster,
                                                              markdown_core_roster_kind kind, const unsigned char *label,
                                                              bufsize_t length, bool *failed) {
-    if (length <= 0 || !roster->made[kind]) {
-        return NULL;
-    }
-    S_assemble(roster, kind, label, length);
-    if (roster->key.oom) {
-        *failed = true;
+    const markdown_core_chunk text = {(unsigned char *)label, length, 0};
+    if (!roster->made[kind] || !S_key(roster, kind, &text, false, failed)) {
         return NULL;
     }
     return S_seen(roster, S_index_find(roster, (const unsigned char *)roster->key.ptr, roster->key.size));
@@ -519,23 +555,154 @@ void markdown_core_roster_moved(markdown_core_roster *roster) {
     }
 }
 
-const markdown_core_roster_record *markdown_core_roster_find_label(markdown_core_roster *roster,
-                                                                   markdown_core_roster_kind kind,
-                                                                   const markdown_core_chunk *label, bool *failed) {
-    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !roster->made[kind]) {
-        return NULL;
+/* The key of `label` of `kind`, as written, assembled: in the
+ * reference-label normal form when the kind `folds`. False when it names
+ * nothing (markdown_core_roster_use) or, with `*failed` set, when storage
+ * could not be had. */
+static bool S_key(markdown_core_roster *roster, markdown_core_roster_kind kind, const markdown_core_chunk *label,
+                  bool folds, bool *failed) {
+    if (folds ? label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH : label->len <= 0) {
+        return false;
     }
     markdown_core_strbuf_clear(&roster->key);
     markdown_core_strbuf_putc(&roster->key, (int)kind);
-    markdown_core_utf8proc_normalize_label(&roster->key, label->data, label->len);
+    if (folds) {
+        markdown_core_utf8proc_normalize_label(&roster->key, label->data, label->len);
+    } else {
+        markdown_core_strbuf_put(&roster->key, label->data, label->len);
+    }
     if (roster->key.oom) {
         *failed = true;
-        return NULL;
+        return false;
     }
-    if (roster->key.size == 1) {
+    return roster->key.size > 1;
+}
+
+const markdown_core_roster_record *markdown_core_roster_find_label(markdown_core_roster *roster,
+                                                                   markdown_core_roster_kind kind,
+                                                                   const markdown_core_chunk *label, bool *failed) {
+    if (!roster->made[kind] || !S_key(roster, kind, label, true, failed)) {
         return NULL;
     }
     return S_seen(roster, S_index_find(roster, (const unsigned char *)roster->key.ptr, roster->key.size));
+}
+
+/* The uses' shelf, made at the first use, or NULL when storage could not be
+ * had. */
+static inline markdown_core_tree *S_uses(markdown_core_roster *roster) {
+    if (roster->use_shelf < 0) {
+        roster->use_shelf = S_shelf(roster, 0, (uint16_t)MARKDOWN_CORE_NODE_NONE);
+    }
+    return roster->use_shelf < 0 ? NULL : &roster->shelves[roster->use_shelf]->places;
+}
+
+static inline const markdown_core_tree *S_uses_of(const markdown_core_roster *roster) {
+    return roster->use_shelf < 0 ? NULL : &roster->shelves[roster->use_shelf]->places;
+}
+
+const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster *roster,
+                                                            markdown_core_roster_kind kind,
+                                                            const markdown_core_chunk *label, bool folds,
+                                                            uint32_t start, const markdown_core_node *node,
+                                                            markdown_core_roster_placing *placed, bool *failed) {
+    *placed = MARKDOWN_CORE_ROSTER_UNUSED;
+    if (!S_key(roster, kind, label, folds, failed)) {
+        return NULL;
+    }
+    markdown_core_roster_label *named = S_label(roster);
+    markdown_core_tree *places = named ? S_uses(roster) : NULL;
+    markdown_core_roster_record *record = places ? S_carve(roster, S_RECORD_SIZE) : NULL;
+    if (!record) {
+        *failed = true;
+        return NULL;
+    }
+    *record = (markdown_core_roster_record){
+        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .shelf = (uint8_t)roster->use_shelf};
+    roster->bytes += S_RECORD_SIZE;
+    /* A completion looks up in the order of the text, mostly, and the
+     * roots complete in the order of where they start. */
+    const size_t front = places->front;
+    const size_t at = front && S_places_at(places, front - 1)->start > start ? S_front_after(places, start) : front;
+    if (!S_number(roster, record)) {
+        roster->dead += S_RECORD_SIZE;
+        *failed = true;
+        return NULL;
+    }
+    const markdown_core_roster_place place = {start, record};
+    if (at == places->count) {
+        markdown_core_roster_place *pushed = S_places_push(places);
+        if (pushed) {
+            *pushed = place;
+            *markdown_core_array_write(&roster->where, record->id) =
+                (markdown_core_tree_handle){places->last, places->last->count - 1};
+        }
+        record->linked = pushed != NULL;
+    } else {
+        record->linked = S_places_insert(places, at, place, true) != NULL;
+    }
+    if (!record->linked) {
+        S_unnumber(roster, record);
+        roster->dead += S_RECORD_SIZE;
+        *failed = true;
+        return NULL;
+    }
+    *placed = at == front ? MARKDOWN_CORE_ROSTER_APPENDED : MARKDOWN_CORE_ROSTER_AMONG;
+    S_use_link(roster, record);
+    return markdown_core_roster_declared(roster, named) ? named->first : NULL;
+}
+
+size_t markdown_core_roster_uses_from(const markdown_core_roster *roster, size_t place) {
+    const markdown_core_tree *uses = S_uses_of(roster);
+    if (!uses) {
+        return 0;
+    }
+    if (uses->front < uses->count &&
+        ((const markdown_core_roster_place *)markdown_core_tree_peek(uses, uses->front))->start < place) {
+        return markdown_core_tree_from(uses, place, uses->front, uses->count);
+    }
+    return markdown_core_tree_from(uses, place, 0, uses->front);
+}
+
+size_t markdown_core_roster_uses_front(const markdown_core_roster *roster) {
+    const markdown_core_tree *uses = S_uses_of(roster);
+    return uses ? uses->front : 0;
+}
+
+size_t markdown_core_roster_uses_back(const markdown_core_roster *roster) {
+    const markdown_core_tree *uses = S_uses_of(roster);
+    return uses ? uses->count - uses->front : 0;
+}
+
+/* The records of `places` from rank `at`, `count` of them, go with the
+ * text they were in. False when the journal could not take a label. */
+static bool S_drop(markdown_core_roster *roster, markdown_core_tree *places, size_t at, size_t count) {
+    bool ok = true;
+    for (size_t k = 0; k < count; k++) {
+        markdown_core_roster_record *record = S_places_at(places, at + k)->record;
+        if (record->shelf == roster->use_shelf) {
+            S_use_unlink(roster, record);
+        } else {
+            if (record->label) {
+                ok = S_touch(roster, record->label) && ok;
+            }
+            if (record->linked) {
+                S_unlink(roster, record);
+            }
+        }
+        record->gone = true;
+        roster->dead += S_RECORD_SIZE;
+    }
+    for (size_t k = 0; k < count; k++) {
+        S_unnumber(roster, S_places_at(places, at + k)->record);
+    }
+    markdown_core_tree_erase(places, at, count);
+    return ok;
+}
+
+void markdown_core_roster_unuse(markdown_core_roster *roster, size_t at, size_t count) {
+    if (count) {
+        (void)S_drop(roster, S_uses(roster), at, count);
+    }
 }
 
 bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_core_node_pool *pool,
@@ -562,7 +729,7 @@ bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_co
     return true;
 }
 
-bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
+bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, uint32_t uses) {
     /* An edit begins a transaction (THE JOURNAL). */
     S_begin(roster);
     if (roster->dead > roster->bytes - roster->dead + 4096 && !markdown_core_roster_compact(roster)) {
@@ -570,35 +737,25 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
     }
     for (size_t i = 0; i < roster->shelf_count; i++) {
         markdown_core_tree *places = &roster->shelves[i]->places;
-        const bool back = places->front < places->count && S_places_at(places, places->front)->start < start;
-        markdown_core_tree_focus(places, back ? markdown_core_tree_from(places, start, places->front, places->count)
-                                              : markdown_core_tree_from(places, start, 0, places->front));
+        const uint32_t at = (int)i == roster->use_shelf ? uses : start;
+        const bool back = places->front < places->count && S_places_at(places, places->front)->start < at;
+        markdown_core_tree_focus(places, back ? markdown_core_tree_from(places, at, places->front, places->count)
+                                              : markdown_core_tree_from(places, at, 0, places->front));
     }
     roster->hidden = true;
     return true;
 }
 
-bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta) {
+bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta, size_t held) {
     bool ok = true;
     for (size_t i = 0; i < roster->shelf_count; i++) {
         markdown_core_tree *places = &roster->shelves[i]->places;
         const size_t front = places->front;
+        const size_t kept = (int)i == roster->use_shelf ? held : 0;
         const size_t gone = markdown_core_tree_from(places, place, front, places->count) - front;
-        for (size_t k = 0; k < gone; k++) {
-            markdown_core_roster_record *record = S_places_at(places, front + k)->record;
-            if (record->label) {
-                ok = S_touch(roster, record->label) && ok;
-            }
-            if (record->linked) {
-                S_unlink(roster, record);
-            }
-            record->gone = true;
-            roster->dead += S_RECORD_SIZE;
+        if (gone > kept) {
+            ok = S_drop(roster, places, front + kept, gone - kept) && ok;
         }
-        for (size_t k = 0; k < gone; k++) {
-            S_unnumber(roster, S_places_at(places, front + k)->record);
-        }
-        markdown_core_tree_erase(places, front, gone);
         markdown_core_tree_shift(places, front, delta);
     }
     roster->hidden = false;
@@ -673,6 +830,9 @@ bool markdown_core_roster_compact(markdown_core_roster *roster) {
             copy->label = label ? label->copy : NULL;
             if (label && label->first == record) {
                 label->copy->first = copy;
+            }
+            if (label && label->uses == record) {
+                label->copy->uses = copy;
             }
             record->hint = copy;
             place->record = copy;

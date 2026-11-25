@@ -387,35 +387,14 @@ typedef struct markdown_core_parser_at {
  * took none back. */
 struct markdown_core_folds;
 
-/* A USE OF A LABEL (markdown_core_edit, `uses`): where the inline root
- * whose completion looked the label up starts, and the lookup's kind and
- * label, as written, `size` bytes at `label` in the edit's `use_labels`. */
-typedef struct markdown_core_use {
-    uint32_t start, label, size;
-    markdown_core_roster_kind kind;
-} markdown_core_use;
-
-/* A use the uses' index holds (markdown_core_edit, `names`) has its `size`
- * this, and `label` the number of its note: its label's bytes went. */
-#define MARKDOWN_CORE_USE_NOTED UINT32_MAX
-
-/* A NAME THE USES' INDEX HOLDS: a lookup's kind and label as the roster
- * keys them, `size` bytes, and the first of the notes of the uses that
- * looked it up, `count` of them. */
-typedef struct markdown_core_use_name {
-    uint32_t first, count;
-    bufsize_t size;
-    unsigned char bytes[];
-} markdown_core_use_name;
-
-/* A NOTE OF A USE THE INDEX HOLDS: its name, where the use is in the
- * uses' tree (tree.h, a handle), and the notes before and after it of the
- * same name. */
-typedef struct markdown_core_use_note {
-    markdown_core_use_name *name;
-    markdown_core_tree_handle where;
-    uint32_t next, prior;
-} markdown_core_use_note;
+/* WHERE A USE IS (blocks.c, S_use_place): the place of the content's
+ * places `places` of the root `root` the last use was in, and the content
+ * offset it starts at. */
+typedef struct markdown_core_use_walk {
+    const struct markdown_core_node *root;
+    const struct markdown_core_places *places;
+    uint32_t place, read;
+} markdown_core_use_walk;
 
 /* Where a block of an edit's chain (markdown_core_edit, `chain`) starts in
  * the old text, and where the last child of its FINAL prefix ends there,
@@ -608,9 +587,6 @@ typedef struct markdown_core_revert {
 } markdown_core_revert;
 
 typedef struct markdown_core_edit {
-    /* The dialect's roster spaces by kind (dialect.h, `spaces`), which say
-     * how the index keys a use's label. */
-    const markdown_core_space *const *spaces;
     /* The root's old tail (THE OLD TAIL IN PLACE), its `start` the root's
      * child the reading began at, and its room `children`, which has room
      * for all of it (markdown_core_edit_old). */
@@ -666,9 +642,6 @@ typedef struct markdown_core_edit {
     markdown_core_revert revert;
     /* Whether the parse is an edit's reading. */
     bool reading;
-    /* Of THE USES' INDEX below, kept here where the record has room. */
-    bool indexed, anew;
-    uint32_t spare;
     /* The number of the back's first line (parser_input, `lines`), in the
      * text the reopen put back. */
     size_t line;
@@ -679,35 +652,6 @@ typedef struct markdown_core_edit {
     /* THE LEAP (blocks.c), made at the first edit that rests in a block of
      * literal lines. */
     markdown_core_leap *leap;
-    /* THE USES (blocks.c): every definition lookup the completion of the
-     * document's inline roots made, in order of where the roots start, a
-     * tree (tree.h) whose focus is the rest point. A block an edit keeps reads as
-     * it did unless one of its labels is declared now and was not, or the
-     * other way round: its uses say which blocks read such a label. The
-     * labels are kept as written, in `use_labels`; the reading of an edit
-     * notes its own from `uses_from` on, before the focus, which its flush
-     * puts in order, and
-     * `use_live` is how many bytes of the labels the uses hold. */
-    markdown_core_tree uses;
-    markdown_core_strbuf use_labels;
-    size_t uses_from, use_live;
-    /* THE USES' INDEX (blocks.c): the uses by name, kept from the empty
-     * text on, as each reading notes its own; made again at a lookup of
-     * altered labels when storage once failed it. `names`
-     * maps each name to its markdown_core_use_name, whose notes are among
-     * the `note_count` of `notes`, those let go linked from `spare`; it holds
-     * every use but what a reading noted when `indexed`. `anew` is set while
-     * the finalize completes anew the roots whose misses now find a
-     * definition, whose commits noted their uses. */
-    markdown_core_key_index names;
-    markdown_core_use_note *notes;
-    size_t note_count, note_room;
-    /* WHERE A USE IS (blocks.c, S_use_place): the place of the content's
-     * places `use_places` of the root `use_root` the last use was in, and
-     * the content offset it starts at. */
-    const struct markdown_core_node *use_root;
-    const struct markdown_core_places *use_places;
-    uint32_t use_place, use_read;
     /* How many uses of the back nearest the focus the splice keeps: those
      * of the old tail of a paragraph whose parse met a seam of the back
      * (THE OLD TAIL OF A PARAGRAPH). */
@@ -790,6 +734,7 @@ struct markdown_core_parser {
      * completion walk is in (blocks.c, COMPLETION), or the heading whose
      * inline content the document's preparation parses. */
     struct markdown_core_node *completing;
+    markdown_core_use_walk use;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
      * walk's frames and then publishing's: each grows it to what it needs
@@ -1665,11 +1610,6 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* A lookup a finalize's completion made, of `kind` and `label` as written,
- * at `at` of the content, noted as a use of the root being completed. False
- * when storage could not be had. */
-bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
-                                   const markdown_core_chunk *label, uint32_t at);
 /* THE DECLARATION (roster.h): `node`, a definition, defines `label` in
  * `kind`'s space from `start` on, in the space's form, as the lookup above
  * reads it: a reference or footnote label normalized into `*normal`, in
@@ -1696,24 +1636,18 @@ static inline bool markdown_core_parser_folds(const markdown_core_parser *parser
  * Reference and footnote labels are looked up in their normal form, and a
  * specimen label as its bytes (roster.h): every declaration answers. `at`
  * is where the lookup is in the content of the block being completed (its
- * inline root's offset, markdown_core_inline_state_root_offset), which a
- * parse that takes edits keeps with its use (blocks.c, THE USES).
- * `*failed` is set when storage could not be had, and the answer is then
- * NULL. */
+ * inline root's offset, markdown_core_inline_state_root_offset), where the
+ * lookup is a use of the label by the root (roster.h, THE USES). `*failed`
+ * is set when storage could not be had, and the answer is then NULL. */
+const markdown_core_roster_record *markdown_core_parser_look_up(markdown_core_parser *parser,
+                                                                markdown_core_roster_kind kind,
+                                                                const markdown_core_chunk *label, uint32_t at,
+                                                                bool *failed);
 static inline const markdown_core_roster_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
                                                                                       markdown_core_roster_kind kind,
                                                                                       const markdown_core_chunk *label,
                                                                                       uint32_t at, bool *failed) {
-    const markdown_core_roster_record *record =
-        markdown_core_parser_folds(parser, kind)
-            ? markdown_core_roster_find_label(&parser->roster, kind, label, failed)
-            : markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed);
-    if (!*failed && parser->stream && parser->stream->edit && parser->completing &&
-        !markdown_core_parser_note_use(parser, kind, label, at)) {
-        *failed = true;
-        return NULL;
-    }
-    return record;
+    return markdown_core_parser_look_up(parser, kind, label, at, failed);
 }
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
@@ -1855,19 +1789,15 @@ uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);
 /* The child of the chain's block `level` the old children it took back
  * begin at, or UINT32_MAX when it took none back into that block. */
 uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t level);
-/* THE LABELS AN EDIT ALTERED: the keys, with their kinds' bytes, as a list
- * of keys (buffer.h), of the labels but anchors the last transaction
- * declared where they were not before, or left undeclared where they were
- * (roster.h, THE JOURNAL). Only a lookup of these keys may answer otherwise
- * than it did. False when storage could not be had. */
-bool markdown_core_parser_altered_labels(markdown_core_parser *parser, markdown_core_strbuf *altered);
-/* THE USES OF ALTERED LABELS (markdown_core_edit, `uses`): one past where
- * each inline root starts that looked up one of the `altered` keys, as
- * markdown_core_parser_altered_labels writes them, and lies in one of the
- * `count` spans of the text, pairs of offsets, in order and each once, in
- * `*places`, which the caller frees. False when storage could not be had. */
-bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
-                                  const size_t *spans, size_t count, size_t **places, size_t *place_count);
+/* THE USES OF ALTERED LABELS: one past where each use (roster.h, THE
+ * USES) of a label but an anchor the last transaction declared where it
+ * was not before, or left undeclared where it was (THE JOURNAL), lies, of
+ * those that lie in one of the `count` spans of the text, pairs of offsets,
+ * in order and each once, in `*places`, which the caller frees. Only a
+ * lookup of these labels may answer otherwise than it did. False when
+ * storage could not be had. */
+bool markdown_core_parser_altered_uses(markdown_core_parser *parser, const size_t *spans, size_t count, size_t **places,
+                                       size_t *place_count);
 /* Where the text an edit's back is measured from ends (THE BACK). */
 static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
     return (uint32_t)parser->input.back_end;

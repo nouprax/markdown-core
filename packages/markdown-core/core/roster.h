@@ -58,14 +58,24 @@ extern "C" {
  * holds where it starts: in the text, or, in the back, in the text before
  * the edit until the splice.
  *
+ * THE USES. A lookup is a use of the label it asks for: a record of the
+ * inline root whose completion made it, at the byte of the text the lookup
+ * reads (blocks.c, WHERE A USE IS), in a shelf of its own, the uses' (kind
+ * none, node none), which the focus cuts and the splice takes back as it
+ * does every shelf. A label lists its uses, declared or not, so a label
+ * whose being declared an edit flipped names the roots whose lookups of it
+ * may now answer otherwise (markdown_core_parser_altered_uses). The text a
+ * use was in goes as a declaration's does, and the reading of an edit lets
+ * go of those of the content it parses again (THE SEAMS, blocks.c).
+ *
  * THE JOURNAL. A transaction (a parse, or an edit's readings, up to its
  * flush) lists each label whose declarations it changed, once, with
  * whether the label was declared as the transaction began. What a
  * transaction changed, and so what a lookup made before it may now answer
  * otherwise, is read from it: the names (names.c) and a document's tables
- * read the labels it touched, and an edit the labels whose being declared
- * it flipped (markdown_core_parser_altered_labels). The next transaction's
- * first change starts it empty. */
+ * read the labels it touched, and an edit the uses of the labels whose
+ * being declared it flipped. The next transaction's first change starts it
+ * empty. */
 #define MARKDOWN_CORE_ROSTER_UNPLACED UINT32_MAX
 
 /* A kind: the engine's ANCHOR, or a number the dialect gave a space its
@@ -81,6 +91,9 @@ typedef struct markdown_core_roster_label {
      * `before`, or NULL while none does; and how many stand. */
     struct markdown_core_roster_record *first;
     uint32_t count;
+    /* Its uses, the lookups that asked for it, in no order, linked through
+     * their `after`, or NULL while none does (THE USES). */
+    struct markdown_core_roster_record *uses;
     /* The transaction that last listed it in the journal (`epoch`), and
      * whether it was declared as that one began. */
     uint32_t listed;
@@ -92,16 +105,20 @@ typedef struct markdown_core_roster_label {
     unsigned char key[];
 } markdown_core_roster_label;
 
+/* A RECORD: a declaration, or a use (THE USES). */
 typedef struct markdown_core_roster_record {
     /* A declaration its label lists: the label's declarations before and
      * after it, the first holding the last in `before`; and, in the first,
      * `hint`, the declaration the list last took or one beside the last it
-     * let go, where a search of the list begins (S_link). In a compaction,
-     * an old declaration's `hint` is its copy. */
+     * let go, where a search of the list begins (S_link). A use's are the
+     * uses of its label before and after it. In a compaction, an old
+     * record's `hint` is its copy. */
     struct markdown_core_roster_record *before, *after, *hint;
-    /* The label it declares, or NULL for a declaration of no label. */
+    /* The label it declares or uses, or NULL for a declaration of no
+     * label. */
     markdown_core_roster_label *label;
-    /* The node that declared it, or NULL. */
+    /* The node that declared it, or NULL; of a use, the inline root whose
+     * completion looked it up. */
     const markdown_core_node *node;
     /* Its number in `where`, or MARKDOWN_CORE_ROSTER_UNPLACED. */
     uint32_t id;
@@ -145,6 +162,8 @@ typedef struct markdown_core_roster {
      * in. */
     markdown_core_roster_shelf **shelves;
     size_t shelf_count;
+    /* The uses' shelf's number, or -1 before the first use (THE USES). */
+    int use_shelf;
     /* Each key's label, in `value`; the index borrows the key bytes from
      * it. */
     markdown_core_key_index index;
@@ -186,6 +205,41 @@ void markdown_core_roster_free(markdown_core_roster *roster);
 bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_roster_kind kind,
                                   const unsigned char *label, bufsize_t length, uint32_t start,
                                   const markdown_core_node *node);
+
+/* Where a use went: nowhere, as a lookup of a label that names nothing
+ * makes none; after every use of the front; or among them. */
+typedef enum {
+    MARKDOWN_CORE_ROSTER_UNUSED,
+    MARKDOWN_CORE_ROSTER_APPENDED,
+    MARKDOWN_CORE_ROSTER_AMONG
+} markdown_core_roster_placing;
+
+/* THE USES: the node `node` looks up `label` of `kind`, as written, at
+ * `start`; its use is placed, after every use that starts there or before,
+ * and listed by its label. The answer is the label's earliest declaration
+ * that stands and a lookup sees, or NULL; and `*placed` where the use
+ * went. A label of a kind that `folds` is
+ * looked up in its reference-label normal form, and one that normalizes
+ * to nothing, or longer than a link label may be, is declared by nothing
+ * and makes no use, as an empty label of any kind. `*failed` is set when
+ * storage could not be had, and the answer is then NULL. */
+const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster *roster,
+                                                            markdown_core_roster_kind kind,
+                                                            const markdown_core_chunk *label, bool folds,
+                                                            uint32_t start, const markdown_core_node *node,
+                                                            markdown_core_roster_placing *placed, bool *failed);
+
+/* The first use that starts at or past `place`, as a rank of the uses'
+ * shelf, in the terms of the part that holds it: every use of the front
+ * starts before every one of the back. */
+size_t markdown_core_roster_uses_from(const markdown_core_roster *roster, size_t place);
+
+/* How many uses the front holds, and the back. */
+size_t markdown_core_roster_uses_front(const markdown_core_roster *roster);
+size_t markdown_core_roster_uses_back(const markdown_core_roster *roster);
+
+/* The `count` uses from rank `at` go. */
+void markdown_core_roster_unuse(markdown_core_roster *roster, size_t at, size_t count);
 
 /* The earliest declaration of `kind` for `label`, in the kind's normal
  * form, that stands and a lookup sees, or NULL when none does. `*failed` is
@@ -283,17 +337,19 @@ static inline void markdown_core_roster_close(markdown_core_roster *roster) { ro
 
 /* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's
  * declarations that start there or past it go to the back, which lookups
- * do not see until the splice, and a roster that holds more dead bytes than
- * live compacts first. False, with the roster as it was, when storage could
- * not be had. */
-bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
+ * do not see until the splice, and the uses that start at `uses` or past
+ * it; a roster that holds more dead bytes than live compacts first. False,
+ * with the roster as it was, when storage could not be had. */
+bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, uint32_t uses);
 
-/* THE SPLICE (blocks.c): the back's declarations that start before `place`
- * of the text before the edit go with the text the edit replaced, the end
- * moves by `delta`, and lookups see the back again. A `place` past every
- * declaration lets the whole back go, as a reading that took nothing back
- * does. False when the journal could not take a label. */
-bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta);
+/* THE SPLICE (blocks.c): the back's records that start before `place` of
+ * the text before the edit go with the text the edit replaced, but the
+ * first `held` uses of the back, which the reading kept (THE OLD TAIL OF A
+ * PARAGRAPH, blocks.c); the end moves by `delta`, and lookups see the back
+ * again. A `place` past every record lets the whole back go, as a reading
+ * that took nothing back does. False when the journal could not take a
+ * label. */
+bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta, size_t held);
 
 /* The roster keeps only the declarations that stand and the labels they
  * declare, in storage of their size, and each shelf's places shrink to

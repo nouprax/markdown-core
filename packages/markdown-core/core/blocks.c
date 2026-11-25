@@ -1530,9 +1530,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_content(markd
     }
     node->source.places = places;
     /* A use's walk begins anew on new places (S_use_place). */
-    if (parser->stream && parser->stream->edit) {
-        parser->stream->edit->use_root = NULL;
-    }
+    parser->use.root = NULL;
 }
 
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
@@ -2551,8 +2549,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
  * scheme) reaches across a node that is no Text. */
 
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at);
-static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_roster_kind kind, const unsigned char *label,
-                  bufsize_t size);
 
 /* The node in `*slot` pushed on the stack `context` holds, linked through
  * the nodes' scaffolds, which a complete node no longer uses. */
@@ -2590,8 +2586,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_content_whole(mark
     return true;
 }
 
-static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count);
-static void S_uses_drop(markdown_core_edit *edit, size_t count);
+static inline size_t S_uses_front(const markdown_core_parser *parser);
+static inline void S_uses_drop(markdown_core_parser *parser, size_t count);
 static void S_pane_owe(markdown_core_parser *parser, markdown_core_node *node);
 static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32_t past, bufsize_t start);
 
@@ -2612,9 +2608,9 @@ static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) 
         node->child_count = 0;
     }
     if (leap->seam.uses) {
-        S_uses_erase(edit, leap->taken, leap->seam.uses);
+        markdown_core_roster_unuse(&parser->roster, leap->taken, leap->seam.uses);
     }
-    S_uses_drop(edit, leap->rest + edit->uses_held);
+    S_uses_drop(parser, leap->rest + edit->uses_held);
     edit->uses_held = 0;
     leap->seam = (markdown_core_seam){0};
     leap->seam_count = leap->back_count = 0;
@@ -2701,7 +2697,7 @@ static bool S_seam_stops(markdown_core_parser *parser, markdown_core_node *node)
         markdown_core_node_pool_bytes_free(parser->pool, node->children);
         node->children = NULL;
     }
-    S_uses_drop(edit, leap->rest);
+    S_uses_drop(parser, leap->rest);
     leap->rest = 0;
     leap->kept = false;
     return false;
@@ -2887,7 +2883,7 @@ static bool S_pane_open(markdown_core_parser *parser, markdown_core_node *node, 
     leap->final = parser->line_marks.values[map.first + map.count - 1];
     leap->base = parser->input.first_line;
     node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
-    parser->stream->edit->use_root = NULL;
+    parser->use.root = NULL;
     return true;
 }
 
@@ -3058,8 +3054,8 @@ static bool S_seam_shrink(markdown_core_parser *parser, markdown_core_node *node
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     node->children[seam.index - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
-    S_uses_erase(edit, leap->taken + seam.uses, leap->seam.uses - seam.uses);
-    S_uses_drop(edit, leap->rest + edit->uses_held);
+    markdown_core_roster_unuse(&parser->roster, leap->taken + seam.uses, leap->seam.uses - seam.uses);
+    S_uses_drop(parser, leap->rest + edit->uses_held);
     edit->uses_held = 0;
     leap->rest = 0;
     leap->kept = false;
@@ -3187,7 +3183,7 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
     }
     leap->held = node->child_count;
     leap->anchors = parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR];
-    leap->uses = edit->uses.front;
+    leap->uses = S_uses_front(parser);
     leap->active = true;
     leap->settle.from = leap->seam.offset;
     leap->settle.source = leap->seam.source + leap->seam.lead;
@@ -3209,8 +3205,8 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
         next = markdown_core_scaffold_next(child);
         markdown_core_parser_release_node(parser, child);
     }
-    if (edit->uses.front > leap->uses) {
-        S_uses_erase(edit, leap->uses, edit->uses.front - leap->uses);
+    if (S_uses_front(parser) > leap->uses) {
+        markdown_core_roster_unuse(&parser->roster, leap->uses, S_uses_front(parser) - leap->uses);
     }
     leap->stops.met = false;
     leap->stops.count = 0;
@@ -3242,10 +3238,11 @@ static uint32_t S_seam_lines(const unsigned char *text, bufsize_t size, bufsize_
  * holds nearest the focus the old ones past the seam it began at, the last
  * `after` of which its old tail made, and the front what the parse made.
  * The old ones it read again go, and the splice keeps the others. */
-static void S_seam_uses(markdown_core_edit *edit, uint32_t after) {
+static void S_seam_uses(markdown_core_parser *parser, uint32_t after) {
+    markdown_core_edit *edit = parser->stream->edit;
     markdown_core_leap *leap = edit->leap;
     assert(leap->rest >= after);
-    S_uses_drop(edit, leap->rest - after);
+    S_uses_drop(parser, leap->rest - after);
     leap->rest = 0;
     edit->uses_held = after;
 }
@@ -3288,11 +3285,11 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
         leap->back_count = 0;
     }
     if (met) {
-        S_seam_uses(edit, stop.uses);
+        S_seam_uses(parser, stop.uses);
         S_seam_opens_back(parser, node, leap->ends.source - stop.source + stop.lead);
     }
     leap->open_count = 0;
-    S_uses_drop(edit, leap->rest);
+    S_uses_drop(parser, leap->rest);
     leap->rest = 0;
     if (parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR] != leap->anchors || settle->note_count) {
         leap->seam_count = leap->back_count = 0;
@@ -3957,45 +3954,37 @@ markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) 
 
 void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_parse(parser); }
 
-/* THE USES TREE (markdown_core_edit, `uses`): in order of where the roots
- * start, but for what the reading of an edit noted since its reopen,
- * `uses_from` up to the focus, which its flush puts in order
- * (S_uses_flush). The front is in the new text's terms and the back in the
- * old's until the splice moves it. A use the index holds tells its note
- * where it is. */
-static size_t S_use_start(const void *entry) { return ((const markdown_core_use *)entry)->start; }
-
-static void S_use_shift(void *entry, int64_t delta) {
-    markdown_core_use *use = entry;
-    use->start = (uint32_t)((int64_t)use->start + delta);
+/* THE USES (roster.h): every lookup a completion makes is a use of the
+ * label it asks for, placed in the roster's uses' shelf in order of where
+ * it reads, whose focus is the rest point. The front is in the new text's
+ * terms and the back in the old's until the splice moves it. The reading
+ * of an edit lets go of the uses of what it parses again by their ranks:
+ * a paragraph's lie in a run of the shelf, as its lookups do in its
+ * content (THE SEAMS). */
+static inline size_t S_uses_front(const markdown_core_parser *parser) {
+    return markdown_core_roster_uses_front(&parser->roster);
 }
 
-static void S_use_moved(const markdown_core_tree *tree, void *entry, markdown_core_tree_leaf *leaf, uint32_t slot) {
-    const markdown_core_use *use = entry;
-    if (use->size == MARKDOWN_CORE_USE_NOTED) {
-        const markdown_core_edit *edit =
-            (const markdown_core_edit *)(const void *)((const char *)tree - offsetof(markdown_core_edit, uses));
-        edit->notes[use->label].where = (markdown_core_tree_handle){leaf, slot};
+/* The `count` uses of the back nearest the focus go. */
+static inline void S_uses_drop(markdown_core_parser *parser, size_t count) {
+    markdown_core_roster_unuse(&parser->roster, S_uses_front(parser), count);
+}
+
+/* The uses of the back that start before `old` of the old text go, but the
+ * first `held`. */
+static void S_uses_trim(markdown_core_parser *parser, size_t old, size_t held) {
+    const size_t front = S_uses_front(parser);
+    const size_t from = markdown_core_roster_uses_from(&parser->roster, old);
+    if (from > front + held) {
+        markdown_core_roster_unuse(&parser->roster, front + held, from - front - held);
     }
 }
 
-static const markdown_core_tree_ops S_uses_ops = {
-    sizeof(markdown_core_use), S_use_start, NULL, S_use_shift, S_use_moved, NULL};
-
-static inline markdown_core_use *S_use_at(const markdown_core_tree *uses, size_t index) {
-    return markdown_core_tree_at(uses, index, sizeof(markdown_core_use));
-}
-
-static inline size_t S_uses_back(const markdown_core_tree *uses) { return uses->count - uses->front; }
-
-/* The first use that starts at or past `place`, in the terms of the part
- * that holds it: every use of the front starts before every one of the
- * back. */
-static size_t S_uses_from(const markdown_core_tree *uses, size_t place) {
-    if (uses->front < uses->count && S_use_at(uses, uses->front)->start < place) {
-        return markdown_core_tree_from(uses, place, uses->front, uses->count);
-    }
-    return markdown_core_tree_from(uses, place, 0, uses->front);
+/* How many uses of the back a paragraph's old tail keeps nearest the focus
+ * (THE OLD TAIL OF A PARAGRAPH): the leap's `rest` while its parse is to
+ * come, and the `uses_held` its parse kept. */
+static inline size_t S_uses_held(const markdown_core_edit *edit) {
+    return edit->uses_held + (edit->leap ? edit->leap->rest : 0);
 }
 
 /* WHERE A USE IS: the byte of the text the lookup at `at` of the content of
@@ -4003,7 +3992,8 @@ static size_t S_uses_from(const markdown_core_tree *uses, size_t place) {
  * starts when it has none. A root's uses lie in order of where they are,
  * as the roots do, so the focus parts a paragraph's uses where it parts its
  * text: at a seam (THE OLD TAIL OF A PARAGRAPH). The walk to the place goes
- * from the one the last use of the root was in. */
+ * from the one the last use of the root was in (markdown_core_parser,
+ * `use`). */
 /* The byte of the text content offset `at` reads, of the place `item`,
  * whose content starts at offset `read`. */
 static inline uint32_t S_place_into(markdown_core_source_place item, uint32_t at, uint32_t read) {
@@ -4012,11 +4002,11 @@ static inline uint32_t S_place_into(markdown_core_source_place item, uint32_t at
 }
 
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at) {
-    markdown_core_edit *edit = parser->stream->edit;
     const markdown_core_places *places = root->source.places;
     /* A paragraph that reads in a pane reads the lookup's place there (THE
      * PANE). */
-    if (edit->leap && edit->leap->paned && edit->leap->node == root) {
+    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    if (edit && edit->leap && edit->leap->paned && edit->leap->node == root) {
         if (!S_pane_read(parser, root, at + 1)) {
             return root->place.start;
         }
@@ -4025,20 +4015,19 @@ static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node
     if (!places || !places->count) {
         return root->place.start;
     }
-    if (edit->use_root != root || edit->use_places != places || edit->use_place >= places->count) {
-        edit->use_root = root;
-        edit->use_places = places;
-        edit->use_place = edit->use_read = 0;
+    markdown_core_use_walk *walk = &parser->use;
+    if (walk->root != root || walk->places != places || walk->place >= places->count) {
+        *walk = (markdown_core_use_walk){root, places, 0, 0};
     }
-    uint32_t place = edit->use_place, read = edit->use_read;
+    uint32_t place = walk->place, read = walk->read;
     while (place && read > at) {
         read -= places->items[--place].length;
     }
     while (place + 1 < places->count && read + places->items[place].length <= at) {
         read += places->items[place++].length;
     }
-    edit->use_place = place;
-    edit->use_read = read;
+    walk->place = place;
+    walk->read = read;
     return S_place_into(places->items[place], at, read);
 }
 
@@ -4050,213 +4039,7 @@ uint32_t markdown_core_parser_source_at(markdown_core_parser *parser, uint32_t a
         const uint32_t end = root->place.end > root->place.start ? root->place.end : root->place.start;
         return at < end - root->place.start ? root->place.start + at : end;
     }
-    if (parser->stream->edit) {
-        return (uint32_t)S_use_place(parser, root, at);
-    }
-    uint32_t place = 0, read = 0;
-    while (place + 1 < places->count && read + places->items[place].length <= at) {
-        read += places->items[place++].length;
-    }
-    return S_place_into(places->items[place], at, read);
-}
-
-/* A use of `label`, `size` bytes as written, of `kind`, at `start` of the
- * text (S_use_place). False when storage could not be had. */
-static bool S_use(markdown_core_edit *edit, size_t start, markdown_core_roster_kind kind, const unsigned char *label,
-                  bufsize_t size) {
-    const markdown_core_use use = {(uint32_t)start, (uint32_t)edit->use_labels.size, (uint32_t)size, kind};
-    markdown_core_strbuf_put(&edit->use_labels, label, size);
-    if (edit->use_labels.oom) {
-        return false;
-    }
-    markdown_core_tree *uses = &edit->uses;
-    if (uses->front == uses->count) {
-        markdown_core_use *at = markdown_core_tree_push(uses, sizeof(*at));
-        if (!at) {
-            return false;
-        }
-        *at = use;
-    } else if (!markdown_core_tree_insert(uses, uses->front, &use, true)) {
-        return false;
-    }
-    edit->use_live += (size_t)size;
-    return true;
-}
-
-/* THE USES' INDEX (markdown_core_edit, `names`): the name of `use`, its
- * kind's byte and its label as the roster keys it, in `name`. False when
- * storage could not be had. */
-static bool S_use_name(const markdown_core_edit *edit, const markdown_core_use *use, markdown_core_strbuf *name) {
-    const unsigned char *label = edit->use_labels.ptr + use->label;
-    markdown_core_strbuf_clear(name);
-    markdown_core_strbuf_putc(name, (int)use->kind);
-    const markdown_core_space *space = edit->spaces[use->kind];
-    if (space && space->folds) {
-        markdown_core_utf8proc_normalize_label(name, label, (bufsize_t)use->size);
-    } else {
-        markdown_core_strbuf_put(name, label, (bufsize_t)use->size);
-    }
-    return !name->oom;
-}
-
-/* The use `index` in the index: its note made, and its label's bytes
- * dead. False, with the use as it was, when storage could not be had. */
-static bool S_use_note(markdown_core_edit *edit, size_t index, markdown_core_strbuf *name) {
-    markdown_core_use *use = S_use_at(&edit->uses, index);
-    if (!S_use_name(edit, use, name)) {
-        return false;
-    }
-    if (edit->spare == UINT32_MAX && edit->note_count == edit->note_room) {
-        markdown_core_use_note *notes =
-            markdown_core_reserve(edit->notes, &edit->note_room, edit->note_count + 1, sizeof(*notes));
-        if (!notes || edit->note_room > UINT32_MAX) {
-            return false;
-        }
-        edit->notes = notes;
-    }
-    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&edit->names, name->ptr, name->size);
-    if (!slot) {
-        return false;
-    }
-    markdown_core_use_name *held = (markdown_core_use_name *)slot->value;
-    if (!slot->key) {
-        held = markdown_core_alloc(1, sizeof(*held) + (size_t)name->size);
-        if (!held) {
-            return false;
-        }
-        held->first = UINT32_MAX;
-        held->size = name->size;
-        memcpy(held->bytes, name->ptr, (size_t)name->size);
-        slot->value = (size_t)held;
-        markdown_core_key_index_commit(&edit->names, slot, held->bytes);
-    }
-    uint32_t id = edit->spare;
-    if (id == UINT32_MAX) {
-        id = (uint32_t)edit->note_count++;
-    } else {
-        edit->spare = edit->notes[id].next;
-    }
-    edit->notes[id] =
-        (markdown_core_use_note){held, markdown_core_tree_where(&edit->uses, index), held->first, UINT32_MAX};
-    if (held->first != UINT32_MAX) {
-        edit->notes[held->first].prior = id;
-    }
-    held->first = id;
-    held->count++;
-    edit->use_live -= use->size;
-    use->label = id;
-    use->size = MARKDOWN_CORE_USE_NOTED;
-    return true;
-}
-
-/* The note `id` leaves the index, and its name when it was the last. */
-static void S_use_unnote(markdown_core_edit *edit, uint32_t id) {
-    markdown_core_use_note *note = &edit->notes[id];
-    markdown_core_use_name *held = note->name;
-    if (note->prior != UINT32_MAX) {
-        edit->notes[note->prior].next = note->next;
-    } else {
-        held->first = note->next;
-    }
-    if (note->next != UINT32_MAX) {
-        edit->notes[note->next].prior = note->prior;
-    }
-    if (!--held->count) {
-        markdown_core_key_index_slot *slot = markdown_core_key_index_find(&edit->names, held->bytes, held->size);
-        assert(slot && slot->value == (size_t)held);
-        markdown_core_key_index_remove(&edit->names, slot);
-        markdown_core_free(held);
-    }
-    note->name = NULL;
-    note->next = edit->spare;
-    edit->spare = id;
-}
-
-/* Every use the index does not hold put in it, and the index then holds
- * them all. False when storage could not be had, with what it took held. */
-static bool S_uses_index(markdown_core_edit *edit) {
-    const markdown_core_tree *uses = &edit->uses;
-    markdown_core_strbuf name = MARKDOWN_CORE_BUF_INIT();
-    bool ok = true;
-    for (size_t i = 0; ok && i < uses->count; i++) {
-        if (S_use_at(uses, i)->size != MARKDOWN_CORE_USE_NOTED) {
-            ok = S_use_note(edit, i, &name);
-        }
-    }
-    markdown_core_strbuf_free(&name);
-    edit->indexed = ok;
-    return ok;
-}
-
-/* The index let go. */
-static void S_uses_unindex(markdown_core_edit *edit) {
-    for (size_t i = 0; i < edit->names.capacity; i++) {
-        if (edit->names.slots[i].key) {
-            markdown_core_free((void *)edit->names.slots[i].value);
-        }
-    }
-    markdown_core_key_index_free(&edit->names);
-    markdown_core_free(edit->notes);
-    edit->notes = NULL;
-    edit->note_count = edit->note_room = 0;
-    edit->spare = UINT32_MAX;
-}
-
-/* The `count` uses of the back nearest the focus go, and their labels'
- * bytes are dead, or their notes leave the index. */
-static void S_uses_drop(markdown_core_edit *edit, size_t count) {
-    markdown_core_tree *uses = &edit->uses;
-    for (size_t k = 0; k < count; k++) {
-        const markdown_core_use *use = S_use_at(uses, uses->front + k);
-        if (use->size == MARKDOWN_CORE_USE_NOTED) {
-            S_use_unnote(edit, use->label);
-        } else {
-            edit->use_live -= use->size;
-        }
-    }
-    markdown_core_tree_erase(uses, uses->front, count);
-}
-
-/* The uses of the back that start before `old` of the old text go at the
- * splice, but those of a paragraph's old tail its reading keeps, nearest the
- * focus (THE OLD TAIL OF A PARAGRAPH): the leap's `rest` while its parse is
- * to come, and the `uses_held` its parse kept. */
-static void S_uses_trim(markdown_core_edit *edit, size_t old) {
-    markdown_core_tree *uses = &edit->uses;
-    const size_t held = edit->uses_held + (edit->leap ? edit->leap->rest : 0);
-    const size_t gone = markdown_core_tree_from(uses, old, uses->front, uses->count) - uses->front;
-    if (!held) {
-        S_uses_drop(edit, gone);
-        return;
-    }
-    if (gone <= held) {
-        return;
-    }
-    for (size_t k = held; k < gone; k++) {
-        const markdown_core_use *use = S_use_at(uses, uses->front + k);
-        if (use->size == MARKDOWN_CORE_USE_NOTED) {
-            S_use_unnote(edit, use->label);
-        } else {
-            edit->use_live -= use->size;
-        }
-    }
-    markdown_core_tree_erase(uses, uses->front + held, gone - held);
-}
-
-/* The `count` uses of the front from `at` go, and their labels' bytes are
- * dead, or their notes leave the index. */
-static void S_uses_erase(markdown_core_edit *edit, size_t at, size_t count) {
-    markdown_core_tree *uses = &edit->uses;
-    for (size_t i = at; i < at + count; i++) {
-        const markdown_core_use *use = S_use_at(uses, i);
-        if (use->size == MARKDOWN_CORE_USE_NOTED) {
-            S_use_unnote(edit, use->label);
-        } else {
-            edit->use_live -= use->size;
-        }
-    }
-    markdown_core_tree_erase(uses, at, count);
-    edit->uses_from = edit->uses_from >= at + count ? edit->uses_from - count : at;
+    return (uint32_t)S_use_place(parser, root, at);
 }
 
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
@@ -4276,148 +4059,33 @@ bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_ro
     return true;
 }
 
-bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_roster_kind kind,
-                                   const markdown_core_chunk *label, uint32_t at) {
-    /* A committed root's commit noted its uses, which its completion
-     * anew repeats (S_complete_misses). */
-    markdown_core_edit *edit = parser->stream->edit;
-    if (edit->anew) {
-        return true;
+const markdown_core_roster_record *markdown_core_parser_look_up(markdown_core_parser *parser,
+                                                                markdown_core_roster_kind kind,
+                                                                const markdown_core_chunk *label, uint32_t at,
+                                                                bool *failed) {
+    /* A lookup outside a root's completion is no root's use. */
+    if (!parser->completing) {
+        return markdown_core_parser_folds(parser, kind)
+                   ? markdown_core_roster_find_label(&parser->roster, kind, label, failed)
+                   : markdown_core_roster_find(&parser->roster, kind, label->data, label->len, failed);
     }
-    /* The seams count the paragraph's uses before them (THE SEAMS). */
-    if (edit->leap && edit->leap->active && parser->completing == edit->leap->node) {
-        edit->leap->settle.misses++;
+    markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
+    markdown_core_leap *leap = edit ? edit->leap : NULL;
+    const bool own = leap && leap->active && parser->completing == leap->node;
+    markdown_core_roster_placing placed;
+    const markdown_core_roster_record *record = markdown_core_roster_use(
+        &parser->roster, kind, label, markdown_core_parser_folds(parser, kind),
+        (uint32_t)S_use_place(parser, parser->completing, at), parser->completing, &placed, failed);
+    /* The seams count the paragraph's uses before them (THE SEAMS), which
+     * lie after every use before the paragraph's: a root that completes
+     * after one that starts later puts its uses among those, and the
+     * paragraph's seams count them no more. */
+    if (own && placed != MARKDOWN_CORE_ROSTER_UNUSED) {
+        leap->settle.misses++;
+    } else if (leap && placed == MARKDOWN_CORE_ROSTER_AMONG) {
+        leap->seam_count = 0;
     }
-    return S_use(edit, S_use_place(parser, parser->completing, at), kind, label->data, label->len);
-}
-
-/* Uses in order of where their roots start, and a root's in the order it
- * made them, which their labels' bytes are in before the index notes them:
- * the seams count a paragraph's (THE SEAMS). */
-static int S_use_order(const void *a, const void *b) {
-    const markdown_core_use *left = a, *other = b;
-    if (left->start != other->start) {
-        return (left->start > other->start) - (left->start < other->start);
-    }
-    return (left->label > other->label) - (left->label < other->label);
-}
-
-/* The labels the uses hold made again, once more of their bytes are dead
- * than live: what a reading noted goes on growing them, and what it let go
- * stays. False when storage could not be had, with the labels as they
- * were. */
-static bool S_uses_settle(markdown_core_edit *edit) {
-    if ((size_t)edit->use_labels.size <= 2 * edit->use_live + 4096) {
-        return true;
-    }
-    markdown_core_strbuf labels = MARKDOWN_CORE_BUF_INIT();
-    const markdown_core_tree *uses = &edit->uses;
-    for (size_t i = 0; i < uses->count; i++) {
-        const markdown_core_use *use = S_use_at(uses, i);
-        if (use->size != MARKDOWN_CORE_USE_NOTED) {
-            markdown_core_strbuf_put(&labels, edit->use_labels.ptr + use->label, (bufsize_t)use->size);
-        }
-    }
-    if (labels.oom) {
-        markdown_core_strbuf_free(&labels);
-        return false;
-    }
-    uint32_t at = 0;
-    for (size_t i = 0; i < uses->count; i++) {
-        markdown_core_use *use = S_use_at(uses, i);
-        if (use->size != MARKDOWN_CORE_USE_NOTED) {
-            use->label = at;
-            at += use->size;
-        }
-    }
-    markdown_core_strbuf_free(&edit->use_labels);
-    edit->use_labels = labels;
-    edit->use_live = (size_t)labels.size;
-    return true;
-}
-
-/* THE USES A FLUSH NOTES: what the reading noted put in order, after the
- * uses before its rest point. The commits noted theirs as they made them
- * (A LOOKUP THAT FOUND NOTHING), and the finalize those of the roots it
- * completed first. False when storage could not be had. */
-static bool S_uses_flush(markdown_core_parser *parser) {
-    markdown_core_edit *edit = parser->stream->edit;
-    markdown_core_tree *uses = &edit->uses;
-    const size_t front = uses->front;
-    /* A reading notes its roots' uses mostly in order. */
-    size_t sorted = edit->uses_from + (front > edit->uses_from);
-    if (sorted < front) {
-        uint32_t prior = S_use_at(uses, sorted - 1)->start;
-        size_t run = 0;
-        const markdown_core_use *at = NULL;
-        while (sorted < front) {
-            if (!run) {
-                at = markdown_core_tree_run(uses, sorted, sizeof(*at), &run);
-            }
-            if (at->start < prior) {
-                break;
-            }
-            prior = at->start;
-            at++;
-            run--;
-            sorted++;
-        }
-    }
-    /* A root the reading completed again may start before its rest point,
-     * as a container it reopened does: its uses go among those before. */
-    size_t from = edit->uses_from;
-    if (from < front) {
-        uint32_t least = S_use_at(uses, from)->start;
-        size_t run = 0;
-        const markdown_core_use *at = NULL;
-        for (size_t i = sorted; i < front; i++, at++, run--) {
-            if (!run) {
-                at = markdown_core_tree_run(uses, i, sizeof(*at), &run);
-            }
-            least = at->start < least ? at->start : least;
-        }
-        if (from && S_use_at(uses, from - 1)->start > least) {
-            from = markdown_core_tree_from(uses, least, 0, edit->uses_from);
-            /* Noted uses are in no order of their own among a root's: a
-             * paragraph's seams count them no more (THE SEAMS). */
-            if (edit->leap) {
-                edit->leap->seam_count = 0;
-            }
-        }
-    }
-    if (sorted < front || from < edit->uses_from) {
-        /* They go out of the tree in order, and back in it. */
-        const size_t count = front - from;
-        markdown_core_use *room = markdown_core_alloc(count, sizeof(*room));
-        if (!room) {
-            return false;
-        }
-        for (size_t i = 0; i < count; i++) {
-            room[i] = *S_use_at(uses, from + i);
-        }
-        qsort(room, count, sizeof(*room), S_use_order);
-        markdown_core_tree_erase(uses, from, count);
-        for (size_t i = 0; i < count; i++) {
-            if (!markdown_core_tree_insert(uses, from + i, &room[i], true)) {
-                markdown_core_free(room);
-                return false;
-            }
-        }
-        markdown_core_free(room);
-    }
-    /* The index, once made, takes what the reading noted; when it cannot,
-     * the next lookup of it takes them. */
-    if (edit->indexed && edit->uses_from < front) {
-        markdown_core_strbuf name = MARKDOWN_CORE_BUF_INIT();
-        for (size_t i = from; edit->indexed && i < front; i++) {
-            if (S_use_at(uses, i)->size != MARKDOWN_CORE_USE_NOTED) {
-                edit->indexed = S_use_note(edit, i, &name);
-            }
-        }
-        markdown_core_strbuf_free(&name);
-    }
-    edit->uses_from = front;
-    return S_uses_settle(edit);
+    return record;
 }
 
 /* AN OPENER READ TO THE END (element.h, `stops`): the reading of an
@@ -4632,10 +4300,6 @@ static bool S_edit_keep(markdown_core_parser *parser, const markdown_core_node *
     S_lines_move(input, start);
     input->back_end = input->size;
     S_openers_aside(edit, start);
-    /* A paragraph that keeps its old tail aside keeps its uses past the
-     * seam nearest the focus in the back (THE OLD TAIL OF A PARAGRAPH). */
-    markdown_core_tree_focus(&edit->uses, markdown_core_tree_from(&edit->uses, own, 0, edit->uses.count));
-    edit->uses_from = edit->uses.front;
     edit->uses_held = 0;
     assert(input->lines.front == line || start == input->scanned);
     edit->line = line;
@@ -5485,8 +5149,8 @@ static bool S_seam_pick(markdown_core_parser *parser, size_t line, size_t from) 
     const size_t own = edit->places[edit->depth - 1].start;
     const size_t first = markdown_core_parser_line_of(parser, own);
     const size_t before = line - first;
-    const markdown_core_tree *uses = &edit->uses;
-    const size_t used = S_uses_from(uses, own + leaf->extent.span) - S_uses_from(uses, own);
+    const size_t used = markdown_core_roster_uses_from(&parser->roster, own + leaf->extent.span) -
+                        markdown_core_roster_uses_from(&parser->roster, own);
     /* The paragraph is as its last reading left it, which measured the
      * seams of the back from its ends. */
     if ((leap->seam_count || leap->back_count) && (leap->ends.index != leaf->child_count || leap->ends.uses != used)) {
@@ -5896,7 +5560,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         !S_edit_keep(parser, root, child, line, prior, start, own + (prose ? stream->edit->leap->seam.source : 0),
                      past > to ? past : to, delta) ||
         !document->element->document->reopen(document, parser, root, child, (uint32_t)own) ||
-        !S_stage_edit(parser, false, (uint32_t)own) || !markdown_core_roster_reopen(&parser->roster, (uint32_t)own)) {
+        !S_stage_edit(parser, false, (uint32_t)own) ||
+        !markdown_core_roster_reopen(&parser->roster, (uint32_t)own,
+                                     (uint32_t)(own + (prose ? stream->edit->leap->seam.source : 0)))) {
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -5949,7 +5615,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     if (prose) {
         stream->reopened = leaf;
         stream->edit->leap->armed = true;
-        stream->edit->leap->taken = markdown_core_tree_from(&stream->edit->uses, own, 0, stream->edit->uses.front);
+        stream->edit->leap->taken = markdown_core_roster_uses_from(&parser->roster, own);
     }
     /* What the readings from the rest point on read goes with them (node.h,
      * `look`): the document's prefix's, read from its start, when the
@@ -6086,8 +5752,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->count = 0;
         stream->edit->nest_on = false;
         markdown_core_tree_erase(&input->lines, input->lines.front, S_lines_back_count(&input->lines));
-        S_uses_drop(stream->edit, S_uses_back(&stream->edit->uses));
-        if (!markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0)) {
+        if (!markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
@@ -6215,13 +5880,11 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
     markdown_core_tree_erase(&input->lines, input->lines.front, gone);
     edit->line = index;
     S_openers_cut(edit, old, delta);
-    S_uses_trim(edit, old);
-    if (!markdown_core_roster_splice(&parser->roster, old, delta)) {
+    if (!markdown_core_roster_splice(&parser->roster, old, delta, S_uses_held(edit))) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     S_lines_slide(&input->lines, delta);
     input->back_end = (size_t)((int64_t)input->back_end + delta);
-    markdown_core_tree_shift(&edit->uses, edit->uses.front, delta);
     /* The children join the root, which owns them once the document took
      * them from its records. */
     const uint32_t tail = root->child_count;
@@ -7153,7 +6816,7 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
      * from its seam to its end, which lists its uses there again: the old
      * ones go, to its old end (THE OLD TAIL OF A PARAGRAPH). */
     if (leap->prose && !leap->kept) {
-        S_uses_trim(edit, edit->ends[leaf]);
+        S_uses_trim(parser, edit->ends[leaf], S_uses_held(edit));
     }
     if (nested) {
         /* Its holder takes back its old children after it, and each block
@@ -7283,19 +6946,6 @@ uint32_t markdown_core_parser_tail_in(const markdown_core_parser *parser, size_t
     return parser->stream->edit->tails[level];
 }
 
-bool markdown_core_parser_altered_labels(markdown_core_parser *parser, markdown_core_strbuf *altered) {
-    markdown_core_strbuf_clear(altered);
-    size_t count;
-    markdown_core_roster_label *const *labels = markdown_core_roster_journal(&parser->roster, &count);
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_roster_label *label = labels[i];
-        if (label->key[0] != (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR && label->was != (label->first != NULL)) {
-            markdown_core_strbuf_put_key(altered, label->key, label->key_len);
-        }
-    }
-    return !altered->oom;
-}
-
 static int S_place_order(const void *a, const void *b) {
     const size_t left = *(const size_t *)a, other = *(const size_t *)b;
     return (left > other) - (left < other);
@@ -7316,34 +6966,21 @@ static bool S_spans_hold(const size_t *spans, size_t count, size_t place) {
     return low < count && spans[2 * low] <= place;
 }
 
-bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
-                                  const size_t *spans, size_t count, size_t **places, size_t *place_count) {
-    markdown_core_edit *edit = parser->stream->edit;
+bool markdown_core_parser_altered_uses(markdown_core_parser *parser, const size_t *spans, size_t count, size_t **places,
+                                       size_t *place_count) {
+    const markdown_core_roster *roster = &parser->roster;
     *places = NULL;
     *place_count = 0;
-    /* The index notes each use as the reading records it, from the empty
-     * text on; one that could not be had is made again here. A lookup of
-     * each altered name then finds its uses. */
-    if (!altered->size || (!edit->indexed && !S_uses_index(edit))) {
-        return !altered->size;
-    }
-    size_t room = 0;
+    size_t room = 0, labels;
     bool ok = true;
-    bufsize_t size;
-    for (bufsize_t item = 0; ok;) {
-        const unsigned char *bytes = markdown_core_strbuf_key(altered, &item, &size);
-        if (!bytes) {
-            break;
-        }
-        const markdown_core_key_index_slot *slot = markdown_core_key_index_find(&edit->names, bytes, size);
-        if (!slot) {
+    markdown_core_roster_label *const *journal = markdown_core_roster_journal(roster, &labels);
+    for (size_t i = 0; ok && i < labels; i++) {
+        const markdown_core_roster_label *label = journal[i];
+        if (label->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR || label->was == (label->first != NULL)) {
             continue;
         }
-        const markdown_core_use_name *held = (const markdown_core_use_name *)slot->value;
-        for (uint32_t id = held->first; ok && id != UINT32_MAX; id = edit->notes[id].next) {
-            markdown_core_use use;
-            markdown_core_tree_read(&edit->uses, edit->notes[id].where, &use);
-            const size_t start = use.start;
+        for (const markdown_core_roster_record *use = label->uses; ok && use; use = use->after) {
+            const size_t start = markdown_core_roster_start(roster, use);
             if (!S_spans_hold(spans, count, start)) {
                 continue;
             }
@@ -7461,12 +7098,7 @@ bool markdown_core_parser_edits(markdown_core_parser *parser) {
     if (!edit) {
         return false;
     }
-    edit->spaces = parser->dialect->spaces;
-    edit->use_labels = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
-    edit->uses = markdown_core_tree_make(&S_uses_ops);
-    edit->spare = UINT32_MAX;
     edit->point = SIZE_MAX;
-    edit->indexed = true;
     stream->edit = edit;
     parser->at.read.rests = true;
     /* Room for the cuts up front: the reopen keeps one in it (THE CUTS). */
@@ -7790,9 +7422,6 @@ static void S_release_stream(markdown_core_parser *parser) {
             markdown_core_free(stream->edit->leap->settle.notes);
             markdown_core_free(stream->edit->leap);
         }
-        markdown_core_tree_free(&stream->edit->uses);
-        markdown_core_strbuf_free(&stream->edit->use_labels);
-        S_uses_unindex(stream->edit);
         markdown_core_free(stream->edit);
     }
     markdown_core_free(stream);
@@ -9742,11 +9371,11 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         S_seam_measure(parser);
     }
 
-    /* A reading that took nothing back read every declaration again: the
-     * back's go before the names and the publish read the roster (names.c,
-     * ast.c, A DOCUMENT'S TABLES). */
+    /* A reading that took nothing back read every declaration and lookup
+     * again: the back's go before the names and the publish read the
+     * roster (names.c, ast.c, A DOCUMENT'S TABLES). */
     if (parser->stream->edit && !parser->stream->edit->resumed &&
-        !markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0)) {
+        !markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     /* The document's finalization reads the finished tree: the headings take
@@ -9802,19 +9431,18 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
             markdown_core_node *node = (markdown_core_node *)edit->leap->node;
             S_seam_release(parser, node, node->child_count, edit->leap->count);
         }
-        S_uses_drop(edit, edit->leap->rest);
+        /* A reading that took nothing back let them go with the back. */
+        if (edit->resumed) {
+            S_uses_drop(parser, edit->leap->rest);
+        }
         edit->leap->rest = 0;
         edit->leap->kept = false;
-    }
-    if (edit && !parser->error && !S_uses_flush(parser)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     if (edit) {
         /* A reading that took nothing back read every line of the text. */
         if (!edit->resumed) {
             markdown_core_tree_erase(&parser->input.lines, parser->input.lines.front,
                                      S_lines_back_count(&parser->input.lines));
-            S_uses_drop(edit, S_uses_back(&edit->uses));
         }
         edit->reading = false;
         edit->count = 0;
