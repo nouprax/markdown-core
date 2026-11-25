@@ -1094,14 +1094,13 @@ static bool S_holds_none_open(markdown_core_parser *parser, const markdown_core_
 /* The token start the run reads next listed as one a settle point may be. */
 static void S_settle_start(markdown_core_inline_state *inline_state) {
     markdown_core_inline_settle *settle = inline_state->settle;
-    markdown_core_settle_start *starts =
-        markdown_core_reserve(settle->starts, &settle->capacity, settle->count + 1, sizeof(*starts));
+    bufsize_t *starts = markdown_core_reserve(settle->starts, &settle->capacity, settle->count + 1, sizeof(*starts));
     if (!starts) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
     settle->starts = starts;
-    starts[settle->count++] = (markdown_core_settle_start){inline_state->pos, settle->misses};
+    starts[settle->count++] = inline_state->pos;
 }
 
 void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
@@ -1154,9 +1153,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_parser *p
 
 /* Whether the run, at a token start it lists, meets the nearest of its
  * stops (markdown_core_seam_stops): the start is the stop's, past a child
- * that is not a Text and ends where the old one before the stop did, and
- * the run made no anchor or note, which the stops' paragraph would keep
- * no seams for. The stops before the start go. */
+ * that is not a Text and ends where the old one before the stop did. The
+ * stops before the start go. */
 static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
     markdown_core_seam_stops *stops = inline_state->stops;
     const bufsize_t pos = inline_state->pos;
@@ -1164,10 +1162,6 @@ static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_stat
         stops->count--;
     }
     if (!stops->count || stops->end - stops->items[stops->count - 1].offset != pos) {
-        return false;
-    }
-    if (inline_state->settle->note_count || parser->roster.made[MARKDOWN_CORE_ROSTER_ANCHOR] != stops->anchors) {
-        stops->count = 0;
         return false;
     }
     const markdown_core_node *last = markdown_core_scaffold_of(inline_state->owner)->last;
@@ -1280,7 +1274,6 @@ bool markdown_core_parse_inlines_seam(markdown_core_parser *parser, markdown_cor
     inline_state.stops = stops;
     settle->count = 0;
     settle->note_count = 0;
-    settle->misses = 0;
     inline_state.settle = settle;
     inline_state.undecided = INT32_MAX;
     inline_state.pos = settle->from;

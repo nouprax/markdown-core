@@ -370,7 +370,7 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
             ((const markdown_core_label_ops *)labels.ops)->length(labels.instance, label.data, label.len) ==
                 label.len) {
             markdown_core_parser_declare(parser, self->spaces[HEADING_REFERENCE], &label, node->place.start, declared,
-                                         node);
+                                         node, false);
         }
     }
     /* The run is read to its end: it finishes as every run does. */

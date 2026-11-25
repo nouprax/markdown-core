@@ -115,7 +115,6 @@ static inline bool markdown_core_seam_mend(markdown_core_node_pool *pool, markdo
 static inline markdown_core_seam markdown_core_seam_flip(markdown_core_seam seam, const markdown_core_seam *ends) {
     seam.offset = ends->offset - seam.offset;
     seam.index = ends->index - seam.index;
-    seam.uses = ends->uses - seam.uses;
     seam.line = ends->line - seam.line;
     seam.source = ends->source - seam.source;
     seam.place = ends->place - seam.place;
@@ -145,7 +144,6 @@ static inline markdown_core_seam markdown_core_seam_front(markdown_core_seam sea
 static inline markdown_core_seam markdown_core_seam_sum(markdown_core_seam seam, markdown_core_seam back) {
     return (markdown_core_seam){seam.offset + back.offset,
                                 seam.index + back.index,
-                                seam.uses + back.uses,
                                 seam.line + back.line,
                                 seam.source + back.source,
                                 seam.place + back.place,

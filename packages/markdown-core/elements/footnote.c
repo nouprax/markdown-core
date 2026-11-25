@@ -111,7 +111,8 @@ static markdown_core_node *markdown_core_inline_close_inline_footnote(const mark
     const markdown_core_chunk none = {0};
     if (!parser->error) {
         markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &none,
-                                     markdown_core_parser_source_at(parser, footnote->place.start), NULL, footnote);
+                                     markdown_core_parser_source_at(parser, footnote->place.start), NULL, footnote,
+                                     true);
     }
     markdown_core_parser_release_node(parser, opener->inl_text);
     markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
@@ -400,7 +401,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
     const bool declared = markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &c, footnote->place.start,
-                                                       &normal, footnote);
+                                                       &normal, footnote, false);
     if (normal.len) {
         footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
     }

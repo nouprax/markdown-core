@@ -3438,7 +3438,7 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
         declared = declared && markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, (const unsigned char *)label,
-                                                            (bufsize_t)strlen(label), (uint32_t)i, NULL);
+                                                            (bufsize_t)strlen(label), (uint32_t)i, NULL, false);
     }
     OK(runner, declared && roster.made[ROSTER_TEST_KIND] == COUNT, "every declaration is a record");
     /* Twelve doublings reach COUNT; each of the three arrays doubles at most
@@ -3623,7 +3623,8 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     const unsigned char *x = (const unsigned char *)"x";
     bool failed = false;
-    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40, NULL), "a reference is declared");
+    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40, NULL, false),
+       "a reference is declared");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
        "a reference label is no footnote");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
@@ -3631,8 +3632,8 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     OK(runner, record && markdown_core_roster_start(&roster, record) == 40,
        "a declaration starts where its definition starts");
     OK(runner,
-       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL) &&
-           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL),
+       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL, false) &&
+           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL, false),
        "the key is declared twice more");
     record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner, record && markdown_core_roster_start(&roster, record) == 10 && record->label->count == 3,
@@ -3705,7 +3706,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         const uint32_t from = (uint32_t)(ROSTER_RANDOM() % length);
         const uint32_t read = (uint32_t)(ROSTER_RANDOM() % 512);
         const uint32_t old = from + (uint32_t)(ROSTER_RANDOM() % (length - from + 1));
-        agrees = markdown_core_roster_reopen(&roster, from, from);
+        agrees = markdown_core_roster_reopen(&roster, from);
         /* The text the reading read, from `from` up to `from + read`, in
          * which it declares; the old text from `old` on comes back after
          * it. */
@@ -3720,7 +3721,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             roster_label_text(label, text, sizeof(text));
             agrees =
                 markdown_core_roster_declare(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
-                                             (const unsigned char *)text, (bufsize_t)strlen(text), start, NULL);
+                                             (const unsigned char *)text, (bufsize_t)strlen(text), start, NULL, false);
             if (key->count == key->capacity) {
                 key->capacity = key->capacity ? 2 * key->capacity : 4;
                 key->starts = realloc(key->starts, key->capacity * sizeof(*key->starts));
@@ -3737,11 +3738,10 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             char text[16];
             roster_label_text(label, text, sizeof(text));
             const markdown_core_chunk chunk = {(unsigned char *)text, (bufsize_t)strlen(text), 0};
-            markdown_core_roster_placing placed;
             bool failed = false;
             (void)markdown_core_roster_use(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
-                                           &chunk, false, start, NULL, &placed, &failed);
-            agrees = !failed && placed != MARKDOWN_CORE_ROSTER_UNUSED;
+                                           &chunk, false, start, NULL, &failed);
+            agrees = !failed;
             if (key->use_count == key->use_capacity) {
                 key->use_capacity = key->use_capacity ? 2 * key->use_capacity : 4;
                 key->uses = realloc(key->uses, key->use_capacity * sizeof(*key->uses));
@@ -3749,7 +3749,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             key->uses[key->use_count++] = start | UINT32_C(0x80000000);
         }
         const int64_t delta = (int64_t)(from + read) - (int64_t)old;
-        agrees = agrees && markdown_core_roster_splice(&roster, old, delta, 0);
+        agrees = agrees && markdown_core_roster_splice(&roster, old, delta);
         length = (uint32_t)((int64_t)length + delta);
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
             roster_model_key *key = &keys[i];
@@ -3777,7 +3777,7 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             keys[i].listed = 0;
             keys[i].sum = 0;
         }
-        const size_t uses = markdown_core_roster_uses_front(&roster) + markdown_core_roster_uses_back(&roster);
+        const size_t uses = roster.use_shelf < 0 ? 0 : roster.shelves[roster.use_shelf]->places.count;
         for (size_t i = 0; i < uses && agrees; i++) {
             const markdown_core_roster_place *place =
                 markdown_core_tree_peek(&roster.shelves[roster.use_shelf]->places, i);

@@ -129,8 +129,9 @@ typedef struct markdown_core_roster_record {
     uint32_t id;
     /* Whether its label lists it, and whether the text it was in is gone,
      * which an edit replaced; of a use, whether its lookup found the label
-     * declared (THE USES), the answer it was given. */
-    bool linked, gone, found;
+     * declared (THE USES), the answer it was given; and whether an inline
+     * root's completion made it, as it makes every use. */
+    bool linked, gone, found, rooted;
     /* The shelf that places it. */
     uint8_t shelf;
 } markdown_core_roster_record;
@@ -205,47 +206,32 @@ bool markdown_core_roster_init(markdown_core_roster *roster, size_t kinds);
 void markdown_core_roster_free(markdown_core_roster *roster);
 
 /* `node`, or no node when it is NULL, declares `label` of `kind`, already in
- * the kind's normal form, and starts at `start`. An empty label declares
- * nothing: of a node, the declaration is placed all the same. False when
- * storage could not be had. */
+ * the kind's normal form, and starts at `start`; `rooted` when an inline
+ * root's completion declares it, as a root's uses are (THE USES). An empty
+ * label declares nothing: of a node, the declaration is placed all the
+ * same. False when storage could not be had. */
 bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_roster_kind kind,
                                   const unsigned char *label, bufsize_t length, uint32_t start,
-                                  const markdown_core_node *node);
-
-/* Where a use went: nowhere, as a lookup of a label that names nothing
- * makes none; after every use of the front; or among them. */
-typedef enum {
-    MARKDOWN_CORE_ROSTER_UNUSED,
-    MARKDOWN_CORE_ROSTER_APPENDED,
-    MARKDOWN_CORE_ROSTER_AMONG
-} markdown_core_roster_placing;
+                                  const markdown_core_node *node, bool rooted);
 
 /* THE USES: the node `node` looks up `label` of `kind`, as written, at
  * `start`; its use is placed, after every use that starts there or before,
  * and listed by its label. The answer is the label's earliest declaration
- * that stands and a lookup sees, or NULL; and `*placed` where the use
- * went. A label of a kind that `folds` is
- * looked up in its reference-label normal form, and one that normalizes
- * to nothing, or longer than a link label may be, is declared by nothing
- * and makes no use, as an empty label of any kind. `*failed` is set when
- * storage could not be had, and the answer is then NULL. */
-const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster *roster,
-                                                            markdown_core_roster_kind kind,
-                                                            const markdown_core_chunk *label, bool folds,
-                                                            uint32_t start, const markdown_core_node *node,
-                                                            markdown_core_roster_placing *placed, bool *failed);
+ * that stands, or NULL. A label of a kind that `folds` is looked up in its
+ * reference-label normal form, and one that normalizes to nothing, or
+ * longer than a link label may be, is declared by nothing and makes no
+ * use, as an empty label of any kind. `*failed` is set when storage could
+ * not be had, and the answer is then NULL. */
+const markdown_core_roster_record *
+markdown_core_roster_use(markdown_core_roster *roster, markdown_core_roster_kind kind, const markdown_core_chunk *label,
+                         bool folds, uint32_t start, const markdown_core_node *node, bool *failed);
 
-/* The first use that starts at or past `place`, as a rank of the uses'
- * shelf, in the terms of the part that holds it: every use of the front
- * starts before every one of the back. */
-size_t markdown_core_roster_uses_from(const markdown_core_roster *roster, size_t place);
-
-/* How many uses the front holds, and the back. */
-size_t markdown_core_roster_uses_front(const markdown_core_roster *roster);
-size_t markdown_core_roster_uses_back(const markdown_core_roster *roster);
-
-/* The `count` uses from rank `at` go. */
-void markdown_core_roster_unuse(markdown_core_roster *roster, size_t at, size_t count);
+/* The records of the front an inline root's completion made that start at
+ * `from` or past it and before `to`, where the root ends, go, of every
+ * shelf: those a reading made, or kept, of content it completes again from
+ * there. Other roots' records past `to` stay, as roots complete in no order
+ * of the text. */
+void markdown_core_roster_cut(markdown_core_roster *roster, size_t from, size_t to);
 
 /* The earliest declaration of `kind` for `label`, in the kind's normal
  * form, that stands and a lookup sees, or NULL when none does. `*failed` is
@@ -351,19 +337,24 @@ static inline markdown_core_roster_label *const *markdown_core_roster_journal(co
 /* The transaction flushed: the next change starts the next. */
 static inline void markdown_core_roster_close(markdown_core_roster *roster) { roster->closed = true; }
 
-/* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): each kind's
- * declarations that start there or past it go to the back, and the uses that start at `uses` or past
- * it; a roster that holds more dead bytes than live compacts first. False,
- * with the roster as it was, when storage could not be had. */
-bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, uint32_t uses);
+/* AN EDIT READS FROM `start` (blocks.c, THE REOPEN): the records that
+ * start there or past it, of every shelf, go to the back; a roster that
+ * holds more dead bytes than live compacts first. False, with the roster
+ * as it was, when storage could not be had. */
+bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
 
 /* THE SPLICE (blocks.c): the back's records that start before `place` of
- * the text before the edit go with the text the edit replaced, but the
- * first `held` uses of the back, which the reading kept (THE OLD TAIL OF A
- * PARAGRAPH, blocks.c), and the end moves by `delta`. A `place` past every record lets the whole back go, as a reading
- * that took nothing back does. False when the journal could not take a
- * label. */
-bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta, size_t held);
+ * the text before the edit go with the text the edit replaced, and the end
+ * moves by `delta`. A `place` past every record lets the whole back go, as
+ * a reading that took nothing back does. False when the journal could not
+ * take a label. */
+bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta);
+
+/* The records of the back nearest the focus an inline root's completion
+ * made that start before `bound`, as the back measures it, go, of every
+ * shelf: those of the old content of a paragraph an edit's reading
+ * completes again (THE OLD TAIL OF A PARAGRAPH, blocks.c). */
+void markdown_core_roster_lose(markdown_core_roster *roster, size_t bound);
 
 /* The roster keeps only the declarations that stand and the labels they
  * declare, in storage of their size, and each shelf's places shrink to

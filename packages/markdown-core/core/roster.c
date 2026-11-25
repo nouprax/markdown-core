@@ -477,7 +477,7 @@ static inline void S_assemble(markdown_core_roster *roster, markdown_core_roster
 
 bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_roster_kind kind,
                                   const unsigned char *label, bufsize_t length, uint32_t start,
-                                  const markdown_core_node *node) {
+                                  const markdown_core_node *node, bool rooted) {
     if (length < 0 || (!length && !node)) {
         return true;
     }
@@ -495,7 +495,7 @@ bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_ro
         return false;
     }
     *record = (markdown_core_roster_record){
-        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .shelf = (uint8_t)shelf};
+        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .rooted = rooted, .shelf = (uint8_t)shelf};
     roster->bytes += S_RECORD_SIZE;
     markdown_core_tree *places = &roster->shelves[shelf]->places;
     /* A label declared now takes its place in order (THE LABELS IN ORDER). */
@@ -646,16 +646,9 @@ static inline markdown_core_tree *S_uses(markdown_core_roster *roster) {
     return roster->use_shelf < 0 ? NULL : &roster->shelves[roster->use_shelf]->places;
 }
 
-static inline const markdown_core_tree *S_uses_of(const markdown_core_roster *roster) {
-    return roster->use_shelf < 0 ? NULL : &roster->shelves[roster->use_shelf]->places;
-}
-
-const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster *roster,
-                                                            markdown_core_roster_kind kind,
-                                                            const markdown_core_chunk *label, bool folds,
-                                                            uint32_t start, const markdown_core_node *node,
-                                                            markdown_core_roster_placing *placed, bool *failed) {
-    *placed = MARKDOWN_CORE_ROSTER_UNUSED;
+const markdown_core_roster_record *
+markdown_core_roster_use(markdown_core_roster *roster, markdown_core_roster_kind kind, const markdown_core_chunk *label,
+                         bool folds, uint32_t start, const markdown_core_node *node, bool *failed) {
     if (!S_key(roster, kind, label, folds, failed)) {
         return NULL;
     }
@@ -666,8 +659,11 @@ const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster
         *failed = true;
         return NULL;
     }
-    *record = (markdown_core_roster_record){
-        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .shelf = (uint8_t)roster->use_shelf};
+    *record = (markdown_core_roster_record){.label = named,
+                                            .node = node,
+                                            .id = MARKDOWN_CORE_ROSTER_UNPLACED,
+                                            .rooted = true,
+                                            .shelf = (uint8_t)roster->use_shelf};
     roster->bytes += S_RECORD_SIZE;
     /* A completion looks up in the order of the text, mostly, and the
      * roots complete in the order of where they start. */
@@ -696,32 +692,9 @@ const markdown_core_roster_record *markdown_core_roster_use(markdown_core_roster
         *failed = true;
         return NULL;
     }
-    *placed = at == front ? MARKDOWN_CORE_ROSTER_APPENDED : MARKDOWN_CORE_ROSTER_AMONG;
     S_use_link(roster, record);
     record->found = markdown_core_roster_declared(roster, named);
     return record->found ? named->first : NULL;
-}
-
-size_t markdown_core_roster_uses_from(const markdown_core_roster *roster, size_t place) {
-    const markdown_core_tree *uses = S_uses_of(roster);
-    if (!uses) {
-        return 0;
-    }
-    if (uses->front < uses->count &&
-        ((const markdown_core_roster_place *)markdown_core_tree_peek(uses, uses->front))->start < place) {
-        return markdown_core_tree_from(uses, place, uses->front, uses->count);
-    }
-    return markdown_core_tree_from(uses, place, 0, uses->front);
-}
-
-size_t markdown_core_roster_uses_front(const markdown_core_roster *roster) {
-    const markdown_core_tree *uses = S_uses_of(roster);
-    return uses ? uses->front : 0;
-}
-
-size_t markdown_core_roster_uses_back(const markdown_core_roster *roster) {
-    const markdown_core_tree *uses = S_uses_of(roster);
-    return uses ? uses->count - uses->front : 0;
 }
 
 /* The records of `places` from rank `at`, `count` of them, go with the
@@ -750,9 +723,20 @@ static bool S_drop(markdown_core_roster *roster, markdown_core_tree *places, siz
     return ok;
 }
 
-void markdown_core_roster_unuse(markdown_core_roster *roster, size_t at, size_t count) {
-    if (count) {
-        (void)S_drop(roster, S_uses(roster), at, count);
+void markdown_core_roster_cut(markdown_core_roster *roster, size_t from, size_t to) {
+    for (size_t i = 0; i < roster->shelf_count; i++) {
+        markdown_core_tree *places = &roster->shelves[i]->places;
+        /* The front's records from `from` up to `to`, the last first, as
+         * the front's of a rooted kind mostly end with them. */
+        for (size_t at = markdown_core_tree_from(places, to, 0, places->front); at-- > 0;) {
+            const markdown_core_roster_place *place = S_places_at(places, at);
+            if (place->start < from) {
+                break;
+            }
+            if (place->record->rooted) {
+                (void)S_drop(roster, places, at, 1);
+            }
+        }
     }
 }
 
@@ -780,7 +764,7 @@ bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_co
     return true;
 }
 
-bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, uint32_t uses) {
+bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
     /* An edit begins a transaction (THE JOURNAL). */
     S_begin(roster);
     if (roster->dead > roster->bytes - roster->dead + 4096 && !markdown_core_roster_compact(roster)) {
@@ -788,27 +772,42 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start, u
     }
     for (size_t i = 0; i < roster->shelf_count; i++) {
         markdown_core_tree *places = &roster->shelves[i]->places;
-        const uint32_t at = (int)i == roster->use_shelf ? uses : start;
-        const bool back = places->front < places->count && S_places_at(places, places->front)->start < at;
-        markdown_core_tree_focus(places, back ? markdown_core_tree_from(places, at, places->front, places->count)
-                                              : markdown_core_tree_from(places, at, 0, places->front));
+        const bool back = places->front < places->count && S_places_at(places, places->front)->start < start;
+        markdown_core_tree_focus(places, back ? markdown_core_tree_from(places, start, places->front, places->count)
+                                              : markdown_core_tree_from(places, start, 0, places->front));
     }
     return true;
 }
 
-bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta, size_t held) {
+bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta) {
     bool ok = true;
     for (size_t i = 0; i < roster->shelf_count; i++) {
         markdown_core_tree *places = &roster->shelves[i]->places;
         const size_t front = places->front;
-        const size_t kept = (int)i == roster->use_shelf ? held : 0;
         const size_t gone = markdown_core_tree_from(places, place, front, places->count) - front;
-        if (gone > kept) {
-            ok = S_drop(roster, places, front + kept, gone - kept) && ok;
+        if (gone) {
+            ok = S_drop(roster, places, front, gone) && ok;
         }
         markdown_core_tree_shift(places, front, delta);
     }
     return ok;
+}
+
+void markdown_core_roster_lose(markdown_core_roster *roster, size_t bound) {
+    for (size_t i = 0; i < roster->shelf_count; i++) {
+        markdown_core_tree *places = &roster->shelves[i]->places;
+        for (size_t at = places->front; at < places->count;) {
+            const markdown_core_roster_place *place = S_places_at(places, at);
+            if (place->start >= bound) {
+                break;
+            }
+            if (place->record->rooted) {
+                (void)S_drop(roster, places, at, 1);
+            } else {
+                at++;
+            }
+        }
+    }
 }
 
 /* An entry of the labels in order, or a copy of one, names the label's

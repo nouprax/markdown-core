@@ -266,23 +266,16 @@ typedef struct markdown_core_line_stop {
  * content). The parse lists
  * in `starts` the starts of the top-level tokens it read before any token
  * read the end of the content, where nothing read before holds anything
- * open, each with how many lookups had found nothing before it (`misses`,
- * which the lookups count), and leaves in `undecided` the earliest start of
+ * open, and leaves in `undecided` the earliest start of
  * a token whose reading read the end, or of an opener left unmatched,
  * INT32_MAX when there is none. It lists in `notes` the inline notes it
  * made, fields their Citations hold, which commit with the nodes that hold
  * them as those settle. `source` is where `from` was written, measured
  * from where the root's source starts, as its published fields are. */
-typedef struct {
-    bufsize_t start;
-    uint32_t misses;
-} markdown_core_settle_start;
-
 typedef struct markdown_core_inline_settle {
     bufsize_t from, undecided;
     uint32_t source;
-    uint32_t misses;
-    markdown_core_settle_start *starts;
+    bufsize_t *starts;
     size_t count, capacity;
     struct markdown_core_node **notes;
     size_t note_count, note_capacity;
@@ -417,20 +410,17 @@ typedef struct markdown_core_unclosed {
  * THE SEAMS of that paragraph's inline content (blocks.c): the paragraph
  * `node`, whose id is `id`, as the last edit's reading completed it, and
  * the `seam_count` seams it found then, in order; `seam` the one the
- * reading takes its first children to, all zero for none, and `taken`
- * where its uses start in the uses' front. The
+ * reading takes its first children to, all zero for none. The
  * reading's parse of the content lists what may be seams in `settle`,
- * from the child `held` on, while `active`, with the anchors the roster
- * held as it began, `anchors`. */
+ * from the child `held` on, while `active`. */
 typedef struct {
-    /* Where it is in the content, the first child after it, how many of
-     * the paragraph's uses lie before it, and the line of the paragraph
+    /* Where it is in the content, the first child after it, and the line of the paragraph
      * it starts, counted from its first; where the child before it ends in
      * the text, past where the paragraph starts, as the content's places
      * read it; and the place of the content's places that reads its last
      * byte, and the content offset that place starts at. */
     bufsize_t offset;
-    uint32_t index, uses, line, source, place, read;
+    uint32_t index, line, source, place, read;
     /* How far before it the child before it ends in the content. */
     uint32_t lead;
     /* The measure the element of the paragraph's kind takes of the children
@@ -446,12 +436,10 @@ typedef struct {
 
 /* THE SEAMS a paragraph's parse may meet (blocks.c): the old seams past
  * the edit, `count` of them, the nearest last, each measured back from the
- * content's `end`; `met` once the parse stopped at the nearest, which no
- * anchor or note the parse made since the roster held `anchors` came
- * before. */
+ * content's `end`; `met` once the parse stopped at the nearest. */
 typedef struct markdown_core_seam_stops {
     const markdown_core_seam *items;
-    size_t count, anchors;
+    size_t count;
     bufsize_t end;
     bool met;
 } markdown_core_seam_stops;
@@ -479,14 +467,12 @@ typedef struct markdown_core_leap {
     size_t seam_count, seam_room;
     markdown_core_seam seam;
     uint32_t held;
-    size_t taken, anchors;
     markdown_core_inline_settle settle;
     /* THE OLD TAIL OF A PARAGRAPH (blocks.c): the seams past the edit, as
      * stops measured back from where the paragraph's content, children,
-     * uses, lines, source and places ended (`ends`), the nearest last; the
+     * lines, source and places ended (`ends`), the nearest last; the
      * paragraph's old children past the seam, still in its storage, from
-     * `seam.index` up to `count`, while `kept`; the uses past its seam's
-     * the front still holds, `rest`; where the leap landed, `land` bytes
+     * `seam.index` up to `count`, while `kept`; where the leap landed, `land` bytes
      * before the old content's end, and where the new content had come to
      * then, `landed`, while `lands`; once the parse met a stop, the child
      * the old tail starts at, `tail`, and where the reading's children end
@@ -495,7 +481,10 @@ typedef struct markdown_core_leap {
     size_t back_count, back_room;
     markdown_core_seam ends;
     uint32_t count, tail, spliced;
-    size_t rest, land, landed, uses;
+    size_t land, landed;
+    /* Where the paragraph ended in the text before the edit, and where the
+     * roster's focus stands: the records before it are the old text's. */
+    size_t bound, focus;
     bool kept, lands;
     markdown_core_seam_stops stops;
     /* What the paragraph's inline runs gave up from the seam on, as the
@@ -641,10 +630,6 @@ typedef struct markdown_core_edit {
     /* THE LEAP (blocks.c), made at the first edit that rests in a block of
      * literal lines. */
     markdown_core_leap *leap;
-    /* How many uses of the back nearest the focus the splice keeps: those
-     * of the old tail of a paragraph whose parse met a seam of the back
-     * (THE OLD TAIL OF A PARAGRAPH). */
-    size_t uses_held;
     /* What the line starts of the lines the deepest block reads again
      * gave up (node.h, OPENER), set aside at the reopen as raw entries of
      * the old text: those of old lines the reading takes back unread (THE
@@ -1603,12 +1588,14 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * `kind`'s space from `start` on, in the space's form, as the lookup above
  * reads it: a reference or footnote label normalized into `*normal`, in
  * storage the node that holds it owns, a specimen label as written, when
- * `normal` may be NULL. An empty label defines nothing, and the document
- * lists the node all the same (roster.h, THE PLACES). False, with the parse
- * failed, when storage could not be had. */
+ * `normal` may be NULL; `content` when an inline root's content declares
+ * it, as an inline note does, which goes and stays with that content as
+ * the root's uses do (roster.h, THE USES). An empty label defines nothing,
+ * and the document lists the node all the same (roster.h, THE PLACES).
+ * False, with the parse failed, when storage could not be had. */
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
-                                  const markdown_core_node *node);
+                                  const markdown_core_node *node, bool content);
 /* The byte of the text that offset `at` of the content of the block being
  * completed reads (its inline root's offset,
  * markdown_core_inline_state_root_offset), as a use's is (blocks.c, WHERE
