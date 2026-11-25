@@ -150,6 +150,8 @@ document documents/hard-paragraph-splice.md
 script documents/hard-paragraph-splice.md scripts/hard-paragraph-splice.script
 document documents/hard-paragraph-splice-crlf.md
 script documents/hard-paragraph-splice-crlf.md scripts/hard-paragraph-splice-crlf.script
+document documents/hard-paragraph-delete-past.md
+script documents/hard-paragraph-delete-past.md scripts/hard-paragraph-delete-past.script
 document documents/hard-candidate-before-children.md
 script documents/hard-candidate-before-children.md scripts/hard-candidate-before-children.script
 document documents/hard-container-markers.md

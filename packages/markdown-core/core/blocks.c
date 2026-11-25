@@ -3239,7 +3239,10 @@ static uint32_t S_seam_lines(const unsigned char *text, bufsize_t size, bufsize_
  * before the edit until the splice moves it. */
 static void S_seam_lose(markdown_core_parser *parser, size_t old) {
     const markdown_core_edit *edit = parser->stream->edit;
-    markdown_core_roster_lose(&parser->roster, edit->resumed ? (size_t)((int64_t)old + edit->delta) : old);
+    /* A bound in the text the edit replaced leaves none of the back's
+     * records, which start past it, and moved below 0 it stands there. */
+    const int64_t moved = (int64_t)old + edit->delta;
+    markdown_core_roster_lose(&parser->roster, !edit->resumed ? old : moved > 0 ? (size_t)moved : 0);
 }
 
 /* The paragraph `node` whose content the reading parsed from a seam is

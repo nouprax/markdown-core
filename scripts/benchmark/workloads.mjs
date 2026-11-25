@@ -1526,6 +1526,11 @@ export function hardScripts() {
                 .insert(start(12) + 1, "w")
         );
     }
+    /* A deletion from inside a paragraph past its old end: the old tail's
+     * bound lies in the text the edit replaced, and the records past the
+     * edit, the use of `[^a]` among them, stay for the definition's loss to
+     * reach. */
+    add("paragraph-delete-past", "p\nx\n[^a]: note\n\n[^a]\n", (s) => s.remove(3, 14));
     /* An edit that opens a candidate before unchanged children: deleting `x`
      * makes `%%` a comment opener that the last line closes (12.3). */
     add("candidate-before-children", "%%x\n\nbody\n\n%%\n", (s) => s.remove(2, 3).insert(2, "x"));
