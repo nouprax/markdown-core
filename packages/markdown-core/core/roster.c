@@ -238,6 +238,9 @@ void markdown_core_roster_free(markdown_core_roster *roster) {
     markdown_core_free(roster->made);
     markdown_core_array_free(&roster->where);
     markdown_core_array_free(&roster->journal);
+    markdown_core_array_free(&roster->owed);
+    markdown_core_array_free(&roster->leaving);
+    markdown_core_free(roster->owners);
     *roster = (markdown_core_roster){0};
 }
 
@@ -468,6 +471,28 @@ static int S_shelf(markdown_core_roster *roster, markdown_core_roster_kind kind,
     return (int)roster->shelf_count++;
 }
 
+/* The shelf of `kind` that nodes of kind `node` declare in, or -1 when none
+ * has. */
+static int S_shelf_known(const markdown_core_roster *roster, markdown_core_roster_kind kind, uint16_t node) {
+    for (size_t i = 0; i < roster->shelf_count; i++) {
+        if (roster->shelves[i]->kind == kind && roster->shelves[i]->node == node) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/* THE OWNERS (roster.h): an owner's slot in the open hash, by the node,
+ * which holds its first record. */
+struct markdown_core_roster_owner {
+    markdown_core_node *node;
+    markdown_core_roster_record *first;
+};
+static struct markdown_core_roster_owner *S_owner_slot(const markdown_core_roster *roster,
+                                                       const markdown_core_node *node);
+static bool S_own(markdown_core_roster *roster, markdown_core_roster_record *record, markdown_core_node *owner);
+static bool S_drop(markdown_core_roster *roster, markdown_core_tree *places, size_t at, size_t count);
+
 static inline void S_assemble(markdown_core_roster *roster, markdown_core_roster_kind kind, const unsigned char *label,
                               bufsize_t length) {
     markdown_core_strbuf_clear(&roster->key);
@@ -477,9 +502,23 @@ static inline void S_assemble(markdown_core_roster *roster, markdown_core_roster
 
 bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_roster_kind kind,
                                   const unsigned char *label, bufsize_t length, uint32_t start,
-                                  const markdown_core_node *node, bool rooted) {
+                                  const markdown_core_node *node, markdown_core_node *owner) {
     if (length < 0 || (!length && !node)) {
         return true;
+    }
+    /* The owner declares in a shelf once: a declaration again replaces its
+     * earlier one there (THE OWNERS). */
+    const int known = S_shelf_known(roster, kind, node ? node->kind : (uint16_t)MARKDOWN_CORE_NODE_NONE);
+    if (known >= 0 && owner && (owner->flags & MARKDOWN_CORE_NODE__LISTED)) {
+        for (markdown_core_roster_record *mine = S_owner_slot(roster, owner)->first; mine; mine = mine->owned) {
+            if (mine->shelf == (uint8_t)known) {
+                markdown_core_tree *held = &roster->shelves[known]->places;
+                if (!S_drop(roster, held, S_rank(roster, mine), 1)) {
+                    return false;
+                }
+                break;
+            }
+        }
     }
     markdown_core_roster_label *named = NULL;
     if (length) {
@@ -495,7 +534,7 @@ bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_ro
         return false;
     }
     *record = (markdown_core_roster_record){
-        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .rooted = rooted, .shelf = (uint8_t)shelf};
+        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .shelf = (uint8_t)shelf};
     roster->bytes += S_RECORD_SIZE;
     markdown_core_tree *places = &roster->shelves[shelf]->places;
     /* A label declared now takes its place in order (THE LABELS IN ORDER). */
@@ -517,7 +556,7 @@ bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_ro
     if (named) {
         S_link(roster, record);
     }
-    return true;
+    return S_own(roster, record, owner);
 }
 
 /* The first declaration of the label `slot` holds, of none, that stands and
@@ -659,11 +698,8 @@ markdown_core_roster_use(markdown_core_roster *roster, markdown_core_roster_kind
         *failed = true;
         return NULL;
     }
-    *record = (markdown_core_roster_record){.label = named,
-                                            .node = node,
-                                            .id = MARKDOWN_CORE_ROSTER_UNPLACED,
-                                            .rooted = true,
-                                            .shelf = (uint8_t)roster->use_shelf};
+    *record = (markdown_core_roster_record){
+        .label = named, .node = node, .id = MARKDOWN_CORE_ROSTER_UNPLACED, .shelf = (uint8_t)roster->use_shelf};
     roster->bytes += S_RECORD_SIZE;
     /* A completion looks up in the order of the text, mostly, and the
      * roots complete in the order of where they start. */
@@ -694,7 +730,143 @@ markdown_core_roster_use(markdown_core_roster *roster, markdown_core_roster_kind
     }
     S_use_link(roster, record);
     record->found = markdown_core_roster_declared(roster, named);
+    /* It owes an owner until its root's completion ends (THE OWNERS). */
+    if (!markdown_core_array_push(&roster->owed, record)) {
+        S_drop(roster, places, S_rank(roster, record), 1);
+        *failed = true;
+        return NULL;
+    }
     return record->found ? named->first : NULL;
+}
+
+markdown_core_roster_record **markdown_core_roster_owed(markdown_core_roster *roster, size_t *count) {
+    *count = roster->owed.count;
+    return roster->owed.values;
+}
+
+bool markdown_core_roster_own(markdown_core_roster *roster, markdown_core_roster_record *record,
+                              markdown_core_node *owner) {
+    return S_own(roster, record, owner);
+}
+
+void markdown_core_roster_owe(markdown_core_roster *roster, size_t from, bool drop) {
+    for (size_t i = from; drop && i < roster->owed.count; i++) {
+        markdown_core_roster_record *record = roster->owed.values[i];
+        (void)S_drop(roster, S_places(roster, record), S_rank(roster, record), 1);
+    }
+    markdown_core_array_truncate(&roster->owed, from);
+}
+
+void markdown_core_roster_release(markdown_core_roster *roster, markdown_core_node *node) {
+    if (!roster->owner_room) {
+        return;
+    }
+    struct markdown_core_roster_owner *slot = S_owner_slot(roster, node);
+    /* Each drop takes the first record from the slot, the last the slot. */
+    while (slot->node == node) {
+        markdown_core_roster_record *record = slot->first;
+        (void)S_drop(roster, S_places(roster, record), S_rank(roster, record), 1);
+        slot = S_owner_slot(roster, node);
+    }
+}
+
+static inline size_t S_owner_home(const markdown_core_roster *roster, const markdown_core_node *node) {
+    uint64_t key = (uint64_t)(uintptr_t)node;
+    key ^= key >> 33;
+    key *= 0xff51afd7ed558ccdULL;
+    key ^= key >> 33;
+    return (size_t)key & (roster->owner_room - 1);
+}
+
+/* The slot of `node`, or the empty one it would take. */
+static struct markdown_core_roster_owner *S_owner_slot(const markdown_core_roster *roster,
+                                                       const markdown_core_node *node) {
+    size_t at = S_owner_home(roster, node);
+    while (roster->owners[at].node && roster->owners[at].node != node) {
+        at = (at + 1) & (roster->owner_room - 1);
+    }
+    return &roster->owners[at];
+}
+
+/* Room for one more owner, or false when storage could not be had. */
+static bool S_owner_room(markdown_core_roster *roster) {
+    if ((roster->owner_count + 1) * 3 <= roster->owner_room * 2) {
+        return true;
+    }
+    const size_t room = roster->owner_room ? roster->owner_room * 2 : 64;
+    struct markdown_core_roster_owner *old = roster->owners;
+    const size_t old_room = roster->owner_room;
+    roster->owners = markdown_core_alloc(room, sizeof(*roster->owners));
+    if (!roster->owners) {
+        roster->owners = old;
+        return false;
+    }
+    roster->owner_room = room;
+    for (size_t i = 0; i < old_room; i++) {
+        if (old[i].node) {
+            *S_owner_slot(roster, old[i].node) = old[i];
+        }
+    }
+    markdown_core_free(old);
+    return true;
+}
+
+/* The owner's slot taken out of the hash, the slots after it moved back to
+ * where a search finds them. */
+static void S_owner_out(markdown_core_roster *roster, struct markdown_core_roster_owner *slot) {
+    const size_t mask = roster->owner_room - 1;
+    size_t hole = (size_t)(slot - roster->owners);
+    for (size_t next = (hole + 1) & mask; roster->owners[next].node; next = (next + 1) & mask) {
+        const size_t home = S_owner_home(roster, roster->owners[next].node);
+        /* An entry stays when its home lies after the hole, cyclically, up
+         * to where it is. */
+        if (((next - home) & mask) >= ((next - hole) & mask)) {
+            roster->owners[hole] = roster->owners[next];
+            hole = next;
+        }
+    }
+    roster->owners[hole] = (struct markdown_core_roster_owner){0};
+    roster->owner_count--;
+}
+
+/* `owner` owns `record`. False when storage could not be had. */
+static bool S_own(markdown_core_roster *roster, markdown_core_roster_record *record, markdown_core_node *owner) {
+    if (!owner) {
+        return true;
+    }
+    if (!S_owner_room(roster)) {
+        return false;
+    }
+    struct markdown_core_roster_owner *slot = S_owner_slot(roster, owner);
+    if (!slot->node) {
+        slot->node = owner;
+        roster->owner_count++;
+        owner->flags |= MARKDOWN_CORE_NODE__LISTED;
+    }
+    record->owner = owner;
+    record->owned = slot->first;
+    slot->first = record;
+    return true;
+}
+
+/* The record leaves its owner's records. */
+static void S_disown(markdown_core_roster *roster, markdown_core_roster_record *record) {
+    if (!record->owner) {
+        return;
+    }
+    struct markdown_core_roster_owner *slot = S_owner_slot(roster, record->owner);
+    assert(slot->node == record->owner);
+    markdown_core_roster_record **link = &slot->first;
+    while (*link != record) {
+        link = &(*link)->owned;
+    }
+    *link = record->owned;
+    if (!slot->first) {
+        slot->node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__LISTED;
+        S_owner_out(roster, slot);
+    }
+    record->owner = NULL;
+    record->owned = NULL;
 }
 
 /* The records of `places` from rank `at`, `count` of them, go with the
@@ -703,6 +875,7 @@ static bool S_drop(markdown_core_roster *roster, markdown_core_tree *places, siz
     bool ok = true;
     for (size_t k = 0; k < count; k++) {
         markdown_core_roster_record *record = S_places_at(places, at + k)->record;
+        S_disown(roster, record);
         if (record->shelf == roster->use_shelf) {
             S_use_unlink(roster, record);
         } else {
@@ -721,23 +894,6 @@ static bool S_drop(markdown_core_roster *roster, markdown_core_tree *places, siz
     }
     markdown_core_tree_erase(places, at, count);
     return ok;
-}
-
-void markdown_core_roster_cut(markdown_core_roster *roster, size_t from, size_t to) {
-    for (size_t i = 0; i < roster->shelf_count; i++) {
-        markdown_core_tree *places = &roster->shelves[i]->places;
-        /* The front's records from `from` up to `to`, the last first, as
-         * the front's of a rooted kind mostly end with them. */
-        for (size_t at = markdown_core_tree_from(places, to, 0, places->front); at-- > 0;) {
-            const markdown_core_roster_place *place = S_places_at(places, at);
-            if (place->start < from) {
-                break;
-            }
-            if (place->record->rooted) {
-                (void)S_drop(roster, places, at, 1);
-            }
-        }
-    }
 }
 
 bool markdown_core_roster_normal_label(markdown_core_roster *roster, markdown_core_node_pool *pool,
@@ -779,39 +935,13 @@ bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start) {
     return true;
 }
 
-bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta) {
-    bool ok = true;
+void markdown_core_roster_shift(markdown_core_roster *roster, int64_t delta) {
     for (size_t i = 0; i < roster->shelf_count; i++) {
         markdown_core_tree *places = &roster->shelves[i]->places;
-        const size_t front = places->front;
-        const size_t gone = markdown_core_tree_from(places, place, front, places->count) - front;
-        if (gone) {
-            ok = S_drop(roster, places, front, gone) && ok;
-        }
-        markdown_core_tree_shift(places, front, delta);
-    }
-    return ok;
-}
-
-void markdown_core_roster_lose(markdown_core_roster *roster, size_t bound) {
-    for (size_t i = 0; i < roster->shelf_count; i++) {
-        markdown_core_tree *places = &roster->shelves[i]->places;
-        for (size_t at = places->front; at < places->count;) {
-            const markdown_core_roster_place *place = S_places_at(places, at);
-            if (place->start >= bound) {
-                break;
-            }
-            if (place->record->rooted) {
-                (void)S_drop(roster, places, at, 1);
-            } else {
-                at++;
-            }
-        }
+        markdown_core_tree_shift(places, places->front, delta);
     }
 }
 
-/* An entry of the labels in order, or a copy of one, names the label's
- * copy (THE LABELS IN ORDER). */
 static void S_label_moved(void *entry, void *context) {
     (void)context;
     markdown_core_key_entry *held = entry;
@@ -904,6 +1034,25 @@ bool markdown_core_roster_compact(markdown_core_roster *roster) {
             copy->before = S_forward(copy->before);
             copy->after = S_forward(copy->after);
             copy->hint = S_forward(copy->hint);
+        }
+    }
+    /* The owners name the copies: no more of them than before, so the
+     * hash has room. */
+    assert(!roster->owed.count);
+    if (roster->owners) {
+        memset(roster->owners, 0, roster->owner_room * sizeof(*roster->owners));
+        roster->owner_count = 0;
+    }
+    for (size_t k = 0; k < roster->shelf_count; k++) {
+        markdown_core_tree *places = &roster->shelves[k]->places;
+        for (size_t i = 0; i < places->count; i++) {
+            markdown_core_roster_record *copy = S_places_at(places, i)->record;
+            markdown_core_node *owner = copy->owner;
+            if (owner) {
+                copy->owner = NULL;
+                copy->owned = NULL;
+                (void)S_own(roster, copy, owner);
+            }
         }
     }
     /* The labels in order name the copies, which keep their keys. */

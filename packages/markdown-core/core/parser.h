@@ -482,9 +482,6 @@ typedef struct markdown_core_leap {
     markdown_core_seam ends;
     uint32_t count, tail, spliced;
     size_t land, landed;
-    /* Where the paragraph ended in the text before the edit, and where the
-     * roster's focus stands: the records before it are the old text's. */
-    size_t bound, focus;
     bool kept, lands;
     markdown_core_seam_stops stops;
     /* What the paragraph's inline runs gave up from the seam on, as the
@@ -1588,14 +1585,13 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * `kind`'s space from `start` on, in the space's form, as the lookup above
  * reads it: a reference or footnote label normalized into `*normal`, in
  * storage the node that holds it owns, a specimen label as written, when
- * `normal` may be NULL; `content` when an inline root's content declares
- * it, as an inline note does, which goes and stays with that content as
- * the root's uses do (roster.h, THE USES). An empty label defines nothing,
+ * `normal` may be NULL. The node owns the declaration, which goes when
+ * it does (roster.h, THE OWNERS). An empty label defines nothing,
  * and the document lists the node all the same (roster.h, THE PLACES).
  * False, with the parse failed, when storage could not be had. */
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
-                                  const markdown_core_node *node, bool content);
+                                  markdown_core_node *node);
 /* The byte of the text that offset `at` of the content of the block being
  * completed reads (its inline root's offset,
  * markdown_core_inline_state_root_offset), as a use's is (blocks.c, WHERE

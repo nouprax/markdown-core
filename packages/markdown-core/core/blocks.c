@@ -311,6 +311,10 @@ static void S_parser_dispose(markdown_core_parser *parser) {
         }
     }
     S_stage(parser, STAGE_RELEASE);
+    if (parser->pool && parser->pool->drop_context == parser) {
+        parser->pool->drop = NULL;
+        parser->pool->drop_context = NULL;
+    }
     markdown_core_roster_free(&parser->roster);
     markdown_core_free(parser->line_opens);
     parser->line_opens = NULL;
@@ -406,12 +410,20 @@ void markdown_core_parser_destroy(markdown_core_parser *parser) {
 
 static inline bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t count);
 
+/* A node the pool lets go takes the records it owns with it (roster.h, THE
+ * OWNERS). */
+static void S_node_drop(void *context, markdown_core_node *node) {
+    markdown_core_roster_release(&((markdown_core_parser *)context)->roster, node);
+}
+
 /* Starts a transaction that continues `revision` and borrows its pool. */
 void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision) {
     markdown_core_node *document;
 
     parser->revision = revision;
     parser->pool = revision->pool;
+    parser->pool->drop = S_node_drop;
+    parser->pool->drop_context = parser;
     parser->room_at = UINT32_MAX;
     parser->room_holder = NULL;
     markdown_core_strbuf_init(&parser->curline, 256);
@@ -2531,7 +2543,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
         return true;
     }
     return markdown_core_roster_declare(&parser->roster, MARKDOWN_CORE_ROSTER_ANCHOR, anchor->data, anchor->len, start,
-                                        NULL, true);
+                                        NULL, (markdown_core_node *)node);
 }
 
 /* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8) of
@@ -2549,6 +2561,124 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
  * scheme) reaches across a node that is no Text. */
 
 static size_t S_use_place(markdown_core_parser *parser, const markdown_core_node *root, uint32_t at);
+
+/* THE TEXT THAT LEFT (roster.h, THE OWNERS): an old node the reading
+ * replaced, and every node it holds, take their records with them as the
+ * reading ends, before the names and the tables read the roster, though
+ * the publish keeps the nodes until it has matched against them. */
+static int S_leave_push(markdown_core_node **slot, void *context) {
+    markdown_core_parser *parser = context;
+    if (*slot && !markdown_core_array_push(&parser->roster.leaving, *slot)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return 0;
+    }
+    return 1;
+}
+
+static void S_leave(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_roster *roster = &parser->roster;
+    if (!roster->owner_count) {
+        return;
+    }
+    roster->leaving.count = 0;
+    if (!S_leave_push(&node, parser)) {
+        return;
+    }
+    while (roster->leaving.count && roster->owner_count) {
+        markdown_core_node *e = roster->leaving.values[--roster->leaving.count];
+        if (e->flags & MARKDOWN_CORE_NODE__LISTED) {
+            markdown_core_roster_release(roster, e);
+        }
+        const markdown_core_record_ops *record = markdown_core_record_for_kind((markdown_core_node_type)e->kind);
+        if ((record->visit && !record->visit(e, S_leave_push, parser)) ||
+            !markdown_core_visit_element_subtrees(e, S_leave_push, parser)) {
+            return;
+        }
+        for (uint32_t i = 0; i < e->child_count; i++) {
+            if (!S_leave_push(&e->children[i], parser)) {
+                return;
+            }
+        }
+        for (markdown_core_node *child = markdown_core_scaffold_first(e); child;
+             child = markdown_core_scaffold_next(child)) {
+            if (!S_leave_push(&child, parser)) {
+                return;
+            }
+        }
+    }
+}
+
+/* The old nodes the reading replaced take their records with them (THE
+ * TEXT THAT LEFT): those the publish's records own, which the content of a
+ * root completed again let go (markdown_core_publish_keep_left,
+ * markdown_core_publish_cede), the root's old tail's children before
+ * `first`, and the chain's old children numbered before `taken`. */
+static void S_leave_old(markdown_core_parser *parser, uint32_t first, size_t taken) {
+    if (!parser->roster.owner_count) {
+        return;
+    }
+    const markdown_core_tail_records *records = &parser->stream->records;
+    for (size_t i = 0; i < records->count && !parser->error; i++) {
+        if (records->items[i].node) {
+            S_leave(parser, records->items[i].node);
+        }
+    }
+    const markdown_core_edit *edit = parser->stream->edit;
+    if (!edit) {
+        return;
+    }
+    for (uint32_t i = 0; i < first && i < edit->root.held && !parser->error; i++) {
+        S_leave(parser, markdown_core_edit_old(edit, parser->root, i));
+    }
+    for (size_t level = 0; level < edit->depth && !parser->error; level++) {
+        const markdown_core_seam_tail *tail = &edit->levels[level];
+        for (uint32_t i = 0; i < tail->held && (size_t)tail->base + i < taken && !parser->error; i++) {
+            S_leave(parser, markdown_core_edit_nested(edit, level, i));
+        }
+    }
+}
+
+/* WHO OWNS A USE (roster.h, THE OWNERS): the child of its root its
+ * completion made whose text holds it, as the root's EXIT finds them, its
+ * text consolidated, their places offsets in its content, which the use's
+ * source place is read against (S_use_place); the root when none does. A paragraph completed again
+ * from a seam keeps the children before it, the last of them FINAL, and
+ * their uses: those it makes are of the children past them. The uses
+ * other roots made stay owed until theirs end. False when storage could
+ * not be had. */
+static bool S_owe(markdown_core_parser *parser, markdown_core_node *root) {
+    size_t count;
+    markdown_core_roster_record **owed = markdown_core_roster_owed(&parser->roster, &count);
+    if (!count) {
+        return true;
+    }
+    uint32_t first = root->child_count;
+    while (first > 0 && !(root->children[first - 1]->flags & MARKDOWN_CORE_NODE__FINAL)) {
+        first--;
+    }
+    size_t kept = 0;
+    bool ok = true;
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_roster_record *record = owed[i];
+        if (record->node != root) {
+            owed[kept++] = record;
+            continue;
+        }
+        const uint32_t start = markdown_core_roster_start(&parser->roster, record);
+        uint32_t low = first, high = root->child_count;
+        while (low < high) {
+            const uint32_t mid = low + (high - low) / 2;
+            if (S_use_place(parser, root, root->children[mid]->place.start) <= start) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        ok = markdown_core_roster_own(&parser->roster, record, low > first ? root->children[low - 1] : root) && ok;
+    }
+    markdown_core_roster_owe(&parser->roster, kept, false);
+    return ok;
+}
 
 /* The node in `*slot` pushed on the stack `context` holds, linked through
  * the nodes' scaffolds, which a complete node no longer uses. */
@@ -2588,15 +2718,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_content_whole(mark
 
 static void S_pane_owe(markdown_core_parser *parser, markdown_core_node *node);
 static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32_t past, bufsize_t start);
-static void S_seam_lose(markdown_core_parser *parser, size_t old);
-
-/* Where the records of the roster the paragraph `node`, which an edit's
- * reading reopened at a seam, made end: its old ones before the focus, and
- * those its completion made in its content. Other roots' records lie past
- * both, as roots complete in no order of the text. */
-static inline size_t S_seam_reach(const markdown_core_leap *leap, const markdown_core_node *node) {
-    return leap->focus > node->place.end ? leap->focus : node->place.end;
-}
 
 /* The paragraph `node`, which an edit's reading reopened at a seam, lets go
  * of the children it kept and of its old tail, and of the records of the
@@ -2614,8 +2735,6 @@ static void S_seam_undo(markdown_core_parser *parser, markdown_core_node *node) 
         node->children = NULL;
         node->child_count = 0;
     }
-    markdown_core_roster_cut(&parser->roster, node->place.start, S_seam_reach(leap, node));
-    S_seam_lose(parser, leap->bound);
     leap->seam = (markdown_core_seam){0};
     leap->seam_count = leap->back_count = 0;
     leap->kept = false;
@@ -2663,17 +2782,17 @@ void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_nod
 }
 
 /* THE OLD TAIL OF A PARAGRAPH an edit's reading reopened at a seam: its old
- * children past the seam stay in its storage, and the records of the roster
- * their text made in the back, while the seams of the back are seams it
+ * children past the seam stay in its storage, with the records of the
+ * roster they own in the back, while the seams of the back are seams it
  * may meet: those past where the reading leapt over the old lines of the
  * paragraph (THE LEAP), whose content from there on is the old content
  * from where it leapt, as the paragraph's content goes on to its old end.
  * The parse stops at the first it meets, where the parse of the old
  * content past the seam stands as the new content's would (THE SEAMS): the
- * old children from the seam on follow the new ones, and the records of
- * their text stand for the new ones (S_seam_room, S_seam_end). The
- * children the reading read again and the back's records of their text go,
- * as all of them do when it meets none (S_seam_lose).
+ * old children from the seam on follow the new ones, and their records
+ * stand for the new ones (S_seam_room, S_seam_end). The
+ * children the reading read again go, and their records with them, as
+ * all of them do when it meets none (THE TEXT THAT LEFT).
  * True when the parse may meet one, with its stops ready. */
 static bool S_seam_stops(markdown_core_parser *parser, markdown_core_node *node) {
     markdown_core_edit *edit = parser->stream->edit;
@@ -2700,7 +2819,6 @@ static bool S_seam_stops(markdown_core_parser *parser, markdown_core_node *node)
         markdown_core_node_pool_bytes_free(parser->pool, node->children);
         node->children = NULL;
     }
-    S_seam_lose(parser, leap->bound);
     leap->kept = false;
     return false;
 }
@@ -3057,8 +3175,6 @@ static bool S_seam_shrink(markdown_core_parser *parser, markdown_core_node *node
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     node->children[seam.index - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
-    markdown_core_roster_cut(&parser->roster, node->place.start + seam.source, S_seam_reach(leap, node));
-    S_seam_lose(parser, leap->bound);
     leap->kept = false;
     leap->back_count = 0;
     leap->seam = seam;
@@ -3204,7 +3320,6 @@ static void S_seam_parse(markdown_core_parser *parser, markdown_core_node *node)
         next = markdown_core_scaffold_next(child);
         markdown_core_parser_release_node(parser, child);
     }
-    markdown_core_roster_cut(&parser->roster, node->place.start + leap->seam.source, S_seam_reach(leap, node));
     leap->stops.met = false;
     leap->stops.count = 0;
     markdown_core_parse_inlines_seam(parser, node, &leap->settle, &leap->stops);
@@ -3228,21 +3343,6 @@ static uint32_t S_seam_lines(const unsigned char *text, bufsize_t size, bufsize_
     }
     *from = start;
     return lines;
-}
-
-/* The records the old content of the paragraph an edit's reading reopened
- * at a seam made past the seam, which the back holds nearest the focus,
- * go up to `old`, a place of the old text (THE OLD TAIL OF A PARAGRAPH):
- * those of content its completion read again, all of them to its old end
- * when it met no seam of the back, and those before the seam it met when
- * it did, whose old tail keeps its own. The back is measured as the text
- * before the edit until the splice moves it. */
-static void S_seam_lose(markdown_core_parser *parser, size_t old) {
-    const markdown_core_edit *edit = parser->stream->edit;
-    /* A bound in the text the edit replaced leaves none of the back's
-     * records, which start past it, and moved below 0 it stands there. */
-    const int64_t moved = (int64_t)old + edit->delta;
-    markdown_core_roster_lose(&parser->roster, !edit->resumed ? old : moved > 0 ? (size_t)moved : 0);
 }
 
 /* The paragraph `node` whose content the reading parsed from a seam is
@@ -3283,10 +3383,7 @@ static bool S_seam_end(markdown_core_parser *parser, markdown_core_node *node) {
         leap->back_count = 0;
     }
     if (met) {
-        S_seam_lose(parser, (size_t)node->place.start + leap->ends.source - stop.source);
         S_seam_opens_back(parser, node, leap->ends.source - stop.source + stop.lead);
-    } else {
-        S_seam_lose(parser, leap->bound);
     }
     leap->open_count = 0;
     const markdown_core_places *places = leap->paned ? leap->pane : node->source.places;
@@ -3568,13 +3665,6 @@ static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, uint32
 
 static unsigned S_read_flags(const markdown_core_parser *parser, const markdown_core_node *block);
 
-/* Whether the reading of the paragraph `node` met its old tail, which it
- * keeps with the records of its text (THE OLD TAIL OF A PARAGRAPH). */
-static inline bool S_tail_met(const markdown_core_parser *parser, const markdown_core_node *node) {
-    const markdown_core_edit *edit = parser->stream ? parser->stream->edit : NULL;
-    return edit && edit->leap && edit->leap->active && edit->leap->node == node && edit->leap->stops.met;
-}
-
 /* Whether the paragraph `node` keeps its old tail aside (THE OLD TAIL OF A
  * PARAGRAPH). */
 static inline bool S_seam_kept(const markdown_core_parser *parser, const markdown_core_node *node) {
@@ -3693,22 +3783,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
         facts->follow[MARKDOWN_CORE_FOLLOW_COMPLETE]->follow(facts->follower[MARKDOWN_CORE_FOLLOW_COMPLETE], parser,
                                                              &lead);
     }
-    /* An explicit anchor is reserved once the node is complete, where its
-     * text lies, as every record of the roster is: an inline node's where it
-     * starts; a paragraph's on its last byte, as its text ends it, inside
-     * every reading of the paragraph, from a seam too; another block's where
-     * it starts, as its text opens it, and a chain that reads inside the
-     * block keeps it whole. A
-     * paragraph whose reading met its old tail keeps the anchor that tail's
-     * text made (THE OLD TAIL OF A PARAGRAPH). A FormulaBlock a fence became
+    /* An explicit anchor is reserved once the node is complete, where it
+     * starts, and the node owns it (roster.h, THE OWNERS): a node completed
+     * again reserves it again in its place. A FormulaBlock a fence became
      * holds no attributes; a Text holds none either, so the siblings
      * consolidation absorbs reserve none. */
-    if (node->attributes.anchor.len && !S_tail_met(parser, node) &&
+    if (node->attributes.anchor.len &&
         !S_reserve_anchor(parser, node,
                           MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind)
                               ? markdown_core_parser_source_at(parser, node->place.start)
-                          : (S_read_flags(parser, node) & MARKDOWN_CORE_KIND_IS_PARAGRAPH)
-                              ? node->place.end - (node->place.end > node->place.start)
                               : node->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
@@ -3854,6 +3937,9 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                      * that holds it. */
                     if (node == tree->root && top) {
                         markdown_core_scaffold_of(node)->parent = NULL;
+                    }
+                    if (node == tree->root && result != MARKDOWN_CORE_FINISH_FAILED && !S_owe(parser, node)) {
+                        result = MARKDOWN_CORE_FINISH_FAILED;
                     }
                     if (result == MARKDOWN_CORE_FINISH_FAILED) {
                         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -4023,7 +4109,7 @@ uint32_t markdown_core_parser_source_at(markdown_core_parser *parser, uint32_t a
 
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal,
-                                  const markdown_core_node *node, bool content) {
+                                  markdown_core_node *node) {
     if (markdown_core_parser_folds(parser, kind) && label->len) {
         if (!markdown_core_roster_normal_label(&parser->roster, parser->pool, label, normal)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -4031,7 +4117,7 @@ bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_ro
         }
         label = normal;
     }
-    if (!markdown_core_roster_declare(&parser->roster, kind, label->data, label->len, start, node, content)) {
+    if (!markdown_core_roster_declare(&parser->roster, kind, label->data, label->len, start, node, node)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -5509,9 +5595,9 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->leap->kept = stream->edit->leap->lands = false;
         stream->edit->leap->spliced = 0;
     }
-    /* The roster reads again from where the paragraph starts, but for the
-     * paragraph's uses before its seam, which stay in the front; those past
-     * it go to the back nearest the focus (THE OLD TAIL OF A PARAGRAPH). */
+    /* The roster's focus stands where the reading begins, a paragraph's at
+     * its seam: the records past it are in the back, which the splice moves
+     * (THE OLD TAIL OF A PARAGRAPH). */
     if ((prose && !S_seam_pick(parser, line, from)) ||
         !S_edit_keep(parser, root, child, line, prior, start, past > to ? past : to, delta) ||
         !document->element->document->reopen(document, parser, root, child, (uint32_t)own) ||
@@ -5521,11 +5607,6 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         S_tail_leave(parser, root);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
-    }
-    /* The paragraph's old end, which the document's reopen measured. */
-    if (prose) {
-        stream->edit->leap->bound = stream->edit->ends[stream->edit->depth - 1];
-        stream->edit->leap->focus = own + stream->edit->leap->seam.source;
     }
     /* A deepest block that read literal lines as another kind reads on as
      * that kind (THE FORMER KIND), once the publish's records hold it as
@@ -5711,9 +5792,7 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         stream->edit->count = 0;
         stream->edit->nest_on = false;
         markdown_core_tree_erase(&input->lines, input->lines.front, S_lines_back_count(&input->lines));
-        if (!markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
+        S_leave_old(parser, stream->edit->root.held, SIZE_MAX);
     }
     /* A chain whose deepest block reads literal lines rests at a later line
      * of it (THE LEAP). */
@@ -5839,9 +5918,8 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
     markdown_core_tree_erase(&input->lines, input->lines.front, gone);
     edit->line = index;
     S_openers_cut(edit, old, delta);
-    if (!markdown_core_roster_splice(&parser->roster, old, delta)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
+    S_leave_old(parser, first, edit->taken);
+    markdown_core_roster_shift(&parser->roster, delta);
     S_lines_slide(&input->lines, delta);
     input->back_end = (size_t)((int64_t)input->back_end + delta);
     /* The children join the root, which owns them once the document took
@@ -6771,12 +6849,6 @@ static bool S_leap_splice(markdown_core_parser *parser, markdown_core_node *bloc
     leap->owed = nested && leap->prose && paragraph;
     parser->at.current = parent;
     parser->at.pending = block;
-    /* A paragraph that meets no seam of its old tail completes its content
-     * on from its seam to its end, which makes its records there again:
-     * the old ones go, to its old end (THE OLD TAIL OF A PARAGRAPH). */
-    if (leap->prose && !leap->kept) {
-        S_seam_lose(parser, edit->ends[leaf]);
-    }
     if (nested) {
         /* Its holder takes back its old children after it, and each block
          * above all of its own (THE NESTED SPLICE). */
@@ -9315,9 +9387,8 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     /* A reading that took nothing back read every declaration and lookup
      * again: the back's go before the names and the publish read the
      * roster (names.c, ast.c, A DOCUMENT'S TABLES). */
-    if (parser->stream->edit && !parser->stream->edit->resumed &&
-        !markdown_core_roster_splice(&parser->roster, SIZE_MAX, 0)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    if (!parser->stream->edit || !parser->stream->edit->resumed) {
+        S_leave_old(parser, UINT32_MAX, SIZE_MAX);
     }
     /* The document's finalization reads the finished tree: the headings take
      * their anchors once every explicit anchor has been reserved, which
@@ -9374,7 +9445,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         }
         /* A reading that took nothing back let them go with the back. */
         if (edit->resumed) {
-            S_seam_lose(parser, edit->leap->bound);
         }
         edit->leap->kept = false;
     }

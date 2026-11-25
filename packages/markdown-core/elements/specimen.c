@@ -132,7 +132,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     const markdown_core_chunk none = {0};
     if (!markdown_core_parser_declare(parser, self->spaces[SPECIMEN_LABELS],
                                       specimen.label.has_value ? &specimen.label.value : &none,
-                                      (*container)->place.start, NULL, *container, false)) {
+                                      (*container)->place.start, NULL, *container)) {
         return false;
     }
     S_specimen_marker(state, reader, matched);

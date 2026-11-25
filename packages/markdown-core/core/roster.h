@@ -64,14 +64,22 @@ extern "C" {
  * THE USES. A lookup is a use of the label it asks for: a record of the
  * inline root whose completion made it, at the byte of the text the lookup
  * reads (blocks.c, WHERE A USE IS), in a shelf of its own, the uses' (kind
- * none, node none), which the focus cuts and the splice takes back as it
- * does every shelf. A label lists its uses, declared or not, and each use
+ * none, node none). A label lists its uses, declared or not, and each use
  * keeps the answer its lookup was given, so the roots whose lookups would
  * now answer otherwise are those of the uses, of the labels a transaction
  * changed, whose answer is not the label's (markdown_core_parser_altered_uses):
- * one rule, wherever and whenever in the transaction the lookup was made. The text a
- * use was in goes as a declaration's does, and the reading of an edit lets
- * go of those of the content it parses again (THE SEAMS, blocks.c).
+ * one rule, wherever and whenever in the transaction the lookup was made.
+ *
+ * THE OWNERS. Every record is a node's, its OWNER, and lives as long as
+ * the node does: a declaration's owner is the node that declares it, an
+ * anchor's the node it names, and a use's the child of its root whose text
+ * holds it, or the root (blocks.c, WHO OWNS A USE). A node the parse lets
+ * go takes its records with it (markdown_core_roster_release), and a node
+ * that declares in a shelf again replaces its earlier declaration there.
+ * So the records of text an edit reads again go as the old nodes do, and
+ * those of the nodes it keeps stay: the places only order them, and their
+ * one rule of their own is that of the text: the splice lets go of those of
+ * the text it replaced, which the old nodes would let go after it.
  *
  * THE JOURNAL. A transaction (a parse, or an edit's readings, up to its
  * flush) lists each label whose declarations it changed, once, with
@@ -119,6 +127,9 @@ typedef struct markdown_core_roster_record {
      * uses of its label before and after it. In a compaction, an old
      * record's `hint` is its copy. */
     struct markdown_core_roster_record *before, *after, *hint;
+    /* Its owner, and the owner's next record (THE OWNERS). */
+    markdown_core_node *owner;
+    struct markdown_core_roster_record *owned;
     /* The label it declares or uses, or NULL for a declaration of no
      * label. */
     markdown_core_roster_label *label;
@@ -129,9 +140,8 @@ typedef struct markdown_core_roster_record {
     uint32_t id;
     /* Whether its label lists it, and whether the text it was in is gone,
      * which an edit replaced; of a use, whether its lookup found the label
-     * declared (THE USES), the answer it was given; and whether an inline
-     * root's completion made it, as it makes every use. */
-    bool linked, gone, found, rooted;
+     * declared (THE USES), the answer it was given. */
+    bool linked, gone, found;
     /* The shelf that places it. */
     uint8_t shelf;
 } markdown_core_roster_record;
@@ -186,6 +196,16 @@ typedef struct markdown_core_roster {
     uint32_t free;
     /* Where a lookup assembles its key. */
     markdown_core_strbuf key;
+    /* THE OWNERS: each owner's first record, by the owner, in an open
+     * hash of `owner_room` slots, `owner_count` of them taken; and the uses
+     * made since the completion of a root began, which it gives owners as
+     * it ends (markdown_core_roster_owe). */
+    struct markdown_core_roster_owner *owners;
+    size_t owner_room, owner_count;
+    MARKDOWN_CORE_ARRAY(markdown_core_roster_record *) owed;
+    /* The nodes a walk of the text that left has still to visit
+     * (blocks.c, THE TEXT THAT LEFT). */
+    MARKDOWN_CORE_ARRAY(struct markdown_core_node *) leaving;
     /* THE JOURNAL: the labels the transaction `epoch` changed, in the order
      * it first changed them; `closed` once it flushed, so that the next
      * change starts the next. */
@@ -206,13 +226,13 @@ bool markdown_core_roster_init(markdown_core_roster *roster, size_t kinds);
 void markdown_core_roster_free(markdown_core_roster *roster);
 
 /* `node`, or no node when it is NULL, declares `label` of `kind`, already in
- * the kind's normal form, and starts at `start`; `rooted` when an inline
- * root's completion declares it, as a root's uses are (THE USES). An empty
+ * the kind's normal form, and starts at `start`; `owner` owns it (THE
+ * OWNERS), and replaces its earlier declaration in the shelf. An empty
  * label declares nothing: of a node, the declaration is placed all the
  * same. False when storage could not be had. */
 bool markdown_core_roster_declare(markdown_core_roster *roster, markdown_core_roster_kind kind,
                                   const unsigned char *label, bufsize_t length, uint32_t start,
-                                  const markdown_core_node *node, bool rooted);
+                                  const markdown_core_node *node, markdown_core_node *owner);
 
 /* THE USES: the node `node` looks up `label` of `kind`, as written, at
  * `start`; its use is placed, after every use that starts there or before,
@@ -226,12 +246,21 @@ const markdown_core_roster_record *
 markdown_core_roster_use(markdown_core_roster *roster, markdown_core_roster_kind kind, const markdown_core_chunk *label,
                          bool folds, uint32_t start, const markdown_core_node *node, bool *failed);
 
-/* The records of the front an inline root's completion made that start at
- * `from` or past it and before `to`, where the root ends, go, of every
- * shelf: those a reading made, or kept, of content it completes again from
- * there. Other roots' records past `to` stay, as roots complete in no order
- * of the text. */
-void markdown_core_roster_cut(markdown_core_roster *roster, size_t from, size_t to);
+/* The uses made since the completion of a root began, `*count` of them
+ * from the one it returns, which owe an owner (THE OWNERS). */
+markdown_core_roster_record **markdown_core_roster_owed(markdown_core_roster *roster, size_t *count);
+
+/* `owner` owns `record`, a use that owed one. */
+bool markdown_core_roster_own(markdown_core_roster *roster, markdown_core_roster_record *record,
+                              markdown_core_node *owner);
+
+/* The uses that owe an owner from the `from`th on owe none: those an
+ * ended completion gave owners, or, `drop`, those of a parse that is
+ * parsed again, which go. */
+void markdown_core_roster_owe(markdown_core_roster *roster, size_t from, bool drop);
+
+/* `node`, which the parse lets go, takes its records with it (THE OWNERS). */
+void markdown_core_roster_release(markdown_core_roster *roster, markdown_core_node *node);
 
 /* The earliest declaration of `kind` for `label`, in the kind's normal
  * form, that stands and a lookup sees, or NULL when none does. `*failed` is
@@ -343,18 +372,9 @@ static inline void markdown_core_roster_close(markdown_core_roster *roster) { ro
  * as it was, when storage could not be had. */
 bool markdown_core_roster_reopen(markdown_core_roster *roster, uint32_t start);
 
-/* THE SPLICE (blocks.c): the back's records that start before `place` of
- * the text before the edit go with the text the edit replaced, and the end
- * moves by `delta`. A `place` past every record lets the whole back go, as
- * a reading that took nothing back does. False when the journal could not
- * take a label. */
-bool markdown_core_roster_splice(markdown_core_roster *roster, size_t place, int64_t delta);
-
-/* The records of the back nearest the focus an inline root's completion
- * made that start before `bound`, as the back measures it, go, of every
- * shelf: those of the old content of a paragraph an edit's reading
- * completes again (THE OLD TAIL OF A PARAGRAPH, blocks.c). */
-void markdown_core_roster_lose(markdown_core_roster *roster, size_t bound);
+/* THE SPLICE (blocks.c): the back's places move by `delta`, the records
+ * of the text the edit replaced gone with their owners (THE OWNERS). */
+void markdown_core_roster_shift(markdown_core_roster *roster, int64_t delta);
 
 /* The roster keeps only the declarations that stand and the labels they
  * declare, in storage of their size, and each shelf's places shrink to

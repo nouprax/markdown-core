@@ -2429,7 +2429,7 @@ bool markdown_core_publish_reopen(markdown_core_parser *parser, markdown_core_no
 }
 
 /* THE OLD CHILDREN TAKEN BACK (blocks.c, THE SPLICE). Their definitions
- * are the roster's, which the splice moved (markdown_core_roster_splice). */
+ * are the roster's, which the splice moved (markdown_core_roster_shift). */
 bool markdown_core_publish_splice(markdown_core_parser *parser, uint32_t child) {
     markdown_core_edit *edit = parser->stream->edit;
     /* The chain's old children the reading took back have no records:

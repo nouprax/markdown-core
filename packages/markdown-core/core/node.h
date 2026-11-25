@@ -364,6 +364,9 @@ enum markdown_core_node__internal_flags {
      * a link reference definition: whether a block ends with a blank line,
      * and whether another block follows it, are answered by the blocks
      * around it. */
+    /* The roster holds records the node owns (roster.h, THE OWNERS), which
+     * a release of it lets go. */
+    MARKDOWN_CORE_NODE__LISTED = (1 << 7),
     MARKDOWN_CORE_NODE__BLANK_TRANSPARENT = (1 << 8),
     /* A child the blank-line facts see has settled into the block, and
      * ENDS_BLANK holds that child's answer. */
@@ -824,6 +827,10 @@ typedef struct markdown_core_node_pool {
     markdown_core_slab_pool nodes;
     markdown_core_slab_pool resources;
     markdown_core_bytes_pool bytes;
+    /* What a release of a LISTED node tells the parse that lends the pool,
+     * or NULL (roster.h, THE OWNERS). */
+    void (*drop)(void *context, struct markdown_core_node *node);
+    void *drop_context;
 } markdown_core_node_pool;
 
 #define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)

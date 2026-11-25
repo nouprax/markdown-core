@@ -3438,7 +3438,7 @@ static void roster_records_are_carved_from_its_blocks(test_batch_runner *runner)
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
         declared = declared && markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, (const unsigned char *)label,
-                                                            (bufsize_t)strlen(label), (uint32_t)i, NULL, false);
+                                                            (bufsize_t)strlen(label), (uint32_t)i, NULL, NULL);
     }
     OK(runner, declared && roster.made[ROSTER_TEST_KIND] == COUNT, "every declaration is a record");
     /* Twelve doublings reach COUNT; each of the three arrays doubles at most
@@ -3623,7 +3623,7 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     const unsigned char *x = (const unsigned char *)"x";
     bool failed = false;
-    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40, NULL, false),
+    OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40, NULL, NULL),
        "a reference is declared");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
        "a reference label is no footnote");
@@ -3632,8 +3632,8 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     OK(runner, record && markdown_core_roster_start(&roster, record) == 40,
        "a declaration starts where its definition starts");
     OK(runner,
-       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL, false) &&
-           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL, false),
+       markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 90, NULL, NULL) &&
+           markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 10, NULL, NULL),
        "the key is declared twice more");
     record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner, record && markdown_core_roster_start(&roster, record) == 10 && record->label->count == 3,
@@ -3693,6 +3693,13 @@ static void roster_matches_a_model(test_batch_runner *runner) {
     markdown_core_roster roster;
     markdown_core_roster_init(&roster, ROSTER_TEST_KINDS);
     roster_model_key *keys = calloc((size_t)KINDS * LABELS, sizeof(*keys));
+    /* Each record's owner, a node of its own, and where its text starts,
+     * marked new until the splice: the splice lets go of the owners of the
+     * text it replaced (roster.h, THE OWNERS). */
+    markdown_core_node *nodes = calloc((size_t)EDITS * 11, sizeof(*nodes));
+    markdown_core_node **owners = calloc((size_t)EDITS * 11, sizeof(*owners));
+    uint32_t *owned = calloc((size_t)EDITS * 11, sizeof(*owned));
+    size_t node_count = 0, owner_count = 0;
     size_t fresh = SHARED, flips = 0, compactions = 0;
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
 #define ROSTER_RANDOM() (random ^= random << 13, random ^= random >> 7, random ^= random << 17, random)
@@ -3719,9 +3726,11 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             roster_model_key *key = &keys[kind * LABELS + label];
             char text[16];
             roster_label_text(label, text, sizeof(text));
-            agrees =
-                markdown_core_roster_declare(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
-                                             (const unsigned char *)text, (bufsize_t)strlen(text), start, NULL, false);
+            agrees = markdown_core_roster_declare(
+                &roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind), (const unsigned char *)text,
+                (bufsize_t)strlen(text), start, NULL, &nodes[node_count]);
+            owners[owner_count] = &nodes[node_count++];
+            owned[owner_count++] = start | UINT32_C(0x80000000);
             if (key->count == key->capacity) {
                 key->capacity = key->capacity ? 2 * key->capacity : 4;
                 key->starts = realloc(key->starts, key->capacity * sizeof(*key->starts));
@@ -3741,7 +3750,12 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             bool failed = false;
             (void)markdown_core_roster_use(&roster, (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind),
                                            &chunk, false, start, NULL, &failed);
-            agrees = !failed;
+            size_t owed;
+            markdown_core_roster_record **records = markdown_core_roster_owed(&roster, &owed);
+            agrees = !failed && owed == 1 && markdown_core_roster_own(&roster, records[0], &nodes[node_count]);
+            markdown_core_roster_owe(&roster, 0, false);
+            owners[owner_count] = &nodes[node_count++];
+            owned[owner_count++] = start | UINT32_C(0x80000000);
             if (key->use_count == key->use_capacity) {
                 key->use_capacity = key->use_capacity ? 2 * key->use_capacity : 4;
                 key->uses = realloc(key->uses, key->use_capacity * sizeof(*key->uses));
@@ -3749,7 +3763,20 @@ static void roster_matches_a_model(test_batch_runner *runner) {
             key->uses[key->use_count++] = start | UINT32_C(0x80000000);
         }
         const int64_t delta = (int64_t)(from + read) - (int64_t)old;
-        agrees = agrees && markdown_core_roster_splice(&roster, old, delta);
+        size_t kept = 0;
+        for (size_t m = 0; m < owner_count; m++) {
+            const uint32_t start = owned[m];
+            if (!(start & UINT32_C(0x80000000)) && start >= from && start < old) {
+                markdown_core_roster_release(&roster, owners[m]);
+                continue;
+            }
+            owners[kept] = owners[m];
+            owned[kept++] = start & UINT32_C(0x80000000) ? start & ~UINT32_C(0x80000000)
+                            : start >= old               ? (uint32_t)((int64_t)start + delta)
+                                                         : start;
+        }
+        owner_count = kept;
+        markdown_core_roster_shift(&roster, delta);
         length = (uint32_t)((int64_t)length + delta);
         for (size_t i = 0; i < (size_t)KINDS * LABELS; i++) {
             roster_model_key *key = &keys[i];
@@ -3874,6 +3901,9 @@ static void roster_matches_a_model(test_batch_runner *runner) {
         free(keys[i].uses);
     }
     free(keys);
+    free(nodes);
+    free(owners);
+    free(owned);
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --

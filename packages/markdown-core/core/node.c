@@ -311,6 +311,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
                                                                          markdown_core_node *stack) {
     while (stack) {
         markdown_core_node *e = stack;
+        if ((e->flags & MARKDOWN_CORE_NODE__LISTED) && pool && pool->drop) {
+            pool->drop(pool->drop_context, e);
+        }
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once
          * beside it -- is made here, so a node that owns neither pays the
