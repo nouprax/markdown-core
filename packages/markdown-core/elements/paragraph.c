@@ -71,7 +71,7 @@ static markdown_core_state S_names_line(markdown_core_tokenizer *tokenizer, int 
 static markdown_core_state S_names_end(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
     return markdown_core_block_turn_of(tokenizer)->parser->look->blanks > 0 ? markdown_core_ok(tokenizer)
-                                                                             : markdown_core_nok(tokenizer);
+                                                                            : markdown_core_nok(tokenizer);
 }
 
 static markdown_core_state S_names_next(markdown_core_tokenizer *tokenizer, int code) {
@@ -134,9 +134,9 @@ static void S_paragraph_open(markdown_core_compiler *compiler, const markdown_co
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     markdown_core_reader *reader = turn->context->reader;
-    markdown_core_node *opened =
-        markdown_core_parser_add_child_validated(turn->parser, MARKDOWN_CORE_BLOCK_FOUND(turn->start, paragraph_found)->parent,
-                                                 MARKDOWN_CORE_NODE_PARAGRAPH, reader->nonspace + 1);
+    markdown_core_node *opened = markdown_core_parser_add_child_validated(
+        turn->parser, MARKDOWN_CORE_BLOCK_FOUND(turn->start, paragraph_found)->parent, MARKDOWN_CORE_NODE_PARAGRAPH,
+        reader->nonspace + 1);
     if (opened) {
         markdown_core_reader_skip(reader);
         *turn->container = opened;

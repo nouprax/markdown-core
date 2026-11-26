@@ -5449,8 +5449,8 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
      * that gave its content a line. */
     markdown_core_tree *lines = &input->lines;
     const size_t back = S_lines_back_from(lines, edit->ends[edit->depth - 1]);
-    const bool shut =
-        (edit->states[edit->depth - 1] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) && !kind->structure->lines->ends.start;
+    const bool shut = (edit->states[edit->depth - 1] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) &&
+                      !kind->structure->lines->ends.start;
     /* Where the rest point's line starts in the content: the marks say,
      * those the block's last reading left (THE PREFIX OF A PARAGRAPH), or
      * those made from its content's lines when it left none (THE MARKS OF
@@ -8274,11 +8274,10 @@ markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *token
 }
 
 markdown_core_state markdown_core_block_verdict(markdown_core_tokenizer *tokenizer, int verdict) {
-    return verdict == MARKDOWN_CORE_LINE_OFF ? markdown_core_nok(tokenizer)
-                                             : markdown_core_block_continued(
-                                                   tokenizer, (uint16_t)(verdict == MARKDOWN_CORE_LINE_ON
-                                                                             ? MARKDOWN_CORE_TOKEN_PREFIX
-                                                                             : verdict));
+    return verdict == MARKDOWN_CORE_LINE_OFF
+               ? markdown_core_nok(tokenizer)
+               : markdown_core_block_continued(
+                     tokenizer, (uint16_t)(verdict == MARKDOWN_CORE_LINE_ON ? MARKDOWN_CORE_TOKEN_PREFIX : verdict));
 }
 
 /* What a continuation that succeeded said of the line, from its tokens
@@ -8867,7 +8866,6 @@ markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer
     return markdown_core_ok(tokenizer);
 }
 
-
 /* THE DOCUMENT (plan symbols-cleanroom.md 23.14.10, micromark's `document`
  * content type): a line is ONE reading of the document's states. They
  * walk down the open blocks, a continuation attempted at each from the
@@ -9235,10 +9233,8 @@ static markdown_core_state S_content(markdown_core_tokenizer *tokenizer, int cod
     const markdown_core_element_instance *owner = parser->dialect->text_block_structure;
     walk->container = container;
     walk->start = (block_start){.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
-    walk->context = (block_start_context){.container = container,
-                                          .reader = walk->turn.reader,
-                                          .all_matched = true,
-                                          .depth = 1};
+    walk->context =
+        (block_start_context){.container = container, .reader = walk->turn.reader, .all_matched = true, .depth = 1};
     walk->turn.context = &walk->context;
     walk->turn.start = &walk->start;
     walk->turn.container = &walk->container;
@@ -9431,8 +9427,10 @@ static markdown_core_state S_rest_seen(markdown_core_tokenizer *tokenizer, int c
     markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
     S_rest *rest = &parser->walk->rest;
     markdown_core_block_lookahead *lookahead = parser->look;
-    const int carried =
-        lookahead->blanks ? -1 : !read ? 0 : lookahead->line == lookahead->saved.read.number + 2 ? 1 : -1;
+    const int carried = lookahead->blanks                                     ? -1
+                        : !read                                               ? 0
+                        : lookahead->line == lookahead->saved.read.number + 2 ? 1
+                                                                              : -1;
     markdown_core_parser_lookahead_end(lookahead);
     parser->stream->edit->quiet = false;
     if (parser->error || carried != rest->want[rest->at]) {
@@ -9654,9 +9652,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_line(markdown_core_parser *parser,
-                                                                           const unsigned char *buffer,
-                                                                           bufsize_t bytes, size_t start,
-                                                                           size_t next) {
+                                                                           const unsigned char *buffer, bufsize_t bytes,
+                                                                           size_t start, size_t next) {
     S_line_machine(parser, buffer, bytes, start, next, NULL);
 }
 

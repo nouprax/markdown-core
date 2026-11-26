@@ -122,7 +122,8 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
     markdown_core_reader *reader = turn->context->reader;
     if (reader->indent >= 4 ||
         !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace) ||
-        !markdown_core_parser_lookahead_begin(turn->parser, turn->context->container, MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+        !markdown_core_parser_lookahead_begin(turn->parser, turn->context->container,
+                                              MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
         return markdown_core_nok(tokenizer);
     }
     return markdown_core_check(tokenizer, &COMMENT_CLOSER, markdown_core_state_of(S_closed),

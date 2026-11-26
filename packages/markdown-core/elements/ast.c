@@ -1488,8 +1488,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const markdown_core_node 
         if (anchored && anchor >= source.end) {
             break;
         }
-        if (anchored && anchor >= source.start && old->kind == node->kind &&
-            (old->id <= edit->kept || old == node)) {
+        if (anchored && anchor >= source.start && old->kind == node->kind && (old->id <= edit->kept || old == node)) {
             owner->old_item = slot + 1;
             owner->old_source = window.end;
             *old_start = window.start;

@@ -277,8 +277,8 @@ static markdown_core_state S_term(markdown_core_tokenizer *tokenizer, int code) 
     markdown_core_node *parent = turn->context->container;
     markdown_core_reader *reader = turn->context->reader;
     *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool) = false;
-    if (!definition_term_admits(self, parser, parent, reader) ||
-        !definition_term_reads(self, parser, parent, reader) || parser->error) {
+    if (!definition_term_admits(self, parser, parent, reader) || !definition_term_reads(self, parser, parent, reader) ||
+        parser->error) {
         return markdown_core_nok(tokenizer);
     }
     return markdown_core_check(tokenizer, &TERM_LOOK, markdown_core_state_of(S_term_matched),
@@ -412,10 +412,11 @@ static markdown_core_state S_body_none(markdown_core_tokenizer *tokenizer, int c
 
 static markdown_core_state S_body_line(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    const markdown_core_definition_list_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    const markdown_core_definition_list_work *work =
+        ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     const markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
     return parser->at.read.indent >= work->body->as.definition_body->continuation ? markdown_core_ok(tokenizer)
-                                                                                    : markdown_core_nok(tokenizer);
+                                                                                  : markdown_core_nok(tokenizer);
 }
 
 static markdown_core_state S_body_next(markdown_core_tokenizer *tokenizer, int code) {
@@ -426,7 +427,8 @@ static markdown_core_state S_body_next(markdown_core_tokenizer *tokenizer, int c
 static const markdown_core_construct BODY_LOOK = {.start = S_body_next};
 
 static markdown_core_state S_body_read(markdown_core_tokenizer *tokenizer, bool continues) {
-    markdown_core_definition_list_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    markdown_core_definition_list_work *work =
+        ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_parser *parser = turn->parser;
     markdown_core_node *body = work->body;
@@ -460,7 +462,8 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
     if (turn->look || !turn->reader->blank || body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         return S_continued(tokenizer);
     }
-    markdown_core_definition_list_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    markdown_core_definition_list_work *work =
+        ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     work->work++;
     if (body->as.definition_body->continuation_line > turn->reader->number) {
         return S_continued(tokenizer);
