@@ -238,7 +238,7 @@ struct markdown_core_dialect_builder {
  * `document_structure` owns the document lifecycle -- the last registered
  * element that declares it, as `text_structure` is the last that declares
  * how the core's data compiles (`data`) and `text_block_structure` the last
- * that declares an opening's `text`. The core dialect has one of each; a setup that registers
+ * that declares an opening's `content`. The core dialect has one of each; a setup that registers
  * another replaces the earlier one for its instance. */
 
 typedef struct markdown_core_dialect {
@@ -264,7 +264,7 @@ typedef struct markdown_core_dialect {
     const markdown_core_block_construct *const *starts;
     uint16_t start_offsets[MARKDOWN_CORE_BLOCK_GATE_KEYS + 1];
     /* The elements that cut items off the front of a block's text
-     * (element.h, `cut`), in descriptor order. */
+     * (element.h, markdown_core_open_ops `item`), in descriptor order. */
     const markdown_core_element_instance *const *cutters;
     size_t cutter_count;
     /* Every byte a container continuation may strip ahead of a line's own
@@ -273,10 +273,8 @@ typedef struct markdown_core_dialect {
      * the byte the stripped line would show first (see
      * definition_next_lines_admit). */
     bool container_prefix[256];
-    /* Every byte an element's `claims` declares. */
-    bool claims[256];
-    /* Every first byte a cut owner reads an item from (element.h,
-     * `cut_needs`), one bit each: a block whose text starts with no such
+    /* Every first byte a cut owner reads an item from (element.h, its
+     * `item`'s `bytes`), one bit each: a block whose text starts with no such
      * byte keeps its front. */
     uint8_t fronts[32];
     /* The inline-content families, in descriptor order. */

@@ -100,15 +100,6 @@ static inline const markdown_core_element *markdown_core_structure_for_kind(mark
                                                   : markdown_core_block_structure[index];
 }
 
-/* What the engine may know about a hook's grammar without entering it: the
- * COMPLETE set of first bytes that can lead the hook to claim, NULL for
- * every byte (a cut's, `cut_needs`). A byte wrongly left out does not make
- * the parser slower, it makes it WRONG: the construct is silently never
- * recognised. */
-typedef struct markdown_core_block_gate {
-    const char *bytes;
-} markdown_core_block_gate;
-
 /* How many elements one dialect holds at most. The block-start projection
  * lists a family's owners by byte -- a count and then owner indices -- so a
  * family may have at most 255 owners and an owner index at most 254; the
@@ -452,16 +443,19 @@ typedef struct markdown_core_inline_ops {
  * non-space byte, and `text` for the text block every dialect has. */
 /* THE FRONT CUT (blocks.c): one item an element cuts off the front of a
  * block's text -- a link reference definition off a paragraph's. The
- * engine hands the element the text left, `rest`, `at` bytes into the
- * block's text `text`; the element reads one item there and makes its node,
- * `made`, or with `measure` only measures it, and says in `wide` whether
- * the bytes through the line read decided it rather than its own and the
- * one after them. The engine places and settles the node, notes what the
- * cut read, and moves the block's front past it. */
+ * engine hands the element's item construct (markdown_core_open_ops `item`)
+ * the text left, `rest`, `at` bytes into the block's text `text`, through
+ * the turn (block_internal.h, markdown_core_block_turn `cut`). The
+ * construct reads one item there, writes its `length` and says in `wide`
+ * whether the bytes through the line read decided it rather than its own
+ * and the one after them, and succeeds with a token whose handler makes
+ * the item's node, `made`. With `measure` it only measures the item: it
+ * writes the length and makes no token. The engine places and settles the node, notes
+ * what the cut read, and moves the block's front past it. */
 typedef struct markdown_core_cut {
     markdown_core_node *block, *parent, *made;
     markdown_core_chunk text, rest;
-    bufsize_t at;
+    bufsize_t at, length;
     bool wide, measure;
 } markdown_core_cut;
 
@@ -503,23 +497,17 @@ typedef struct markdown_core_open_ops {
      * instance). */
     const markdown_core_compile_ops *tokens;
     size_t token_count;
-    /* Opens the text block (a paragraph) on a line nothing else opens on:
-     * the dialect's last owner of it is asked. */
-    markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                                markdown_core_reader *);
-    /* The bytes a line may hold and still make the paragraph line before it
-     * a block of the element's, as a table's delimiter row makes its head:
-     * while a streamed paragraph's last line holds only such bytes, the line
-     * before it settles nothing (blocks.c, THE LAST LINES REMAIN OPEN).
-     * Projected into the dialect's `claims`. NULL for none. */
-    const char *claims;
-    /* The item of the element's at the front of `cut->rest`, which it reads
-     * through the reader and makes (THE FRONT CUT): its length, 0 for none.
-     * Projected into the dialect's cut owners. */
-    bufsize_t (*cut)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_reader *,
-                     markdown_core_cut *);
-    /* What `cut` needs as the first byte of what is left of the text. */
-    markdown_core_block_gate cut_needs;
+    /* THE CONTENT (plan symbols-cleanroom.md 23.14, S3): the start tried
+     * on a line nothing else opens on, which opens the text block that
+     * takes the line, a paragraph. Its construct succeeds with a token of
+     * the element's, as a start's does, and the handler opens the block.
+     * The dialect's last element that has one owns it. */
+    const markdown_core_block_construct *content;
+    /* THE CONTENT'S ITEM (markdown_core_cut, THE FRONT CUT): the construct
+     * tried at the front of what is left of a cutting block's text, `bytes`
+     * the COMPLETE set of first bytes it can succeed at, NULL for every
+     * byte, as a start's are. Projected into the dialect's cut owners. */
+    const markdown_core_block_construct *item;
 } markdown_core_open_ops;
 
 /* THE LINES: how an open block of the element's takes each line after its
@@ -603,17 +591,13 @@ struct markdown_core_line_ops {
      * continue settles for them. */
     bool pending;
     /* A lazy line -- one that did not match every open container's prefix
-     * and opened no block -- is offered to the current block. `lazy`
-     * says whether it takes the line; `lazy_open` returns the block the line is
-     * added to, from its first non-space byte: the block itself when the line
-     * continues it, or a block it opens, which starts where a block the line
-     * opened would. NULL means the line was consumed or the parse failed, and
-     * leaves the parser's current block where the hook put it. A block that
-     * accepts the line takes it as a paragraph takes a lazy line: the starts
-     * that refuse a lazy line (`block_start_context`) open no block on it, so
-     * the line is lazy exactly when it would be after a paragraph's line. */
-    markdown_core_node *(*lazy_open)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_reader *);
+     * and opened no block -- is offered to the current block, and `lazy`
+     * says whether it takes the line: a block of text adds it to its text,
+     * any other opens the content the line starts in it (THE CONTENT). A
+     * block that accepts the line takes it as a paragraph takes a lazy
+     * line: the starts that refuse a lazy line (`block_start_context`) open
+     * no block on it, so the line is lazy exactly when it would be after a
+     * paragraph's line. */
     bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                  markdown_core_reader *);
     /* THE TEXT OF ITS LINE: the line's text from the reader's offset, at the

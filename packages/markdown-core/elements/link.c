@@ -442,13 +442,25 @@ static void S_reference_fields(markdown_core_parser *parser, markdown_core_node 
     }
 }
 
-/* THE FRONT CUT'S ITEM (element.h, markdown_core_cut): the link reference
- * definition at the front of `cut->rest`, `cut->at` bytes into the block's
- * text, made a Reference node, which the engine settles before the block;
- * with `measure`, only its length. Its length, 0 when there is none. */
-static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_reader *reader, markdown_core_cut *cut) {
-    (void)reader;
+/* THE FRONT CUT'S ITEM (element.h, markdown_core_open_ops `item`): the
+ * link reference definition at the front of `cut->rest`, `cut->at` bytes
+ * into the block's text, which the construct reads and the handler makes a
+ * Reference node, which the engine settles before the block. A cut its
+ * item ends, with none or the last of the text, lets its recognizer go,
+ * which adds what it read to the parse's work. */
+typedef struct {
+    reference_definition definition;
+} S_item_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(S_item_found, S_item_found_fits);
+
+enum { LINK_ITEM_REFERENCE, LINK_BLOCKS };
+
+static markdown_core_state S_item(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_cut *cut = turn->cut;
     markdown_core_node *b = cut->block;
     markdown_core_chunk *input = &cut->rest;
     const bufsize_t before = cut->at;
@@ -461,29 +473,47 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
         tails.ops->release(need.instance, held);
         tails.ops->begin(need.instance, held, cut->text.data, cut->text.len);
     }
-    reference_definition definition; /* S_reference_definition writes it whole. */
-    bufsize_t length = S_reference_definition(input, tails.ops ? &tails : NULL, &definition);
+    reference_definition *definition = &MARKDOWN_CORE_BLOCK_FOUND(turn->start, S_item_found)->definition;
+    const bufsize_t length = S_reference_definition(input, tails.ops ? &tails : NULL, definition);
     if (tails.ops && held->oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    cut->wide = definition.wide;
+    cut->wide = definition->wide;
+    cut->length = length;
     if (cut->measure) {
         if (length) {
-            markdown_core_attributes_free(&definition.value);
+            markdown_core_attributes_free(&definition->value);
         }
-        return length;
+        return markdown_core_nok(tokenizer);
     }
     /* A definition given up keeps what it read on the paragraph. */
     if (!length) {
-        S_report_unread(parser, b, input, before, &definition);
-        S_report_tail(self, parser, b, input, before, &definition);
-        return 0;
+        S_report_unread(parser, b, input, before, definition);
+        S_report_tail(self, parser, b, input, before, definition);
+        S_release(self);
+        return markdown_core_nok(tokenizer);
     }
+    return markdown_core_block_found(tokenizer, LINK_ITEM_REFERENCE);
+}
+
+static void S_item_make(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_cut *cut = turn->cut;
+    markdown_core_node *b = cut->block;
+    const markdown_core_chunk *input = &cut->rest;
+    const bufsize_t before = cut->at, length = cut->length;
+    reference_definition *definition = &MARKDOWN_CORE_BLOCK_FOUND(turn->start, S_item_found)->definition;
+    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
+    const S_tails tails = {need.ops, need.instance, &((S_state *)self->state)->held};
     /* The destination and title are cleaned here, the way a direct link's
      * are, so a Reference and a direct link state the same values. */
     int lost = 0;
-    markdown_core_chunk clean_url = markdown_core_clean_url(self, &definition.url, &lost);
-    markdown_core_optional_chunk clean_title = markdown_core_clean_title(self, &definition.title, &lost);
+    markdown_core_chunk clean_url = markdown_core_clean_url(self, &definition->url, &lost);
+    markdown_core_optional_chunk clean_title = markdown_core_clean_title(self, &definition->title, &lost);
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
     markdown_core_node *reference =
         resource
@@ -496,42 +526,32 @@ static bufsize_t S_cut_item(const markdown_core_element_instance *self, markdown
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
         }
-        markdown_core_attributes_free(&definition.value);
+        markdown_core_attributes_free(&definition->value);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return length;
+    } else {
+        reference->as.reference->resource = resource;
+        reference->attributes = definition->value;
+        reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
+        /* It spans its definition, through the end of its last line's
+         * content: the line ending after it belongs to no block. */
+        bufsize_t end = length;
+        while (end > 0 && (input->data[end - 1] == '\n' || input->data[end - 1] == '\r')) {
+            end--;
+        }
+        reference->place = (markdown_core_place){b->place.start, b->place.start};
+        markdown_core_text_place(parser, &b->content_map, before, before + end, &reference->place);
+        S_reference_fields(parser, reference, b, cut->text.data, definition, &tails);
+        const bufsize_t start = (bufsize_t)reference->place.start;
+        cut->made = reference;
+        /* The document defines the label from where the definition starts. */
+        if (!parser->error) {
+            markdown_core_parser_declare(parser, self->spaces[LINK_REFERENCE], &definition->label, start,
+                                         &reference->as.reference->label, reference);
+        }
     }
-    reference->as.reference->resource = resource;
-    reference->attributes = definition.value;
-    reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
-    /* It spans its definition, through the end of its last line's content:
-     * the line ending after it belongs to no block. */
-    bufsize_t end = length;
-    while (end > 0 && (input->data[end - 1] == '\n' || input->data[end - 1] == '\r')) {
-        end--;
-    }
-    reference->place = (markdown_core_place){b->place.start, b->place.start};
-    markdown_core_text_place(parser, &b->content_map, before, before + end, &reference->place);
-    S_reference_fields(parser, reference, b, cut->text.data, &definition, &tails);
-    const bufsize_t start = (bufsize_t)reference->place.start;
-    cut->made = reference;
-    /* The document defines the label from where the definition starts. */
-    if (!parser->error) {
-        markdown_core_parser_declare(parser, self->spaces[LINK_REFERENCE], &definition.label, start,
-                                     &reference->as.reference->label, reference);
-    }
-    return length;
-}
-
-/* (S_cut_item) A cut its item ends, with none or the last of the text, lets
- * its recognizer go, which adds what it read to the parse's work. */
-static bufsize_t S_cut_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_reader *reader, markdown_core_cut *cut) {
-    const bufsize_t rest = cut->rest.len;
-    const bufsize_t length = S_cut_item(self, parser, reader, cut);
-    if (!length || length == rest) {
+    if (length == input->len) {
         S_release(self);
     }
-    return length;
 }
 
 /* The numeric character reference whose `#` is at `hash`, after an `&`:
@@ -1119,9 +1139,16 @@ static const markdown_core_inline_ops LINK_INLINES = {
 
 /* A paragraph's text opens with its link reference definitions, which the
  * engine cuts off its front (blocks.c, THE FRONT CUT). */
+static const markdown_core_block_construct LINK_ITEM = {.bytes = "[", .construct = {.start = S_item}};
+
+static const markdown_core_compile_ops LINK_BLOCK_TOKENS[LINK_BLOCKS] = {
+    [LINK_ITEM_REFERENCE] = {.enter = S_item_make},
+};
+
 static const markdown_core_open_ops LINK_OPENS = {
-    .cut = S_cut_reference,
-    .cut_needs = {.bytes = "["},
+    .tokens = LINK_BLOCK_TOKENS,
+    .token_count = LINK_BLOCKS,
+    .item = &LINK_ITEM,
 };
 
 const markdown_core_facet MARKDOWN_CORE_LINK_FACETS[] = {

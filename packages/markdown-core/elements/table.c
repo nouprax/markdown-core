@@ -706,8 +706,6 @@ static const markdown_core_open_ops TABLE_OPENS = {
     .start_count = 1,
     .tokens = TABLE_BLOCK_TOKENS,
     .token_count = TABLE_BLOCKS,
-    /* A delimiter row makes the paragraph line before it the head. */
-    .claims = " \t|:-",
 };
 
 /* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */

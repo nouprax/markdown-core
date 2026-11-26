@@ -216,6 +216,9 @@ static markdown_core_state markdown_core_callout_scan(markdown_core_tokenizer *t
     return markdown_core_block_found(tokenizer, CALLOUT_OPEN);
 }
 
+/* The marker line's text is the callout's title, so a lazy line after it
+ * cannot continue a paragraph: it starts the body's first one, as the same
+ * text would with the quote's prefix. */
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node, markdown_core_reader *reader) {
     (void)self;
@@ -230,16 +233,6 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_block_parse_callout_prefix(reader);
 }
-/* The marker line's text is the callout's title, so a lazy line after it
- * cannot continue a paragraph: it starts the body's first one, as the same
- * text would with the quote's prefix. */
-static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *node, markdown_core_reader *reader) {
-    (void)self;
-    const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
-    return text_block->element->opens->text(text_block, parser, node, reader);
-}
-
 static const markdown_core_edit_ops CALLOUT_EDIT = {
     .reopens = true,
     .text = callout_title,
@@ -275,7 +268,6 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 static const markdown_core_line_ops CALLOUT_LINES = {
     .continuation = {.start = S_continue},
     .lazy = accepts_lazy,
-    .lazy_open = open_lazy,
     .prefix_bytes = ">",
     .blank_opaque = true,
     .text = callout_text,

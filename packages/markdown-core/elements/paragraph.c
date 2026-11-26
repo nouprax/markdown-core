@@ -24,12 +24,6 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
     (void)node;
     return true;
 }
-static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *node, markdown_core_reader *reader) {
-    (void)self;
-    return node;
-}
-
 /* A text line no block claims opens a paragraph: the dialect's text block. */
 static markdown_core_node *open_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                      markdown_core_node *container, markdown_core_reader *reader) {
@@ -73,8 +67,37 @@ static const markdown_core_follow PARAGRAPH_FOLLOWS[] = {
     {0},
 };
 
+enum { PARAGRAPH_OPEN, PARAGRAPH_BLOCKS };
+
+/* THE CONTENT (element.h, markdown_core_open_ops `content`): every line
+ * nothing else opens on opens a paragraph. */
+static markdown_core_state S_content(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_block_found(tokenizer, PARAGRAPH_OPEN);
+}
+
+static void S_paragraph_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_node *opened =
+        open_text(markdown_core_compile_self(compiler), turn->parser, *turn->container, turn->context->reader);
+    if (opened) {
+        *turn->container = opened;
+    }
+    turn->opened = opened != NULL;
+}
+
+static const markdown_core_block_construct PARAGRAPH_CONTENT_START = {.construct = {.start = S_content}};
+
+static const markdown_core_compile_ops PARAGRAPH_BLOCK_TOKENS[PARAGRAPH_BLOCKS] = {
+    [PARAGRAPH_OPEN] = {.enter = S_paragraph_open},
+};
+
 static const markdown_core_open_ops PARAGRAPH_OPENS = {
-    .text = open_text,
+    .tokens = PARAGRAPH_BLOCK_TOKENS,
+    .token_count = PARAGRAPH_BLOCKS,
+    .content = &PARAGRAPH_CONTENT_START,
 };
 
 /* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
@@ -92,7 +115,6 @@ static const markdown_core_line_ops PARAGRAPH_LINES = {
     .continuation = {.start = S_continue},
     .beyond = true,
     .lazy = accepts_lazy,
-    .lazy_open = open_lazy,
     .close = close_paragraph,
     .cuts = true,
 };

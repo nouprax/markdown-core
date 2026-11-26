@@ -303,7 +303,7 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         if (S_inlines_of(element)->data) {
             dialect->text_structure = instance;
         }
-        if (S_opens_of(element)->text) {
+        if (S_opens_of(element)->content) {
             dialect->text_block_structure = instance;
         }
         if (element->spelling) {
@@ -838,7 +838,7 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     for (size_t i = 0; i < count; i++) {
         const markdown_core_open_ops *opens = S_opens_of(elements[i]);
         const markdown_core_inline_ops *inlines = S_inlines_of(elements[i]);
-        if (opens->cut) {
+        if (opens->item) {
             sizes->cutters++;
             sizes->pointers++;
         }
@@ -988,12 +988,8 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
             dialect->container_prefix[*c] = true;
         }
         const markdown_core_open_ops *opens = S_opens_of(instances[i].element);
-        const char *claims = opens->claims;
-        for (const unsigned char *c = (const unsigned char *)claims; claims && *c; c++) {
-            dialect->claims[*c] = true;
-        }
-        if (opens->cut) {
-            const unsigned char *needs = (const unsigned char *)opens->cut_needs.bytes;
+        if (opens->item) {
+            const unsigned char *needs = (const unsigned char *)opens->item->bytes;
             if (!needs) {
                 memset(dialect->fronts, 0xFF, sizeof(dialect->fronts));
             }
@@ -1007,7 +1003,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     dialect->cutters = entries + at;
     dialect->cutter_count = sizes->cutters;
     for (size_t i = 0; i < count; i++) {
-        if (S_opens_of(instances[i].element)->cut) {
+        if (S_opens_of(instances[i].element)->item) {
             entries[at++] = &instances[i];
         }
     }

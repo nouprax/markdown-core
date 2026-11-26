@@ -4573,7 +4573,7 @@ static inline bool S_cut_fronts(const markdown_core_dialect *dialect, unsigned c
 
 /* A block of literal lines leaps, and so does a paragraph whose text is all
  * its own, from its first byte to its last: one whose front a cut owner may
- * take (its first byte is one a `cut_needs` declares), which may read past
+ * take (its first byte is one an `item` declares), which may read past
  * its first line, does not. */
 bool markdown_core_parser_leaps(const markdown_core_parser *parser, const markdown_core_node *block) {
     const unsigned flags = S_read_flags(parser, block);
@@ -7892,6 +7892,41 @@ static bool S_cut_starts_line(markdown_core_parser *parser, size_t start) {
     return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
 }
 
+/* ONE ITEM TRIED (element.h, markdown_core_open_ops `item`): `owner`'s item
+ * construct reads the front of `cut->rest`, and when it succeeds its
+ * token's handler makes the item, whose length it writes in the cut. */
+static void S_item_try(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_cut *cut,
+                       const markdown_core_element_instance *owner) {
+    const markdown_core_block_construct *item = owner->element->opens->item;
+    const unsigned char byte = cut->rest.data[0];
+    if (item->bytes && (!byte || !strchr(item->bytes, byte))) {
+        return;
+    }
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
+    if (!pass) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    block_start start = {.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
+    markdown_core_block_turn turn = {.parser = parser, .start = &start, .reader = reader, .cut = cut};
+    const markdown_core_read read = {
+        .data = cut->rest.data, .size = (uint32_t)cut->rest.len, .from = 0, .cut = UINT32_MAX, .reader = &turn};
+    markdown_core_construct construct = item->construct;
+    construct.context = owner;
+    const bool found = markdown_core_tokenizer_try(&pass->tokenizer, &read, &construct);
+    if (found && !parser->error) {
+        const markdown_core_dialect *dialect = parser->dialect;
+        if (!markdown_core_compile(&pass->compiler, &pass->tokenizer.events, cut->rest.data, dialect->compiles,
+                                   dialect->token_kinds, &turn) &&
+            !parser->error) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+    } else if (pass->tokenizer.events.failed && !parser->error) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_pass_back(parser, pass);
+}
+
 /* The item one of the dialect's cut owners reads at the front of
  * `cut->rest`, or 0. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
@@ -7906,9 +7941,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
         const markdown_core_element_instance *owner = owners[i];
         cut->wide = false;
         cut->made = NULL;
-        const bufsize_t length = owner->element->opens->cut(owner, parser, reader, cut);
-        if (length) {
-            return length;
+        cut->length = 0;
+        S_item_try(parser, reader, cut, owner);
+        if (cut->length) {
+            return cut->length;
         }
     }
     return 0;
@@ -8738,6 +8774,24 @@ bool markdown_core_block_start_try(markdown_core_parser *parser, markdown_core_b
     return found;
 }
 
+markdown_core_node *markdown_core_block_content(markdown_core_parser *parser, markdown_core_node *container,
+                                                markdown_core_reader *reader) {
+    const markdown_core_element_instance *owner = parser->dialect->text_block_structure;
+    block_start start = {.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
+    block_start_context context = {.container = container,
+                                   .reader = reader,
+                                   .all_matched = true,
+                                   .depth = 1,
+                                   .thematic_kill = parser->at.thematic_break_kill_pos};
+    markdown_core_block_turn turn = {
+        .parser = parser, .context = &context, .start = &start, .container = &container, .reader = reader};
+    if (!markdown_core_block_start_try(parser, &turn, owner->element->opens->content, owner) || !turn.opened ||
+        parser->error) {
+        return NULL;
+    }
+    return container;
+}
+
 /* Where the line machine stands as it opens blocks: whether the line may
  * still be lazy, and how many blocks this line has asked to open. */
 typedef struct {
@@ -8873,9 +8927,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
     // line: the current block takes it.
     if (container == last_matched_container && !parser->at.read.blank &&
         S_may_be_lazy(parser, last_matched_container)) {
+        /* A block of text takes it; any other that takes a lazy line opens
+         * the content it starts (THE CONTENT). */
         markdown_core_node *current = markdown_core_parser_current(parser);
-        const markdown_core_element_instance *taker = markdown_core_parser_block_kind(parser, current)->structure;
-        markdown_core_node *lazy = taker->lines->lazy_open(taker, parser, current, reader);
+        markdown_core_node *lazy = markdown_core_parser_block_kind(parser, current)->flags & MARKDOWN_CORE_KIND_PROSE
+                                       ? current
+                                       : markdown_core_block_content(parser, current, reader);
         S_reader_close(parser);
         if (!lazy) {
             return false;
@@ -8909,8 +8966,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
                 return false;
             }
         } else {
-            const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
-            container = text_block->element->opens->text(text_block, parser, container, reader);
+            container = markdown_core_block_content(parser, container, reader);
             S_reader_close(parser);
             if (!container) {
                 return false;

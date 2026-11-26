@@ -107,6 +107,8 @@ typedef struct markdown_core_block_turn {
     markdown_core_node *node;
     const markdown_core_node *joining;
     bool look;
+    /* The item a front cut asks for (element.h, markdown_core_cut). */
+    markdown_core_cut *cut;
 } markdown_core_block_turn;
 
 /* What a continuation said of the line: not continued, continued, or the
@@ -141,6 +143,11 @@ static inline markdown_core_block_turn *markdown_core_block_turned(const markdow
 bool markdown_core_block_start_try(markdown_core_parser *parser, markdown_core_block_turn *turn,
                                    const markdown_core_block_construct *start,
                                    const markdown_core_element_instance *self);
+/* THE CONTENT (element.h, markdown_core_open_ops `content`): the dialect's
+ * text block opened in `container` on the line at `reader`, which takes
+ * the line; NULL when it did not open or the parse failed. */
+markdown_core_node *markdown_core_block_content(markdown_core_parser *parser, markdown_core_node *container,
+                                                markdown_core_reader *reader);
 /* The start found its block: one token of the element's block kind
  * `kind`, at the line's first non-space byte, and the construct succeeds. */
 markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind);
