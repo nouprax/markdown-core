@@ -1021,7 +1021,7 @@ export function identityScripts() {
      * paragraph's text: the read of the use's region, after the edit's own,
      * continues the nodes from before the edit, not those that reading
      * made, so the merged Text keeps the `!`'s id. */
-    add("reference-invalidated-merge", '[a]:"\n[a]!', (s) =>
+    add("reference-invalidated-merge", '[a]:"\n[a]!\n', (s) =>
         s.edit(4, 6, " <").expect("kept", "Paragraph", 6, 0).expect("kept", "Text", 9, 0)
     );
     add("paragraph-to-setext-and-back", "title\n", (s) =>
