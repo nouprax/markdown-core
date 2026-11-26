@@ -93,22 +93,31 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
 }
 
 /* THE OPENER: a fence line a later fence closes. */
-static markdown_core_node *open_block(const markdown_core_element_instance *self, int indented,
-                                      markdown_core_parser *parser, markdown_core_node *parent_container,
-                                      markdown_core_reader *reader) {
-    int first_nonspace = reader->nonspace;
-    markdown_core_node *node;
+enum { COMMENT_OPEN, COMMENT_KINDS };
 
-    if (indented ||
-        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), first_nonspace) ||
-        !comment_reads(self, parser, parent_container, reader)) {
-        return NULL;
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_reader *reader = turn->context->reader;
+    if (!is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace) ||
+        !comment_reads(markdown_core_self(tokenizer), turn->parser, turn->context->container, reader)) {
+        return markdown_core_nok(tokenizer);
     }
+    return markdown_core_block_found(tokenizer, COMMENT_OPEN);
+}
 
-    node =
-        markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, first_nonspace + 1);
+static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_reader *reader = turn->context->reader;
+    int first_nonspace = reader->nonspace;
+    markdown_core_node *node =
+        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, first_nonspace + 1);
     if (!node) {
-        return NULL;
+        return;
     }
     markdown_core_node_set_element(node, self->element);
     /* Its literal is found in its text past the opening `%%`. */
@@ -119,7 +128,8 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
      * of the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP), and no part of its literal. */
     markdown_core_reader_advance(reader, first_nonspace + 2 - reader->offset, false);
-    return node;
+    *turn->container = node;
+    turn->opened = true;
 }
 
 /* Every line reaches the open block until its closer; the closer line closes
@@ -250,11 +260,20 @@ static const markdown_core_inline_ops COMMENT_INLINES = {
     .token_count = 1,
 };
 
+/* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
+static const markdown_core_block_construct COMMENT_STARTS[] = {
+    {.bytes = "%", .indent = 3, .precedence = 1, .construct = {.start = S_start}},
+};
+
+static const markdown_core_compile_ops COMMENT_BLOCK_TOKENS[COMMENT_KINDS] = {
+    [COMMENT_OPEN] = {.enter = S_open},
+};
+
 static const markdown_core_open_ops COMMENT_OPENS = {
-    .indent = 3,
-    .open = open_block,
-    /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
-    .open_needs = {.bytes = "%"},
+    .starts = COMMENT_STARTS,
+    .start_count = 1,
+    .tokens = COMMENT_BLOCK_TOKENS,
+    .token_count = COMMENT_KINDS,
 };
 
 static const markdown_core_line_ops COMMENT_LINES = {

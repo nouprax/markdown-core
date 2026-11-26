@@ -20,19 +20,6 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
                                                        markdown_core_reader *reader, bufsize_t pos,
                                                        markdown_core_node *container, int first_column,
                                                        bool interrupts_paragraph, markdown_core_list *data);
-/* What the open reads past the marker (block_start.reads): its padding,
- * the item's first non-space byte and a task prefix there. */
-static void S_list_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
-                         const block_start *start) {
-    (void)self;
-    markdown_core_block_consume_item_marker(reader, start->matched);
-    markdown_core_reader_find(reader);
-    bufsize_t width;
-    (void)markdown_core_task_prefix_end(reader, &width);
-}
-
-static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    block_start_context *context, block_start *start);
 /* The upper-case roman letters: the terms of ordered_numeral's roman variant. */
 static bool roman_letter(unsigned char c) { return c && strchr("MDCLXVI", c) != NULL; }
 static bool ordered_numeral(markdown_core_list_work *counts, const unsigned char *input, bufsize_t begin, bufsize_t end,
@@ -287,18 +274,30 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
     return true;
 }
 
-static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    block_start_context *context, block_start *start) {
+enum { LIST_ITEM, LIST_BLOCKS };
+
+static void S_list_item(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = markdown_core_list_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                                           turn->context->reader, turn->start);
+}
+
+static markdown_core_state markdown_core_list_scan(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
     if (!((start->matched = markdown_core_block_parse_list_marker(
                self->state, parser, context->reader, context->reader->nonspace, context->container,
                context->reader->nonspace_column, context->paragraph,
                MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_list))))) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_LIST;
-    start->open = markdown_core_list_open;
-    start->reads = S_list_reads;
-    return true;
+    return markdown_core_block_found(tokenizer, LIST_ITEM);
 }
 
 bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_node *container,
@@ -369,11 +368,21 @@ static const markdown_core_fold_ops LIST_FOLD = {
     .kinds = LIST_KINDS,
 };
 
+static const markdown_core_block_construct LIST_STARTS[] = {
+    {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+     .indent = 3,
+     .construct = {.start = markdown_core_list_scan}},
+};
+
+static const markdown_core_compile_ops LIST_BLOCK_TOKENS[LIST_BLOCKS] = {
+    [LIST_ITEM] = {.enter = S_list_item},
+};
+
 static const markdown_core_open_ops LIST_OPENS = {
-    .indent = 3,
-    .scan = markdown_core_list_scan,
-    /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
-    .scan_needs = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
+    .starts = LIST_STARTS,
+    .start_count = 1,
+    .tokens = LIST_BLOCK_TOKENS,
+    .token_count = LIST_BLOCKS,
 };
 
 static const markdown_core_line_ops LIST_LINES = {

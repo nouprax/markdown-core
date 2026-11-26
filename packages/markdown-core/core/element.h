@@ -100,27 +100,11 @@ static inline const markdown_core_element *markdown_core_structure_for_kind(mark
                                                   : markdown_core_block_structure[index];
 }
 
-/* What the block dispatcher may know about a hook's grammar without entering
- * it: the COMPLETE set of first non-space bytes that can lead the hook to claim
- * a line. NULL means ungated -- the hook is asked about every line, which is
- * what every hook did before gates existed, so an element that declares nothing
- * keeps exactly its old behaviour.
- *
- * A byte wrongly left out of a declared set does not make the parser slower, it
- * makes it WRONG: the construct is silently never recognised. So the set
- * belongs to the element that owns the grammar, and api_test checks it against
- * that grammar rather than against a fixture.
- *
- * A gate is a statement about ONE LINE. A grammar decided by a later line --
- * a Pandoc simple table, whose prose header is only a table because the NEXT
- * line is dashes -- cannot be expressed here and must not be gated.
- *
- * A gate speaks about a line that is NOT indented code. Four columns of
- * indentation are a block start of their own, decided by no byte, so the scan
- * and interrupt families ask an indented line only of the owners whose
- * the opening's `indent` reaches it, whatever their gate says, and ask a
- * non-indented line only of the owners whose gate admits its first byte. The
- * two descriptor facts compose; neither is a branch on the input. */
+/* What the engine may know about a hook's grammar without entering it: the
+ * COMPLETE set of first bytes that can lead the hook to claim, NULL for
+ * every byte (a cut's, `cut_needs`). A byte wrongly left out does not make
+ * the parser slower, it makes it WRONG: the construct is silently never
+ * recognised. */
 typedef struct markdown_core_block_gate {
     const char *bytes;
 } markdown_core_block_gate;
@@ -464,11 +448,8 @@ typedef struct markdown_core_inline_ops {
 } markdown_core_inline_ops;
 
 /* THE OPENING: how a block of the element's opens on a line the open
- * containers left -- found by `scan` (a block start) or `open`, `last` just
- * before an ordinary paragraph, `interrupt` over a paragraph, `text` for the
- * text block every dialect has -- each entered only when the line holds
- * what its gate `*_needs` says. Each may be NULL; the dialect projects the
- * gates and owners by byte as it is sealed. */
+ * containers left -- its starts (below), tried at the line's first
+ * non-space byte, and `text` for the text block every dialect has. */
 /* THE FRONT CUT (blocks.c): one item an element cuts off the front of a
  * block's text -- a link reference definition off a paragraph's. The
  * engine hands the element the text left, `rest`, `at` bytes into the
@@ -484,25 +465,44 @@ typedef struct markdown_core_cut {
     bool wide, measure;
 } markdown_core_cut;
 
-typedef struct markdown_core_open_ops {
-    /* A block start: whether the line opens a block, with what it opens in
-     * `start`, without opening it. */
-    bool (*scan)(const markdown_core_element_instance *, markdown_core_parser *,
-                 struct markdown_core_block_start_context *, struct markdown_core_block_start *);
-    /* What `scan` needs on a non-indented line before it is worth entering;
-     * an indented line reaches it through `indent`. */
-    markdown_core_block_gate scan_needs;
-    markdown_core_open_block_func open;
-    /* What `open` needs on the line before it is worth entering. */
-    markdown_core_block_gate open_needs;
-    /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
-    markdown_core_open_block_func last;
-    markdown_core_node *(*interrupt)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_reader *, bool);
-    /* What `interrupt` needs on a non-indented line. */
-    markdown_core_block_gate interrupt_needs;
-    /* The most indentation a line opening a block of it may have. */
+/* A START OF THE ELEMENT'S BLOCKS (plan symbols-cleanroom.md 23.14): a
+ * construct tried at the first non-space byte of what the open containers
+ * left of a line, its state reaching the line through the turn
+ * (block_internal.h, markdown_core_block_turn). It only reads: what it
+ * found it writes in the turn's `start`, and it succeeds with one token of
+ * the element's (markdown_core_block_found), whose compile handler opens
+ * the block. The dialect lists the starts by the line's key -- the first
+ * non-space byte, a blank line, an indented line -- tried in ascending
+ * `precedence`, then descriptor order, then the element's own.
+ *
+ * `bytes` is the COMPLETE set of first bytes the start can succeed at, a
+ * NUL-terminated list, or NULL for every line, blank ones too. A byte left
+ * out does not make the parser faster; it makes the construct silently
+ * never recognised, so api_test checks the set against the grammar. A set
+ * speaks about ONE line that is not indented code: a grammar decided by a
+ * later line cannot be expressed here. Four columns of indentation are a
+ * start of their own, decided by no byte: an indented line is tried only
+ * at the starts whose `indent`, the most indentation they open at, reaches
+ * it. A `last` start is tried only where an ordinary paragraph would open
+ * (the line neither lazy nor over a paragraph), and the line opens nothing
+ * after it: the block it opens takes the line's text. */
+typedef struct markdown_core_block_construct {
+    const char *bytes;
     int indent;
+    int precedence;
+    bool last;
+    markdown_core_construct construct;
+} markdown_core_block_construct;
+
+typedef struct markdown_core_open_ops {
+    const markdown_core_block_construct *starts;
+    size_t start_count;
+    /* The element's block token kinds, `token_count` of them, numbered
+     * from the instance's `block_base` as the dialect is sealed, with how
+     * compile makes each (one entry per kind, its context set to the
+     * instance). */
+    const markdown_core_compile_ops *tokens;
+    size_t token_count;
     /* Opens the text block (a paragraph) on a line nothing else opens on:
      * the dialect's last owner of it is asked. */
     markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,

@@ -210,6 +210,10 @@ struct markdown_core_tokenizer {
     uint32_t text_from;
     /* Whether the state just handed a code consumed it. */
     bool consumed;
+    /* The construct a reading of one attempt runs, and whether it
+     * succeeded (markdown_core_tokenizer_try). */
+    const markdown_core_construct *one;
+    bool accepted;
     /* The bytes failed attempts and checks gave back to be read again,
      * summed until the reader takes them: the engine's work counter. */
     size_t rewound;
@@ -234,6 +238,15 @@ void markdown_core_tokenizer_free(markdown_core_tokenizer *tokenizer);
  * not be had. The events stay in `tokenizer->events` until the next
  * reading. */
 bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_core_read *read);
+
+/* Reads the content of `read` as ONE attempt of `construct` at `from`,
+ * whose resolvers then run: true when it succeeded, its events in
+ * `tokenizer->events` until the next reading; false when it failed,
+ * nothing of it kept, or storage could not be had (`events.failed`).
+ * `read->text` may be NULL: the construct's states attempt what they
+ * name. */
+bool markdown_core_tokenizer_try(markdown_core_tokenizer *tokenizer, const markdown_core_read *read,
+                                 const markdown_core_construct *construct);
 
 /* EFFECTS. */
 uint32_t markdown_core_enter(markdown_core_tokenizer *tokenizer, uint16_t kind);

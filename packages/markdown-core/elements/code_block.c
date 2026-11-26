@@ -301,26 +301,46 @@ static bool open_indented(const markdown_core_element_instance *self, markdown_c
 
     return true;
 }
-static bool scan_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      block_start_context *context, block_start *start) {
-    (void)self;
+enum { CODE_BLOCK_INDENTED, CODE_BLOCK_FENCED, CODE_BLOCK_BLOCKS };
+
+static void S_code_block_indented(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = open_indented(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                                 turn->context->reader, turn->start);
+}
+
+static void S_code_block_fenced(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = open_fenced(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                               turn->context->reader, turn->start);
+}
+
+static markdown_core_state scan_code(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
+    uint16_t open = CODE_BLOCK_INDENTED;
     if (context->reader->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
         if (context->paragraph || context->lazy ||
             markdown_core_is_line_end(markdown_core_reader_peek(context->reader, context->reader->nonspace))) {
-            return false;
+            return markdown_core_nok(tokenizer);
         }
-        start->open = open_indented;
+        open = CODE_BLOCK_INDENTED;
     } else {
         start->matched = scan_open_code_fence(markdown_core_reader_rest(context->reader, 0),
                                               markdown_core_reader_length(context->reader), context->reader->nonspace);
         if (!start->matched) {
-            return false;
+            return markdown_core_nok(tokenizer);
         }
-        start->open = open_fenced;
+        open = CODE_BLOCK_FENCED;
     }
     start->kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
-    return true;
+    return markdown_core_block_found(tokenizer, open);
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node, markdown_core_reader *reader) {
@@ -359,11 +379,20 @@ static const markdown_core_content_ops CODE_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
+static const markdown_core_block_construct CODE_BLOCK_STARTS[] = {
+    {.bytes = "`~", .indent = INT_MAX, .construct = {.start = scan_code}},
+};
+
+static const markdown_core_compile_ops CODE_BLOCK_BLOCK_TOKENS[CODE_BLOCK_BLOCKS] = {
+    [CODE_BLOCK_INDENTED] = {.enter = S_code_block_indented},
+    [CODE_BLOCK_FENCED] = {.enter = S_code_block_fenced},
+};
+
 static const markdown_core_open_ops CODE_BLOCK_OPENS = {
-    .indent = INT_MAX,
-    .scan = scan_code,
-    /* A fence; an indented block is reached through the indent bound. */
-    .scan_needs = {.bytes = "`~"},
+    .starts = CODE_BLOCK_STARTS,
+    .start_count = 1,
+    .tokens = CODE_BLOCK_BLOCK_TOKENS,
+    .token_count = CODE_BLOCK_BLOCKS,
 };
 
 static const markdown_core_line_ops CODE_BLOCK_LINES = {

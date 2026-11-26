@@ -10,8 +10,6 @@ static inline bool markdown_core_block_definition_marker(markdown_core_reader *r
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_reader *reader, bool compact);
-static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               block_start_context *context, block_start *start);
 /* THE BODY'S READING of a blank line in `parent`: whether the next line that
  * is not blank is indented to `continuation`, which line that is in
  * `*line`. */
@@ -244,27 +242,26 @@ static bool markdown_core_definition_list_open(const markdown_core_element_insta
     return true;
 }
 
-/* What the open reads past the marker (block_start.reads): its padding and
- * where the line ends, which the body's internal offset is. */
-static void S_body_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
-                         const block_start *start) {
-    (void)self;
-    (void)start;
-    (void)markdown_core_block_consume_item_marker(reader, 1);
-    (void)markdown_core_reader_length(reader);
+enum { DEFINITION_LIST_BODY, DEFINITION_LIST_TERM, DEFINITION_LIST_BLOCKS };
+
+static void S_definition_list_body(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = markdown_core_definition_list_open(markdown_core_compile_self(compiler), turn->parser,
+                                                      turn->container, turn->context->reader, turn->start);
 }
 
-static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               block_start_context *context, block_start *start) {
-    (void)self;
+static markdown_core_state markdown_core_definition_list_scan(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
     markdown_core_reader *reader = context->reader;
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION && markdown_core_block_definition_marker(reader))) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
-    start->open = markdown_core_definition_list_open;
-    start->reads = S_body_reads;
-    return true;
+    return markdown_core_block_found(tokenizer, DEFINITION_LIST_BODY);
 }
 
 bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdown_core_node *container,
@@ -274,16 +271,34 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
 
 /* THE TERM, the paragraph opener's last call: a line its reading admits
  * opens a definition, with the line as its term. */
-static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
-                                         markdown_core_parser *parser, markdown_core_node *parent,
-                                         markdown_core_reader *reader) {
-    (void)indented;
-    bool compact = false;
+static markdown_core_state S_term(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_node *parent = turn->context->container;
+    markdown_core_reader *reader = turn->context->reader;
+    bool *compact = MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool);
+    *compact = false;
     if (!definition_term_admits(self, parser, parent, reader) ||
-        !definition_term_reads(self, parser, parent, reader, &compact) || parser->error) {
-        return NULL;
+        !definition_term_reads(self, parser, parent, reader, compact) || parser->error) {
+        return markdown_core_nok(tokenizer);
     }
-    return markdown_core_block_open_definition(self->state, parser, parent, reader, compact);
+    return markdown_core_block_found(tokenizer, DEFINITION_LIST_TERM);
+}
+
+static void S_definition_list_term(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_node *opened =
+        markdown_core_block_open_definition(self->state, turn->parser, *turn->container, turn->context->reader,
+                                            *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool));
+    if (opened) {
+        *turn->container = opened;
+        turn->opened = true;
+    }
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -361,11 +376,21 @@ static const markdown_core_edit_ops DEFINITION_LIST_EDIT = {
     .yields = yields,
 };
 
+static const markdown_core_block_construct DEFINITION_LIST_STARTS[] = {
+    {.bytes = ":~", .indent = 3, .construct = {.start = markdown_core_definition_list_scan}},
+    {.indent = INT_MAX, .precedence = 2, .last = true, .construct = {.start = S_term}},
+};
+
+static const markdown_core_compile_ops DEFINITION_LIST_TOKENS[DEFINITION_LIST_BLOCKS] = {
+    [DEFINITION_LIST_BODY] = {.enter = S_definition_list_body},
+    [DEFINITION_LIST_TERM] = {.enter = S_definition_list_term},
+};
+
 static const markdown_core_open_ops DEFINITION_LIST_OPENS = {
-    .indent = 3,
-    .scan = markdown_core_definition_list_scan,
-    .scan_needs = {.bytes = ":~"},
-    .last = try_paragraph,
+    .starts = DEFINITION_LIST_STARTS,
+    .start_count = 2,
+    .tokens = DEFINITION_LIST_TOKENS,
+    .token_count = DEFINITION_LIST_BLOCKS,
 };
 
 static const markdown_core_line_ops DEFINITION_LIST_LINES = {

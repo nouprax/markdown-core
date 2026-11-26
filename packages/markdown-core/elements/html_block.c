@@ -55,9 +55,20 @@ static bool open_html(const markdown_core_element_instance *self, markdown_core_
 
     return true;
 }
-static bool scan_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      block_start_context *context, block_start *start) {
-    (void)self;
+enum { HTML_BLOCK_OPEN, HTML_BLOCK_BLOCKS };
+
+static void S_html_block_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = open_html(markdown_core_compile_self(compiler), turn->parser, turn->container, turn->context->reader,
+                             turn->start);
+}
+
+static markdown_core_state scan_html(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
     if (!(start->matched =
               scan_html_block_start(markdown_core_reader_rest(context->reader, 0),
                                     markdown_core_reader_length(context->reader), context->reader->nonspace)) &&
@@ -65,11 +76,10 @@ static bool scan_html(const markdown_core_element_instance *self, markdown_core_
           (start->matched =
                scan_html_block_start_7(markdown_core_reader_rest(context->reader, 0),
                                        markdown_core_reader_length(context->reader), context->reader->nonspace)))) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_HTML_BLOCK;
-    start->open = open_html;
-    return true;
+    return markdown_core_block_found(tokenizer, HTML_BLOCK_OPEN);
 }
 static bool ends_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
                       markdown_core_node *container, markdown_core_reader *reader) {
@@ -105,10 +115,19 @@ static const markdown_core_content_ops HTML_BLOCK_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
+static const markdown_core_block_construct HTML_BLOCK_STARTS[] = {
+    {.bytes = "<", .indent = 3, .construct = {.start = scan_html}},
+};
+
+static const markdown_core_compile_ops HTML_BLOCK_BLOCK_TOKENS[HTML_BLOCK_BLOCKS] = {
+    [HTML_BLOCK_OPEN] = {.enter = S_html_block_open},
+};
+
 static const markdown_core_open_ops HTML_BLOCK_OPENS = {
-    .indent = 3,
-    .scan = scan_html,
-    .scan_needs = {.bytes = "<"},
+    .starts = HTML_BLOCK_STARTS,
+    .start_count = 1,
+    .tokens = HTML_BLOCK_BLOCK_TOKENS,
+    .token_count = HTML_BLOCK_BLOCKS,
 };
 
 static const markdown_core_line_ops HTML_BLOCK_LINES = {

@@ -3,6 +3,7 @@
 #include "formula.h"
 #include "attention.h"
 #include "element.h"
+#include "block_internal.h"
 #include "inline_internal.h"
 
 #include <assert.h>
@@ -175,37 +176,43 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
-static markdown_core_node *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
-                                                     markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                     markdown_core_reader *reader) {
-    int block_delim;
-    markdown_core_node *node;
-    node_formula *formula;
+enum { FORMULA_OPEN, FORMULA_BLOCKS };
+
+static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_reader *reader = turn->context->reader;
+    int *block_delim = MARKDOWN_CORE_BLOCK_FOUND(turn->start, int);
+    *block_delim = scan_formula_block_open(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
+                                           (bufsize_t)reader->nonspace);
+    if (*block_delim == FORMULA_BLOCK_DELIM_NONE) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_block_found(tokenizer, FORMULA_OPEN);
+}
+
+static void S_block_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_reader *reader = turn->context->reader;
+    const int block_delim = *MARKDOWN_CORE_BLOCK_FOUND(turn->start, int);
     int first_nonspace = reader->nonspace;
-
-    if (indented) {
-        return NULL;
-    }
-
-    block_delim = scan_formula_block_open(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
-                                          (bufsize_t)first_nonspace);
-    if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
-        return NULL;
-    }
-
-    node =
-        markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_FORMULA_BLOCK, first_nonspace + 1);
+    markdown_core_node *node =
+        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_FORMULA_BLOCK, first_nonspace + 1);
     if (!node) {
-        return NULL;
+        return;
     }
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 
-    formula = get_formula(node);
+    node_formula *formula = get_formula(node);
     if (!formula) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
+        return;
     }
 
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
@@ -217,7 +224,8 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
     markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, past, past, true);
     markdown_core_reader_advance(reader, past - reader->offset, false);
-    return node;
+    *turn->container = node;
+    turn->opened = true;
 }
 
 static int formula_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -783,11 +791,20 @@ static const markdown_core_inline_ops FORMULA_INLINES = {
     .cover = FORMULA_SPAN,
 };
 
+/* `scan_formula_block_open` accepts only `$$` and `\\[`. */
+static const markdown_core_block_construct FORMULA_STARTS[] = {
+    {.bytes = "$\\", .indent = 3, .precedence = 1, .construct = {.start = S_block_start}},
+};
+
+static const markdown_core_compile_ops FORMULA_BLOCK_TOKENS[FORMULA_BLOCKS] = {
+    [FORMULA_OPEN] = {.enter = S_block_open},
+};
+
 static const markdown_core_open_ops FORMULA_OPENS = {
-    .indent = 3,
-    .open = try_opening_formula_block,
-    /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
-    .open_needs = {.bytes = "$\\"},
+    .starts = FORMULA_STARTS,
+    .start_count = 1,
+    .tokens = FORMULA_BLOCK_TOKENS,
+    .token_count = FORMULA_BLOCKS,
 };
 
 static const markdown_core_line_ops FORMULA_LINES = {

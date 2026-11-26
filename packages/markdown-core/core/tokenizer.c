@@ -542,7 +542,8 @@ static void S_merge(markdown_core_tokenizer *tokenizer) {
     events->count = write;
 }
 
-bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_core_read *read) {
+/* A reading begins: nothing of the last one is kept. */
+static void S_reset(markdown_core_tokenizer *tokenizer, const markdown_core_read *read) {
     tokenizer->data = read->data;
     tokenizer->size = read->size;
     tokenizer->position = read->from;
@@ -558,7 +559,11 @@ bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_c
     tokenizer->group_count = 0;
     tokenizer->note_count = 0;
     tokenizer->word_count = 0;
-    tokenizer->text = *read->text;
+    if (read->text) {
+        tokenizer->text = *read->text;
+    } else {
+        tokenizer->text = (markdown_core_constructs){0};
+    }
     tokenizer->reader = read->reader;
     tokenizer->records = read->records;
     tokenizer->start = read->start;
@@ -566,11 +571,15 @@ bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_c
     tokenizer->halts = read->halts;
     tokenizer->halted = false;
     tokenizer->done = false;
+    tokenizer->accepted = false;
     if (read->room) {
         memset(read->records, 0, read->room);
     }
     markdown_core_events_clear(&tokenizer->events);
-    markdown_core_state state = markdown_core_state_of(S_text);
+}
+
+/* Runs the reading from `state` until it is done. */
+static void S_run(markdown_core_tokenizer *tokenizer, markdown_core_state state) {
     int code = markdown_core_code_at(tokenizer, 0);
     while (!tokenizer->done && !tokenizer->events.failed) {
         tokenizer->consumed = false;
@@ -591,6 +600,10 @@ bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_c
         (void)at;
         code = markdown_core_code_at(tokenizer, 0);
     }
+}
+
+/* Every resolve_all of the reading runs, and the groups go in. */
+static bool S_finish(markdown_core_tokenizer *tokenizer) {
     if (tokenizer->events.failed) {
         return false;
     }
@@ -619,6 +632,38 @@ bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_c
         S_merge(tokenizer);
     }
     return !tokenizer->events.failed;
+}
+
+bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_core_read *read) {
+    S_reset(tokenizer, read);
+    S_run(tokenizer, markdown_core_state_of(S_text));
+    return S_finish(tokenizer);
+}
+
+/* THE ONE ATTEMPT (markdown_core_tokenizer_try): the reading's first state
+ * attempts the construct, and its ends say how it went. */
+static markdown_core_state S_try_ok(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    tokenizer->accepted = true;
+    return S_end(tokenizer);
+}
+
+static markdown_core_state S_try_nok(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_end(tokenizer);
+}
+
+static markdown_core_state S_try_first(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, tokenizer->one, markdown_core_state_of(S_try_ok),
+                                 markdown_core_state_of(S_try_nok), code);
+}
+
+bool markdown_core_tokenizer_try(markdown_core_tokenizer *tokenizer, const markdown_core_read *read,
+                                 const markdown_core_construct *construct) {
+    S_reset(tokenizer, read);
+    tokenizer->one = construct;
+    S_run(tokenizer, markdown_core_state_of(S_try_first));
+    return S_finish(tokenizer) && tokenizer->accepted;
 }
 
 void markdown_core_halt(markdown_core_tokenizer *tokenizer) {

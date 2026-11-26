@@ -10,6 +10,8 @@
 #include "utf8.h"
 #include "inlines.h"
 #include "element.h"
+#include "tokenizer.h"
+#include "compile.h"
 #define CODE_INDENT 4
 #define TAB_STOP 4
 #ifndef MIN
@@ -62,30 +64,21 @@ typedef struct markdown_core_block_start_context {
     bufsize_t thematic_kill;
 } block_start_context;
 
-/* WHAT THE SCAN FOUND: the claiming owner's own record of what its scan
- * read, which its open builds from -- a list's marker, a specimen's label, a
- * callout's header -- in a layout only the element knows. The scan writes it
- * before its `open` reads it, and the engine never reads it. An element
+/* WHAT THE START FOUND: the claiming start's own record of what its
+ * construct read, which its token's handler builds from -- a list's
+ * marker, a specimen's label, a callout's header -- in a layout only the
+ * element knows. The construct writes it before the handler reads it, and
+ * the engine never reads it. An element
  * names it as its type with MARKDOWN_CORE_BLOCK_FOUND, and holds at build
  * time that the type fits (MARKDOWN_CORE_BLOCK_FOUND_FITS). */
-#define MARKDOWN_CORE_BLOCK_FOUND_SIZE 64
+#define MARKDOWN_CORE_BLOCK_FOUND_SIZE 128
 #define MARKDOWN_CORE_BLOCK_FOUND(start, type) ((type *)(void *)(start)->found.bytes)
 /* C99 has no _Static_assert: an array of negative size fails the build. */
 #define MARKDOWN_CORE_BLOCK_FOUND_FITS(type, name)                                                                     \
     typedef char name[sizeof(type) <= MARKDOWN_CORE_BLOCK_FOUND_SIZE ? 1 : -1]
 
 typedef struct markdown_core_block_start {
-    /* The claiming owner's open, and the owner itself, which the dispatcher
-     * records and hands `open` as its `self`. */
-    bool (*open)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node **,
-                 markdown_core_reader *, struct markdown_core_block_start *);
-    /* What the open reads past what the scan read, read on a copy of the
-     * reader the engine hands it (the marker's padding, the item's first
-     * byte). The engine asks it only on a line more text can change, where
-     * how far the step reads decides whether the line is held; NULL when the
-     * open reads nothing more. */
-    void (*reads)(const markdown_core_element_instance *, markdown_core_reader *,
-                  const struct markdown_core_block_start *);
+    /* The start whose construct found it. */
     const markdown_core_element_instance *owner;
     markdown_core_node_type kind;
     bufsize_t matched;
@@ -96,6 +89,38 @@ typedef struct markdown_core_block_start {
         unsigned char bytes[MARKDOWN_CORE_BLOCK_FOUND_SIZE];
     } found;
 } block_start;
+/* A TURN OF THE LINE (element.h, markdown_core_block_construct): one
+ * block start tried on a line, the state its construct reads through the
+ * tokenizer's reader and its token's handler through the compiler's. The
+ * construct reads the line in `context` and writes what it found in
+ * `start`; the handler opens the block in `*container` and says in
+ * `opened` whether it did. */
+typedef struct markdown_core_block_turn {
+    markdown_core_parser *parser;
+    block_start_context *context;
+    block_start *start;
+    markdown_core_node **container;
+    bool opened;
+} markdown_core_block_turn;
+
+static inline markdown_core_block_turn *markdown_core_block_turn_of(const markdown_core_tokenizer *tokenizer) {
+    return (markdown_core_block_turn *)tokenizer->reader;
+}
+static inline markdown_core_block_turn *markdown_core_block_turned(const markdown_core_compiler *compiler) {
+    return (markdown_core_block_turn *)compiler->reader;
+}
+/* ONE START TRIED (element.h, markdown_core_block_construct) as a start
+ * of the instance `self`: its construct reads the line in `turn->context`
+ * from its first non-space byte, and when it succeeds its token's handler
+ * opens the block. True when the construct succeeded; `turn->opened` says
+ * whether the block opened. */
+bool markdown_core_block_start_try(markdown_core_parser *parser, markdown_core_block_turn *turn,
+                                   const markdown_core_block_construct *start,
+                                   const markdown_core_element_instance *self);
+/* The start found its block: one token of the element's block kind
+ * `kind`, at the line's first non-space byte, and the construct succeeds. */
+markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind);
+
 int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
 /* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */
 void markdown_core_block_add_line(markdown_core_parser *parser, markdown_core_node *node);

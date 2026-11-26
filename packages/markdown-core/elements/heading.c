@@ -452,28 +452,48 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
     markdown_core_reader_end(reader);
     return true;
 }
-static bool scan_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         block_start_context *context, block_start *start) {
-    (void)self;
+enum { HEADING_ATX, HEADING_SETEXT, HEADING_BLOCKS };
+
+static void S_heading_atx(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = open_atx(markdown_core_compile_self(compiler), turn->parser, turn->container, turn->context->reader,
+                            turn->start);
+}
+
+static void S_heading_setext(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = open_setext(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                               turn->context->reader, turn->start);
+}
+
+static markdown_core_state scan_heading(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
+    uint16_t open = HEADING_ATX;
     /* The line is read past its first byte only when that byte may begin
      * the heading's line: a `#`, or an underline's `=` or `-`. */
     const unsigned char first = markdown_core_reader_peek(context->reader, context->reader->nonspace);
     if (first == '#' && (start->matched = scan_atx_heading_start(markdown_core_reader_rest(context->reader, 0),
                                                                  markdown_core_reader_length(context->reader),
                                                                  context->reader->nonspace))) {
-        start->open = open_atx;
+        open = HEADING_ATX;
     } else if (context->paragraph && (first == '=' || first == '-') &&
                markdown_core_reader_blank_from(
                    context->reader, context->reader->nonspace +
                                         markdown_core_reader_run(context->reader, context->reader->nonspace, first))) {
         /* An underline: a run of one of them, and only spaces after it. */
         start->matched = first == '=' ? 1 : 2;
-        start->open = open_setext;
+        open = HEADING_SETEXT;
     } else {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_HEADING;
-    return true;
+    return markdown_core_block_found(tokenizer, open);
 }
 static int continue_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_reader *reader, markdown_core_node *container) {
@@ -593,11 +613,20 @@ static const markdown_core_inline_ops HEADING_INLINES = {
     .enter = markdown_core_heading_begin_inlines,
 };
 
+static const markdown_core_block_construct HEADING_STARTS[] = {
+    {.bytes = "#=-", .indent = 3, .construct = {.start = scan_heading}},
+};
+
+static const markdown_core_compile_ops HEADING_BLOCK_TOKENS[HEADING_BLOCKS] = {
+    [HEADING_ATX] = {.enter = S_heading_atx},
+    [HEADING_SETEXT] = {.enter = S_heading_setext},
+};
+
 static const markdown_core_open_ops HEADING_OPENS = {
-    .indent = 3,
-    .scan = scan_heading,
-    /* ATX `#`; a setext underline of `=` or `-`. */
-    .scan_needs = {.bytes = "#=-"},
+    .starts = HEADING_STARTS,
+    .start_count = 1,
+    .tokens = HEADING_BLOCK_TOKENS,
+    .token_count = HEADING_BLOCKS,
 };
 
 static const markdown_core_line_ops HEADING_LINES = {

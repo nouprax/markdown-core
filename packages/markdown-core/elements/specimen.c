@@ -12,8 +12,6 @@ MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_specimen_value, specimen_marker_fit
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
                                                            markdown_core_reader *reader, bufsize_t pos,
                                                            markdown_core_specimen_value *value);
-static bool markdown_core_specimen_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        block_start_context *context, block_start *start);
 /* The width of the letter or number at `at`, a scalar the reader reads
  * whole; 0 for any other scalar. */
 static inline int S_key_width(markdown_core_reader *reader, bufsize_t at) {
@@ -139,26 +137,33 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     return true;
 }
 
-/* What the open reads past the marker (block_start.reads). */
-static void S_specimen_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
-                             const block_start *start) {
-    S_specimen_marker(self->state, reader, start->matched);
+enum { SPECIMEN_OPEN, SPECIMEN_BLOCKS };
+
+static void S_specimen_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = markdown_core_specimen_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                                               turn->context->reader, turn->start);
 }
 
-static bool markdown_core_specimen_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        block_start_context *context, block_start *start) {
+static markdown_core_state markdown_core_specimen_scan(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
+    (void)parser;
     (void)parser;
     markdown_core_reader *reader = context->reader;
     int first = reader->nonspace;
     if (!(!context->paragraph &&
           (start->matched = markdown_core_block_parse_specimen_marker(
                self->state, reader, first, MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_specimen_value))))) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;
-    start->open = markdown_core_specimen_open;
-    start->reads = S_specimen_reads;
-    return true;
+    return markdown_core_block_found(tokenizer, SPECIMEN_OPEN);
 }
 
 bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
@@ -176,10 +181,19 @@ static const markdown_core_edit_ops SPECIMEN_EDIT = {
     .reopens = true,
 };
 
+static const markdown_core_block_construct SPECIMEN_STARTS[] = {
+    {.bytes = "(", .indent = 3, .construct = {.start = markdown_core_specimen_scan}},
+};
+
+static const markdown_core_compile_ops SPECIMEN_BLOCK_TOKENS[SPECIMEN_BLOCKS] = {
+    [SPECIMEN_OPEN] = {.enter = S_specimen_open},
+};
+
 static const markdown_core_open_ops SPECIMEN_OPENS = {
-    .indent = 3,
-    .scan = markdown_core_specimen_scan,
-    .scan_needs = {.bytes = "("},
+    .starts = SPECIMEN_STARTS,
+    .start_count = 1,
+    .tokens = SPECIMEN_BLOCK_TOKENS,
+    .token_count = SPECIMEN_BLOCKS,
 };
 
 static const markdown_core_line_ops SPECIMEN_LINES = {

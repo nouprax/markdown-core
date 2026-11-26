@@ -353,6 +353,18 @@ bool markdown_core_inline_settles(markdown_core_parser *parser, markdown_core_in
  * index of the field's reading, or UINT32_MAX when the reading halts
  * (a field waits on the document as a label does) or failed, `root` then
  * the caller's. */
+/* A PASS: the tokenizer and the compiler of one reading -- a run's, a
+ * field's inside it, a block start's (blocks.c) -- taken from the parser's
+ * finished ones and given back as the reading ends. NULL when storage could
+ * not be had. */
+typedef struct markdown_core_pass {
+    markdown_core_tokenizer tokenizer;
+    markdown_core_compiler compiler;
+    struct markdown_core_pass *next;
+} markdown_core_pass;
+markdown_core_pass *markdown_core_pass_take(markdown_core_parser *parser);
+void markdown_core_pass_back(markdown_core_parser *parser, markdown_core_pass *pass);
+
 uint32_t markdown_core_text_field(markdown_core_tokenizer *tokenizer, markdown_core_node *root, bool *spaced);
 /* The field `index` the run read compiled into its root, which is then the
  * caller's; NULL when it failed. */

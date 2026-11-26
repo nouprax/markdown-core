@@ -463,54 +463,78 @@ static bufsize_t scan_directive_block(const markdown_core_element_instance *self
     return 0;
 }
 
-static markdown_core_node *open_directive_block(const markdown_core_element_instance *self, int indented,
-                                                markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                markdown_core_reader *reader) {
-    (void)indented;
-    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
+/* What a block directive's start found: its opener's colons and what it
+ * parsed of the line after them. */
+typedef struct {
+    bufsize_t colon_count;
     parsed_directive parsed;
-    /* An opener's colons come first: a line without two reads no further. */
-    bufsize_t colon_count =
-        reader->indent < 4 && markdown_core_reader_run(reader, first_nonspace, ':') >= 2
-            ? scan_directive_block(self, parser, reader, (unsigned char *)markdown_core_reader_rest(reader, 0),
-                                   markdown_core_reader_length(reader), first_nonspace, reader->indent, &parsed)
-            : (memset(&parsed, 0, sizeof(parsed)), 0);
-    markdown_core_node *node = NULL;
-    node_directive *directive;
-    if (!colon_count) {
-        goto done;
-    }
+} directive_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(directive_found, directive_found_fits);
 
-    node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-                                          (int)first_nonspace + 1);
+enum { DIRECTIVE_OPEN, DIRECTIVE_BLOCKS };
+
+static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_reader *reader = turn->context->reader;
+    directive_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, directive_found);
+    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
+    /* An opener's colons come first: a line without two reads no further. */
+    found->colon_count =
+        reader->indent < 4 && markdown_core_reader_run(reader, first_nonspace, ':') >= 2
+            ? scan_directive_block(self, turn->parser, reader, (unsigned char *)markdown_core_reader_rest(reader, 0),
+                                   markdown_core_reader_length(reader), first_nonspace, reader->indent, &found->parsed)
+            : (memset(&found->parsed, 0, sizeof(found->parsed)), 0);
+    if (!found->colon_count) {
+        if (S_attributes(self)) {
+            S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
+        }
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_block_found(tokenizer, DIRECTIVE_OPEN);
+}
+
+static void S_block_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_reader *reader = turn->context->reader;
+    directive_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, directive_found);
+    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
+    node_directive *directive;
+    markdown_core_node *node = markdown_core_parser_add_child(
+        parser, *turn->container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, (int)first_nonspace + 1);
     if (!node) {
         goto done;
     }
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque || !apply_parsed_directive(self, parser, node, reader, &parsed)) {
+    if (!node->opaque || !apply_parsed_directive(self, parser, node, reader, &found->parsed)) {
         /* The suffix already validated; failure here is allocation loss.
          * The block is the parse's builder from its opening and goes with
          * the parse. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        node = NULL;
         goto done;
     }
 
     directive = get_directive(node);
-    directive->fence_length = (int)colon_count;
+    directive->fence_length = (int)found->colon_count;
     directive->consume_line = 1;
     if (directive->label) {
         markdown_core_block_settle_field(parser, directive->label, node);
     }
     markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
+    *turn->container = node;
+    turn->opened = true;
 
 done:
     if (S_attributes(self)) {
-        S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &parsed.attributes);
+        S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
     }
-    return node;
 }
 
 /* The one closer rule of the directives module: a bare colon run at least as
@@ -739,12 +763,21 @@ static const markdown_core_inline_ops DIRECTIVE_INLINES = {
     .token_count = DIRECTIVE_KINDS,
 };
 
+/* `scan_directive_block` needs at least two leading colons, so a line that
+ * does not start with one cannot open a directive. */
+static const markdown_core_block_construct DIRECTIVE_STARTS[] = {
+    {.bytes = ":", .indent = 3, .precedence = 1, .construct = {.start = S_block_start}},
+};
+
+static const markdown_core_compile_ops DIRECTIVE_BLOCK_TOKENS[DIRECTIVE_BLOCKS] = {
+    [DIRECTIVE_OPEN] = {.enter = S_block_open},
+};
+
 static const markdown_core_open_ops DIRECTIVE_OPENS = {
-    .indent = 3,
-    .open = open_directive_block,
-    /* `scan_directive_block` needs at least two leading colons, so a line that
-     * does not start with one cannot open a directive. */
-    .open_needs = {.bytes = ":"},
+    .starts = DIRECTIVE_STARTS,
+    .start_count = 1,
+    .tokens = DIRECTIVE_BLOCK_TOKENS,
+    .token_count = DIRECTIVE_BLOCKS,
 };
 
 static const markdown_core_line_ops DIRECTIVE_LINES = {

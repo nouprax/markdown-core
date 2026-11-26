@@ -278,48 +278,6 @@ void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builde
     builder->element_capacity = 0;
 }
 
-/* Whether an element whose opening is `opens` implements `hook`. */
-static bool S_opens_implement(const markdown_core_open_ops *opens, markdown_core_block_hook hook) {
-    switch (hook) {
-    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-        return opens->scan != NULL;
-    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
-        return opens->interrupt != NULL;
-    case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
-        return opens->open != NULL;
-    case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
-        return opens->last != NULL;
-    case MARKDOWN_CORE_BLOCK_HOOK_CUT:
-        return opens->cut != NULL;
-    case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
-        break;
-    }
-    return false;
-}
-
-/* The gate the opening `opens` declares for `hook`, or an ungated one. A
- * family gains a gate by adding a field to the opening and a case here; the dispatcher never
- * learns an element's name. */
-static markdown_core_block_gate S_opens_gate(const markdown_core_open_ops *opens, markdown_core_block_hook hook) {
-    markdown_core_block_gate ungated = {NULL};
-
-    switch (hook) {
-    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-        return opens->scan_needs;
-    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
-        return opens->interrupt_needs;
-    case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
-        return opens->open_needs;
-    case MARKDOWN_CORE_BLOCK_HOOK_CUT:
-        /* Asked as a block closes, not per line: its gate is the byte set
-         * `fronts` (dialect.h). */
-    case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
-    case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
-        break;
-    }
-    return ungated;
-}
-
 static bool S_inlines_implement(const markdown_core_inline_ops *inlines, markdown_core_inline_hook hook) {
     switch (hook) {
     case MARKDOWN_CORE_INLINE_HOOK_INIT:
@@ -472,7 +430,7 @@ static void S_count_text(const markdown_core_element *const *elements, size_t co
     for (size_t i = 0; i < count; i++) {
         const markdown_core_inline_ops *inlines = S_inlines_of(elements[i]);
         sizes->constructs += inlines->construct_count;
-        sizes->token_kinds += inlines->token_count;
+        sizes->token_kinds += inlines->token_count + S_opens_of(elements[i])->token_count;
         for (size_t k = 0; k < inlines->construct_count; k++) {
             const unsigned char *bytes = (const unsigned char *)inlines->constructs[k].bytes;
             for (const unsigned char *c = bytes; c && *c; c++) {
@@ -515,7 +473,7 @@ static void S_project_text(markdown_core_dialect *dialect, markdown_core_element
     uint16_t kind = MARKDOWN_CORE_TOKEN_FIRST;
     size_t data_slot = 0;
     for (size_t i = 0; i < dialect->element_count; i++) {
-        data_slot += S_inlines_of(instances[i].element)->token_count;
+        data_slot += S_inlines_of(instances[i].element)->token_count + S_opens_of(instances[i].element)->token_count;
     }
     for (size_t k = 0; k < MARKDOWN_CORE_TOKEN_FIRST; k++) {
         compiles[k] = NULL;
@@ -532,6 +490,13 @@ static void S_project_text(markdown_core_dialect *dialect, markdown_core_element
         }
         for (size_t t = 0; t < inlines->token_count; t++, kind++) {
             handlers[kind - MARKDOWN_CORE_TOKEN_FIRST] = inlines->tokens[t];
+            handlers[kind - MARKDOWN_CORE_TOKEN_FIRST].context = instance;
+            compiles[kind] = &handlers[kind - MARKDOWN_CORE_TOKEN_FIRST];
+        }
+        const markdown_core_open_ops *opens = S_opens_of(instance->element);
+        instance->block_base = kind;
+        for (size_t t = 0; t < opens->token_count; t++, kind++) {
+            handlers[kind - MARKDOWN_CORE_TOKEN_FIRST] = opens->tokens[t];
             handlers[kind - MARKDOWN_CORE_TOKEN_FIRST].context = instance;
             compiles[kind] = &handlers[kind - MARKDOWN_CORE_TOKEN_FIRST];
         }
@@ -776,49 +741,89 @@ static void S_number_spaces(markdown_core_dialect *dialect, markdown_core_elemen
     dialect->space_count = kinds;
 }
 
-/* THE LINE NAMES ITS CANDIDATES. Each gated family's owners are projected
- * into one list per key, in the family's own order: a count, then owner
- * indices, `count + 1` bytes, so a family's table is
- * `MARKDOWN_CORE_BLOCK_GATE_KEYS * (owners + 1)` bytes. An ungated owner is
- * on every byte's list; an indented line is decided by the indent bound
- * alone. */
-static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_core_dialect_sizes *sizes,
-                                 uint8_t *tables) {
-    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-        if (!sizes->gated[hook]) {
-            continue;
+/* THE STARTS (element.h, markdown_core_block_construct): the keys a start
+ * is listed under, `keys` of them at most, written into `into`: every first
+ * byte it declares, once, or every byte and the blank line when it
+ * declares none, and the indented line when its indent reaches one. */
+static size_t S_start_keys(const markdown_core_block_construct *start, uint16_t *into) {
+    size_t count = 0;
+    if (!start->bytes) {
+        for (size_t key = 0; key <= MARKDOWN_CORE_BLOCK_GATE_KEY_NONE; key++) {
+            into[count++] = (uint16_t)key;
         }
-        size_t owners = dialect->block_hook_counts[hook];
-        size_t stride = owners + 1;
-        uint8_t *table = tables;
-        dialect->block_gate_lists[hook] = table;
-        /* Counts and indices are bytes: registration bounds the dialect so
-         * that they fit (MARKDOWN_CORE_ELEMENT_LIMIT). */
-        assert(owners <= MARKDOWN_CORE_ELEMENT_LIMIT);
-        for (size_t i = 0; i < owners; i++) {
-            /* An owner of the family implements the opening. */
-            const markdown_core_open_ops *opens = dialect->block_hooks[hook][i]->element->opens;
-            markdown_core_block_gate gate = S_opens_gate(opens, (markdown_core_block_hook)hook);
-            if (!gate.bytes) {
-                for (size_t key = 0; key <= MARKDOWN_CORE_BLOCK_GATE_KEY_NONE; key++) {
-                    uint8_t *list = table + key * stride;
-                    list[1 + list[0]++] = (uint8_t)i;
-                }
-            } else {
-                for (const unsigned char *c = (const unsigned char *)gate.bytes; *c; c++) {
-                    uint8_t *list = table + *c * stride;
-                    if (!list[0] || list[list[0]] != (uint8_t)i) {
-                        list[1 + list[0]++] = (uint8_t)i;
-                    }
-                }
-            }
-            if (opens->indent >= CODE_INDENT) {
-                uint8_t *list = table + MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED * stride;
-                list[1 + list[0]++] = (uint8_t)i;
+    } else {
+        const unsigned char *bytes = (const unsigned char *)start->bytes;
+        for (const unsigned char *c = bytes; *c; c++) {
+            if (!S_declared_earlier(bytes, c)) {
+                into[count++] = *c;
             }
         }
-        tables += MARKDOWN_CORE_BLOCK_GATE_KEYS * stride;
     }
+    if (start->indent >= CODE_INDENT) {
+        into[count++] = MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED;
+    }
+    return count;
+}
+
+/* The starts' entries by key, counted into `offsets` as running totals. */
+static size_t S_count_starts(const markdown_core_element *const *elements, size_t count, size_t *starts,
+                             uint16_t *offsets) {
+    size_t at[MARKDOWN_CORE_BLOCK_GATE_KEYS + 1] = {0};
+    uint16_t keys[MARKDOWN_CORE_BLOCK_GATE_KEYS];
+    *starts = 0;
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_open_ops *opens = S_opens_of(elements[i]);
+        *starts += opens->start_count;
+        for (size_t k = 0; k < opens->start_count; k++) {
+            size_t listed = S_start_keys(&opens->starts[k], keys);
+            for (size_t j = 0; j < listed; j++) {
+                at[keys[j] + 1]++;
+            }
+        }
+    }
+    for (size_t key = 0; key < MARKDOWN_CORE_BLOCK_GATE_KEYS; key++) {
+        at[key + 1] += at[key];
+    }
+    for (size_t key = 0; key <= MARKDOWN_CORE_BLOCK_GATE_KEYS; key++) {
+        offsets[key] = (uint16_t)at[key];
+    }
+    return at[MARKDOWN_CORE_BLOCK_GATE_KEYS];
+}
+
+/* The starts copied into `copies` with their instances as context, and
+ * listed by key into `items` in ascending precedence, then descriptor
+ * order, then each element's own order. */
+static void S_project_starts(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
+                             markdown_core_block_construct *copies, const markdown_core_block_construct **items,
+                             size_t total) {
+    size_t copied = 0;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const markdown_core_open_ops *opens = S_opens_of(instances[i].element);
+        for (size_t k = 0; k < opens->start_count; k++) {
+            markdown_core_block_construct copy = opens->starts[k];
+            copy.construct.context = &instances[i];
+            /* A stable insertion by precedence. */
+            size_t at = copied++;
+            while (at > 0 && copies[at - 1].precedence > copy.precedence) {
+                copies[at] = copies[at - 1];
+                at--;
+            }
+            copies[at] = copy;
+        }
+    }
+    assert(copied == total);
+    size_t next[MARKDOWN_CORE_BLOCK_GATE_KEYS];
+    uint16_t keys[MARKDOWN_CORE_BLOCK_GATE_KEYS];
+    for (size_t key = 0; key < MARKDOWN_CORE_BLOCK_GATE_KEYS; key++) {
+        next[key] = dialect->start_offsets[key];
+    }
+    for (size_t i = 0; i < copied; i++) {
+        size_t listed = S_start_keys(&copies[i], keys);
+        for (size_t j = 0; j < listed; j++) {
+            items[next[keys[j]]++] = &copies[i];
+        }
+    }
+    dialect->starts = items;
 }
 
 /* MEASURE: what sealing the builder's dialect takes, counted from its element
@@ -833,14 +838,9 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     for (size_t i = 0; i < count; i++) {
         const markdown_core_open_ops *opens = S_opens_of(elements[i]);
         const markdown_core_inline_ops *inlines = S_inlines_of(elements[i]);
-        for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-            if (S_opens_implement(opens, (markdown_core_block_hook)hook)) {
-                sizes->block_totals[hook]++;
-                sizes->pointers++;
-                if (S_opens_gate(opens, (markdown_core_block_hook)hook).bytes) {
-                    sizes->gated[hook] = true;
-                }
-            }
+        if (opens->cut) {
+            sizes->cutters++;
+            sizes->pointers++;
         }
         for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
             if (S_inlines_implement(inlines, (markdown_core_inline_hook)hook)) {
@@ -863,6 +863,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     }
     uint16_t text_offsets[257];
     S_count_text(elements, count, sizes, text_offsets);
+    uint16_t start_offsets[MARKDOWN_CORE_BLOCK_GATE_KEYS + 1];
+    sizes->start_entries = S_count_starts(elements, count, &sizes->starts, start_offsets);
     sizes->pointers += 2; /* the name owners' and the staged instances' terminators */
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
@@ -872,20 +874,15 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
      * hash takes a bit. */
     for (sizes->instance_bits = 1; ((size_t)1 << sizes->instance_bits) < 2 * count; sizes->instance_bits++) {
     }
-    /* A family with no declared gate keeps no table and every owner is asked. */
-    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-        if (sizes->gated[hook]) {
-            sizes->gate_bytes += MARKDOWN_CORE_BLOCK_GATE_KEYS * (sizes->block_totals[hook] + 1);
-        }
-    }
     sizes->spaces = S_count_spaces(elements, count, SIZE_MAX);
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
            sizes->closers * sizeof(markdown_core_closer) + sizes->constructs * sizeof(markdown_core_construct) +
+           sizes->starts * sizeof(markdown_core_block_construct) +
            (sizes->token_kinds - MARKDOWN_CORE_TOKEN_FIRST + 1) * sizeof(markdown_core_compile_ops) +
-           (sizes->text_entries + sizes->constructs + sizes->token_kinds) * sizeof(void *) +
+           (sizes->text_entries + sizes->constructs + sizes->start_entries + sizes->token_kinds) * sizeof(void *) +
            (sizes->pointers + ((size_t)1 << sizes->instance_bits)) * sizeof(const markdown_core_element_instance *) +
            sizes->needs * sizeof(markdown_core_need) + (sizes->spaces + 2) * sizeof(const markdown_core_space *) +
-           sizes->namings * sizeof(unsigned) + sizes->gate_bytes;
+           sizes->namings * sizeof(unsigned);
 }
 
 /* THE RULES FOR CLOSING A BRACKET (element.h, markdown_core_close_rule):
@@ -931,9 +928,10 @@ static void S_project_closers(markdown_core_dialect *dialect, markdown_core_elem
 
 /* SEAL: every table the dialect decides, projected once, into the storage
  * `sizes` was measured for. The tail after the struct holds the finish step
- * entries, then the instances, then the rules for closing a label, then the instance-pointer lists (the block
- * families and the inline-content families), the
- * instance table and the resolved needs, then the gate tables. Each region's alignment is at most
+ * entries, then the instances, then the rules for closing a label, the
+ * constructs and the starts, the handlers, the lists of constructs and of
+ * starts, then the instance-pointer lists (the cutters and the
+ * inline-content families), the instance table and the resolved needs. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
  * list is copied into the instances rather than taken, so the dialect owns
  * nothing apart from its storage and the builder still owns what it did. */
@@ -944,18 +942,21 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
     markdown_core_closer *closers = (markdown_core_closer *)(instances + count);
     markdown_core_construct *copies = (markdown_core_construct *)(closers + sizes->closers);
-    markdown_core_compile_ops *handlers = (markdown_core_compile_ops *)(copies + sizes->constructs);
+    markdown_core_block_construct *start_copies = (markdown_core_block_construct *)(copies + sizes->constructs);
+    markdown_core_compile_ops *handlers = (markdown_core_compile_ops *)(start_copies + sizes->starts);
     const markdown_core_construct **items =
         (const markdown_core_construct **)(handlers + (sizes->token_kinds - MARKDOWN_CORE_TOKEN_FIRST + 1));
     const markdown_core_construct **holders = items + sizes->text_entries;
-    const markdown_core_compile_ops **compiles = (const markdown_core_compile_ops **)(holders + sizes->constructs);
+    const markdown_core_block_construct **start_items =
+        (const markdown_core_block_construct **)(holders + sizes->constructs);
+    const markdown_core_compile_ops **compiles =
+        (const markdown_core_compile_ops **)(start_items + sizes->start_entries);
     const markdown_core_element_instance **entries =
         (const markdown_core_element_instance **)(compiles + sizes->token_kinds);
     const markdown_core_element_instance **table = entries + sizes->pointers;
     markdown_core_need *resolved = (markdown_core_need *)(table + ((size_t)1 << sizes->instance_bits));
     const markdown_core_space **spaces = (const markdown_core_space **)(resolved + sizes->needs);
     unsigned *namings = (unsigned *)(spaces + sizes->spaces + 2);
-    uint8_t *tables = (uint8_t *)(namings + sizes->namings);
 
     dialect->element_count = count;
     S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);
@@ -1003,13 +1004,11 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     }
 
     size_t at = 0;
-    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-        dialect->block_hooks[hook] = entries + at;
-        dialect->block_hook_counts[hook] = sizes->block_totals[hook];
-        for (size_t i = 0; i < count; i++) {
-            if (S_opens_implement(S_opens_of(instances[i].element), (markdown_core_block_hook)hook)) {
-                entries[at++] = &instances[i];
-            }
+    dialect->cutters = entries + at;
+    dialect->cutter_count = sizes->cutters;
+    for (size_t i = 0; i < count; i++) {
+        if (S_opens_of(instances[i].element)->cut) {
+            entries[at++] = &instances[i];
         }
     }
     for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
@@ -1041,5 +1040,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     S_count_text(builder->elements, count, &(markdown_core_dialect_sizes){0}, dialect->text_offsets);
     S_project_text(dialect, instances, copies, items, holders, handlers, compiles);
     S_project_finish_steps(dialect, sizes->finish_key_counts, step_entries);
-    S_project_gate_lists(dialect, sizes, tables);
+    size_t starts = 0;
+    S_count_starts(builder->elements, count, &starts, dialect->start_offsets);
+    S_project_starts(dialect, instances, start_copies, start_items, starts);
 }

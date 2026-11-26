@@ -18,8 +18,6 @@ const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .f
 enum { FOOTNOTE_LABELS };
 static const markdown_core_space *const FOOTNOTE_SPACES[] = {[FOOTNOTE_LABELS] = &MARKDOWN_CORE_FOOTNOTE_SPACE, NULL};
 
-static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        block_start_context *context, block_start *start);
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                markdown_core_node *node, markdown_core_reader *reader,
                                const markdown_core_node *joining, bool *taken) {
@@ -259,25 +257,6 @@ static const markdown_core_inline_ops FOOTNOTE_INLINES = {
     .closer = ']',
 };
 
-static const markdown_core_open_ops FOOTNOTE_OPENS = {
-    .indent = 3,
-    .scan = markdown_core_footnote_scan,
-    .scan_needs = {.bytes = "["},
-};
-
-static const markdown_core_line_ops FOOTNOTE_LINES = {
-    .prefix = continue_container,
-};
-
-const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
-    .edit = &FOOTNOTE_EDIT,
-    .spaces = FOOTNOTE_SPACES,
-    .name = "footnote",
-    .inlines = &FOOTNOTE_INLINES,
-    .opens = &FOOTNOTE_OPENS,
-    .lines = &FOOTNOTE_LINES,
-};
-
 static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         markdown_core_node **container, markdown_core_reader *reader,
                                         block_start *start) {
@@ -348,20 +327,58 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
     return true;
 }
 
-static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        block_start_context *context, block_start *start) {
-    (void)self;
+enum { FOOTNOTE_OPEN, FOOTNOTE_BLOCKS };
+
+static void S_footnote_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = markdown_core_footnote_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                                               turn->context->reader, turn->start);
+}
+
+static markdown_core_state markdown_core_footnote_scan(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
     markdown_core_reader *reader = context->reader;
     int first = reader->nonspace;
     if (!(context->depth < MAX_FOOTNOTE_DEPTH &&
           (start->matched = scan_footnote_definition(markdown_core_reader_rest(reader, 0),
                                                      markdown_core_reader_length(reader), first)))) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_FOOTNOTE;
-    start->open = markdown_core_footnote_open;
-    return true;
+    return markdown_core_block_found(tokenizer, FOOTNOTE_OPEN);
 }
+
+static const markdown_core_block_construct FOOTNOTE_STARTS[] = {
+    {.bytes = "[", .indent = 3, .construct = {.start = markdown_core_footnote_scan}},
+};
+
+static const markdown_core_compile_ops FOOTNOTE_BLOCK_TOKENS[FOOTNOTE_BLOCKS] = {
+    [FOOTNOTE_OPEN] = {.enter = S_footnote_open},
+};
+
+static const markdown_core_open_ops FOOTNOTE_OPENS = {
+    .starts = FOOTNOTE_STARTS,
+    .start_count = 1,
+    .tokens = FOOTNOTE_BLOCK_TOKENS,
+    .token_count = FOOTNOTE_BLOCKS,
+};
+
+static const markdown_core_line_ops FOOTNOTE_LINES = {
+    .prefix = continue_container,
+};
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .edit = &FOOTNOTE_EDIT,
+    .spaces = FOOTNOTE_SPACES,
+    .name = "footnote",
+    .inlines = &FOOTNOTE_INLINES,
+    .opens = &FOOTNOTE_OPENS,
+    .lines = &FOOTNOTE_LINES,
+};
 
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
                                      markdown_core_reader *reader) {

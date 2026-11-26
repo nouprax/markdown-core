@@ -7900,8 +7900,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     if (!S_cut_fronts(dialect, cut->rest.data[0])) {
         return 0;
     }
-    const markdown_core_element_instance *const *owners = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_CUT];
-    const size_t count = dialect->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_CUT];
+    const markdown_core_element_instance *const *owners = dialect->cutters;
+    const size_t count = dialect->cutter_count;
     for (size_t i = 0; i < count && !parser->error; i++) {
         const markdown_core_element_instance *owner = owners[i];
         cut->wide = false;
@@ -8697,36 +8697,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_line_take(markdown
     return true;
 }
 
-/* THE LINE NAMES ITS CANDIDATES; THE DISPATCHER DOES NOT ASK EVERY OWNER.
- *
- * A family's gates are projected into one list of owners per KEY, in the
- * family's own order: a key for each first non-space byte, one for a line
- * with no such byte, and one for an indented line. Reading the list for the
- * line's key is the whole admission test, so a line meets only the owners
- * whose grammar can start on it -- cmark's one if-chain keyed on the byte,
- * as a table built once from what the elements declared. An ungated owner is
- * on every list; a family in which no owner declares a gate has no table and
- * every owner is asked, which is the behaviour a gate replaces.
- *
- * The lists are projected when the dialect is sealed (dialect.c); each is
- * a count followed by owner indices. */
-
-/* The owners of `hook`'s family a line with key `key` is asked, and how many;
- * NULL with `count` = the whole family when the family has no table. */
-static const uint8_t *S_gate_candidates(const markdown_core_dialect *dialect, markdown_core_block_hook hook, int key,
-                                        size_t *count) {
-    const uint8_t *table = dialect->block_gate_lists[hook];
-    if (!table) {
-        *count = dialect->block_hook_counts[hook];
-        return NULL;
-    }
-    const uint8_t *list = table + (size_t)key * (dialect->block_hook_counts[hook] + 1);
-    *count = *list;
-    return list + 1;
-}
-
-/* The key of the line at `first` for a family that asks an indented line by
- * indent bound rather than by byte (scan and interrupt). */
+/* THE LINE'S KEY (dialect.h, `starts`): its first non-space byte, a line
+ * with none, or an indented line, which only the starts whose indent
+ * reaches it are tried at. A start's list for the line's key is the whole
+ * admission test, so a line meets only the starts whose grammar can begin
+ * on it: cmark's one if-chain keyed on the byte, as a table built once from
+ * what the elements declared. */
 static int S_gate_key(const markdown_core_reader *reader, int first, int indent) {
     if (indent >= CODE_INDENT) {
         return MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED;
@@ -8734,37 +8710,44 @@ static int S_gate_key(const markdown_core_reader *reader, int first, int indent)
     return first < reader->line.len ? (int)reader->line.data[first] : MARKDOWN_CORE_BLOCK_GATE_KEY_NONE;
 }
 
-/* Ask the scan family about the line, in family order, and leave what the
- * claiming owner wrote in `start`; `start->open` is NULL when none claimed.
- * The payload fields are the claiming owner's to write before its `open` reads
- * them, so nothing is cleared per line beyond the three the dispatcher reads. */
-static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
-    const markdown_core_dialect *const dialect = parser->dialect;
-    const markdown_core_element_instance *const *owners = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_SCAN];
-    size_t count;
-    const uint8_t *candidates =
-        S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_SCAN,
-                          S_gate_key(context->reader, context->reader->nonspace, context->reader->indent), &count);
+markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint16_t type = (uint16_t)(self->block_base + kind);
+    markdown_core_enter(tokenizer, type);
+    markdown_core_exit(tokenizer, type);
+    return markdown_core_ok(tokenizer);
+}
 
-    start->open = NULL;
-    start->reads = NULL;
-    start->kind = MARKDOWN_CORE_NODE_NONE;
-    start->matched = 0;
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_element_instance *owner = owners[candidates ? candidates[i] : i];
-        /* The indent bound stays a runtime test rather than part of the
-         * projection: `context->reader->indent` is a property of the line, not of the
-         * element set, so it cannot be folded into a table built once. */
-        if (context->reader->indent <= owner->element->opens->indent &&
-            owner->element->opens->scan(owner, parser, context, start)) {
-            start->owner = owner;
-            return true;
-        }
-        if (parser->error) {
-            return false;
-        }
+bool markdown_core_block_start_try(markdown_core_parser *parser, markdown_core_block_turn *turn,
+                                   const markdown_core_block_construct *start,
+                                   const markdown_core_element_instance *self) {
+    markdown_core_reader *reader = turn->context->reader;
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
+    if (!pass) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
     }
-    return false;
+    const markdown_core_read read = {.data = reader->line.data,
+                                     .size = (uint32_t)reader->line.len,
+                                     .from = (uint32_t)reader->nonspace,
+                                     .cut = UINT32_MAX,
+                                     .reader = turn};
+    turn->opened = false;
+    markdown_core_construct construct = start->construct;
+    construct.context = self;
+    const bool found = markdown_core_tokenizer_try(&pass->tokenizer, &read, &construct);
+    if (found && !parser->error) {
+        const markdown_core_dialect *dialect = parser->dialect;
+        if (!markdown_core_compile(&pass->compiler, &pass->tokenizer.events, reader->line.data, dialect->compiles,
+                                   dialect->token_kinds, turn) &&
+            !parser->error) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+    } else if (pass->tokenizer.events.failed && !parser->error) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_pass_back(parser, pass);
+    return found;
 }
 
 /* Where the line machine stands as it opens blocks: whether the line may
@@ -8793,8 +8776,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
     while (!S_kind_accepts_lines(kind, *container)) {
         bool paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
         /* Not cleared: the dispatcher writes the three fields it reads, and
-         * the payload is the claiming owner's, written before its `open`
-         * reads it (scan_element_start). Clearing its bytes here was
+         * the payload is the claiming start's, written by its construct
+         * before its token's handler reads it. Clearing its bytes here was
          * paid by every line, the ones a code block or a properties block
          * takes without a round of this loop included. */
         block_start start;
@@ -8811,94 +8794,36 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                                        .all_matched = all_matched,
                                        .depth = depth + 1,
                                        .thematic_kill = parser->at.thematic_break_kill_pos};
-        scan_element_start(parser, &context, &start);
-        if (parser->error) {
-            return;
-        }
-        depth++;
-        parser->at.thematic_break_kill_pos = context.thematic_kill;
-
-        /* Dash-led tables precede thematic breaks and lists. An opener may
-         * close the old path before an allocation fails; OOM is terminal,
-         * never a grammar miss that can try another owner on that path. */
-        const markdown_core_element_instance *const *interrupters =
-            dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT];
-        size_t interrupter_count;
-        const uint8_t *interrupter_candidates =
-            S_gate_candidates(dialect, MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
-                              S_gate_key(reader, parser->at.read.nonspace, parser->at.read.indent), &interrupter_count);
-        for (size_t element_index = 0; element_index < interrupter_count; element_index++) {
-            const markdown_core_element_instance *owner =
-                interrupters[interrupter_candidates ? interrupter_candidates[element_index] : element_index];
-            markdown_core_node *opened =
-                owner->element->opens->interrupt(owner, parser, *container, reader, maybe_lazy);
+        markdown_core_block_turn turn = {parser, &context, &start, container, false};
+        const int key = S_gate_key(reader, reader->nonspace, reader->indent);
+        const markdown_core_block_construct *const *starts = dialect->starts + dialect->start_offsets[key];
+        const size_t count = (size_t)(dialect->start_offsets[key + 1] - dialect->start_offsets[key]);
+        const markdown_core_block_construct *found = NULL;
+        for (size_t i = 0; i < count && !found; i++) {
+            const markdown_core_block_construct *candidate = starts[i];
+            /* The indent bound stays a test of the line: the table is the
+             * element set's. */
+            if (reader->indent > candidate->indent || (candidate->last && (maybe_lazy || paragraph))) {
+                continue;
+            }
+            start.owner = candidate->construct.context;
+            start.kind = MARKDOWN_CORE_NODE_NONE;
+            start.matched = 0;
+            if (markdown_core_block_start_try(parser, &turn, candidate, start.owner)) {
+                found = candidate;
+            }
             S_reader_close(parser);
             if (parser->error) {
                 return;
             }
-            if (opened) {
-                *container = opened;
-                return;
-            }
         }
-
-        if (start.open) {
-            const bool opened = start.open(start.owner, parser, container, reader, &start);
-            S_reader_close(parser);
-            if (!opened) {
-                return;
-            }
-        } else {
-            markdown_core_node *new_container = NULL;
-            const markdown_core_element_instance *const *openers = dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
-            size_t opener_count;
-            /* An opener is asked about an indented line too, and told so: its
-             * key is the byte alone. */
-            const uint8_t *opener_candidates = S_gate_candidates(
-                dialect, MARKDOWN_CORE_BLOCK_HOOK_OPEN, S_gate_key(reader, parser->at.read.nonspace, 0), &opener_count);
-
-            for (size_t element_index = 0; element_index < opener_count; element_index++) {
-                const markdown_core_element_instance *opener =
-                    openers[opener_candidates ? opener_candidates[element_index] : element_index];
-
-                new_container = opener->element->opens->open(
-                    opener, parser->at.read.indent > opener->element->opens->indent, parser, *container, reader);
-                S_reader_close(parser);
-                if (parser->error) {
-                    return;
-                }
-
-                if (new_container) {
-                    *container = new_container;
-                    if (parser->claimed_cursor) {
-                        return;
-                    }
-                    break;
-                }
-            }
-
-            if (!new_container) {
-                if (!maybe_lazy && !paragraph) {
-                    const markdown_core_element_instance *const *last_chance =
-                        dialect->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
-                    size_t last_chance_count = dialect->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
-                    for (size_t element_index = 0; element_index < last_chance_count; element_index++) {
-                        const markdown_core_element_instance *opener = last_chance[element_index];
-                        new_container = opener->element->opens->last(
-                            opener, parser->at.read.indent > opener->element->opens->indent, parser, *container,
-                            reader);
-                        S_reader_close(parser);
-                        if (parser->error) {
-                            return;
-                        }
-                        if (new_container) {
-                            *container = new_container;
-                            return;
-                        }
-                    }
-                }
-                break;
-            }
+        depth++;
+        parser->at.thematic_break_kill_pos = context.thematic_kill;
+        if (!found) {
+            break;
+        }
+        if (!turn.opened || found->last || parser->claimed_cursor) {
+            return;
         }
 
         /* What this opener consumed made the block it just opened, so the

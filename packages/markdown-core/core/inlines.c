@@ -395,13 +395,7 @@ static void S_finish_run(markdown_core_inline_state *inline_state, bool settle) 
  * compile makes the run's nodes of them, in order. A PASS is the
  * tokenizer and the compiler of one reading; a reading inside a reading
  * (a field's) takes its own. */
-typedef struct markdown_core_pass {
-    markdown_core_tokenizer tokenizer;
-    markdown_core_compiler compiler;
-    struct markdown_core_pass *next;
-} markdown_core_pass;
-
-static markdown_core_pass *S_take_pass(markdown_core_parser *parser) {
+markdown_core_pass *markdown_core_pass_take(markdown_core_parser *parser) {
     markdown_core_pass *pass = parser->free_passes;
     if (pass) {
         parser->free_passes = pass->next;
@@ -415,7 +409,7 @@ static markdown_core_pass *S_take_pass(markdown_core_parser *parser) {
     return pass;
 }
 
-static void S_give_pass(markdown_core_parser *parser, markdown_core_pass *pass) {
+void markdown_core_pass_back(markdown_core_parser *parser, markdown_core_pass *pass) {
     pass->next = parser->free_passes;
     parser->free_passes = pass;
 }
@@ -504,7 +498,7 @@ static void S_fields_drop(markdown_core_inline_state *inline_state, size_t from)
     for (size_t i = from; i < inline_state->read_count; i++) {
         markdown_core_field_read *read = inline_state->reads[i];
         if (read) {
-            S_give_pass(parser, read->pass);
+            markdown_core_pass_back(parser, read->pass);
             markdown_core_inline_clear_inlines(&read->state);
             markdown_core_parser_release_node(parser, read->root);
             markdown_core_free(read);
@@ -536,7 +530,7 @@ static void S_records_clear(markdown_core_parser *parser, markdown_core_inline_s
  * reading that `halts` and does leaves the run as it was and answers
  * false (markdown_core_inline_settles). */
 static bool S_read(markdown_core_parser *parser, markdown_core_inline_state *inline_state, bool halts) {
-    markdown_core_pass *pass = S_take_pass(parser);
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
     if (!pass) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return true;
@@ -568,7 +562,7 @@ static bool S_read(markdown_core_parser *parser, markdown_core_inline_state *inl
         run.reads = inline_state->reads;
         run.read_room = inline_state->read_room;
         *inline_state = run;
-        S_give_pass(parser, pass);
+        markdown_core_pass_back(parser, pass);
         return false;
     }
     if (tokenizer->undecided != UINT32_MAX && (bufsize_t)tokenizer->undecided < inline_state->undecided) {
@@ -589,7 +583,7 @@ static bool S_read(markdown_core_parser *parser, markdown_core_inline_state *inl
     if (tokenizer->crossed && inline_state->cut >= 0 && !inline_state->error) {
         S_cut_crossed(parser, inline_state);
     }
-    S_give_pass(parser, pass);
+    markdown_core_pass_back(parser, pass);
     return true;
 }
 
@@ -613,7 +607,7 @@ uint32_t markdown_core_text_field(markdown_core_tokenizer *tokenizer, markdown_c
         inline_state->reads = reads;
     }
     markdown_core_field_read *read = reads ? markdown_core_alloc(1, sizeof(*read)) : NULL;
-    markdown_core_pass *pass = read ? S_take_pass(parser) : NULL;
+    markdown_core_pass *pass = read ? markdown_core_pass_take(parser) : NULL;
     if (!pass) {
         markdown_core_free(read);
         tokenizer->events.failed = true;
@@ -666,7 +660,7 @@ markdown_core_node *markdown_core_compile_field(markdown_core_compiler *compiler
         }
     }
     state->pos = state->input.len;
-    S_give_pass(parser, read->pass);
+    markdown_core_pass_back(parser, read->pass);
     S_finish_run(state, false);
     markdown_core_node *root = read->root;
     markdown_core_free(read);

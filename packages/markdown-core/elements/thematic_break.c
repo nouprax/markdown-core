@@ -28,39 +28,53 @@ static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset,
     }
 }
 
-static bool open_thematic(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_reader *reader, block_start *start) {
-    (void)self;
+enum { THEMATIC_BREAK_OPEN, THEMATIC_BREAK_BLOCKS };
 
-    // it's only now that we know the line is not part of a setext heading:
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, reader->nonspace + 1);
-    if (!*container) {
-        return false;
+/* The break opens as its token is compiled: it's only now that we know the
+ * line is not part of a setext heading. */
+static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_reader *reader = turn->context->reader;
+    *turn->container = markdown_core_parser_add_child(turn->parser, *turn->container, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                                      reader->nonspace + 1);
+    if (!*turn->container) {
+        return;
     }
     markdown_core_reader_end(reader);
-
-    return true;
+    turn->opened = true;
 }
-static bool scan_thematic(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          block_start_context *context, block_start *start) {
-    (void)self;
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
     if (context->paragraph && !context->all_matched) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     if (context->thematic_kill > context->reader->nonspace ||
         !(start->matched =
               S_scan_thematic_break(context->reader, context->reader->nonspace, &context->thematic_kill))) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;
-    start->open = open_thematic;
-    return true;
+    return markdown_core_block_found(tokenizer, THEMATIC_BREAK_OPEN);
 }
+
+static const markdown_core_block_construct THEMATIC_BREAK_STARTS[] = {
+    {.bytes = "*-_", .indent = 3, .construct = {.start = S_start}},
+};
+
+static const markdown_core_compile_ops THEMATIC_BREAK_BLOCK_TOKENS[THEMATIC_BREAK_BLOCKS] = {
+    [THEMATIC_BREAK_OPEN] = {.enter = S_open},
+};
+
 static const markdown_core_open_ops THEMATIC_BREAK_OPENS = {
-    .indent = 3,
-    .scan = scan_thematic,
-    .scan_needs = {.bytes = "*-_"},
+    .starts = THEMATIC_BREAK_STARTS,
+    .start_count = 1,
+    .tokens = THEMATIC_BREAK_BLOCK_TOKENS,
+    .token_count = THEMATIC_BREAK_BLOCKS,
 };
 
 static const markdown_core_line_ops THEMATIC_BREAK_LINES = {

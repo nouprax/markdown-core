@@ -40,22 +40,6 @@ struct markdown_core_parser;
  * size of that allocation is known only once the dialect is measured.
  */
 
-/* The block-start hook families, in the order a line consults them.
- *
- * They are separate families rather than one list because the ORDER BETWEEN
- * them is grammar: every `scan` owner wins over every `open` owner on the same
- * line, and `interrupt` runs between the two so a dash-led table can take a
- * line a thematic break or list already matched. Merging them would change
- * which element claims an ambiguous line. */
-typedef enum {
-    MARKDOWN_CORE_BLOCK_HOOK_SCAN,
-    MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
-    MARKDOWN_CORE_BLOCK_HOOK_OPEN,
-    MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH,
-    MARKDOWN_CORE_BLOCK_HOOK_CUT,
-    MARKDOWN_CORE_BLOCK_HOOK_COUNT
-} markdown_core_block_hook;
-
 /* THE INLINE-CONTENT HOOK FAMILIES, projected for the same reason: the
  * elements whose run records begin (`init`) and are let go (`dispose`) with
  * each inline run, in descriptor order, so a run calls the few that declare
@@ -198,9 +182,9 @@ typedef struct markdown_core_kind_record {
     const struct markdown_core_follow *made;
 } markdown_core_kind_record;
 
-/* The keys a block-start family's gate lists are indexed by: each first
- * non-space byte, a line with no such byte, and an indented line (see
- * S_gate_candidates in blocks.c). */
+/* The keys the starts are listed by (`starts`): each first non-space
+ * byte, a line with no such byte, and an indented line (blocks.c,
+ * S_gate_key). */
 #define MARKDOWN_CORE_BLOCK_GATE_KEY_NONE 256
 #define MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED 257
 #define MARKDOWN_CORE_BLOCK_GATE_KEYS 258
@@ -272,19 +256,17 @@ typedef struct markdown_core_dialect {
      * text consolidation, acts at. */
     markdown_core_node_type root, plain;
     size_t plain_index;
-    /* Each block-start hook family, in descriptor order. Order inside a
-     * family IS the grammar: the first owner that claims a line wins it,
-     * which is why heading precedes thematic break (setext `---`) and
-     * thematic break precedes list (`***`). A line asks four of these
-     * families in turn, so without the projection it would pay the whole
-     * dialect four times to reach the one to four owners that can answer. */
-    const markdown_core_element_instance *const *block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    size_t block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    /* Each family's declared gates as one list of owners per key, in the
-     * family's own order: a count, then owner indices. NULL when the family
-     * declared no gate and every owner is asked, the behaviour a gate
-     * replaces. */
-    const uint8_t *block_gate_lists[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    /* THE STARTS (element.h, markdown_core_block_construct): the elements'
+     * block constructs, each listed under every key it may succeed at --
+     * a first non-space byte, a blank line (KEY_NONE), an indented line
+     * (KEY_INDENTED) -- in the order they are tried: starts[start_offsets[k]
+     * .. start_offsets[k + 1]) for key k. */
+    const markdown_core_block_construct *const *starts;
+    uint16_t start_offsets[MARKDOWN_CORE_BLOCK_GATE_KEYS + 1];
+    /* The elements that cut items off the front of a block's text
+     * (element.h, `cut`), in descriptor order. */
+    const markdown_core_element_instance *const *cutters;
+    size_t cutter_count;
     /* Every byte a container continuation may strip ahead of a line's own
      * first byte: indentation, and each element's lines' `prefix_bytes`.
      * A question asked of a later line from raw source walks these to land on
@@ -415,11 +397,10 @@ static inline unsigned markdown_core_dialect_space_kind(const markdown_core_dial
  * entries, resolved needs and gate-table bytes follow the struct beside one instance per
  * element, and the counts that place each projection among them. */
 typedef struct markdown_core_dialect_sizes {
-    size_t block_totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    bool gated[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    size_t cutters;
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
-    size_t pointers, steps, gate_bytes;
+    size_t pointers, steps;
     /* The instance table holds 1 << `instance_bits` entries. */
     unsigned instance_bits;
     /* The bytes the elements' parse records take, and one run's records. */
@@ -431,6 +412,8 @@ typedef struct markdown_core_dialect_sizes {
     /* The elements' constructs and their entries by byte, and their token
      * kinds. */
     size_t constructs, text_entries, token_kinds;
+    /* The elements' block starts and their entries by key. */
+    size_t starts, start_entries;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */

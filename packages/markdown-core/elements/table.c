@@ -318,34 +318,48 @@ static markdown_core_node *S_open_table(markdown_core_parser *parser, markdown_c
  * it (S_open_table). Once the table has opened, return it even if a later
  * allocation fails; parser->error then aborts the parse and destruction
  * releases the partially built table. */
-static markdown_core_node *try_opening_table_header(const markdown_core_element_instance *self,
-                                                    markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                    markdown_core_reader *reader) {
-    markdown_core_node *table_header;
-    pipe_row header_row, delimiter_row;
-    markdown_core_chunk text;
-    uint16_t i;
+/* What a table's start found: the rows of its line, and of the paragraph
+ * line before it when the line is a delimiter row. */
+typedef struct {
+    pipe_row header_row, row;
+} table_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(table_found, table_found_fits);
 
+/* A delimiter row whose header, the last line of the paragraph's text,
+ * is as wide as it. A header of another width marks the paragraph, which
+ * no later line makes a table then. */
+static bool S_head_found(markdown_core_node *paragraph, markdown_core_reader *reader, table_found *found) {
     if (paragraph->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
-        return NULL;
+        return false;
     }
 
     if (!scan_table_start(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
                           reader->nonspace)) {
-        return NULL;
+        return false;
     }
     if (!recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
-                            markdown_core_reader_length(reader) - reader->nonspace, &delimiter_row)) {
-        return NULL;
+                            markdown_core_reader_length(reader) - reader->nonspace, &found->row)) {
+        return false;
     }
 
     // Select the final header row and verify width before committing a table.
     /* The header row is the last line of the paragraph's text. */
-    text = markdown_core_node_text(paragraph);
-    if (!recognize_pipe_row(text.data, text.len, &header_row) || header_row.n_columns != delimiter_row.n_columns) {
+    markdown_core_chunk text = markdown_core_node_text(paragraph);
+    if (!recognize_pipe_row(text.data, text.len, &found->header_row) ||
+        found->header_row.n_columns != found->row.n_columns) {
         paragraph->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
-        return NULL;
+        return false;
     }
+    return true;
+}
+
+static markdown_core_node *S_head_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       markdown_core_node *paragraph, markdown_core_reader *reader,
+                                       const table_found *found) {
+    markdown_core_node *table_header;
+    pipe_row header_row = found->header_row, delimiter_row = found->row;
+    markdown_core_chunk text = markdown_core_node_text(paragraph);
+    uint16_t i;
 
     markdown_core_node *node = S_open_table(parser, paragraph, markdown_core_parser_parent(parser, paragraph), text,
                                             header_row.paragraph_offset);
@@ -448,24 +462,26 @@ static void S_extra_field(markdown_core_parser *parser, markdown_core_reader *re
     markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NONE, start, end);
 }
 
-static markdown_core_node *try_opening_table_row(const markdown_core_element *self, markdown_core_parser *parser,
-                                                 markdown_core_node *parent_container, markdown_core_reader *reader) {
-    markdown_core_node *table_row_block;
-    pipe_row row;
-
+/* A pipe row on a line of a table that takes more rows. */
+static bool S_row_found(markdown_core_node *parent_container, markdown_core_reader *reader, table_found *found) {
     if (reader->blank) {
-        return NULL;
+        return false;
     }
 
     markdown_core_table *table = parent_container->opaque;
     if (!table || table->autocompleted_cells > MAX_AUTOCOMPLETED_CELLS) {
-        return NULL;
+        return false;
     }
 
-    if (!recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
-                            markdown_core_reader_length(reader) - reader->nonspace, &row)) {
-        return NULL;
-    }
+    return recognize_pipe_row((unsigned char *)markdown_core_reader_rest(reader, reader->nonspace),
+                              markdown_core_reader_length(reader) - reader->nonspace, &found->row);
+}
+
+static markdown_core_node *S_row_open(markdown_core_parser *parser, markdown_core_node *parent_container,
+                                      markdown_core_reader *reader, const table_found *found) {
+    markdown_core_node *table_row_block;
+    pipe_row row = found->row;
+    markdown_core_table *table = parent_container->opaque;
     /* A pipe row begins at its own first non-space byte, as its header does:
      * `reader->offset` is the container's content, which holds the row's
      * indentation or the tail of a tab its container prefix shares. */
@@ -482,7 +498,6 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
     if (!table_row_block) {
         return NULL;
     }
-    (void)self;
     /* The count before the row, which the cap is no further past than one
      * row's width. */
     table_row_block->internal_offset = table->autocompleted_cells < INT_MAX ? (int)table->autocompleted_cells : INT_MAX;
@@ -542,18 +557,45 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
 
 /* A pipe table opens at its delimiter row, whose header is the last line of
  * the paragraph above it, and takes a row on each later line it matches. */
-static markdown_core_node *try_opening_table_block(const markdown_core_element_instance *self, int indented,
-                                                   markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                   markdown_core_reader *reader) {
-    markdown_core_node_type parent_type = (markdown_core_node_type)parent_container->kind;
+enum { TABLE_HEAD, TABLE_ROW, TABLE_BLOCKS };
 
-    if (!indented && parent_type == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        return try_opening_table_header(self, parser, parent_container, reader);
-    } else if (!indented && parent_type == MARKDOWN_CORE_NODE_TABLE) {
-        return try_opening_table_row(self->element, parser, parent_container, reader);
+static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_node *container = turn->context->container;
+    markdown_core_reader *reader = turn->context->reader;
+    table_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found);
+    if (container->kind == MARKDOWN_CORE_NODE_PARAGRAPH && S_head_found(container, reader, found)) {
+        return markdown_core_block_found(tokenizer, TABLE_HEAD);
     }
+    if (container->kind == MARKDOWN_CORE_NODE_TABLE && S_row_found(container, reader, found)) {
+        return markdown_core_block_found(tokenizer, TABLE_ROW);
+    }
+    return markdown_core_nok(tokenizer);
+}
 
-    return NULL;
+static void S_head(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_node *node = S_head_open(markdown_core_compile_self(compiler), turn->parser, *turn->container,
+                                           turn->context->reader, MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found));
+    if (node) {
+        *turn->container = node;
+        turn->opened = true;
+    }
+}
+
+static void S_row(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_node *node = S_row_open(turn->parser, *turn->container, turn->context->reader,
+                                          MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found));
+    if (node) {
+        *turn->container = node;
+        turn->opened = true;
+    }
 }
 
 /* A table goes on at any line a pipe row reads: a blank line or a block
@@ -650,11 +692,22 @@ static const markdown_core_content_ops TABLE_CONTENT = {
     .holds_inlines = contains_inlines,
 };
 
+static const markdown_core_block_construct TABLE_STARTS[] = {
+    {.indent = 3, .precedence = 1, .construct = {.start = S_block_start}},
+};
+
+static const markdown_core_compile_ops TABLE_BLOCK_TOKENS[TABLE_BLOCKS] = {
+    [TABLE_HEAD] = {.enter = S_head},
+    [TABLE_ROW] = {.enter = S_row},
+};
+
 static const markdown_core_open_ops TABLE_OPENS = {
+    .starts = TABLE_STARTS,
+    .start_count = 1,
+    .tokens = TABLE_BLOCK_TOKENS,
+    .token_count = TABLE_BLOCKS,
     /* A delimiter row makes the paragraph line before it the head. */
     .claims = " \t|:-",
-    .indent = 3,
-    .open = try_opening_table_block,
 };
 
 static const markdown_core_line_ops TABLE_LINES = {

@@ -102,18 +102,6 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_COUNT
 } markdown_core_delimiter_rule;
 
-/** Should create and add a new open block to 'parent_container' if
- * the reader's line matches a syntax rule for that block type. It is allowed
- * to modify the type of 'parent_container'.
- *
- * Should return the newly created block if there is one, or
- * 'parent_container' if its type was modified, or NULL.
- */
-typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
-                                                             markdown_core_parser *parser,
-                                                             markdown_core_node *parent_container,
-                                                             markdown_core_reader *reader);
-
 /** Returned by a 'markdown_core_match_block_func' when the reader's line is the
  *  container's own closing line.
  *
@@ -326,8 +314,9 @@ struct markdown_core_element_instance {
      * dialect's (dialect.h, `closers`), and how many there are. */
     uint32_t mine_first, mine_count;
     /* The kind of the element's first token kind (element.h,
-     * markdown_core_inline_ops `tokens`). */
-    uint16_t token_base;
+     * markdown_core_inline_ops `tokens`), and of its first block token kind
+     * (markdown_core_open_ops `tokens`). */
+    uint16_t token_base, block_base;
 };
 
 /** The instance of `element` in the parse `parser` runs, or NULL when its

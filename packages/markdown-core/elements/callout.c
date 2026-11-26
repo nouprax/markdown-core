@@ -13,8 +13,6 @@ typedef struct {
 } markdown_core_callout_header;
 MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_callout_header, callout_header_fits);
 
-static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                       block_start_context *context, block_start *start);
 bool markdown_core_block_parse_callout_prefix(markdown_core_reader *reader) {
     bool res = false;
     bufsize_t matched = 0;
@@ -185,13 +183,26 @@ static bool markdown_core_callout_open(const markdown_core_element_instance *sel
     return true;
 }
 
-static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                       block_start_context *context, block_start *start) {
-    (void)self;
+enum { CALLOUT_OPEN, CALLOUT_BLOCKS };
+
+static void S_callout_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    turn->opened = markdown_core_callout_open(markdown_core_compile_self(compiler), turn->parser, turn->container,
+                                              turn->context->reader, turn->start);
+}
+
+static markdown_core_state markdown_core_callout_scan(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
+    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
     markdown_core_reader *reader = context->reader;
     int first = reader->nonspace;
     if (!(markdown_core_reader_peek(reader, first) == '>')) {
-        return false;
+        return markdown_core_nok(tokenizer);
     }
     /* What the open reads, read here: the marker's motion and the header
      * after it, from where the reader comes back to the marker. */
@@ -202,8 +213,7 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
     MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header)->after = after;
     markdown_core_reader_back(reader, mark);
     start->kind = MARKDOWN_CORE_NODE_CALLOUT;
-    start->open = markdown_core_callout_open;
-    return true;
+    return markdown_core_block_found(tokenizer, CALLOUT_OPEN);
 }
 
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -235,10 +245,19 @@ static const markdown_core_edit_ops CALLOUT_EDIT = {
     .text = callout_title,
 };
 
+static const markdown_core_block_construct CALLOUT_STARTS[] = {
+    {.bytes = ">", .indent = 3, .construct = {.start = markdown_core_callout_scan}},
+};
+
+static const markdown_core_compile_ops CALLOUT_BLOCK_TOKENS[CALLOUT_BLOCKS] = {
+    [CALLOUT_OPEN] = {.enter = S_callout_open},
+};
+
 static const markdown_core_open_ops CALLOUT_OPENS = {
-    .indent = 3,
-    .scan = markdown_core_callout_scan,
-    .scan_needs = {.bytes = ">"},
+    .starts = CALLOUT_STARTS,
+    .start_count = 1,
+    .tokens = CALLOUT_BLOCK_TOKENS,
+    .token_count = CALLOUT_BLOCKS,
 };
 
 static const markdown_core_line_ops CALLOUT_LINES = {
