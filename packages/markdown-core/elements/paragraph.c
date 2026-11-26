@@ -77,10 +77,22 @@ static const markdown_core_open_ops PARAGRAPH_OPENS = {
     .text = open_text,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look
+                       ? MARKDOWN_CORE_LINE_OFF
+                       : continue_paragraph(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops PARAGRAPH_LINES = {
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .lazy = accepts_lazy,
     .lazy_open = open_lazy,
-    .matches = continue_paragraph,
     .close = close_paragraph,
     .cuts = true,
 };

@@ -710,8 +710,19 @@ static const markdown_core_open_ops TABLE_OPENS = {
     .claims = " \t|:-",
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
+                              : matches(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops TABLE_LINES = {
-    .matches = matches,
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .uncut = true,
 };
 

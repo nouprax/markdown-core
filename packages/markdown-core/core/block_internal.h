@@ -89,19 +89,43 @@ typedef struct markdown_core_block_start {
         unsigned char bytes[MARKDOWN_CORE_BLOCK_FOUND_SIZE];
     } found;
 } block_start;
-/* A TURN OF THE LINE (element.h, markdown_core_block_construct): one
- * block start tried on a line, the state its construct reads through the
- * tokenizer's reader and its token's handler through the compiler's. The
- * construct reads the line in `context` and writes what it found in
- * `start`; the handler opens the block in `*container` and says in
- * `opened` whether it did. */
+/* A TURN OF THE LINE: one block start tried on a line (element.h,
+ * markdown_core_block_construct), or one open block's continuation
+ * (markdown_core_line_ops `continuation`), the state its construct reads
+ * through the tokenizer's reader and its token's handler through the
+ * compiler's. A start reads the line in `context` and writes what it found
+ * in `start`; the handler opens the block in `*container` and says in
+ * `opened` whether it did. A continuation reads the line on `reader` for
+ * the open block `node`, in a lookahead (`look`) about to add `joining`. */
 typedef struct markdown_core_block_turn {
     markdown_core_parser *parser;
     block_start_context *context;
     block_start *start;
     markdown_core_node **container;
     bool opened;
+    markdown_core_reader *reader;
+    markdown_core_node *node;
+    const markdown_core_node *joining;
+    bool look;
 } markdown_core_block_turn;
+
+/* What a continuation said of the line: not continued, continued, or the
+ * verdict its token gave (MARKDOWN_CORE_TOKEN_CLOSE, _PEND, _TAKE). */
+enum { MARKDOWN_CORE_LINE_OFF = 0, MARKDOWN_CORE_LINE_ON = 1 };
+/* The open block `node`'s continuation on the line at `reader`, as the
+ * line's own reading asks it, or a lookahead about to add `joining`. */
+int markdown_core_block_continue_try(markdown_core_parser *parser, markdown_core_node *node,
+                                     markdown_core_reader *reader, const markdown_core_node *joining, bool look);
+/* The same as a block of `structure`'s. */
+int markdown_core_block_continue_as(markdown_core_parser *parser, const markdown_core_element_instance *structure,
+                                    markdown_core_node *node, markdown_core_reader *reader,
+                                    const markdown_core_node *joining, bool look);
+/* The continuation's verdict on the line, `kind` (MARKDOWN_CORE_TOKEN_CLOSE,
+ * _PEND, _TAKE), and it succeeds. */
+markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *tokenizer, uint16_t kind);
+/* The continuation ends with `verdict`: MARKDOWN_CORE_LINE_OFF fails, _ON
+ * succeeds, a verdict token's kind succeeds with that token. */
+markdown_core_state markdown_core_block_verdict(markdown_core_tokenizer *tokenizer, int verdict);
 
 static inline markdown_core_block_turn *markdown_core_block_turn_of(const markdown_core_tokenizer *tokenizer) {
     return (markdown_core_block_turn *)tokenizer->reader;

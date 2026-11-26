@@ -1648,7 +1648,8 @@ static markdown_core_node *try_block_start(const markdown_core_element_instance 
         .container = parent, .reader = reader, .paragraph = paragraph, .all_matched = true, .depth = 1};
     block_start start = {.owner = self};
     markdown_core_node *container = parent;
-    markdown_core_block_turn turn = {parser, &context, &start, &container, false};
+    markdown_core_block_turn turn = {
+        .parser = parser, .context = &context, .start = &start, .container = &container, .reader = reader};
     const bool found = markdown_core_block_start_try(parser, &turn, &self->element->opens->starts[which], self);
     return found && turn.opened ? container : NULL;
 }
@@ -2068,7 +2069,11 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                                                        .depth = 1};
                         block_start start = {.owner = instance};
                         markdown_core_node *container = parent;
-                        markdown_core_block_turn turn = {&probe, &context, &start, &container, false};
+                        markdown_core_block_turn turn = {.parser = &probe,
+                                                         .context = &context,
+                                                         .start = &start,
+                                                         .container = &container,
+                                                         .reader = &reader};
                         if (markdown_core_block_start_try(&probe, &turn, &opens->starts[g], instance)) {
                             sweep->violations++;
                             if (sweep->first_bad_byte < 0) {
@@ -6061,7 +6066,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     OK(runner, root != NULL, "directive probes run inside a parse");
     markdown_core_node_free(root);
     /* Instances with no record: these paths read none. */
-    const markdown_core_element_instance table_instance = {.element = &MARKDOWN_CORE_ELEMENT_TABLE};
+    const markdown_core_element_instance table_instance = {.element = &MARKDOWN_CORE_ELEMENT_TABLE,
+                                                           .lines = MARKDOWN_CORE_ELEMENT_TABLE.lines};
     const markdown_core_element_instance autolink_instance = {.element = &MARKDOWN_CORE_ELEMENT_AUTOLINK};
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
@@ -6069,9 +6075,12 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         /* A pipe table: one with no dash runs. */
         markdown_core_table value = {0};
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE, .opaque = &value};
-        text_allocation_calls = 0;
         markdown_core_reader reader = {.line = {(unsigned char *)rows[i], (bufsize_t)strlen(rows[i]), 0}};
-        int matched = MARKDOWN_CORE_ELEMENT_TABLE.lines->matches(&table_instance, &parser, &reader, &table);
+        /* The reading's own room, which a parse has from its first line on. */
+        (void)markdown_core_block_continue_as(&parser, &table_instance, &table, &reader, NULL, false);
+        text_allocation_calls = 0;
+        int matched = markdown_core_block_continue_as(&parser, &table_instance, &table, &reader, NULL, false);
+        markdown_core_inline_release_passes(&parser);
         INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
         INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
     }

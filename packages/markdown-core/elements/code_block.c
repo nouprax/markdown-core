@@ -76,7 +76,7 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
             // the end of a line, we can stop processing it; the close
             // notes the fence closed it (close_code):
             markdown_core_reader_advance(reader, matched, false);
-            return MARKDOWN_CORE_BLOCK_CLOSED;
+            return MARKDOWN_CORE_TOKEN_CLOSE;
         } else {
             // skip opt. spaces of fence reader->offset
             int i = container->as.code->fence_offset;
@@ -395,8 +395,19 @@ static const markdown_core_open_ops CODE_BLOCK_OPENS = {
     .token_count = CODE_BLOCK_BLOCKS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
+                              : continue_code(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops CODE_BLOCK_LINES = {
-    .matches = continue_code,
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .close = close_code,
     .blank_last = blank_line,
 };

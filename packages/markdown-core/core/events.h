@@ -40,6 +40,13 @@ typedef enum {
      * bytes, and its `data` the event past what was resolved from it,
      * which a later pass steps over. */
     MARKDOWN_CORE_TOKEN_MARKER,
+    /* A block's continuation's verdicts on a line other than "continued"
+     * (element.h, markdown_core_line_ops `continuation`): the block's own
+     * closing line, a closer the blocks inside decide, a line the block
+     * takes whole. */
+    MARKDOWN_CORE_TOKEN_CLOSE,
+    MARKDOWN_CORE_TOKEN_PEND,
+    MARKDOWN_CORE_TOKEN_TAKE,
     /* The first kind the dialect gives an element's token. */
     MARKDOWN_CORE_TOKEN_FIRST
 } markdown_core_token_kind;

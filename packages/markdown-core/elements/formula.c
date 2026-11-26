@@ -238,7 +238,7 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
     if (scan_formula_block_close(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
                                  (bufsize_t)first_nonspace, formula->block_delim)) {
         markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
-        return MARKDOWN_CORE_BLOCK_CLOSED;
+        return MARKDOWN_CORE_TOKEN_CLOSE;
     }
 
     return 1;
@@ -807,8 +807,20 @@ static const markdown_core_open_ops FORMULA_OPENS = {
     .token_count = FORMULA_BLOCKS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look
+                       ? MARKDOWN_CORE_LINE_OFF
+                       : formula_block_matches(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops FORMULA_LINES = {
-    .matches = formula_block_matches,
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .close = close_formula_block,
 };
 

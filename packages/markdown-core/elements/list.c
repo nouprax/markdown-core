@@ -385,10 +385,22 @@ static const markdown_core_open_ops LIST_OPENS = {
     .token_count = LIST_BLOCKS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    bool taken = false;
+    if (!continue_container(markdown_core_self(tokenizer), turn->parser, turn->node, turn->reader, turn->joining,
+                            &taken)) {
+        return markdown_core_nok(tokenizer);
+    }
+    return taken ? markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_TAKE) : markdown_core_ok(tokenizer);
+}
+
 static const markdown_core_line_ops LIST_LINES = {
+    .continuation = {.start = S_continue},
     .blank_last = blank_line,
     .speculative = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
-    .prefix = continue_container,
     .blank_spreads = true,
     .blank_runs = true,
 };

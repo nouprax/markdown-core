@@ -6026,7 +6026,7 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
         const markdown_core_kind_record *record = markdown_core_parser_block_kind(parser, open);
         const markdown_core_line_ops *lines = record->structure ? record->structure->lines : NULL;
         if ((!abuts && S_kind_accepts_lines(record, open)) ||
-            (lines && (lines->pending || (!abuts && (lines->matches || lines->continues))))) {
+            (lines && (lines->pending || (!abuts && lines->beyond)))) {
             return false;
         }
         below = inside;
@@ -8107,61 +8107,59 @@ static inline void S_reader_close(markdown_core_parser *parser) {
     }
 }
 
-/* ONE CONTAINER'S CLAIM ON THE LINE at the parser's cursor, for the kinds whose
- * prefix the core knows: the block quote's `>`, the list item's indentation,
- * a footnote or specimen's four columns, and the list's rule for consecutive
- * blank lines. `check_open_blocks` asks it walking down the open spine, and
- * the block-start lookahead asks the same question of the same containers on
- * later lines, so a lookahead's decision and the parse that follows it cannot
- * disagree about which lines a container owns.
- *
- * Returns false when the line does not carry the container's prefix. `taken`
- * is set when a list took the whole line: a second consecutive blank line at
- * indentation zero cannot open a block, every closable descendant was closed
- * by the first, and only a raw-line leaf still wants it. `joining` is the
- * block a lookahead is about to add, or NULL in the real pass. */
-/* `structure` is the container's structure instance, which its caller
- * resolved once for the visit. */
-static bool S_container_prefix_matches(markdown_core_parser *parser, const markdown_core_element_instance *structure,
-                                       markdown_core_node *container, markdown_core_reader *reader,
-                                       const markdown_core_node *joining, bool *taken) {
-    return !structure || !structure->lines->prefix ||
-           structure->lines->prefix(structure, parser, container, reader, joining, taken);
+/* ONE BLOCK'S CLAIM ON THE LINE (element.h, markdown_core_line_ops
+ * `continuation`): `check_open_blocks` asks it walking down the open spine,
+ * and the block-start lookahead asks the same question of the same
+ * containers on later lines (`look`), so a lookahead's decision and the
+ * parse that follows it cannot disagree about which lines a container
+ * owns. */
+markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *tokenizer, uint16_t kind) {
+    markdown_core_enter(tokenizer, kind);
+    markdown_core_exit(tokenizer, kind);
+    return markdown_core_ok(tokenizer);
 }
 
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
-    markdown_core_parser *parser, const markdown_core_kind_record *kind, markdown_core_node *container,
-    markdown_core_reader *reader, bool *should_continue, markdown_core_node **closing, markdown_core_node **taker) {
-    const markdown_core_element_instance *structure = kind->structure;
-    int matched;
+markdown_core_state markdown_core_block_verdict(markdown_core_tokenizer *tokenizer, int verdict) {
+    return verdict == MARKDOWN_CORE_LINE_OFF  ? markdown_core_nok(tokenizer)
+           : verdict == MARKDOWN_CORE_LINE_ON ? markdown_core_ok(tokenizer)
+                                              : markdown_core_block_continued(tokenizer, (uint16_t)verdict);
+}
 
-    if (!structure->lines->matches) {
-        return false;
-    }
+int markdown_core_block_continue_try(markdown_core_parser *parser, markdown_core_node *node,
+                                     markdown_core_reader *reader, const markdown_core_node *joining, bool look) {
+    return markdown_core_block_continue_as(parser, markdown_core_parser_block_kind(parser, node)->structure, node,
+                                           reader, joining, look);
+}
 
-    matched = structure->lines->matches(structure, parser, reader, container);
-    if (matched && structure->lines->pending) {
-        *closing = matched == MARKDOWN_CORE_BLOCK_PENDING_CLOSE ? container : NULL;
-    } else if (matched && S_kind_accepts_lines(kind, container)) {
-        *closing = NULL;
+int markdown_core_block_continue_as(markdown_core_parser *parser, const markdown_core_element_instance *structure,
+                                    markdown_core_node *node, markdown_core_reader *reader,
+                                    const markdown_core_node *joining, bool look) {
+    if (!structure || !structure->lines->continuation.start) {
+        return MARKDOWN_CORE_LINE_ON;
     }
-    if (matched == MARKDOWN_CORE_BLOCK_TAKEN) {
-        assert(structure->lines->take);
-        *taker = container;
-        return true;
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
+    if (!pass) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return MARKDOWN_CORE_LINE_OFF;
     }
-    if (matched != MARKDOWN_CORE_BLOCK_CLOSED) {
-        return matched != 0;
+    markdown_core_block_turn turn = {
+        .parser = parser, .reader = reader, .node = node, .joining = joining, .look = look};
+    const markdown_core_read read = {.data = reader->line.data,
+                                     .size = (uint32_t)reader->line.len,
+                                     .from = (uint32_t)reader->offset,
+                                     .cut = UINT32_MAX,
+                                     .reader = &turn};
+    markdown_core_construct construct = structure->lines->continuation;
+    construct.context = structure;
+    const markdown_core_events *events = &pass->tokenizer.events;
+    int verdict = MARKDOWN_CORE_LINE_OFF;
+    if (markdown_core_tokenizer_try(&pass->tokenizer, &read, &construct)) {
+        verdict = events->token_count ? events->tokens[events->token_count - 1].kind : MARKDOWN_CORE_LINE_ON;
+    } else if (events->failed) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-
-    /* The container's own closing line. Everything still open inside it ended
-     * on the line before, and the container ends here. */
-    *should_continue = false;
-    /* A block survives its own close and can still be positioned. */
-    assert(!(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH));
-    container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-    markdown_core_block_close(parser, container);
-    return false;
+    markdown_core_pass_back(parser, pass);
+    return verdict;
 }
 
 /* Matches the line against the open blocks below `from`, the block root on a
@@ -8172,9 +8170,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *check
     *all_matched = false;
     markdown_core_node *container = from;
     markdown_core_node *closing = NULL;
-    markdown_core_node *taker = NULL;
 
-    while (container != parser->at.current && !taker) {
+    while (container != parser->at.current) {
         /* Whatever a container's prefix consumed is that container's
          * MARKER: `> ` belongs to the block quote, the item's indent to the
          * list item. So the bytes of the block below begin where the
@@ -8187,27 +8184,32 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *check
         markdown_core_reader_find(reader);
 
         const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-        const markdown_core_element_instance *structure = kind->structure;
-        if (structure && structure->lines->matches) {
-            if (!parse_element_block(parser, kind, container, reader, &should_continue, &closing, &taker)) {
-                goto done;
+        const int verdict = markdown_core_block_continue_try(parser, container, reader, NULL, false);
+        if (verdict == MARKDOWN_CORE_LINE_OFF) {
+            goto done;
+        }
+        if (verdict == MARKDOWN_CORE_TOKEN_TAKE) {
+            markdown_core_node *current = markdown_core_parser_current(parser);
+            if (S_kind_accepts_lines(markdown_core_parser_block_kind(parser, current), current)) {
+                markdown_core_block_add_line(parser, current);
             }
-        } else {
-            bool taken = false;
-            if (structure && structure->lines->blank && parser->at.read.blank &&
-                !structure->lines->blank(structure, parser, container, reader)) {
-                goto done;
-            }
-            if (!S_container_prefix_matches(parser, structure, container, reader, NULL, &taken)) {
-                goto done;
-            }
-            if (taken) {
-                markdown_core_node *current = markdown_core_parser_current(parser);
-                if (S_kind_accepts_lines(markdown_core_parser_block_kind(parser, current), current)) {
-                    markdown_core_block_add_line(parser, current);
-                }
-                return NULL;
-            }
+            return NULL;
+        }
+        if (kind->structure && kind->structure->lines->pending) {
+            closing = verdict == MARKDOWN_CORE_TOKEN_PEND ? container : NULL;
+        } else if (S_kind_accepts_lines(kind, container)) {
+            closing = NULL;
+        }
+        if (verdict == MARKDOWN_CORE_TOKEN_CLOSE) {
+            /* The container's own closing line. Everything still open
+             * inside it ended on the line before, and the container ends
+             * here. A block survives its own close and can still be
+             * positioned. */
+            should_continue = false;
+            assert(!(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH));
+            container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
+            markdown_core_block_close(parser, container);
+            goto done;
         }
     }
 
@@ -8219,16 +8221,6 @@ done:
          * closes; what is open inside it ended on the line before. */
         closing->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
         markdown_core_block_close(parser, closing);
-        return NULL;
-    }
-    if (taker) {
-        /* The line is the taker's, whole: what is open inside it ended on the
-         * line before. */
-        markdown_core_parser_close_below(parser, taker);
-        if (!parser->error) {
-            const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, taker)->structure;
-            structure->lines->take(structure, parser, taker, reader);
-        }
         return NULL;
     }
     /* A container whose prefix consumed bytes and then declined still read
@@ -8255,11 +8247,11 @@ done:
  *
  * Exactness is the whole contract. Every later line is offered as the block
  * parser will see it: the containers between the root and the block's parent
- * are matched by `S_container_prefix_matches`, the operation `check_open_blocks`
- * runs, through the same cursor fields, with the same list flags, which are
- * saved and restored around the lookahead. A container an element owns is
- * asked through its lines' `continues` hook, the side-effect-free form of its
- * matcher. So a line the lookahead counts as carrying the prefixes is one
+ * are matched by their continuations (markdown_core_block_continue_try), the
+ * operation `check_open_blocks` runs, through the same cursor fields, with
+ * the same list flags, which are saved and restored around the lookahead,
+ * and told it is a lookahead's (`look`), which changes nothing but the
+ * reader. So a line the lookahead counts as carrying the prefixes is one
  * the block parser will hand to the new block, and the first line it rejects
  * is where the block parser will close the block's container.
  *
@@ -8492,18 +8484,14 @@ markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lo
         for (i = from; i < lookahead->depth && carried && !taken; i++) {
             markdown_core_node *container = lookahead->path[i];
             markdown_core_reader_find(reader);
-            const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-            const markdown_core_element_instance *structure = kind->structure;
-            if (structure && structure->lines->matches) {
-                int match =
-                    structure->lines->continues ? structure->lines->continues(structure, parser, reader, container) : 0;
-                carried = match != 0;
-                if (carried && structure->lines->pending) {
-                    closing = match == MARKDOWN_CORE_BLOCK_PENDING_CLOSE;
-                }
-            } else {
-                carried = S_container_prefix_matches(parser, structure, container, reader,
-                                                     markdown_core_parser_lookahead_parent(lookahead), &taken);
+            const markdown_core_element_instance *structure =
+                markdown_core_parser_block_kind(parser, container)->structure;
+            const int verdict = markdown_core_block_continue_try(
+                parser, container, reader, markdown_core_parser_lookahead_parent(lookahead), true);
+            carried = verdict != MARKDOWN_CORE_LINE_OFF;
+            taken = verdict == MARKDOWN_CORE_TOKEN_TAKE;
+            if (carried && structure && structure->lines->pending) {
+                closing = verdict == MARKDOWN_CORE_TOKEN_PEND;
             }
         }
         /* The work of this visit is the prefix bytes it had to match itself:
@@ -8794,7 +8782,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                                        .all_matched = all_matched,
                                        .depth = depth + 1,
                                        .thematic_kill = parser->at.thematic_break_kill_pos};
-        markdown_core_block_turn turn = {parser, &context, &start, container, false};
+        markdown_core_block_turn turn = {
+            .parser = parser, .context = &context, .start = &start, .container = container, .reader = reader};
         const int key = S_gate_key(reader, reader->nonspace, reader->indent);
         const markdown_core_block_construct *const *starts = dialect->starts + dialect->start_offsets[key];
         const size_t count = (size_t)(dialect->start_offsets[key + 1] - dialect->start_offsets[key]);

@@ -139,7 +139,7 @@ static int block_matches(const markdown_core_element_instance *self, markdown_co
                          markdown_core_reader *reader, markdown_core_node *container) {
     if (reader->indent <= 3 &&
         is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
-        return MARKDOWN_CORE_BLOCK_CLOSED;
+        return MARKDOWN_CORE_TOKEN_CLOSE;
     }
     return 1;
 }
@@ -276,9 +276,20 @@ static const markdown_core_open_ops COMMENT_OPENS = {
     .token_count = COMMENT_KINDS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
+                              : block_matches(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops COMMENT_LINES = {
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .close = close_comment,
-    .matches = block_matches,
 };
 
 static bufsize_t S_follow_html(const markdown_core_element_instance *self, markdown_core_parser *parser,

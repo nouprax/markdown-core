@@ -130,9 +130,20 @@ static const markdown_core_open_ops HTML_BLOCK_OPENS = {
     .token_count = HTML_BLOCK_BLOCKS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
+                              : continue_html(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops HTML_BLOCK_LINES = {
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .blank_last = blank_line,
-    .matches = continue_html,
     .close = close_html,
     .ends = ends_html,
 };

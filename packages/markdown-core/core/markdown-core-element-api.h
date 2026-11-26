@@ -102,60 +102,6 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_COUNT
 } markdown_core_delimiter_rule;
 
-/** Returned by a 'markdown_core_match_block_func' when the reader's line is the
- *  container's own closing line.
- *
- *  The parser closes the container and every block still open inside it, ends
- *  the container at THIS line, and stops processing the line. Returning 1 and
- *  consuming the fence is not enough: the container stays open, and the next
- *  non-blank line is taken as a lazy paragraph continuation and pulled inside
- *  it, on the wrong line.
- *
- *  0 and 1 keep their meanings, so an element that never returns this is
- *  unaffected.
- */
-#define MARKDOWN_CORE_BLOCK_CLOSED 2
-/* A DirectiveBlock fence competes with deeper containers and opaque blocks. Leave
- * the cursor unchanged: the shared spine walk commits the deepest carried
- * container's closer only after descendant ownership is known. Both matching
- * and non-consuming continuation hooks may return this result. */
-#define MARKDOWN_CORE_BLOCK_PENDING_CLOSE 3
-/* The line continues the container, which takes it whole: no block opens on
- * it and no block takes it as text. The parser hands it to the container's
- * element (its lines' `take`) once the containers above have kept it, so a
- * pending closer above still takes the line, and the container then ends on
- * the line before. The blocks open inside the container end on the line
- * before it. */
-#define MARKDOWN_CORE_BLOCK_TAKEN 4
-
-/** Should return 'true' if the reader's line can be contained in 'container',
- *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if it is the
- *  container's own closing line. A DirectiveBlock returns
- *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
- *  A container that takes the line whole returns MARKDOWN_CORE_BLOCK_TAKEN
- *  and changes nothing: its element reads the line in `take_line`.
- */
-typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              markdown_core_reader *reader, markdown_core_node *container);
-
-/** Whether the reader's line would continue 'container', asked AHEAD OF TIME.
- *
- *  A block start may look at the lines after its own before it opens (see
- *  markdown_core_parser_lookahead_begin in the core), and it then asks every
- *  open container whether each later line carries its prefix. That question
- *  must leave no trace: the lines' `matches` consumes the line, closes the
- *  container on its fence and records state on the node, so it cannot be
- *  asked speculatively. An element that opens block CONTAINERS provides this
- *  hook as the same test with none of those effects: 1 when the line continues
- *  'container', 0 when it does not or is the container's own closing line. It
- *  must not change the parser beyond the reader, which the core resets, the
- *  container, or any node. A container whose element provides no hook ends
- *  every lookahead at its next line.
- */
-typedef int (*markdown_core_continues_block_func)(const markdown_core_element_instance *self,
-                                                  markdown_core_parser *parser, markdown_core_reader *reader,
-                                                  markdown_core_node *container);
-
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
                                               markdown_core_node_type child);
 

@@ -565,7 +565,7 @@ static int directive_block_continues(const markdown_core_element_instance *self,
     if (!directive_closer_line(directive, parser, reader)) {
         return 1;
     }
-    return MARKDOWN_CORE_BLOCK_PENDING_CLOSE;
+    return MARKDOWN_CORE_TOKEN_PEND;
 }
 
 static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -780,10 +780,20 @@ static const markdown_core_open_ops DIRECTIVE_OPENS = {
     .token_count = DIRECTIVE_BLOCKS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    return markdown_core_block_verdict(
+        tokenizer, turn->look ? directive_block_continues(self, turn->parser, turn->reader, turn->node)
+                              : directive_block_matches(self, turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops DIRECTIVE_LINES = {
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .pending = true,
-    .matches = directive_block_matches,
-    .continues = directive_block_continues,
 };
 
 /* Where a directive's label is (element.h, markdown_core_facet). */

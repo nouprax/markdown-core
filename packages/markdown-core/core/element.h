@@ -523,22 +523,33 @@ typedef struct markdown_core_open_ops {
 } markdown_core_open_ops;
 
 /* THE LINES: how an open block of the element's takes each line after its
- * first -- its container `prefix` and its `matches`, a lookahead's
- * `continues`, a blank line (`blank*`), a lazy line (`lazy*`), a line it
- * takes whole (`take`), its end condition (`ends`) -- and how it closes
- * (`close`). Each may be NULL; the dialect projects the prefixes and the
- * blank answers into the kind records as it is sealed. */
+ * first -- its `continuation`, a lazy line (`lazy*`), its end condition
+ * (`ends`), a blank line's mark (`blank*`) -- and how it closes (`close`).
+ * Each may be NULL; the dialect projects the prefixes and the blank answers
+ * into the kind records as it is sealed. */
 struct markdown_core_line_ops {
-    /* Whether the line continues the block (the typedef says how), asked
-     * of the deepest open block that has it. */
-    markdown_core_match_block_func matches;
-    /* The speculative form of `matches` a block-start lookahead asks
-     * (see the typedef); required of an element whose blocks contain blocks. */
-    markdown_core_continues_block_func continues;
-    /* The container's prefix match on a line, which strips its marker. */
-    bool (*prefix)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                   markdown_core_reader *, const markdown_core_node *, bool *);
-    /* The bytes `prefix` can strip from a line besides
+    /* THE CONTINUATION (plan symbols-cleanroom.md 23.14, S2): the construct
+     * tried at a line after the block's first, from the reader's offset,
+     * where the blocks above it left the line, its state reaching the line
+     * through the turn (block_internal.h, markdown_core_block_turn: `node`
+     * the open block, `joining` the block a lookahead is about to add
+     * below the open ones, NULL in the line's own reading). It fails when
+     * the line does not continue the block, and succeeds when it does,
+     * having moved the reader past the block's prefix -- with no token, or
+     * with the core's verdict token (markdown_core_block_continued): the
+     * line is the block's own closing line (MARKDOWN_CORE_TOKEN_CLOSE), a
+     * closer the blocks inside decide (`_PEND`), or a line the block takes
+     * whole, which the open block inside it takes as a line (`_TAKE`). A
+     * container's continuation is also asked by a block-start lookahead
+     * (`look`), where it must change nothing but the reader. NULL: every
+     * line continues the block. */
+    markdown_core_construct continuation;
+    /* Whether the continuation reads the line beyond the block's prefix: a
+     * line of the block's own may close it or stand outside it (a fence, a
+     * paragraph's blank line), so no edit's splice reads past it as past a
+     * prefix (blocks.c, THE NESTED SPLICE). */
+    bool beyond;
+    /* The bytes the continuation can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only; it strips at most one of them from a line. A
      * block-start question asked of a LATER line from raw source (the
@@ -552,9 +563,6 @@ struct markdown_core_line_ops {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *prefix_bytes;
-    /* Whether the block takes a blank line; NULL takes it. */
-    bool (*blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                  markdown_core_reader *);
     /* Whether a blank line it took leaves its last line blank (BLANK_ASK,
      * dialect.h); NULL decides by whether it takes lines. */
     bool (*blank_last)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
@@ -567,11 +575,6 @@ struct markdown_core_line_ops {
     /* The end condition, tested on a line the block took as content: true
      * closes it there. */
     bool (*ends)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 markdown_core_reader *);
-    /* Reads a line its block took whole (MARKDOWN_CORE_BLOCK_TAKEN), from
-     * the parser's cursor, which the block's matcher left where the blocks
-     * above it end. Required of an element whose matcher returns that. */
-    void (*take)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                  markdown_core_reader *);
     /* THE CLOSE HOOK, asked of a block as it closes inside the block that
      * holds it, which it settles into later. It reads the block -- its
@@ -595,8 +598,9 @@ struct markdown_core_line_ops {
      * as written: the engine cuts nothing first (a table whose header row
      * was a paragraph's text). */
     bool uncut;
-    /* Its `matches` may answer MARKDOWN_CORE_BLOCK_PENDING_CLOSE: a
-     * closer whose ownership the blocks inside decide. */
+    /* Its continuation may answer MARKDOWN_CORE_TOKEN_PEND: a closer whose
+     * ownership the blocks inside decide, which a line the blocks inside
+     * continue settles for them. */
     bool pending;
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `lazy`

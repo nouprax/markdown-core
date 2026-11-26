@@ -629,8 +629,20 @@ static const markdown_core_open_ops HEADING_OPENS = {
     .token_count = HEADING_BLOCKS,
 };
 
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    /* A block of its kind holds no block a lookahead adds. */
+    return markdown_core_block_verdict(
+        tokenizer, turn->look
+                       ? MARKDOWN_CORE_LINE_OFF
+                       : continue_heading(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+}
+
 static const markdown_core_line_ops HEADING_LINES = {
-    .matches = continue_heading,
+    .continuation = {.start = S_continue},
+    .beyond = true,
     .close = close_heading,
     .blank_opaque = true,
 };
