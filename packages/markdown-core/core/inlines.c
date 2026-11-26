@@ -675,7 +675,7 @@ markdown_core_node *markdown_core_compile_field(markdown_core_compiler *compiler
 
 bool markdown_core_text_give_up(markdown_core_tokenizer *tokenizer, markdown_core_node_kind opens, bufsize_t from,
                                 bufsize_t to, const markdown_core_field *fields, size_t count) {
-    uint32_t local[4 * MARKDOWN_CORE_GIVE_UP_FIELDS];
+    uint32_t local[4 * MARKDOWN_CORE_GIVE_UP_FIELDS] = {0};
     uint32_t *words = count <= MARKDOWN_CORE_GIVE_UP_FIELDS ? local : markdown_core_alloc(4 * count, sizeof(*words));
     if (!words) {
         tokenizer->events.failed = true;
