@@ -23,6 +23,8 @@
 #endif
 
 #include "alloc.h"
+#include "tokenizer.h"
+#include "compile.h"
 #include "node_type.h"
 #include "node.h"
 #include "buffer.h"
@@ -3620,6 +3622,146 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
  * answer with the earliest of them: a name defined as a reference is not a
  * footnote, and a name defined twice more answers where its earliest
  * definition is located. */
+/* THE TOKENIZER (core/tokenizer.h): toy constructs over a few bytes. */
+enum { TOY_AB = MARKDOWN_CORE_TOKEN_FIRST, TOY_AC, TOY_X, TOY_Q };
+
+static markdown_core_state toy_ab_b(markdown_core_tokenizer *t, int code);
+static markdown_core_state toy_ab(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_enter(t, TOY_AB);
+    markdown_core_consume(t);
+    return markdown_core_state_of(toy_ab_b);
+}
+static markdown_core_state toy_ab_end(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_exit(t, TOY_AB);
+    return markdown_core_ok(t);
+}
+static markdown_core_state toy_ab_b(markdown_core_tokenizer *t, int code) {
+    if (code != 'b') {
+        return markdown_core_nok(t);
+    }
+    markdown_core_consume(t);
+    return markdown_core_state_of(toy_ab_end);
+}
+static markdown_core_state toy_ac_c(markdown_core_tokenizer *t, int code);
+static markdown_core_state toy_ac(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_enter(t, TOY_AC);
+    markdown_core_consume(t);
+    return markdown_core_state_of(toy_ac_c);
+}
+static markdown_core_state toy_ac_c(markdown_core_tokenizer *t, int code) {
+    if (code != 'c') {
+        return markdown_core_nok(t);
+    }
+    markdown_core_consume(t);
+    markdown_core_exit(t, TOY_AC);
+    return markdown_core_ok(t);
+}
+static const markdown_core_construct TOY_AB_CONSTRUCT = {.start = toy_ab};
+static const markdown_core_construct TOY_AC_CONSTRUCT = {.start = toy_ac};
+
+/* x, when a y follows, which it checks and does not read. */
+static markdown_core_state toy_y(markdown_core_tokenizer *t, int code) {
+    if (code != 'y') {
+        return markdown_core_nok(t);
+    }
+    markdown_core_consume(t);
+    return markdown_core_ok(t);
+}
+static const markdown_core_construct TOY_Y_CONSTRUCT = {.start = toy_y};
+static markdown_core_state toy_x_seen(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_exit(t, TOY_X);
+    return markdown_core_ok(t);
+}
+static markdown_core_state toy_x_fail(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    return markdown_core_nok(t);
+}
+static markdown_core_state toy_x_next(markdown_core_tokenizer *t, int code) {
+    return markdown_core_check(t, &TOY_Y_CONSTRUCT, markdown_core_state_of(toy_x_seen),
+                               markdown_core_state_of(toy_x_fail), code);
+}
+static markdown_core_state toy_x(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_enter(t, TOY_X);
+    markdown_core_consume(t);
+    return markdown_core_state_of(toy_x_next);
+}
+static const markdown_core_construct TOY_X_CONSTRUCT = {.start = toy_x};
+
+/* q, and an ab after it read by an attempt inside it. */
+static markdown_core_state toy_q_done(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_exit(t, TOY_Q);
+    return markdown_core_ok(t);
+}
+static markdown_core_state toy_q_fail(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    return markdown_core_nok(t);
+}
+static markdown_core_state toy_q_next(markdown_core_tokenizer *t, int code) {
+    return markdown_core_attempt(t, &TOY_AB_CONSTRUCT, markdown_core_state_of(toy_q_done),
+                                 markdown_core_state_of(toy_q_fail), code);
+}
+static markdown_core_state toy_q(markdown_core_tokenizer *t, int code) {
+    (void)code;
+    markdown_core_enter(t, TOY_Q);
+    markdown_core_consume(t);
+    return markdown_core_state_of(toy_q_next);
+}
+static const markdown_core_construct TOY_Q_CONSTRUCT = {.start = toy_q};
+
+static const markdown_core_construct *const TOY_ITEMS[] = {&TOY_AB_CONSTRUCT, &TOY_AC_CONSTRUCT, &TOY_X_CONSTRUCT,
+                                                           &TOY_Q_CONSTRUCT};
+
+/* The tokens of a reading, as "kind:start-end" words, enters only. */
+static void toy_tokens(const markdown_core_tokenizer *t, char *out, size_t room) {
+    size_t at = 0;
+    out[0] = 0;
+    for (size_t i = 0; i < t->events.count; i++) {
+        if (t->events.items[i].phase != MARKDOWN_CORE_ENTER) {
+            continue;
+        }
+        const markdown_core_token *token = markdown_core_event_token(&t->events, i);
+        at += (size_t)snprintf(out + at, room - at, "%s%u:%u-%u", at ? " " : "", token->kind, token->start, token->end);
+    }
+}
+
+static void tokenizer_reads_constructs(test_batch_runner *runner) {
+    uint16_t offsets[257] = {0};
+    /* 'a' starts ab, then ac; 'q' starts q; 'x' starts x. */
+    for (int c = 0; c <= 256; c++) {
+        offsets[c] = (uint16_t)(c <= 'a' ? 0 : c <= 'q' ? 2 : c <= 'x' ? 3 : 4);
+    }
+    const markdown_core_construct *const sorted[] = {TOY_ITEMS[0], TOY_ITEMS[1], TOY_ITEMS[3], TOY_ITEMS[2]};
+    markdown_core_constructs text = {sorted, offsets};
+    markdown_core_tokenizer t;
+    markdown_core_tokenizer_init(&t);
+    char out[256];
+    static const struct {
+        const char *in, *tokens, *why;
+    } cases[] = {
+        {"zab", "1:0-1 4:1-3", "a construct after data"},
+        {"zad", "1:0-3", "a failed attempt is data, joined with the data around it"},
+        {"ac", "5:0-2", "the second construct a byte starts is tried when the first fails"},
+        {"xy", "6:0-1 1:1-2", "a check keeps nothing of what it read"},
+        {"xz", "1:0-2", "a check that fails fails its construct"},
+        {"qab", "7:0-3 4:1-3", "an attempt inside a construct nests its token"},
+        {"qac", "1:0-1 5:1-3", "a failed inner attempt fails the outer, which leaves its byte data"},
+        {"", "", "nothing reads to no events"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const bool read = markdown_core_tokenize_text(&t, (const unsigned char *)cases[i].in,
+                                                      (uint32_t)strlen(cases[i].in), &text, NULL);
+        toy_tokens(&t, out, sizeof(out));
+        OK(runner, read && strcmp(out, cases[i].tokens) == 0, "%s (%s: %s)", cases[i].why, cases[i].in, out);
+    }
+    markdown_core_tokenizer_free(&t);
+}
+
 static void labels_spaces_and_locations(test_batch_runner *runner) {
     markdown_core_labels labels;
     markdown_core_labels_init(&labels);
@@ -12505,6 +12647,7 @@ int main(void) {
     labels_store_one_allocation_each(runner);
     key_tree_matches_a_sorted_model(runner);
     labels_spaces_and_locations(runner);
+    tokenizer_reads_constructs(runner);
     labels_match_a_model(runner);
     properties_values(runner);
     properties_source_boundaries(runner);

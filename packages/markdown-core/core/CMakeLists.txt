@@ -21,6 +21,9 @@ set(HEADERS
     slab.h
     metadata.h
     labels.h
+    events.h
+    tokenizer.h
+    compile.h
     tree.h
     index.h
     map.h
@@ -50,6 +53,9 @@ set(LIBRARY_SOURCES
     buffer.c
     names.c
     labels.c
+    events.c
+    tokenizer.c
+    compile.c
     map.c
     tree.c
     index.c
