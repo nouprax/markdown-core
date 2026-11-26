@@ -405,8 +405,16 @@ static bool S_collect(S_pass *pass, size_t from, size_t to) {
     markdown_core_events *events = &tokenizer->events;
     size_t count = 0;
     for (size_t at = from; at < to; at++) {
-        if (events->items[at].phase == MARKDOWN_CORE_ENTER &&
-            S_sequence_of(dialect, markdown_core_event_token(events, at)->kind)) {
+        if (events->items[at].phase != MARKDOWN_CORE_ENTER) {
+            continue;
+        }
+        const markdown_core_token *token = markdown_core_event_token(events, at);
+        if (token->kind == MARKDOWN_CORE_TOKEN_MARKER && token->data > at + 1) {
+            /* What was resolved holds no marker of this pass, as below
+             * (S_word): its events are not counted again, or nested
+             * bodies are read once per depth. */
+            at = token->data - 1;
+        } else if (S_sequence_of(dialect, token->kind)) {
             count++;
         }
     }
