@@ -272,6 +272,16 @@ static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_c
         bufsize_t from = node->content_map.offset - inline_state->owner->content_map.offset;
         bufsize_t first = trim_start ? start - from : 0;
         bufsize_t length = trim_end && end - from < text->len ? end - from : text->len;
+        if ((bufsize_t)(place.end - place.start) != text->len) {
+            /* A literal shorter than its scope (the spaces before a line's
+             * end left out) maps its bytes to the whole scope, at no offset
+             * of the content: it is cut where its source is, the line it
+             * lies on holding its bytes one for one from its start. */
+            first = trim_start ? first_byte - (bufsize_t)place.start : 0;
+            length = trim_end && end_byte - (bufsize_t)place.start < text->len ? end_byte - (bufsize_t)place.start
+                                                                               : text->len;
+            from = start - (first_byte - (bufsize_t)place.start);
+        }
         if (length <= first) {
             return false;
         }
