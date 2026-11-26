@@ -145,7 +145,7 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
     return MARKDOWN_CORE_OK;
 }
 
-static markdown_core_status session_change(markdown_core_session *session, size_t first, size_t from, size_t to,
+static markdown_core_status session_update(markdown_core_session *session, size_t first, size_t from, size_t to,
                                            const uint8_t *text, size_t length, const markdown_core_document **document);
 
 /* AN APPEND IS AN EDIT AT THE TEXT'S END: the text the session holds is
@@ -154,7 +154,7 @@ static markdown_core_status session_change(markdown_core_session *session, size_
 markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text, size_t size,
                                                   const markdown_core_document **document) {
     const size_t end = session->text.count;
-    return session_change(session, markdown_core_parser_line_count(session->committed) - 1, end, end, text, size,
+    return session_update(session, markdown_core_parser_line_count(session->committed) - 1, end, end, text, size,
                           document);
 }
 
@@ -298,53 +298,44 @@ static markdown_core_status session_reread(markdown_core_session *session, uint3
 
 /* THE DEFINITIONS AN EDIT ALTERED (plan 12.3, step 5; E-D2): every lookup
  * is a use of its label by the inline root that made it, and keeps the
- * answer it was given (labels.h). At the end of the edit, the
- * uses of the labels it changed whose answer is not the label's now are
- * the lookups that would answer otherwise (markdown_core_parser_altered_uses),
- * wherever and whenever in the edit they were made, and only their blocks
- * are read again, as an edit of nothing just past where the root starts
- * reads them when it takes no old child back before the last, which
- * completes their content against the definitions the edit left and keeps
- * the identity of every node. */
+ * answer it was given (labels.h). After a reading, the uses of the labels
+ * it changed whose answer is not the label's now are the lookups that would
+ * answer otherwise (markdown_core_parser_altered_uses), wherever and
+ * whenever in the edit they were made, and only their blocks are read
+ * again, as an edit of nothing just past where the root starts reads them
+ * when it takes no old child back before the last, which completes their
+ * content against the definitions the edit left and keeps the identity of
+ * every node.
+ *
+ * THE REGIONS (plan symbols-cleanroom.md 21.7): an edit is a queue of
+ * regions, each read by the same reading (block lines, inline content,
+ * names, publish, each stopping where its output stands as it was): first
+ * the edited text, or all of it for a compaction, then one place per
+ * altered use. A region's reading reads the root of its place, and the
+ * places a reading read past need none of their own, so a label many roots
+ * name costs a reading per root and never the text between them. */
 
-/* The kept text read again at the `place_count` `places`, one past where
- * each use of an altered label lies, in order, which it frees: each
- * reading reads the root of one place, and the places it read past need
- * none of their own, so a label many roots name costs a reading per root
- * and never the text between them. The bytes read again join those the
- * edit read. */
-static markdown_core_status session_refresh(markdown_core_session *session, size_t *places, size_t place_count) {
+/* Reads the region of the kept text one past `place`, where a use of an
+ * altered label lies: the root of that place. */
+static markdown_core_status session_read_place(markdown_core_session *session, size_t place) {
     session_edits *edits = session->edits;
-    markdown_core_status status = MARKDOWN_CORE_OK;
-    size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
-    for (size_t at = 0; status == MARKDOWN_CORE_OK && at < place_count;) {
-        /* An edit just past the opener: one at a block's start would be the
-         * end of the block before. */
-        const size_t inside = places[at] + 1;
-        markdown_core_rest rest;
-        const markdown_core_rest_edit ask = {
-            .line = markdown_core_parser_line_of(session->committed, inside), .from = inside, .to = inside};
-        if (!markdown_core_index_rest(&edits->index, session_source(session), session->text.count, &ask, &rest)) {
-            status = MARKDOWN_CORE_ALLOCATION_FAILED;
-            break;
-        }
-        status = session_reread(session, rest.child, rest.line, session_line_start(session, rest.line), inside, inside,
-                                0, inside, false, &rest);
-        reread_from = edits->reread_from < reread_from ? edits->reread_from : reread_from;
-        reread_to = edits->reread_to > reread_to ? edits->reread_to : reread_to;
-        for (at++; at < place_count && places[at] < edits->reread_to; at++) {
-        }
+    /* An edit just past the opener: one at a block's start would be the
+     * end of the block before. */
+    const size_t inside = place + 1;
+    markdown_core_rest rest;
+    const markdown_core_rest_edit ask = {
+        .line = markdown_core_parser_line_of(session->committed, inside), .from = inside, .to = inside};
+    if (!markdown_core_index_rest(&edits->index, session_source(session), session->text.count, &ask, &rest)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    markdown_core_free(places);
-    edits->reread_from = reread_from;
-    edits->reread_to = reread_to;
-    return status;
+    return session_reread(session, rest.child, rest.line, session_line_start(session, rest.line), inside, inside, 0,
+                          inside, false, &rest);
 }
 
 /* Replaces the bytes from `from` to `to` of the text, `from` on line
  * `first` (from 0), with `length` bytes of `text`, and reads the text again
  * from the rest point. */
-static markdown_core_status session_change(markdown_core_session *session, size_t first, size_t from, size_t to,
+static markdown_core_status session_update(markdown_core_session *session, size_t first, size_t from, size_t to,
                                            const uint8_t *text, size_t length,
                                            const markdown_core_document **document) {
     if (!session->document.root) {
@@ -395,25 +386,31 @@ static markdown_core_status session_change(markdown_core_session *session, size_
         }
         edits->peak = session->text.count;
     }
-    /* A lookup whose answer the edit altered is made again, wherever it was
-     * made (THE DEFINITIONS AN EDIT ALTERED). */
-    if (status == MARKDOWN_CORE_OK && !compact) {
-        size_t *places, place_count;
-        if (!markdown_core_parser_altered_uses(session->committed, &places, &place_count)) {
-            /* The children that stay may read otherwise, and no edit after
-             * this one may take them as they are. */
-            markdown_core_node_pool_release(&session->pool, session->document.root);
-            session->document.root = NULL;
-            status = MARKDOWN_CORE_ALLOCATION_FAILED;
-        } else if (place_count) {
-            status = session_refresh(session, places, place_count);
-            if (status != MARKDOWN_CORE_OK && session->document.root) {
-                /* The children that name an altered label read as they
-                 * did, and no edit after this one may take them so. */
-                markdown_core_node_pool_release(&session->pool, session->document.root);
-                session->document.root = NULL;
-            }
+    /* The regions the edit's reading altered a lookup in follow (THE
+     * REGIONS); a compaction read every lookup again. Their readings read
+     * definitions as they were, so they alter none. */
+    size_t *queue = NULL, count = 0;
+    if (status == MARKDOWN_CORE_OK && !compact &&
+        !markdown_core_parser_altered_uses(session->committed, &queue, &count)) {
+        status = MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    size_t reread_from = edits->reread_from, reread_to = edits->reread_to;
+    for (size_t at = 0; status == MARKDOWN_CORE_OK && at < count;) {
+        status = session_read_place(session, queue[at]);
+        reread_from = edits->reread_from < reread_from ? edits->reread_from : reread_from;
+        reread_to = edits->reread_to > reread_to ? edits->reread_to : reread_to;
+        /* The places the reading read past are read. */
+        for (at++; at < count && queue[at] < edits->reread_to; at++) {
         }
+    }
+    markdown_core_free(queue);
+    edits->reread_from = reread_from;
+    edits->reread_to = reread_to;
+    if (status != MARKDOWN_CORE_OK && !compact && session->document.root) {
+        /* The children that name an altered label read as they did, and no
+         * edit after this one may take them so. */
+        markdown_core_node_pool_release(&session->pool, session->document.root);
+        session->document.root = NULL;
     }
     if (status == MARKDOWN_CORE_OK) {
 #ifndef NDEBUG
@@ -442,7 +439,7 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (!session_offset(session, start, &from) || !session_offset(session, end, &to) || from > to) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    return session_change(session, (size_t)start.line - 1, from, to, text, length, document);
+    return session_update(session, (size_t)start.line - 1, from, to, text, length, document);
 }
 
 void markdown_core_session_reread(const markdown_core_session *session, size_t *from, size_t *to) {
