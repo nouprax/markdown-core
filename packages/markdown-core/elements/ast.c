@@ -594,6 +594,10 @@ static inline publish_relation publish_next(publish_frame *frame, const publish_
 typedef struct {
     uint32_t from, to;
     int64_t delta;
+    /* The last id issued before the edit (parser.h, `kept`): a node an
+     * earlier reading of the same edit placed is continued by none but
+     * itself, published in place. */
+    uint64_t kept;
 } publish_edit;
 
 /* An empty source anchors at its position: one before the edit, or at the
@@ -1484,7 +1488,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const markdown_core_node 
         if (anchored && anchor >= source.end) {
             break;
         }
-        if (anchored && anchor >= source.start && old->kind == node->kind) {
+        if (anchored && anchor >= source.start && old->kind == node->kind &&
+            (old->id <= edit->kept || old == node)) {
             owner->old_item = slot + 1;
             owner->old_source = window.end;
             *old_start = window.start;
@@ -1582,7 +1587,8 @@ static const markdown_core_tail_record *publish_record_match(const markdown_core
         if (record->field != (uint32_t)owner->field || (anchored && anchor >= source.end)) {
             break;
         }
-        if (anchored && anchor >= source.start && record->kind == node->kind) {
+        if (anchored && anchor >= source.start && record->kind == node->kind &&
+            (record->id <= edit->kept || (node->id && record->id == node->id))) {
             owner->record = record->next;
             *old_start = record->start;
             return record;
@@ -2134,11 +2140,11 @@ static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
             ? parser->stream->edit->leap->node
             : NULL;
     const markdown_core_stream *stream = parser->stream;
-    walk->moved = NULL;
-    if (stream->edit_to || stream->edit_delta) {
-        walk->edit = (publish_edit){stream->edit_from, stream->edit_to, stream->edit_delta};
-        walk->moved = &walk->edit;
-    }
+    const uint64_t kept = parser->revision->kept ? parser->revision->kept : parser->revision->last_id;
+    walk->edit = stream->edit_to || stream->edit_delta
+                     ? (publish_edit){stream->edit_from, stream->edit_to, stream->edit_delta, kept}
+                     : (publish_edit){0, 0, 0, kept};
+    walk->moved = &walk->edit;
 }
 
 static void publish_end(const publish_walk *walk, markdown_core_parser *parser) {

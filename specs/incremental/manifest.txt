@@ -18,6 +18,8 @@ family rows
 family splits
 document documents/identity-type-at-paragraph-end.md
 script documents/identity-type-at-paragraph-end.md scripts/identity-type-at-paragraph-end.script
+document documents/identity-reference-invalidated-merge.md
+script documents/identity-reference-invalidated-merge.md scripts/identity-reference-invalidated-merge.script
 document documents/identity-paragraph-to-setext-and-back.md
 script documents/identity-paragraph-to-setext-and-back.md scripts/identity-paragraph-to-setext-and-back.script
 document documents/identity-row-appended-to-table.md

@@ -541,6 +541,7 @@ static void S_project_text(markdown_core_dialect *dialect, markdown_core_element
     for (size_t k = MARKDOWN_CORE_TOKEN_LABEL; k <= MARKDOWN_CORE_TOKEN_MARKER; k++) {
         compiles[k] = &MARKDOWN_CORE_LABEL_TOKENS[k - MARKDOWN_CORE_TOKEN_LABEL];
     }
+    compiles[MARKDOWN_CORE_TOKEN_FLOW] = &MARKDOWN_CORE_FLOW_TOKEN;
     /* The constructs that may hold something open, asked at every start
      * of the text (markdown_core_tokenizer_settled). */
     size_t held = 0;

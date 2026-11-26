@@ -1,0 +1,5 @@
+markdown-core incremental script 3
+script identity-reference-invalidated-merge ids
+edit 4 6 203c
+expect kept Paragraph 6 0
+expect kept Text 9 0

@@ -106,6 +106,21 @@ void markdown_core_consume_to(markdown_core_tokenizer *tokenizer, uint32_t end) 
     tokenizer->consumed = true;
 }
 
+void markdown_core_move_to(markdown_core_tokenizer *tokenizer, uint32_t end) {
+    assert(tokenizer->position <= end && end <= tokenizer->size);
+    tokenizer->position = end;
+    tokenizer->consumed = true;
+}
+
+void markdown_core_cursor_move(markdown_core_tokenizer *tokenizer) {
+    if (tokenizer->cursor) {
+        const uint32_t at = tokenizer->base + (uint32_t)tokenizer->cursor->offset;
+        if (at > tokenizer->position && at <= tokenizer->size) {
+            markdown_core_move_to(tokenizer, at);
+        }
+    }
+}
+
 void markdown_core_met_end(markdown_core_tokenizer *tokenizer) {
     /* Data reads no end: only a construct decides by it, or what a
      * construct's `passes` said of the data's bytes. */
@@ -214,7 +229,11 @@ static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state
                                                              .opens = tokenizer->open_count,
                                                              .given = tokenizer->note_count,
                                                              .notes = tokenizer->note_count,
-                                                             .check = check};
+                                                             .check = check,
+                                                             .base = tokenizer->base};
+    if (tokenizer->cursor) {
+        frames[tokenizer->frame_count - 1].stand = markdown_core_reader_stand_of(tokenizer->cursor);
+    }
     return true;
 }
 
@@ -248,6 +267,10 @@ markdown_core_state markdown_core_check(markdown_core_tokenizer *tokenizer, cons
 static void S_restore(markdown_core_tokenizer *tokenizer, const markdown_core_frame *frame) {
     tokenizer->rewound += tokenizer->position - frame->position;
     tokenizer->position = frame->position;
+    tokenizer->base = frame->base;
+    if (tokenizer->cursor) {
+        markdown_core_reader_stand_back(tokenizer->cursor, &frame->stand);
+    }
     tokenizer->open_count = frame->opens;
     markdown_core_events_cut(&tokenizer->events, frame->events, frame->tokens);
     while (tokenizer->mark_count && tokenizer->marks[tokenizer->mark_count - 1].token >= frame->tokens) {
@@ -568,10 +591,11 @@ static void S_reset(markdown_core_tokenizer *tokenizer, const markdown_core_read
     tokenizer->records = read->records;
     tokenizer->start = read->start;
     tokenizer->context = read->context;
+    tokenizer->cursor = read->cursor;
+    tokenizer->base = 0;
     tokenizer->halts = read->halts;
     tokenizer->halted = false;
     tokenizer->done = false;
-    tokenizer->accepted = false;
     if (read->room) {
         memset(read->records, 0, read->room);
     }
@@ -640,31 +664,30 @@ bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_c
     return S_finish(tokenizer);
 }
 
-/* THE ONE ATTEMPT (markdown_core_tokenizer_try): the reading's first state
- * attempts the construct, and its ends say how it went. */
-static markdown_core_state S_try_ok(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    tokenizer->accepted = true;
-    return S_end(tokenizer);
-}
-
-static markdown_core_state S_try_nok(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_end(tokenizer);
-}
-
-static markdown_core_state S_try_first(markdown_core_tokenizer *tokenizer, int code) {
-    return markdown_core_attempt(tokenizer, tokenizer->one, markdown_core_state_of(S_try_ok),
-                                 markdown_core_state_of(S_try_nok), code);
-}
-
-bool markdown_core_tokenizer_try(markdown_core_tokenizer *tokenizer, const markdown_core_read *read,
-                                 const markdown_core_construct *construct) {
+void markdown_core_tokenizer_begin(markdown_core_tokenizer *tokenizer, const markdown_core_read *read,
+                                   markdown_core_state state) {
     S_reset(tokenizer, read);
-    tokenizer->one = construct;
-    S_run(tokenizer, markdown_core_state_of(S_try_first));
-    return S_finish(tokenizer) && tokenizer->accepted;
+    tokenizer->resume = state;
 }
+
+bool markdown_core_tokenizer_feed(markdown_core_tokenizer *tokenizer, const unsigned char *data, uint32_t size,
+                                  uint32_t from) {
+    assert(!tokenizer->frame_count && !tokenizer->open_count);
+    tokenizer->data = data;
+    tokenizer->size = size;
+    tokenizer->position = from;
+    tokenizer->done = false;
+    S_run(tokenizer, tokenizer->resume);
+    return !tokenizer->events.failed;
+}
+
+markdown_core_state markdown_core_pause(markdown_core_tokenizer *tokenizer, markdown_core_state next) {
+    assert(!tokenizer->frame_count);
+    tokenizer->resume = next;
+    return S_end(tokenizer);
+}
+
+bool markdown_core_tokenizer_end(markdown_core_tokenizer *tokenizer) { return S_finish(tokenizer); }
 
 void markdown_core_halt(markdown_core_tokenizer *tokenizer) {
     if (!tokenizer->halted) {

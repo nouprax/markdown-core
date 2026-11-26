@@ -479,13 +479,21 @@ typedef struct markdown_core_cut {
  * at the starts whose `indent`, the most indentation they open at, reaches
  * it. A `last` start is tried only where an ordinary paragraph would open
  * (the line neither lazy nor over a paragraph), and the line opens nothing
- * after it: the block it opens takes the line's text. */
+ * after it: the block it opens takes the line's text. A start with a
+ * `within` kind is tried only where the line stands in an open block of
+ * that kind (a table's row in its table): like `bytes`, a statement of the
+ * grammar, never a filter for speed. */
 typedef struct markdown_core_block_construct {
     const char *bytes;
     int indent;
     int precedence;
     bool last;
+    markdown_core_node_type within;
     markdown_core_construct construct;
+    /* Releases what the construct found and holds in the start's record
+     * (`found`) when its token is not compiled: the parse failed after it
+     * succeeded. NULL when its record holds nothing to release. */
+    void (*drop)(const struct markdown_core_element_instance *self, struct markdown_core_block_start *start);
 } markdown_core_block_construct;
 
 typedef struct markdown_core_open_ops {
@@ -560,10 +568,10 @@ struct markdown_core_line_ops {
     bool blank_opaque;
     bool blank_runs;
     bool blank_spreads;
-    /* The end condition, tested on a line the block took as content: true
-     * closes it there. */
-    bool (*ends)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 markdown_core_reader *);
+    /* THE END CONDITION, checked on a line the block took as content, in
+     * the document's reading (the turn's `node` the block): its success
+     * closes the block there. Its start NULL for none. */
+    markdown_core_construct ends;
     /* THE CLOSE HOOK, asked of a block as it closes inside the block that
      * holds it, which it settles into later. It reads the block -- its
      * content, its children and its open state -- and makes the node the
@@ -600,16 +608,18 @@ struct markdown_core_line_ops {
      * paragraph's line. */
     bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                  markdown_core_reader *);
-    /* THE TEXT OF ITS LINE: the line's text from the reader's offset, at the
-     * line's TEXT step (blocks.c), given to `node`, a block the line opened,
-     * which makes a field of its own of it -- a callout's title -- and true;
-     * false when the block takes none, and a paragraph does. What the block
-     * reads of the text is no step of the line's: the line gave the text away
-     * there (blocks.c, A REST INSIDE A LINE), as it gives a paragraph its
-     * text. A block of the element that a rest inside that line reopens is
-     * given the text again, and makes the field anew. NULL for none. */
-    bool (*text)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 markdown_core_reader *);
+    /* THE TEXT OF ITS LINE: a construct attempted on the line's text from
+     * the reader's offset, at the line's TEXT step (blocks.c), in the
+     * document's reading, the turn's `node` a block the line opened. It
+     * succeeds when the block takes the text, its tokens, compiled by the
+     * element's block token handlers (markdown_core_open_ops `tokens`),
+     * making a field of its own of it -- a callout's title; it fails when
+     * the block takes none, and a paragraph does. What the block reads of
+     * the text is no step of the line's: the line gave the text away there
+     * (blocks.c, A REST INSIDE A LINE), as it gives a paragraph its text. A
+     * block of the element that a rest inside that line reopens is given
+     * the text again, and makes the field anew. Its start NULL for none. */
+    markdown_core_construct text;
     /* The flags of the block that its container's prefix match sets line by
      * line, which a lookahead puts back. A line that holds a byte other
      * than spaces, tabs and container prefix bytes sets them as no line

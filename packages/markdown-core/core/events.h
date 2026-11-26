@@ -47,6 +47,13 @@ typedef enum {
     MARKDOWN_CORE_TOKEN_CLOSE,
     MARKDOWN_CORE_TOKEN_PEND,
     MARKDOWN_CORE_TOKEN_TAKE,
+    /* A block's prefix on a line it continues: the bytes its continuation
+     * read, "continued". */
+    MARKDOWN_CORE_TOKEN_PREFIX,
+    /* A line's text a block takes, from where the reading stands to the
+     * line's end: compiled, the block's content takes it (blocks.c,
+     * markdown_core_block_add_line). */
+    MARKDOWN_CORE_TOKEN_FLOW,
     /* The first kind the dialect gives an element's token. */
     MARKDOWN_CORE_TOKEN_FIRST
 } markdown_core_token_kind;

@@ -559,16 +559,24 @@ static markdown_core_node *S_row_open(markdown_core_parser *parser, markdown_cor
  * the paragraph above it, and takes a row on each later line it matches. */
 enum { TABLE_HEAD, TABLE_ROW, TABLE_BLOCKS };
 
-static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+/* A delimiter row under a paragraph's last line opens the table. */
+static markdown_core_state S_head_start(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_node *container = turn->context->container;
-    markdown_core_reader *reader = turn->context->reader;
-    table_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found);
-    if (container->kind == MARKDOWN_CORE_NODE_PARAGRAPH && S_head_found(container, reader, found)) {
+    if (container->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        S_head_found(container, turn->context->reader, MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found))) {
         return markdown_core_block_found(tokenizer, TABLE_HEAD);
     }
-    if (container->kind == MARKDOWN_CORE_NODE_TABLE && S_row_found(container, reader, found)) {
+    return markdown_core_nok(tokenizer);
+}
+
+/* A pipe row in an open table is its next row. */
+static markdown_core_state S_row_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    if (S_row_found(turn->context->container, turn->context->reader,
+                    MARKDOWN_CORE_BLOCK_FOUND(turn->start, table_found))) {
         return markdown_core_block_found(tokenizer, TABLE_ROW);
     }
     return markdown_core_nok(tokenizer);
@@ -692,8 +700,10 @@ static const markdown_core_content_ops TABLE_CONTENT = {
     .holds_inlines = contains_inlines,
 };
 
+/* A delimiter row begins with a pipe, a colon or a dash (scan_table_start). */
 static const markdown_core_block_construct TABLE_STARTS[] = {
-    {.indent = 3, .precedence = 1, .construct = {.start = S_block_start}},
+    {.bytes = "|:-", .indent = 3, .precedence = 1, .construct = {.start = S_head_start}},
+    {.indent = 3, .precedence = 1, .within = MARKDOWN_CORE_NODE_TABLE, .construct = {.start = S_row_start}},
 };
 
 static const markdown_core_compile_ops TABLE_BLOCK_TOKENS[TABLE_BLOCKS] = {
@@ -703,7 +713,7 @@ static const markdown_core_compile_ops TABLE_BLOCK_TOKENS[TABLE_BLOCKS] = {
 
 static const markdown_core_open_ops TABLE_OPENS = {
     .starts = TABLE_STARTS,
-    .start_count = 1,
+    .start_count = 2,
     .tokens = TABLE_BLOCK_TOKENS,
     .token_count = TABLE_BLOCKS,
 };

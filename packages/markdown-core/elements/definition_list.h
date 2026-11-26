@@ -10,6 +10,9 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST;
  * element's parse record): the marker and term bytes it examined, for its gate. */
 typedef struct {
     size_t work;
+    /* The body whose continuation reads on past a blank line, while its
+     * reading's look stands on the lines after it. */
+    markdown_core_node *body;
 } markdown_core_definition_list_work;
 
 #endif

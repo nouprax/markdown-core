@@ -15,12 +15,22 @@ typedef struct {
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
                                                      markdown_core_node *parent, markdown_core_reader *reader);
-/* A line that would open a paragraph in `parent`: an identifier alone on it
- * names the pending block, and true when the line opens nothing: the
- * identifier attached. */
-bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
-                                                markdown_core_parser *parser, markdown_core_node *parent,
-                                                markdown_core_reader *reader);
+/* What an identifier line found: the block it names and its identifier. */
+typedef struct {
+    markdown_core_node *owner;
+    markdown_core_chunk identifier;
+    bufsize_t content_end;
+} markdown_core_block_identifier_line_found;
+/* A line that would open a paragraph in `parent` may be an identifier line
+ * naming the block before it (block_identifier.c, THE IDENTIFIER LINE):
+ * true when it is one the boundary after it decides, already read when
+ * the input ends after it (`*bounded`); then it names its owner, false
+ * when it could not. */
+bool markdown_core_block_identifier_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                         markdown_core_node *parent, markdown_core_reader *reader,
+                                         markdown_core_block_identifier_line_found *found, bool *bounded);
+bool markdown_core_block_identifier_line_attach(markdown_core_parser *parser, markdown_core_reader *reader,
+                                                const markdown_core_block_identifier_line_found *found);
 /* Whether a line as written may be an identifier line, which names the
  * block before it (element.h, the follow's `writes`): one that ends with
  * an identifier, whatever its prefixes. */

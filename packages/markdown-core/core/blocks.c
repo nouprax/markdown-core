@@ -61,12 +61,16 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_par
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline void S_reader_close(markdown_core_parser *parser);
+static void S_walk_free(markdown_core_parser *parser, struct markdown_core_walk **walk);
+static void S_walk_end(markdown_core_parser *parser);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
 
-static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
+static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes, size_t start,
+                           size_t next);
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_process_held_line(markdown_core_parser *parser,
                                                                     const unsigned char *buffer, bufsize_t bytes,
+                                                                    size_t start, size_t next,
                                                                     const markdown_core_line_stop *from);
 /* The content of input line `line`, without its terminator, and its
  * length: the input's own bytes, as written. */
@@ -341,6 +345,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_array_free(&parser->line_marks);
 
     markdown_core_inline_release_records(parser);
+    S_walk_free(parser, &parser->walk);
+    S_walk_free(parser, &parser->cell_walk);
     markdown_core_inline_release_passes(parser);
 
     /* The block-start lookahead's path, flags and resume cache are parser
@@ -348,6 +354,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
      * owned by no node, and dead with the parse. */
     markdown_core_free(parser->lookahead_path);
     parser->lookahead_path = NULL;
+    markdown_core_free(parser->look);
+    parser->look = NULL;
     parser->lookahead_containers = NULL;
     parser->lookahead_capacity = 0;
 }
@@ -938,20 +946,6 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
         S_line_places(parser, node, first, last);
     }
     *line = last;
-}
-
-void markdown_core_parser_claim(markdown_core_parser *parser, int line, const unsigned char *cursor, bufsize_t end) {
-    /* The lookahead's last scan of each line recorded where it matched the
-     * line's containers to in the reading's memo. */
-    for (int claimed = parser->at.read.number + 1; claimed <= line; claimed++) {
-        markdown_core_input_line *visited = markdown_core_parser_rewritten_line(parser, claimed);
-        assert(claimed >= parser->input.memo_base &&
-               (size_t)(claimed - parser->input.memo_base) < parser->input.memo_count);
-        visited->own = (uint32_t)parser->input.memo[claimed - parser->input.memo_base].offset;
-    }
-    parser->claimed_cursor = cursor;
-    parser->claimed_line = line;
-    parser->claimed_last_end = end;
 }
 
 /* One copied run of a document line. */
@@ -1755,16 +1749,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_unsettle_field(markdown_core_p
 /* THE TEXT OF ITS LINE (element.h): the field an earlier reading of the
  * line made goes before `structure`'s block `node` is given the text again,
  * whatever element made it, and the element makes the field anew. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_text_of_line(
-    const markdown_core_element_instance *structure, markdown_core_parser *parser, markdown_core_node *node,
-    markdown_core_reader *reader) {
+static void S_text_unsettle(const markdown_core_element_instance *structure, markdown_core_parser *parser,
+                            markdown_core_node *node) {
     const markdown_core_edit_ops *edit = structure->element->edit;
     markdown_core_node **slot = edit && edit->text ? edit->text(node) : NULL;
     if (slot && *slot) {
         S_unsettle_field(parser, *slot, node);
         *slot = NULL;
     }
-    return structure->lines->text(structure, parser, node, reader);
 }
 
 /* The pending block settles into `holder`, the current block of kind
@@ -3985,6 +3977,10 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     }
     const markdown_core_parser_input document = parser->input;
     const markdown_core_parser_at at = parser->at;
+    /* Each cell's content is a document of its own, read by a reading of
+     * its own (THE DOCUMENT'S READING). */
+    struct markdown_core_walk *const reading = parser->walk;
+    parser->walk = parser->cell_walk;
     const uint32_t enclosing = parser->input_enclosing;
     parser->input = *parser->cell_input;
     parser->at.pending = NULL;
@@ -3997,6 +3993,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         parser->at.last_line_end = parser->line_marks.values[owner->content_map.first].source;
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
         S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size);
+        S_walk_end(parser);
         if (parser->error) {
             break;
         }
@@ -4009,6 +4006,8 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         owner->content_map.offset = 0;
     }
     *parser->cell_input = parser->input;
+    parser->cell_walk = parser->walk;
+    parser->walk = reading;
     parser->input = document;
     parser->at = at;
     parser->input_enclosing = enclosing;
@@ -4805,7 +4804,7 @@ static void S_reopen_level(markdown_core_parser *parser, markdown_core_node *nod
     }
     if (deepest && blank) {
         /* The deepest block took the blank line before, as
-         * add_text_to_container sets it. */
+         * the line's text sets it (S_text_of). */
         S_set_last_line_blank(node,
                               !(kind->flags & MARKDOWN_CORE_KIND_BLANK_OPAQUE) &&
                                   (!(kind->flags & MARKDOWN_CORE_KIND_BLANK_ASK)
@@ -5451,7 +5450,7 @@ static bool S_leap_ready(markdown_core_parser *parser, size_t line, int64_t delt
     markdown_core_tree *lines = &input->lines;
     const size_t back = S_lines_back_from(lines, edit->ends[edit->depth - 1]);
     const bool shut =
-        (edit->states[edit->depth - 1] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) && !kind->structure->lines->ends;
+        (edit->states[edit->depth - 1] & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) && !kind->structure->lines->ends.start;
     /* Where the rest point's line starts in the content: the marks say,
      * those the block's last reading left (THE PREFIX OF A PARAGRAPH), or
      * those made from its content's lines when it left none (THE MARKS OF
@@ -5728,7 +5727,6 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
         .last_line_end = last ? (bufsize_t)last->end : 0,
         .lookahead_cursor = (const unsigned char *)source + start,
     };
-    parser->claimed_cursor = NULL;
     parser->reading = false;
     root->flags |= MARKDOWN_CORE_NODE__OPEN;
     parser->root = root;
@@ -5805,9 +5803,6 @@ static bool S_joins(const markdown_core_edit_ops *ops, markdown_core_node_type k
     }
     return false;
 }
-
-static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind,
-                           size_t start);
 
 /* The root, which holds the children the reading gave it after those
  * before the old tail, takes the old tail back from its child `first` (THE
@@ -5963,35 +5958,31 @@ static bool S_splice(markdown_core_parser *parser, size_t start, size_t index, s
  * taken back stand as their publish left them, and only the first of the
  * block the splice is at moves, from the child before it. */
 
-/* How the line after the reading's, read as the next line is, takes the
- * prefixes of the open blocks from the root down to `block`, as one that
- * starts a block of kind `kind` in it: 1 when it carries them and is not
- * blank past them, 0 when it does not carry them, -1 otherwise -- read by
- * a lookahead, which leaves the reading as it was, and notes no reach
- * (THE REACH). */
-static int S_carries(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind) {
-    markdown_core_edit *edit = parser->stream->edit;
-    markdown_core_block_lookahead lookahead;
-    edit->quiet = true;
-    if (!markdown_core_parser_lookahead_begin(parser, block, kind, &lookahead)) {
-        edit->quiet = false;
-        return -1;
-    }
-    int blanks;
-    const bool read = markdown_core_parser_lookahead_next(&lookahead, &blanks) != NULL;
-    const int carried = blanks ? -1 : !read ? 0 : lookahead.line == lookahead.saved.read.number + 2 ? 1 : -1;
-    markdown_core_parser_lookahead_end(&lookahead);
-    edit->quiet = false;
-    return parser->error ? -1 : carried;
-}
+/* THE REST AS THE READING READS IT: the edit's reading, at the start of
+ * the line at `start`, line `index` of the input, where the old child it
+ * tries next starts its line (THE SPLICE), asks whether it stands there
+ * as the old reading did (S_stands) in the document's reading's states
+ * (S_rest_start). How the line takes the prefixes of the open blocks from
+ * the root down to a block, as one that starts a block of a kind in it, is
+ * a look of that reading, a check, which leaves it as it was and notes no
+ * reach (THE REACH): 1 when the line carries them and is not blank past
+ * them, 0 when it does not carry them, -1 otherwise. The rest asks it of
+ * up to two blocks, `look`, for the kinds `kind`, and stands only when each
+ * answers `want`; then the blocks open inside `holder` close on the line
+ * (S_close_on). */
+typedef struct {
+    size_t start, index, past;
+    markdown_core_node *holder;
+    const markdown_core_node *back;
+    markdown_core_node *look[2];
+    markdown_core_node_type kind[2];
+    int want[2];
+    size_t looks, at;
+    /* `on`: the line fed is the edit's point; `closes`: the blocks inside
+     * the holder close on it; `took`: the reading took the old tail back. */
+    bool on, closes, took;
+} S_rest;
 
-/* The blocks open inside `block`, a block of the chain, close as the line
- * after the reading's, where an old child of `block` of kind `kind` starts,
- * would close them, and the reading stands in `block`: each is a block that
- * holds blocks, which no line of its own closes, and the line carries the
- * prefixes down to `block` but not the next (THE NESTED SPLICE). Each
- * close is noted as the line's, at `start` (S_reach_close). False, with the
- * reading as it was, when they do not. */
 /* The blocks above `block` close on the old line at `start`, as its old
  * reading closed them, and their closes are noted as that reading's. */
 static void S_close_on(markdown_core_parser *parser, markdown_core_node *block, size_t start) {
@@ -6004,9 +5995,16 @@ static void S_close_on(markdown_core_parser *parser, markdown_core_node *block, 
     parser->at.read.start = line;
 }
 
-static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind,
-                           size_t start) {
+/* Whether the blocks open inside `block`, a block of the chain, may close
+ * as the line after the reading's, where an old child of `block` of kind
+ * `kind` starts, would close them, the reading then standing in `block`:
+ * each is a block that holds blocks, which no line of its own closes, and
+ * the line carries the prefixes down to `block` but not the next (THE
+ * NESTED SPLICE), which the rest's looks ask. False when they may not. */
+static bool S_close_plan(markdown_core_parser *parser, markdown_core_node *block, markdown_core_node_type kind,
+                         S_rest *rest) {
     markdown_core_node *open = parser->at.current, *inside = NULL, *below = NULL;
+    rest->looks = 0;
     /* Or the open child's element says the line closes it. */
     const markdown_core_element_instance *structure =
         open && open != block ? markdown_core_parser_block_kind(parser, open)->structure : NULL;
@@ -6015,11 +6013,13 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
         ((ops && ops->yields && ops->yields(structure, parser, open, kind)) ||
          (structure && structure->lines->cuts && S_joins(ops, kind) &&
           markdown_core_reader_cuts_whole(&parser->at.read, parser, open)))) {
-        if (block != parser->root && S_carries(parser, block, kind) != 1) {
-            return false;
+        if (block != parser->root) {
+            rest->look[0] = block;
+            rest->kind[0] = kind;
+            rest->want[0] = 1;
+            rest->looks = 1;
         }
-        S_close_on(parser, block, start);
-        return !parser->error;
+        return true;
     }
     const bool abuts = markdown_core_parser_abuts(parser, block);
     for (; open && open != block; open = markdown_core_parser_builder_below(parser, open)) {
@@ -6037,12 +6037,17 @@ static bool S_close_inside(markdown_core_parser *parser, markdown_core_node *blo
     const markdown_core_node *held = below                           ? below
                                      : inside && inside->child_count ? inside->children[inside->child_count - 1]
                                                                      : NULL;
-    if (!open || !held || S_carries(parser, block, kind) != 1 ||
-        S_carries(parser, inside, (markdown_core_node_type)held->kind) != 0) {
+    if (!open || !held) {
         return false;
     }
-    S_close_on(parser, block, start);
-    return !parser->error;
+    rest->look[0] = block;
+    rest->kind[0] = kind;
+    rest->want[0] = 1;
+    rest->look[1] = inside;
+    rest->kind[1] = (markdown_core_node_type)held->kind;
+    rest->want[1] = 0;
+    rest->looks = 2;
+    return true;
 }
 
 /* THE BLOCK BEFORE AT A SPLICE: whether the old line at `start` of the new
@@ -6077,11 +6082,11 @@ static bool S_stands_after(const markdown_core_parser *parser, const markdown_co
  * reading from before the line, old or new, read past it, the blocks open
  * inside the holder close as the line closes them, the line before reads
  * to the chain as it did, and the block before and the holder stand
- * (S_stands_after). A block the line closes closes first (S_close_inside):
+ * (S_stands_after). A block the line closes closes first (S_close_plan):
  * its close is noted as the line's reading (S_reach_close), as the old
  * child's before it was, which the old tail then reads past no further
  * than that. */
-static bool S_stands(markdown_core_parser *parser, size_t start, size_t index) {
+static bool S_stands_front(markdown_core_parser *parser, S_rest *rest) {
     const markdown_core_stream *stream = parser->stream;
     const markdown_core_edit *edit = stream->edit;
     const bool nested = edit->nest_on;
@@ -6089,18 +6094,36 @@ static bool S_stands(markdown_core_parser *parser, size_t start, size_t index) {
     const markdown_core_node *back = nested ? markdown_core_edit_nested(edit, edit->nest_level, edit->nest_index)
                                      : edit->next < edit->count ? markdown_core_edit_old(edit, parser->root, edit->next)
                                                                 : NULL;
-    if (stream->held || (nested && (!index || !holder->child_count))) {
+    rest->holder = holder;
+    rest->back = back;
+    rest->looks = rest->at = 0;
+    rest->closes = false;
+    if (stream->held || (nested && (!rest->index || !holder->child_count))) {
         return false;
     }
+    const size_t start = rest->start;
     const size_t old = (size_t)((int64_t)start - edit->delta);
-    const size_t past = S_line_past(parser, start);
+    const size_t past = rest->past = S_line_past(parser, start);
     if (S_old_reads_into(parser, old, (size_t)((int64_t)past - edit->delta))) {
         return false;
     }
-    if (parser->at.current != holder &&
-        (!back || !S_close_inside(parser, holder, (markdown_core_node_type)back->kind, start))) {
-        return false;
+    if (parser->at.current != holder) {
+        if (!back || !S_close_plan(parser, holder, (markdown_core_node_type)back->kind, rest)) {
+            return false;
+        }
+        rest->closes = true;
     }
+    return true;
+}
+
+/* The rest of the splice's stand, past the blocks the line closed. */
+static bool S_stands_back(markdown_core_parser *parser, const S_rest *rest) {
+    const markdown_core_edit *edit = parser->stream->edit;
+    const bool nested = edit->nest_on;
+    const size_t start = rest->start, index = rest->index;
+    markdown_core_node *holder = rest->holder;
+    const markdown_core_node *back = rest->back;
+    const size_t old = (size_t)((int64_t)start - edit->delta), past = rest->past;
     const markdown_core_node *last = holder->child_count ? holder->children[holder->child_count - 1] : NULL;
     if (nested) {
         /* The line before is the old text's, the line end before it too,
@@ -6910,39 +6933,45 @@ static bool S_leap(markdown_core_parser *parser, size_t start, size_t index) {
 }
 
 static void S_line_look_settle(markdown_core_parser *parser);
+static bool S_walk_rest(markdown_core_parser *parser, size_t start, size_t index);
 
-/* At the start of the line at `start`, line `index` of the input, which the
- * line loop's limit stopped at: the reading takes the old tail back when
- * the child it tries next starts its line there and the reading resumes,
- * and goes on to try the next child otherwise. True when it took the tail
- * back or failed. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_resume(markdown_core_parser *parser, size_t start, size_t index) {
+/* The edit's point the reading meets first, as the rest asks it
+ * (S_rest_start): the leap's, which the reading takes there; or the next
+ * child's at or past the line. 1 when the reading leapt or failed, -1 when
+ * the next child starts past the line, 0 when it starts the line. */
+static int S_rest_point(markdown_core_parser *parser, size_t start, size_t index) {
     markdown_core_edit *edit = parser->stream->edit;
     if (edit->leap && edit->leap->at != SIZE_MAX && edit->point == edit->leap->at) {
-        return S_leap(parser, start, index);
+        return S_leap(parser, start, index) ? 1 : -1;
     }
     while (edit->point < start) {
         S_edit_pass(edit, parser->root, &parser->input.lines);
     }
-    if (edit->point != start) {
-        return false;
-    }
-    const bool resumes = S_stands(parser, start, index);
+    return edit->point != start ? -1 : 0;
+}
+
+/* The rest asked (S_rest_start), the reading takes the old tail back when
+ * it stands, and passes on to the next child otherwise. True when it took
+ * the tail back. */
+static bool S_rest_done(markdown_core_parser *parser, const S_rest *rest, bool stands) {
+    markdown_core_edit *edit = parser->stream->edit;
     /* What the test read from the line that ended goes to that line. */
     if (edit->look.end) {
         S_line_look_settle(parser);
     }
-    if (resumes) {
+    if (stands && !parser->error) {
         if (edit->nest_on) {
-            S_splice_in(parser, start, index, start);
+            S_splice_in(parser, rest->start, rest->index, rest->start);
         } else {
-            S_splice(parser, start, index, start);
+            S_splice(parser, rest->start, rest->index, rest->start);
         }
         return true;
     }
     S_edit_pass(edit, parser->root, &parser->input.lines);
     return false;
 }
+
+size_t markdown_core_parser_visit(const markdown_core_parser *parser) { return parser->line_visit; }
 
 size_t markdown_core_parser_resumed(const markdown_core_parser *parser) {
     return parser->stream && parser->stream->edit ? parser->stream->edit->resumed : 0;
@@ -7590,18 +7619,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown
             markdown_core_parser_mapped_source_end(parser, parser->at.read.number + 1, content_length);
     }
     if (from) {
-        S_process_held_line(parser, content, content_length, from);
+        S_process_held_line(parser, content, content_length, found->start, next, from);
     } else {
-        S_process_line(parser, content, content_length);
+        S_process_line(parser, content, content_length, found->start, next);
     }
-    if (parser->claimed_cursor) {
-        assert(parser->claimed_cursor >= source + next && parser->claimed_cursor <= source + length);
-        (void)length;
-        parser->at.read.number = parser->claimed_line;
-        parser->at.read.start = (bufsize_t)markdown_core_parser_visited_line(parser, parser->at.read.number)->start;
-        parser->at.last_line_end = parser->claimed_last_end;
-        parser->claimed_cursor = NULL;
-    }
+    (void)length;
 }
 
 /* THE LINE AN EDIT'S READING STANDS INSIDE (A REST INSIDE A LINE), read on
@@ -7713,7 +7735,7 @@ bound:;
         const size_t start = found ? found->start : parser->input.scanned;
         if (start >= limit) {
             if (stream && stream->edit && limit == stream->edit->point && limit < length) {
-                if (S_resume(parser, start, index)) {
+                if (S_walk_rest(parser, start, index)) {
                     return;
                 }
                 goto bound;
@@ -7728,15 +7750,6 @@ bound:;
     }
 }
 
-// Check for thematic break.  On failure, return 0 and update
-// thematic_break_kill_pos with the index at which the
-// parse fails.  On success, return length of match.
-// "...three or more hyphens, asterisks,
-// or underscores on a line by themselves. If you wish, you may use
-// spaces between the hyphens or asterisks."
-// Find first nonspace character from current offset, setting
-// reader->nonspace, reader->nonspace_column,
-// reader->indent, and reader->blank. Does not advance reader->offset.
 /* THE DISTANCE TO THE NEXT TAB STOP IS DERIVED, NOT CARRIED.
  *
  * This used to open with `chars_to_tab = TAB_STOP - (parser->at.read.column %
@@ -7892,62 +7905,183 @@ static bool S_cut_starts_line(markdown_core_parser *parser, size_t start) {
     return start - at < 4 && (!at || source[at - 1] == '\n' || source[at - 1] == '\r');
 }
 
-/* ONE ITEM TRIED (element.h, markdown_core_open_ops `item`): `owner`'s item
- * construct reads the front of `cut->rest`, and when it succeeds its
- * token's handler makes the item, whose length it writes in the cut. */
-static void S_item_try(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_cut *cut,
-                       const markdown_core_element_instance *owner) {
-    const markdown_core_block_construct *item = owner->element->opens->item;
-    const unsigned char byte = cut->rest.data[0];
-    if (item->bytes && (!byte || !strchr(item->bytes, byte))) {
-        return;
+/* THE CONTENT'S READING (plan symbols-cleanroom.md 23.14, micromark's
+ * `content`, subtokenized): the front of a block's text read for the items
+ * the dialect's cut owners cut off it, one reading of the text whose
+ * states attempt each owner's item construct at the front (S_cut_next),
+ * compile the item an attempt found (S_cut_found), and go on past it until
+ * no owner reads an item there. An item construct reads `cut->rest`
+ * through the turn and writes the item's length in the cut; a reading
+ * that only measures (`cut->measure`) makes no item, and its attempt fails
+ * with the length written. */
+typedef struct {
+    markdown_core_block_turn turn;
+    block_start start;
+    markdown_core_construct one;
+    markdown_core_compiler *compiler;
+    markdown_core_cut cut;
+    /* The owner tried next, and the item construct whose found record
+     * waits on its compile (`drop`). */
+    size_t at;
+    const markdown_core_block_construct *pending;
+    /* A reading that makes the items (markdown_core_reader_cut_front):
+     * the line the next item's lines follow on, whether it notes what each
+     * read, how far the line read, and where the chain of items a reading
+     * reads again starts (S_cut_note). */
+    int line;
+    bool noted;
+    size_t now, chain;
+    /* A reading that measures (markdown_core_reader_cuts_whole): whether
+     * every item read so far was decided by its own bytes. */
+    bool whole;
+} S_cutting;
+
+static inline S_cutting *S_cutting_of(const markdown_core_tokenizer *tokenizer) {
+    return (S_cutting *)tokenizer->reader;
+}
+
+static void S_cut_note(markdown_core_parser *parser, const markdown_core_cut *cut, bufsize_t length, size_t now,
+                       size_t *chain);
+static markdown_core_state S_cut_next(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_cut_try(markdown_core_tokenizer *tokenizer, int code);
+
+/* No owner reads an item at the front: the reading is done. */
+static markdown_core_state S_cut_end(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_move_to(tokenizer, tokenizer->size);
+    return markdown_core_pause(tokenizer, markdown_core_state_of(S_cut_end));
+}
+
+/* The item read, `length` bytes at the front: the reading goes on past it. */
+static markdown_core_state S_cut_past(markdown_core_tokenizer *tokenizer, int code, bufsize_t length) {
+    S_cutting *cutting = S_cutting_of(tokenizer);
+    markdown_core_parser *parser = cutting->turn.parser;
+    markdown_core_cut *cut = &cutting->cut;
+    if (cut->measure) {
+        cutting->whole = cutting->whole && !cut->wide;
+    } else if (cut->made) {
+        if (cutting->noted && !cutting->now) {
+            cutting->now = markdown_core_parser_read_past(parser);
+        }
+        /* An item is read whole: it settles as it is made, before the block
+         * it was read from, which settles later if anything of it is
+         * left. */
+        markdown_core_parser_line_places(parser, cut->made, cut->parent, &cutting->line);
+        markdown_core_block_settle_before(parser, cut->made, cut->parent);
+        if (cutting->noted && !parser->error) {
+            S_cut_note(parser, cut, length, cutting->now, &cutting->chain);
+        }
     }
-    markdown_core_pass *pass = markdown_core_pass_take(parser);
-    if (!pass) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
+    cut->rest.data += length;
+    cut->rest.len -= length;
+    markdown_core_move_to(tokenizer, tokenizer->position + (uint32_t)length);
+    if (parser->error || (cut->measure && !cutting->whole)) {
+        return S_cut_end(tokenizer, code);
     }
-    block_start start = {.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
-    markdown_core_block_turn turn = {.parser = parser, .start = &start, .reader = reader, .cut = cut};
-    const markdown_core_read read = {
-        .data = cut->rest.data, .size = (uint32_t)cut->rest.len, .from = 0, .cut = UINT32_MAX, .reader = &turn};
-    markdown_core_construct construct = item->construct;
-    construct.context = owner;
-    const bool found = markdown_core_tokenizer_try(&pass->tokenizer, &read, &construct);
-    if (found && !parser->error) {
+    return S_cut_next(tokenizer, code);
+}
+
+static markdown_core_state S_cut_found(markdown_core_tokenizer *tokenizer, int code) {
+    S_cutting *cutting = S_cutting_of(tokenizer);
+    markdown_core_parser *parser = cutting->turn.parser;
+    const markdown_core_block_construct *item = cutting->pending;
+    cutting->pending = NULL;
+    if (parser->error) {
+        if (item->drop) {
+            item->drop(cutting->start.owner, &cutting->start);
+        }
+    } else {
         const markdown_core_dialect *dialect = parser->dialect;
-        if (!markdown_core_compile(&pass->compiler, &pass->tokenizer.events, cut->rest.data, dialect->compiles,
-                                   dialect->token_kinds, &turn) &&
+        if (!markdown_core_compile(cutting->compiler, &tokenizer->events, cutting->cut.text.data, dialect->compiles,
+                                   dialect->token_kinds, &cutting->turn) &&
             !parser->error) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
-    } else if (pass->tokenizer.events.failed && !parser->error) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    markdown_core_pass_back(parser, pass);
+    /* An item made is placed, the parse failed or not: the tree owns it. */
+    if (!cutting->cut.length) {
+        return S_cut_end(tokenizer, code);
+    }
+    return S_cut_past(tokenizer, code, cutting->cut.length);
 }
 
-/* The item one of the dialect's cut owners reads at the front of
- * `cut->rest`, or 0. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
-    S_cut_one(markdown_core_parser *parser, markdown_core_reader *reader, markdown_core_cut *cut) {
-    const markdown_core_dialect *dialect = parser->dialect;
-    if (!S_cut_fronts(dialect, cut->rest.data[0])) {
-        return 0;
+/* The owner read no item, or, measuring, measured one. */
+static markdown_core_state S_cut_missed(markdown_core_tokenizer *tokenizer, int code) {
+    S_cutting *cutting = S_cutting_of(tokenizer);
+    cutting->pending = NULL;
+    if (cutting->cut.length) {
+        return S_cut_past(tokenizer, code, cutting->cut.length);
     }
-    const markdown_core_element_instance *const *owners = dialect->cutters;
-    const size_t count = dialect->cutter_count;
-    for (size_t i = 0; i < count && !parser->error; i++) {
-        const markdown_core_element_instance *owner = owners[i];
+    if (cutting->turn.parser->error) {
+        return S_cut_end(tokenizer, code);
+    }
+    return S_cut_try(tokenizer, code);
+}
+
+/* The next owner whose item may start at the front's first byte. */
+static markdown_core_state S_cut_try(markdown_core_tokenizer *tokenizer, int code) {
+    S_cutting *cutting = S_cutting_of(tokenizer);
+    const markdown_core_dialect *dialect = cutting->turn.parser->dialect;
+    markdown_core_cut *cut = &cutting->cut;
+    const unsigned char byte = cut->rest.data[0];
+    while (cutting->at < dialect->cutter_count) {
+        const markdown_core_element_instance *owner = dialect->cutters[cutting->at++];
+        const markdown_core_block_construct *item = owner->element->opens->item;
+        if (item->bytes && (!byte || !strchr(item->bytes, byte))) {
+            continue;
+        }
         cut->wide = false;
         cut->made = NULL;
         cut->length = 0;
-        S_item_try(parser, reader, cut, owner);
-        if (cut->length) {
-            return cut->length;
-        }
+        cutting->start = (block_start){.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
+        cutting->pending = cut->measure ? NULL : item;
+        cutting->one = item->construct;
+        cutting->one.context = owner;
+        markdown_core_events_clear(&tokenizer->events);
+        return markdown_core_attempt(tokenizer, &cutting->one, markdown_core_state_of(S_cut_found),
+                                     markdown_core_state_of(S_cut_missed), code);
     }
-    return 0;
+    return S_cut_end(tokenizer, code);
+}
+
+/* The front, where the next item may start. */
+static markdown_core_state S_cut_next(markdown_core_tokenizer *tokenizer, int code) {
+    S_cutting *cutting = S_cutting_of(tokenizer);
+    markdown_core_cut *cut = &cutting->cut;
+    if (!cut->rest.len || !S_cut_fronts(cutting->turn.parser->dialect, cut->rest.data[0])) {
+        return S_cut_end(tokenizer, code);
+    }
+    cut->at = (bufsize_t)(cut->rest.data - cut->text.data);
+    cutting->at = 0;
+    return S_cut_try(tokenizer, code);
+}
+
+/* The content's reading of `cutting->cut`, in a pass of its own: false,
+ * with the parse failed, when storage could not be had. */
+static bool S_cut_read(markdown_core_parser *parser, S_cutting *cutting) {
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
+    if (!pass) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    cutting->turn.parser = parser;
+    cutting->turn.start = &cutting->start;
+    cutting->turn.cut = &cutting->cut;
+    cutting->compiler = &pass->compiler;
+    const markdown_core_chunk *text = &cutting->cut.text;
+    const markdown_core_read read = {.cut = UINT32_MAX, .reader = cutting};
+    markdown_core_tokenizer_begin(&pass->tokenizer, &read, markdown_core_state_of(S_cut_next));
+    const bool read_ok = markdown_core_tokenizer_feed(&pass->tokenizer, text->data, (uint32_t)text->len, 0) &&
+                         markdown_core_tokenizer_end(&pass->tokenizer);
+    /* An item found whose token the failed reading never compiled. */
+    if (!read_ok && cutting->pending && cutting->cut.length && cutting->pending->drop) {
+        cutting->pending->drop(cutting->start.owner, &cutting->start);
+    }
+    if (!read_ok && !parser->error) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_pass_back(parser, pass);
+    return read_ok;
 }
 
 /* WHAT AN ITEM READ (blocks.c, THE REACH): an item cut in a block of the
@@ -7984,36 +8118,21 @@ bool markdown_core_reader_cut_front(markdown_core_reader *reader, markdown_core_
     if (!(text.len && S_cut_fronts(parser->dialect, text.data[0])) && !b->cut_front) {
         return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
     }
-    markdown_core_cut cut = {.block = b, .parent = parent, .text = text, .rest = text};
-    /* The items follow each other down the block's lines. */
-    int line = parser->at.read.number;
-    /* Only a reading that notes reach notes what each item read. */
-    const bool noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
-                       markdown_core_parser_block_root(parser) == parser->root;
-    size_t now = 0;
-    size_t chain = SIZE_MAX;
-    while (cut.rest.len && !parser->error) {
-        cut.at = (bufsize_t)(cut.rest.data - text.data);
-        const bufsize_t length = S_cut_one(parser, reader, &cut);
-        if (!length) {
-            break;
-        }
-        if (cut.made) {
-            if (noted && !now) {
-                now = markdown_core_parser_read_past(parser);
-            }
-            /* An item is read whole: it settles as it is made, before the
-             * block it was read from, which settles later if anything of
-             * it is left. */
-            markdown_core_parser_line_places(parser, cut.made, parent, &line);
-            markdown_core_block_settle_before(parser, cut.made, parent);
-            if (noted && !parser->error) {
-                S_cut_note(parser, &cut, length, now, &chain);
-            }
-        }
-        cut.rest.data += length;
-        cut.rest.len -= length;
+    /* The items follow each other down the block's lines. Only a reading
+     * that notes reach notes what each item read. */
+    S_cutting cutting = {.turn = {.reader = reader},
+                         .cut = {.block = b, .parent = parent, .text = text, .rest = text},
+                         .line = parser->at.read.number,
+                         .noted = markdown_core_parser_reaches(parser) && parent == parser->root &&
+                                  markdown_core_parser_block_root(parser) == parser->root,
+                         .chain = SIZE_MAX};
+    if (text.len) {
+        S_cut_read(parser, &cutting);
     }
+    const markdown_core_cut cut = cutting.cut;
+    size_t now = cutting.now;
+    const size_t chain = cutting.chain;
+    const bool noted = cutting.noted;
     /* The items read are cut from the front of the block's text, and its
      * map follows the cut. */
     bufsize_t read = text.len - cut.rest.len;
@@ -8076,16 +8195,14 @@ bool markdown_core_parser_kind_cut(markdown_core_parser *parser, markdown_core_n
 bool markdown_core_reader_cuts_whole(markdown_core_reader *reader, markdown_core_parser *parser,
                                      const markdown_core_node *b) {
     const markdown_core_chunk text = markdown_core_node_text(b);
-    markdown_core_cut cut = {.block = (markdown_core_node *)b, .text = text, .rest = text, .measure = true};
-    bool whole = text.len > 0;
-    while (whole && cut.rest.len) {
-        cut.at = (bufsize_t)(cut.rest.data - text.data);
-        const bufsize_t length = S_cut_one(parser, reader, &cut);
-        whole = length && !cut.wide;
-        cut.rest.data += length;
-        cut.rest.len -= length;
+    if (!text.len) {
+        return false;
     }
-    return whole && !parser->error;
+    S_cutting cutting = {.turn = {.reader = reader},
+                         .cut = {.block = (markdown_core_node *)b, .text = text, .rest = text, .measure = true},
+                         .whole = true};
+    S_cut_read(parser, &cutting);
+    return cutting.whole && !cutting.cut.rest.len && !parser->error;
 }
 
 /* THE READER CLOSES. What a step's reading read beyond the line in hand is
@@ -8144,132 +8261,40 @@ static inline void S_reader_close(markdown_core_parser *parser) {
 }
 
 /* ONE BLOCK'S CLAIM ON THE LINE (element.h, markdown_core_line_ops
- * `continuation`): `check_open_blocks` asks it walking down the open spine,
+ * `continuation`): the document's walk (S_next_container) asks it down the open spine,
  * and the block-start lookahead asks the same question of the same
  * containers on later lines (`look`), so a lookahead's decision and the
  * parse that follows it cannot disagree about which lines a container
  * owns. */
 markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *tokenizer, uint16_t kind) {
     markdown_core_enter(tokenizer, kind);
+    markdown_core_cursor_move(tokenizer);
     markdown_core_exit(tokenizer, kind);
     return markdown_core_ok(tokenizer);
 }
 
 markdown_core_state markdown_core_block_verdict(markdown_core_tokenizer *tokenizer, int verdict) {
-    return verdict == MARKDOWN_CORE_LINE_OFF  ? markdown_core_nok(tokenizer)
-           : verdict == MARKDOWN_CORE_LINE_ON ? markdown_core_ok(tokenizer)
-                                              : markdown_core_block_continued(tokenizer, (uint16_t)verdict);
+    return verdict == MARKDOWN_CORE_LINE_OFF ? markdown_core_nok(tokenizer)
+                                             : markdown_core_block_continued(
+                                                   tokenizer, (uint16_t)(verdict == MARKDOWN_CORE_LINE_ON
+                                                                             ? MARKDOWN_CORE_TOKEN_PREFIX
+                                                                             : verdict));
 }
 
-int markdown_core_block_continue_try(markdown_core_parser *parser, markdown_core_node *node,
-                                     markdown_core_reader *reader, const markdown_core_node *joining, bool look) {
-    return markdown_core_block_continue_as(parser, markdown_core_parser_block_kind(parser, node)->structure, node,
-                                           reader, joining, look);
-}
-
-int markdown_core_block_continue_as(markdown_core_parser *parser, const markdown_core_element_instance *structure,
-                                    markdown_core_node *node, markdown_core_reader *reader,
-                                    const markdown_core_node *joining, bool look) {
-    if (!structure || !structure->lines->continuation.start) {
-        return MARKDOWN_CORE_LINE_ON;
+/* What a continuation that succeeded said of the line, from its tokens
+ * past the first `from`: the verdict its last one gave, or "continued",
+ * the bytes it read its PREFIX, which the reading makes when the
+ * continuation made no token. */
+static int S_prefix_verdict(markdown_core_tokenizer *tokenizer, size_t from) {
+    const markdown_core_events *events = &tokenizer->events;
+    if (events->token_count > from) {
+        const uint16_t kind = events->tokens[events->token_count - 1].kind;
+        return kind == MARKDOWN_CORE_TOKEN_PREFIX ? MARKDOWN_CORE_LINE_ON : kind;
     }
-    markdown_core_pass *pass = markdown_core_pass_take(parser);
-    if (!pass) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return MARKDOWN_CORE_LINE_OFF;
-    }
-    markdown_core_block_turn turn = {
-        .parser = parser, .reader = reader, .node = node, .joining = joining, .look = look};
-    const markdown_core_read read = {.data = reader->line.data,
-                                     .size = (uint32_t)reader->line.len,
-                                     .from = (uint32_t)reader->offset,
-                                     .cut = UINT32_MAX,
-                                     .reader = &turn};
-    markdown_core_construct construct = structure->lines->continuation;
-    construct.context = structure;
-    const markdown_core_events *events = &pass->tokenizer.events;
-    int verdict = MARKDOWN_CORE_LINE_OFF;
-    if (markdown_core_tokenizer_try(&pass->tokenizer, &read, &construct)) {
-        verdict = events->token_count ? events->tokens[events->token_count - 1].kind : MARKDOWN_CORE_LINE_ON;
-    } else if (events->failed) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    markdown_core_pass_back(parser, pass);
-    return verdict;
-}
-
-/* Matches the line against the open blocks below `from`, the block root on a
- * new line. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *check_open_blocks(
-    markdown_core_parser *parser, markdown_core_reader *reader, bool *all_matched, markdown_core_node *from) {
-    bool should_continue = true;
-    *all_matched = false;
-    markdown_core_node *container = from;
-    markdown_core_node *closing = NULL;
-
-    while (container != parser->at.current) {
-        /* Whatever a container's prefix consumed is that container's
-         * MARKER: `> ` belongs to the block quote, the item's indent to the
-         * list item. So the bytes of the block below begin where the
-         * prefixes above it end: one claim per block, walking down the
-         * spine, each naming the line by number, as matching a container can
-         * read lines ahead, which can move the line table. */
-        markdown_core_parser_rewritten_line(parser, parser->at.read.number)->own = (uint32_t)parser->at.read.offset;
-        container = container->children[container->child_count - 1];
-
-        markdown_core_reader_find(reader);
-
-        const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
-        const int verdict = markdown_core_block_continue_try(parser, container, reader, NULL, false);
-        if (verdict == MARKDOWN_CORE_LINE_OFF) {
-            goto done;
-        }
-        if (verdict == MARKDOWN_CORE_TOKEN_TAKE) {
-            markdown_core_node *current = markdown_core_parser_current(parser);
-            if (S_kind_accepts_lines(markdown_core_parser_block_kind(parser, current), current)) {
-                markdown_core_block_add_line(parser, current);
-            }
-            return NULL;
-        }
-        if (kind->structure && kind->structure->lines->pending) {
-            closing = verdict == MARKDOWN_CORE_TOKEN_PEND ? container : NULL;
-        } else if (S_kind_accepts_lines(kind, container)) {
-            closing = NULL;
-        }
-        if (verdict == MARKDOWN_CORE_TOKEN_CLOSE) {
-            /* The container's own closing line. Everything still open
-             * inside it ended on the line before, and the container ends
-             * here. A block survives its own close and can still be
-             * positioned. */
-            should_continue = false;
-            assert(!(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH));
-            container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-            markdown_core_block_close(parser, container);
-            goto done;
-        }
-    }
-
-    *all_matched = true;
-
-done:
-    if (closing) {
-        /* The container ends on its own closing line, which it knows as it
-         * closes; what is open inside it ended on the line before. */
-        closing->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-        markdown_core_block_close(parser, closing);
-        return NULL;
-    }
-    /* A container whose prefix consumed bytes and then declined still read
-     * them; they are its marker up to the point it gave up. */
-    if (!*all_matched) {
-        container = markdown_core_scaffold_parent(container); // back up to last matching node
-    }
-
-    if (!should_continue) {
-        container = NULL;
-    }
-
-    return container;
+    markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+    markdown_core_cursor_move(tokenizer);
+    markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+    return MARKDOWN_CORE_LINE_ON;
 }
 
 /* --- Block-start lookahead ---------------------------------------------------
@@ -8283,8 +8308,8 @@ done:
  *
  * Exactness is the whole contract. Every later line is offered as the block
  * parser will see it: the containers between the root and the block's parent
- * are matched by their continuations (markdown_core_block_continue_try), the
- * operation `check_open_blocks` runs, through the same cursor fields, with
+ * are matched by their continuations (THE LOOK), the
+ * attempt the document's walk makes, through the same cursor fields, with
  * the same list flags, which are saved and restored around the lookahead,
  * and told it is a lookahead's (`look`), which changes nothing but the
  * reader. So a line the lookahead counts as carrying the prefixes is one
@@ -8398,8 +8423,9 @@ static markdown_core_node *S_joined(const markdown_core_parser *parser, markdown
     return container;
 }
 
-bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container,
-                                          markdown_core_node_type child, markdown_core_block_lookahead *lookahead) {
+markdown_core_block_lookahead *markdown_core_parser_lookahead_begin(markdown_core_parser *parser,
+                                                                    markdown_core_node *parent_container,
+                                                                    markdown_core_node_type child) {
     /* The containers the lookahead matches are the stack up to the one the
      * block joins. */
     markdown_core_node *parent = S_joined(parser, parent_container, child);
@@ -8408,188 +8434,272 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
         depth++;
     }
     if (!S_lookahead_room(parser, depth)) {
-        return false;
+        return NULL;
     }
+    if (!parser->look && !(parser->look = markdown_core_alloc(1, sizeof(*parser->look)))) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return NULL;
+    }
+    markdown_core_block_lookahead *lookahead = parser->look;
+    assert(!lookahead->parser);
     markdown_core_node **path = parser->lookahead_path;
     int at = depth;
     for (markdown_core_node *node = parent; node; node = markdown_core_parser_builder_below(parser, node)) {
         path[--at] = node;
     }
     S_lookahead_start(parser, path, depth, parser->at.lookahead_cursor, parser->at.read.number + 1, lookahead);
-    return true;
+    return lookahead;
 }
 
-markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines) {
-    markdown_core_parser *parser = lookahead->parser;
+/* THE LOOK (plan symbols-cleanroom.md 23.14.12): the next line that carries
+ * the prefixes, read as an attempt of the document's reading. A line is
+ * visited (S_look_line), its path's continuations attempted from the first
+ * the memo has not matched (S_look_container), and then it is the line
+ * found, a blank line stepped over, or the end (S_look_visited). The look
+ * consumes the lines it visits, which the check its caller reads it in
+ * gives back. */
+static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_look_container(markdown_core_tokenizer *tokenizer, int code);
 
-    *blank_lines = 0;
-    if (!lookahead->active) {
-        return NULL;
+/* What the continuation of the path's container `index` said of the line. */
+static markdown_core_state S_look_verdict(markdown_core_tokenizer *tokenizer, int code, int verdict) {
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    markdown_core_block_lookahead *lookahead = parser->look;
+    const markdown_core_element_instance *structure =
+        markdown_core_parser_block_kind(parser, lookahead->path[lookahead->index])->structure;
+    lookahead->carried = verdict != MARKDOWN_CORE_LINE_OFF;
+    lookahead->taken = verdict == MARKDOWN_CORE_TOKEN_TAKE;
+    if (lookahead->carried && structure && structure->lines->pending) {
+        lookahead->closing = verdict == MARKDOWN_CORE_TOKEN_PEND;
     }
-    while (lookahead->cursor && !parser->error) {
-        if (markdown_core_parser_input_ends(parser, lookahead->cursor)) {
-            break;
-        }
-        const unsigned char *start = lookahead->cursor;
-        const unsigned char *next;
-        markdown_core_chunk input;
-        markdown_core_line_memo *entry;
-        int this_line = lookahead->line;
-        int from = 1;
-        bufsize_t resumed_offset;
-        bool carried = true;
-        bool closing = false;
-        bool taken = false;
-        bool resumed = false;
-        bool blank;
-        int i;
+    lookahead->index++;
+    return S_look_container(tokenizer, code);
+}
 
-        markdown_core_input_line *geometry = markdown_core_parser_source_line(parser, this_line);
-        if (!geometry) {
-            return NULL;
-        }
-        bufsize_t content_length;
-        const unsigned char *content = S_input_line_content(parser, geometry, &content_length);
-        if (!content) {
-            return NULL;
-        }
-        next = parser->input.source + markdown_core_input_line_next(parser, geometry);
-        parser->block_lookahead_work++;
-        if (next == parser->input.source + geometry->end) {
-            /* A line without a terminator, the input's last, normalized once:
-             * the matchers read a line through its terminator. */
-            if (!parser->input.last_line_ready) {
-                markdown_core_strbuf_set(&parser->input.last_line, content, content_length);
-                markdown_core_strbuf_putc(&parser->input.last_line, '\n');
-                if (parser->input.last_line.oom) {
-                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                    return NULL;
-                }
-                parser->input.last_line_ready = true;
-            }
-            input.data = parser->input.last_line.ptr;
-            input.len = parser->input.last_line.size;
-        } else {
-            input.data = (unsigned char *)start;
-            input.len = (bufsize_t)(next - start);
-        }
-        input.alloc = 0;
-        markdown_core_reader *const reader = &parser->at.read;
-        reader->line = input;
-        reader->far = 0;
-        lookahead->cursor = next;
-        lookahead->line = this_line + 1;
+static markdown_core_state S_look_carried(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_block_lookahead *lookahead = markdown_core_block_turn_of(tokenizer)->parser->look;
+    return S_look_verdict(tokenizer, code, S_prefix_verdict(tokenizer, lookahead->tokens));
+}
 
-        parser->at.read.offset = 0;
-        parser->at.read.column = 0;
-        parser->at.read.nonspace = 0;
-        parser->at.read.nonspace_column = 0;
-        parser->at.read.indent = 0;
-        parser->at.read.blank = false;
-        parser->at.read.split = false;
+static markdown_core_state S_look_dropped(markdown_core_tokenizer *tokenizer, int code) {
+    return S_look_verdict(tokenizer, code, MARKDOWN_CORE_LINE_OFF);
+}
 
-        entry = S_memo(parser, this_line);
-        if (!entry) {
-            return NULL;
-        }
-        if (entry && entry->container && entry->depth < lookahead->depth &&
-            lookahead->path[entry->depth] == entry->container) {
-            resumed = true;
-            from = entry->depth + 1;
-            if (entry->taken) {
-                taken = true;
-            } else {
-                parser->at.read.offset = entry->offset;
-                parser->at.read.column = entry->column;
-                parser->at.read.split = entry->split;
-                parser->at.read.nonspace = parser->at.read.offset;
-                parser->at.read.nonspace_column = parser->at.read.column;
-            }
-        }
-        /* The containers the line matches keep their flags as a line first
-         * matched them, for `end`. */
-        lookahead->from = from;
-        markdown_core_lookahead_container *const containers = parser->lookahead_containers;
-        for (i = from; i < lookahead->touched; i++) {
-            containers[i].flags = lookahead->path[i]->flags;
-        }
-        if (from < lookahead->touched) {
-            lookahead->touched = from;
-        }
-        resumed_offset = parser->at.read.offset;
-        for (i = from; i < lookahead->depth && carried && !taken; i++) {
-            markdown_core_node *container = lookahead->path[i];
-            markdown_core_reader_find(reader);
-            const markdown_core_element_instance *structure =
-                markdown_core_parser_block_kind(parser, container)->structure;
-            const int verdict = markdown_core_block_continue_try(
-                parser, container, reader, markdown_core_parser_lookahead_parent(lookahead), true);
-            carried = verdict != MARKDOWN_CORE_LINE_OFF;
-            taken = verdict == MARKDOWN_CORE_TOKEN_TAKE;
-            if (carried && structure && structure->lines->pending) {
-                closing = verdict == MARKDOWN_CORE_TOKEN_PEND;
-            }
-        }
-        /* The work of this visit is the prefix bytes it had to match itself:
-         * what the resumed state did not already cover. */
-        parser->block_lookahead_work += (size_t)(parser->at.read.offset - resumed_offset);
-        if (!carried || closing) {
-            S_lookahead_close_run(lookahead, this_line, start);
+/* The line visited: found, stepped over when blank, or the look's end. */
+static markdown_core_state S_look_visited(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    markdown_core_block_lookahead *lookahead = parser->look;
+    markdown_core_reader *const reader = &parser->at.read;
+    const int this_line = lookahead->visit;
+    /* The work of this visit is the prefix bytes it had to match itself:
+     * what the resumed state did not already cover. */
+    parser->block_lookahead_work += (size_t)(parser->at.read.offset - lookahead->resumed_offset);
+    if (!lookahead->carried || lookahead->closing) {
+        S_lookahead_close_run(lookahead, this_line, lookahead->start);
+        lookahead->active = false;
+        return markdown_core_nok(tokenizer);
+    }
+    if (!lookahead->taken) {
+        markdown_core_reader_find(reader);
+    }
+    const bool blank = lookahead->taken || parser->at.read.blank;
+
+    /* A lookahead an element callback ran may grow the memo and move it.
+     * A line number, not the earlier borrow, survives that boundary. */
+    markdown_core_line_memo *entry = S_memo(parser, this_line);
+    if (!entry) {
+        return markdown_core_nok(tokenizer);
+    }
+    /* Record the deepest result for the scans that come after this one.
+     * A run an earlier scan recorded from this line stays until this scan
+     * closes its own, which ends where that one did. */
+    entry->container = markdown_core_parser_lookahead_parent(lookahead);
+    entry->depth = lookahead->depth - 1;
+    entry->offset = parser->at.read.offset;
+    entry->column = parser->at.read.column;
+    entry->split = parser->at.read.split;
+    entry->taken = lookahead->taken;
+    entry->blank = blank;
+
+    if (blank) {
+        lookahead->blanks += 1;
+        if (lookahead->once) {
+            /* The reading asked of this line alone: it reads no further
+             * (THE REACH). */
             lookahead->active = false;
-            return NULL;
+            return markdown_core_nok(tokenizer);
         }
-        if (!taken) {
-            markdown_core_reader_find(reader);
+        if (!lookahead->run_start) {
+            lookahead->run_start = this_line;
         }
-        blank = taken || parser->at.read.blank;
-
-        /* A lookahead an element callback ran may grow the memo and move it.
-         * A line number, not the earlier borrow, survives that boundary. */
-        entry = S_memo(parser, this_line);
-        if (!entry) {
-            return NULL;
+        if (lookahead->resumed && entry->run_end > this_line + 1 &&
+            S_lookahead_extras_accept_blank(lookahead, lookahead->from)) {
+            lookahead->blanks += entry->run_end - this_line - 1;
+            lookahead->cursor = parser->input.source + entry->run_end_at;
+            lookahead->line = entry->run_end;
         }
-        /* Record the deepest result for the scans that come after this one.
-         * A run an earlier scan recorded from this line stays until this scan
-         * closes its own, which ends where that one did. */
-        if (entry) {
-            entry->container = markdown_core_parser_lookahead_parent(lookahead);
-            entry->depth = lookahead->depth - 1;
-            entry->offset = parser->at.read.offset;
-            entry->column = parser->at.read.column;
-            entry->split = parser->at.read.split;
-            entry->taken = taken;
-            entry->blank = blank;
-        }
-
-        if (blank) {
-            *blank_lines += 1;
-            if (lookahead->once) {
-                /* The reading asked of this line alone: it reads no further
-                 * (THE REACH). */
-                lookahead->active = false;
-                return NULL;
-            }
-            if (!lookahead->run_start) {
-                lookahead->run_start = this_line;
-            }
-            if (resumed && entry->run_end > this_line + 1 && S_lookahead_extras_accept_blank(lookahead, from)) {
-                *blank_lines += entry->run_end - this_line - 1;
-                lookahead->cursor = parser->input.source + entry->run_end_at;
-                lookahead->line = entry->run_end;
-            }
-            continue;
-        }
-        S_lookahead_close_run(lookahead, this_line, start);
-        reader->number = this_line;
-        reader->start = (bufsize_t)geometry->start;
-        reader->end = (bufsize_t)geometry->end;
-        return reader;
+        return S_look_line(tokenizer, code);
     }
-    S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
-    lookahead->active = false;
-    lookahead->ended = true;
-    return NULL;
+    S_lookahead_close_run(lookahead, this_line, lookahead->start);
+    reader->number = this_line;
+    reader->start = (bufsize_t)lookahead->line_start;
+    reader->end = (bufsize_t)lookahead->line_end;
+    return markdown_core_ok(tokenizer);
+}
+
+/* The continuation of the next container of the path the line carries. */
+static markdown_core_state S_look_container(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_parser *parser = turn->parser;
+    markdown_core_block_lookahead *lookahead = parser->look;
+    if (lookahead->index >= lookahead->depth || !lookahead->carried || lookahead->taken) {
+        return S_look_visited(tokenizer, code);
+    }
+    markdown_core_node *container = lookahead->path[lookahead->index];
+    markdown_core_reader *const reader = &parser->at.read;
+    markdown_core_reader_find(reader);
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, container)->structure;
+    if (!structure || !structure->lines->continuation.start) {
+        return S_look_verdict(tokenizer, code, MARKDOWN_CORE_LINE_ON);
+    }
+    lookahead->one = structure->lines->continuation;
+    lookahead->one.context = structure;
+    lookahead->tokens = tokenizer->events.token_count;
+    turn->node = container;
+    turn->reader = reader;
+    turn->joining = markdown_core_parser_lookahead_parent(lookahead);
+    turn->look = true;
+    return markdown_core_attempt(tokenizer, &lookahead->one, markdown_core_state_of(S_look_carried),
+                                 markdown_core_state_of(S_look_dropped), code);
+}
+
+/* The next line, visited: the reader on it, past what the memo says an
+ * earlier look matched of it. */
+static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    markdown_core_block_lookahead *lookahead = parser->look;
+    if (!lookahead->cursor || parser->error) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (markdown_core_parser_input_ends(parser, lookahead->cursor)) {
+        S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
+        lookahead->active = false;
+        lookahead->ended = true;
+        return markdown_core_nok(tokenizer);
+    }
+    const unsigned char *start = lookahead->cursor;
+    const unsigned char *next;
+    markdown_core_chunk input;
+    const int this_line = lookahead->line;
+    int from = 1;
+
+    markdown_core_input_line *geometry = markdown_core_parser_source_line(parser, this_line);
+    if (!geometry) {
+        return markdown_core_nok(tokenizer);
+    }
+    bufsize_t content_length;
+    const unsigned char *content = S_input_line_content(parser, geometry, &content_length);
+    if (!content) {
+        return markdown_core_nok(tokenizer);
+    }
+    next = parser->input.source + markdown_core_input_line_next(parser, geometry);
+    parser->block_lookahead_work++;
+    if (next == parser->input.source + geometry->end) {
+        /* A line without a terminator, the input's last, normalized once:
+         * the matchers read a line through its terminator. */
+        if (!parser->input.last_line_ready) {
+            markdown_core_strbuf_set(&parser->input.last_line, content, content_length);
+            markdown_core_strbuf_putc(&parser->input.last_line, '\n');
+            if (parser->input.last_line.oom) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                return markdown_core_nok(tokenizer);
+            }
+            parser->input.last_line_ready = true;
+        }
+        input.data = parser->input.last_line.ptr;
+        input.len = parser->input.last_line.size;
+    } else {
+        input.data = (unsigned char *)start;
+        input.len = (bufsize_t)(next - start);
+    }
+    input.alloc = 0;
+    /* The look reads the line: the document's reading consumes it, and the
+     * check the look is read in gives it back. */
+    const uint32_t at = (uint32_t)(start - parser->input.source);
+    if (tokenizer->data == parser->input.source) {
+        if (tokenizer->position < at) {
+            markdown_core_move_to(tokenizer, at);
+        }
+        markdown_core_cursor_line(tokenizer, at);
+    }
+    markdown_core_reader *const reader = &parser->at.read;
+    reader->line = input;
+    reader->far = 0;
+    lookahead->cursor = next;
+    lookahead->line = this_line + 1;
+    lookahead->visit = this_line;
+    lookahead->start = start;
+    lookahead->line_start = geometry->start;
+    lookahead->line_end = geometry->end;
+
+    parser->at.read.offset = 0;
+    parser->at.read.column = 0;
+    parser->at.read.nonspace = 0;
+    parser->at.read.nonspace_column = 0;
+    parser->at.read.indent = 0;
+    parser->at.read.blank = false;
+    parser->at.read.split = false;
+
+    markdown_core_line_memo *entry = S_memo(parser, this_line);
+    if (!entry) {
+        return markdown_core_nok(tokenizer);
+    }
+    lookahead->taken = false;
+    lookahead->resumed = false;
+    if (entry->container && entry->depth < lookahead->depth && lookahead->path[entry->depth] == entry->container) {
+        lookahead->resumed = true;
+        from = entry->depth + 1;
+        if (entry->taken) {
+            lookahead->taken = true;
+        } else {
+            parser->at.read.offset = entry->offset;
+            parser->at.read.column = entry->column;
+            parser->at.read.split = entry->split;
+            parser->at.read.nonspace = parser->at.read.offset;
+            parser->at.read.nonspace_column = parser->at.read.column;
+        }
+    }
+    /* The containers the line matches keep their flags as a line first
+     * matched them, for `end`. */
+    lookahead->from = from;
+    markdown_core_lookahead_container *const containers = parser->lookahead_containers;
+    for (int i = from; i < lookahead->touched; i++) {
+        containers[i].flags = lookahead->path[i]->flags;
+    }
+    if (from < lookahead->touched) {
+        lookahead->touched = from;
+    }
+    lookahead->resumed_offset = parser->at.read.offset;
+    lookahead->index = from;
+    lookahead->carried = true;
+    lookahead->closing = false;
+    return S_look_container(tokenizer, code);
+}
+
+static markdown_core_state S_look_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_lookahead *lookahead = markdown_core_block_turn_of(tokenizer)->parser->look;
+    lookahead->blanks = 0;
+    if (!lookahead->active) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_look_line(tokenizer, code);
+}
+
+static const markdown_core_construct S_LOOK = {.start = S_look_start};
+
+markdown_core_state markdown_core_look_next(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
+                                            markdown_core_state nok, int code) {
+    return markdown_core_attempt(tokenizer, &S_LOOK, ok, nok, code);
 }
 
 /* How far a lookahead read, for the reading that ran it (THE READER
@@ -8734,169 +8844,457 @@ static int S_gate_key(const markdown_core_reader *reader, int first, int indent)
     return first < reader->line.len ? (int)reader->line.data[first] : MARKDOWN_CORE_BLOCK_GATE_KEY_NONE;
 }
 
-markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind) {
+markdown_core_state markdown_core_block_span(markdown_core_tokenizer *tokenizer, uint16_t kind, bufsize_t end) {
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     const uint16_t type = (uint16_t)(self->block_base + kind);
+    /* The token reads from where the cursor stands. */
+    markdown_core_cursor_move(tokenizer);
     markdown_core_enter(tokenizer, type);
+    const uint32_t at = tokenizer->base + (uint32_t)end;
+    if (at > tokenizer->position) {
+        markdown_core_move_to(tokenizer, at);
+    }
     markdown_core_exit(tokenizer, type);
     return markdown_core_ok(tokenizer);
 }
 
-bool markdown_core_block_start_try(markdown_core_parser *parser, markdown_core_block_turn *turn,
-                                   const markdown_core_block_construct *start,
-                                   const markdown_core_element_instance *self) {
-    markdown_core_reader *reader = turn->context->reader;
-    markdown_core_pass *pass = markdown_core_pass_take(parser);
-    if (!pass) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint16_t type = (uint16_t)(self->block_base + kind);
+    markdown_core_enter(tokenizer, type);
+    markdown_core_cursor_move(tokenizer);
+    markdown_core_exit(tokenizer, type);
+    return markdown_core_ok(tokenizer);
+}
+
+
+/* THE DOCUMENT (plan symbols-cleanroom.md 23.14.10, micromark's `document`
+ * content type): a line is ONE reading of the document's states. They
+ * walk down the open blocks, a continuation attempted at each from the
+ * outermost; then try the starts, in turn at the first non-space byte of
+ * what the continuations left, a container's starts tried again in the
+ * block it opened; then give the line's text to the open block that takes
+ * lines, to the block a lazy line goes to, or to the content, which opens
+ * a paragraph for it. Every construct is an attempt, a frame of the one
+ * reading, which reaches the line through the turn (`turn`, the first
+ * member, all a construct sees). Its tokens are zero-width: the reader is
+ * the column cursor, and the reading reads no byte. A start's tokens are
+ * compiled as its attempt succeeds, since what the line reads next is read
+ * in the block it opened. */
+typedef struct {
+    markdown_core_block_turn turn;
+    block_start start;
+    block_start_context context;
+    /* The construct attempted, its context its instance. */
+    markdown_core_construct one;
+    markdown_core_compiler *compiler;
+    /* The block the walk stands in, the block that closes on its own
+     * line, and the last open block the line matched. */
+    markdown_core_node *container, *closing, *last_matched;
+    /* `matched`: the line matched every open block; `closed`: a block
+     * ended on its own closing line, and the line opens nothing; `lazy`:
+     * the line may still be lazy; `stray`: the content is a lazy line's;
+     * `given`: the line gave its text away. */
+    bool matched, closed, lazy, stray, given;
+    /* The starts' round: how many blocks the line opened, the starts of the
+     * line's key, the next one to try, the one tried, and the one found. */
+    size_t depth;
+    const markdown_core_block_construct *const *starts;
+    size_t count, at;
+    const markdown_core_block_construct *tried, *found;
+} S_walk;
+
+/* THE DOCUMENT'S READING: one for the parser's reading of the text, begun
+ * at its first line and ended as the parse finishes, fed a line at a time
+ * (markdown_core_tokenizer_feed), its walk the state its states share.
+ * Every line starts in S_walk_start; `from` is where an edit's reading
+ * stands inside the line it is fed (A REST INSIDE A LINE), else NULL. */
+struct markdown_core_walk {
+    markdown_core_pass *pass;
+    S_walk walk;
+    const markdown_core_line_stop *from;
+    /* Where the line fed ends, its terminator read: the next line's start
+     * in the input's text. */
+    uint32_t eol;
+    bool open;
+    /* The edit's rest, which a line at the edit's point asks before it is
+     * read (THE REST AS THE READING READS IT). */
+    S_rest rest;
+};
+
+static inline S_walk *S_walk_of(const markdown_core_tokenizer *tokenizer) { return (S_walk *)tokenizer->reader; }
+
+static markdown_core_state S_next_container(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_open_round(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_next_start(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_text_of(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_walk_tail(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_walk_eol(markdown_core_tokenizer *tokenizer, int code);
+static markdown_core_state S_rest_start(markdown_core_tokenizer *tokenizer, int code);
+
+/* A start's or the content's tokens, compiled: the handler opens the block
+ * in the turn's container. False, with the parse failed, when storage
+ * could not be had. */
+static bool S_walk_compile(markdown_core_tokenizer *tokenizer) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    const markdown_core_dialect *dialect = parser->dialect;
+    if (parser->error) {
         return false;
     }
-    const markdown_core_read read = {.data = reader->line.data,
-                                     .size = (uint32_t)reader->line.len,
-                                     .from = (uint32_t)reader->nonspace,
-                                     .cut = UINT32_MAX,
-                                     .reader = turn};
-    turn->opened = false;
-    markdown_core_construct construct = start->construct;
-    construct.context = self;
-    const bool found = markdown_core_tokenizer_try(&pass->tokenizer, &read, &construct);
-    if (found && !parser->error) {
-        const markdown_core_dialect *dialect = parser->dialect;
-        if (!markdown_core_compile(&pass->compiler, &pass->tokenizer.events, reader->line.data, dialect->compiles,
-                                   dialect->token_kinds, turn) &&
-            !parser->error) {
+    if (!markdown_core_compile(walk->compiler, &tokenizer->events, walk->turn.reader->line.data, dialect->compiles,
+                               dialect->token_kinds, &walk->turn)) {
+        if (!parser->error) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
-    } else if (pass->tokenizer.events.failed && !parser->error) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
     }
-    markdown_core_pass_back(parser, pass);
-    return found;
+    /* What the handlers read as they opened the block -- a marker, a
+     * header -- the reading consumes. */
+    markdown_core_cursor_move(tokenizer);
+    return !parser->error;
 }
 
-markdown_core_node *markdown_core_block_content(markdown_core_parser *parser, markdown_core_node *container,
-                                                markdown_core_reader *reader) {
+/* THE LINE'S TEXT a block takes (MARKDOWN_CORE_TOKEN_FLOW): a token from
+ * where the cursor stands to the line's end, which the reading consumes,
+ * compiled into `node`'s content. False, with the parse failed, when
+ * storage could not be had. */
+static bool S_walk_flow(markdown_core_tokenizer *tokenizer, markdown_core_node *node) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    const markdown_core_reader *reader = walk->turn.reader;
+    walk->turn.node = node;
+    markdown_core_events_clear(&tokenizer->events);
+    markdown_core_cursor_move(tokenizer);
+    markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_FLOW);
+    uint32_t end = tokenizer->base + (uint32_t)reader->line.len;
+    end = end < parser->walk->eol ? end : parser->walk->eol;
+    if (end > tokenizer->position) {
+        markdown_core_move_to(tokenizer, end);
+    }
+    markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_FLOW);
+    return S_walk_compile(tokenizer);
+}
+
+static void S_flow_line(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_block_add_line(turn->parser, turn->node);
+}
+
+const markdown_core_compile_ops MARKDOWN_CORE_FLOW_TOKEN = {.enter = S_flow_line};
+
+/* The walk down the open blocks ends: at the deepest block the line
+ * matched, where the starts are tried, unless a block closed on the line. */
+static markdown_core_state S_matched(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    if (walk->closing) {
+        /* The container ends on its own closing line, which it knows as it
+         * closes; what is open inside it ended on the line before. */
+        walk->closing->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
+        markdown_core_block_close(parser, walk->closing);
+        return S_walk_eol(tokenizer, code);
+    }
+    /* A container whose prefix consumed bytes and then declined still read
+     * them; they are its marker up to the point it gave up. */
+    if (!walk->matched) {
+        walk->container = markdown_core_scaffold_parent(walk->container);
+    }
+    if (walk->closed) {
+        return S_walk_eol(tokenizer, code);
+    }
+    walk->last_matched = walk->container;
+    walk->lazy = S_may_be_lazy(parser, walk->container);
+    walk->depth = 0;
+    return S_open_round(tokenizer, code);
+}
+
+/* What the continuation of the block the walk stands in said of the line
+ * (markdown_core_block_verdict). */
+static markdown_core_state S_verdict(markdown_core_tokenizer *tokenizer, int code, int verdict) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    markdown_core_node *container = walk->container;
+    if (verdict == MARKDOWN_CORE_LINE_OFF) {
+        return S_matched(tokenizer, code);
+    }
+    if (verdict == MARKDOWN_CORE_TOKEN_TAKE) {
+        /* The block took the whole line, its text included. */
+        markdown_core_node *current = markdown_core_parser_current(parser);
+        if (S_kind_accepts_lines(markdown_core_parser_block_kind(parser, current), current)) {
+            S_walk_flow(tokenizer, current);
+        }
+        return S_walk_eol(tokenizer, code);
+    }
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
+    if (kind->structure && kind->structure->lines->pending) {
+        walk->closing = verdict == MARKDOWN_CORE_TOKEN_PEND ? container : NULL;
+    } else if (S_kind_accepts_lines(kind, container)) {
+        walk->closing = NULL;
+    }
+    if (verdict == MARKDOWN_CORE_TOKEN_CLOSE) {
+        /* The container's own closing line. Everything still open inside
+         * it ended on the line before, and the container ends here. A block
+         * survives its own close and can still be positioned. */
+        walk->closed = true;
+        assert(!(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH));
+        container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
+        markdown_core_block_close(parser, container);
+        return S_matched(tokenizer, code);
+    }
+    return S_next_container(tokenizer, code);
+}
+
+/* The continuation succeeded: its verdict is its last token, if any. */
+static markdown_core_state S_continued(markdown_core_tokenizer *tokenizer, int code) {
+    return S_verdict(tokenizer, code, S_prefix_verdict(tokenizer, 0));
+}
+
+static markdown_core_state S_unmatched(markdown_core_tokenizer *tokenizer, int code) {
+    return S_verdict(tokenizer, code, MARKDOWN_CORE_LINE_OFF);
+}
+
+/* The next open block's continuation, below the one the walk stands in. */
+static markdown_core_state S_next_container(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    markdown_core_reader *reader = walk->turn.reader;
+    if (walk->container == parser->at.current) {
+        walk->matched = true;
+        return S_matched(tokenizer, code);
+    }
+    /* Whatever a container's prefix consumed is that container's MARKER:
+     * `> ` belongs to the block quote, the item's indent to the list item.
+     * So the bytes of the block below begin where the prefixes above it
+     * end: one claim per block, walking down the spine, each naming the
+     * line by number, as matching a container can read lines ahead, which
+     * can move the line table. */
+    markdown_core_parser_rewritten_line(parser, parser->at.read.number)->own = (uint32_t)parser->at.read.offset;
+    walk->container = walk->container->children[walk->container->child_count - 1];
+    markdown_core_reader_find(reader);
+    const markdown_core_element_instance *structure =
+        markdown_core_parser_block_kind(parser, walk->container)->structure;
+    if (!structure || !structure->lines->continuation.start) {
+        return S_verdict(tokenizer, code, MARKDOWN_CORE_LINE_ON);
+    }
+    walk->one = structure->lines->continuation;
+    walk->one.context = structure;
+    walk->turn.node = walk->container;
+    walk->turn.joining = NULL;
+    walk->turn.look = false;
+    markdown_core_events_clear(&tokenizer->events);
+    return markdown_core_attempt(tokenizer, &walk->one, markdown_core_state_of(S_continued),
+                                 markdown_core_state_of(S_unmatched), markdown_core_code_at(tokenizer, 0));
+}
+
+/* The starts are done: the line's text is next, unless a start claimed
+ * the line's remaining bytes. */
+static markdown_core_state S_opened(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    if (!walk->container || parser->error) {
+        return S_walk_eol(tokenizer, code);
+    }
+    return S_text_of(tokenizer, code);
+}
+
+/* A round of the starts ends: a block opened goes on to the next round
+ * inside it, unless it takes the line's text. */
+static markdown_core_state S_round_end(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    walk->depth++;
+    const markdown_core_block_construct *found = walk->found;
+    if (!found || !walk->turn.opened || found->last) {
+        return S_opened(tokenizer, code);
+    }
+    /* What this opener consumed made the block it just opened, so the block
+     * owns it: `> `, `- `, the `#`s of a heading, the opening fence,
+     * `[^label]:`. A block that takes the text line holds no other. */
+    if (S_kind_takes_text(markdown_core_parser_block_kind(parser, walk->container), walk->container)) {
+        return S_opened(tokenizer, code);
+    }
+    walk->lazy = false;
+    return S_open_round(tokenizer, code);
+}
+
+static markdown_core_state S_started(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    walk->found = walk->tried;
+    S_walk_compile(tokenizer);
+    S_reader_close(parser);
+    if (parser->error) {
+        return S_walk_eol(tokenizer, code);
+    }
+    return S_round_end(tokenizer, code);
+}
+
+static markdown_core_state S_not_started(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
+    S_reader_close(parser);
+    if (parser->error) {
+        return S_walk_eol(tokenizer, code);
+    }
+    return S_next_start(tokenizer, code);
+}
+
+/* The next start of the line's key the line admits. */
+static markdown_core_state S_next_start(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    const markdown_core_reader *reader = walk->turn.reader;
+    while (walk->at < walk->count) {
+        const markdown_core_block_construct *candidate = walk->starts[walk->at++];
+        /* The indent bound stays a test of the line: the table is the
+         * element set's. */
+        if (reader->indent > candidate->indent || (candidate->last && (walk->lazy || walk->context.paragraph)) ||
+            (candidate->within && candidate->within != (markdown_core_node_type)walk->container->kind)) {
+            continue;
+        }
+        walk->tried = candidate;
+        walk->start.owner = candidate->construct.context;
+        walk->start.kind = MARKDOWN_CORE_NODE_NONE;
+        walk->start.matched = 0;
+        walk->turn.opened = false;
+        walk->one = candidate->construct;
+        markdown_core_events_clear(&tokenizer->events);
+        return markdown_core_attempt(tokenizer, &walk->one, markdown_core_state_of(S_started),
+                                     markdown_core_state_of(S_not_started), markdown_core_code_at(tokenizer, 0));
+    }
+    return S_round_end(tokenizer, code);
+}
+
+/* A round of the starts, in the block the walk stands in: none in a block
+ * that takes lines. */
+static markdown_core_state S_open_round(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    markdown_core_reader *reader = walk->turn.reader;
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, walk->container);
+    if (S_kind_accepts_lines(kind, walk->container)) {
+        return S_opened(tokenizer, code);
+    }
+    markdown_core_reader_find(reader);
+    /* Two facts keep a line from interrupting text: `paragraph`, the
+     * matched container is a paragraph the line would continue, and
+     * `lazy`, the current block would take the line lazily. Only the first
+     * round has either: a block opened here holds the rest of the line.
+     * Indentation ahead of whatever opens here is the CONTAINER's: a block
+     * begins at its own first non-space byte. The start's record is not
+     * cleared: its construct writes it before its token's handler reads
+     * it. */
+    walk->context = (block_start_context){.container = walk->container,
+                                          .reader = reader,
+                                          .paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH,
+                                          .lazy = walk->lazy,
+                                          .all_matched = walk->matched,
+                                          .depth = walk->depth + 1};
+    walk->turn.context = &walk->context;
+    walk->turn.start = &walk->start;
+    walk->turn.container = &walk->container;
+    const markdown_core_dialect *dialect = parser->dialect;
+    const int key = S_gate_key(reader, reader->nonspace, reader->indent);
+    walk->starts = dialect->starts + dialect->start_offsets[key];
+    walk->count = (size_t)(dialect->start_offsets[key + 1] - dialect->start_offsets[key]);
+    walk->at = 0;
+    walk->found = NULL;
+    return S_next_start(tokenizer, code);
+}
+
+/* THE CONTENT opened (element.h, markdown_core_open_ops `content`): the
+ * text block it opened takes the line. A lazy line is text, so its
+ * indentation is not content, as it is not on a line that continues a
+ * paragraph with every prefix. */
+static markdown_core_state S_content_made(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    const bool made = S_walk_compile(tokenizer);
+    S_reader_close(parser);
+    if (made && walk->turn.opened) {
+        assert(walk->container == markdown_core_parser_current(parser));
+        if (walk->stray) {
+            markdown_core_reader_skip(walk->turn.reader);
+        }
+        S_walk_flow(tokenizer, walk->container);
+    }
+    return S_walk_tail(tokenizer, code);
+}
+
+static markdown_core_state S_content_none(markdown_core_tokenizer *tokenizer, int code) {
+    S_reader_close(S_walk_of(tokenizer)->turn.parser);
+    return S_walk_tail(tokenizer, code);
+}
+
+/* The content attempted in `container`; `lazy`, for a lazy line. */
+static markdown_core_state S_content(markdown_core_tokenizer *tokenizer, int code, markdown_core_node *container,
+                                     bool lazy) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
     const markdown_core_element_instance *owner = parser->dialect->text_block_structure;
-    block_start start = {.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
-    block_start_context context = {.container = container,
-                                   .reader = reader,
-                                   .all_matched = true,
-                                   .depth = 1,
-                                   .thematic_kill = parser->at.thematic_break_kill_pos};
-    markdown_core_block_turn turn = {
-        .parser = parser, .context = &context, .start = &start, .container = &container, .reader = reader};
-    if (!markdown_core_block_start_try(parser, &turn, owner->element->opens->content, owner) || !turn.opened ||
-        parser->error) {
-        return NULL;
-    }
-    return container;
+    walk->container = container;
+    walk->start = (block_start){.owner = owner, .kind = MARKDOWN_CORE_NODE_NONE};
+    walk->context = (block_start_context){.container = container,
+                                          .reader = walk->turn.reader,
+                                          .all_matched = true,
+                                          .depth = 1};
+    walk->turn.context = &walk->context;
+    walk->turn.start = &walk->start;
+    walk->turn.container = &walk->container;
+    walk->turn.opened = false;
+    walk->one = owner->element->opens->content->construct;
+    walk->one.context = owner;
+    walk->stray = lazy;
+    markdown_core_events_clear(&tokenizer->events);
+    return markdown_core_attempt(tokenizer, &walk->one, markdown_core_state_of(S_content_made),
+                                 markdown_core_state_of(S_content_none), markdown_core_code_at(tokenizer, 0));
 }
 
-/* Where the line machine stands as it opens blocks: whether the line may
- * still be lazy, and how many blocks this line has asked to open. */
-typedef struct {
-    bool maybe_lazy;
-    size_t depth;
-} S_opens;
-
-/* Opens the blocks the line starts in `*container`, from where `opens`
- * says the line stands. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(markdown_core_parser *parser,
-                                                                            markdown_core_node **container,
-                                                                            markdown_core_reader *reader,
-                                                                            bool all_matched, S_opens opens) {
-    /* Two facts keep a line from interrupting text: `paragraph`, the matched
-     * container is a paragraph the line would continue, and `maybe_lazy`, the
-     * current block would take the line lazily. Only the first turn has
-     * either: a block opened here holds the rest of the line. */
-    bool maybe_lazy = opens.maybe_lazy;
-    size_t depth = opens.depth;
-    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, *container);
-    /* The instance's dialect is sealed: read its families through one local. */
-    const markdown_core_dialect *const dialect = parser->dialect;
-
-    while (!S_kind_accepts_lines(kind, *container)) {
-        bool paragraph = kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH;
-        /* Not cleared: the dispatcher writes the three fields it reads, and
-         * the payload is the claiming start's, written by its construct
-         * before its token's handler reads it. Clearing its bytes here was
-         * paid by every line, the ones a code block or a properties block
-         * takes without a round of this loop included. */
-        block_start start;
-        markdown_core_reader_find(reader);
-        /* Indentation ahead of whatever opens here is the CONTAINER's, not the
-         * new block's: a block begins at its own first non-space byte, so
-         * giving the spaces to the block being opened would make its first
-         * region start before its own scope. Measured before it was fixed --
-         * 52 rows of an indented code block's four spaces alone. */
-        block_start_context context = {.container = *container,
-                                       .reader = reader,
-                                       .paragraph = paragraph,
-                                       .lazy = maybe_lazy,
-                                       .all_matched = all_matched,
-                                       .depth = depth + 1,
-                                       .thematic_kill = parser->at.thematic_break_kill_pos};
-        markdown_core_block_turn turn = {
-            .parser = parser, .context = &context, .start = &start, .container = container, .reader = reader};
-        const int key = S_gate_key(reader, reader->nonspace, reader->indent);
-        const markdown_core_block_construct *const *starts = dialect->starts + dialect->start_offsets[key];
-        const size_t count = (size_t)(dialect->start_offsets[key + 1] - dialect->start_offsets[key]);
-        const markdown_core_block_construct *found = NULL;
-        for (size_t i = 0; i < count && !found; i++) {
-            const markdown_core_block_construct *candidate = starts[i];
-            /* The indent bound stays a test of the line: the table is the
-             * element set's. */
-            if (reader->indent > candidate->indent || (candidate->last && (maybe_lazy || paragraph))) {
-                continue;
-            }
-            start.owner = candidate->construct.context;
-            start.kind = MARKDOWN_CORE_NODE_NONE;
-            start.matched = 0;
-            if (markdown_core_block_start_try(parser, &turn, candidate, start.owner)) {
-                found = candidate;
-            }
-            S_reader_close(parser);
-            if (parser->error) {
-                return;
-            }
-        }
-        depth++;
-        parser->at.thematic_break_kill_pos = context.thematic_kill;
-        if (!found) {
-            break;
-        }
-        if (!turn.opened || found->last || parser->claimed_cursor) {
-            return;
-        }
-
-        /* What this opener consumed made the block it just opened, so the
-         * block owns it: `> `, `- `, the `#`s of a heading, the opening fence,
-         * `[^label]:`. Claimed once per turn of the loop -- once per block
-         * opened -- and before a block that takes the text line breaks out. */
-
-        kind = markdown_core_parser_block_kind(parser, *container);
-        if (S_kind_takes_text(kind, *container)) {
-            // if it's a line container, it can't contain other containers
-            break;
-        }
-
-        maybe_lazy = false;
-    }
+/* A construct of the block's lines (element.h, markdown_core_line_ops)
+ * attempted on the line by the walk, in the block the walk stands in. */
+static void S_walk_line_op(S_walk *walk, const markdown_core_element_instance *structure,
+                           const markdown_core_construct *construct, markdown_core_tokenizer *tokenizer) {
+    walk->one = *construct;
+    walk->one.context = structure;
+    walk->turn.node = walk->container;
+    walk->turn.joining = NULL;
+    walk->turn.look = false;
+    markdown_core_events_clear(&tokenizer->events);
 }
 
-/* What remains at parser->at.read.offset is a text line: adds the text to the
- * appropriate container. False when the block that would take it did not
- * open: the parse failed. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_container(
-    markdown_core_parser *parser, markdown_core_node *container, markdown_core_node *last_matched_container,
-    markdown_core_reader *reader) {
+/* The end condition met: the block closes on the line. */
+static markdown_core_state S_ends_met(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    walk->container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
+    (void)markdown_core_block_close(walk->turn.parser, walk->container);
+    return S_walk_tail(tokenizer, code);
+}
+
+/* The block took the line's text: its tokens make its field. */
+static markdown_core_state S_text_made(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk_compile(tokenizer);
+    return S_walk_tail(tokenizer, code);
+}
+
+static markdown_core_state S_text_none(markdown_core_tokenizer *tokenizer, int code) {
+    return S_content(tokenizer, code, S_walk_of(tokenizer)->container, false);
+}
+
+/* The line's text, at the reader's offset, given to the block that takes
+ * it. */
+static markdown_core_state S_text_of(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    markdown_core_reader *reader = walk->turn.reader;
+    markdown_core_node *container = walk->container;
 
     markdown_core_reader_find(reader);
 
     /* A blank line is the last line of the block before it that has not
      * settled: the one open inside the container, its last child, or the
      * container's pending child. */
-    if (parser->at.read.blank) {
+    if (reader->blank) {
         markdown_core_node *before =
             container != parser->at.current ? container->children[container->child_count - 1] : parser->at.pending;
         if (before) {
@@ -8911,7 +9309,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
     const markdown_core_element_instance *structure = kind->structure;
     const bool accepts_lines = S_kind_accepts_lines(kind, container);
-    const bool last_line_blank = parser->at.read.blank && !(kind->flags & MARKDOWN_CORE_KIND_BLANK_OPAQUE) &&
+    const bool last_line_blank = reader->blank && !(kind->flags & MARKDOWN_CORE_KIND_BLANK_OPAQUE) &&
                                  (!(kind->flags & MARKDOWN_CORE_KIND_BLANK_ASK)
                                       ? !accepts_lines
                                       : structure->lines->blank_last(structure, parser, container, reader));
@@ -8925,70 +9323,254 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
 
     // A line that may be lazy, opened no block and is not blank is a lazy
     // line: the current block takes it.
-    if (container == last_matched_container && !parser->at.read.blank &&
-        S_may_be_lazy(parser, last_matched_container)) {
+    if (container == walk->last_matched && !reader->blank && S_may_be_lazy(parser, walk->last_matched)) {
         /* A block of text takes it; any other that takes a lazy line opens
          * the content it starts (THE CONTENT). */
         markdown_core_node *current = markdown_core_parser_current(parser);
-        markdown_core_node *lazy = markdown_core_parser_block_kind(parser, current)->flags & MARKDOWN_CORE_KIND_PROSE
-                                       ? current
-                                       : markdown_core_block_content(parser, current, reader);
+        if (!(markdown_core_parser_block_kind(parser, current)->flags & MARKDOWN_CORE_KIND_PROSE)) {
+            return S_content(tokenizer, code, current, true);
+        }
         S_reader_close(parser);
-        if (!lazy) {
+        markdown_core_reader_skip(reader);
+        S_walk_flow(tokenizer, current);
+        return S_walk_tail(tokenizer, code);
+    }
+    // Close the blocks the line did not match: those open below the
+    // container that takes it.
+    markdown_core_parser_close_below(parser, container);
+
+    walk->container = container;
+    if (accepts_lines) {
+        S_walk_flow(tokenizer, container);
+        if (structure->lines->ends.start && !parser->error) {
+            /* The end condition, a check of the line's reading. */
+            S_walk_line_op(walk, structure, &structure->lines->ends, tokenizer);
+            return markdown_core_check(tokenizer, &walk->one, markdown_core_state_of(S_ends_met),
+                                       markdown_core_state_of(S_walk_tail), markdown_core_code_at(tokenizer, 0));
+        }
+    } else if (reader->blank) {
+        // ??? do nothing
+    } else if (kind->flags & MARKDOWN_CORE_KIND_PROSE) {
+        markdown_core_reader_skip(reader);
+        S_walk_flow(tokenizer, container);
+    } else if (container != walk->last_matched && structure && structure->lines->text.start) {
+        /* THE TEXT OF ITS LINE: the block the line opened may take it. */
+        S_text_unsettle(structure, parser, container);
+        S_walk_line_op(walk, structure, &structure->lines->text, tokenizer);
+        return markdown_core_attempt(tokenizer, &walk->one, markdown_core_state_of(S_text_made),
+                                     markdown_core_state_of(S_text_none), markdown_core_code_at(tokenizer, 0));
+    } else {
+        return S_content(tokenizer, code, container, false);
+    }
+    assert(container == markdown_core_parser_current(parser));
+    return S_walk_tail(tokenizer, code);
+}
+
+/* The line gave its text away: the reading ends. */
+static markdown_core_state S_walk_tail(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    if (parser->line_open_count && !parser->error) {
+        S_line_opens_keep(parser, markdown_core_parser_current(parser));
+    }
+    walk->given = true;
+    return S_walk_eol(tokenizer, code);
+}
+
+/* The document's first state on a line: the continuations from the block
+ * root, or, on a line an edit's reading stands inside (A REST INSIDE A
+ * LINE), the text, given to the block the line opened, which is not the
+ * last it matched: a line that has opened a block is no lazy line. */
+static markdown_core_state S_walk_start(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk *walk = S_walk_of(tokenizer);
+    markdown_core_parser *parser = walk->turn.parser;
+    const markdown_core_line_stop *from = parser->walk->from;
+    walk->turn.reader = &parser->at.read;
+    markdown_core_cursor_line(tokenizer, tokenizer->position);
+    if (parser->walk->rest.on) {
+        return S_rest_start(tokenizer, code);
+    }
+    walk->closing = walk->last_matched = NULL;
+    walk->matched = walk->closed = walk->lazy = walk->stray = walk->given = false;
+    if (from) {
+        /* The reading goes on where the edit's reading stood in the line,
+         * the bytes before it read. */
+        walk->container = from->container;
+        markdown_core_cursor_move(tokenizer);
+        return S_opened(tokenizer, markdown_core_code_at(tokenizer, 0));
+    }
+    walk->container = markdown_core_parser_block_root(parser);
+    return S_next_container(tokenizer, code);
+}
+
+/* The line is read: its end is the document's, and the next line starts
+ * where every line does. */
+static markdown_core_state S_walk_eol(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const uint32_t eol = S_walk_of(tokenizer)->turn.parser->walk->eol;
+    if (tokenizer->position < eol) {
+        markdown_core_move_to(tokenizer, eol);
+    }
+    return markdown_core_pause(tokenizer, markdown_core_state_of(S_walk_start));
+}
+
+/* THE REST AS THE READING READS IT: the rest's stand, its looks each a
+ * check of the reading, and the old tail taken back or passed by; then
+ * the reading waits for the line again. */
+static markdown_core_state S_rest_look(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_rest_end(markdown_core_tokenizer *tokenizer, bool stands) {
+    markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
+    S_rest *rest = &parser->walk->rest;
+    rest->took = S_rest_done(parser, rest, stands);
+    return markdown_core_pause(tokenizer, markdown_core_state_of(S_walk_start));
+}
+
+static markdown_core_state S_rest_seen(markdown_core_tokenizer *tokenizer, int code, bool read) {
+    markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
+    S_rest *rest = &parser->walk->rest;
+    markdown_core_block_lookahead *lookahead = parser->look;
+    const int carried =
+        lookahead->blanks ? -1 : !read ? 0 : lookahead->line == lookahead->saved.read.number + 2 ? 1 : -1;
+    markdown_core_parser_lookahead_end(lookahead);
+    parser->stream->edit->quiet = false;
+    if (parser->error || carried != rest->want[rest->at]) {
+        return S_rest_end(tokenizer, false);
+    }
+    rest->at++;
+    return S_rest_look(tokenizer, code);
+}
+
+static markdown_core_state S_rest_carried(markdown_core_tokenizer *tokenizer, int code) {
+    return S_rest_seen(tokenizer, code, true);
+}
+
+static markdown_core_state S_rest_dropped(markdown_core_tokenizer *tokenizer, int code) {
+    return S_rest_seen(tokenizer, code, false);
+}
+
+static markdown_core_state S_rest_look(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
+    S_rest *rest = &parser->walk->rest;
+    if (rest->at == rest->looks) {
+        if (rest->closes) {
+            S_close_on(parser, rest->holder, rest->start);
+            if (parser->error) {
+                return S_rest_end(tokenizer, false);
+            }
+        }
+        return S_rest_end(tokenizer, S_stands_back(parser, rest));
+    }
+    markdown_core_edit *edit = parser->stream->edit;
+    edit->quiet = true;
+    if (!markdown_core_parser_lookahead_begin(parser, rest->look[rest->at], rest->kind[rest->at])) {
+        edit->quiet = false;
+        return S_rest_end(tokenizer, false);
+    }
+    return markdown_core_check(tokenizer, &S_LOOK, markdown_core_state_of(S_rest_carried),
+                               markdown_core_state_of(S_rest_dropped), code);
+}
+
+static markdown_core_state S_rest_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
+    S_rest *rest = &parser->walk->rest;
+    rest->on = false;
+    const int point = S_rest_point(parser, rest->start, rest->index);
+    if (point) {
+        rest->took = point > 0;
+        return markdown_core_pause(tokenizer, markdown_core_state_of(S_walk_start));
+    }
+    if (!S_stands_front(parser, rest)) {
+        return S_rest_end(tokenizer, false);
+    }
+    return S_rest_look(tokenizer, code);
+}
+
+/* The document's reading, begun as the parser reads its first line: the
+ * line's blocks read through the parser, its compiles in the reading's
+ * pass. False, with the parse failed, when storage could not be had. */
+static bool S_walk_begin(markdown_core_parser *parser) {
+    struct markdown_core_walk *reading = parser->walk;
+    if (!reading) {
+        reading = markdown_core_alloc(1, sizeof(*reading));
+        if (!reading) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
-        assert(lazy == markdown_core_parser_current(parser));
-        /* A lazy line is text, so its indentation is not content, as it is not
-         * on a line that continues a paragraph with every prefix. */
-        markdown_core_reader_skip(reader);
-        markdown_core_block_add_line(parser, lazy);
-    } else { // not a lazy continuation
-        // Close the blocks the line did not match: those open below the
-        // container that takes it.
-        markdown_core_parser_close_below(parser, container);
-
-        if (accepts_lines) {
-            markdown_core_block_add_line(parser, container);
-            if (structure->lines->ends && structure->lines->ends(structure, parser, container, reader)) {
-                container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-                container = markdown_core_block_close(parser, container);
-            }
-        } else if (parser->at.read.blank) {
-            // ??? do nothing
-        } else if (kind->flags & MARKDOWN_CORE_KIND_PROSE) {
-            markdown_core_reader_skip(reader);
-            markdown_core_block_add_line(parser, container);
-        } else if (container != last_matched_container && structure && structure->lines->text &&
-                   S_text_of_line(structure, parser, container, reader)) {
-            /* The block the line opened took the line's text (THE TEXT OF
-             * ITS LINE). */
-            if (parser->error) {
-                return false;
-            }
-        } else {
-            container = markdown_core_block_content(parser, container, reader);
-            S_reader_close(parser);
-            if (!container) {
-                return false;
-            }
-            markdown_core_block_add_line(parser, container);
-        }
-        assert(container == markdown_core_parser_current(parser));
+        parser->walk = reading;
     }
+    if (reading->open) {
+        return true;
+    }
+    if (!reading->pass && !(reading->pass = markdown_core_pass_take(parser))) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    reading->walk = (S_walk){.turn = {.parser = parser}, .compiler = &reading->pass->compiler};
+    const markdown_core_read read = {.cut = UINT32_MAX, .reader = &reading->walk, .cursor = &parser->at.read};
+    markdown_core_tokenizer_begin(&reading->pass->tokenizer, &read, markdown_core_state_of(S_walk_start));
+    reading->open = true;
     return true;
+}
+
+/* The document's reading ends with the parse. */
+static void S_walk_end(markdown_core_parser *parser) {
+    struct markdown_core_walk *reading = parser->walk;
+    if (reading && reading->open) {
+        reading->open = false;
+        if (!markdown_core_tokenizer_end(&reading->pass->tokenizer) && !parser->error) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+    }
+}
+
+/* The document's reading released with the parser. */
+static void S_walk_free(markdown_core_parser *parser, struct markdown_core_walk **walk) {
+    struct markdown_core_walk *reading = *walk;
+    if (reading) {
+        if (reading->pass) {
+            markdown_core_pass_back(parser, reading->pass);
+        }
+        markdown_core_free(reading);
+        *walk = NULL;
+    }
+}
+/* At the start of the line at `start`, line `index` of the input, which the
+ * line loop's limit stopped at, the edit's rest, asked in the document's
+ * reading (THE REST AS THE READING READS IT): the reading leaps, or takes
+ * the old tail back when the child it tries next starts its line there and
+ * the reading stands as the old one did, and goes on to try the next child
+ * otherwise. True when it leapt, took the tail back, or failed. */
+static bool S_walk_rest(markdown_core_parser *parser, size_t start, size_t index) {
+    if (!S_walk_begin(parser)) {
+        return true;
+    }
+    struct markdown_core_walk *reading = parser->walk;
+    reading->rest = (S_rest){.start = start, .index = index, .on = true};
+    reading->eol = (uint32_t)start;
+    if (!markdown_core_tokenizer_feed(&reading->pass->tokenizer, parser->input.source, (uint32_t)parser->input.size,
+                                      (uint32_t)start) ||
+        parser->error) {
+        reading->open = false;
+        if (!parser->error) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        return true;
+    }
+    return reading->rest.took;
 }
 
 /* THE LINE MACHINE (http://spec.commonmark.org/0.24/#phase-1-block-structure)
  * reads the line in `buffer` from its start, or from `from`, where an edit's
  * reading stands inside it (A REST INSIDE A LINE): there the line has
  * matched every open block and opened the block that takes its text, which
- * is left to add. */
+ * is left to add. The line is one reading of the document (THE
+ * DOCUMENT). */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markdown_core_parser *parser,
                                                                            const unsigned char *buffer, bufsize_t bytes,
+                                                                           size_t start, size_t next,
                                                                            const markdown_core_line_stop *from) {
-    markdown_core_node *last_matched_container;
-    bool all_matched = true;
-    markdown_core_node *container;
     markdown_core_reader *const reader = &parser->at.read;
 
     if (parser->error || parser->root == NULL) {
@@ -9027,53 +9609,40 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     } else {
         parser->at.read.number = line;
     }
-    /* Where a thematic break failed holds while the reading goes on: a
-     * resumed visit reads on from where the last reading stopped. */
-    if (!resumed || !from) {
-        parser->at.thematic_break_kill_pos = 0;
-    }
 
-    if (!from) {
-        last_matched_container =
-            check_open_blocks(parser, reader, &all_matched, markdown_core_parser_block_root(parser));
-        if (!last_matched_container) {
-            goto finished;
+    if (S_walk_begin(parser)) {
+        /* The line is fed to the document's reading: its states read the
+         * line through the reader, the column cursor, and end at the
+         * line's end. */
+        struct markdown_core_walk *reading = parser->walk;
+        reading->from = from;
+        reading->eol = (uint32_t)next;
+        if (!markdown_core_tokenizer_feed(&reading->pass->tokenizer, parser->input.source, (uint32_t)parser->input.size,
+                                          (uint32_t)start) ||
+            parser->error) {
+            /* A reading that failed ends where it failed: the next begins
+             * anew. */
+            reading->open = false;
+            if (!parser->error) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            }
         }
-        container = last_matched_container;
-        open_new_blocks(parser, &container, reader, all_matched, (S_opens){S_may_be_lazy(parser, container), 0});
-    } else {
-        /* A line that has opened a block is no lazy line: the block it
-         * reaches is not the last it matched. */
-        container = from->container;
-        last_matched_container = NULL;
+        reading->from = NULL;
+        if (reading->walk.given && reader->rests && !parser->error) {
+            /* How far the line's reading read as it gave its text away (A
+             * REST INSIDE A LINE), and whether it looked past the line's
+             * end, as a term does at the next line's marker: what it read
+             * there an edit of the line moves, and leaves as it was only
+             * while the line ends where it did. A reading that goes on
+             * inside the line looked where the line's first reading did,
+             * which it does not do again. */
+            const markdown_core_edit *edit = parser->stream->edit;
+            const bool looked = (edit->look.end && edit->look_line == parser->at.read.number) || (from && from->past);
+            markdown_core_parser_rewritten_line(parser, line)->decided =
+                (uint32_t)reader->far | (looked ? MARKDOWN_CORE_LINE_PAST : 0);
+        }
     }
 
-    if (container == NULL || parser->error) {
-        goto finished;
-    }
-
-    if (parser->claimed_cursor) {
-        goto finished;
-    }
-
-    add_text_to_container(parser, container, last_matched_container, reader);
-    if (parser->line_open_count && !parser->error) {
-        S_line_opens_keep(parser, markdown_core_parser_current(parser));
-    }
-    if (reader->rests && !parser->claimed_cursor && !parser->error) {
-        /* How far the line's reading read as it gave its text away (A REST
-         * INSIDE A LINE), and whether it looked past the line's end, as a
-         * term does at the next line's marker: what it read there an edit
-         * of the line moves, and leaves as it was only while the line ends
-         * where it did. A reading that goes on inside the line looked
-         * where the line's first reading did, which it does not do again. */
-        const markdown_core_edit *edit = parser->stream->edit;
-        const bool looked = (edit->look.end && edit->look_line == parser->at.read.number) || (from && from->past);
-        markdown_core_parser_rewritten_line(parser, line)->decided =
-            (uint32_t)reader->far | (looked ? MARKDOWN_CORE_LINE_PAST : 0);
-    }
-
-finished:
     /* Block scopes cover the complete physical line, including closing
      * delimiters and attribute containers. Inline content trimming never
      * changes this source boundary. */
@@ -9086,14 +9655,16 @@ finished:
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_line(markdown_core_parser *parser,
                                                                            const unsigned char *buffer,
-                                                                           bufsize_t bytes) {
-    S_line_machine(parser, buffer, bytes, NULL);
+                                                                           bufsize_t bytes, size_t start,
+                                                                           size_t next) {
+    S_line_machine(parser, buffer, bytes, start, next, NULL);
 }
 
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_process_held_line(markdown_core_parser *parser,
                                                                     const unsigned char *buffer, bufsize_t bytes,
+                                                                    size_t start, size_t next,
                                                                     const markdown_core_line_stop *from) {
-    S_line_machine(parser, buffer, bytes, from);
+    S_line_machine(parser, buffer, bytes, start, next, from);
 }
 
 /* COMPLETION: every queued block, in the order it joined, as one walk over
@@ -9305,6 +9876,9 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
     if (parser->root == NULL || parser->error) {
+        if (parser->walk) {
+            parser->walk->open = false;
+        }
         return NULL;
     }
 
@@ -9319,6 +9893,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         }
     }
     S_close_document(parser);
+    S_walk_end(parser);
     if (parser->stream->edit && parser->stream->edit->depth) {
         S_unqueue_chain(parser);
     }

@@ -148,6 +148,38 @@ static inline void markdown_core_reader_back(markdown_core_reader *reader, markd
     reader->split = mark.split;
 }
 
+/* WHERE A READING STANDS IN FULL: the mark and what the first non-space
+ * byte tells from it, which an attempt that fails goes back to with the
+ * reading's position (tokenizer.h, the reading's `cursor`). */
+typedef struct {
+    bufsize_t offset, column, nonspace, nonspace_column;
+    int indent;
+    bool split, blank;
+} markdown_core_reader_stand;
+
+static inline markdown_core_reader_stand markdown_core_reader_stand_of(const markdown_core_reader *reader) {
+    markdown_core_reader_stand stand;
+    stand.offset = reader->offset;
+    stand.column = reader->column;
+    stand.nonspace = reader->nonspace;
+    stand.nonspace_column = reader->nonspace_column;
+    stand.indent = reader->indent;
+    stand.split = reader->split;
+    stand.blank = reader->blank;
+    return stand;
+}
+
+static inline void markdown_core_reader_stand_back(markdown_core_reader *reader,
+                                                   const markdown_core_reader_stand *stand) {
+    reader->offset = stand->offset;
+    reader->column = stand->column;
+    reader->nonspace = stand->nonspace;
+    reader->nonspace_column = stand->nonspace_column;
+    reader->indent = stand->indent;
+    reader->split = stand->split;
+    reader->blank = stand->blank;
+}
+
 /* The scalar at `at`, a byte before the line's length, into `*scalar`
  * (MARKDOWN_CORE_NO_SCALAR for a byte that begins none), and its width in
  * bytes: the reader notes it read them. */

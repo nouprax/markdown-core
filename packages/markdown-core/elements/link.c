@@ -1139,7 +1139,14 @@ static const markdown_core_inline_ops LINK_INLINES = {
 
 /* A paragraph's text opens with its link reference definitions, which the
  * engine cuts off its front (blocks.c, THE FRONT CUT). */
-static const markdown_core_block_construct LINK_ITEM = {.bytes = "[", .construct = {.start = S_item}};
+/* A definition found and not made gives back its attributes. */
+static void S_item_drop(const markdown_core_element_instance *self, block_start *start) {
+    (void)self;
+    markdown_core_attributes_free(&MARKDOWN_CORE_BLOCK_FOUND(start, S_item_found)->definition.value);
+}
+
+static const markdown_core_block_construct LINK_ITEM = {
+    .bytes = "[", .construct = {.start = S_item}, .drop = S_item_drop};
 
 static const markdown_core_compile_ops LINK_BLOCK_TOKENS[LINK_BLOCKS] = {
     [LINK_ITEM_REFERENCE] = {.enter = S_item_make},

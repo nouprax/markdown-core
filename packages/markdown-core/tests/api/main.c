@@ -1656,6 +1656,89 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, co
     markdown_core_document_free(document);
 }
 
+/* ONE CONSTRUCT READ ALONE on a line, as the document's reading attempts
+ * it (blocks.c, THE DOCUMENT): a reading of the tokenizer, begun, fed the
+ * line and ended as every reading is (markdown_core_tokenizer_begin),
+ * whose first state attempts the construct, and whose ends note how it
+ * went. The reader is the turn, the first member, as the walk's is. */
+typedef struct {
+    markdown_core_block_turn turn;
+    markdown_core_construct one;
+    bool found;
+} test_alone;
+
+static markdown_core_state test_alone_first(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state test_alone_ok(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    ((test_alone *)tokenizer->reader)->found = true;
+    return markdown_core_pause(tokenizer, markdown_core_state_of(test_alone_first));
+}
+
+static markdown_core_state test_alone_nok(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_pause(tokenizer, markdown_core_state_of(test_alone_first));
+}
+
+static markdown_core_state test_alone_first(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, &((test_alone *)tokenizer->reader)->one,
+                                 markdown_core_state_of(test_alone_ok), markdown_core_state_of(test_alone_nok), code);
+}
+
+/* True when the construct read the line of `reader` from `from`; its
+ * events in the pass's tokenizer until the pass reads again. */
+static bool test_alone_read(markdown_core_pass *pass, test_alone *alone, const markdown_core_reader *reader,
+                            size_t from) {
+    const markdown_core_read read = {.cut = UINT32_MAX, .reader = alone};
+    alone->found = false;
+    markdown_core_tokenizer_begin(&pass->tokenizer, &read, markdown_core_state_of(test_alone_first));
+    const bool fed =
+        markdown_core_tokenizer_feed(&pass->tokenizer, reader->line.data, (uint32_t)reader->line.len, (uint32_t)from);
+    return markdown_core_tokenizer_end(&pass->tokenizer) && fed && alone->found;
+}
+
+/* An element's start, its tokens compiled when it succeeded. */
+static bool test_start_alone(markdown_core_parser *parser, markdown_core_block_turn *turn,
+                             const markdown_core_block_construct *start, const markdown_core_element_instance *self) {
+    markdown_core_reader *reader = turn->context->reader;
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
+    if (!pass) {
+        return false;
+    }
+    turn->opened = false;
+    test_alone alone = {.turn = *turn, .one = start->construct};
+    alone.one.context = self;
+    const bool found = test_alone_read(pass, &alone, reader, (size_t)reader->nonspace);
+    if (found && !parser->error) {
+        const markdown_core_dialect *dialect = parser->dialect;
+        (void)markdown_core_compile(&pass->compiler, &pass->tokenizer.events, reader->line.data, dialect->compiles,
+                                    dialect->token_kinds, &alone.turn);
+    }
+    turn->opened = alone.turn.opened;
+    markdown_core_pass_back(parser, pass);
+    return found;
+}
+
+/* An open block's continuation, its verdict. */
+static int test_continue_alone(markdown_core_parser *parser, const markdown_core_element_instance *structure,
+                               markdown_core_node *node, markdown_core_reader *reader) {
+    markdown_core_pass *pass = markdown_core_pass_take(parser);
+    if (!pass) {
+        return MARKDOWN_CORE_LINE_OFF;
+    }
+    test_alone alone = {.turn = {.parser = parser, .reader = reader, .node = node},
+                        .one = structure->lines->continuation};
+    alone.one.context = structure;
+    const markdown_core_events *events = &pass->tokenizer.events;
+    int verdict = MARKDOWN_CORE_LINE_OFF;
+    if (test_alone_read(pass, &alone, reader, (size_t)reader->offset)) {
+        const int kind = events->token_count ? events->tokens[events->token_count - 1].kind : MARKDOWN_CORE_LINE_ON;
+        verdict = kind == MARKDOWN_CORE_TOKEN_PREFIX ? MARKDOWN_CORE_LINE_ON : kind;
+    }
+    markdown_core_pass_back(parser, pass);
+    return verdict;
+}
+
 /* The block an element's start `which` opens on the line of `reader` in
  * `parent` -- over a paragraph the line would continue when `paragraph` --
  * or NULL when it opens none: a start tried as the line machine tries it. */
@@ -1668,7 +1751,7 @@ static markdown_core_node *try_block_start(const markdown_core_element_instance 
     markdown_core_node *container = parent;
     markdown_core_block_turn turn = {
         .parser = parser, .context = &context, .start = &start, .container = &container, .reader = reader};
-    const bool found = markdown_core_block_start_try(parser, &turn, &self->element->opens->starts[which], self);
+    const bool found = test_start_alone(parser, &turn, &self->element->opens->starts[which], self);
     return found && turn.opened ? container : NULL;
 }
 
@@ -2092,7 +2175,7 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                                                          .start = &start,
                                                          .container = &container,
                                                          .reader = &reader};
-                        if (markdown_core_block_start_try(&probe, &turn, &opens->starts[g], instance)) {
+                        if (test_start_alone(&probe, &turn, &opens->starts[g], instance)) {
                             sweep->violations++;
                             if (sweep->first_bad_byte < 0) {
                                 sweep->first_bad_byte = byte;
@@ -6095,9 +6178,9 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE, .opaque = &value};
         markdown_core_reader reader = {.line = {(unsigned char *)rows[i], (bufsize_t)strlen(rows[i]), 0}};
         /* The reading's own room, which a parse has from its first line on. */
-        (void)markdown_core_block_continue_as(&parser, &table_instance, &table, &reader, NULL, false);
+        (void)test_continue_alone(&parser, &table_instance, &table, &reader);
         text_allocation_calls = 0;
-        int matched = markdown_core_block_continue_as(&parser, &table_instance, &table, &reader, NULL, false);
+        int matched = test_continue_alone(&parser, &table_instance, &table, &reader);
         markdown_core_inline_release_passes(&parser);
         INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
         INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");

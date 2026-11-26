@@ -81,9 +81,8 @@ static markdown_core_state scan_html(markdown_core_tokenizer *tokenizer, int cod
     start->kind = MARKDOWN_CORE_NODE_HTML_BLOCK;
     return markdown_core_block_found(tokenizer, HTML_BLOCK_OPEN);
 }
-static bool ends_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_node *container, markdown_core_reader *reader) {
-    (void)self;
+/* THE END CONDITION (element.h, markdown_core_line_ops `ends`). */
+static bool S_ends(const markdown_core_node *container, markdown_core_reader *reader) {
     switch (container->as.html_block->block_type) {
     case 1:
         return scan_html_block_end_1(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
@@ -109,6 +108,12 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     (void)reader;
     (void)self;
     return true;
+}
+
+static markdown_core_state S_ends_check(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    return S_ends(turn->node, turn->reader) ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
 }
 
 static const markdown_core_content_ops HTML_BLOCK_CONTENT = {
@@ -145,7 +150,7 @@ static const markdown_core_line_ops HTML_BLOCK_LINES = {
     .beyond = true,
     .blank_last = blank_line,
     .close = close_html,
-    .ends = ends_html,
+    .ends = {.start = S_ends_check},
 };
 
 const markdown_core_facet MARKDOWN_CORE_HTML_BLOCK_FACETS[] = {

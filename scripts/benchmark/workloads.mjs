@@ -1017,6 +1017,13 @@ export function identityScripts() {
             .expect("changed", "Text", 12)
             .expect("only")
     );
+    /* An edit that ends a reference definition and merges its use into the
+     * paragraph's text: the read of the use's region, after the edit's own,
+     * continues the nodes from before the edit, not those that reading
+     * made, so the merged Text keeps the `!`'s id. */
+    add("reference-invalidated-merge", '[a]:"\n[a]!', (s) =>
+        s.edit(4, 6, " <").expect("kept", "Paragraph", 6, 0).expect("kept", "Text", 9, 0)
+    );
     add("paragraph-to-setext-and-back", "title\n", (s) =>
         s
             .append("==")

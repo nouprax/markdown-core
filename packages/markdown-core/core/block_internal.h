@@ -61,7 +61,6 @@ typedef struct markdown_core_block_start_context {
      * lazy line, as in cmark. */
     bool paragraph, lazy, all_matched;
     size_t depth;
-    bufsize_t thematic_kill;
 } block_start_context;
 
 /* WHAT THE START FOUND: the claiming start's own record of what its
@@ -114,14 +113,6 @@ typedef struct markdown_core_block_turn {
 /* What a continuation said of the line: not continued, continued, or the
  * verdict its token gave (MARKDOWN_CORE_TOKEN_CLOSE, _PEND, _TAKE). */
 enum { MARKDOWN_CORE_LINE_OFF = 0, MARKDOWN_CORE_LINE_ON = 1 };
-/* The open block `node`'s continuation on the line at `reader`, as the
- * line's own reading asks it, or a lookahead about to add `joining`. */
-int markdown_core_block_continue_try(markdown_core_parser *parser, markdown_core_node *node,
-                                     markdown_core_reader *reader, const markdown_core_node *joining, bool look);
-/* The same as a block of `structure`'s. */
-int markdown_core_block_continue_as(markdown_core_parser *parser, const markdown_core_element_instance *structure,
-                                    markdown_core_node *node, markdown_core_reader *reader,
-                                    const markdown_core_node *joining, bool look);
 /* The continuation's verdict on the line, `kind` (MARKDOWN_CORE_TOKEN_CLOSE,
  * _PEND, _TAKE), and it succeeds. */
 markdown_core_state markdown_core_block_continued(markdown_core_tokenizer *tokenizer, uint16_t kind);
@@ -135,22 +126,16 @@ static inline markdown_core_block_turn *markdown_core_block_turn_of(const markdo
 static inline markdown_core_block_turn *markdown_core_block_turned(const markdown_core_compiler *compiler) {
     return (markdown_core_block_turn *)compiler->reader;
 }
-/* ONE START TRIED (element.h, markdown_core_block_construct) as a start
- * of the instance `self`: its construct reads the line in `turn->context`
- * from its first non-space byte, and when it succeeds its token's handler
- * opens the block. True when the construct succeeded; `turn->opened` says
- * whether the block opened. */
-bool markdown_core_block_start_try(markdown_core_parser *parser, markdown_core_block_turn *turn,
-                                   const markdown_core_block_construct *start,
-                                   const markdown_core_element_instance *self);
-/* THE CONTENT (element.h, markdown_core_open_ops `content`): the dialect's
- * text block opened in `container` on the line at `reader`, which takes
- * the line; NULL when it did not open or the parse failed. */
-markdown_core_node *markdown_core_block_content(markdown_core_parser *parser, markdown_core_node *container,
-                                                markdown_core_reader *reader);
 /* The start found its block: one token of the element's block kind
  * `kind`, at the line's first non-space byte, and the construct succeeds. */
+/* The core's handler of the line's text a block takes
+ * (MARKDOWN_CORE_TOKEN_FLOW). */
+extern const markdown_core_compile_ops MARKDOWN_CORE_FLOW_TOKEN;
 markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer, uint16_t kind);
+/* The same, the token reading the line's bytes to `end`, an offset on the
+ * line, which the cursor does not move to: a block's text a later step of
+ * the line reads from where the cursor stands. */
+markdown_core_state markdown_core_block_span(markdown_core_tokenizer *tokenizer, uint16_t kind, bufsize_t end);
 
 int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int marker_width);
 /* Adds the rest of the line in hand, from the reader's offset, to `node`'s content. */

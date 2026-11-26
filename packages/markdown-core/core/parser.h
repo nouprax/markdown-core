@@ -44,6 +44,12 @@ typedef enum {
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
     uint64_t last_id;
+    /* While an edit's readings publish, the last id issued before the
+     * first: a node a reading of the edit placed is new to the edit, and a
+     * later reading of it continues only the nodes before it (the regions
+     * of an altered definition's uses read the edit's own output). 0 for
+     * none. */
+    uint64_t kept;
 } markdown_core_revision;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
@@ -342,10 +348,9 @@ typedef struct markdown_core_parser_at {
     /* The line being read (reader.h, THE READER): the driver records its
      * number, start and end as it hands the line to the block parser, they
      * hold while `curline` does, and a claim of later lines moves the start.
-     * Where a thematic break failed on it, and where the last line read
-     * ended. */
+     * Where the last line read ended. */
     markdown_core_reader read;
-    bufsize_t thematic_break_kill_pos, last_line_end;
+    bufsize_t last_line_end;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
@@ -744,6 +749,10 @@ struct markdown_core_parser {
     /* The passes of finished readings (inlines.c, markdown_core_pass),
      * kept for the next, a reading inside a reading taking its own. */
     struct markdown_core_pass *free_passes;
+    /* The document's reading (blocks.c, THE DOCUMENT'S READING). */
+    struct markdown_core_walk *walk;
+    /* The reading of the table cells' inputs, kept for the next. */
+    struct markdown_core_walk *cell_walk;
     /* The sealed dialect this instance parses with (dialect.h), which
      * shares the instance's allocation (blocks.c, markdown_core_instance),
      * and the context its setup was given. The context is the caller's; the
@@ -777,12 +786,6 @@ struct markdown_core_parser {
      * read and kept for the next while the document's input is read. */
     markdown_core_parser_input *cell_input;
     size_t input_line_work;
-    /* A complete block start may consume through a later source boundary. The
-     * source driver advances to it after the current line has finished
-     * (markdown_core_parser_claim). */
-    const unsigned char *claimed_cursor;
-    int claimed_line;
-    bufsize_t claimed_last_end;
     /* THE LINE'S VISIT: a number a reading of a line takes as it begins or
      * resumes the line (S_line_machine), unless the last reading
      * read the same line of the same epoch, line `visit_line` of the input
@@ -848,6 +851,8 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_path;
     struct markdown_core_lookahead_container *lookahead_containers;
     size_t lookahead_capacity;
+    /* The lookahead open, if any (markdown_core_parser_lookahead_begin). */
+    struct markdown_core_block_lookahead *look;
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes
@@ -1214,8 +1219,7 @@ typedef struct markdown_core_input_line {
     /* Where the line's own bytes begin: the offset in the line where the
      * bytes of the last open block the line reached begin, past the
      * prefixes of the containers above it, as the block parser last matched
-     * them, or the lookahead of the call that claimed the line
-     * (markdown_core_parser_claim; markdown_core_parser_line_places). */
+     * them (markdown_core_parser_line_places). */
     uint32_t own;
     /* How far past its start the looks that began on the line read, of the
      * readings that began no block's first line here (blocks.c, THE BLOCK
@@ -1379,7 +1383,7 @@ typedef struct markdown_core_lookahead_container {
  * candidate that fails consumes nothing and the block parser never rewinds.
  * Each line is offered exactly as the block parser will see it once the block
  * exists: the open containers' prefixes matched by the same matchers
- * `check_open_blocks` runs, through the same parser cursor, with a list item
+ * the document's walk attempts (blocks.c, S_next_container), through the same parser cursor, with a list item
  * whose first child is the block about to be added accepting a blank line the
  * way it will then. A line that does not carry every prefix, a container's
  * own closing line, or the end of the input ends the lookahead. Blank lines
@@ -1391,7 +1395,7 @@ typedef struct markdown_core_lookahead_container {
  * line first matches it, from `touched` on, and `end` restores them; nothing
  * else in the parser or the tree is touched. `begin` returns false only when
  * an allocation failed, and has then marked the parse lost. */
-typedef struct {
+typedef struct markdown_core_block_lookahead {
     markdown_core_parser *parser;
     struct markdown_core_node *const *path;
     const unsigned char *cursor;
@@ -1414,6 +1418,20 @@ typedef struct {
      * by markdown_core_parser_lookahead_opener before the end. */
     bool closed;
     const struct markdown_core_element_instance *opener;
+    /* THE LOOK's state (blocks.c, markdown_core_look_next): the line
+     * visited, where it starts in the text and in its input, the path's
+     * container whose continuation is attempted, how many tokens the
+     * events held before it, the continuation attempted, where the reader
+     * stood past what the memo matched, what the continuations said, and
+     * the blank lines stepped over before the line found. */
+    int visit, index;
+    const unsigned char *start;
+    size_t line_start, line_end;
+    size_t tokens;
+    markdown_core_construct one;
+    bufsize_t resumed_offset;
+    bool carried, taken, closing, resumed;
+    int blanks;
 } markdown_core_block_lookahead;
 
 /* The reading is one of `owner`'s opener, which `closed` says whether it
@@ -1516,13 +1534,6 @@ const unsigned char *markdown_core_parser_line_content(markdown_core_parser *par
  * where a later node can start the search. */
 void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_core_node *node,
                                       const markdown_core_node *container, int *line);
-/* A CALL'S CLAIM on the lines after the reading's through `line`, which the
- * call's lookahead read: the reading skips them and goes on at `cursor`, the
- * last of them ending at `end`. Each claimed line's own bytes begin where
- * that lookahead matched the line's containers to, as the reading matches a
- * line it reads (markdown_core_input_line, `own`), so the call claims before
- * it places nodes on the lines. */
-void markdown_core_parser_claim(markdown_core_parser *parser, int line, const unsigned char *cursor, bufsize_t end);
 /* An inline root's content, `length` bytes of it read, becomes the input its
  * nodes are placed in: its map to the source is kept in its places, among
  * the places of length 0 of its own source, and its map becomes the identity
@@ -1561,15 +1572,22 @@ static inline int markdown_core_reader_marks(const markdown_core_reader *reader,
                                                   offset);
 }
 
-bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
-                                          markdown_core_node_type child, markdown_core_block_lookahead *lookahead);
-/* The next non-blank line that carries the prefixes, as the reader on it
- * (reader.h): its bytes through its line ending, its number, the offset
- * past the prefixes, its first non-space byte and its indentation after
- * them; and the blank lines stepped over before it. NULL when the
- * lookahead has ended. The reader is the parser's: the lookahead's end
+/* The parser's lookahead (no two are open at once) begun for a block of
+ * kind `child` in `parent_container`; NULL, with the parse failed, when
+ * storage could not be had. */
+markdown_core_block_lookahead *markdown_core_parser_lookahead_begin(markdown_core_parser *parser,
+                                                                    struct markdown_core_node *parent_container,
+                                                                    markdown_core_node_type child);
+/* THE LOOK: an attempt of the document's reading, read inside a check:
+ * the next non-blank line that carries the prefixes of the parser's
+ * lookahead, which succeeds with the reader on it (reader.h): its bytes
+ * through its line ending, its number, the offset past the prefixes, its
+ * first non-space byte and its indentation after them; and the blank
+ * lines stepped over before it in the lookahead's `blanks`. It fails when
+ * the lookahead has ended. The reader is the parser's: the lookahead's end
  * puts it back on the line in hand. */
-markdown_core_reader *markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, int *blank_lines);
+markdown_core_state markdown_core_look_next(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
+                                            markdown_core_state nok, int code);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
 /* THE DEFINITION (labels.h): `node`, a definition, defines `label` in
@@ -1744,6 +1762,10 @@ size_t markdown_core_parser_rest_blank(const markdown_core_parser *parser, const
 /* Where the last reading of an edit took the old children back, in the new
  * text: 0 when it took none back. */
 size_t markdown_core_parser_resumed(const markdown_core_parser *parser);
+/* The visit of the line in hand (THE LINE'S VISIT): what an element notes
+ * of the line's bytes holds while it is the same and the line keeps its
+ * length. */
+size_t markdown_core_parser_visit(const markdown_core_parser *parser);
 /* The root's child the old children it took back begin at, when it took
  * some back. */
 uint32_t markdown_core_parser_tail(const markdown_core_parser *parser);

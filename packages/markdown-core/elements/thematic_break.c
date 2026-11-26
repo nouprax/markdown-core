@@ -1,7 +1,17 @@
 #include "thematic_break.h"
 #include "block_internal.h"
 
-static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset, bufsize_t *kill_pos) {
+/* WHERE A BREAK FAILED ON THE LINE (the element's parse record): a scan
+ * from a byte at or before it fails there too, for every container the
+ * line opens asks again at a later byte ("- - - a" asks at each marker),
+ * so the line is scanned once. It holds for the visit of the line it was
+ * noted on, while the line keeps its length. */
+typedef struct {
+    size_t visit;
+    bufsize_t length, kill;
+} thematic_break_work;
+
+static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset, bufsize_t *kill) {
     bufsize_t i;
     char c;
     char nextc = '\0';
@@ -9,7 +19,7 @@ static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset,
     i = offset;
     c = markdown_core_reader_peek(reader, i);
     if (!(c == '*' || c == '_' || c == '-')) {
-        *kill_pos = i;
+        *kill = i;
         return 0;
     }
     count = 1;
@@ -22,10 +32,9 @@ static int S_scan_thematic_break(markdown_core_reader *reader, bufsize_t offset,
     }
     if (count >= 3 && (nextc == '\r' || nextc == '\n')) {
         return (i - offset) + 1;
-    } else {
-        *kill_pos = i;
-        return 0;
     }
+    *kill = i;
+    return 0;
 }
 
 enum { THEMATIC_BREAK_OPEN, THEMATIC_BREAK_BLOCKS };
@@ -53,9 +62,14 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
     if (context->paragraph && !context->all_matched) {
         return markdown_core_nok(tokenizer);
     }
-    if (context->thematic_kill > context->reader->nonspace ||
-        !(start->matched =
-              S_scan_thematic_break(context->reader, context->reader->nonspace, &context->thematic_kill))) {
+    thematic_break_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
+    const size_t visit = markdown_core_parser_visit(markdown_core_block_turn_of(tokenizer)->parser);
+    markdown_core_reader *reader = context->reader;
+    if (work->visit != visit || work->length != reader->line.len) {
+        *work = (thematic_break_work){visit, reader->line.len, 0};
+    }
+    if (work->kill > reader->nonspace ||
+        !(start->matched = S_scan_thematic_break(reader, reader->nonspace, &work->kill))) {
         return markdown_core_nok(tokenizer);
     }
     start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;
@@ -83,6 +97,7 @@ static const markdown_core_line_ops THEMATIC_BREAK_LINES = {
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_THEMATIC_BREAK = {
     .name = "thematic_break",
+    .state_size = sizeof(thematic_break_work),
     .opens = &THEMATIC_BREAK_OPENS,
     .lines = &THEMATIC_BREAK_LINES,
 };

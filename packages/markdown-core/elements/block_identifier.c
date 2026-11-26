@@ -127,33 +127,16 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
-/* THE BOUNDARY AFTER AN IDENTIFIER LINE: the identifier line on the reader
- * names the pending block in `container` (parser.h, THE BUILDERS), which
- * nothing after it writes, when the line after it is blank or the input
- * ends. */
-static bool S_identifier_bounded(markdown_core_parser *parser, markdown_core_node *container,
-                                 markdown_core_reader *reader) {
-    markdown_core_reader_write(reader, markdown_core_reader_last(reader, parser, container));
-    if (markdown_core_reader_byte(reader, parser, markdown_core_reader_after(reader, parser)) < 0) {
-        return true;
-    }
-    markdown_core_block_lookahead lookahead;
-    int blank_lines;
-    if (!markdown_core_parser_lookahead_begin(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
-        return false;
-    }
-    lookahead.once = true;
-    markdown_core_parser_lookahead_next(&lookahead, &blank_lines);
-    markdown_core_parser_lookahead_end(&lookahead);
-    return blank_lines > 0;
-}
-
-/* THE IDENTIFIER LINE, the text opener's call (paragraph.c) on a line that
- * would open a paragraph in `parent`: an identifier alone on the line names
- * the block before it when the boundary follows it. */
-bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
-                                                markdown_core_parser *parser, markdown_core_node *parent,
-                                                markdown_core_reader *reader) {
+/* THE IDENTIFIER LINE, read by the text opener (paragraph.c) on a line
+ * that would open a paragraph in `parent`: an identifier alone on the line
+ * names the block before it when the boundary follows it. The first part
+ * reads the line and the block it would name (the owner, which the line
+ * writes), and true when the boundary is what is left to read: the input
+ * ends after the line (`*bounded`), or the next line, read by a look, is
+ * blank. */
+bool markdown_core_block_identifier_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                         markdown_core_node *parent, markdown_core_reader *reader,
+                                         markdown_core_block_identifier_line_found *found, bool *bounded) {
     markdown_core_block_identifier_work *work = self->state;
     block_identifier candidate;
     if (reader->indent >= CODE_INDENT || markdown_core_reader_peek(reader, reader->nonspace) != '#' ||
@@ -170,8 +153,20 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         !markdown_core_block_ends_with_blank_line(owner)) {
         return false;
     }
-    if (!S_identifier_bounded(parser, parent, reader) || parser->error ||
-        !S_attach_block_identifier(parser, owner, &candidate)) {
+    found->owner = owner;
+    found->identifier = candidate.identifier;
+    found->content_end = candidate.content_end;
+    markdown_core_reader_write(reader, markdown_core_reader_last(reader, parser, parent));
+    *bounded = markdown_core_reader_byte(reader, parser, markdown_core_reader_after(reader, parser)) < 0;
+    return true;
+}
+
+/* The identifier line names its owner: false when it could not. */
+bool markdown_core_block_identifier_line_attach(markdown_core_parser *parser, markdown_core_reader *reader,
+                                                const markdown_core_block_identifier_line_found *found) {
+    block_identifier candidate = {.identifier = found->identifier, .content_end = found->content_end, .own_line = true};
+    markdown_core_node *owner = found->owner;
+    if (!S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);

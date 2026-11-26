@@ -365,6 +365,7 @@ static markdown_core_status session_update(markdown_core_session *session, size_
     if (!session_replace(session, from, to, text, length)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    session->revision.kept = session->revision.last_id;
     const int64_t delta = (int64_t)length - (int64_t)(to - from);
     session_edits *const edits = session->edits;
     /* THE COMPACTION (plan 12.4, E-D4): the pool keeps what each reading
@@ -404,6 +405,7 @@ static markdown_core_status session_update(markdown_core_session *session, size_
         }
     }
     markdown_core_free(queue);
+    session->revision.kept = 0;
     edits->reread_from = reread_from;
     edits->reread_to = reread_to;
     if (status != MARKDOWN_CORE_OK && !compact && session->document.root) {

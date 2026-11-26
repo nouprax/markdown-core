@@ -24,24 +24,6 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
     (void)node;
     return true;
 }
-/* A text line no block claims opens a paragraph: the dialect's text block. */
-static markdown_core_node *open_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *container, markdown_core_reader *reader) {
-    container = markdown_core_block_parent_for(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH);
-    if (!container) {
-        return NULL;
-    }
-    if (markdown_core_block_attach_identifier_line(self, parser, container, reader) || parser->error) {
-        return NULL;
-    }
-    container =
-        markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, reader->nonspace + 1);
-    if (container) {
-        markdown_core_reader_skip(reader);
-    }
-    return container;
-}
-
 static const markdown_core_content_ops PARAGRAPH_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inlines = true,
@@ -67,31 +49,119 @@ static const markdown_core_follow PARAGRAPH_FOLLOWS[] = {
     {0},
 };
 
-enum { PARAGRAPH_OPEN, PARAGRAPH_BLOCKS };
-
 /* THE CONTENT (element.h, markdown_core_open_ops `content`): every line
- * nothing else opens on opens a paragraph. */
-static markdown_core_state S_content(markdown_core_tokenizer *tokenizer, int code) {
+ * nothing else opens on opens a paragraph, the dialect's text block, in
+ * the nearest container that holds one, but an identifier line, which
+ * names the block before it when the boundary follows (block_identifier.c,
+ * THE IDENTIFIER LINE), read by a check of the document's reading. */
+enum { PARAGRAPH_OPEN, PARAGRAPH_NAMES, PARAGRAPH_BLOCKS };
+
+typedef struct {
+    markdown_core_node *parent;
+    markdown_core_block_identifier_line_found line;
+} paragraph_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(paragraph_found, paragraph_found_fits);
+
+/* The next line, as the look reads it once: blank is the boundary. */
+static markdown_core_state S_names_line(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    return markdown_core_block_found(tokenizer, PARAGRAPH_OPEN);
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_names_end(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_block_turn_of(tokenizer)->parser->look->blanks > 0 ? markdown_core_ok(tokenizer)
+                                                                             : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_names_next(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_look_next(tokenizer, markdown_core_state_of(S_names_line), markdown_core_state_of(S_names_end),
+                                   code);
+}
+
+static const markdown_core_construct PARAGRAPH_BOUNDARY = {.start = S_names_next};
+
+static markdown_core_state S_names_read(markdown_core_tokenizer *tokenizer, bool bounded) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_parser_lookahead_end(turn->parser->look);
+    turn->look = false;
+    if (turn->parser->error) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_block_found(tokenizer, bounded ? PARAGRAPH_NAMES : PARAGRAPH_OPEN);
+}
+
+static markdown_core_state S_bounded(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_names_read(tokenizer, true);
+}
+
+static markdown_core_state S_unbounded(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_names_read(tokenizer, false);
+}
+
+static markdown_core_state S_content(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_parser *parser = turn->parser;
+    paragraph_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, paragraph_found);
+    /* The content opens: the blocks the paragraph's container closes on
+     * close as it is found. */
+    found->parent = markdown_core_block_parent_for(parser, turn->context->container, MARKDOWN_CORE_NODE_PARAGRAPH);
+    if (!found->parent) {
+        return markdown_core_nok(tokenizer);
+    }
+    bool bounded = false;
+    if (!markdown_core_block_identifier_line(markdown_core_self(tokenizer), parser, found->parent,
+                                             turn->context->reader, &found->line, &bounded)) {
+        return parser->error ? markdown_core_nok(tokenizer) : markdown_core_block_found(tokenizer, PARAGRAPH_OPEN);
+    }
+    if (bounded) {
+        return markdown_core_block_found(tokenizer, PARAGRAPH_NAMES);
+    }
+    markdown_core_block_lookahead *lookahead =
+        markdown_core_parser_lookahead_begin(parser, found->parent, MARKDOWN_CORE_NODE_PARAGRAPH);
+    if (!lookahead) {
+        return markdown_core_nok(tokenizer);
+    }
+    lookahead->once = true;
+    return markdown_core_check(tokenizer, &PARAGRAPH_BOUNDARY, markdown_core_state_of(S_bounded),
+                               markdown_core_state_of(S_unbounded), code);
 }
 
 static void S_paragraph_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
     (void)token;
     (void)index;
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    markdown_core_reader *reader = turn->context->reader;
     markdown_core_node *opened =
-        open_text(markdown_core_compile_self(compiler), turn->parser, *turn->container, turn->context->reader);
+        markdown_core_parser_add_child_validated(turn->parser, MARKDOWN_CORE_BLOCK_FOUND(turn->start, paragraph_found)->parent,
+                                                 MARKDOWN_CORE_NODE_PARAGRAPH, reader->nonspace + 1);
     if (opened) {
+        markdown_core_reader_skip(reader);
         *turn->container = opened;
     }
     turn->opened = opened != NULL;
+}
+
+/* The identifier line names its owner, and opens nothing; a paragraph when
+ * it could not. */
+static void S_paragraph_names(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    if (markdown_core_block_identifier_line_attach(turn->parser, turn->context->reader,
+                                                   &MARKDOWN_CORE_BLOCK_FOUND(turn->start, paragraph_found)->line) ||
+        turn->parser->error) {
+        turn->opened = false;
+        return;
+    }
+    S_paragraph_open(compiler, token, index);
 }
 
 static const markdown_core_block_construct PARAGRAPH_CONTENT_START = {.construct = {.start = S_content}};
 
 static const markdown_core_compile_ops PARAGRAPH_BLOCK_TOKENS[PARAGRAPH_BLOCKS] = {
     [PARAGRAPH_OPEN] = {.enter = S_paragraph_open},
+    [PARAGRAPH_NAMES] = {.enter = S_paragraph_names},
 };
 
 static const markdown_core_open_ops PARAGRAPH_OPENS = {

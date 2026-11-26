@@ -64,46 +64,69 @@ static bool comment_stops(const markdown_core_element_instance *self, const unsi
     return true;
 }
 
-/* THE OPENER'S READING: whether the fence line on the reader opens a block
- * a later line under the same prefixes in `container` closes. */
-static bool comment_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *container, markdown_core_reader *reader) {
-    if (reader->indent >= 4 ||
-        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
-        return false;
-    }
-    /* The lookahead's beginning writes the lookahead whole. */
-    markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, &lookahead)) {
-        return false;
-    }
-    bool closed = false;
-    int blanks;
-    markdown_core_reader *line;
-    while ((line = markdown_core_parser_lookahead_next(&lookahead, &blanks))) {
-        if (line->indent < 4 &&
-            is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
-            closed = !parser->error;
-            break;
-        }
-    }
-    markdown_core_parser_lookahead_opener(&lookahead, self, closed);
-    markdown_core_parser_lookahead_end(&lookahead);
-    return closed && !parser->error;
-}
-
 /* THE OPENER: a fence line a later fence closes. */
 enum { COMMENT_OPEN, COMMENT_KINDS };
 
-static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+/* THE OPENER'S READING, a check of the document's reading: whether a later
+ * line under the same prefixes is a fence line (markdown_core_look_next). */
+static markdown_core_state S_closer_line(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_closer_none(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_closer_next(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_look_next(tokenizer, markdown_core_state_of(S_closer_line),
+                                   markdown_core_state_of(S_closer_none), code);
+}
+
+static markdown_core_state S_closer_line(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    markdown_core_reader *line = &parser->at.read;
+    if (line->indent < 4 &&
+        is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
+        return parser->error ? markdown_core_nok(tokenizer) : markdown_core_ok(tokenizer);
+    }
+    return S_closer_next(tokenizer, code);
+}
+
+static const markdown_core_construct COMMENT_CLOSER = {.start = S_closer_next};
+
+/* The reading ends, the reader back on the fence line. */
+static markdown_core_state S_read(markdown_core_tokenizer *tokenizer, bool closed) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_reader *reader = turn->context->reader;
-    if (!is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace) ||
-        !comment_reads(markdown_core_self(tokenizer), turn->parser, turn->context->container, reader)) {
+    markdown_core_parser *parser = turn->parser;
+    closed = closed && !parser->error;
+    markdown_core_parser_lookahead_opener(parser->look, markdown_core_self(tokenizer), closed);
+    markdown_core_parser_lookahead_end(parser->look);
+    turn->look = false;
+    if (!closed || parser->error) {
         return markdown_core_nok(tokenizer);
     }
     return markdown_core_block_found(tokenizer, COMMENT_OPEN);
+}
+
+static markdown_core_state S_closed(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_read(tokenizer, true);
+}
+
+static markdown_core_state S_unclosed(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_read(tokenizer, false);
+}
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_reader *reader = turn->context->reader;
+    if (reader->indent >= 4 ||
+        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace) ||
+        !markdown_core_parser_lookahead_begin(turn->parser, turn->context->container, MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_check(tokenizer, &COMMENT_CLOSER, markdown_core_state_of(S_closed),
+                               markdown_core_state_of(S_unclosed), code);
 }
 
 static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {

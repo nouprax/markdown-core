@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "events.h"
+#include "reader.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -104,6 +105,10 @@ typedef struct markdown_core_frame {
     size_t given, notes;
     bool check;
     uint32_t words[MARKDOWN_CORE_FRAME_WORDS];
+    /* Where the reading's cursor stood, and where its line starts in the
+     * data (the reading's `cursor`, `base`). */
+    markdown_core_reader_stand stand;
+    uint32_t base;
 } markdown_core_frame;
 
 /* A MARK: a token a construct keeps on the reading's list of marks, with
@@ -164,6 +169,14 @@ typedef struct markdown_core_read {
     bool (*start)(markdown_core_tokenizer *, void *context);
     void *context;
     bool halts;
+    /* THE CURSOR: the line view a block reading's constructs scan the line
+     * through (reader.h), or NULL. Its offsets count from the reading's
+     * `base`, where its line starts in the data, which the reading sets as
+     * it takes a line (markdown_core_cursor_line); every attempt goes back
+     * to where the cursor stood as it began when it fails, and what a
+     * construct scanned it consumes as it ends its token
+     * (markdown_core_cursor_move). */
+    markdown_core_reader *cursor;
 } markdown_core_read;
 
 struct markdown_core_tokenizer {
@@ -210,20 +223,20 @@ struct markdown_core_tokenizer {
     uint32_t text_from;
     /* Whether the state just handed a code consumed it. */
     bool consumed;
-    /* The construct a reading of one attempt runs, and whether it
-     * succeeded (markdown_core_tokenizer_try). */
-    const markdown_core_construct *one;
-    bool accepted;
     /* The bytes failed attempts and checks gave back to be read again,
      * summed until the reader takes them: the engine's work counter. */
     size_t rewound;
     bool done;
+    /* Where a reading fed in chunks goes on (markdown_core_pause). */
+    markdown_core_state resume;
     /* What the reading reads for: the parser, which constructs reach
      * through their context's services. */
     void *reader;
     unsigned char *records;
     bool (*start)(markdown_core_tokenizer *, void *context);
     void *context;
+    markdown_core_reader *cursor;
+    uint32_t base;
 };
 
 void markdown_core_tokenizer_init(markdown_core_tokenizer *tokenizer);
@@ -239,14 +252,30 @@ void markdown_core_tokenizer_free(markdown_core_tokenizer *tokenizer);
  * reading. */
 bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_core_read *read);
 
-/* Reads the content of `read` as ONE attempt of `construct` at `from`,
- * whose resolvers then run: true when it succeeded, its events in
- * `tokenizer->events` until the next reading; false when it failed,
- * nothing of it kept, or storage could not be had (`events.failed`).
- * `read->text` may be NULL: the construct's states attempt what they
- * name. */
-bool markdown_core_tokenizer_try(markdown_core_tokenizer *tokenizer, const markdown_core_read *read,
-                                 const markdown_core_construct *construct);
+/* A READING FED AS ITS TEXT GROWS (plan symbols-cleanroom.md 23.14.12,
+ * micromark's `write`): the document's one reading, begun once with its
+ * first state, then fed the text read so far, `size` bytes at `data`
+ * (the text grows at its end, and may move), to read on at `from`, where
+ * its driver stands. A feed runs from where the last one paused: a state
+ * that has read what it reads pauses the reading (markdown_core_pause),
+ * naming the state the next feed starts in, at no attempt. The end runs
+ * every resolver. False, from a feed or the end, when storage could not
+ * be had (`events.failed`). */
+void markdown_core_tokenizer_begin(markdown_core_tokenizer *tokenizer, const markdown_core_read *read,
+                                   markdown_core_state state);
+bool markdown_core_tokenizer_feed(markdown_core_tokenizer *tokenizer, const unsigned char *data, uint32_t size,
+                                  uint32_t from);
+markdown_core_state markdown_core_pause(markdown_core_tokenizer *tokenizer, markdown_core_state next);
+bool markdown_core_tokenizer_end(markdown_core_tokenizer *tokenizer);
+
+/* The cursor's line starts at `base` in the data. */
+static inline void markdown_core_cursor_line(markdown_core_tokenizer *tokenizer, uint32_t base) {
+    tokenizer->base = base;
+}
+
+/* The reading consumes what its cursor scanned: its position moves on to
+ * where the cursor stands, when that is past it. */
+void markdown_core_cursor_move(markdown_core_tokenizer *tokenizer);
 
 /* EFFECTS. */
 uint32_t markdown_core_enter(markdown_core_tokenizer *tokenizer, uint16_t kind);
@@ -255,6 +284,10 @@ void markdown_core_consume(markdown_core_tokenizer *tokenizer);
 /* Consumes the code handed and every byte up to `end`, which is past it:
  * a construct that scans a span at once (a scanner's match). */
 void markdown_core_consume_to(markdown_core_tokenizer *tokenizer, uint32_t end);
+/* The reading moves on to `end`, at or past where it is: what a state read
+ * through a reader of its own, the block reading's column cursor, which
+ * may read several spans in one step (blocks.c, THE DOCUMENT). */
+void markdown_core_move_to(markdown_core_tokenizer *tokenizer, uint32_t end);
 markdown_core_state markdown_core_ok(markdown_core_tokenizer *tokenizer);
 markdown_core_state markdown_core_nok(markdown_core_tokenizer *tokenizer);
 
