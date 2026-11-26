@@ -65,8 +65,8 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
     thematic_break_work *work = ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     const size_t visit = markdown_core_parser_visit(markdown_core_block_turn_of(tokenizer)->parser);
     markdown_core_reader *reader = context->reader;
-    if (work->visit != visit || work->length != reader->line.len) {
-        *work = (thematic_break_work){visit, reader->line.len, 0};
+    if (work->visit != visit || work->length != markdown_core_reader_length(reader)) {
+        *work = (thematic_break_work){visit, markdown_core_reader_length(reader), 0};
     }
     if (work->kill > reader->nonspace ||
         !(start->matched = S_scan_thematic_break(reader, reader->nonspace, &work->kill))) {
