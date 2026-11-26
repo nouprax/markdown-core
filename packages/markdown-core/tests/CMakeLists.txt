@@ -454,6 +454,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     heading_unclosed_attributes
     span_unclosed_attributes
     citation_unclosed_keys
+    citation_unclosed_openers
     directive_colon_pairs
     directive_long_label
     directive_long_attributes

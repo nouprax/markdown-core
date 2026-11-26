@@ -1260,6 +1260,15 @@ static int case_citation_unclosed_keys(pc_context *context) {
     return pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph");
 }
 
+/* A paragraph of citation openers none closes: the reading's end walks the
+ * open labels once, down the marks, not from the top for each label. */
+static int case_citation_unclosed_openers(pc_context *context) {
+    if (pc_build(context, NULL, "[@a", 200000, NULL) != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph");
+}
+
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
 
 /* A name of numbers alone is no topic, and the `#` after it follows a name
@@ -1580,6 +1589,7 @@ static const pc_case_entry PC_CASES[] = {
     {"heading_unclosed_attributes", case_heading_unclosed_attributes},
     {"span_unclosed_attributes", case_span_unclosed_attributes},
     {"citation_unclosed_keys", case_citation_unclosed_keys},
+    {"citation_unclosed_openers", case_citation_unclosed_openers},
     {"directive_colon_pairs", case_directive_colon_pairs},
     {"directive_long_label", case_directive_long_label},
     {"directive_long_attributes", case_directive_long_attributes},

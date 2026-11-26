@@ -22,16 +22,10 @@ markdown_core_opener *markdown_core_opener_last(markdown_core_tokenizer *tokeniz
     return (markdown_core_opener *)S_last(tokenizer);
 }
 
-markdown_core_opener *markdown_core_opener_below(markdown_core_tokenizer *tokenizer,
-                                                 const markdown_core_opener *label) {
-    for (size_t at = tokenizer->mark_count; at--;) {
-        if (tokenizer->marks[at].tag == S_TAG && tokenizer->marks[at].token == label->token) {
-            while (at--) {
-                if (tokenizer->marks[at].tag == S_TAG) {
-                    return (markdown_core_opener *)S_label(tokenizer, at);
-                }
-            }
-            return NULL;
+markdown_core_opener *markdown_core_opener_under(markdown_core_tokenizer *tokenizer, size_t *at) {
+    while (*at) {
+        if (tokenizer->marks[--*at].tag == S_TAG) {
+            return (markdown_core_opener *)S_label(tokenizer, *at);
         }
     }
     return NULL;

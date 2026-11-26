@@ -139,8 +139,10 @@ bool markdown_core_label_closes(const struct markdown_core_element_instance *own
 
 /* The innermost open label, or NULL. */
 markdown_core_opener *markdown_core_opener_last(markdown_core_tokenizer *tokenizer);
-/* The open label below `label`, or NULL. */
-markdown_core_opener *markdown_core_opener_below(markdown_core_tokenizer *tokenizer, const markdown_core_opener *label);
+/* The open labels, innermost first, in one walk down the marks: `*at`
+ * starts at the tokenizer's mark count and becomes the mark of the label
+ * returned; NULL once none is left below it. */
+markdown_core_opener *markdown_core_opener_under(markdown_core_tokenizer *tokenizer, size_t *at);
 
 /* The events of a label's body, from past its opener's exit up to `to`,
  * each walked at the label's own depth: the labels inside it, from their

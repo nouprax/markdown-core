@@ -744,8 +744,9 @@ static void S_resolve(markdown_core_tokenizer *tokenizer) {
     if (!self) {
         return;
     }
-    for (markdown_core_opener *label = markdown_core_opener_last(tokenizer); label && !tokenizer->events.failed;
-         label = markdown_core_opener_below(tokenizer, label)) {
+    size_t mark = tokenizer->mark_count;
+    for (markdown_core_opener *label = markdown_core_opener_under(tokenizer, &mark); label && !tokenizer->events.failed;
+         label = markdown_core_opener_under(tokenizer, &mark)) {
         S_tails(self, tokenizer, (size_t)label->enter + 2, tokenizer->events.count);
     }
     S_tails(self, tokenizer, 0, tokenizer->events.count);
