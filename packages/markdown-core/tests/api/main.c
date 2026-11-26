@@ -1427,6 +1427,24 @@ static void numeric_entities(test_batch_runner *runner) {
                            "Unicode labels are punctuation for emphasis flanking");
 }
 
+/* Text before a line's end keeps its map byte for byte when its trailing
+ * spaces are dropped: the email autolink a finish pass splits off it, and
+ * the Text after the link, each span their own bytes. */
+static void trimmed_text_scopes(test_batch_runner *runner) {
+    static const char markdown[] = "a@b.cd< \nx";
+    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *link = child_at(paragraph, 0);
+    markdown_core_node *text = child_at(paragraph, 1);
+    INT_EQ(runner, link->kind, MARKDOWN_CORE_NODE_LINK, "the email is an autolink");
+    INT_EQ(runner, START_COLUMN(link), 1, "the autolink starts at its first byte");
+    INT_EQ(runner, END_COLUMN(link), 6, "the autolink ends at its last byte");
+    LITERAL_EQ(runner, text, "<", "the text after the autolink");
+    INT_EQ(runner, START_COLUMN(text), 7, "the text after the autolink starts at its byte");
+    INT_EQ(runner, END_COLUMN(text), 7, "the text after the autolink ends at its byte");
+    markdown_core_node_free(doc);
+}
+
 /* M0: an HTML comment is a `Comment` node of the dialect -- inline for the
  * token, block for an HTML block that opened with `<!--` and whose end line
  * held only whitespace after the first `-->` -- and its literal is the bytes
@@ -12602,6 +12620,7 @@ int main(void) {
     numeric_entities(runner);
     test_cplusplus(runner);
     comment_nodes(runner);
+    trimmed_text_scopes(runner);
     test_crlf_line_ending(runner);
     test_pathological_regressions(runner);
     element_decline_yields_turn(runner);

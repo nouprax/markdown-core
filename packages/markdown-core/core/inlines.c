@@ -54,9 +54,7 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
             markdown_core_inline_map_text(inline_state, node, from, to, span.first, span.last);
         } else {
             const markdown_core_chunk *literal = node->as.literal;
-            if (!(literal->len == to - from + 1 &&
-                  (literal->data == inline_state->input.data + from ||
-                   memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
+            if (!markdown_core_inline_verbatim(inline_state, literal, from, to)) {
                 node->content_map.count = 0;
                 node->content_map.offset = 0;
                 markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, inline_state->mark_line,

@@ -161,20 +161,33 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
 }
 
 /* A Text's map, once its extent is placed on the runs [first, last]. A Text
- * whose bytes ARE the source bytes of its scope takes a view of the source
- * map; a decoded token, or a literal shorter than its scope, maps each of
- * its bytes to the whole authored extent. The common Text is a view of
+ * whose bytes ARE the source bytes its scope starts with -- all of them, or
+ * all but the spaces before a line's end -- takes a view of the source map;
+ * a decoded token maps each of its bytes to the whole authored extent. The common Text is a view of
  * `input` at `from`, which is that fact by identity; an element that placed
  * a copy it made (a citation prefix moved into its own buffer) is asked byte
  * for byte. The writes stay inside the gate: a node that is not a verbatim
  * copy of its source must keep `content_map.count` at zero, because that
  * count is read elsewhere as "is there a mapping at all". */
+static inline bool markdown_core_inline_verbatim(const markdown_core_inline_state *inline_state,
+                                                 const markdown_core_chunk *literal, int from, int to) {
+    const unsigned char *source = inline_state->input.data + from;
+    if (literal->len > to - from + 1 ||
+        (literal->data != source && memcmp(literal->data, source, (size_t)literal->len) != 0)) {
+        return false;
+    }
+    for (int at = from + literal->len; at <= to; at++) {
+        if (inline_state->input.data[at] != ' ' && inline_state->input.data[at] != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static inline void markdown_core_inline_map_text(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                  int from, int to, int first, int last) {
     const markdown_core_chunk *literal = node->as.literal;
-    if (literal->len == to - from + 1 &&
-        (literal->data == inline_state->input.data + from ||
-         memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
+    if (markdown_core_inline_verbatim(inline_state, literal, from, to)) {
         node->content_map.first = first;
         node->content_map.count = last - first + 1;
         node->content_map.offset = from + inline_state->owner->content_map.offset;
