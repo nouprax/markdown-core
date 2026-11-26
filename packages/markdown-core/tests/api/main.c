@@ -1677,117 +1677,39 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-/* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
- *
- *     if (element)                       ... else
- *     if (delim_char == '*' || '_')        ... else
- *     if (delim_char == '\'' || '"')        ...
- *
- * where `element` was "the first attached element whose dispatch set
- * contains this byte". A delimiter matching none of the three left `closer`
- * exactly where it was, fell into the removal below, freed it, and read it
- * again on the next turn -- ASan `heap-use-after-free`, READ of size 8 in
- * `process_emphasis`. With `can_open` set nothing freed it and the loop never
- * ended at all.
- *
- * No in-tree element reaches it, because each pushes a tag it also declares.
- * The public push does not care: it is one call from any element, and the two
- * descriptors below are the two ways to make it. The first pushes a real rule
- * with a NULL owner, so nothing can handle it; the second pushes a rule outside
- * the enum, which would also index `openers_bottom` out of bounds.
- *
- * They are `static const` descriptors, like every element since 3.4. A test
- * may still build one -- what 3.4 removed is the ability to REGISTER one, look
- * one up by name, or mutate one after the fact. */
-static markdown_core_node *stray_delimiter_push(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                                unsigned char character, markdown_core_delimiter_rule rule) {
-    markdown_core_node *node;
-
-    (void)parser;
-    if (character != '@') {
-        return NULL;
-    }
-    markdown_core_inline_state_advance_offset(inline_state);
-    node = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    if (!node) {
-        return NULL;
-    }
-    set_literal(node, "@");
-    int offset = markdown_core_inline_state_get_offset(inline_state);
-    markdown_core_inline_state_place(inline_state, node, offset - 1, offset - 1);
-    markdown_core_inline_state_push_delimiter(inline_state, NULL, rule, 0, 1, node);
-    return node;
-}
-
-static markdown_core_node *stray_unowned_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *parent, unsigned char character,
-                                               markdown_core_inline_state *inline_state) {
-    (void)self;
-    (void)parent;
-    return stray_delimiter_push(parser, inline_state, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
-}
-
-static markdown_core_node *stray_unnamed_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *parent, unsigned char character,
-                                               markdown_core_inline_state *inline_state) {
-    (void)self;
-    (void)parent;
-    return stray_delimiter_push(parser, inline_state, character, (markdown_core_delimiter_rule)200);
-}
-
-static const markdown_core_inline_ops STRAY_UNOWNED_INLINES = {
-    .match = stray_unowned_match,
-    .terminates = "@",
-    .dispatch = "@",
-};
-
-static const markdown_core_element STRAY_UNOWNED = {
-    .name = "stray-unowned",
-    .inlines = &STRAY_UNOWNED_INLINES,
-};
-static const markdown_core_inline_ops STRAY_UNNAMED_INLINES = {
-    .match = stray_unnamed_match,
-    .terminates = "@",
-    .dispatch = "@",
-};
-
-static const markdown_core_element STRAY_UNNAMED = {
-    .name = "stray-unnamed",
-    .inlines = &STRAY_UNNAMED_INLINES,
-};
-
-static void stray_delimiter_parse(test_batch_runner *runner, const markdown_core_element *element, const char *what) {
-    const char *input = "a @ b @ c\n";
-    markdown_core_node *document = parse_with_probes(input, strlen(input), &element, 1);
-
-    OK(runner, document != NULL, "a delimiter with %s still finishes the parse", what);
-    markdown_core_node_free(document);
-}
-
-static void stray_delimiter(test_batch_runner *runner) {
-    stray_delimiter_parse(runner, &STRAY_UNOWNED, "a rule and no owner");
-    stray_delimiter_parse(runner, &STRAY_UNNAMED, "a rule outside the enum");
-}
-
 typedef struct dispatch_observation {
     char calls[16];
     size_t count;
 } dispatch_observation;
 
-static markdown_core_node *observe_dispatch(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_node *parent, unsigned char character,
-                                            markdown_core_inline_state *inline_state) {
-    (void)parent;
-    (void)character;
-    dispatch_observation *observation = parser->context;
+/* Each observer's construct notes its element's initial and declines,
+ * except the consuming one (`c...`), which takes the byte as a token of a
+ * kind that compiles to nothing. */
+enum { OBSERVED_TAKEN, OBSERVED_KINDS };
+static markdown_core_state observe_dispatch(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    dispatch_observation *observation = inline_state->owner_parser->context;
     if (observation->count + 1 < sizeof(observation->calls)) {
         observation->calls[observation->count++] = self->element->name[0];
     }
-    if (self->element->name[0] == 'c') {
-        markdown_core_inline_state_advance_offset(inline_state);
+    if (self->element->name[0] != 'c') {
+        return markdown_core_nok(tokenizer);
     }
-    return NULL;
+    const uint32_t at = tokenizer->position;
+    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + OBSERVED_TAKEN));
+    markdown_core_consume_to(tokenizer, at + 1);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + OBSERVED_TAKEN));
+    return markdown_core_ok(tokenizer);
 }
+
+static const markdown_core_compile_ops OBSERVED_TOKENS[OBSERVED_KINDS] = {{0}};
+static const markdown_core_text_construct OBSERVE_BANG[] = {{"!", {.start = observe_dispatch}}};
+static const markdown_core_text_construct OBSERVE_BANGS[] = {{"!!", {.start = observe_dispatch}}};
+static const markdown_core_text_construct OBSERVE_QUESTION[] = {{"?", {.start = observe_dispatch}}};
+static const markdown_core_text_construct OBSERVE_PERCENT[] = {{"%", {.start = observe_dispatch}}};
+static const markdown_core_text_construct OBSERVE_PERCENTS[] = {{"%%", {.start = observe_dispatch}}};
 
 static bool attach_dispatch_observers(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
@@ -1795,36 +1717,40 @@ static bool attach_dispatch_observers(markdown_core_dialect_builder *builder, vo
      * scanner. These are grammar/ordering contracts, independent of the index. */
     static const markdown_core_inline_ops fallback_inlines = {
         .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-        .match = observe_dispatch,
-        .terminates = "!",
-        .dispatch = "!",
+        .constructs = OBSERVE_BANG,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element fallback = {
         .name = "fallback-observer",
         .inlines = &fallback_inlines,
     };
     static const markdown_core_inline_ops decline_inlines = {
-        .match = observe_dispatch,
-        .terminates = "!",
-        .dispatch = "!!",
+        .constructs = OBSERVE_BANGS,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element decline = {
         .name = "decline-observer",
         .inlines = &decline_inlines,
     };
     static const markdown_core_inline_ops consume_inlines = {
-        .match = observe_dispatch,
-        .terminates = "!",
-        .dispatch = "!",
+        .constructs = OBSERVE_BANG,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element consume = {
         .name = "consume-observer",
         .inlines = &consume_inlines,
     };
     static const markdown_core_inline_ops disjoint_inlines = {
-        .match = observe_dispatch,
-        .terminates = "?",
-        .dispatch = "?",
+        .constructs = OBSERVE_QUESTION,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element disjoint = {
         .name = "unrelated-observer",
@@ -1843,9 +1769,10 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
      * owner declines without consuming, so each is asked exactly once. */
     static const markdown_core_inline_ops late_inlines = {
         .precedence = (markdown_core_inline_precedence)2,
-        .match = observe_dispatch,
-        .terminates = "%",
-        .dispatch = "%",
+        .constructs = OBSERVE_PERCENT,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element late = {
         .name = "y-late-observer",
@@ -1853,9 +1780,10 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
     };
     static const markdown_core_inline_ops fallback_inlines = {
         .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-        .match = observe_dispatch,
-        .terminates = "%",
-        .dispatch = "%",
+        .constructs = OBSERVE_PERCENT,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element fallback = {
         .name = "fallback-observer",
@@ -1863,18 +1791,20 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
     };
     static const markdown_core_inline_ops later_inlines = {
         .precedence = (markdown_core_inline_precedence)2,
-        .match = observe_dispatch,
-        .terminates = "%",
-        .dispatch = "%%",
+        .constructs = OBSERVE_PERCENTS,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element later = {
         .name = "z-late-observer",
         .inlines = &later_inlines,
     };
     static const markdown_core_inline_ops ordinary_inlines = {
-        .match = observe_dispatch,
-        .terminates = "%",
-        .dispatch = "%",
+        .constructs = OBSERVE_PERCENT,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element ordinary = {
         .name = "default-observer",
@@ -1882,9 +1812,10 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
     };
     static const markdown_core_inline_ops token_inlines = {
         .precedence = MARKDOWN_CORE_INLINE_TOKEN,
-        .match = observe_dispatch,
-        .terminates = "%",
-        .dispatch = "%",
+        .constructs = OBSERVE_PERCENT,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element token = {
         .name = "token-observer",
@@ -1892,9 +1823,10 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
     };
     static const markdown_core_inline_ops early_inlines = {
         .precedence = (markdown_core_inline_precedence)-2,
-        .match = observe_dispatch,
-        .terminates = "%",
-        .dispatch = "%",
+        .constructs = OBSERVE_PERCENT,
+        .construct_count = 1,
+        .tokens = OBSERVED_TOKENS,
+        .token_count = OBSERVED_KINDS,
     };
     static const markdown_core_element early = {
         .name = "early-observer",
@@ -2265,7 +2197,7 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
         markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_dispatch_observers, &observation);
     OK(runner, root != NULL, "overlapping inline owners complete the parse");
     STR_EQ(runner, observation.calls, "dc",
-           "each matching owner runs once in precedence order; consuming NULL commits the token");
+           "each construct at the byte is tried once in precedence order until one succeeds");
     if (root) {
         markdown_core_node *code = child_at(child_at(root, 0), 0);
         INT_EQ(runner, code->kind, MARKDOWN_CORE_NODE_CODE, "protected tokens retain their contents");
@@ -3726,7 +3658,11 @@ static void toy_tokens(const markdown_core_tokenizer *t, char *out, size_t room)
             continue;
         }
         const markdown_core_token *token = markdown_core_event_token(&t->events, i);
-        at += (size_t)snprintf(out + at, room - at, "%s%u:%u-%u", at ? " " : "", token->kind, token->start, token->end);
+        static const char *const names[] = {"ab", "ac", "x", "q"};
+        const char *name = token->kind == MARKDOWN_CORE_TOKEN_DATA         ? "data"
+                           : token->kind >= TOY_AB && token->kind <= TOY_Q ? names[token->kind - TOY_AB]
+                                                                           : "?";
+        at += (size_t)snprintf(out + at, room - at, "%s%s:%u-%u", at ? " " : "", name, token->start, token->end);
     }
 }
 
@@ -3737,25 +3673,28 @@ static void tokenizer_reads_constructs(test_batch_runner *runner) {
         offsets[c] = (uint16_t)(c <= 'a' ? 0 : c <= 'q' ? 2 : c <= 'x' ? 3 : 4);
     }
     const markdown_core_construct *const sorted[] = {TOY_ITEMS[0], TOY_ITEMS[1], TOY_ITEMS[3], TOY_ITEMS[2]};
-    markdown_core_constructs text = {sorted, offsets};
+    markdown_core_constructs text = {.items = sorted, .offsets = offsets};
     markdown_core_tokenizer t;
     markdown_core_tokenizer_init(&t);
     char out[256];
     static const struct {
         const char *in, *tokens, *why;
     } cases[] = {
-        {"zab", "1:0-1 4:1-3", "a construct after data"},
-        {"zad", "1:0-3", "a failed attempt is data, joined with the data around it"},
-        {"ac", "5:0-2", "the second construct a byte starts is tried when the first fails"},
-        {"xy", "6:0-1 1:1-2", "a check keeps nothing of what it read"},
-        {"xz", "1:0-2", "a check that fails fails its construct"},
-        {"qab", "7:0-3 4:1-3", "an attempt inside a construct nests its token"},
-        {"qac", "1:0-1 5:1-3", "a failed inner attempt fails the outer, which leaves its byte data"},
+        {"zab", "data:0-1 ab:1-3", "a construct after data"},
+        {"zad", "data:0-3", "a failed attempt is data, which runs on in the data before it"},
+        {"ac", "ac:0-2", "the second construct a byte starts is tried when the first fails"},
+        {"xy", "x:0-1 data:1-2", "a check keeps nothing of what it read"},
+        {"xz", "data:0-2", "a check that fails fails its construct"},
+        {"qab", "q:0-3 ab:1-3", "an attempt inside a construct nests its token"},
+        {"qac", "data:0-1 ac:1-3", "a failed inner attempt fails the outer, which leaves its byte data"},
         {"", "", "nothing reads to no events"},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        const bool read = markdown_core_tokenize_text(&t, (const unsigned char *)cases[i].in,
-                                                      (uint32_t)strlen(cases[i].in), &text, NULL);
+        const markdown_core_read in = {.data = (const unsigned char *)cases[i].in,
+                                       .size = (uint32_t)strlen(cases[i].in),
+                                       .cut = UINT32_MAX,
+                                       .text = &text};
+        const bool read = markdown_core_tokenize(&t, &in);
         toy_tokens(&t, out, sizeof(out));
         OK(runner, read && strcmp(out, cases[i].tokens) == 0, "%s (%s: %s)", cases[i].why, cases[i].in, out);
     }
@@ -4447,25 +4386,27 @@ static int conversion_can_contain(const markdown_core_element *element, markdown
                : node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_kind);
 }
 
-/* A literal ! lets this probe set the parent policy before the following
- * delimiter, with every production element still in its fixed order. */
-static markdown_core_node *conversion_match_inline(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, markdown_core_node *parent,
-                                                   unsigned char character, markdown_core_inline_state *inline_state) {
-    (void)character;
-    (void)inline_state;
-    parent->element = self->element;
-    conversion_current_policy = parser->context;
-    return NULL;
+/* A literal ! lets this probe's construct set the parent policy before the
+ * following delimiter, with every production element still in its fixed
+ * order; it reads nothing. */
+static markdown_core_state conversion_match_inline(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    inline_state->owner->element = self->element;
+    conversion_current_policy = inline_state->owner_parser->context;
+    return markdown_core_nok(tokenizer);
 }
+
+static const markdown_core_text_construct CONVERSION_POLICY_CONSTRUCTS[] = {{"!", {.start = conversion_match_inline}}};
 
 static const markdown_core_contain_ops CONVERSION_POLICY_CONTAIN = {
     .allows = conversion_can_contain,
 };
 
 static const markdown_core_inline_ops CONVERSION_POLICY_INLINES = {
-    .match = conversion_match_inline,
-    .dispatch = "!",
+    .constructs = CONVERSION_POLICY_CONSTRUCTS,
+    .construct_count = 1,
 };
 
 static const markdown_core_element CONVERSION_POLICY = {
@@ -5492,15 +5433,13 @@ static void universal_values(test_batch_runner *runner) {
  * candidates share one extent, so they cannot rescan each other's suffixes. */
 typedef struct {
     size_t autolink_domains;
-    size_t cross_link, opaque, delimiters, comment, lookahead, nonblank, block_identifier, callout, dimensions;
+    size_t cross_link, rewound, comment, lookahead, block_identifier, callout, dimensions;
     size_t definition_lists, citation_brace_bytes;
     size_t physical_lines, physical_capacity, memo_room;
     bool heading_collection_disposed;
-    size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
+    size_t attributes, anchors, definitions, whitespace, citations, list_markers, specimens;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes;
-    size_t delimiter_pushes;
-    size_t pooled_delimiters;
     size_t content_mark_queries;
     size_t content_mark_probes;
     /* The runs the content-to-source map holds when the parse ends. */
@@ -5517,16 +5456,10 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->cross_link = ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->scan;
     work->autolink_domains =
         ELEMENT_STATE(parser, markdown_core_autolink_work, MARKDOWN_CORE_ELEMENT_AUTOLINK)->domains;
-    work->opaque = parser->opaque_scan_work;
-    work->delimiters = parser->delimiter_work;
-    work->delimiter_pushes = parser->delimiter_pushes;
+    work->rewound = parser->rewound_work;
     work->content_mark_queries = parser->content_mark_queries;
     work->content_mark_probes = parser->content_mark_probes;
     work->line_marks = parser->line_marks.count;
-    work->pooled_delimiters = 0;
-    for (const markdown_core_stack_item *entry = parser->delimiter_pool.free; entry; entry = entry->next) {
-        work->pooled_delimiters++;
-    }
     work->whitespace = ELEMENT_STATE(parser, markdown_core_text_work, MARKDOWN_CORE_ELEMENT_TEXT)->whitespace +
                        ELEMENT_STATE(parser, markdown_core_escape_work, MARKDOWN_CORE_ELEMENT_ESCAPE)->whitespace;
     work->inline_hooks = parser->inline_hook_work;
@@ -5537,7 +5470,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->memo_room = parser->input.memo_room;
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
-    work->brackets = parser->bracket_work;
     work->citations = ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->work;
     work->citation_brace_bytes =
         ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->brace_bytes;
@@ -5558,7 +5490,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         MARKDOWN_CORE_NODE_HEADING);
     work->definitions = titles ? titles->places.count : 0;
     work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
-    work->nonblank = parser->nonblank_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
@@ -5791,8 +5722,8 @@ static void citation_linear_work(test_batch_runner *runner) {
             OK(runner, root != NULL, "citation dependency chains parse: case=%zu count=%zu", c, count);
             OK(runner, work.citations <= 20 * (size_t)source.size,
                "citation scans and resolutions are linear: case=%zu size=%d work=%zu", c, source.size, work.citations);
-            OK(runner, work.brackets <= 4 * (size_t)source.size && work.delimiters <= 20 * (size_t)source.size,
-               "citation ranges share bounded delimiter reduction: case=%zu count=%zu", c, count);
+            OK(runner, work.rewound <= 4 * (size_t)source.size,
+               "citation ranges read their bytes again a bounded number of times: case=%zu count=%zu", c, count);
             OK(runner, work.list_markers <= 20 * (size_t)source.size && work.specimens <= 20 * (size_t)source.size,
                "list marker scans are bounded: case=%zu count=%zu", c, count);
             markdown_core_node_free(root);
@@ -5881,8 +5812,8 @@ static void cross_link_linear_work(test_batch_runner *runner) {
             OK(runner, work.cross_link <= 3 * (size_t)source.size,
                "cross-link scanner inspects disjoint bodies: case=%zu size=%d work=%zu", c, source.size,
                work.cross_link);
-            OK(runner, work.opaque <= 4 * (size_t)source.size,
-               "opaque delimiter searches are linear: case=%zu size=%d work=%zu", c, source.size, work.opaque);
+            OK(runner, work.rewound <= 4 * (size_t)source.size,
+               "failed cross links give back linear work: case=%zu size=%d work=%zu", c, source.size, work.rewound);
             OK(runner, work.dimensions <= 3 * (size_t)source.size,
                "dimension recognition is bounded: case=%zu size=%d work=%zu", c, source.size, work.dimensions);
             markdown_core_node_free(root);
@@ -5916,9 +5847,8 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             markdown_core_node *root = markdown_core_parse_document_with_setup(
                 (const char *)source.ptr, (size_t)source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial inline footnotes parse");
-            OK(runner, work.nonblank <= (size_t)source.size,
-               "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
-               work.nonblank);
+            OK(runner, work.rewound <= 4 * (size_t)source.size,
+               "failed notes give back linear work: case=%zu size=%d work=%zu", c, source.size, work.rewound);
             if (root) {
                 node_list notes = footnotes_of(root);
                 node_list citations = nodes_of_kind(root, MARKDOWN_CORE_NODE_CITATION);
@@ -6267,29 +6197,26 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 OK(runner, root != NULL, "literal text parses: shape=%zu size=%zu", shape, length);
                 if (!pass) {
                     ordinary_allocations = text_allocation_calls;
-                    ordinary_work = work.delimiters;
+                    ordinary_work = work.rewound;
                 } else {
                     /* A run that gives constructs up keeps them in one list
-                     * on its paragraph (node.h, OPENER), which grows by
-                     * doubling. */
+                     * on its paragraph (node.h, OPENER); the reading notes
+                     * them first, in its notes and their words (tokenizer.h),
+                     * and kept bytes carry their words to the paragraph:
+                     * lists that grow by doubling, beside the reading's one
+                     * room for its attempts. */
                     const markdown_core_fields *kept = root ? child_at(root, 0)->fields : NULL;
                     size_t growth = 0;
                     for (size_t room = kept ? kept->count : 0; room; room /= 2) {
                         growth++;
                     }
-                    OK(runner, text_allocation_calls <= ordinary_allocations + growth,
-                       "known-literal runs allocate only for their surrounding text slice and the list of what they "
-                       "give up: shape=%zu size=%zu",
-                       shape, length);
+                    OK(runner, text_allocation_calls <= ordinary_allocations + 3 * growth + 2,
+                       "known-literal runs allocate only for their surrounding text slice and the lists of what they "
+                       "give up: shape=%zu size=%zu calls=%zu ordinary=%zu growth=%zu",
+                       shape, length, text_allocation_calls, ordinary_allocations, growth);
                 }
-                size_t delimiter_bytes = 0;
-                for (size_t i = prefix_length; i < length; i++) {
-                    if (strchr("*_+=", source[i])) {
-                        delimiter_bytes++;
-                    }
-                }
-                INT_EQ(runner, work.delimiters, ordinary_work + delimiter_bytes,
-                       "known-literal delimiter runs are scanned once without matching work");
+                INT_EQ(runner, (int)work.rewound, (int)ordinary_work,
+                       "known-literal delimiter runs are read once: no attempt gives their bytes back");
                 if (root) {
                     markdown_core_node *text = last_child_of(child_at(root, 0));
                     if (!pass) {
@@ -6336,11 +6263,10 @@ static void paired_delimiter_linear_work(test_batch_runner *runner, markdown_cor
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial paired-delimiter runs parse successfully");
             OK(runner,
-               work.delimiters <= 8 * (size_t)source.size && work.attributes <= 16 * (size_t)source.size &&
-                   work.whitespace <= 2 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size,
-               "shared inline work is linear: case=%zu size=%d delimiters=%zu attributes=%zu whitespace=%zu "
-               "brackets=%zu",
-               c, source.size, work.delimiters, work.attributes, work.whitespace, work.brackets);
+               work.rewound <= 8 * (size_t)source.size && work.attributes <= 16 * (size_t)source.size &&
+                   work.whitespace <= 2 * (size_t)source.size,
+               "shared inline work is linear: case=%zu size=%d rewound=%zu attributes=%zu whitespace=%zu", c,
+               source.size, work.rewound, work.attributes, work.whitespace);
             size_t nodes = 0;
             tree_iter *iter = tree_iter_new(root);
             markdown_core_event_type event;
@@ -6473,9 +6399,7 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         if (root) {
             STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, "a-b-x-1",
                    "heading projection includes script bodies and reserves the later Span anchor");
-            OK(runner,
-               work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
-                   work.delimiters <= 8 * (size_t)source.size,
+            OK(runner, work.anchors < 25 * (size_t)source.size && work.rewound <= 8 * (size_t)source.size,
                "heading projection and mixed bracket/delimiter ownership stay linear");
             markdown_core_node_free(root);
         }
@@ -6569,9 +6493,9 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
             markdown_core_node *root =
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial percent runs parse successfully");
-            OK(runner, work.comment + work.opaque <= 4 * (size_t)source.size,
-               "comment scanner work is linear: case=%zu size=%d comment=%zu opaque=%zu", c, source.size, work.comment,
-               work.opaque);
+            OK(runner, work.comment + work.rewound <= 4 * (size_t)source.size,
+               "comment scanner work is linear: case=%zu size=%d comment=%zu rewound=%zu", c, source.size, work.comment,
+               work.rewound);
             if (cases[c].comments_per_unit) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_COMMENT), count * cases[c].comments_per_unit,
                        "every closed comment is one Comment node");
@@ -7127,52 +7051,6 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
        "fewer than two entries are ordered as they are");
 }
 
-/* A DELIMITER ENTRY IS ALLOCATED ONCE PER LIVE SLOT, NOT ONCE PER PUSH. The
- * pushes grow with the inline containers a document has; the entries the
- * parser holds at the end -- every entry it ever allocated, since a container
- * returns all of its entries when it is cleared -- do not. */
-static void delimiter_entries_are_pooled_across_inline_containers(test_batch_runner *runner) {
-    static const char paragraph[] = "*a* **b** _c_ d *e f* g\n\n";
-    size_t pushes_per_paragraph = 0, pooled_for_one = 0, nodes_for_one = 0;
-    for (size_t count = 1; count <= 64; count *= 8) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, paragraph);
-        }
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "the document parses");
-        size_t emphases = 0;
-        tree_iter *iter = tree_iter_new(root);
-        markdown_core_event_type ev;
-        while ((ev = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node *node = tree_iter_get_node(iter);
-            if (ev == MARKDOWN_CORE_EVENT_ENTER &&
-                (node->kind == MARKDOWN_CORE_NODE_EMPHASIS || node->kind == MARKDOWN_CORE_NODE_STRONG)) {
-                emphases++;
-            }
-        }
-        tree_iter_free(iter);
-        if (count == 1) {
-            pushes_per_paragraph = work.delimiter_pushes;
-            pooled_for_one = work.pooled_delimiters;
-            nodes_for_one = emphases;
-            OK(runner, pushes_per_paragraph > 0 && pooled_for_one > 0 && nodes_for_one == 4,
-               "one paragraph pushes entries and leaves them pooled: pushes=%zu pooled=%zu", pushes_per_paragraph,
-               pooled_for_one);
-        } else {
-            INT_EQ(runner, (int)work.delimiter_pushes, (int)(count * pushes_per_paragraph),
-                   "pushes grow with the paragraphs: count=%zu", count);
-            INT_EQ(runner, (int)work.pooled_delimiters, (int)pooled_for_one, "the entries allocated do not: count=%zu",
-                   count);
-            INT_EQ(runner, (int)emphases, (int)(count * nodes_for_one), "a reused entry parses as a fresh one");
-        }
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
-    }
-}
-
 /* Every node's release visits its attribute value, and most values are empty. */
 static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batch_runner *runner) {
     static const char container[] = "{#a .b k=v}";
@@ -7270,7 +7148,7 @@ static void consolidation_keeps_a_view_when_its_operands_are_views(test_batch_ru
  * positions for every pair of offsets a container has -- including a reversed
  * pair, which is how an empty field is placed ([x, x - 1]) and which puts the
  * two ends on two runs when x is a line's first byte -- from every run the
- * cursor can be on. The probe runs when the container's inlines are finished,
+ * cursor can be on. The probe runs as the container's inline run is let go,
  * with the map complete and the state still alive. */
 static int placement_disagreements, placements_checked;
 static void probe_placements(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
@@ -7301,7 +7179,7 @@ static void probe_placements(const markdown_core_element_instance *self, markdow
 
 static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *runner) {
     static const markdown_core_inline_ops probe_inlines = {
-        .finish = probe_placements,
+        .dispose = probe_placements,
     };
     static const markdown_core_element probe = {
         .name = "probe-placements",
@@ -7546,7 +7424,7 @@ static void heading_anchor_invariants(test_batch_runner *runner) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), count,
                    "every live delimiter pair resolves once");
-            OK(runner, work.anchors + work.attributes + work.nonblank < 40 * (size_t)source.size,
+            OK(runner, work.anchors + work.attributes + work.rewound < 40 * (size_t)source.size,
                "declaration parsing and finalization stay linear with pending cursors");
             markdown_core_node_free(root);
         }
@@ -8289,40 +8167,32 @@ typedef struct instance_marks {
     bool inner_parsed;
 } instance_marks;
 
-static markdown_core_node *mark_percent_a(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *parent, unsigned char character,
-                                          markdown_core_inline_state *inline_state) {
-    (void)self;
-    (void)parent;
-    (void)character;
-    (void)inline_state;
-    ((instance_marks *)parser->context)->marked_a++;
-    return NULL;
+static markdown_core_state mark_percent_a(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    ((instance_marks *)inline_state->owner_parser->context)->marked_a++;
+    return markdown_core_nok(tokenizer);
 }
-static markdown_core_node *mark_percent_b(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *parent, unsigned char character,
-                                          markdown_core_inline_state *inline_state) {
-    (void)self;
-    (void)parent;
-    (void)character;
-    (void)inline_state;
-    ((instance_marks *)parser->context)->marked_b++;
-    return NULL;
+static markdown_core_state mark_percent_b(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    ((instance_marks *)inline_state->owner_parser->context)->marked_b++;
+    return markdown_core_nok(tokenizer);
 }
+static const markdown_core_text_construct PERCENT_MARKER_A_CONSTRUCTS[] = {{"%", {.start = mark_percent_a}}};
 static const markdown_core_inline_ops PERCENT_MARKER_A_INLINES = {
-    .match = mark_percent_a,
-    .terminates = "%",
-    .dispatch = "%",
+    .constructs = PERCENT_MARKER_A_CONSTRUCTS,
+    .construct_count = 1,
 };
 
 static const markdown_core_element PERCENT_MARKER_A = {
     .name = "percent-a-marker",
     .inlines = &PERCENT_MARKER_A_INLINES,
 };
+static const markdown_core_text_construct PERCENT_MARKER_B_CONSTRUCTS[] = {{"%", {.start = mark_percent_b}}};
 static const markdown_core_inline_ops PERCENT_MARKER_B_INLINES = {
-    .match = mark_percent_b,
-    .terminates = "%",
-    .dispatch = "%",
+    .constructs = PERCENT_MARKER_B_CONSTRUCTS,
+    .construct_count = 1,
 };
 
 static const markdown_core_element PERCENT_MARKER_B = {
@@ -8965,7 +8835,7 @@ static void delimiter_boundary_floors(test_batch_runner *runner) {
                "ordinary spaces do not inhibit inline bodies");
         INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_MARK), count,
                "unrelated rules retain independent search floors");
-        OK(runner, work.delimiters <= 16 * (size_t)source.size, "failed searches and scope reduction remain linear");
+        OK(runner, work.rewound <= 16 * (size_t)source.size, "failed searches and scope reduction remain linear");
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
     }
@@ -9002,7 +8872,7 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), count, "every body is one opaque leaf");
             INT_EQ(runner, owned_node_census(root), 2 * count + 3,
                    "the tree is the document, its paragraph, the formula leaves and the text around them");
-            OK(runner, work.opaque <= 4 * (size_t)source.size, "opaque search remains linear");
+            OK(runner, work.rewound <= 4 * (size_t)source.size, "opaque search remains linear");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -10317,17 +10187,6 @@ static void a_finish_step_is_asked_where_it_can_act(test_batch_runner *runner) {
     }
 }
 
-static markdown_core_node *match_nothing(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                         markdown_core_node *parent, unsigned char character,
-                                         markdown_core_inline_state *inline_state) {
-    (void)self;
-    (void)parser;
-    (void)parent;
-    (void)character;
-    (void)inline_state;
-    return NULL;
-}
-
 typedef struct {
     const markdown_core_element *element;
     attach_probe probe;
@@ -10350,10 +10209,10 @@ static bool attach_transparent(markdown_core_dialect_builder *builder, void *con
 static void a_flanking_transparent_byte_is_ascii(test_batch_runner *runner) {
     static const char source[] = "a ~~b~~ c\n";
     static const markdown_core_inline_ops inlines[] = {
-        {.match = match_nothing, .transparent = "\x7F"},
-        {.match = match_nothing, .transparent = "\x80"},
-        {.match = match_nothing, .transparent = "\xBF"},
-        {.match = match_nothing, .transparent = "~\xFF"},
+        {.transparent = "\x7F"},
+        {.transparent = "\x80"},
+        {.transparent = "\xBF"},
+        {.transparent = "~\xFF"},
     };
     static const markdown_core_element elements[] = {
         {.name = "transparent-7f", .inlines = &inlines[0]},
@@ -12668,7 +12527,6 @@ int main(void) {
     attribute_reads_refuse_every_allocation(runner);
     attribute_values_are_one_allocation(runner);
     source_entries_order_by_the_key_bytes_that_differ(runner);
-    delimiter_entries_are_pooled_across_inline_containers(runner);
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     inline_placement_probes_the_map_a_bounded_number_of_times(runner);
     consolidation_keeps_a_view_when_its_operands_are_views(runner);
@@ -12777,7 +12635,6 @@ int main(void) {
     strbuf_failure_is_a_transaction(runner);
     lazy_literal_failure_writes_nothing(runner);
     void_source_continues(runner);
-    stray_delimiter(runner);
     finish_step_skips_absent_kinds(runner);
     finish_step_gate_opens_when_its_kind_is_made(runner);
     finish_kind_sets_are_well_formed(runner);

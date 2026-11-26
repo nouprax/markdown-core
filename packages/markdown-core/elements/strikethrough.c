@@ -1,3 +1,4 @@
+#include "attention.h"
 #include "inline_internal.h"
 #include "services.h"
 
@@ -13,16 +14,6 @@ static unsigned S_flank(const markdown_core_element_instance *self, markdown_cor
 #include <parser.h>
 #include <limits.h>
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    if (character != '~' || markdown_core_inline_state_peek_at(
-                                inline_state, markdown_core_inline_state_get_offset(inline_state) + 1) != '~') {
-        return NULL;
-    }
-    return markdown_core_inline_match_delimiter(self, inline_state);
-}
-
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_NONE};
 
 /* `~` is the ONE byte in this repository that is genuinely
@@ -32,7 +23,12 @@ static const markdown_core_contain_ops STRIKETHROUGH_CONTAIN = {
     .kinds = containment_kinds,
 };
 
+static const markdown_core_text_construct STRIKETHROUGH_CONSTRUCTS[] = {{"~", MARKDOWN_CORE_ATTENTION_CONSTRUCT}};
 static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
+    .constructs = STRIKETHROUGH_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = MARKDOWN_CORE_ATTENTION_TOKENS,
+    .token_count = MARKDOWN_CORE_ATTENTION_KINDS,
     .rule = MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH,
     .delimiter = {.minimum_width = 2,
                   .maximum_width = 2,
@@ -40,9 +36,6 @@ static const markdown_core_inline_ops STRIKETHROUGH_INLINES = {
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},
-    .match = match,
-    .terminates = "~",
-    .dispatch = "~",
     .transparent = "~",
 };
 

@@ -2,7 +2,8 @@
 #include "inline_internal.h"
 #include "autolink.h"
 #include "services.h"
-#include "bracket.h"
+#include "label.h"
+#include "label.h"
 #include "element.h"
 #include <parser.h>
 #include <string.h>
@@ -95,49 +96,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(const markdown_cor
     if (text) {
         markdown_core_scaffold_append(link, text);
     }
-    /* What follows an autolink may update it (no-flush.md 10.13). */
-    markdown_core_inline_made(inline_state, link);
     /* The pointy braces are the syntax; what they enclose is the text. */
     return link;
-}
-
-/* A failed angle autolink at `from`, unless the byte there starts neither a
- * scheme nor a local part: its `<` opens an autolink or HTML once the text
- * goes on (markdown_core_inline_open), and its scan read the end of the
- * input, which a run that tracks its end notes. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_failed(markdown_core_inline_state *inline_state,
-                                                               bufsize_t from) {
-    const unsigned char first =
-        from < markdown_core_inline_size(inline_state) ? markdown_core_inline_char_at(inline_state, from) : 0;
-    if (!first || markdown_core_isalnum((char)first) ||
-        (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
-        if (markdown_core_inline_tracks_end(inline_state)) {
-            markdown_core_inline_saw_end(inline_state);
-        }
-        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, from - 1, from, NULL, 0);
-    }
-}
-
-static markdown_core_node *match_angle(const markdown_core_element_instance *self,
-                                       markdown_core_inline_state *inline_state) {
-    bufsize_t from = markdown_core_inline_offset(inline_state) + 1;
-    bufsize_t length = scan_autolink_uri(markdown_core_inline_window(inline_state, 0).data,
-                                         markdown_core_inline_window(inline_state, 0).len, from);
-    bool email = false;
-    if (!length) {
-        length = scan_autolink_email(markdown_core_inline_window(inline_state, 0).data,
-                                     markdown_core_inline_window(inline_state, 0).len, from);
-        email = true;
-    }
-    if (!length) {
-        /* Either scan may still match once the input goes on, unless the
-         * byte after `<` starts neither a scheme nor a local part. */
-        S_angle_failed(inline_state, from);
-        return NULL;
-    }
-    markdown_core_chunk content = markdown_core_inline_take(inline_state, from, length - 1);
-    markdown_core_inline_seek(inline_state, from + length);
-    return make_autolink(self, inline_state, from - 1, markdown_core_inline_offset(inline_state) - 1, content, email);
 }
 
 /* The width of the host character at `link`, or 0 when the character there
@@ -173,7 +133,7 @@ static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
     return 0;
 }
 
-static size_t autolink_delim(uint8_t *data, size_t link_end) {
+static size_t autolink_delim(const uint8_t *data, size_t link_end) {
     size_t i;
     size_t closing = 0;
     size_t opening = 0;
@@ -261,12 +221,22 @@ typedef struct {
     bufsize_t rejected_until;
 } autolink_run;
 
-static size_t check_domain(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                           uint8_t *data, size_t size, int allow_short) {
+/* What an autolink scan reads: the run's bytes from `base`, its record and
+ * the element's counts, the byte that closes the innermost label (0 for
+ * none), and whether it read the end. */
+typedef struct {
+    const uint8_t *base;
+    autolink_run *run;
+    markdown_core_autolink_work *counts;
+    unsigned char closer;
+    bool end;
+} S_scan;
+
+static size_t S_domain(S_scan *scan, const uint8_t *data, size_t size, int allow_short) {
     size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
-    bufsize_t start = (bufsize_t)(data - markdown_core_inline_window(inline_state, 0).data);
-    autolink_run *run = markdown_core_run_state(inline_state, self);
-    markdown_core_autolink_work *counts = self->state;
+    bufsize_t start = (bufsize_t)(data - scan->base);
+    autolink_run *run = scan->run;
+    markdown_core_autolink_work *counts = scan->counts;
     counts->domains++;
     if (start < run->rejected_until) {
         return 0;
@@ -317,7 +287,7 @@ static size_t check_domain(const markdown_core_element_instance *self, markdown_
 
     /* The domain may go on with the input. */
     if (i >= size - 1) {
-        markdown_core_inline_saw_end(inline_state);
+        scan->end = true;
     }
     if (uscore1 > 0 || uscore2 > 0) {
         /* Every later candidate before this underscore still has it in its
@@ -356,9 +326,8 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
 /* URL and www candidates use the same extent rule. Bracket bodies supply
  * their delimiter; escaped punctuation stays in the opaque token. Each byte
  * is visited once, including tokens that end at a footnote's closing ]. */
-static size_t autolink_extent(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                              uint8_t *data, size_t size, size_t offset) {
-    unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
+static size_t S_extent(S_scan *scan, const uint8_t *data, size_t size, size_t offset) {
+    const unsigned char closer = scan->closer;
     while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
         if (closer && data[offset] == closer) {
             break;
@@ -370,251 +339,9 @@ static size_t autolink_extent(const markdown_core_element_instance *self, markdo
         offset++;
     }
     if (offset >= size) {
-        markdown_core_inline_saw_end(inline_state);
+        scan->end = true;
     }
     return offset;
-}
-
-static markdown_core_node *www_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *parent, markdown_core_inline_state *inline_state) {
-    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    size_t max_rewind = markdown_core_inline_state_get_offset(inline_state);
-    uint8_t *data = chunk->data + max_rewind;
-    size_t size = chunk->len - max_rewind;
-
-    size_t link_end;
-
-    if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
-        (!data[-1] || strchr("*_~(", data[-1]) == NULL) && !markdown_core_is_whitespace(data[-1])) {
-        return 0;
-    }
-
-    if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
-        if (size < 4 && memcmp(data, "www.", size) == 0) {
-            markdown_core_inline_state_saw_end(inline_state);
-        }
-        return 0;
-    }
-
-    link_end = check_domain(self, inline_state, data, size, 0);
-
-    if (link_end == 0) {
-        return NULL;
-    }
-
-    link_end = autolink_extent(self, inline_state, data, size, link_end);
-
-    link_end = autolink_delim(data, link_end);
-
-    if (link_end == 0) {
-        return NULL;
-    }
-
-    markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
-
-    markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
-    if (!node) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-
-    markdown_core_strbuf buf;
-    markdown_core_strbuf_init(&buf, 10);
-    markdown_core_strbuf_puts(&buf, "http://");
-    markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
-    {
-        markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
-        node->as.link->resource =
-            url.data ? markdown_core_resource_new(parser->pool, url, markdown_core_optional_chunk_absent()) : NULL;
-        if (!node->as.link->resource) {
-            markdown_core_chunk_free(&url);
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-    }
-
-    markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
-    if (!text) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
-        return NULL;
-    }
-    *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
-    markdown_core_scaffold_append(node, text);
-
-    markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
-    markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
-    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, node);
-    markdown_core_field_put(&to, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE, (bufsize_t)max_rewind,
-                            (bufsize_t)(max_rewind + link_end), false);
-
-    return node;
-}
-
-static markdown_core_node *url_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *parent, markdown_core_inline_state *inline_state) {
-    size_t link_end, domain_len;
-    int rewind = 0;
-
-    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    int max_rewind = markdown_core_inline_state_get_offset(inline_state);
-    uint8_t *data = chunk->data + max_rewind;
-    size_t size = chunk->len - max_rewind;
-
-    if (size < 4 || data[1] != '/' || data[2] != '/') {
-        if (size < 4 && (size < 2 || data[1] == '/') && (size < 3 || data[2] == '/')) {
-            markdown_core_inline_state_saw_end(inline_state);
-        }
-        return 0;
-    }
-
-    while (rewind < max_rewind && markdown_core_isalpha(data[-rewind - 1])) {
-        rewind++;
-    }
-
-    if (!sd_autolink_issafe(data - rewind, size + rewind)) {
-        return 0;
-    }
-
-    link_end = strlen("://");
-
-    domain_len = check_domain(self, inline_state, data + link_end, size - link_end, 1);
-
-    if (domain_len == 0) {
-        return 0;
-    }
-
-    link_end += domain_len;
-    link_end = autolink_extent(self, inline_state, data, size, link_end);
-
-    link_end = autolink_delim(data, link_end);
-
-    if (link_end == 0) {
-        return NULL;
-    }
-
-    markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
-    markdown_core_node_unput(parser, parent, rewind);
-
-    markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
-    if (!node) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-
-    markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link->resource = markdown_core_resource_new(parser->pool, url, markdown_core_optional_chunk_absent());
-    if (!node->as.link->resource) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-
-    markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
-    if (!text) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
-        return NULL;
-    }
-    *text->as.literal = url;
-    markdown_core_scaffold_append(node, text);
-
-    markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
-    markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
-    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, node);
-    markdown_core_field_put(&to, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE, (bufsize_t)(max_rewind - rewind),
-                            (bufsize_t)(max_rewind + link_end), false);
-
-    return node;
-}
-
-/* A3 BEFORE A10. A bare address is an autolink wherever it appears, and the
- * text-directive scanner also claims a colon before a name, so at
- * `mailto:x@y.z`, `xmpp:x@y.z`, or any `at:x@y.z` whichever scanner runs
- * first owns the colon. The dialect's recognition order gives it to the
- * autolink, as cmark-gfm does and remark-directive does not.
- *
- * Only the colon is claimed, as one opaque byte of text. The address bytes
- * stay with the base scanner, which is exactly what cmark-gfm's postprocess
- * pass sees: nothing in an address is special to the base language except
- * `_`, an intraword `_` is literal, and a `_` that does form emphasis splits
- * the address on both sides alike -- `[foo:_x_@y.z](u)` keeps its emphasis.
- * The runs are consolidated before that step, which then links the address
- * byte for byte as cmark-gfm links it, `mailto:` spelling included, and skips
- * it inside a link. */
-static markdown_core_node *address_match(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
-    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    size_t offset = (size_t)markdown_core_inline_state_get_offset(inline_state);
-    uint8_t *data = chunk->data + offset;
-    size_t size = chunk->len - offset;
-    size_t at, end, np = 0;
-    markdown_core_node *node;
-
-    (void)parser;
-    /* The local part, then '@'. */
-    for (at = 1; at < size && (markdown_core_isalnum(data[at]) || (data[at] && strchr(".+-_", data[at]) != NULL));
-         at++) {
-    }
-    if (at >= size) {
-        markdown_core_inline_state_saw_end(inline_state);
-    }
-    if (at == 1 || at >= size || data[at] != '@') {
-        return NULL;
-    }
-    /* The domain, as `postprocess_text` scans it. */
-    for (end = at + 1; end < size; end++) {
-        uint8_t c = data[end];
-        if (markdown_core_isalnum(c)) {
-            continue;
-        }
-        if (c == '.' && end + 1 < size && markdown_core_isalnum(data[end + 1])) {
-            np++;
-            continue;
-        }
-        if (c != '-' && c != '_') {
-            break;
-        }
-    }
-    if (end + 1 >= size) {
-        markdown_core_inline_state_saw_end(inline_state);
-    }
-    if (end - at < 2 || np == 0 || (!markdown_core_isalpha(data[end - 1]) && data[end - 1] != '.')) {
-        return NULL;
-    }
-
-    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)offset);
-    if (!node) {
-        return NULL;
-    }
-    markdown_core_inline_state_set_offset(inline_state, (int)(offset + 1));
-    return node;
-}
-
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char c,
-                                 markdown_core_inline_state *inline_state) {
-    if (c == '<') {
-        return match_angle(self, inline_state);
-    }
-
-    int in_bracket = markdown_core_inline_state_in_bracket(inline_state, false) ||
-                     markdown_core_inline_state_in_bracket(inline_state, true);
-
-    if (c == ':') {
-        /* No link forms inside a bracket, but the colon is still fenced off
-         * there: `postprocess_text` skips the text of a link, so
-         * `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm does, and a
-         * bracket that never closes still gets its link. */
-        markdown_core_node *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state);
-        return node || parser->error ? node : address_match(parser, inline_state);
-    }
-
-    if (c == 'w' && !in_bracket) {
-        return www_match(self, parser, parent, inline_state);
-    }
-
-    return NULL;
-
-    // note that we could end up re-consuming something already a
-    // part of an inline, because we don't track when the last
-    // inline was finished in inlines.c.
 }
 
 static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewind, size_t max_rewind) {
@@ -895,10 +622,288 @@ static const markdown_core_finish_ops AUTOLINK_FINISH = {
     .scopes = AUTOLINK_SCOPE_KINDS,
 };
 
+/* THE AUTOLINKS (plan symbols-cleanroom.md 23): `<` and a URI or an
+ * address and `>`, one token (`data` 1 for an address); at a `:`, a URL
+ * whose scheme is the letters before the colon (`data`, which the
+ * construct's resolve takes off the data before it), and otherwise the
+ * colon of a bare address fenced off as text; at a `w`, a `www.` link.
+ * Inside a label's body neither a URL nor a `www.` link forms. */
+enum { AUTOLINK_ANGLE, AUTOLINK_URL, AUTOLINK_WWW, AUTOLINK_COLON, AUTOLINK_KINDS };
+
+static markdown_core_state S_token(markdown_core_tokenizer *tokenizer, unsigned kind, uint32_t end, uint32_t data) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + kind));
+    if (token != UINT32_MAX) {
+        tokenizer->events.tokens[token].data = data;
+    }
+    markdown_core_consume_to(tokenizer, end);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + kind));
+    return markdown_core_ok(tokenizer);
+}
+
+static S_scan S_scan_of(markdown_core_tokenizer *tokenizer) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    S_scan scan = {tokenizer->data, markdown_core_read_record(tokenizer, self->run_offset), self->state,
+                   markdown_core_label_closer(tokenizer), false};
+    return scan;
+}
+
+static markdown_core_state S_angle(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const uint32_t from = tokenizer->position + 1;
+    const unsigned char *data = tokenizer->data;
+    bufsize_t length = scan_autolink_uri(data, (bufsize_t)tokenizer->size, (bufsize_t)from);
+    bool email = false;
+    if (!length) {
+        length = scan_autolink_email(data, (bufsize_t)tokenizer->size, (bufsize_t)from);
+        email = true;
+    }
+    if (!length) {
+        /* Either scan may still match once the input goes on, unless the
+         * byte after `<` starts neither a scheme nor a local part: its `<`
+         * opens an autolink or HTML once the text goes on. */
+        const unsigned char first = from < tokenizer->size ? data[from] : 0;
+        if (!first || markdown_core_isalnum((char)first) ||
+            (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
+            markdown_core_met_end(tokenizer);
+            markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_NONE, (bufsize_t)from - 1, (bufsize_t)from, NULL,
+                                       0);
+        }
+        return markdown_core_nok(tokenizer);
+    }
+    const markdown_core_state next = S_token(tokenizer, AUTOLINK_ANGLE, from + (uint32_t)length, email);
+    /* What follows an autolink may update it (no-flush.md 10.13). */
+    markdown_core_text_made(tokenizer, MARKDOWN_CORE_NODE_LINK);
+    return next;
+}
+
+static markdown_core_state S_url(markdown_core_tokenizer *tokenizer) {
+    const uint32_t at = tokenizer->position;
+    const uint8_t *data = tokenizer->data + at;
+    const size_t size = tokenizer->size - at;
+    if (size < 4 || data[1] != '/' || data[2] != '/') {
+        if (size < 4 && (size < 2 || data[1] == '/') && (size < 3 || data[2] == '/')) {
+            markdown_core_met_end(tokenizer);
+        }
+        return markdown_core_nok(tokenizer);
+    }
+    uint32_t rewind = 0;
+    while (rewind < at && markdown_core_isalpha(data[-(ptrdiff_t)rewind - 1])) {
+        rewind++;
+    }
+    if (!sd_autolink_issafe(data - rewind, size + rewind)) {
+        return markdown_core_nok(tokenizer);
+    }
+    S_scan scan = S_scan_of(tokenizer);
+    size_t link_end = strlen("://");
+    const size_t domain = S_domain(&scan, data + link_end, size - link_end, 1);
+    if (domain) {
+        link_end = autolink_delim(data, S_extent(&scan, data, size, link_end + domain));
+    }
+    if (scan.end) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (!domain || !link_end) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_token(tokenizer, AUTOLINK_URL, at + (uint32_t)link_end, rewind);
+}
+
+/* The colon of a bare address, `x:a@b.c`, which the autolink takes as one
+ * opaque byte of text (address_match). */
+static markdown_core_state S_address(markdown_core_tokenizer *tokenizer) {
+    const uint8_t *data = tokenizer->data + tokenizer->position;
+    const size_t size = tokenizer->size - tokenizer->position;
+    size_t at, end, np = 0;
+    for (at = 1; at < size && (markdown_core_isalnum(data[at]) || (data[at] && strchr(".+-_", data[at]) != NULL));
+         at++) {
+    }
+    if (at >= size) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (at == 1 || at >= size || data[at] != '@') {
+        return markdown_core_nok(tokenizer);
+    }
+    for (end = at + 1; end < size; end++) {
+        uint8_t c = data[end];
+        if (markdown_core_isalnum(c)) {
+            continue;
+        }
+        if (c == '.' && end + 1 < size && markdown_core_isalnum(data[end + 1])) {
+            np++;
+            continue;
+        }
+        if (c != '-' && c != '_') {
+            break;
+        }
+    }
+    if (end + 1 >= size) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (end - at < 2 || np == 0 || (!markdown_core_isalpha(data[end - 1]) && data[end - 1] != '.')) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_token(tokenizer, AUTOLINK_COLON, tokenizer->position + 1, 0);
+}
+
+static markdown_core_state S_after_url(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_ok(tokenizer);
+}
+static markdown_core_state S_no_url(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_address(tokenizer);
+}
+static markdown_core_state S_url_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_url(tokenizer);
+}
+/* The scheme's letters, already data, are the URL's. */
+static void S_url_resolve(markdown_core_tokenizer *tokenizer, size_t from) {
+    markdown_core_events *events = &tokenizer->events;
+    markdown_core_token *link = markdown_core_event_token(events, from);
+    uint32_t rewind = link->data;
+    link->start -= rewind;
+    for (size_t at = from; rewind && at >= 2;) {
+        markdown_core_token *before = markdown_core_event_token(events, at - 1);
+        if (before->kind != MARKDOWN_CORE_TOKEN_DATA || events->items[at - 1].phase != MARKDOWN_CORE_EXIT) {
+            break;
+        }
+        const uint32_t take = before->end - before->start < rewind ? before->end - before->start : rewind;
+        before->end -= take;
+        rewind -= take;
+        if (before->end == before->start) {
+            /* The data is gone: its two events go with it. */
+            markdown_core_events_splice(events, at - 2, 2, NULL, 0);
+            at -= 2;
+        } else {
+            break;
+        }
+    }
+}
+static const markdown_core_construct S_URL = {.start = S_url_start, .resolve = S_url_resolve};
+
+static markdown_core_state S_colon(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_label_in(tokenizer, 0) || markdown_core_label_in(tokenizer, 1)) {
+        return S_address(tokenizer);
+    }
+    return markdown_core_attempt(tokenizer, &S_URL, markdown_core_state_of(S_after_url),
+                                 markdown_core_state_of(S_no_url), code);
+}
+
+static markdown_core_state S_www(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    if (markdown_core_label_in(tokenizer, 0) || markdown_core_label_in(tokenizer, 1)) {
+        return markdown_core_nok(tokenizer);
+    }
+    const uint32_t at = tokenizer->position;
+    const uint8_t *data = tokenizer->data + at;
+    const size_t size = tokenizer->size - at;
+    if (at > markdown_core_label_body(tokenizer) && (!data[-1] || strchr("*_~(", data[-1]) == NULL) &&
+        !markdown_core_is_whitespace(data[-1])) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
+        if (size < 4 && memcmp(data, "www.", size) == 0) {
+            markdown_core_met_end(tokenizer);
+        }
+        return markdown_core_nok(tokenizer);
+    }
+    S_scan scan = S_scan_of(tokenizer);
+    size_t link_end = S_domain(&scan, data, size, 0);
+    if (link_end) {
+        link_end = autolink_delim(data, S_extent(&scan, data, size, link_end));
+    }
+    if (scan.end) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (!link_end) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_token(tokenizer, AUTOLINK_WWW, at + (uint32_t)link_end, 0);
+}
+
+static const markdown_core_text_construct AUTOLINK_CONSTRUCTS[] = {
+    {"<", {.start = S_angle}}, {":", {.start = S_colon}}, {"w", {.start = S_www}}};
+
+/* A literal link's Link and its Text, of the content bytes `from` up to
+ * `to`, its destination `url`. */
+static void S_literal(markdown_core_compiler *compiler, bufsize_t from, bufsize_t to, markdown_core_chunk url,
+                      markdown_core_chunk text_literal) {
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
+    if (!node) {
+        markdown_core_chunk_free(&url);
+        markdown_core_chunk_free(&text_literal);
+        markdown_core_compile_append(compiler, NULL);
+        return;
+    }
+    node->as.link->resource =
+        url.data ? markdown_core_resource_new(parser->pool, url, markdown_core_optional_chunk_absent()) : NULL;
+    if (!node->as.link->resource) {
+        markdown_core_chunk_free(&url);
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+    }
+    markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
+    if (!text) {
+        markdown_core_chunk_free(&text_literal);
+        markdown_core_parser_release_node(parser, node);
+        markdown_core_compile_append(compiler, NULL);
+        return;
+    }
+    *text->as.literal = text_literal;
+    markdown_core_scaffold_append(node, text);
+    markdown_core_inline_state_place(inline_state, node, from, to - 1);
+    markdown_core_inline_state_place(inline_state, text, from, to - 1);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_DEST, MARKDOWN_CORE_FIELD_BARE, from, to, false);
+    markdown_core_compile_append(compiler, node);
+}
+
+static void S_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const bufsize_t start = (bufsize_t)token->start, end = (bufsize_t)token->end;
+    switch (token->kind - self->token_base) {
+    case AUTOLINK_ANGLE: {
+        markdown_core_chunk content = markdown_core_inline_take(inline_state, start + 1, end - start - 2);
+        markdown_core_inline_seek(inline_state, end);
+        markdown_core_compile_append(compiler,
+                                     make_autolink(self, inline_state, start, end - 1, content, (int)token->data));
+        break;
+    }
+    case AUTOLINK_URL: {
+        markdown_core_chunk url = markdown_core_inline_take(inline_state, start, end - start);
+        S_literal(compiler, start, end, url, url);
+        break;
+    }
+    case AUTOLINK_WWW: {
+        markdown_core_strbuf buf;
+        markdown_core_strbuf_init(&buf, 10);
+        markdown_core_strbuf_puts(&buf, "http://");
+        markdown_core_strbuf_put(&buf, markdown_core_inline_window(inline_state, 0).data + start, end - start);
+        S_literal(compiler, start, end, markdown_core_chunk_buf_detach(&buf),
+                  markdown_core_inline_take(inline_state, start, end - start));
+        break;
+    }
+    default:
+        markdown_core_compile_text(compiler, start, start + 1);
+        break;
+    }
+}
+static const markdown_core_compile_ops AUTOLINK_TOKENS[AUTOLINK_KINDS] = {
+    [AUTOLINK_ANGLE] = {.exit = S_made},
+    [AUTOLINK_URL] = {.exit = S_made},
+    [AUTOLINK_WWW] = {.exit = S_made},
+    [AUTOLINK_COLON] = {.exit = S_made, .plain = true}};
+
 static const markdown_core_inline_ops AUTOLINK_INLINES = {
-    .match = match,
-    .terminates = "<:w",
-    .dispatch = "<:w",
+    .constructs = AUTOLINK_CONSTRUCTS,
+    .construct_count = 3,
+    .tokens = AUTOLINK_TOKENS,
+    .token_count = AUTOLINK_KINDS,
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {

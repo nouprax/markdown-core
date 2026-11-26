@@ -1,7 +1,7 @@
 #ifndef MARKDOWN_CORE_ELEMENT_EMBEDDED_H
 #define MARKDOWN_CORE_ELEMENT_EMBEDDED_H
 #include "inlines.h"
-#include "bracket.h"
+#include "label.h"
 /* It provides MARKDOWN_CORE_SERVICE_DIMENSIONS (services.h). */
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED;
 /* THE DIMENSION GRAMMAR'S WORK (the embedded element's parse record):

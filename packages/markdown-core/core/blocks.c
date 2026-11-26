@@ -340,9 +340,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
      * nothing else does, so it is released here rather than with the node. */
     markdown_core_array_free(&parser->line_marks);
 
-    markdown_core_pool_release(&parser->delimiter_pool);
-    markdown_core_pool_release(&parser->bracket_pool);
     markdown_core_inline_release_records(parser);
+    markdown_core_inline_release_passes(parser);
 
     /* The block-start lookahead's path, flags and resume cache are parser
      * state of the same kind: indexed by open containers and source lines,
@@ -2162,10 +2161,9 @@ static inline markdown_core_event_type S_walk_step(inline_walk *walk) {
  * reached inside an inline tree. Inline parsing completes fields at their
  * owning token; the structural walk here therefore skips the emitted inline
  * tree. */
-static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node *root) {
+static void process_inline_tree(markdown_core_parser *parser, markdown_core_node *root) {
     inline_walk walk;
     markdown_core_event_type event;
-    bool whitespace = false;
 
     S_walk_init(&walk, root);
     while (!parser->error && (event = S_walk_step(&walk)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -2174,39 +2172,31 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
             const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, cur);
             if (S_kind_contains_inlines(kind, cur)) {
                 if (!(kind->flags & MARKDOWN_CORE_KIND_DEFERRED)) {
-                    whitespace |= markdown_core_parse_inlines(parser, cur, false);
+                    markdown_core_parse_inlines(parser, cur, false);
                 }
                 walk.next_event = MARKDOWN_CORE_EVENT_EXIT;
                 walk.next = cur;
             }
-            whitespace |= markdown_core_parse_inline_subtrees(parser, cur);
+            markdown_core_parse_inline_subtrees(parser, cur);
         }
     }
-    return whitespace;
 }
 
 /* Core and element fields participate in the same parser phases. The
  * private title root stays owned here from source capture through cleanup. */
 
-typedef struct {
-    markdown_core_parser *parser;
-    bool whitespace;
-} inline_parse_context;
-
 static int parse_inline_field(markdown_core_node **root_slot, void *context) {
-    inline_parse_context *fields = context;
-    if (root_slot && *root_slot && !fields->parser->error) {
-        fields->whitespace |= process_inline_tree(fields->parser, *root_slot);
+    markdown_core_parser *parser = context;
+    if (root_slot && *root_slot && !parser->error) {
+        process_inline_tree(parser, *root_slot);
     }
-    return !fields->parser->error;
+    return !parser->error;
 }
 
-bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node) {
-    inline_parse_context context = {parser, false};
-    if (!markdown_core_visit_inline_subtrees(parser->dialect, node, parse_inline_field, &context)) {
+void markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node) {
+    if (!markdown_core_visit_inline_subtrees(parser->dialect, node, parse_inline_field, parser)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    return context.whitespace;
 }
 
 /* ONE FRAME PER ROOT THE WALK IS INSIDE: the walk of the root's inline tree,

@@ -128,14 +128,12 @@ typedef struct markdown_core_attribute_parser {
 
 /* `end`: one past the `}` of the block whose `{` is at `start`, or 0 when
  * none closes there; recognition only.
- * `tail`: where the first complete block that ends at `end` starts, outside
- * escaped punctuation, at or after `start`; -1 when none does.
  * `parse`: the block at `start` decoded into `value`, which the caller gives
  * empty, and `end` past it: success transfers the value's allocations, and
  * failure leaves both as they were.
- * `closes`: where a block at content offset `start` of a construct of kind
- * `owner` of the run closes, one past its `}`, or 0; the block's value is
- * the attribute element's to write, on the node the construct makes.
+ * `block`: where a block at `start` of the reading's bytes of a construct
+ * of kind `owner` closes, one past its `}`, or 0; the block's value is the
+ * attribute element's to write, on the node the construct makes.
  * `report`: the blocks a block of kind `owner` opens and does not close on
  * its line `line`, at or after `from`, before `end`, kept on `to`'s node;
  * whether there is one.
@@ -150,12 +148,10 @@ typedef struct markdown_core_attribute_ops {
                   const unsigned char *data, bufsize_t size);
     void (*release)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p);
     bufsize_t (*end)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start);
-    bufsize_t (*tail)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start,
-                      bufsize_t end);
     bool (*parse)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start,
                   markdown_core_attributes *value, bufsize_t *end);
-    bufsize_t (*closes)(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                        bufsize_t start, markdown_core_node_kind owner);
+    bufsize_t (*block)(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer, bufsize_t start,
+                       markdown_core_node_kind owner);
     bool (*report)(const markdown_core_element_instance *self, const markdown_core_field_to *to,
                    markdown_core_node_kind owner, const unsigned char *line, bufsize_t from, bufsize_t end);
     bool (*open)(const markdown_core_element_instance *self, const markdown_core_field_to *to,
@@ -171,19 +167,16 @@ typedef struct markdown_core_attribute_ops {
  *
  * `parse`: the suffix at `suffix` of `label`, after a separator of
  * `separator` bytes, into `value`, adding the bytes it examined to `work`;
- * false when it is none. It searches nothing and allocates nothing.
- * `record`: the run's text from its cursor to `end`, a text slice, inside
- * the innermost bracket, whose last `|` an image's label keeps.
- * `apply`: an image the bracket `opener` made, its label ending at `end`,
- * takes the dimensions its label's suffix states, and the suffix leaves its
- * text. */
-struct bracket;
+ * false when it is none. It searches nothing and allocates nothing. */
 typedef struct markdown_core_dimension_ops {
     bool (*parse)(const markdown_core_element_instance *self, markdown_core_chunk label, bufsize_t suffix,
                   bufsize_t separator, markdown_core_dimensions *value, size_t *work);
-    void (*record)(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state, bufsize_t end);
-    void (*apply)(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                  const struct bracket *opener, markdown_core_node *image, bufsize_t end);
+    /* `measure`: the image the label `label` (label.h) makes, whose body
+     * ends at its end's enter event (`close`): when its label's suffix
+     * states dimensions, they in `*value` and where the suffix's field
+     * starts in `*field`, and the suffix leaves the body's last text. */
+    bool (*measure)(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
+                    const struct markdown_core_opener *label, markdown_core_dimensions *value, uint32_t *field);
 } markdown_core_dimension_ops;
 
 #define MARKDOWN_CORE_SERVICE_DIMENSIONS "dimensions"

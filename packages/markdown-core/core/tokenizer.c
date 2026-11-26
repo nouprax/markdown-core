@@ -1,29 +1,37 @@
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "alloc.h"
 #include "tokenizer.h"
 
+static markdown_core_state S_end_step(markdown_core_tokenizer *tokenizer, int code);
+
 /* The two ends a state names instead of a next state, and the end of the
- * reading: never stepped. */
+ * reading: never stepped, and told apart by their addresses alone. A
+ * linker that folds identical functions (MSVC's /OPT:ICF, on in its
+ * release builds) would give two bodies that only assert one address, and
+ * a failed attempt would then settle as one that succeeded; so each does
+ * its own thing to a reading that steps it by mistake, which ends it. */
 static markdown_core_state S_ok_step(markdown_core_tokenizer *tokenizer, int code) {
-    (void)tokenizer;
     (void)code;
     assert(false);
-    return markdown_core_state_of(S_ok_step);
+    tokenizer->events.failed = true;
+    return markdown_core_state_of(S_end_step);
 }
 
 static markdown_core_state S_nok_step(markdown_core_tokenizer *tokenizer, int code) {
-    (void)tokenizer;
     (void)code;
     assert(false);
-    return markdown_core_state_of(S_nok_step);
+    tokenizer->events.failed = true;
+    tokenizer->done = true;
+    return markdown_core_state_of(S_end_step);
 }
 
 static markdown_core_state S_end_step(markdown_core_tokenizer *tokenizer, int code) {
-    (void)tokenizer;
     (void)code;
     assert(false);
+    tokenizer->done = true;
     return markdown_core_state_of(S_end_step);
 }
 
@@ -47,6 +55,11 @@ void markdown_core_tokenizer_free(markdown_core_tokenizer *tokenizer) {
     markdown_core_free(tokenizer->opens);
     markdown_core_free(tokenizer->frames);
     markdown_core_free(tokenizer->alls);
+    markdown_core_free(tokenizer->marks);
+    markdown_core_free(tokenizer->groups);
+    markdown_core_free(tokenizer->notes);
+    markdown_core_free(tokenizer->words);
+    markdown_core_free(tokenizer->room);
     *tokenizer = (markdown_core_tokenizer){0};
 }
 
@@ -55,11 +68,13 @@ uint32_t markdown_core_enter(markdown_core_tokenizer *tokenizer, uint16_t kind) 
     const uint32_t token = markdown_core_events_token(events, kind, tokenizer->position);
     uint32_t *opens =
         markdown_core_reserve(tokenizer->opens, &tokenizer->open_room, tokenizer->open_count + 1, sizeof(*opens));
+    if (opens) {
+        tokenizer->opens = opens;
+    }
     if (!opens || token == UINT32_MAX) {
         events->failed = true;
         return UINT32_MAX;
     }
-    tokenizer->opens = opens;
     opens[tokenizer->open_count++] = token;
     markdown_core_events_push(events, MARKDOWN_CORE_ENTER, token);
     return token;
@@ -83,6 +98,92 @@ void markdown_core_consume(markdown_core_tokenizer *tokenizer) {
     assert(!tokenizer->consumed && tokenizer->position < tokenizer->size);
     tokenizer->position++;
     tokenizer->consumed = true;
+}
+
+void markdown_core_consume_to(markdown_core_tokenizer *tokenizer, uint32_t end) {
+    assert(!tokenizer->consumed && tokenizer->position < end && end <= tokenizer->size);
+    tokenizer->position = end;
+    tokenizer->consumed = true;
+}
+
+void markdown_core_met_end(markdown_core_tokenizer *tokenizer) {
+    /* Data reads no end: only a construct decides by it, or what a
+     * construct's `passes` said of the data's bytes. */
+    if (tokenizer->frame_count) {
+        markdown_core_undecide(tokenizer, tokenizer->frames[0].position);
+    } else {
+        markdown_core_undecide(tokenizer, tokenizer->passing);
+    }
+}
+
+void *markdown_core_tokenizer_room(markdown_core_tokenizer *tokenizer, size_t size) {
+    if (size > tokenizer->room_size) {
+        void *room = markdown_core_realloc(tokenizer->room, size);
+        if (!room) {
+            tokenizer->events.failed = true;
+            return NULL;
+        }
+        tokenizer->room = room;
+        tokenizer->room_size = size;
+    }
+    return tokenizer->room;
+}
+
+const void *markdown_core_self(const markdown_core_tokenizer *tokenizer) {
+    for (size_t at = tokenizer->frame_count; at--;) {
+        const markdown_core_frame *frame = &tokenizer->frames[at];
+        const markdown_core_construct *construct = frame->list ? frame->list[frame->tried] : frame->one;
+        if (construct->context) {
+            return construct->context;
+        }
+    }
+    return NULL;
+}
+
+bool markdown_core_note_push(markdown_core_tokenizer *tokenizer, uint16_t kind, uint32_t start, uint32_t end,
+                             uint32_t data, const uint32_t *words, size_t count) {
+    /* Each kept as it is had: a reserve that moved one freed where it was. */
+    markdown_core_note *notes =
+        markdown_core_reserve(tokenizer->notes, &tokenizer->note_room, tokenizer->note_count + 1, sizeof(*notes));
+    if (notes) {
+        tokenizer->notes = notes;
+    }
+    uint32_t *room = notes && count ? markdown_core_reserve(tokenizer->words, &tokenizer->word_room,
+                                                            tokenizer->word_count + count, sizeof(*room))
+                                    : tokenizer->words;
+    if (!notes || (count && !room)) {
+        tokenizer->events.failed = true;
+        return false;
+    }
+    tokenizer->words = room;
+    if (count) {
+        memcpy(room + tokenizer->word_count, words, count * sizeof(*words));
+    }
+    notes[tokenizer->note_count++] =
+        (markdown_core_note){{kind, start, end, data}, (uint32_t)tokenizer->word_count, (uint32_t)count, false};
+    tokenizer->word_count += count;
+    return true;
+}
+
+bool markdown_core_mark_push(markdown_core_tokenizer *tokenizer, uint32_t tag, uint32_t token) {
+    markdown_core_mark *marks =
+        markdown_core_reserve(tokenizer->marks, &tokenizer->mark_room, tokenizer->mark_count + 1, sizeof(*marks));
+    if (!marks) {
+        tokenizer->events.failed = true;
+        return false;
+    }
+    tokenizer->marks = marks;
+    marks[tokenizer->mark_count++] = (markdown_core_mark){token, tag};
+    return true;
+}
+
+size_t markdown_core_mark_find(const markdown_core_tokenizer *tokenizer, uint32_t tag) {
+    for (size_t at = tokenizer->mark_count; at--;) {
+        if (tokenizer->marks[at].tag == tag) {
+            return at;
+        }
+    }
+    return SIZE_MAX;
 }
 
 static const markdown_core_construct *S_tried(const markdown_core_frame *frame) {
@@ -111,6 +212,8 @@ static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state
                                                              .events = tokenizer->events.count,
                                                              .tokens = tokenizer->events.token_count,
                                                              .opens = tokenizer->open_count,
+                                                             .given = tokenizer->note_count,
+                                                             .notes = tokenizer->note_count,
                                                              .check = check};
     return true;
 }
@@ -143,9 +246,16 @@ markdown_core_state markdown_core_check(markdown_core_tokenizer *tokenizer, cons
 
 /* Goes back to where the innermost attempt began, nothing it made kept. */
 static void S_restore(markdown_core_tokenizer *tokenizer, const markdown_core_frame *frame) {
+    tokenizer->rewound += tokenizer->position - frame->position;
     tokenizer->position = frame->position;
     tokenizer->open_count = frame->opens;
     markdown_core_events_cut(&tokenizer->events, frame->events, frame->tokens);
+    while (tokenizer->mark_count && tokenizer->marks[tokenizer->mark_count - 1].token >= frame->tokens) {
+        tokenizer->mark_count--;
+    }
+    while (tokenizer->group_count && tokenizer->groups[tokenizer->group_count - 1].token >= frame->tokens) {
+        tokenizer->group_count--;
+    }
 }
 
 /* The construct succeeded: its resolvers run, and its resolve_all is kept
@@ -157,7 +267,7 @@ static void S_resolved(markdown_core_tokenizer *tokenizer, const markdown_core_c
     if (construct->resolve_to) {
         construct->resolve_to(tokenizer, from);
     }
-    if (construct->resolve_all || construct->holds) {
+    if (construct->resolve_all) {
         for (size_t i = 0; i < tokenizer->all_count; i++) {
             if (tokenizer->alls[i] == construct) {
                 return;
@@ -189,6 +299,13 @@ static markdown_core_state S_settle(markdown_core_tokenizer *tokenizer, markdown
         if (next.step == S_ok_step) {
             const markdown_core_frame done = *frame;
             tokenizer->frame_count--;
+            /* The text's alternative read its byte: the notes of those it
+             * gave up before it are void. */
+            if (!tokenizer->frame_count && done.tried && !S_tried(&done)->opens) {
+                for (size_t at = done.given; at < done.notes; at++) {
+                    tokenizer->notes[at].gone = true;
+                }
+            }
             if (done.check) {
                 S_restore(tokenizer, &done);
             } else {
@@ -199,6 +316,7 @@ static markdown_core_state S_settle(markdown_core_tokenizer *tokenizer, markdown
             S_restore(tokenizer, frame);
             if (frame->tried + 1 < frame->count) {
                 frame->tried++;
+                frame->notes = tokenizer->note_count;
                 memset(frame->words, 0, sizeof(frame->words));
                 next = S_tried(frame)->start(tokenizer, markdown_core_code_at(tokenizer, 0));
                 continue;
@@ -214,45 +332,119 @@ static markdown_core_state S_settle(markdown_core_tokenizer *tokenizer, markdown
 
 /* THE TEXT (micromark's `text` content type): every byte is offered to
  * the constructs it may start, in order; a byte none reads is data, and
- * data runs to the next byte a construct may start. */
+ * data runs to the next byte a construct may start. The text stops where
+ * the cut begins. */
 static markdown_core_state S_text(markdown_core_tokenizer *tokenizer, int code);
-static markdown_core_state S_data_more(markdown_core_tokenizer *tokenizer, int code);
 
 static bool S_starts(const markdown_core_tokenizer *tokenizer, int code) {
     const markdown_core_constructs *text = &tokenizer->text;
     return code != MARKDOWN_CORE_EOF && text->offsets[code] != text->offsets[code + 1];
 }
 
-/* A byte no construct read is data. */
-static markdown_core_state S_data(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_DATA);
-    markdown_core_consume(tokenizer);
-    return markdown_core_state_of(S_data_more);
+/* Where data meeting the constructs of the byte at `at` runs on to
+ * (markdown_core_construct, `passes`). */
+static uint32_t S_passes(markdown_core_tokenizer *tokenizer, uint32_t at) {
+    const markdown_core_constructs *text = &tokenizer->text;
+    const unsigned char byte = tokenizer->data[at];
+    for (uint16_t i = text->offsets[byte]; i < text->offsets[byte + 1]; i++) {
+        if (text->items[i]->passes) {
+            const uint32_t end = text->items[i]->passes(tokenizer, text->items[i]->context, at);
+            if (end > at) {
+                return end;
+            }
+        }
+    }
+    return at;
 }
 
-static markdown_core_state S_data_more(markdown_core_tokenizer *tokenizer, int code) {
-    if (code == MARKDOWN_CORE_EOF || S_starts(tokenizer, code)) {
-        markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_DATA);
-        return S_text(tokenizer, code);
+/* A byte no construct read is data, and so is every byte after it up to
+ * the next a construct may start, or the cut: the bytes a construct says
+ * are text whatever follows are data too, the first among them. */
+static markdown_core_state S_data(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const uint16_t *offsets = tokenizer->text.offsets;
+    const uint32_t end = tokenizer->cut < tokenizer->size ? tokenizer->cut : tokenizer->size;
+    const uint32_t from = tokenizer->position;
+    tokenizer->passing = from;
+    uint32_t at = from;
+    while (at < end) {
+        if (offsets[tokenizer->data[at]] == offsets[tokenizer->data[at] + 1]) {
+            at++;
+            continue;
+        }
+        const uint32_t past = S_passes(tokenizer, at);
+        if (past > at) {
+            at = past < end ? past : end;
+        } else if (at == from) {
+            at++;
+        } else {
+            break;
+        }
     }
-    markdown_core_consume(tokenizer);
-    return markdown_core_state_of(S_data_more);
+    tokenizer->passing = UINT32_MAX;
+    /* Data right after data is the same data (micromark merges them as
+     * the text resolves): a byte a construct failed at runs on in the
+     * data before it. */
+    markdown_core_events *events = &tokenizer->events;
+    if (events->count && events->items[events->count - 1].phase == MARKDOWN_CORE_EXIT) {
+        markdown_core_token *last = markdown_core_event_token(events, events->count - 1);
+        if (last->kind == MARKDOWN_CORE_TOKEN_DATA && last->end == from) {
+            markdown_core_consume_to(tokenizer, at);
+            last->end = at;
+            return markdown_core_state_of(S_text);
+        }
+    }
+    markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_DATA);
+    markdown_core_consume_to(tokenizer, at);
+    markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_DATA);
+    return markdown_core_state_of(S_text);
 }
 
 /* After a construct: one that read nothing is no construct, and its byte
- * is data. */
+ * is data. One that read across the cut took it. */
 static markdown_core_state S_after(markdown_core_tokenizer *tokenizer, int code) {
     if (tokenizer->position == tokenizer->text_from) {
         return S_data(tokenizer, code);
     }
+    if (tokenizer->position > tokenizer->cut) {
+        /* What was cut is the text's again: the reading goes on to the
+         * end. */
+        tokenizer->crossed = true;
+        tokenizer->cut = UINT32_MAX;
+    }
     return S_text(tokenizer, code);
 }
 
+static markdown_core_state S_end(markdown_core_tokenizer *tokenizer) {
+    tokenizer->done = true;
+    return markdown_core_state_of(S_end_step);
+}
+
+/* Whether what the reading holds waits on what it does not know yet: a
+ * construct that opens (a label) holds something open, whose end the
+ * labels the text declares decide (markdown_core_read, `halts`). */
+static bool S_waits(const markdown_core_tokenizer *tokenizer) {
+    const markdown_core_constructs *text = &tokenizer->text;
+    for (size_t i = 0; i < text->holder_count; i++) {
+        if (text->holders[i]->opens && text->holders[i]->holds(tokenizer, text->holders[i]->context)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static markdown_core_state S_text(markdown_core_tokenizer *tokenizer, int code) {
-    if (code == MARKDOWN_CORE_EOF) {
-        tokenizer->done = true;
-        return markdown_core_state_of(S_end_step);
+    if (code == MARKDOWN_CORE_EOF || tokenizer->position >= tokenizer->cut) {
+        return S_end(tokenizer);
+    }
+    if (tokenizer->halted || (tokenizer->halts && S_waits(tokenizer))) {
+        markdown_core_halt(tokenizer);
+        return S_end(tokenizer);
+    }
+    if (tokenizer->start && tokenizer->undecided == UINT32_MAX && markdown_core_tokenizer_settled(tokenizer) &&
+        !tokenizer->start(tokenizer, tokenizer->context)) {
+        tokenizer->stopped = tokenizer->position;
+        return S_end(tokenizer);
     }
     if (!S_starts(tokenizer, code)) {
         return S_data(tokenizer, code);
@@ -264,49 +456,128 @@ static markdown_core_state S_text(markdown_core_tokenizer *tokenizer, int code) 
                                       markdown_core_state_of(S_after), markdown_core_state_of(S_data), code);
 }
 
-/* THE DATA OF THE TEXT (micromark's resolveAllText): touching data tokens
- * are one. */
-static void S_join_data(markdown_core_tokenizer *tokenizer) {
-    markdown_core_events *events = &tokenizer->events;
-    size_t out = 0;
-    for (size_t i = 0; i < events->count; i++) {
-        const markdown_core_event event = events->items[i];
-        if (event.phase == MARKDOWN_CORE_ENTER && out >= 1 &&
-            events->tokens[event.token].kind == MARKDOWN_CORE_TOKEN_DATA) {
-            const markdown_core_event last = events->items[out - 1];
-            markdown_core_token *before = &events->tokens[last.token];
-            if (last.phase == MARKDOWN_CORE_EXIT && before->kind == MARKDOWN_CORE_TOKEN_DATA &&
-                before->end == events->tokens[event.token].start) {
-                /* The data before goes on: its exit is the later one's. */
-                const size_t exit = i + 1;
-                assert(exit < events->count && events->items[exit].token == event.token);
-                before->end = events->tokens[event.token].end;
-                i = exit;
-                continue;
-            }
-        }
-        events->items[out++] = event;
+bool markdown_core_group_add(markdown_core_tokenizer *tokenizer, uint32_t token, uint32_t from, uint32_t to) {
+    markdown_core_group *groups =
+        markdown_core_reserve(tokenizer->groups, &tokenizer->group_room, tokenizer->group_count + 1, sizeof(*groups));
+    if (!groups) {
+        tokenizer->events.failed = true;
+        return false;
     }
-    events->count = out;
+    tokenizer->groups = groups;
+    groups[tokenizer->group_count] = (markdown_core_group){token, from, to, (uint32_t)tokenizer->group_count};
+    tokenizer->group_count++;
+    return true;
 }
 
-bool markdown_core_tokenize_text(markdown_core_tokenizer *tokenizer, const unsigned char *data, uint32_t size,
-                                 const markdown_core_constructs *text, void *reader) {
-    tokenizer->data = data;
-    tokenizer->size = size;
-    tokenizer->position = 0;
+/* An event a group adds, before event `slot`. */
+typedef struct S_added {
+    uint32_t slot, from, to, order, token;
+    uint8_t phase;
+} S_added;
+
+/* Where at its place an added event goes: the exits of groups entered
+ * before it, then the enters, then the exits of groups that hold
+ * nothing. */
+static int S_rank(const S_added *added) {
+    return added->phase == MARKDOWN_CORE_ENTER ? 1 : added->from < added->slot ? 0 : 2;
+}
+
+static int S_order(const void *a, const void *b) {
+    const S_added *x = a, *y = b;
+    if (x->slot != y->slot) {
+        return x->slot < y->slot ? -1 : 1;
+    }
+    if (S_rank(x) != S_rank(y)) {
+        return S_rank(x) < S_rank(y) ? -1 : 1;
+    }
+    if (x->phase == MARKDOWN_CORE_EXIT) {
+        /* The inner exits first: the one entered later, or of two entered
+         * at one place the one added first. */
+        if (x->from != y->from) {
+            return x->from > y->from ? -1 : 1;
+        }
+        return x->order < y->order ? -1 : 1;
+    }
+    /* The outer enters first: the one that exits later, or of two that
+     * exit at one place the one added later. */
+    if (x->to != y->to) {
+        return x->to > y->to ? -1 : 1;
+    }
+    return x->order > y->order ? -1 : 1;
+}
+
+/* The groups' events go in. */
+static void S_merge(markdown_core_tokenizer *tokenizer) {
+    markdown_core_events *events = &tokenizer->events;
+    const size_t count = events->count, added = 2 * tokenizer->group_count;
+    S_added *adds =
+        markdown_core_tokenizer_room(tokenizer, added * sizeof(*adds) + (count + added) * sizeof(markdown_core_event));
+    if (!adds) {
+        return;
+    }
+    for (size_t i = 0; i < tokenizer->group_count; i++) {
+        const markdown_core_group *group = &tokenizer->groups[i];
+        adds[2 * i] = (S_added){group->from, group->from, group->to, group->order, group->token, MARKDOWN_CORE_ENTER};
+        adds[2 * i + 1] = (S_added){group->to, group->from, group->to, group->order, group->token, MARKDOWN_CORE_EXIT};
+    }
+    qsort(adds, added, sizeof(*adds), S_order);
+    markdown_core_event *items = (markdown_core_event *)(adds + added);
+    size_t write = 0, add = 0;
+    for (size_t at = 0; at <= count; at++) {
+        while (add < added && adds[add].slot == at) {
+            items[write++] = (markdown_core_event){adds[add].phase, adds[add].token};
+            add++;
+        }
+        if (at < count) {
+            items[write++] = events->items[at];
+        }
+    }
+    markdown_core_event *wider = markdown_core_reserve(events->items, &events->room, write, sizeof(*wider));
+    if (!wider) {
+        events->failed = true;
+        return;
+    }
+    events->items = wider;
+    memcpy(events->items, items, write * sizeof(*items));
+    events->count = write;
+}
+
+bool markdown_core_tokenize(markdown_core_tokenizer *tokenizer, const markdown_core_read *read) {
+    tokenizer->data = read->data;
+    tokenizer->size = read->size;
+    tokenizer->position = read->from;
+    tokenizer->cut = read->cut;
+    tokenizer->crossed = false;
+    tokenizer->undecided = UINT32_MAX;
+    tokenizer->stopped = UINT32_MAX;
+    tokenizer->passing = UINT32_MAX;
     tokenizer->open_count = 0;
     tokenizer->frame_count = 0;
     tokenizer->all_count = 0;
-    tokenizer->text = *text;
-    tokenizer->reader = reader;
+    tokenizer->mark_count = 0;
+    tokenizer->group_count = 0;
+    tokenizer->note_count = 0;
+    tokenizer->word_count = 0;
+    tokenizer->text = *read->text;
+    tokenizer->reader = read->reader;
+    tokenizer->records = read->records;
+    tokenizer->start = read->start;
+    tokenizer->context = read->context;
+    tokenizer->halts = read->halts;
+    tokenizer->halted = false;
     tokenizer->done = false;
+    if (read->room) {
+        memset(read->records, 0, read->room);
+    }
     markdown_core_events_clear(&tokenizer->events);
     markdown_core_state state = markdown_core_state_of(S_text);
     int code = markdown_core_code_at(tokenizer, 0);
     while (!tokenizer->done && !tokenizer->events.failed) {
         tokenizer->consumed = false;
         const uint32_t at = tokenizer->position;
+        if (code == MARKDOWN_CORE_EOF) {
+            markdown_core_met_end(tokenizer);
+        }
         state = state.step(tokenizer, code);
         if (tokenizer->done) {
             break;
@@ -316,7 +587,7 @@ bool markdown_core_tokenize_text(markdown_core_tokenizer *tokenizer, const unsig
             continue;
         }
         /* Every state consumes the code it is handed or names an end. */
-        assert(tokenizer->consumed && tokenizer->position == at + 1);
+        assert(tokenizer->consumed && tokenizer->position > at);
         (void)at;
         code = markdown_core_code_at(tokenizer, 0);
     }
@@ -324,21 +595,46 @@ bool markdown_core_tokenize_text(markdown_core_tokenizer *tokenizer, const unsig
         return false;
     }
     assert(!tokenizer->frame_count && !tokenizer->open_count);
-    for (size_t i = 0; i < tokenizer->all_count; i++) {
-        if (tokenizer->alls[i]->resolve_all) {
-            tokenizer->alls[i]->resolve_all(tokenizer);
+    if (tokenizer->halts && S_waits(tokenizer)) {
+        markdown_core_halt(tokenizer);
+    }
+    if (tokenizer->halted) {
+        return true;
+    }
+    for (int late = 0; late < 2; late++) {
+        for (size_t i = 0; i < tokenizer->all_count && !tokenizer->events.failed; i++) {
+            /* Once by what it runs: the elements whose constructs share one
+             * resolver are rewritten by one pass. */
+            const markdown_core_construct *construct = tokenizer->alls[i];
+            bool ran = !construct->resolve_all || construct->late != (late != 0);
+            for (size_t j = 0; j < i && !ran; j++) {
+                ran = tokenizer->alls[j]->resolve_all == construct->resolve_all;
+            }
+            if (!ran) {
+                construct->resolve_all(tokenizer);
+            }
         }
     }
-    S_join_data(tokenizer);
+    if (tokenizer->group_count && !tokenizer->events.failed) {
+        S_merge(tokenizer);
+    }
     return !tokenizer->events.failed;
+}
+
+void markdown_core_halt(markdown_core_tokenizer *tokenizer) {
+    if (!tokenizer->halted) {
+        tokenizer->stopped = tokenizer->position;
+        tokenizer->halted = true;
+    }
 }
 
 bool markdown_core_tokenizer_settled(const markdown_core_tokenizer *tokenizer) {
     if (tokenizer->frame_count || tokenizer->open_count) {
         return false;
     }
-    for (size_t i = 0; i < tokenizer->all_count; i++) {
-        if (tokenizer->alls[i]->holds && tokenizer->alls[i]->holds(tokenizer)) {
+    const markdown_core_constructs *text = &tokenizer->text;
+    for (size_t i = 0; i < text->holder_count; i++) {
+        if (text->holders[i]->holds(tokenizer, text->holders[i]->context)) {
             return false;
         }
     }

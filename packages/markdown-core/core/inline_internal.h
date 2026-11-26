@@ -11,23 +11,7 @@
 #include "inlines.h"
 #include "element.h"
 
-/* One maximal parsed delimiter run, classified from immutable source bytes. The text
- * scanner may retain one lookahead run for delimiter dispatch to consume. */
-typedef struct {
-    bufsize_t start, end;
-    markdown_core_delimiter_rule rule;
-    bool can_open, can_close;
-} delimiter_run;
-
-/* ONE RUN'S BRACKETS (bracket.h): two instances of the engine's stack
- * (stack.h), the open ones, the innermost last, and the suspended ones; and
- * whether a link may open here, which a link's own text forbids until a new
- * opener. */
-typedef struct markdown_core_bracket_scope {
-    markdown_core_stack open, suspended;
-    bool no_link_openers;
-} markdown_core_bracket_scope;
-
+typedef struct markdown_core_field_read markdown_core_field_read;
 struct markdown_core_inline_state {
     markdown_core_chunk input;
     /* Where a cut the owner's text gave a take that its inlines may yet give
@@ -35,16 +19,16 @@ struct markdown_core_inline_state {
      * there, a token that starts there ends the run, and one that crosses it
      * gives the cut back. */
     bufsize_t cut;
-    /* THE NODE A TOKEN MADE THAT A LATER TOKEN MAY UPDATE (no-flush.md
-     * 10.13): a token whose node another grammar may go on to update at the
-     * byte after it says so as it ends (markdown_core_inline_made), and the
-     * token read next finds it there (markdown_core_inline_made_node). */
-    markdown_core_node *made;
+    /* THE NODE A CONSTRUCT MADE THAT A LATER ONE MAY UPDATE (no-flush.md
+     * 10.13): its kind, and where it ends, as the reading of the text says
+     * (markdown_core_text_made). */
     bufsize_t made_end;
-    unsigned flags;
-    bufsize_t opaque_end;
-    /* One plus the start of a suffix proven to contain no closer of a rule. */
-    bufsize_t opaque_failed_from[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    markdown_core_node_type made_kind;
+    /* The readings of the fields the run's tokens hold, made as the run is
+     * read and compiled as its compile reaches the token
+     * (markdown_core_text_field); NULL once one is compiled. */
+    markdown_core_field_read **reads;
+    size_t read_count, read_room;
     bufsize_t pos;
     /* The block whose content buffer `input` is, and the parser that holds
      * requirement 10's content-to-source map for it. Both are NULL for a
@@ -77,22 +61,14 @@ struct markdown_core_inline_state {
     int mark_line, mark_step, mark_width;
     bufsize_t mark_source;
     bool mapped;
-    /* The run's delimiters (stack.h), from the parser's pool. */
-    markdown_core_stack delims;
-    delimiter_run cached_run;
-    /* How many delimiters of each rule on the stack can open, and how many
-     * can close, kept at every push and removal so a scanner can ask whether
-     * a closer will pair without walking the stack. */
+    /* How many runs of each rule the reading holds that can open, and how
+     * many that can close (attention.h, markdown_core_attention_count), so
+     * a scanner can ask whether a closer will pair without walking them. */
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    /* The rules whose scanners asked those counts, one bit each: a reading
-     * of such a rule depends on the openers below it on the stack. */
-    uint32_t asked;
-    /* One past the last consumed byte other than SP/TAB. This lets every
-     * inline-note closer test its body's non-empty rule in constant time. */
-    bufsize_t nonblank_end;
-    /* The run's brackets (bracket.h). */
-    markdown_core_bracket_scope brackets;
+    /* Whether no link may open where the reading stands: a link's own
+     * text forbids one until a new label opens (label.h). */
+    bool no_link_openers;
     /* This run's block of the elements' run records (markdown_core_run_state):
      * taken from the parser when the run starts and given back when it is
      * cleared. NULL for a run with no parser, and for one whose records could
@@ -120,22 +96,6 @@ struct markdown_core_inline_state {
     markdown_core_seam_stops *stops;
 };
 
-/* The token being read made `node`, which ends here: the token read next
- * may update it (markdown_core_inline_made_node). */
-static inline void markdown_core_inline_made(markdown_core_inline_state *inline_state, markdown_core_node *node) {
-    inline_state->made = node;
-    inline_state->made_end = inline_state->pos;
-}
-
-/* The node the token before made, when it ends where the run stands and
- * may be updated there, or NULL. */
-static inline markdown_core_node *markdown_core_inline_made_node(const markdown_core_inline_state *inline_state) {
-    return inline_state->made && inline_state->made_end == inline_state->pos ? inline_state->made : NULL;
-}
-
-/* Each rule takes one bit of `asked`. */
-typedef char markdown_core_asked_fits[MARKDOWN_CORE_DELIM_RULE_COUNT <= 32 ? 1 : -1];
-
 /* Whether an end read of the token being read would be one the run lists:
  * no earlier token read the end, and the run lists settle starts. A check
  * whose only use is to say a token read the end asks this first. */
@@ -151,11 +111,6 @@ static inline bool markdown_core_inline_tracks_end(const markdown_core_inline_st
  * the completion reads at a cursor as it reads a finished node's fields. */
 void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
                                bufsize_t to, const markdown_core_field *fields, size_t count);
-/* The same for a construct the line, not the run, may open: a block's tail,
- * whose opener the completion does not list among the cursor's inlines. */
-void markdown_core_inline_open_line(markdown_core_inline_state *inline_state, markdown_core_node_kind opens,
-                                    bufsize_t from, bufsize_t to, const markdown_core_field *fields, size_t count);
-
 /* The inline note `note`, a field its Citation holds, settles as a field
  * does (markdown_core_parser_settle_field), and a run that lists settle
  * starts lists it, so it commits with the node that holds it as that
@@ -380,18 +335,64 @@ unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_st
 int markdown_core_inline_is_eof(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_skip_spaces(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_skip_line_end(markdown_core_inline_state *inline_state);
-void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_state, delimiter *delim);
-delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state *inline_state, delimiter_kind kind,
-                                                     bufsize_t position);
-void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                             bufsize_t stack_bottom, delimiter *after);
-int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
                                         markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
-bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
-                                                         markdown_core_inline_state *inline_state);
-int markdown_core_byte_set_has(const char *set, unsigned char character);
-void markdown_core_inline_push_boundary(markdown_core_inline_state *inline_state, bufsize_t position);
+void markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
+/* Reads the run, as its finish would, unless something it reads is held
+ * open waiting on what the document says later (a label, which its rules
+ * close by the definitions): then the run is left as it was, to finish
+ * once the document is known, and the answer is false. */
+bool markdown_core_inline_settles(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
+/* THE FIELD OF A TOKEN (plan symbols-cleanroom.md 23.10, fields): `root`,
+ * a field root the token being read makes, whose content is text, is read
+ * there, as the reading reads the token, so that what it looks up is
+ * looked up in order; whether its text has a boundary (an enclosing word
+ * body pairs across none) is `*spaced`. The reading holds `root` until
+ * compile takes it (markdown_core_compile_field) or the run ends. The
+ * index of the field's reading, or UINT32_MAX when the reading halts
+ * (a field waits on the document as a label does) or failed, `root` then
+ * the caller's. */
+uint32_t markdown_core_text_field(markdown_core_tokenizer *tokenizer, markdown_core_node *root, bool *spaced);
+/* The field `index` the run read compiled into its root, which is then the
+ * caller's; NULL when it failed. */
+markdown_core_node *markdown_core_compile_field(markdown_core_compiler *compiler, uint32_t index);
+/* THE COMPILE OF A READING (plan symbols-cleanroom.md 23.5): the run whose
+ * nodes compile makes, the node it is filling -- the innermost a handler
+ * opened, or the run's owner -- and how a handler places what it makes:
+ * appended to that node (its containment asked), or appended and opened,
+ * or a Text of the content bytes `from` up to `to`. False, or NULL, when
+ * the node could not be had or was refused, which fails the reading. */
+static inline markdown_core_inline_state *markdown_core_compile_state(const markdown_core_compiler *compiler) {
+    return (markdown_core_inline_state *)compiler->reader;
+}
+static inline markdown_core_node *markdown_core_compile_parent(const markdown_core_compiler *compiler) {
+    markdown_core_node *top = (markdown_core_node *)markdown_core_compile_top(compiler);
+    return top ? top : markdown_core_compile_state(compiler)->owner;
+}
+bool markdown_core_compile_append(markdown_core_compiler *compiler, markdown_core_node *node);
+/* THE GIVING UP of a construct (node.h, OPENER, and tokenizer.h, THE
+ * NOTES): it opened a construct of kind `opens` whose opening syntax is
+ * content bytes `from` up to `to`, and wrote the `count` fields at
+ * `fields` as far as it read them. The run's node keeps it once the
+ * reading is done. */
+enum { MARKDOWN_CORE_GIVE_UP_FIELDS = 4 };
+bool markdown_core_text_give_up(markdown_core_tokenizer *tokenizer, markdown_core_node_kind opens, bufsize_t from,
+                                bufsize_t to, const markdown_core_field *fields, size_t count);
+/* THE NODE A CONSTRUCT MADE THAT A LATER TOKEN MAY UPDATE (no-flush.md
+ * 10.13, element.h MARKDOWN_CORE_FOLLOW_TOKEN): the construct just read
+ * makes a node of `kind` that a follower of that kind may take what comes
+ * right after it for (an attribute block). One made at the content's end
+ * read the end: a follower may begin there once the input goes on. The
+ * follower asks with markdown_core_text_made_at. */
+void markdown_core_text_made(markdown_core_tokenizer *tokenizer, markdown_core_node_type kind);
+/* The kind of the node made right before where the reading stands, or
+ * NONE. */
+static inline markdown_core_node_type markdown_core_text_made_at(const markdown_core_tokenizer *tokenizer) {
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    return inline_state->made_end == (bufsize_t)tokenizer->position ? inline_state->made_kind : MARKDOWN_CORE_NODE_NONE;
+}
+bool markdown_core_compile_open(markdown_core_compiler *compiler, markdown_core_node *node);
+markdown_core_node *markdown_core_compile_text(markdown_core_compiler *compiler, bufsize_t from, bufsize_t to);
+
 #endif

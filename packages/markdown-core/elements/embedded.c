@@ -1,11 +1,12 @@
 #include "embedded.h"
+#include "label.h"
 #include "services.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
-/* An image's bracket, opened by a `![`, whose `!` stays as text when the
- * image replaces it (bracket.h). */
-static const markdown_core_bracket_shape MARKDOWN_CORE_EMBEDDED_BRACKET = {
+/* An image's label, opened by a `![`, whose `!` stays as text when the
+ * image replaces it (label.h). */
+static const markdown_core_label_shape MARKDOWN_CORE_EMBEDDED_BRACKET = {
     .width = 2, .kept = 1, .mark = 1, .keeps = true, .closer = ']', .kind = MARKDOWN_CORE_KIND_EMBEDDED};
 static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
     if (*pos == end || s[*pos] < '1' || s[*pos] > '9') {
@@ -49,110 +50,100 @@ static bool S_parse(const markdown_core_element_instance *self, markdown_core_ch
     return true;
 }
 
-/* WHAT A BRACKET HOLDS OF AN IMAGE (the embedded element's bracket record,
- * bracket.h): one past the last pipe its body read as ordinary text at its
- * own depth, or 0, as the record is zeroed when the bracket opens. Opaque
- * tokens, escapes and nested brackets never update the enclosing image's. */
-typedef struct {
-    bufsize_t pipe;
-} S_picture;
+/* THE IMAGE'S TEXT (plan symbols-cleanroom.md 23.12): a `![` opens a
+ * label (label.h) where the dialect closes one, and any other `!` is its
+ * own text. */
+enum { EMBEDDED_BANG, EMBEDDED_KINDS };
 
-static S_picture *S_bracket(const markdown_core_element_instance *self, const bracket *b) {
-    return markdown_core_bracket_record(b, self);
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    const uint32_t at = tokenizer->position;
+    if (markdown_core_label_closes(self, inline_state->dialect) && markdown_core_code_at(tokenizer, 1) == '[' &&
+        markdown_core_code_at(tokenizer, 2) != '^') {
+        return markdown_core_label_open(tokenizer, &MARKDOWN_CORE_EMBEDDED_BRACKET);
+    }
+    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + EMBEDDED_BANG));
+    markdown_core_consume_to(tokenizer, at + 1);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + EMBEDDED_BANG));
+    return markdown_core_ok(tokenizer);
 }
 
-static void S_apply(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                    const bracket *opener, markdown_core_node *image, bufsize_t end) {
-    /* Earlier inline allocation failure may have omitted the final text run.
-     * The transaction is already failed; do not consume its incomplete tree. */
+/* The suffix of an image's label: its last pipe at the label's own depth
+ * in text, and the dimensions after it. */
+static bool S_measure(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
+                      const markdown_core_opener *label, markdown_core_dimensions *value, uint32_t *field) {
+    markdown_core_embedded_work *counts = self->state;
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
     if (inline_state->error || inline_state->owner_parser->error) {
-        return;
+        return false;
     }
-    const bufsize_t pipe = S_bracket(self, opener)->pipe - 1;
-    bufsize_t suffix = pipe >= 0 ? pipe : opener->position;
-    markdown_core_dimensions dimensions;
-    markdown_core_chunk label = markdown_core_inline_take(inline_state, opener->position, end - opener->position);
-    if (!S_parse(self, label, suffix - opener->position, pipe >= 0 ? 1 : 0, &dimensions,
-                 &((markdown_core_embedded_work *)self->state)->dimensions)) {
-        return;
-    }
-
-    /* A successful suffix contains only ordinary ASCII text and belongs to
-     * the final text run at this bracket depth. Remove it before delimiter
-     * reduction; the prefix keeps its nodes and its original source map. */
-    markdown_core_node *tail = markdown_core_scaffold_last(image);
-    assert(tail && tail->kind == MARKDOWN_CORE_NODE_TEXT && tail->as.literal->len >= end - suffix);
-    bufsize_t start = end - tail->as.literal->len;
-    tail->as.literal->len -= end - suffix;
-    if (tail->as.literal->len == 0) {
-        markdown_core_parser_release_node(inline_state->owner_parser, tail);
-    } else {
-        markdown_core_inline_state_place(inline_state, tail, start, suffix - 1);
-    }
-    image->as.link->dimensions.value = dimensions;
-    image->as.link->dimensions.has_value = true;
-    /* The suffix after the pipe is the image's field of no slot kind. */
-    const markdown_core_field_to to = markdown_core_inline_fields(inline_state, image);
-    markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_NONE, suffix + (pipe >= 0), end);
-}
-
-static void S_record(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                     bufsize_t endpos) {
-    bracket *image = markdown_core_open_bracket(inline_state);
-    if (image && image->owner == self) {
-        markdown_core_embedded_work *counts = self->state;
-        /* The text run's bytes, before `endpos`: a window that never meets
-         * the run's end. */
-        const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-        for (bufsize_t i = markdown_core_inline_offset(inline_state); i < endpos; i++) {
+    markdown_core_events *events = &tokenizer->events;
+    const size_t to = label->close;
+    const unsigned char *data = tokenizer->data;
+    bufsize_t pipe = -1;
+    size_t last = SIZE_MAX;
+    for (size_t at = (size_t)label->enter + 2; at < to; at = markdown_core_label_step(tokenizer, at, to)) {
+        if (events->items[at].phase != MARKDOWN_CORE_ENTER) {
+            continue;
+        }
+        last = at;
+        const markdown_core_token *token = markdown_core_event_token(events, at);
+        if (token->kind != MARKDOWN_CORE_TOKEN_DATA) {
+            continue;
+        }
+        for (uint32_t i = token->start; i < token->end; i++) {
             counts->dimensions++;
             if (data[i] == '|') {
-                S_bracket(self, image)->pipe = i + 1;
+                pipe = (bufsize_t)i;
             }
         }
     }
+    const bufsize_t position = (bufsize_t)label->position;
+    const bufsize_t end = (bufsize_t)markdown_core_event_token(events, to)->start;
+    const bufsize_t suffix = pipe >= 0 ? pipe : position;
+    const markdown_core_chunk text = {(unsigned char *)data + position, end - position, 0};
+    if (!S_parse(self, text, suffix - position, pipe >= 0 ? 1 : 0, value, &counts->dimensions)) {
+        return false;
+    }
+    /* A successful suffix contains only ordinary ASCII text and belongs to
+     * the body's last text at its own depth, which it leaves. */
+    markdown_core_token *tail = last == SIZE_MAX ? NULL : markdown_core_event_token(events, last);
+    assert(tail && tail->kind == MARKDOWN_CORE_TOKEN_DATA && tail->end == (uint32_t)end &&
+           tail->end - tail->start >= (uint32_t)(end - suffix));
+    tail->end = (uint32_t)suffix;
+    if (tail->end == tail->start) {
+        tail->kind = MARKDOWN_CORE_TOKEN_NONE;
+    }
+    *field = (uint32_t)(suffix + (pipe >= 0));
+    return true;
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    if (character != '!') {
-        return NULL;
-    }
-    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
-    /* An image opens a bracket, which only a dialect that closes one reads. */
-    if (markdown_core_inline_bracket_closes(self, inline_state) &&
-        markdown_core_inline_peek_char(inline_state) == '[' &&
-        markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
-        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
-        markdown_core_node *text = make_str(
-            inline_state, markdown_core_inline_offset(inline_state) - 2, markdown_core_inline_offset(inline_state) - 1,
-            markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 2, 2));
-        if (text) {
-            markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_EMBEDDED_BRACKET, text);
-        }
-        return text;
-    }
-    return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
-                    markdown_core_inline_offset(inline_state) - 1,
-                    markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
+static void S_bang(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_compile_text(compiler, (bufsize_t)token->start, (bufsize_t)token->end);
 }
+
+static const markdown_core_text_construct EMBEDDED_CONSTRUCTS[] = {{"!", MARKDOWN_CORE_LABEL_CONSTRUCT(S_start)}};
+static const markdown_core_compile_ops EMBEDDED_TOKENS[EMBEDDED_KINDS] = {
+    [EMBEDDED_BANG] = {.exit = S_bang, .plain = true}};
 
 static const markdown_core_inline_ops EMBEDDED_INLINES = {
+    .constructs = EMBEDDED_CONSTRUCTS,
+    .construct_count = sizeof(EMBEDDED_CONSTRUCTS) / sizeof(EMBEDDED_CONSTRUCTS[0]),
+    .tokens = EMBEDDED_TOKENS,
+    .token_count = EMBEDDED_KINDS,
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-    .match = match,
-    .terminates = "!",
-    .dispatch = "!",
 };
 
-static const markdown_core_dimension_ops EMBEDDED_DIMENSIONS = {.parse = S_parse, .record = S_record, .apply = S_apply};
+static const markdown_core_dimension_ops EMBEDDED_DIMENSIONS = {.parse = S_parse, .measure = S_measure};
 static const markdown_core_service EMBEDDED_SERVICES[] = {{MARKDOWN_CORE_SERVICE_DIMENSIONS, &EMBEDDED_DIMENSIONS},
                                                           {0}};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
     .provides = EMBEDDED_SERVICES,
     .state_size = sizeof(markdown_core_embedded_work),
-    .bracket_size = sizeof(S_picture),
     .name = "embedded",
     .inlines = &EMBEDDED_INLINES,
 };

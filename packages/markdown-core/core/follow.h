@@ -3,9 +3,9 @@
 
 /* THE TIMES A FOLLOWER IS ASKED (element.h, markdown_core_follow). */
 typedef enum markdown_core_follow_at {
-    /* The run stands where a token that made a node a later token may follow
-     * ended (`lead.inline_state`); `follow` reads on from there and moves the
-     * run past what it reads. */
+    /* The reading stands where a construct that made a node a later token
+     * may follow ended (markdown_core_text_made): the follower's own
+     * construct reads on from there, and no `follow` is asked. */
     MARKDOWN_CORE_FOLLOW_TOKEN,
     /* A block's element offers the end of a line of its own, bytes `from` to
      * `to` of `line`; `follow` answers how many bytes before `to` it took, 0

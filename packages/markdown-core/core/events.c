@@ -8,13 +8,29 @@ void markdown_core_events_init(markdown_core_events *events) { *events = (markdo
 void markdown_core_events_free(markdown_core_events *events) {
     markdown_core_free(events->tokens);
     markdown_core_free(events->items);
+    markdown_core_free(events->kept);
     *events = (markdown_core_events){0};
 }
 
 void markdown_core_events_clear(markdown_core_events *events) {
     events->token_count = 0;
     events->count = 0;
+    events->kept_size = 0;
     events->failed = false;
+}
+
+uint32_t markdown_core_events_keep(markdown_core_events *events, const void *record, size_t size) {
+    /* Records start where any type may. */
+    const size_t at = (events->kept_size + 7u) & ~(size_t)7u;
+    unsigned char *kept = events->failed ? NULL : markdown_core_reserve(events->kept, &events->kept_room, at + size, 1);
+    if (!kept || at + size > UINT32_MAX) {
+        events->failed = true;
+        return UINT32_MAX;
+    }
+    events->kept = kept;
+    memcpy(kept + at, record, size);
+    events->kept_size = at + size;
+    return (uint32_t)at;
 }
 
 uint32_t markdown_core_events_token(markdown_core_events *events, uint16_t kind, uint32_t start) {
@@ -23,11 +39,13 @@ uint32_t markdown_core_events_token(markdown_core_events *events, uint16_t kind,
     }
     markdown_core_token *tokens =
         markdown_core_reserve(events->tokens, &events->token_room, events->token_count + 1, sizeof(*tokens));
+    if (tokens) {
+        events->tokens = tokens;
+    }
     if (!tokens || events->token_count >= (size_t)INT32_MAX) {
         events->failed = true;
         return UINT32_MAX;
     }
-    events->tokens = tokens;
     tokens[events->token_count] = (markdown_core_token){.kind = kind, .start = start, .end = start};
     return (uint32_t)events->token_count++;
 }

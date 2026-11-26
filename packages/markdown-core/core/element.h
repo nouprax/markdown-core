@@ -11,6 +11,8 @@
 #include "attributes.h"
 #include "measure.h"
 #include "follow.h"
+#include "tokenizer.h"
+#include "compile.h"
 
 struct markdown_core_block_start_context;
 struct markdown_core_block_start;
@@ -370,60 +372,75 @@ typedef struct markdown_core_content_ops {
  * `finish`, `dispose`, `holds`, `report`), and, of the block whose inline
  * content runs (its structure), `enter`. Each may be NULL; the
  * dialect projects who answers what by byte and by hook as it is sealed. */
-struct bracket;
-/* What a rule makes of a bracket at its closer (below). */
+/* What a rule makes of a label at its closer (below). */
 typedef enum { BRACKET_UNMATCHED, BRACKET_MATCHED, BRACKET_REJECTED } markdown_core_bracket_match;
-/* A RULE BY WHICH AN ELEMENT CLOSES A BRACKET at its element's closer byte
- * (bracket.h, markdown_core_inline_ops `closer`): the engine asks the
- * dialect's rules for that byte in ascending `precedence`, equal ones in
- * descriptor order, each with the run standing after the closer. `close`
- * answers MATCHED when it made its construct -- and then in `*made` the
- * node the closer leaves, or NULL -- REJECTED when no construct is made of
- * the bracket at all, and UNMATCHED to leave it to the next rule; with
- * neither MATCHED, the closer is text. A `mine` rule closes only the brackets its
- * element opened, and those close only by its element's `mine` rules. */
+/* A RULE BY WHICH AN ELEMENT CLOSES A LABEL at its element's closer byte
+ * (label.h, markdown_core_inline_ops `closer`): the core's label end asks
+ * the dialect's rules for that byte in ascending `precedence`, equal ones in
+ * descriptor order. `end` answers MATCHED when it makes its construct,
+ * REJECTED when no construct is made of the label at all, and UNMATCHED to
+ * leave it to the next rule; with neither MATCHED, the closer is text. A
+ * `mine` rule closes only the labels its element opened, and those close
+ * only by its element's `mine` rules. */
+struct markdown_core_opener;
+struct markdown_core_label_made;
 typedef struct markdown_core_close_rule {
     int precedence;
     bool mine;
-    markdown_core_bracket_match (*close)(const markdown_core_element_instance *, markdown_core_parser *,
-                                         markdown_core_inline_state *, struct bracket *, markdown_core_node **made);
+    /* With the reading standing after the closer: MATCHED with what it
+     * makes in `*made`, which it fills. It consumes nothing; what it read
+     * past the closer is the end's (`past`). */
+    markdown_core_bracket_match (*end)(const markdown_core_element_instance *, markdown_core_tokenizer *,
+                                       struct markdown_core_opener *, struct markdown_core_label_made *made);
 } markdown_core_close_rule;
 
+/* A CONSTRUCT OF THE ELEMENT'S TEXT (plan symbols-cleanroom.md 23): the
+ * construct, and the bytes it may start at, a NUL-terminated list without
+ * NUL. The dialect copies it with its context set to the element's
+ * instance, which its states reach through markdown_core_self. */
+typedef struct markdown_core_text_construct {
+    const char *bytes;
+    markdown_core_construct construct;
+} markdown_core_text_construct;
+
 typedef struct markdown_core_inline_ops {
+    /* THE ELEMENT'S TEXT (plan symbols-cleanroom.md 23): its constructs,
+     * `construct_count` of them, tried at a byte in the dialect's order of
+     * `precedence` and then of descriptors, and its token kinds,
+     * `token_count` of them, numbered from the instance's `token_base` as
+     * the dialect is sealed, with how compile makes each (`tokens`, one
+     * entry per kind, its context set to the instance). */
+    const markdown_core_text_construct *constructs;
+    size_t construct_count;
+    const markdown_core_compile_ops *tokens;
+    size_t token_count;
+    /* How compile makes the core's data, the text no construct read: the
+     * dialect's last element that says. */
+    const markdown_core_compile_ops *data;
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm.
      * A byte's owners are asked in ascending precedence -- any value, not only
      * the named ones -- and equal precedences in descriptor order. */
     markdown_core_inline_precedence precedence;
-    markdown_core_node *(*text)(const markdown_core_element_instance *, markdown_core_parser *,
-                                markdown_core_inline_state *, bufsize_t);
-    /* The kind of the plain text nodes `text` makes: the engine's plain role
-     * (the dialect's `plain`), the one kind it merges, maps and trims. */
+    /* The kind of the plain text nodes the core's data makes: the engine's
+     * plain role (the dialect's `plain`), the one kind it merges, maps and
+     * trims. */
     markdown_core_node_type plain;
     void (*init)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*enter)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
                   markdown_core_node *);
-    void (*finish)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    /* Whether the run's record holds something open at the token start the
-     * run reads next -- a bracket, a token whose owner is still to come --
-     * which a token after it may close or take. A settle point is a start at
-     * which no element holds anything open (inlines.h,
-     * markdown_core_inline_settle). */
-    bool (*holds)(const markdown_core_element_instance *, const markdown_core_inline_state *);
-    /* Keeps on the run's node what the run's record holds open as its last
-     * token ends -- the brackets no closer met -- the constructs it gave up
-     * (markdown_core_inline_open), before the run finishes. */
-    void (*report)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    /* THE BRACKETS (bracket.h) a run opens, of any element: one opened,
-     * its record zeroed; one whose body is decided, its construct made or
-     * not, before the body's delimiters are processed; one freed. */
-    void (*opened)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
-    void (*settled)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
-    void (*freed)(const markdown_core_element_instance *, markdown_core_inline_state *, struct bracket *);
-    /* The element's rules for closing a bracket, `close_count` of them,
-     * each asked at `closer`, the byte they close a bracket at: the dialect
-     * ends a text run at it and reads it as a closer (bracket.h). */
+    /* Keeps on the run's node what a label no closer met gives up (the
+     * constructs it gave up, markdown_core_inline_open), as the core asks
+     * it of each such label as the reading ends (label.h), innermost
+     * first. */
+    void (*left)(const markdown_core_element_instance *, markdown_core_tokenizer *, struct markdown_core_opener *);
+    /* A label's body is decided, its construct made or not, before its
+     * attention pairs (label.h, markdown_core_label_decide). */
+    void (*decided)(const markdown_core_element_instance *, markdown_core_tokenizer *, struct markdown_core_opener *);
+    /* The element's rules for closing a label, `close_count` of them, each
+     * asked at `closer`, the byte they close a label at: the dialect reads
+     * the label's end there (label.h). */
     const markdown_core_close_rule *closes;
     size_t close_count;
     unsigned char closer;
@@ -432,32 +449,18 @@ typedef struct markdown_core_inline_ops {
     markdown_core_delimiter_rule rule;
     unsigned char character;
     delimiter_rule_spec delimiter;
-    /* Optional non-consuming token predicate. Text scanning consults the
-     * dialect's byte-indexed projection of it; a byte another element also
-     * terminates text at keeps none, and always reaches ordinary element
-     * dispatch. */
-    bool (*starts)(const markdown_core_element_instance *, markdown_core_inline_state *, bufsize_t);
-    markdown_core_match_inline_func match;
-    markdown_core_inline_from_delim_func insert;
-    /* THREE byte sets, not one list.
-     *
-     * `special_inline_chars` was a single `llist` read by five consumers that
-     * each meant something different by it: two byte tables were folded out of
-     * it, `try_elements` used it for cursor dispatch,
-     * `get_element_for_special_char` used it for delimiter-tag OWNERSHIP,
-     * `bracket_takes_close_bracket` used it for `]` arbitration, and
-     * `handle_backslash` used it to disable a core optimisation. One list
-     * cannot say three different things, and D1 and D2 are what happens when it
-     * tries: `set_emphasis` folded every byte an element named into
-     * `skip_chars`, which killed CommonMark flanking merely by attaching the
-     * element, and `'}'` sat in the list dispatching to nothing.
-     *
-     * Each set is a NUL-terminated byte list, so NUL is never a member: a
-     * NUL of the text is a byte that ends no run and starts no construct. A
-     * NULL set is empty. */
-    const char *terminates;  /* ends a text run: inline_state_find_special_char */
-    const char *dispatch;    /* offered to `match`, and owns a delimiter tag */
-    const char *transparent; /* scan_delimiter looks through it; ASCII */
+    /* THE PAIRS OF A RULE WHOSE RUNS MAKE NO GROUP (attention.h; a rule of
+     * no `minimum_width`): whether its opener and closer, sequence tokens,
+     * make what the element makes of them, one token of its kind `cover`
+     * over both and all between, with the word `*data`, where a pass of
+     * `holder` puts it (markdown_core_attention_allows). */
+    bool (*covers)(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
+                   markdown_core_node_type holder, const markdown_core_token *opener, const markdown_core_token *closer,
+                   uint32_t *data);
+    uint16_t cover;
+    /* The bytes flanking looks through (attention.h), a NUL-terminated
+     * list of ASCII bytes, or NULL. */
+    const char *transparent;
 } markdown_core_inline_ops;
 
 /* THE OPENING: how a block of the element's opens on a line the open
@@ -734,16 +737,14 @@ typedef struct markdown_core_edit_ops {
  * own line reads (the paragraph before an underline, the block before an
  * identifier line), and its declaration says what it does to it.
  *
- * What a leader is, is the leader's grammar's: an inline token reports the
- * node a later token may follow (markdown_core_inline_made), and a block's
+ * What a leader is, is the leader's grammar's: an inline construct reports
+ * the node a later token may follow (markdown_core_text_made), and a block's
  * element offers the end of a line of its own (markdown_core_parser_offer).
  * The times are markdown_core_follow_at (follow.h). */
 
 /* What the engine hands a follower of its leader. */
 typedef struct markdown_core_lead {
     markdown_core_node *node, *parent;
-    /* MARKDOWN_CORE_FOLLOW_TOKEN */
-    struct markdown_core_inline_state *inline_state;
     /* MARKDOWN_CORE_FOLLOW_TAIL: and where the fields a follower reads in
      * the line go (markdown_core_field_to). */
     const unsigned char *line;
@@ -898,9 +899,6 @@ struct markdown_core_element {
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
      * IT"); zero declares none. */
     size_t state_size, run_state_size;
-    /* A record in each bracket a run opens (bracket.h,
-     * markdown_core_bracket_record), zeroed as it opens. */
-    size_t bracket_size;
     /* The nodes of other elements it follows (markdown_core_follow), ended
      * by one with no `kinds`, or NULL. */
     const markdown_core_follow *follows;

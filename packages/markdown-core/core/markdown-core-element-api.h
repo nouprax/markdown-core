@@ -79,35 +79,10 @@ typedef struct markdown_core_element_instance markdown_core_element_instance;
  * (dialect.h). Setup is the only code that holds one. */
 typedef struct markdown_core_dialect_builder markdown_core_dialect_builder;
 
-/** A delimiter names its RULE, not a byte.
- *
- * It used to carry an `unsigned char delim_char`, and three separate things
- * were derived from that byte:
- *
- *   WHO OWNS IT -- `get_element_for_special_char` walked the attached
- *   elements and returned the first whose dispatch set contained the byte.
- *   Two elements may claim one byte (`autolink` and `directive` both claim
- *   `:`), so the answer was attach order; and if no element claimed it the
- *   answer was NULL, which `process_emphasis`'s `else if` chain then fell
- *   straight through -- **without advancing the cursor** -- freeing the
- *   delimiter and reading it again on the next turn. Measured: ASan
- *   `heap-use-after-free`, READ of size 1 in `process_emphasis`, from an
- *   element that pushes a byte it does not itself dispatch; with
- *   `can_open` set it is an infinite loop instead. That is **D33**.
- *
- *   WHICH OPENER MATCHES -- `opener->delim_char == closer->delim_char`, which
- *   is why `formula` needed four distinct sentinel BYTES (0x01-0x04) to keep
- *   `$x$` from matching `$$x$$`, and `directive` a fifth (0x08). Those bytes
- *   are ordinary file bytes: a literal 0x01 in a document split a text run and
- *   was offered to `formula`'s inline hook.
- *
- *   WHERE THE OPENER MEMO LIVES -- `openers_bottom[length % 3][delim_char]`,
- *   an array declared `[3][128]` and indexed by a byte the PUBLIC push
- *   accepts unconstrained. `openers_bottom[2][200]` is offset 456 into 384
- *   elements.
- *
- * A dense rule id answers all three: the owner is on the delimiter, matching is
- * `opener->rule == closer->rule`, and the memo is sized by construction.
+/** A paired run names its RULE, not a byte (attention.h): a dense id, so
+ * an opener pairs with a closer of its own rule, two rules may share a byte
+ * (`$` opens `$x$` and `$$x$$`), and the pass's opener floors are sized by
+ * construction.
  */
 typedef enum {
     MARKDOWN_CORE_DELIM_RULE_NONE = 0,
@@ -124,36 +99,8 @@ typedef enum {
     MARKDOWN_CORE_DELIM_RULE_FORMULA_DOLLAR_DISPLAY,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_INLINE,
     MARKDOWN_CORE_DELIM_RULE_FORMULA_LATEX_DISPLAY,
-    MARKDOWN_CORE_DELIM_RULE_DIRECTIVE_LABEL,
-    /* A rule id also names an opaque-body search (see
-     * markdown_core_inline_state_find_opaque_close): the `%%` comment pushes
-     * no delimiter, but its closer search caches its failures under this id. */
-    MARKDOWN_CORE_DELIM_RULE_COMMENT,
     MARKDOWN_CORE_DELIM_RULE_COUNT
 } markdown_core_delimiter_rule;
-
-/** The delimiter stack's element, OPAQUE.
- *
- * Elements only receive marker entries through the construction hook.
- * Source boundaries and token-completion events are private to the engine;
- * elements cannot traverse or mutate the stack.
- */
-typedef struct delimiter delimiter;
-
-/** The literal text node the delimiter was pushed for. */
-markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
-
-markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
-
-/** The inline state offset just past the delimiter's last byte. */
-bufsize_t markdown_core_delimiter_position(const delimiter *delim);
-
-/** How many bytes the delimiter run owns. */
-bufsize_t markdown_core_delimiter_length(const delimiter *delim);
-
-int markdown_core_delimiter_can_open(const delimiter *delim);
-
-int markdown_core_delimiter_can_close(const delimiter *delim);
 
 /** Should create and add a new open block to 'parent_container' if
  * the reader's line matches a syntax rule for that block type. It is allowed
@@ -166,18 +113,6 @@ typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core
                                                              markdown_core_parser *parser,
                                                              markdown_core_node *parent_container,
                                                              markdown_core_reader *reader);
-
-typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
-                                                               markdown_core_parser *parser, markdown_core_node *parent,
-                                                               unsigned char character,
-                                                               markdown_core_inline_state *inline_state);
-
-/* Builds the opaque AST value only. The matcher owns all delimiter removal,
- * including the matched endpoints, on success and failure alike. */
-typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element_instance *self,
-                                                     markdown_core_parser *parser,
-                                                     markdown_core_inline_state *inline_state, delimiter *opener,
-                                                     delimiter *closer);
 
 /** Returned by a 'markdown_core_match_block_func' when the reader's line is the
  *  container's own closing line.
@@ -377,9 +312,8 @@ struct markdown_core_element_instance {
     const markdown_core_line_ops *lines;
     /* The parse record, or NULL when the element declares none. */
     void *state;
-    /* Where the element's record lies in a run's block of records, and
-     * where its record lies in a bracket's (bracket.h, `bracket_size`). */
-    size_t run_offset, bracket_offset;
+    /* Where the element's record lies in a run's block of records. */
+    size_t run_offset;
     /* The services the descriptor `needs`, in its order. */
     const markdown_core_need *needs;
     /* The dialect that holds it, which answers what the dialect's other
@@ -388,9 +322,12 @@ struct markdown_core_element_instance {
     /* The label space numbers of the descriptor's `spaces`, in its order
      * (element.h, markdown_core_space). */
     const unsigned *spaces;
-    /* Where the element's `mine` rules for closing a bracket lie among the
+    /* Where the element's `mine` rules for closing a label lie among the
      * dialect's (dialect.h, `closers`), and how many there are. */
     uint32_t mine_first, mine_count;
+    /* The kind of the element's first token kind (element.h,
+     * markdown_core_inline_ops `tokens`). */
+    uint16_t token_base;
 };
 
 /** The instance of `element` in the parse `parser` runs, or NULL when its
@@ -602,16 +539,6 @@ int markdown_core_node_set_element(markdown_core_node *node, const markdown_core
  * <http://spec.commonmark.org/0.24/#phase-2-inline-structure>
  */
 
-/** Should return 'true' if the predicate matches 'c', 'false' otherwise
- */
-typedef int (*markdown_core_inline_predicate)(int c);
-
-/** Advance the current inline parsing offset */
-void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state);
-
-/** Get the current inline parsing offset */
-int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state);
-
 /** The offset in the content of the inline root being parsed of byte
  * `offset` of the chunk the given inline state reads: the same offset in the
  * root's own run, and in a field's the root's offset its map names. A
@@ -620,103 +547,9 @@ int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_sta
  */
 uint32_t markdown_core_inline_state_root_offset(markdown_core_inline_state *inline_state, int offset);
 
-/** Set the offset in bytes in the chunk being processed by the given inline state.
- */
-void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_state, int offset);
-
 /** Gets the markdown_core_chunk being operated on by the given inline state.
- * Use markdown_core_inline_state_get_offset to get our current position in the chunk.
  */
 struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
-
-/** Remove the last n characters from the last child of the given node.
- * This only works where all n characters are in the single last child, and the last
- * child is plain text (the dialect's `plain` kind).
- */
-void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
-
-/** Get the character located at the current inline parsing offset
- */
-unsigned char markdown_core_inline_state_peek_char(markdown_core_inline_state *inline_state);
-
-/** Get the character located 'pos' bytes in the current line.
- */
-unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inline_state, int pos);
-
-/** Whether the inline state has reached the end of the current line
- */
-int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state);
-
-/** The token being read read the end of the input: what it decided may change
- * once the input goes on (docs/plans/2026-09-29-incremental-parsing.md, 5.8).
- * The calls above that answer about a byte at or past the end say so
- * themselves; a scan that reads the input's bytes directly and reaches the
- * end, or fails where a longer input might match, says it here.
- */
-void markdown_core_inline_state_saw_end(markdown_core_inline_state *inline_state);
-
-/** What the run read from content offset `start` on depends on input after
- * the token being read, though no node it makes says so: a delimiter pair
- * that makes no node still took the delimiters between its two away, so a
- * reading that began between them would pair them otherwise. No settle point
- * lies past `start` (docs/plans/2026-09-29-incremental-parsing.md, 5.8).
- */
-void markdown_core_inline_state_undecide(markdown_core_inline_state *inline_state, bufsize_t start);
-
-/** Get the characters located after the current inline parsing offset
- * while 'pred' matches. Free after usage.
- */
-char *markdown_core_inline_state_take_while(markdown_core_inline_state *inline_state,
-                                            markdown_core_inline_predicate pred);
-
-/* A delimiter scanner describes one lexical unit: its width and whether it
- * closes this rule. The shared cursor caches failed suffix searches per rule,
- * then treats a recognized body as raw text until the closing delimiter. The
- * owning element still constructs its node through the delimiter stack. */
-typedef int (*markdown_core_opaque_delimiter_scanner)(const unsigned char *data, int length, int offset,
-                                                      markdown_core_delimiter_rule rule, bool *closes);
-void markdown_core_inline_state_set_opaque_body_end(markdown_core_inline_state *inline_state, int end);
-int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inline_state,
-                                                 markdown_core_delimiter_rule rule, int from,
-                                                 markdown_core_opaque_delimiter_scanner scan);
-
-/** Push a delimiter on the delimiter stack.
- * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
- * more information on the parameters
- */
-void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
-                                               const markdown_core_element_instance *owner,
-                                               markdown_core_delimiter_rule rule, int can_open, int can_close,
-                                               markdown_core_node *inl_text);
-
-/** Whether the delimiters of `rule` on the stack that can open outnumber
- * those that can close. The counts are kept at every push and removal, so the
- * answer costs the same however deep the stack is. For a rule whose closers
- * are pushed only when this answers yes, that is exactly whether an opener is
- * still unmatched: an element whose closers may not stand alone -- a
- * formula's `\\)` is CommonMark's escaped backslash and a parenthesis unless
- * something opened it -- asks here before pushing one, so a closer that would
- * never pair stays with the base language. A rule whose openers may not nest
- * asks the same question before pushing an opener, and its delimiters then
- * alternate on the stack, so every closer pairs with the opener directly
- * before it and no pair ever spans another of the rule.
- */
-int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
-                                                    markdown_core_delimiter_rule rule);
-
-/** Make the Text node a delimiter run stands as: its literal is the bytes
- * [from, to] of the block's content and its position is a projection of that
- * range. Returns NULL for a range outside the content.
- *
- * ONE constructor, because there were two hand-written copies of it -- one in
- * `formula`, one in `strikethrough` -- and they disagreed about where the
- * cursor was when they ran, so each computed the run's columns from a different
- * end. Passing the range says it once. The cursor is NOT moved: a caller that
- * has not consumed the run yet still has to.
- */
-markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
-                                                                   int to);
-
 #ifdef __cplusplus
 }
 #endif

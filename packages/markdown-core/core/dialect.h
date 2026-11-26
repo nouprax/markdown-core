@@ -56,33 +56,13 @@ typedef enum {
     MARKDOWN_CORE_BLOCK_HOOK_COUNT
 } markdown_core_block_hook;
 
-/* THE INLINE-CONTENT HOOK FAMILIES, projected for the same reason and with one
- * difference: a block hook family is asked per LINE and can be gated on the
- * line's first byte, while these are asked once per inline-content NODE, or
- * at a token start a settle point may be (`open`, from
- * `markdown_core_inline_finish_inlines`), and have nothing to gate on. So they get the projection and not the gate
- * maps.
- *
- * Each of the three was a scan of every attached element looking for the few
- * that declare the hook, run per inline-content node: `init` from
- * `markdown_core_inline_state_from_buf`, `finish` from
- * `markdown_core_inline_finish_inlines`, `dispose` from
- * `markdown_core_inline_clear_inlines`. With thirty core elements and one
- * declarer for `init` and for `finish`, that is ninety iterations per node to
- * find six calls.
- *
- * Order inside a family is descriptor order, which is what the scan gave, so a
- * projected family calls the same hooks on the same states in the same
- * sequence. */
+/* THE INLINE-CONTENT HOOK FAMILIES, projected for the same reason: the
+ * elements whose run records begin (`init`) and are let go (`dispose`) with
+ * each inline run, in descriptor order, so a run calls the few that declare
+ * them and scans no others. */
 typedef enum {
     MARKDOWN_CORE_INLINE_HOOK_INIT,
-    MARKDOWN_CORE_INLINE_HOOK_FINISH,
     MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
-    MARKDOWN_CORE_INLINE_HOOK_OPEN,
-    MARKDOWN_CORE_INLINE_HOOK_REPORT,
-    MARKDOWN_CORE_INLINE_HOOK_OPENED,
-    MARKDOWN_CORE_INLINE_HOOK_SETTLED,
-    MARKDOWN_CORE_INLINE_HOOK_FREED,
     MARKDOWN_CORE_INLINE_HOOK_COUNT
 } markdown_core_inline_hook;
 
@@ -273,13 +253,9 @@ struct markdown_core_dialect_builder {
  *
  * `document_structure` owns the document lifecycle -- the last registered
  * element that declares it, as `text_structure` is the last that declares
- * an inline `text`, `text_block_structure` the last that declares
- * an opening's `text` and each delimiter rule belongs to the last element that
- * declares it. The core dialect has one of each; a setup that registers
+ * how the core's data compiles (`data`) and `text_block_structure` the last
+ * that declares an opening's `text`. The core dialect has one of each; a setup that registers
  * another replaces the earlier one for its instance. */
-/* The class of a byte that ends a run of inline text, in the dialect's
- * `special_chars` table. */
-enum { MARKDOWN_CORE_TEXT_END = 1 };
 
 typedef struct markdown_core_dialect {
     /* The elements, as one instance each in element order (markdown-core-
@@ -296,8 +272,6 @@ typedef struct markdown_core_dialect {
      * text consolidation, acts at. */
     markdown_core_node_type root, plain;
     size_t plain_index;
-    const markdown_core_element_instance *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    markdown_core_delimiter_rule delimiter_chars[256];
     /* Each block-start hook family, in descriptor order. Order inside a
      * family IS the grammar: the first owner that claims a line wins it,
      * which is why heading precedes thematic break (setext `---`) and
@@ -319,9 +293,6 @@ typedef struct markdown_core_dialect {
     bool container_prefix[256];
     /* Every byte an element's `claims` declares. */
     bool claims[256];
-    /* Every byte an element's close rules close a bracket at (element.h,
-     * markdown_core_inline_ops `closer`). */
-    bool closes[256];
     /* Every first byte a cut owner reads an item from (element.h,
      * `cut_needs`), one bit each: a block whose text starts with no such
      * byte keeps its front. */
@@ -329,17 +300,15 @@ typedef struct markdown_core_dialect {
     /* The inline-content families, in descriptor order. */
     const markdown_core_element_instance *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
-    /* Each byte's inline owners, by precedence and then descriptor order:
-     * `inline_dispatch[inline_dispatch_offsets[c] .. inline_dispatch_offsets[c + 1])`. */
-    size_t inline_dispatch_offsets[257];
-    const markdown_core_element_instance *const *inline_dispatch;
-    /* The inline byte tables: the text terminators, flanking-transparent
-     * bytes and the instance whose start predicate a byte asks, of the
-     * registered inline elements. A text terminator has the class
-     * MARKDOWN_CORE_TEXT_END, which the text scan stops at
-     * (markdown_core_scan_to_class). */
-    const markdown_core_element_instance *inline_start_owners[256];
-    uint8_t special_chars[256];
+    /* THE TEXT (plan symbols-cleanroom.md 23): the elements' constructs by
+     * the byte they start at, and compile's handlers by token kind,
+     * `token_kinds` of them, the core's kinds without any. */
+    markdown_core_constructs text;
+    uint16_t text_offsets[257];
+    const markdown_core_compile_ops *const *compiles;
+    size_t token_kinds;
+    /* The flanking-transparent bytes of the registered elements
+     * (element.h, markdown_core_inline_ops `transparent`). */
     int8_t skip_chars[256];
     /* The finish steps by key (see `markdown_core_finish_key`): a list
      * terminated by a NULL element, or NULL when nothing declared the key.
@@ -351,12 +320,12 @@ typedef struct markdown_core_dialect {
     markdown_core_kind_record kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
     /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
-     * of records and of one bracket's. */
+     * of records. */
     const markdown_core_element_instance *const *instance_table;
     unsigned instance_bits;
-    size_t run_state_size, bracket_size;
-    /* The dialect's rules for closing a bracket (element.h,
-     * markdown_core_close_rule): first the `shared` rules every bracket no
+    size_t run_state_size;
+    /* The dialect's rules for closing a label (element.h,
+     * markdown_core_close_rule): first the `shared` rules every label no
      * `mine` rule claims meets, by precedence and then descriptor order,
      * then each element's `mine` rules, in its range (the instance's
      * `mine_first`, `mine_count`), by precedence. */
@@ -381,7 +350,7 @@ typedef struct markdown_core_dialect {
     const markdown_core_element_instance *const *staged;
 } markdown_core_dialect;
 
-/* A rule for closing a bracket and the instance whose rule it is. */
+/* A rule for closing a label and the instance whose rule it is. */
 typedef struct markdown_core_closer {
     const markdown_core_element_instance *owner;
     const struct markdown_core_close_rule *rule;
@@ -449,7 +418,6 @@ typedef struct markdown_core_dialect_sizes {
     size_t block_totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     bool gated[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
-    size_t inline_dispatch_offsets[257];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
     size_t pointers, steps, gate_bytes;
     /* The instance table holds 1 << `instance_bits` entries. */
@@ -457,9 +425,12 @@ typedef struct markdown_core_dialect_sizes {
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
     /* The services the elements need, all together, and their rules for
-     * closing a bracket; the spaces they name, each once, and their
+     * closing a label; the spaces they name, each once, and their
      * namings, all together. */
     size_t needs, closers, spaces, namings;
+    /* The elements' constructs and their entries by byte, and their token
+     * kinds. */
+    size_t constructs, text_entries, token_kinds;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */

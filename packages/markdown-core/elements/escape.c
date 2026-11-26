@@ -29,135 +29,135 @@ static void S_strip(const markdown_core_element_instance *self, markdown_core_st
     markdown_core_strbuf_truncate(buf, w);
 }
 
-/* Whether an element other than this one owns `c`. */
-static int any_element_dispatches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                  unsigned char c) {
-    const markdown_core_dialect *dialect = parser->dialect;
-    for (size_t i = dialect->inline_dispatch_offsets[c]; i < dialect->inline_dispatch_offsets[c + 1]; i++) {
-        if (dialect->inline_dispatch[i] != self) {
-            return 1;
-        }
-    }
+/* THE ESCAPE (plan symbols-cleanroom.md 23): a backslash and what it
+ * escapes. Its tokens: the backslash alone, which is text; an escaped
+ * space, a word space; a run of escaped backslashes, read whole where no
+ * other construct starts at a backslash; an escaped punctuation
+ * character; and a hard break, the backslash and the line's end. */
+enum { ESCAPE_LONE, ESCAPE_SPACE, ESCAPE_RUN, ESCAPE_PUNCT, ESCAPE_BREAK, ESCAPE_KINDS };
 
-    return 0;
+static markdown_core_state S_token(markdown_core_tokenizer *tokenizer, unsigned kind, uint32_t end) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + kind));
+    markdown_core_consume_to(tokenizer, end);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + kind));
+    return markdown_core_ok(tokenizer);
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    (void)parent;
-    if (character != '\\') {
-        return NULL;
+/* Whether a construct of another element starts at a backslash. */
+static bool S_shared(const markdown_core_tokenizer *tokenizer, const markdown_core_element_instance *self) {
+    const markdown_core_constructs *text = &tokenizer->text;
+    for (uint16_t i = text->offsets['\\']; i < text->offsets['\\' + 1]; i++) {
+        if (text->items[i]->context != self) {
+            return true;
+        }
     }
+    return false;
+}
+
+static markdown_core_state S_escape(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     markdown_core_escape_work *counts = self->state;
-    bufsize_t start = markdown_core_inline_offset(inline_state);
-    /* The line frame BEFORE anything is consumed. The hard-break arm below
-     * needs it, and reading it after `markdown_core_inline_skip_line_end` would be right only
-     * because `markdown_core_inline_skip_line_end` happens not to advance the frame -- an accident,
-     * not a contract. `handle_newline` captures its frame first for the same
-     * reason, and the two arms must not merely look symmetric. */
-    advance(inline_state);
-    unsigned char nextchar = markdown_core_inline_peek_char(inline_state);
-    if (nextchar == ' ') {
-        /* A trailing whitespace run cannot belong to a completed script.
-         * Leave it to the inherited text/line-ending scanner, including its
-         * trimming and hard-break rules. These lookaheads are disjoint: each
-         * begins after its own backslash and ends before the next token. */
-        bufsize_t end = markdown_core_inline_offset(inline_state);
-        while (end < markdown_core_inline_size(inline_state) &&
-               markdown_core_is_space_or_tab(markdown_core_inline_peek_at(inline_state, end))) {
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    const uint32_t start = tokenizer->position, size = tokenizer->size;
+    const unsigned char *data = tokenizer->data;
+    const int next = markdown_core_code_at(tokenizer, 1);
+    if (next == ' ') {
+        uint32_t end = start + 1;
+        while (end < size && markdown_core_is_space_or_tab(data[end])) {
             end++;
         }
-        if (end == markdown_core_inline_size(inline_state)) {
-            markdown_core_inline_saw_end(inline_state);
+        if (end == size) {
+            markdown_core_met_end(tokenizer);
         }
-        counts->whitespace += (size_t)(end - markdown_core_inline_offset(inline_state));
-        if ((end == markdown_core_inline_size(inline_state) &&
-             !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
-            (end < markdown_core_inline_size(inline_state) &&
-             markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
-            return make_str(inline_state, start, start, markdown_core_inline_take(inline_state, start, 1));
+        counts->whitespace += (size_t)(end - start - 1);
+        if ((end == size && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
+            (end < size && markdown_core_is_line_end(data[end]))) {
+            return S_token(tokenizer, ESCAPE_LONE, start + 1);
         }
-        advance(inline_state);
-        markdown_core_node *escaped = make_str(inline_state, start, markdown_core_inline_offset(inline_state) - 1,
-                                               markdown_core_inline_take(inline_state, start, 2));
-        if (escaped) {
-            /* Contextual escape token: inline completion decodes it once the
-             * delimiter/bracket engine has established its semantic owner. */
-            markdown_core_word_space_note(self->needs[ESCAPE_WORD_SPACES], escaped);
-        }
-        return escaped;
+        return S_token(tokenizer, ESCAPE_SPACE, start + 2);
     }
-    if (markdown_core_ispunct(nextchar)) {
-        if (nextchar == '\\' && !any_element_dispatches(self, parser, '\\')) {
-            bufsize_t end = start;
-            while (end + 1 < markdown_core_inline_size(inline_state) &&
-                   markdown_core_inline_char_at(inline_state, end) == '\\' &&
-                   markdown_core_inline_char_at(inline_state, end + 1) == '\\') {
+    if (next != MARKDOWN_CORE_EOF && markdown_core_ispunct((unsigned char)next)) {
+        if (next == '\\' && !S_shared(tokenizer, self)) {
+            uint32_t end = start;
+            while (end + 1 < size && data[end] == '\\' && data[end + 1] == '\\') {
                 end += 2;
             }
-            if (end + 1 >= markdown_core_inline_size(inline_state)) {
-                markdown_core_inline_saw_end(inline_state);
+            if (end + 1 >= size) {
+                markdown_core_met_end(tokenizer);
             }
             if (end - start >= 4) {
-                bufsize_t output_len = (end - start) / 2;
-                unsigned char *output = (unsigned char *)markdown_core_alloc((size_t)output_len + 1, 1);
-                if (output) {
-                    markdown_core_chunk contents = {output, output_len, 1};
-                    markdown_core_node *run;
-                    memset(output, '\\', (size_t)output_len);
-                    markdown_core_inline_seek(inline_state, end);
-                    run = make_str(inline_state, start, end - 1, contents);
-                    /* One escape per PAIR: the first backslash of each is the
-                     * escape and reaches no literal, the second is the byte the
-                     * literal is made of. */
-                    return run;
-                }
+                return S_token(tokenizer, ESCAPE_RUN, end);
             }
         }
-        // only ascii symbols and newline can be escaped
-        advance(inline_state);
-        {
-            markdown_core_node *escaped =
-                make_str(inline_state, markdown_core_inline_offset(inline_state) - 2,
-                         markdown_core_inline_offset(inline_state) - 1,
-                         markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
-            return escaped;
-        }
-    } else if (!markdown_core_inline_is_eof(inline_state) && markdown_core_inline_skip_line_end(inline_state)) {
-        markdown_core_inline_push_boundary(inline_state, markdown_core_inline_offset(inline_state));
-        // A backslash hard break CONSUMES a line ending, so the inline state has to
-        // be told, exactly as handle_newline tells it. It was not, so every node
-        // after such a break kept the break's own line and a column measured
-        // from the wrong line's start: `foo\` / `bar` reported Text 1:6..1:8 --
-        // three columns that do not exist on a four-character line 1.
-        // cmark-gfm reports the same numbers, so upstream cannot be the oracle.
-        //
-        // The node's extent is the bytes that SPELL it: the backslash and the
-        // line ending it escapes. The backslash belonged to no node at all
-        // before this, so the break is not taking it from anyone.
-        markdown_core_node *hard =
-            markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_LINE_BREAK);
-        if (hard) {
-            /* The break's extent is the backslash and the line ending it
-             * escapes; `markdown_core_inline_offset(inline_state)` is one past that ending's last byte, CR, LF
-             * or CRLF alike. Projected from the two offsets, so the frame
-             * captured before the consume is only the fallback's. */
-            markdown_core_inline_state_place(inline_state, hard, start, markdown_core_inline_offset(inline_state) - 1);
-        }
-        return hard;
-    } else {
-        return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
-                        markdown_core_inline_offset(inline_state) - 1,
-                        markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
+        return S_token(tokenizer, ESCAPE_PUNCT, start + 2);
     }
+    if (next == '\r' || next == '\n') {
+        uint32_t end = start + 1;
+        if (data[end] == '\r') {
+            end++;
+        }
+        if (end < size && data[end] == '\n') {
+            end++;
+        }
+        return S_token(tokenizer, ESCAPE_BREAK, end);
+    }
+    return S_token(tokenizer, ESCAPE_LONE, start + 1);
 }
+static const markdown_core_text_construct ESCAPE_CONSTRUCTS[] = {{"\\", {.start = S_escape}}};
+
+static void S_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const bufsize_t start = (bufsize_t)token->start, end = (bufsize_t)token->end;
+    markdown_core_node *node = NULL;
+    switch (token->kind - self->token_base) {
+    case ESCAPE_LONE:
+        node = make_str(inline_state, start, start, markdown_core_inline_take(inline_state, start, 1));
+        break;
+    case ESCAPE_SPACE:
+        node = make_str(inline_state, start, end - 1, markdown_core_inline_take(inline_state, start, 2));
+        if (node) {
+            markdown_core_word_space_note(self->needs[ESCAPE_WORD_SPACES], node);
+        }
+        break;
+    case ESCAPE_RUN: {
+        const bufsize_t length = (end - start) / 2;
+        unsigned char *output = (unsigned char *)markdown_core_alloc((size_t)length + 1, 1);
+        if (output) {
+            memset(output, '\\', (size_t)length);
+            const markdown_core_chunk run = {output, length, 1};
+            node = make_str(inline_state, start, end - 1, run);
+        }
+        break;
+    }
+    case ESCAPE_PUNCT:
+        node = make_str(inline_state, start, end - 1, markdown_core_inline_take(inline_state, start + 1, 1));
+        break;
+    default:
+        node = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_LINE_BREAK);
+        if (node) {
+            markdown_core_inline_state_place(inline_state, node, start, end - 1);
+        }
+        break;
+    }
+    markdown_core_compile_append(compiler, node);
+}
+static const markdown_core_compile_ops ESCAPE_TOKENS[ESCAPE_KINDS] = {
+    [ESCAPE_LONE] = {.exit = S_made, .plain = true},
+    [ESCAPE_SPACE] = {.exit = S_made, .plain = true},
+    [ESCAPE_RUN] = {.exit = S_made, .plain = true},
+    [ESCAPE_PUNCT] = {.exit = S_made, .plain = true},
+    [ESCAPE_BREAK] = {.exit = S_made, .boundary = true}};
 
 static const markdown_core_inline_ops ESCAPE_INLINES = {
+    .constructs = ESCAPE_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = ESCAPE_TOKENS,
+    .token_count = ESCAPE_KINDS,
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-    .match = match,
-    .terminates = "\\",
-    .dispatch = "\\",
 };
 
 static const markdown_core_decoder ESCAPE_DECODER = {.strip = S_strip};

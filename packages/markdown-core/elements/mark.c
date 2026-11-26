@@ -1,4 +1,5 @@
 #include "mark.h"
+#include "attention.h"
 #include "inline_internal.h"
 #include "services.h"
 
@@ -9,15 +10,12 @@ static const char *const MARK_NEEDS[] = {[MARK_FLANK] = MARKDOWN_CORE_SERVICE_FL
 static unsigned S_flank(const markdown_core_element_instance *self, markdown_core_flank flank) {
     return markdown_core_flank_sides(self->needs[MARK_FLANK], flank);
 }
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    if (character != '=') {
-        return NULL;
-    }
-    return markdown_core_inline_match_delimiter(self, inline_state);
-}
+static const markdown_core_text_construct MARK_CONSTRUCTS[] = {{"=", MARKDOWN_CORE_ATTENTION_CONSTRUCT}};
 static const markdown_core_inline_ops MARK_INLINES = {
+    .constructs = MARK_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = MARKDOWN_CORE_ATTENTION_TOKENS,
+    .token_count = MARKDOWN_CORE_ATTENTION_KINDS,
     .rule = MARKDOWN_CORE_DELIM_RULE_MARK,
     .character = '=',
     .delimiter = {.minimum_width = 2,
@@ -25,9 +23,6 @@ static const markdown_core_inline_ops MARK_INLINES = {
                   .flank = S_flank,
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_MARK},
-    .match = match,
-    .terminates = "=",
-    .dispatch = "=",
 };
 
 /* What its nodes read as in a name: their children (element.h,

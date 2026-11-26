@@ -43,6 +43,18 @@ bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, mark
     return (held >> ordinal) & 1u;
 }
 
+bool markdown_core_kind_can_contain(markdown_core_node_type parent, markdown_core_node_type child_type) {
+    const unsigned ordinal = (unsigned)child_type & MARKDOWN_CORE_NODE_VALUE_MASK;
+    const markdown_core_hold *hold = markdown_core_holds_for_kind(parent);
+    if (ordinal >= MARKDOWN_CORE_NODE_KIND_COUNT || (hold->flags & MARKDOWN_CORE_HOLD_OWNED)) {
+        return false;
+    }
+    const uint32_t held = MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type)  ? hold->inlines
+                          : MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) ? hold->blocks
+                                                                        : 0;
+    return (held >> ordinal) & 1u;
+}
+
 #ifndef NDEBUG
 bool markdown_core_node_may_attach(const markdown_core_node *parent, markdown_core_node_type child_type) {
     return markdown_core_node_allows(parent) || markdown_core_node_can_contain_builtin(parent, child_type);

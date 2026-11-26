@@ -1,45 +1,30 @@
 #!/usr/bin/env node
 /**
- * Every byte an element registers as a special inline character must be a
- * byte its own inline `match` dispatches on.
+ * Every byte an element's text constructs start at is a character, and every
+ * paired run's default byte starts one of its element's constructs.
  *
- * A registered byte ends the text run in front of it, and the parser then asks
- * the owning element what to do with it. If the element's `match` cannot
- * name that byte at all, the answer is always NULL and the split was pure cost:
- * the directive element registered `}` and dispatched only `:` and `]`, which
- * bought nothing and cost about 181 arena bytes per `}` in the document,
- * because the release CLI never reclaims what text consolidation frees.
+ * THE BYTES THAT SPLIT TEXT ARE THE CONSTRUCTS' FIRST BYTES (plan
+ * symbols-cleanroom.md 23). The dialect projects every element's
+ * `markdown_core_text_construct` table onto one byte table as it seals, and
+ * the tokenizer's data runs up to the next byte a construct may start at; a
+ * construct that fails there gives the byte back to the data before it. A
+ * byte named there is tried at every occurrence in every document, and
+ * nothing in the output shows a byte that is tried and never taken, so this
+ * audit reads the source, which is the only place the fact exists.
  *
- * There is no way to see this from output. Text consolidation
- * runs while the one-shot parse transaction closes, before any consumer sees the tree,
- * and merges the split run back carrying `end_column` forward — measured over
- * an exhaustive 37,448-case differential with zero differences. So this audit
- * reads the source, which is the only place the fact exists.
+ * THERE ARE NO SENTINELS. Bytes below 0x20 used to name delimiter kinds
+ * (`formula`'s 0x01-0x04, `directive`'s 0x08); a literal 0x01 in a document
+ * then was offered to `formula`. A run names a RULE since 3.3, so a control
+ * byte in a construct table is a failure, except the line ends a construct
+ * reads (a hard break).
  *
- * THERE ARE NO SENTINELS ANY MORE, and that is now a law rather than a note.
- * Five bytes below 0x20 used to be declared here — `formula`'s 0x01–0x04 and
- * `directive`'s 0x08 — because a delimiter carried a byte and four kinds of
- * formula opener had to be told apart by it. They were exempt from the dispatch
- * requirement precisely because they were not characters at all. They were
- * still ordinary file bytes: a literal 0x01 in a document ended the text run in
- * front of it and was offered to `formula`'s inline hook. 3.3 gave a delimiter
- * a RULE instead of a byte and they are gone, so a byte below 0x20 in any set
- * is now a failure.
+ * A PAIRED RUN'S BYTE (attention.h): an element whose delimiter rule names a
+ * default `character` reads its runs with the core's sequence construct,
+ * which it must list at that byte, or its runs are text however they flank.
  *
- * SINCE 3.2 AN ELEMENT DECLARES THREE SETS, and two laws relate them, both
- * checked below:
- *
- *   terminates  ⊆ dispatch    — a byte that ends a text run and is
- *                               dispatched to nobody is D2 exactly
- *   transparent ⊆ dispatch    — a byte an element makes invisible to
- *                               `scan_delims` without owning it is D1
- *
- * AND THE AUDIT MUST SEE SOMETHING. The declaration used to be a run of
- * generic linked-list append calls; when 3.2 replaced them with one
- * `set_byte_sets` call this reader matched nothing, skipped all four
- * elements, printed no report and exited 0. A source-scanning audit with no
+ * AND THE AUDIT MUST SEE SOMETHING. A source-scanning audit with no
  * saw-nothing assertion is one refactor away from being a gate that cannot
- * fail. The shared inventory pairs every descriptor definition with its
+ * fail; the shared inventory pairs every descriptor definition with its
  * CORE_ELEMENTS[] entry, so every attached descriptor is audited.
  */
 
@@ -51,12 +36,8 @@ import { readElementInventory } from "../shared/element-inventory.mjs";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const elementsDir = path.join(root, "packages/markdown-core/elements");
 
-const FIELD = (name) => new RegExp(`\\.${name}\\s*=\\s*("(?:\\\\.|[^"])*")`);
-const HOOK = /\.match\s*=\s*(\w+)/;
-
 /** The bytes a C string literal denotes, with the escapes this repository uses. */
 function bytesOf(literal) {
-    if (literal === "NULL") return [];
     const body = literal.slice(1, -1);
     const bytes = [];
     for (let i = 0; i < body.length;) {
@@ -80,110 +61,67 @@ function bytesOf(literal) {
     }
     return bytes;
 }
-// The one shape every element's inline match uses: comparing its `character`
-// (or `c`) parameter with a character literal.
-// `[^'\\]` and not `[^']`: the two alternatives must not both match a
-// backslash, or a run of `\&` with no closing quote makes the engine try every
-// way to split it and the match goes exponential -- 13 ms at 18 repetitions,
-// 94 ms at 24, and CodeQL's "inefficient regular expression" alert. Excluding
-// the backslash from the second branch changes nothing about what is matched,
-// because the first branch already covers every escape.
-const DISPATCH = /\b(?:character|c)\s*[!=]=\s*'((?:\\.|[^'\\])+)'/g;
 
-const ESCAPES = { "\\\\": 0x5c, "\\'": 0x27, "\\n": 0x0a, "\\r": 0x0d, "\\t": 0x09, "\\0": 0x00 };
-const byteOf = (literal) => (literal in ESCAPES ? ESCAPES[literal] : literal.charCodeAt(0));
 const spell = (byte) => (byte < 0x20 ? `0x${byte.toString(16).padStart(2, "0")}` : `'${String.fromCharCode(byte)}'`);
-
-/** The body of the element's inline `match` hook, found through its inline table. */
-function matchBody(source, inlines, file) {
-    const hook = HOOK.exec(inlines);
-    if (hook === null) return null;
-    const start = source.search(new RegExp(`^static markdown_core_node \\*${hook[1]}\\(`, "m"));
-    if (start < 0) throw new Error(`${file}: inline match hook \`${hook[1]}\` is named but not defined here.`);
-    const end = source.indexOf("\n}\n", start);
-    return source.slice(start, end < 0 ? source.length : end);
-}
 
 const failures = [];
 const report = [];
 const { descriptors } = readElementInventory(elementsDir);
-let hooks = 0;
+let constructs = 0;
+const startedBy = new Map();
+const sources = new Map();
 for (const { file: entry, source, tables } of descriptors) {
     const inlines = tables.inlines ?? "";
-    const setOf = (name) => {
-        const match = FIELD(name).exec(inlines);
-        return match === null ? [] : bytesOf(match[1]);
-    };
-    const terminates = setOf("terminates");
-    const dispatch = setOf("dispatch");
-    const transparent = setOf("transparent");
-    const delimiterCharacter = /\.character\s*=\s*'([^'\\])'/.exec(inlines)?.[1];
-    if (delimiterCharacter && !terminates.includes(delimiterCharacter.charCodeAt(0))) {
-        failures.push(`${entry}: its default delimiter byte must terminate text and reach dispatch.`);
-    }
-
-    const body = matchBody(source, inlines, entry);
-    if (body === null) {
-        if (dispatch.length > 0) {
-            failures.push(`${entry}: declares ${String(dispatch.length)} dispatch bytes and has no inline match.`);
-        }
-        report.push(`  ${entry}: no inline hook`);
+    const named = /\.constructs\s*=\s*(\w+)/.exec(inlines)?.[1];
+    if (!named) {
+        report.push(`  ${entry}: no text constructs`);
         continue;
     }
-    hooks += 1;
-    const dispatched = new Set([...body.matchAll(DISPATCH)].map((match) => byteOf(match[1])));
-
-    for (const byte of [...terminates, ...dispatch, ...transparent]) {
-        if (byte < 0x20 && byte !== 0x0a && byte !== 0x0d) {
-            failures.push(
-                `${entry}: declares ${spell(byte)}, a control byte. Delimiter tags are RULES since 3.3, and a byte ` +
-                    "below 0x20 is a byte a document can contain."
-            );
+    const table = new RegExp(
+        `\\bmarkdown_core_text_construct\\s+${named}\\s*\\[\\]\\s*=\\s*\\{([\\s\\S]*?)\\};`,
+        "m"
+    ).exec(source);
+    if (table === null) {
+        failures.push(`${entry}: its inline table names constructs \`${named}\`, which it does not define.`);
+        continue;
+    }
+    const literals = [...table[1].matchAll(/\{\s*("(?:\\.|[^"\\])*")\s*,/g)].map((match) => match[1]);
+    if (literals.length === 0) {
+        failures.push(`${entry}: could not read a byte string of \`${named}\`.`);
+        continue;
+    }
+    const bytes = new Set();
+    for (const literal of literals) {
+        constructs += 1;
+        for (const byte of bytesOf(literal)) {
+            if (byte < 0x20 && byte !== 0x0a && byte !== 0x0d) {
+                failures.push(`${entry}: a construct starts at ${spell(byte)}, a control byte.`);
+            }
+            bytes.add(byte);
         }
     }
-    for (const byte of dispatch) {
-        if (!dispatched.has(byte)) {
-            failures.push(
-                `${entry}: declares ${spell(byte)} in its dispatch set, and its inline match never dispatches on it.`
-            );
+    // A source may define more than one descriptor (emphasis's `*` and `_`):
+    // a rule's byte is checked against all of its source's constructs.
+    const started = startedBy.get(entry) ?? new Set();
+    for (const byte of bytes) started.add(byte);
+    startedBy.set(entry, started);
+    sources.set(entry, source);
+    report.push(`  ${entry}: ${[...bytes].map(spell).join(" ")}`);
+}
+for (const [entry, source] of sources) {
+    for (const [, character] of source.matchAll(/\.character\s*=\s*'([^'\\])'/g)) {
+        if (!startedBy.get(entry).has(character.charCodeAt(0))) {
+            failures.push(`${entry}: its paired runs of '${character}' start none of its constructs.`);
         }
     }
-
-    // The two laws that make D1 and D2 unexpressible rather than fixed.
-    const owned = new Set(dispatch);
-    for (const byte of terminates) {
-        if (!owned.has(byte)) {
-            failures.push(
-                `${entry}: ${spell(byte)} ends a text run and is in no dispatch set. That split is pure cost (D2).`
-            );
-        }
-    }
-    for (const byte of transparent) {
-        if (!owned.has(byte)) {
-            failures.push(
-                `${entry}: ${spell(byte)} is flanking-transparent and the element does not own it. That is D1.`
-            );
-        }
-    }
-
-    const show = (label, bytes) => `${label}=${bytes.length ? bytes.map(spell).join(" ") : "(none)"}`;
-    report.push(
-        `  ${entry}: ${show("terminates", terminates)}  ${show("dispatch", dispatch)}  ` +
-            `${show("transparent", transparent)}`
-    );
 }
 
-// AND THE AUDIT MUST SEE SOMETHING (above): an inventory that found no
-// inline match read the declarations wrong.
-if (hooks === 0) failures.push("no element's inline match was found: the audit read nothing.");
+if (constructs === 0) failures.push("no element's text construct was found: the audit read nothing.");
 if (failures.length > 0) {
     process.stderr.write(`element special characters FAILED:\n${failures.map((f) => `  ${f}`).join("\n")}\n`);
-    process.stderr.write(
-        "\nA registered byte splits the text run in front of it whether or not its inline match\n" +
-            "claims it, and consolidation hides the split from every output gate. Either dispatch\n" +
-            "the byte or do not register it.\n"
-    );
     process.exit(1);
 }
-process.stdout.write(`Element special characters: every declared byte is a character, and every one is dispatched.\n`);
+process.stdout.write(
+    `Element special characters: every construct starts at a character, and every paired run's byte starts one.\n`
+);
 process.stdout.write(`${report.join("\n")}\n`);

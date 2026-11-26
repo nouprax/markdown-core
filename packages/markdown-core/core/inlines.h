@@ -12,22 +12,19 @@ extern "C" {
 /* Parses the inline content of `parent`: an inline root's, whose nodes are
  * placed in offsets of its content, or, when `root` is false, a field's, cut
  * from the content of the root its owning token is in. */
-bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root);
+void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root);
 
-/* markdown_core_parse_inlines of an inline root, read as `settle` says
- * (parser.h, markdown_core_inline_settle). */
-bool markdown_core_parse_inlines_settle(markdown_core_parser *parser, markdown_core_node *parent,
-                                        markdown_core_inline_settle *settle);
 /* The same, stopping at the first of `stops` it meets, when not NULL
  * (markdown_core_seam_stops). */
-bool markdown_core_parse_inlines_seam(markdown_core_parser *parser, markdown_core_node *parent,
+void markdown_core_parse_inlines_seam(markdown_core_parser *parser, markdown_core_node *parent,
                                       markdown_core_inline_settle *settle, markdown_core_seam_stops *stops);
 
-/* Shared field ownership and inline parsing. Parsing returns whether ordinary
- * raw whitespace occurred, including in nested fields; OOM stays on parser. */
-bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node);
+/* Parses the inline content of the fields `node`'s subtrees hold; OOM
+ * stays on the parser. */
+void markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node);
 
 /* Release the run records finished runs gave back to `parser`. */
+void markdown_core_inline_release_passes(markdown_core_parser *parser);
 void markdown_core_inline_release_records(markdown_core_parser *parser);
 
 #ifdef __cplusplus

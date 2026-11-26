@@ -68,14 +68,6 @@ void markdown_core_attributes_fields(const markdown_core_attribute_parser *parse
  * (`scratch`). */
 markdown_core_attribute_scratch *markdown_core_attributes_scratch(const markdown_core_element_instance *self);
 struct markdown_core_field;
-/* THE SERVICE'S `closes` (services.h): where an attribute
- * block at content offset `start` of a construct of kind `owner` closes,
- * one past its `}`, or 0 when none closes there. The block's value is the
- * attribute element's to write: it updates the node the construct makes
- * (no-flush.md 10.13). */
-bufsize_t markdown_core_attributes_closes(const markdown_core_element_instance *self,
-                                          markdown_core_inline_state *inline_state, bufsize_t start,
-                                          markdown_core_node_kind owner);
 /* AN ATTRIBUTE BLOCK THAT DOES NOT CLOSE, its `{` at `start` of the `n`
  * bytes at `s`, which reach to the end of what may hold it: kept on `to`'s
  * node (markdown_core_field_opener), a construct of kind NONE whose members

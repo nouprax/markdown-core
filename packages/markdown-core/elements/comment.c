@@ -134,58 +134,6 @@ static int block_matches(const markdown_core_element_instance *self, markdown_co
     return 1;
 }
 
-/* One closer unit: `%%` closes; any other byte is one byte of body. */
-static int scan_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule, bool *closes) {
-    (void)rule;
-    if (data[at] == '%' && at + 1 < length && data[at + 1] == '%') {
-        *closes = true;
-        return 2;
-    }
-    return 1;
-}
-
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
-    int start = markdown_core_inline_state_get_offset(inline_state);
-    int close;
-    markdown_core_node *node;
-
-    if (character != '%') {
-        return NULL;
-    }
-    ((markdown_core_comment_work *)self->state)->scan++;
-    if (start + 1 >= input->len || input->data[start + 1] != '%') {
-        if (start + 1 >= input->len) {
-            markdown_core_inline_state_saw_end(inline_state);
-        }
-        return NULL;
-    }
-    close = markdown_core_inline_state_find_opaque_close(inline_state, MARKDOWN_CORE_DELIM_RULE_COMMENT, start + 2,
-                                                         scan_closer);
-    if (close < 0) {
-        return NULL;
-    }
-    node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, self->element);
-    if (!node) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    *node->as.literal = markdown_core_chunk_dup(input, start + 2, close - start - 2);
-    if (!markdown_core_chunk_to_cstr(node->as.literal)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
-        return NULL;
-    }
-    /* The scope covers both delimiters and the body. */
-    markdown_core_inline_state_place(inline_state, node, start, close + 1);
-    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
-    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, start + 2, start + 2, true);
-    markdown_core_inline_state_set_offset(inline_state, close + 2);
-    return node;
-}
-
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
 static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
                           markdown_core_node *, markdown_core_reader *);
@@ -230,10 +178,76 @@ static const markdown_core_content_ops COMMENT_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_LITERAL,
 };
 
+/* THE INLINE COMMENT (plan symbols-cleanroom.md 23): `%%`, its body and
+ * the next `%%`, one token. A `%` no comment follows is data. Where no
+ * closer follows from, the read's record says, so a later opener past it
+ * looks no further. */
+enum { COMMENT_INLINE };
+static markdown_core_state S_comment(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    ((markdown_core_comment_work *)self->state)->scan++;
+    const uint32_t start = tokenizer->position, size = tokenizer->size;
+    if (markdown_core_code_at(tokenizer, 1) != '%') {
+        return markdown_core_nok(tokenizer);
+    }
+    /* One plus where a scan found no closer from. */
+    uint32_t *failed = markdown_core_read_record(tokenizer, self->run_offset);
+    const uint32_t from = start + 2;
+    if (*failed && from >= *failed - 1) {
+        markdown_core_met_end(tokenizer);
+        return markdown_core_nok(tokenizer);
+    }
+    uint32_t close = from;
+    while (close + 1 < size && !(tokenizer->data[close] == '%' && tokenizer->data[close + 1] == '%')) {
+        close++;
+    }
+    if (close + 1 >= size) {
+        markdown_core_met_end(tokenizer);
+        *failed = from + 1;
+        return markdown_core_nok(tokenizer);
+    }
+    if (close + 2 >= size) {
+        markdown_core_met_end(tokenizer);
+    }
+    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + COMMENT_INLINE));
+    markdown_core_consume_to(tokenizer, close + 2);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + COMMENT_INLINE));
+    return markdown_core_ok(tokenizer);
+}
+static const markdown_core_text_construct COMMENT_CONSTRUCTS[] = {{"%", {.start = S_comment}}};
+
+static void S_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const bufsize_t start = (bufsize_t)token->start, close = (bufsize_t)token->end - 2;
+    markdown_core_node *node =
+        markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, self->element);
+    if (!node) {
+        markdown_core_compile_append(compiler, NULL);
+        return;
+    }
+    *node->as.literal = markdown_core_inline_take(inline_state, start + 2, close - start - 2);
+    if (!markdown_core_chunk_to_cstr(node->as.literal)) {
+        markdown_core_parser_release_node(parser, node);
+        markdown_core_compile_append(compiler, NULL);
+        return;
+    }
+    /* The scope covers both delimiters and the body. */
+    markdown_core_inline_state_place(inline_state, node, start, close + 1);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, start + 2, start + 2, true);
+    markdown_core_compile_append(compiler, node);
+}
+static const markdown_core_compile_ops COMMENT_TOKENS[] = {[COMMENT_INLINE] = {.exit = S_made}};
+
 static const markdown_core_inline_ops COMMENT_INLINES = {
-    .match = match,
-    .terminates = "%",
-    .dispatch = "%",
+    .constructs = COMMENT_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = COMMENT_TOKENS,
+    .token_count = 1,
 };
 
 static const markdown_core_open_ops COMMENT_OPENS = {
@@ -283,6 +297,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .provides = COMMENT_SERVICES,
     .facets = MARKDOWN_CORE_COMMENT_FACETS,
     .state_size = sizeof(markdown_core_comment_work),
+    .run_state_size = sizeof(uint32_t),
     .follows = COMMENT_FOLLOWS,
     .name = "comment",
     .edit = &COMMENT_EDIT,

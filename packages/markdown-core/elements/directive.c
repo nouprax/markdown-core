@@ -4,6 +4,8 @@
 #include "directive.h"
 #include "element.h"
 #include "inline_internal.h"
+#include "tokenizer.h"
+#include "compile.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -357,164 +359,6 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
     return node;
 }
 
-/* The directive whose `:` is at `colon`, given up with its name, from past
- * the colon to `stop`, kept on the run's node (markdown_core_inline_open). */
-static void S_report_name(markdown_core_inline_state *inline_state, bufsize_t colon, bufsize_t stop) {
-    const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE, colon + 1, stop};
-    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
-}
-
-/* THE WHOLE CONSTRUCT IS SCANNED AT THE COLON, and that is the difference
- * between this and what was here before.
- *
- * `:name[label]{attrs}` used to be started by PUSHING A DELIMITER for `:name[`
- * and betting that a `]` would turn up later to pair with it. Two things
- * follow from that bet and both are wrong. When no `]` arrives the directive
- * is lost -- `:a[b` was one Text node where micromark gives a directive named
- * `a` and the prose `[b`. And while the bet is open the label has no boundary,
- * so whatever reaches the `]` first takes the directive with it: a GFM
- * autolink literal, an emphasis run, a code span (D36).
- *
- * micromark decides at the colon instead, with
- * `effects.attempt(label, afterLabel, afterLabel)` -- it SCANS the label, and
- * BOTH branches continue. A label that closes is a label; one that does not is
- * prose, and the directive stands either way. That is the same shape 7.1 gave
- * the attribute block, and it is what this does.
- *
- * Scanning it here also means the bytes are CONSUMED here, so no other
- * element is ever offered them. There is nothing left to protect. */
-static markdown_core_node *match_colon_directive(const markdown_core_element_instance *self,
-                                                 markdown_core_parser *parser, markdown_core_node *parent,
-                                                 markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
-                                                 bufsize_t offset) {
-    const markdown_core_element *element = self->element;
-    bufsize_t name_start;
-    bufsize_t name_len;
-    bufsize_t pos;
-    bufsize_t label_start = 0;
-    bufsize_t label_len = 0;
-    bufsize_t label_open = 0;
-    int has_label = 0;
-    markdown_core_node *node;
-    markdown_core_node *label_node = NULL;
-    node_directive *directive;
-
-    /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
-     * side: a run of colons stays whole, so `x ::a[y]` is text rather than
-     * `x :` plus a directive, and `x:::a[y]` is text rather than `x::` plus
-     * one. `::name` and `:::name` at the start of a line are leaf and
-     * container directives and open through the block path, not this one. */
-    if (offset > 0 && chunk->data[offset - 1] == ':') {
-        return NULL;
-    }
-
-    if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
-        if (offset + 1 >= chunk->len) {
-            markdown_core_inline_state_saw_end(inline_state);
-            S_report_name(inline_state, offset, offset + 1);
-        }
-        return NULL;
-    }
-
-    if (!scan_name(chunk->data, chunk->len, offset + 1, &name_start, &name_len)) {
-        return NULL;
-    }
-
-    /* THE INLINE FORM IS ANCHORED ON ITS BRACKET PART. A name alone is text:
-     * the proposal's examples always carry a label or attributes, and it is
-     * that part, not the name's first character, that tells `:badge[new]`
-     * from the colon in `12:30` or `http://`. A part that fails to scan does
-     * not anchor; the name commits only once one part has. */
-    pos = name_start + name_len;
-    /* The name, and the label after it, may go on with the input. */
-    if (pos >= chunk->len) {
-        markdown_core_inline_state_saw_end(inline_state);
-    }
-    if (pos < chunk->len && chunk->data[pos] == '[') {
-        bufsize_t label_end;
-        if (scan_label(chunk->data, chunk->len, pos, &label_start, &label_len, &label_end)) {
-            has_label = 1;
-            label_open = pos;
-            pos = label_end;
-        } else {
-            markdown_core_inline_state_saw_end(inline_state);
-        }
-    }
-    if (pos >= chunk->len) {
-        markdown_core_inline_state_saw_end(inline_state);
-    }
-
-    /* Without a label the attribute block anchors the directive: whether one
-     * closes here is the attribute grammar's to say, and its value is that
-     * element's to write, as it updates the directive (no-flush.md 10.13). */
-    const markdown_core_attribute_ops *attributes = S_attributes(self);
-    if (!has_label && !(attributes && pos < chunk->len && chunk->data[pos] == '{' &&
-                        attributes->closes(self->needs[DIRECTIVE_ATTRIBUTES].instance, inline_state, pos,
-                                           MARKDOWN_CORE_KIND_DIRECTIVE))) {
-        S_report_name(inline_state, offset, name_start + name_len);
-        return NULL;
-    }
-
-    node = make_directive_node(element, parser, chunk->data + name_start, name_len);
-    if (!node) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    directive = get_directive(node);
-
-    /* The directive, from its `:` to its last byte, and its label, from the
-     * `[` to the `]`, are placed like every inline scope: each endpoint is
-     * where the user sees that byte. A label may span a line ending, and the
-     * byte after the directive need not be the next byte in the editor: at a
-     * table cell's edge it is the cell's line ending, placed at the end of
-     * the row. */
-    markdown_core_inline_state_place(inline_state, node, (int)offset, (int)pos - 1);
-    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
-    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NAME, name_start, name_start + name_len);
-
-    if (has_label) {
-        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, 0, 0);
-        if (!label_node) {
-            markdown_core_parser_release_node(parser, node);
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return NULL;
-        }
-        markdown_core_inline_state_place(inline_state, label_node, (int)label_open, (int)(label_start + label_len));
-        if (directive->label) {
-            markdown_core_parser_release_node(parser, label_node);
-            markdown_core_parser_release_node(parser, node);
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return NULL;
-        }
-        directive->label = label_node;
-        /* The field is a view of these source bytes, including line breaks
-         * and stripped block prefixes. Do not rebuild its map from one column. */
-        markdown_core_text_share(parser, &parent->content_map, &label_node->content_map, label_start, label_len);
-    }
-
-    markdown_core_inline_state_set_offset(inline_state, (int)pos);
-    markdown_core_inline_made(inline_state, node);
-
-    return node;
-}
-
-/* ONE BYTE, not two. `]` was claimed because a label's closer had to be
- * recognised as a delimiter to pair with the opener; the label is scanned at
- * the colon now, so the bracket is nobody's business but the core's -- which
- * is what makes `[a](b)` inside a label work like any other link. */
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
-
-    if (character == ':') {
-        return match_colon_directive(self, parser, parent, inline_state, chunk, offset);
-    }
-
-    return NULL;
-}
-
 static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_t pos) {
     bufsize_t count = 0;
     while (pos + count < len && data[pos + count] == ':') {
@@ -767,10 +611,132 @@ static const markdown_core_content_ops DIRECTIVE_CONTENT = {
     .holds_lines = accepts_lines,
 };
 
+/* THE DIRECTIVE'S TEXT (plan symbols-cleanroom.md 23.10): the whole
+ * construct is read at its colon, as match_colon_directive reads it; its
+ * label is a field (markdown_core_text_field), read where the directive
+ * is, and its attribute block is the one that follows it. A directive whose
+ * label's text has a boundary is a token of its own kind, which is one. */
+enum { DIRECTIVE_TEXT, DIRECTIVE_SPACED, DIRECTIVE_KINDS };
+
+static void S_give_name(markdown_core_tokenizer *tokenizer, bufsize_t colon, bufsize_t stop) {
+    const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE, colon + 1, stop};
+    markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
+}
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_inline_state *inline_state = tokenizer->reader;
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const unsigned char *data = tokenizer->data;
+    const bufsize_t size = (bufsize_t)tokenizer->size;
+    const bufsize_t offset = (bufsize_t)tokenizer->position;
+    if (offset > 0 && data[offset - 1] == ':') {
+        return markdown_core_nok(tokenizer);
+    }
+    if (offset + 1 >= size) {
+        markdown_core_met_end(tokenizer);
+        S_give_name(tokenizer, offset, offset + 1);
+        return markdown_core_nok(tokenizer);
+    }
+    bufsize_t name_start, name_len;
+    if (data[offset + 1] == ':' || !scan_name(data, size, offset + 1, &name_start, &name_len)) {
+        return markdown_core_nok(tokenizer);
+    }
+    bufsize_t pos = name_start + name_len;
+    bufsize_t label_start = 0, label_len = 0;
+    bool has_label = false;
+    if (pos >= size) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (pos < size && data[pos] == '[') {
+        bufsize_t label_end;
+        if (scan_label(data, size, pos, &label_start, &label_len, &label_end)) {
+            has_label = true;
+            pos = label_end;
+        } else {
+            markdown_core_met_end(tokenizer);
+        }
+    }
+    if (pos >= size) {
+        markdown_core_met_end(tokenizer);
+    }
+    const markdown_core_attribute_ops *attributes = S_attributes(self);
+    if (!has_label && !(attributes && pos < size && data[pos] == '{' &&
+                        attributes->block(self->needs[DIRECTIVE_ATTRIBUTES].instance, tokenizer, pos,
+                                          MARKDOWN_CORE_KIND_DIRECTIVE))) {
+        S_give_name(tokenizer, offset, name_start + name_len);
+        return markdown_core_nok(tokenizer);
+    }
+    uint32_t field = UINT32_MAX;
+    bool spaced = false;
+    if (has_label) {
+        markdown_core_node *label = make_label_node(self->element, parser, data + label_start, label_len, 0, 0);
+        if (!label) {
+            tokenizer->events.failed = true;
+            return markdown_core_nok(tokenizer);
+        }
+        /* The field is a view of these source bytes (match_colon_directive). */
+        markdown_core_text_share(parser, &inline_state->owner->content_map, &label->content_map, label_start,
+                                 label_len);
+        field = markdown_core_text_field(tokenizer, label, &spaced);
+        if (field == UINT32_MAX) {
+            markdown_core_parser_release_node(parser, label);
+        }
+    }
+    const uint16_t kind = (uint16_t)(self->token_base + (spaced ? DIRECTIVE_SPACED : DIRECTIVE_TEXT));
+    const uint32_t token = markdown_core_enter(tokenizer, kind);
+    markdown_core_consume_to(tokenizer, (uint32_t)pos);
+    markdown_core_exit(tokenizer, kind);
+    if (token != UINT32_MAX) {
+        tokenizer->events.tokens[token].data = field;
+    }
+    markdown_core_text_made(tokenizer, MARKDOWN_CORE_NODE_DIRECTIVE);
+    return markdown_core_ok(tokenizer);
+}
+
+/* COMPILE: the directive, its name and its label, placed as
+ * match_colon_directive places them. */
+static void S_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
+    const bufsize_t start = (bufsize_t)token->start, end = (bufsize_t)token->end;
+    const bufsize_t name_start = start + 1;
+    const bufsize_t name_len = name_end(data + name_start, end - name_start);
+    markdown_core_node *node = make_directive_node(self->element, parser, data + name_start, name_len);
+    if (!node) {
+        compiler->failed = true;
+        return;
+    }
+    markdown_core_inline_state_place(inline_state, node, (int)start, (int)end - 1);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, node);
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NAME, name_start, name_start + name_len);
+    if (token->data != UINT32_MAX) {
+        markdown_core_node *label = markdown_core_compile_field(compiler, token->data);
+        if (!label) {
+            markdown_core_parser_release_node(parser, node);
+            compiler->failed = true;
+            return;
+        }
+        const bufsize_t label_open = name_start + name_len;
+        markdown_core_inline_state_place(inline_state, label, (int)label_open, (int)end - 1);
+        get_directive(node)->label = label;
+    }
+    markdown_core_compile_append(compiler, node);
+}
+
+static const markdown_core_text_construct DIRECTIVE_CONSTRUCTS[] = {{":", {.start = S_start}}};
+static const markdown_core_compile_ops DIRECTIVE_TOKENS[DIRECTIVE_KINDS] = {
+    [DIRECTIVE_TEXT] = {.exit = S_made}, [DIRECTIVE_SPACED] = {.exit = S_made, .boundary = true}};
+
 static const markdown_core_inline_ops DIRECTIVE_INLINES = {
-    .match = match,
-    .terminates = ":",
-    .dispatch = ":",
+    .constructs = DIRECTIVE_CONSTRUCTS,
+    .construct_count = sizeof(DIRECTIVE_CONSTRUCTS) / sizeof(DIRECTIVE_CONSTRUCTS[0]),
+    .tokens = DIRECTIVE_TOKENS,
+    .token_count = DIRECTIVE_KINDS,
 };
 
 static const markdown_core_open_ops DIRECTIVE_OPENS = {

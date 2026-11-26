@@ -4,6 +4,7 @@
 #include "alloc.h"
 #include "block_internal.h"
 #include "dialect.h"
+#include "label.h"
 #include "labels.h"
 
 /* Whether a descriptor is refused. The rule: an element takes part in the
@@ -142,7 +143,7 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Plain text made of a kind that is not an inline kind of the table. */
     const markdown_core_inline_ops *inlines = S_inlines_of(element);
-    if (inlines->text &&
+    if (inlines->data &&
         !(MARKDOWN_CORE_NODE_TYPE_INLINE_P(inlines->plain) && S_finish_kind_indexable(inlines->plain))) {
         return true;
     }
@@ -323,20 +324,8 @@ static bool S_inlines_implement(const markdown_core_inline_ops *inlines, markdow
     switch (hook) {
     case MARKDOWN_CORE_INLINE_HOOK_INIT:
         return inlines->init != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_FINISH:
-        return inlines->finish != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_DISPOSE:
         return inlines->dispose != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_OPEN:
-        return inlines->holds != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_REPORT:
-        return inlines->report != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_OPENED:
-        return inlines->opened != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_SETTLED:
-        return inlines->settled != NULL;
-    case MARKDOWN_CORE_INLINE_HOOK_FREED:
-        return inlines->freed != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }
@@ -353,7 +342,7 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         if (S_owns_document_lifecycle(element)) {
             dialect->document_structure = instance;
         }
-        if (S_inlines_of(element)->text) {
+        if (S_inlines_of(element)->data) {
             dialect->text_structure = instance;
         }
         if (S_opens_of(element)->text) {
@@ -361,12 +350,6 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
         }
         if (element->spelling) {
             dialect->spelling = element->spelling;
-        }
-        if (S_inlines_of(element)->rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
-            dialect->delimiter_owners[S_inlines_of(element)->rule] = instance;
-            if (S_inlines_of(element)->character) {
-                dialect->delimiter_chars[S_inlines_of(element)->character] = S_inlines_of(element)->rule;
-            }
         }
     }
     assert(dialect->document_structure && dialect->text_structure && dialect->text_block_structure);
@@ -456,17 +439,21 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
     /* The out-of-table index answers nothing; the storage is zeroed. */
 }
 
-/* THE INLINE BYTE TABLES. A byte ends a text run when an inline owner says
- * so (`terminates`), is looked through by flanking when one declares it
- * (`transparent`), and is offered to the owners that list it in
- * `dispatch`. These are properties of the registered elements alone, so they
- * are derived once, when the dialect is sealed -- never per inline pass.
- * They used to be installed around the inline pass and cleared after it, the
- * shape cmark-gfm needs because its tables are process globals; here they are
- * the instance's dialect's and die with it. */
+/* THE FLANKING-TRANSPARENT BYTES, which flanking looks through when an
+ * element declares them (`transparent`), a property of the registered
+ * elements alone, projected once as the dialect is sealed. */
+static void S_project_transparent(markdown_core_dialect *dialect) {
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const char *bytes = S_inlines_of(dialect->instances[i].element)->transparent;
+        for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
+            dialect->skip_chars[*c] = 1;
+        }
+    }
+}
+
+/* Whether byte `*at` of `bytes` is written earlier in it: a byte written
+ * twice in one declaration is one declaration. */
 static bool S_declared_earlier(const unsigned char *bytes, const unsigned char *at) {
-    /* A byte written twice in one declaration is one declaration. The
-     * declarations are a handful of bytes, so the check is the scan itself. */
     for (const unsigned char *p = bytes; p < at; p++) {
         if (*p == *at) {
             return true;
@@ -475,80 +462,132 @@ static bool S_declared_earlier(const unsigned char *bytes, const unsigned char *
     return false;
 }
 
-/* Count the dispatch entries per byte into `offsets` as running totals and
- * return their sum, which the measure lays out after the dialect's struct. */
-static size_t S_count_inline_dispatch(const markdown_core_element *const *elements, size_t count, size_t *offsets) {
+/* THE TEXT (plan symbols-cleanroom.md 23): the elements' constructs, the
+ * entries by byte, which `offsets` counts as running totals, and the token
+ * kinds, counted into `sizes`. */
+static void S_count_text(const markdown_core_element *const *elements, size_t count, markdown_core_dialect_sizes *sizes,
+                         uint16_t *offsets) {
+    size_t at[257] = {0};
+    sizes->token_kinds = MARKDOWN_CORE_TOKEN_FIRST;
     for (size_t i = 0; i < count; i++) {
-        const markdown_core_element *element = elements[i];
-        const unsigned char *bytes = (const unsigned char *)S_inlines_of(element)->dispatch;
-        for (const unsigned char *c = bytes; S_inlines_of(element)->match && c && *c; c++) {
-            if (!S_declared_earlier(bytes, c)) {
-                offsets[*c + 1]++;
+        const markdown_core_inline_ops *inlines = S_inlines_of(elements[i]);
+        sizes->constructs += inlines->construct_count;
+        sizes->token_kinds += inlines->token_count;
+        for (size_t k = 0; k < inlines->construct_count; k++) {
+            const unsigned char *bytes = (const unsigned char *)inlines->constructs[k].bytes;
+            for (const unsigned char *c = bytes; c && *c; c++) {
+                if (!S_declared_earlier(bytes, c)) {
+                    at[*c + 1]++;
+                }
             }
         }
     }
+    /* A byte a rule closes a label at reads the label's end, after every
+     * element's construct there (label.h). */
+    bool ends[256] = {false};
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_inline_ops *inlines = S_inlines_of(elements[i]);
+        if (inlines->close_count && !ends[inlines->closer]) {
+            ends[inlines->closer] = true;
+            at[inlines->closer + 1]++;
+        }
+    }
     for (size_t c = 0; c < 256; c++) {
-        offsets[c + 1] += offsets[c];
+        at[c + 1] += at[c];
     }
-    return offsets[256];
-}
-
-static void S_project_inline_bytes(markdown_core_dialect *dialect) {
-    for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_element_instance *instance = &dialect->instances[i];
-        const markdown_core_element *element = instance->element;
-        if (!S_inlines_of(element)->match && !S_inlines_of(element)->insert) {
-            continue;
-        }
-        /* A byte keeps a start predicate only while one element terminates
-         * text at it: another owner's tokens are not that predicate's to
-         * rule out, so a shared byte is unconditional. */
-        for (const unsigned char *c = (const unsigned char *)S_inlines_of(element)->terminates; c && *c; c++) {
-            dialect->inline_start_owners[*c] =
-                !dialect->special_chars[*c] && S_inlines_of(element)->starts ? instance : NULL;
-            dialect->special_chars[*c] = MARKDOWN_CORE_TEXT_END;
-        }
-        for (const unsigned char *c = (const unsigned char *)S_inlines_of(element)->transparent; c && *c; c++) {
-            dialect->skip_chars[*c] = 1;
-        }
+    sizes->text_entries = at[256];
+    for (size_t c = 0; c <= 256; c++) {
+        offsets[c] = (uint16_t)at[c];
     }
 }
 
-/* Fill each byte's owners into `entries` in the order `try_elements` asks
- * them: by ascending precedence, and within one precedence in descriptor
- * order. The owners are ordered once -- a stable insertion by precedence over
- * the elements with an inline matcher -- and then emitted, so every byte's
- * list inherits that order with no per-byte sort. The ordering is total over
- * the field's values, not only the named ones, so every entry
- * `S_count_inline_dispatch` counted is written. */
-static void S_project_inline_dispatch(markdown_core_dialect *dialect, const markdown_core_element_instance **entries) {
+/* The constructs copied into `copies` with their instances as context and
+ * listed by byte into `items` -- by ascending precedence of their
+ * elements, then descriptor order, then each element's own order -- and
+ * the handlers copied into `handlers` and listed by kind into `compiles`,
+ * the data's last, past the elements' kinds. */
+static void S_project_text(markdown_core_dialect *dialect, markdown_core_element_instance *instances,
+                           markdown_core_construct *copies, const markdown_core_construct **items,
+                           const markdown_core_construct **holders, markdown_core_compile_ops *handlers,
+                           const markdown_core_compile_ops **compiles) {
     const markdown_core_element_instance *owners[MARKDOWN_CORE_ELEMENT_LIMIT];
     size_t count = 0;
-    assert(dialect->element_count <= MARKDOWN_CORE_ELEMENT_LIMIT);
+    uint16_t kind = MARKDOWN_CORE_TOKEN_FIRST;
+    size_t data_slot = 0;
     for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_element_instance *instance = &dialect->instances[i];
-        if (!S_inlines_of(instance->element)->match) {
+        data_slot += S_inlines_of(instances[i].element)->token_count;
+    }
+    for (size_t k = 0; k < MARKDOWN_CORE_TOKEN_FIRST; k++) {
+        compiles[k] = NULL;
+    }
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        markdown_core_element_instance *instance = &instances[i];
+        const markdown_core_inline_ops *inlines = S_inlines_of(instance->element);
+        instance->token_base = kind;
+        if (inlines->data) {
+            markdown_core_compile_ops *data = &handlers[data_slot];
+            *data = *inlines->data;
+            data->context = instance;
+            compiles[MARKDOWN_CORE_TOKEN_DATA] = data;
+        }
+        for (size_t t = 0; t < inlines->token_count; t++, kind++) {
+            handlers[kind - MARKDOWN_CORE_TOKEN_FIRST] = inlines->tokens[t];
+            handlers[kind - MARKDOWN_CORE_TOKEN_FIRST].context = instance;
+            compiles[kind] = &handlers[kind - MARKDOWN_CORE_TOKEN_FIRST];
+        }
+        if (!inlines->construct_count) {
             continue;
         }
         size_t at = count++;
-        while (at > 0 &&
-               S_inlines_of(owners[at - 1]->element)->precedence > S_inlines_of(instance->element)->precedence) {
+        while (at > 0 && S_inlines_of(owners[at - 1]->element)->precedence > inlines->precedence) {
             owners[at] = owners[at - 1];
             at--;
         }
         owners[at] = instance;
     }
-    size_t next[256];
-    memcpy(next, dialect->inline_dispatch_offsets, sizeof(next));
-    dialect->inline_dispatch = entries;
+    dialect->token_kinds = kind;
+    dialect->compiles = compiles;
+    size_t next[256], copied = 0;
+    for (size_t c = 0; c < 256; c++) {
+        next[c] = dialect->text_offsets[c];
+    }
     for (size_t i = 0; i < count; i++) {
-        const unsigned char *bytes = (const unsigned char *)S_inlines_of(owners[i]->element)->dispatch;
-        for (const unsigned char *c = bytes; c && *c; c++) {
-            if (!S_declared_earlier(bytes, c)) {
-                entries[next[*c]++] = owners[i];
+        const markdown_core_inline_ops *inlines = S_inlines_of(owners[i]->element);
+        for (size_t k = 0; k < inlines->construct_count; k++) {
+            markdown_core_construct *copy = &copies[copied++];
+            *copy = inlines->constructs[k].construct;
+            copy->context = owners[i];
+            const unsigned char *bytes = (const unsigned char *)inlines->constructs[k].bytes;
+            for (const unsigned char *c = bytes; c && *c; c++) {
+                if (!S_declared_earlier(bytes, c)) {
+                    items[next[*c]++] = copy;
+                }
             }
         }
     }
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const markdown_core_inline_ops *inlines = S_inlines_of(instances[i].element);
+        const unsigned char c = inlines->closer;
+        if (inlines->close_count && next[c] < dialect->text_offsets[c + 1] &&
+            (next[c] == dialect->text_offsets[c] || items[next[c] - 1] != &MARKDOWN_CORE_LABEL_END)) {
+            items[next[c]++] = &MARKDOWN_CORE_LABEL_END;
+        }
+    }
+    for (size_t k = MARKDOWN_CORE_TOKEN_LABEL; k <= MARKDOWN_CORE_TOKEN_MARKER; k++) {
+        compiles[k] = &MARKDOWN_CORE_LABEL_TOKENS[k - MARKDOWN_CORE_TOKEN_LABEL];
+    }
+    /* The constructs that may hold something open, asked at every start
+     * of the text (markdown_core_tokenizer_settled). */
+    size_t held = 0;
+    for (size_t i = 0; i < copied; i++) {
+        if (copies[i].holds) {
+            holders[held++] = &copies[i];
+        }
+    }
+    dialect->text.items = items;
+    dialect->text.offsets = dialect->text_offsets;
+    dialect->text.holders = holders;
+    dialect->text.holder_count = held;
 }
 
 /* The (event, kind) keys a finish step's declaration projects to, counted
@@ -670,8 +709,6 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         instance->run_offset = dialect->run_state_size;
         state_at += markdown_core_state_align(element->state_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
-        instance->bracket_offset = dialect->bracket_size;
-        dialect->bracket_size += markdown_core_state_align(element->bracket_size);
         size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {
             assert(table[at]->element != element);
@@ -824,7 +861,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         }
         sizes->closers += inlines->close_count;
     }
-    sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
+    uint16_t text_offsets[257];
+    S_count_text(elements, count, sizes, text_offsets);
     sizes->pointers += 2; /* the name owners' and the staged instances' terminators */
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
@@ -842,7 +880,9 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     }
     sizes->spaces = S_count_spaces(elements, count, SIZE_MAX);
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
-           sizes->closers * sizeof(markdown_core_closer) +
+           sizes->closers * sizeof(markdown_core_closer) + sizes->constructs * sizeof(markdown_core_construct) +
+           (sizes->token_kinds - MARKDOWN_CORE_TOKEN_FIRST + 1) * sizeof(markdown_core_compile_ops) +
+           (sizes->text_entries + sizes->constructs + sizes->token_kinds) * sizeof(void *) +
            (sizes->pointers + ((size_t)1 << sizes->instance_bits)) * sizeof(const markdown_core_element_instance *) +
            sizes->needs * sizeof(markdown_core_need) + (sizes->spaces + 2) * sizeof(const markdown_core_space *) +
            sizes->namings * sizeof(unsigned) + sizes->gate_bytes;
@@ -887,20 +927,12 @@ static void S_project_closers(markdown_core_dialect *dialect, markdown_core_elem
     assert(at == count);
     dialect->closers = closers;
     dialect->closer_count = count;
-    /* The engine reads a closer whenever a rule may close a bracket at it,
-     * so the byte ends a text run unconditionally. */
-    for (size_t i = 0; i < count; i++) {
-        const unsigned char byte = closers[i].byte;
-        dialect->closes[byte] = true;
-        dialect->special_chars[byte] = MARKDOWN_CORE_TEXT_END;
-        dialect->inline_start_owners[byte] = NULL;
-    }
 }
 
 /* SEAL: every table the dialect decides, projected once, into the storage
  * `sizes` was measured for. The tail after the struct holds the finish step
- * entries, then the instances, then the rules for closing a bracket, then the instance-pointer lists (the block
- * families, the inline-content families, the inline dispatch), the
+ * entries, then the instances, then the rules for closing a label, then the instance-pointer lists (the block
+ * families and the inline-content families), the
  * instance table and the resolved needs, then the gate tables. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
  * list is copied into the instances rather than taken, so the dialect owns
@@ -911,8 +943,14 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     markdown_core_finish_step_entry *step_entries = (markdown_core_finish_step_entry *)(dialect + 1);
     markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
     markdown_core_closer *closers = (markdown_core_closer *)(instances + count);
+    markdown_core_construct *copies = (markdown_core_construct *)(closers + sizes->closers);
+    markdown_core_compile_ops *handlers = (markdown_core_compile_ops *)(copies + sizes->constructs);
+    const markdown_core_construct **items =
+        (const markdown_core_construct **)(handlers + (sizes->token_kinds - MARKDOWN_CORE_TOKEN_FIRST + 1));
+    const markdown_core_construct **holders = items + sizes->text_entries;
+    const markdown_core_compile_ops **compiles = (const markdown_core_compile_ops **)(holders + sizes->constructs);
     const markdown_core_element_instance **entries =
-        (const markdown_core_element_instance **)(closers + sizes->closers);
+        (const markdown_core_element_instance **)(compiles + sizes->token_kinds);
     const markdown_core_element_instance **table = entries + sizes->pointers;
     markdown_core_need *resolved = (markdown_core_need *)(table + ((size_t)1 << sizes->instance_bits));
     const markdown_core_space **spaces = (const markdown_core_space **)(resolved + sizes->needs);
@@ -938,7 +976,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     S_number_spaces(dialect, instances, spaces, namings);
     S_resolve_owners(dialect);
     S_project_kinds(dialect);
-    S_project_inline_bytes(dialect);
+    S_project_transparent(dialect);
     /* What a container continuation may strip, as one table over the byte:
      * indentation, which every continuation strips, and the bytes each
      * container element declares for its own. */
@@ -997,12 +1035,11 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
         }
     }
     entries[at++] = NULL;
-    memcpy(dialect->inline_dispatch_offsets, sizes->inline_dispatch_offsets, sizeof(dialect->inline_dispatch_offsets));
-    S_project_inline_dispatch(dialect, entries + at);
-    at += dialect->inline_dispatch_offsets[256];
     assert(at == sizes->pointers);
 
     S_project_closers(dialect, instances, closers, sizes->closers);
+    S_count_text(builder->elements, count, &(markdown_core_dialect_sizes){0}, dialect->text_offsets);
+    S_project_text(dialect, instances, copies, items, holders, handlers, compiles);
     S_project_finish_steps(dialect, sizes->finish_key_counts, step_entries);
     S_project_gate_lists(dialect, sizes, tables);
 }

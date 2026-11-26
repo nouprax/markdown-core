@@ -32,6 +32,14 @@ typedef enum {
      * boundary. */
     MARKDOWN_CORE_TOKEN_SPACE,
     MARKDOWN_CORE_TOKEN_LINE_END,
+    /* A label's start and its end (label.h), text while no construct is
+     * made of them. */
+    MARKDOWN_CORE_TOKEN_LABEL,
+    MARKDOWN_CORE_TOKEN_LABEL_END,
+    /* What is left of a token a resolver made something over: text of its
+     * bytes, and its `data` the event past what was resolved from it,
+     * which a later pass steps over. */
+    MARKDOWN_CORE_TOKEN_MARKER,
     /* The first kind the dialect gives an element's token. */
     MARKDOWN_CORE_TOKEN_FIRST
 } markdown_core_token_kind;
@@ -54,6 +62,11 @@ typedef struct markdown_core_events {
     size_t token_count, token_room;
     markdown_core_event *items;
     size_t count, room;
+    /* What constructs keep for compile beside their tokens' words, each
+     * record at an offset a token's `data` names
+     * (markdown_core_events_keep). */
+    unsigned char *kept;
+    size_t kept_size, kept_room;
     /* Set when storage could not be had: every write after it does
      * nothing, and the reading fails. */
     bool failed;
@@ -79,6 +92,14 @@ void markdown_core_events_splice(markdown_core_events *events, size_t at, size_t
 /* Drops the events from `count` on, and the tokens from `tokens` on: what an
  * attempt that failed made. */
 void markdown_core_events_cut(markdown_core_events *events, size_t count, size_t tokens);
+
+/* Keeps a copy of the `size` bytes at `record` for compile: its offset,
+ * which a token's `data` may hold, or UINT32_MAX when storage could not be
+ * had. An attempt that fails leaves what it kept, which nothing reads. */
+uint32_t markdown_core_events_keep(markdown_core_events *events, const void *record, size_t size);
+static inline const void *markdown_core_events_kept(const markdown_core_events *events, uint32_t offset) {
+    return events->kept + offset;
+}
 
 static inline markdown_core_token *markdown_core_event_token(const markdown_core_events *events, size_t at) {
     return &events->tokens[events->items[at].token];

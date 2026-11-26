@@ -1,14 +1,12 @@
 #include "superscript.h"
+#include "attention.h"
 #include "inline_internal.h"
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    if (character != '^') {
-        return NULL;
-    }
-    return markdown_core_inline_match_delimiter(self, inline_state);
-}
+static const markdown_core_text_construct SUPERSCRIPT_CONSTRUCTS[] = {{"^", MARKDOWN_CORE_ATTENTION_CONSTRUCT}};
 static const markdown_core_inline_ops SUPERSCRIPT_INLINES = {
+    .constructs = SUPERSCRIPT_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = MARKDOWN_CORE_ATTENTION_TOKENS,
+    .token_count = MARKDOWN_CORE_ATTENTION_KINDS,
     .rule = MARKDOWN_CORE_DELIM_RULE_SUPERSCRIPT,
     .character = '^',
     .delimiter = {.minimum_width = 1,
@@ -16,9 +14,6 @@ static const markdown_core_inline_ops SUPERSCRIPT_INLINES = {
                   .run_limit = 1,
                   .body = DELIMITER_WORD_BODY,
                   .single_kind = MARKDOWN_CORE_NODE_SUPERSCRIPT},
-    .match = match,
-    .terminates = "^",
-    .dispatch = "^",
 };
 
 /* What its nodes read as in a name: their children (element.h,

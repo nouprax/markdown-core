@@ -1,4 +1,5 @@
 #include "emphasis.h"
+#include "attention.h"
 #include "inline_internal.h"
 #include "services.h"
 
@@ -25,19 +26,12 @@ static unsigned S_bound(const markdown_core_element_instance *self, markdown_cor
            (right && (!left || flank.punct_after) ? MARKDOWN_CORE_FLANK_CLOSES : 0u);
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    if (character != '*' && character != '_') {
-        return NULL;
-    }
-    if (character != self->element->inlines->character) {
-        return NULL;
-    }
-    return markdown_core_inline_match_delimiter(self, inline_state);
-}
-
+static const markdown_core_text_construct EMPHASIS_CONSTRUCTS[] = {{"*", MARKDOWN_CORE_ATTENTION_CONSTRUCT}};
 static const markdown_core_inline_ops EMPHASIS_INLINES = {
+    .constructs = EMPHASIS_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = MARKDOWN_CORE_ATTENTION_TOKENS,
+    .token_count = MARKDOWN_CORE_ATTENTION_KINDS,
     .precedence = MARKDOWN_CORE_INLINE_TOKEN,
     .rule = MARKDOWN_CORE_DELIM_RULE_EMPHASIS,
     .character = '*',
@@ -48,9 +42,6 @@ static const markdown_core_inline_ops EMPHASIS_INLINES = {
                   .body = DELIMITER_INLINE_BODY,
                   .single_kind = MARKDOWN_CORE_NODE_EMPHASIS,
                   .double_kind = MARKDOWN_CORE_NODE_STRONG},
-    .match = match,
-    .terminates = "*",
-    .dispatch = "*",
 };
 
 /* The `*` rule, which the other paired-run elements take as theirs. */
@@ -71,7 +62,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_EMPHASIS = {
     .provides = EMPHASIS_SERVICES,
     .inlines = &EMPHASIS_INLINES,
 };
+static const markdown_core_text_construct EMPHASIS_UNDERSCORE_CONSTRUCTS[] = {{"_", MARKDOWN_CORE_ATTENTION_CONSTRUCT}};
 static const markdown_core_inline_ops EMPHASIS_UNDERSCORE_INLINES = {
+    .constructs = EMPHASIS_UNDERSCORE_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = MARKDOWN_CORE_ATTENTION_TOKENS,
+    .token_count = MARKDOWN_CORE_ATTENTION_KINDS,
     .precedence = MARKDOWN_CORE_INLINE_TOKEN,
     .rule = MARKDOWN_CORE_DELIM_RULE_UNDERSCORE,
     .character = '_',
@@ -82,9 +78,6 @@ static const markdown_core_inline_ops EMPHASIS_UNDERSCORE_INLINES = {
                   .body = DELIMITER_INLINE_BODY,
                   .single_kind = MARKDOWN_CORE_NODE_EMPHASIS,
                   .double_kind = MARKDOWN_CORE_NODE_STRONG},
-    .match = match,
-    .terminates = "_",
-    .dispatch = "_",
 };
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMPHASIS_UNDERSCORE = {

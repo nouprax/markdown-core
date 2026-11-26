@@ -8,7 +8,6 @@
 #include "tree.h"
 #include "labels.h"
 #include "names.h"
-#include "stack.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
@@ -742,6 +741,9 @@ struct markdown_core_parser {
      * (markdown_core_inline_state_from_buf); linked through their first word
      * and released with the parser. Each is the dialect's `run_state_size`. */
     struct markdown_core_inline_record *free_inline_records;
+    /* The passes of finished readings (inlines.c, markdown_core_pass),
+     * kept for the next, a reading inside a reading taking its own. */
+    struct markdown_core_pass *free_passes;
     /* The sealed dialect this instance parses with (dialect.h), which
      * shares the instance's allocation (blocks.c, markdown_core_instance),
      * and the context its setup was given. The context is the caller's; the
@@ -810,14 +812,9 @@ struct markdown_core_parser {
     markdown_core_parse_error error;
     /* THE ENGINE'S WORK COUNTERS, for deterministic complexity gates. An
      * element counts its own work in its own state record. */
-    size_t opaque_scan_work;
-    /* Bytes walked back over a token's trailing white space to find the
-     * run's last nonblank byte. */
-    size_t nonblank_work;
-    /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
-    size_t delimiter_work;
-    /* Delimiter entries pushed, against which the pool's growth is measured. */
-    size_t delimiter_pushes;
+    /* The bytes the inline tokenizer read again after an attempt or a
+     * check gave them back (tokenizer.h, `rewound`). */
+    size_t rewound_work;
     /* Inline placements asked of the content-to-source map, and the runs
      * probed to answer the ones that left the cursor's run. The map's whole
      * claim since #346 is that a placement made while a container is read
@@ -833,9 +830,6 @@ struct markdown_core_parser {
      * scanning every attached element would build the identical tree. So the
      * invariant is asserted on this counter rather than on output. */
     size_t inline_hook_work;
-    /* The brackets' work: `]` read and nodes moved into a bracket's
-     * construct (bracket.h), for their gate. */
-    size_t bracket_work;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
      * definition, a link or a heading's implicit reference states is a slot
@@ -854,10 +848,6 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_path;
     struct markdown_core_lookahead_container *lookahead_containers;
     size_t lookahead_capacity;
-    /* The items of the inline parse's stacks (stack.h) its runs let go of,
-     * kept for the next push: delimiters (markdown_core_inline_push_delimiter_entry)
-     * and brackets (bracket.h), each of one size; released with the parser. */
-    markdown_core_pool delimiter_pool, bracket_pool;
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes

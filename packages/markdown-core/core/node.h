@@ -557,6 +557,9 @@ static inline markdown_core_scaffold *markdown_core_scaffold_of(const markdown_c
 /* The fixed grammar and an element's retained kind domain, without callbacks.
  * The containment decision and the construction assertion use this same rule. */
 bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type);
+/* Whether a node of kind `parent` that no element decides for may hold a
+ * child of `child_type`, by its kind's schema alone. */
+bool markdown_core_kind_can_contain(markdown_core_node_type parent, markdown_core_node_type child_type);
 
 /* THE CONSTRUCTION ASSERTION: the engine attaches a child -- to a children
  * array or to the scaffold -- only where its parent may hold it, by the

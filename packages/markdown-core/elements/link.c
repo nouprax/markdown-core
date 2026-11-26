@@ -5,6 +5,8 @@
 #include "link_scanners.h"
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 #include "link.h"
+#include "attention.h"
+#include "label.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
@@ -16,8 +18,8 @@ static const char *const LINK_NEEDS[] = {[LINK_DIMENSIONS] = MARKDOWN_CORE_SERVI
                                          [LINK_REFERENCES] = MARKDOWN_CORE_SERVICE_REFERENCES,
                                          NULL};
 
-/* A link's bracket, opened by a `[` (bracket.h). */
-static const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET = {
+/* A link's label, opened by a `[` (label.h). */
+static const markdown_core_label_shape MARKDOWN_CORE_LINK_BRACKET = {
     .width = 1, .mark = 0, .closer = ']', .kind = MARKDOWN_CORE_KIND_LINK};
 
 const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE = {.name = "reference", .folds = true};
@@ -605,19 +607,6 @@ static size_t S_destination(const unsigned char *data, bufsize_t len, bufsize_t 
     return hash < end ? 2 : 1;
 }
 
-/* The link or image whose `[` the opener holds, given up after its `(`
- * with the destination read from `start`, kept on the run's node
- * (markdown_core_inline_open). */
-static void S_report_destination(markdown_core_inline_state *inline_state, const bracket *opener, bufsize_t start) {
-    const bool image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
-    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
-    markdown_core_field fields[2];
-    const size_t count = S_destination(markdown_core_inline_window(inline_state, 0).data,
-                                       markdown_core_inline_size(inline_state), start, kind, fields);
-    markdown_core_inline_open(inline_state, kind, opener->position - opener->shape->width, opener->position, fields,
-                              count);
-}
-
 /* The definition at the front of `input`, content offset `before` of the
  * paragraph `b`, given up with the destination read from `start`, kept on
  * the paragraph, the opener its `[`. */
@@ -717,172 +706,372 @@ static void S_report_tail(const markdown_core_element_instance *self, markdown_c
     }
 }
 
-/* The link or image whose `[` the opener holds, given up after its `]`
- * with the label of `[text][label` read from the `[` at `start`, which no
- * `]` closes, kept on the run's node (markdown_core_inline_open). */
-static void S_report_label(markdown_core_inline_state *inline_state, const bracket *opener, bufsize_t start) {
-    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-    const bufsize_t len = markdown_core_inline_size(inline_state);
-    if (start >= len || data[start] != '[') {
+static markdown_core_bracket_match S_end_explicit(const markdown_core_element_instance *self,
+                                                  markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
+                                                  markdown_core_label_made *made);
+static markdown_core_bracket_match S_end_shortcut(const markdown_core_element_instance *self,
+                                                  markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
+                                                  markdown_core_label_made *made);
+static const markdown_core_close_rule LINK_CLOSES[] = {
+    {.precedence = -20, .end = S_end_explicit},
+    {.precedence = 10, .end = S_end_shortcut},
+};
+
+/* THE LINK'S TEXT (plan symbols-cleanroom.md 23.12): a `[` opens a label
+ * (label.h), and the link's rules at its `]` read what follows it as the
+ * reading stands there; a link or an image made is a GROUP token whose
+ * word names what its rule read (S_found), kept beside the events. */
+enum { LINK_GROUP, LINK_KINDS };
+
+/* WHAT A RULE READ of a link or an image: where its group starts; an
+ * inline tail's destination, `angled` when `<` and `>` hold it, and its
+ * title inside its quotes (`titled`); a full reference's label inside its
+ * brackets; the name of the definition a reference names, kept at `name`,
+ * `name_size` bytes (none for a direct link); an image's dimensions and
+ * its suffix's field, from `field` to `field_end`. */
+typedef struct S_found {
+    uint32_t start;
+    uint32_t dest, dest_end, title_start, title_end, label_start, label_end;
+    uint32_t name, name_size;
+    uint32_t field, field_end;
+    markdown_core_dimensions dimensions;
+    bool image, resource, angled, titled, dimensioned;
+} S_found;
+
+/* WHAT A READING HOLDS OF THE LINK: what the explicit rule read at the
+ * label whose token is `label`, which the shortcut rule after it reads. */
+typedef struct S_asked {
+    uint32_t label;
+    markdown_core_link_match match;
+    S_found found;
+    uint32_t past;
+} S_asked;
+
+static markdown_core_node_kind S_kind_of(const markdown_core_opener *label) {
+    return label->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
+}
+
+/* The link or image whose label is `label`, given up after its `(` with
+ * the destination read from `start`. */
+static void S_give_destination(markdown_core_tokenizer *tokenizer, const markdown_core_opener *label, uint32_t start) {
+    const markdown_core_node_kind kind = S_kind_of(label);
+    markdown_core_field fields[2];
+    const size_t count = S_destination(tokenizer->data, (bufsize_t)tokenizer->size, (bufsize_t)start, kind, fields);
+    markdown_core_text_give_up(tokenizer, kind, (bufsize_t)label->start, (bufsize_t)label->position, fields, count);
+}
+
+/* The same, given up after its `]` with the label of `[text][label` read
+ * from the `[` at `start`, which no `]` closes. */
+static void S_give_label(markdown_core_tokenizer *tokenizer, const markdown_core_opener *label, uint32_t start) {
+    const unsigned char *data = tokenizer->data;
+    const bufsize_t len = (bufsize_t)tokenizer->size;
+    if ((bufsize_t)start >= len || data[start] != '[') {
         return;
     }
-    const bufsize_t stop = start + 1 + markdown_core_inline_reference_label_length(data + start + 1, len - start - 1);
+    const bufsize_t stop = (bufsize_t)start + 1 +
+                           markdown_core_inline_reference_label_length(data + start + 1, len - (bufsize_t)start - 1);
     if (stop < len && data[stop] == ']') {
         return;
     }
-    const bool image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
-    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
-    const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, stop};
-    markdown_core_inline_open(inline_state, kind, opener->position - opener->shape->width, opener->position, &label, 1);
+    const markdown_core_node_kind kind = S_kind_of(label);
+    const markdown_core_field field = {MARKDOWN_CORE_SLOT_LABEL, kind, (bufsize_t)start + 1, stop};
+    markdown_core_text_give_up(tokenizer, kind, (bufsize_t)label->start, (bufsize_t)label->position, &field, 1);
 }
 
-markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
-                                                      markdown_core_inline_state *inline_state, bracket *opener,
-                                                      markdown_core_link_candidate *candidate) {
-    bufsize_t initial_pos = markdown_core_inline_offset(inline_state), starturl = 0, endurl, starttitle, endtitle,
-              endall, n = -1;
-    markdown_core_chunk url_chunk = MARKDOWN_CORE_CHUNK_EMPTY, title_chunk, raw_label;
-    markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
-    markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    const markdown_core_mention *record = NULL;
-    int found_label;
-    bool explicit_tail = false;
-    // If we got here, we matched a potential link/image text.
-    // Now we check to see if it's a link/image.
-    bool is_image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
+/* A link label at `at`: the raw label in `*raw`, trimmed, and where the
+ * label's `]` is past in `*end`; false, reading nothing, when there is
+ * none (markdown_core_inline_link_label). */
+static bool S_link_label(markdown_core_tokenizer *tokenizer, uint32_t at, markdown_core_chunk *raw, uint32_t *end) {
+    const unsigned char *data = tokenizer->data;
+    const uint32_t size = tokenizer->size;
+    if (at >= size) {
+        markdown_core_met_end(tokenizer);
+        return false;
+    }
+    if (data[at] != '[') {
+        return false;
+    }
+    const bufsize_t length = markdown_core_inline_reference_label_length(data + at + 1, (bufsize_t)(size - at - 1));
+    const uint32_t stop = at + 1 + (uint32_t)length;
+    if (length > MAX_LINK_LABEL_LENGTH) {
+        return false;
+    }
+    if (stop >= size) {
+        markdown_core_met_end(tokenizer);
+        return false;
+    }
+    if (data[stop] != ']') {
+        return false;
+    }
+    *raw = (markdown_core_chunk){(unsigned char *)data + at + 1, (bufsize_t)length, 0};
+    markdown_core_chunk_trim(raw);
+    *end = stop + 1;
+    return true;
+}
 
-    bool link_allowed = is_image || !markdown_core_brackets(inline_state)->no_link_openers;
-
-    bufsize_t after_link_text_pos = markdown_core_inline_offset(inline_state);
-
-    // First, look for an inline link. Its destination, title and closing
-    // parenthesis may each follow spaces, tabs and up to one line ending.
-    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-    const bufsize_t len = markdown_core_inline_size(inline_state);
-    /* A destination, title or parenthesis the end cuts short may be one
-     * once the input goes on. */
-    if (link_allowed && markdown_core_inline_peek_char(inline_state) == '(') {
-        starturl = markdown_core_skip_spaces_and_line_end(data, markdown_core_inline_offset(inline_state) + 1, len);
-        markdown_core_chunk window = markdown_core_inline_window(inline_state, 0);
-        n = markdown_core_inline_manual_scan_link_url(&window, starturl, &url_chunk);
-        if (n < 0) {
-            markdown_core_inline_saw_end(inline_state);
-            S_report_destination(inline_state, opener, starturl);
+/* What follows the `]` of `label` at `after`, as markdown_core_link_recognize reads it:
+ * an inline tail, a reference by a label, or the label's own body as a
+ * reference, into `found`, with where the tail ends in `*past`. */
+static markdown_core_link_match S_recognize(const markdown_core_element_instance *self,
+                                            markdown_core_tokenizer *tokenizer, const markdown_core_opener *label,
+                                            uint32_t after, S_found *found, uint32_t *past) {
+    markdown_core_inline_state *inline_state = tokenizer->reader;
+    const unsigned char *data = tokenizer->data;
+    const bufsize_t len = (bufsize_t)tokenizer->size;
+    const bool image = label->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
+    const bool allowed = image || !inline_state->no_link_openers;
+    *found = (S_found){.start = label->start, .image = image};
+    *past = after;
+    bufsize_t starturl = 0, n = -1;
+    if (allowed) {
+        if ((bufsize_t)after >= len) {
+            markdown_core_met_end(tokenizer);
+        } else if (data[after] == '(') {
+            starturl = markdown_core_skip_spaces_and_line_end(data, (bufsize_t)after + 1, len);
+            markdown_core_chunk window = {(unsigned char *)data, len, 0}, url = MARKDOWN_CORE_CHUNK_EMPTY;
+            n = markdown_core_inline_manual_scan_link_url(&window, starturl, &url);
+            if (n < 0) {
+                markdown_core_met_end(tokenizer);
+                S_give_destination(tokenizer, label, (uint32_t)starturl);
+            } else {
+                found->dest = (uint32_t)(url.data - data);
+                found->dest_end = found->dest + (uint32_t)url.len;
+            }
         }
     }
     if (n > -1) {
-
-        // try to parse an explicit link:
-        endurl = starturl + n;
-        starttitle = markdown_core_skip_spaces_and_line_end(data, endurl, len);
-
-        // A title must be separated from the destination; without one, the
-        // separator already read is the one before the parenthesis.
-        endtitle = starttitle == endurl ? starttitle : starttitle + scan_link_title(data, len, starttitle);
-        endall = endtitle == starttitle ? starttitle : markdown_core_skip_spaces_and_line_end(data, endtitle, len);
-        if (markdown_core_inline_tracks_end(inline_state) &&
-            (endall >= len ||
-             (endtitle == starttitle && starttitle < len && data[starttitle] && strchr("\"'(", data[starttitle])))) {
-            markdown_core_inline_saw_end(inline_state);
+        const bufsize_t endurl = starturl + n;
+        const bufsize_t starttitle = markdown_core_skip_spaces_and_line_end(data, endurl, len);
+        /* A title must be separated from the destination; without one, the
+         * separator already read is the one before the parenthesis. */
+        const bufsize_t endtitle =
+            starttitle == endurl ? starttitle : starttitle + scan_link_title(data, len, starttitle);
+        const bufsize_t endall =
+            endtitle == starttitle ? starttitle : markdown_core_skip_spaces_and_line_end(data, endtitle, len);
+        if (endall >= len ||
+            (endtitle == starttitle && starttitle < len && data[starttitle] && strchr("\"'(", data[starttitle]))) {
+            markdown_core_met_end(tokenizer);
         }
-
-        if (markdown_core_inline_peek_at(inline_state, endall) == ')') {
-            explicit_tail = true;
-            markdown_core_inline_seek(inline_state, endall + 1);
-
-            const unsigned char *url_chunk_start = url_chunk.data;
-            const bufsize_t url_length = url_chunk.len;
-            title_chunk = markdown_core_inline_take(inline_state, starttitle, endtitle - starttitle);
-            {
-                int lost = 0;
-                url = markdown_core_clean_url(link, &url_chunk, &lost);
-                title = markdown_core_clean_title(link, &title_chunk, &lost);
-                if (lost) {
-                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-                }
-            }
-            markdown_core_chunk_free(&url_chunk);
-            markdown_core_chunk_free(&title_chunk);
-            candidate->url = url;
-            candidate->title = title;
-            candidate->explicit_tail = true;
-            candidate->dest = (bufsize_t)(url_chunk_start - data);
-            candidate->dest_end = candidate->dest + url_length;
-            candidate->angled = starturl < len && data[starturl] == '<';
+        if (endall < len && data[endall] == ')') {
+            found->resource = true;
+            found->angled = starturl < len && data[starturl] == '<';
             if (endtitle > starttitle) {
-                candidate->title_start = starttitle + 1;
-                candidate->title_end = endtitle - 1;
+                found->titled = true;
+                found->title_start = (uint32_t)starttitle + 1;
+                found->title_end = (uint32_t)endtitle - 1;
             }
+            *past = (uint32_t)endall + 1;
             return LINK_EXPLICIT;
-
-        } else {
-            // it could still be a shortcut reference link
-            S_report_destination(inline_state, opener, starturl);
-            markdown_core_inline_seek(inline_state, after_link_text_pos);
         }
+        /* It could still be a reference. */
+        S_give_destination(tokenizer, label, (uint32_t)starturl);
     }
-
-    // Next, look for a following [link label] that a definition declares.
-    // skip spaces
-    raw_label = markdown_core_chunk_literal("");
-    const bufsize_t label_open = markdown_core_inline_offset(inline_state);
-    found_label = markdown_core_inline_link_label(inline_state, &raw_label);
-    if (found_label) {
-        candidate->label_start = label_open + 1;
-        candidate->label_end = markdown_core_inline_offset(inline_state) - 1;
+    markdown_core_chunk raw = markdown_core_chunk_literal("");
+    uint32_t end = after;
+    bool labeled = S_link_label(tokenizer, after, &raw, &end);
+    if (labeled) {
+        found->label_start = after + 1;
+        found->label_end = end - 1;
+    } else {
+        S_give_label(tokenizer, label, after);
     }
-    if (!found_label) {
-        S_report_label(inline_state, opener, markdown_core_inline_offset(inline_state));
+    const bool tail = labeled;
+    if ((!labeled || raw.len == 0) && !label->after) {
+        raw =
+            (markdown_core_chunk){(unsigned char *)data + label->position, (bufsize_t)(after - label->position - 1), 0};
+        labeled = true;
     }
-    explicit_tail = found_label;
-    if (!found_label) {
-        // If we have a shortcut reference link, back up
-        // to before the spacse we skipped.
-        markdown_core_inline_seek(inline_state, initial_pos);
-    }
-
-    if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
-        markdown_core_chunk_free(&raw_label);
-        raw_label = markdown_core_inline_take(inline_state, opener->position, initial_pos - opener->position - 1);
-        found_label = true;
-    }
-
-    /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
-     * `Link` or `Embedded` the definition names (M2). Nothing records which of the
-     * three spellings the author wrote, and nothing downstream can recover it
-     * -- the module states one node for every successful form. */
-    if (link_allowed && found_label) {
+    /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same
+     * node: the one the definition names. */
+    const markdown_core_mention *record = NULL;
+    if (allowed && labeled) {
         bool failed = false;
         record = markdown_core_parser_find_definition(
-            inline_state->owner_parser, link->spaces[LINK_REFERENCE], &raw_label,
-            markdown_core_inline_state_root_offset(inline_state, opener->position), &failed);
+            inline_state->owner_parser, self->spaces[LINK_REFERENCE], &raw,
+            markdown_core_inline_state_root_offset(inline_state, (int)label->position), &failed);
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
     }
-    markdown_core_chunk_free(&raw_label);
-    candidate->label = record ? markdown_core_mention_name(record) : markdown_core_chunk_literal("");
-    candidate->explicit_tail = explicit_tail;
-    return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
+    if (!record) {
+        return LINK_UNMATCHED;
+    }
+    const markdown_core_chunk name = markdown_core_mention_name(record);
+    found->name_size = (uint32_t)name.len;
+    found->name = name.len ? markdown_core_events_keep(&tokenizer->events, name.data, (size_t)name.len) : 0;
+    if (tail) {
+        *past = end;
+    }
+    return tail ? LINK_EXPLICIT : LINK_SHORTCUT;
 }
 
-/* THE FIELDS OF A LINK'S TAIL, as recognize read them (node.h,
- * markdown_core_fields): an inline tail's destination, its path and, after
- * its first `#` that starts a fragment, as field_end reads it, its anchor,
- * and its title inside its quotes; a full reference's label. */
-static void S_tail_fields(markdown_core_inline_state *inline_state, markdown_core_node *inl,
-                          const markdown_core_link_candidate *candidate) {
+/* The link or image `found` is made of `label`, its tail ending at
+ * `past`: REJECTED where its holder takes none. */
+static markdown_core_bracket_match S_make(const markdown_core_element_instance *self,
+                                          markdown_core_tokenizer *tokenizer, const markdown_core_opener *label,
+                                          S_found *found, uint32_t past, markdown_core_label_made *made) {
+    const bool image = found->image;
+    if (!markdown_core_attention_allows(tokenizer, MARKDOWN_CORE_NODE_NONE,
+                                        image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK)) {
+        return BRACKET_REJECTED;
+    }
+    const uint32_t start = label->start;
+    if (image) {
+        /* Only the embedded element opens an image's label. */
+        const markdown_core_need dimensions = self->needs[LINK_DIMENSIONS];
+        const markdown_core_dimension_ops *ops = dimensions.ops;
+        if (ops && ops->measure) {
+            found->dimensioned = ops->measure(dimensions.instance, tokenizer, label, &found->dimensions, &found->field);
+            /* The suffix runs to the closer. */
+            found->field_end = markdown_core_event_token(&tokenizer->events, label->close)->start;
+        }
+    }
+    const uint32_t kept = markdown_core_events_keep(&tokenizer->events, found, sizeof(*found));
+    made->kind = (uint16_t)(self->token_base + LINK_GROUP);
+    made->data = kept;
+    made->from = start;
+    made->past = past;
+    made->holder = image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK;
+    made->links = image ? 0 : 1;
+    return kept == UINT32_MAX ? BRACKET_REJECTED : BRACKET_MATCHED;
+}
+
+/* THE LINK'S RULES FOR A `]`, as the core's label end asks them: a link
+ * whose destination, title or label follows the `]` is made first; a
+ * shortcut, whose `]` is all of its tail, after the other rules. */
+static markdown_core_bracket_match S_end_explicit(const markdown_core_element_instance *self,
+                                                  markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
+                                                  markdown_core_label_made *made) {
+    S_asked *asked = markdown_core_read_record(tokenizer, self->run_offset);
+    const markdown_core_opener opener = *label;
+    asked->label = opener.token;
+    asked->match = S_recognize(self, tokenizer, &opener, made->past, &asked->found, &asked->past);
+    if (asked->match != LINK_EXPLICIT) {
+        return BRACKET_UNMATCHED;
+    }
+    const markdown_core_bracket_match match = S_make(self, tokenizer, &opener, &asked->found, asked->past, made);
+    /* What follows a link whose destination, title or label follows its
+     * `]` may update it (no-flush.md 10.13). */
+    made->follows = asked->found.image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK;
+    return match;
+}
+
+static markdown_core_bracket_match S_end_shortcut(const markdown_core_element_instance *self,
+                                                  markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
+                                                  markdown_core_label_made *made) {
+    S_asked *asked = markdown_core_read_record(tokenizer, self->run_offset);
+    const markdown_core_opener opener = *label;
+    if (asked->label != opener.token) {
+        return BRACKET_UNMATCHED;
+    }
+    if (asked->match == LINK_UNMATCHED && asked->found.label_end > asked->found.label_start) {
+        /* A full reference, `[t][label]`, whose label names no definition. */
+        const markdown_core_node_kind kind = S_kind_of(&opener);
+        const markdown_core_field field = {MARKDOWN_CORE_SLOT_LABEL, kind, (bufsize_t)asked->found.label_start,
+                                           (bufsize_t)asked->found.label_end};
+        markdown_core_text_give_up(tokenizer, kind, (bufsize_t)opener.start, (bufsize_t)opener.position, &field, 1);
+    }
+    if (asked->match != LINK_SHORTCUT) {
+        return BRACKET_UNMATCHED;
+    }
+    return S_make(self, tokenizer, &opener, &asked->found, made->past, made);
+}
+
+/* The labels no closer met, each a construct given up (report_open). */
+static void S_left(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
+                   markdown_core_opener *b) {
+    (void)self;
+    const unsigned char *data = tokenizer->data;
+    const bufsize_t len = (bufsize_t)tokenizer->size;
+    const bufsize_t position = (bufsize_t)b->position;
+    const bool own = b->shape == &MARKDOWN_CORE_LINK_BRACKET;
+    const bufsize_t start = (bufsize_t)b->start;
+    markdown_core_field fields[2];
+    size_t count = 0;
+    markdown_core_node_kind opens = own ? MARKDOWN_CORE_KIND_NONE : b->shape->kind;
+    const bufsize_t stop = position + markdown_core_inline_reference_label_length(data + position, len - position);
+    const bool label = own && stop == len;
+    const bool caret = own && position < len && data[position] == '^';
+    const bool line = start == 0 || data[start - 1] == '\n' || data[start - 1] == '\r';
+    if (caret && label) {
+        opens = MARKDOWN_CORE_KIND_CITE;
+        fields[count++] =
+            (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_CITATION, position + 1, stop};
+    }
+    if (line && caret) {
+        bufsize_t note = position + 1;
+        while (note < len && data[note] != ']' && !markdown_core_is_whitespace(data[note])) {
+            note++;
+        }
+        fields[count++] =
+            (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_FOOTNOTE, position + 1, note};
+    } else if (line && label) {
+        fields[count++] = (markdown_core_field){MARKDOWN_CORE_SLOT_LABEL, MARKDOWN_CORE_KIND_REFERENCE, position, stop};
+    }
+    markdown_core_text_give_up(tokenizer, opens, start, caret && label ? position + 1 : position, fields, count);
+}
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_label_open(tokenizer, &MARKDOWN_CORE_LINK_BRACKET);
+}
+
+/* COMPILE: a link or an image over its body. */
+static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const S_found *found = markdown_core_events_kept(compiler->events, token->data);
+    const unsigned char *data = compiler->data;
+    markdown_core_node *inl = markdown_core_inline_make_simple(inline_state, found->image ? MARKDOWN_CORE_NODE_EMBEDDED
+                                                                                          : MARKDOWN_CORE_NODE_LINK);
+    if (inl && found->name_size) {
+        const unsigned char *name = markdown_core_events_kept(compiler->events, found->name);
+        unsigned char *label = markdown_core_node_pool_bytes(parser->pool, (size_t)found->name_size + 1);
+        if (label) {
+            memcpy(label, name, found->name_size);
+            label[found->name_size] = '\0';
+            inl->as.link->label = (markdown_core_chunk){label, (bufsize_t)found->name_size, 0};
+        } else {
+            markdown_core_parser_release_node(parser, inl);
+            inl = NULL;
+        }
+    } else if (inl) {
+        int lost = 0;
+        markdown_core_chunk url = {(unsigned char *)data + found->dest, (bufsize_t)(found->dest_end - found->dest), 0};
+        markdown_core_chunk title =
+            found->titled ? (markdown_core_chunk){(unsigned char *)data + found->title_start - 1,
+                                                  (bufsize_t)(found->title_end - found->title_start + 2), 0}
+                          : (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
+        markdown_core_chunk clean = markdown_core_clean_url(self, &url, &lost);
+        markdown_core_optional_chunk titled = markdown_core_clean_title(self, &title, &lost);
+        if (lost) {
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        }
+        inl->as.link->resource = markdown_core_resource_new(parser->pool, clean, titled);
+        if (!inl->as.link->resource) {
+            markdown_core_chunk_free(&clean);
+            markdown_core_optional_chunk_free(&titled);
+            markdown_core_parser_release_node(parser, inl);
+            inl = NULL;
+        }
+    }
+    if (!inl) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        compiler->failed = true;
+        return;
+    }
+    markdown_core_inline_state_place(inline_state, inl, (int)token->start, (int)token->end - 1);
+    /* The fields of its tail (S_tail_fields). */
     const markdown_core_field_to to = markdown_core_inline_fields(inline_state, inl);
     markdown_core_field_spot spots[4];
     size_t count = 0;
     if (inl->as.link->resource) {
-        const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-        const bufsize_t start = candidate->dest, end = candidate->dest_end > start ? candidate->dest_end : start;
-        /* A destination with no `#` is all path, and one with no path,
-         * `()` or `(#t)`, holds an empty one, as one with an empty fragment
-         * holds an empty anchor. */
+        const bufsize_t start = (bufsize_t)found->dest;
+        const bufsize_t end = found->dest_end > found->dest ? (bufsize_t)found->dest_end : start;
         const bufsize_t hash = memchr(data + start, '#', (size_t)(end - start))
-                                   ? start + field_end(data + start, end - start, candidate->angled, false)
+                                   ? start + field_end(data + start, end - start, found->angled, false)
                                    : end;
         spots[count++] = (markdown_core_field_spot){start, hash < end ? hash : end, MARKDOWN_CORE_SLOT_DEST, true,
                                                     MARKDOWN_CORE_FIELD};
@@ -891,251 +1080,41 @@ static void S_tail_fields(markdown_core_inline_state *inline_state, markdown_cor
                 (markdown_core_field_spot){hash + 1, end, MARKDOWN_CORE_SLOT_ANCHOR, true, MARKDOWN_CORE_FIELD};
         }
     }
-    spots[count++] = (markdown_core_field_spot){candidate->title_start, candidate->title_end, MARKDOWN_CORE_SLOT_NONE,
-                                                false, MARKDOWN_CORE_FIELD};
+    spots[count++] = (markdown_core_field_spot){(bufsize_t)found->title_start, (bufsize_t)found->title_end,
+                                                MARKDOWN_CORE_SLOT_NONE, false, MARKDOWN_CORE_FIELD};
     if (!inl->as.link->resource) {
-        spots[count++] = (markdown_core_field_spot){candidate->label_start, candidate->label_end,
+        spots[count++] = (markdown_core_field_spot){(bufsize_t)found->label_start, (bufsize_t)found->label_end,
                                                     MARKDOWN_CORE_SLOT_LABEL, false, MARKDOWN_CORE_FIELD};
     }
     markdown_core_field_many(&to, spots, count);
+    if (found->dimensioned) {
+        inl->as.link->dimensions.value = found->dimensions;
+        inl->as.link->dimensions.has_value = true;
+        markdown_core_field_add(&to, MARKDOWN_CORE_SLOT_NONE, (bufsize_t)found->field, (bufsize_t)found->field_end);
+    }
+    markdown_core_compile_open(compiler, inl);
 }
 
-bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
-                               markdown_core_inline_state *inline_state, bracket *opener,
-                               markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
-    bool is_image = opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
-    bool explicit_tail = candidate->explicit_tail;
-    bool reference = candidate->label.len != 0;
-    markdown_core_chunk url = candidate->url;
-    markdown_core_optional_chunk title = candidate->title;
-    markdown_core_node *inl;
-    markdown_core_inline_settle_bracket(inline_state, opener);
-    if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
-                                             is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK)) {
-        markdown_core_chunk_free(&url);
-        markdown_core_optional_chunk_free(&title);
-        return false;
-    }
-    inl = markdown_core_inline_make_simple(inline_state,
-                                           is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
-    if (inl && reference) {
-        /* A RESOLVED REFERENCE NAMES ITS DEFINITION BY LABEL: the Link or
-         * Embedded holds its own copy of the normalized label, and its
-         * destination and title are those of the node the document finds by
-         * that label. The occurrence keeps its own scope and attributes. */
-        const bufsize_t length = candidate->label.len;
-        unsigned char *label = markdown_core_node_pool_bytes(parser->pool, (size_t)length + 1);
-        if (label) {
-            memcpy(label, candidate->label.data, (size_t)length);
-            label[length] = '\0';
-            inl->as.link->label = (markdown_core_chunk){label, length, 0};
-        } else {
-            markdown_core_parser_release_node(parser, inl);
-            inl = NULL;
-        }
-    } else if (inl) {
-        inl->as.link->resource = markdown_core_resource_new(parser->pool, url, title);
-        if (!inl->as.link->resource) {
-            markdown_core_parser_release_node(parser, inl);
-            inl = NULL;
-        }
-    }
-    if (!inl) {
-        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        if (!reference) {
-            markdown_core_chunk_free(&url);
-            markdown_core_optional_chunk_free(&title);
-        }
-        return false;
-    }
-    /* REQUIREMENT 11b: the brackets, and whatever follows the closing one --
-     * `(...)` with the destination and title, or `[label]` -- are the link's
-     * markers. They were claimed CONTENT as they were read, because an
-     * unmatched `[` is its own literal; these claims are later and win. The
-     * children keep the claims they made for themselves. */
-    // A link starts at its own '[' and ends at its closing ')' or ']', and the
-    // two need not be on the same line. Taking BOTH from inline_state->line made a link
-    // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
-    // Text at 1:2 -- a node that begins after its own first child.
-    markdown_core_inline_state_place(inline_state, inl, opener->position - 1,
-                                     markdown_core_inline_offset(inline_state) - 1);
-    inl->place.start = opener->inl_text->place.start;
-    S_tail_fields(inline_state, inl, candidate);
-    /* What follows a link whose destination, title or label follows its `]`
-     * may update it (no-flush.md 10.13). */
-    if (explicit_tail) {
-        markdown_core_inline_made(inline_state, inl);
-    }
-    // And the destination and title are scanned by markdown_core_inline_manual_scan_link_url and
-    // scan_link_title, which move markdown_core_inline_offset(inline_state) without ever passing through
-    // handle_newline -- so a line ending inside `(...)` is invisible to the
-    // inline state, and every later node in the paragraph inherits the error.
-    // The extent is projected from the two offsets, which is the repair inline
-    // code and raw HTML already
-    // use; it walks only [initial_pos, markdown_core_inline_offset(inline_state)), which is what the bracket
-    // handler consumed for itself. Counting from the OPENING bracket instead
-    // would count the label's own newlines a second time -- measured,
-    // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    markdown_core_scaffold_insert_before(opener->inl_text, inl);
-    markdown_core_inline_take_bracket_content(parser, inline_state, opener, inl);
-
-    /* Only the embedded element opens an image bracket. */
-    if (is_image) {
-        const markdown_core_need dimensions = link->needs[LINK_DIMENSIONS];
-        if (dimensions.ops) {
-            ((const markdown_core_dimension_ops *)dimensions.ops)
-                ->apply(dimensions.instance, inline_state, opener, inl, initial_pos - 1);
-        }
-    }
-
-    // Free the bracket [:
-    markdown_core_parser_release_node(parser, opener->inl_text);
-
-    markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-    markdown_core_inline_pop_bracket(inline_state);
-
-    // Now, if we have a link, we also want to deactivate links until
-    // we get a new opener. (This code can be removed if we decide to allow links
-    // inside links.)
-    if (!is_image) {
-        markdown_core_brackets(inline_state)->no_link_openers = true;
-    }
-
-    return true;
+static void S_close(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_compile_pop(compiler);
 }
 
-/* WHAT A BRACKET HOLDS OF A LINK (the link element's bracket record,
- * bracket.h): what its `]` read after it, which the explicit rule reads
- * and the shortcut rule commits. */
-typedef struct {
-    markdown_core_link_match match;
-    markdown_core_link_candidate candidate;
-} S_tail;
-
-static S_tail *S_bracket(const markdown_core_element_instance *self, const bracket *b) {
-    return markdown_core_bracket_record(b, self);
-}
-
-/* THE LINK'S RULES FOR A `]` (element.h, markdown_core_close_rule). One
- * bracket owns its parsed children; alternatives only claim that existing
- * range, in syntax precedence order, and none reparses its body. A link
- * whose destination, title or label follows the `]` is made first; a
- * shortcut, whose `]` is all of its tail, after the other rules. */
-static markdown_core_bracket_match S_close_explicit(const markdown_core_element_instance *self,
-                                                    markdown_core_parser *parser,
-                                                    markdown_core_inline_state *inline_state, bracket *opener,
-                                                    markdown_core_node **made) {
-    (void)made;
-    S_tail *tail = S_bracket(self, opener);
-    const bufsize_t after = markdown_core_inline_offset(inline_state);
-    tail->candidate = (markdown_core_link_candidate){0};
-    tail->match = markdown_core_link_recognize(self, inline_state, opener, &tail->candidate);
-    if (tail->match != LINK_EXPLICIT) {
-        return BRACKET_UNMATCHED;
-    }
-    return markdown_core_link_commit(self, parser, inline_state, opener, &tail->candidate, after) ? BRACKET_MATCHED
-                                                                                                  : BRACKET_REJECTED;
-}
-
-static markdown_core_bracket_match S_close_shortcut(const markdown_core_element_instance *self,
-                                                    markdown_core_parser *parser,
-                                                    markdown_core_inline_state *inline_state, bracket *opener,
-                                                    markdown_core_node **made) {
-    (void)made;
-    S_tail *tail = S_bracket(self, opener);
-    if (tail->match == LINK_UNMATCHED && tail->candidate.label_end > tail->candidate.label_start) {
-        /* A full reference, `[t][label]`, whose label names no definition,
-         * which a cursor in it may name (markdown_core_inline_open). */
-        const markdown_core_node_kind kind =
-            opener->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
-        const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, tail->candidate.label_start,
-                                           tail->candidate.label_end};
-        markdown_core_inline_open(inline_state, kind, opener->position - opener->shape->width, opener->position, &label,
-                                  1);
-    }
-    if (tail->match != LINK_SHORTCUT) {
-        return BRACKET_UNMATCHED;
-    }
-    return markdown_core_link_commit(self, parser, inline_state, opener, &tail->candidate,
-                                     markdown_core_inline_offset(inline_state))
-               ? BRACKET_MATCHED
-               : BRACKET_REJECTED;
-}
-
-static const markdown_core_close_rule LINK_CLOSES[] = {
-    {.precedence = -20, .close = S_close_explicit},
-    {.precedence = 10, .close = S_close_shortcut},
-};
-
-static markdown_core_node *match_bracket(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                         markdown_core_node *parent, unsigned char character,
-                                         markdown_core_inline_state *inline_state) {
-    (void)parser;
-    if (character == '[') {
-        advance(inline_state);
-        markdown_core_node *text = make_str(
-            inline_state, markdown_core_inline_offset(inline_state) - 1, markdown_core_inline_offset(inline_state) - 1,
-            markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
-        if (text) {
-            markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_LINK_BRACKET, text);
-        }
-        return text;
-    }
-    return NULL;
-}
-/* The brackets no closer met, each a construct given up, kept on the run's
- * node (markdown_core_inline_open): a `[` whose construct is still open, an
- * image's `![` and an inline note's `^[`. A `[` reads a label to where its
- * reading stops, when nothing it may not hold stops it: a `[^`'s a footnote
- * call's, and at the start of a line of its content a definition's, as any
- * other `[` there reads a reference definition's. */
-static void report_open(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
-    (void)self;
-    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-    const bufsize_t len = markdown_core_inline_size(inline_state);
-    for (const bracket *b = markdown_core_open_bracket(inline_state); b; b = bracket_previous(b)) {
-        const bool own = b->shape == &MARKDOWN_CORE_LINK_BRACKET;
-        const bufsize_t start = b->position - b->shape->width;
-        markdown_core_field fields[2];
-        size_t count = 0;
-        markdown_core_node_kind opens = own ? MARKDOWN_CORE_KIND_NONE : b->shape->kind;
-        const bufsize_t stop =
-            b->position + markdown_core_inline_reference_label_length(data + b->position, len - b->position);
-        const bool label = own && stop == len;
-        const bool caret = own && b->position < len && data[b->position] == '^';
-        const bool line = start == 0 || data[start - 1] == '\n' || data[start - 1] == '\r';
-        if (caret && label) {
-            opens = MARKDOWN_CORE_KIND_CITE;
-            fields[count++] =
-                (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_CITATION, b->position + 1, stop};
-        }
-        if (line && caret) {
-            /* A footnote definition's label holds any byte but `]` and white
-             * space, brackets too, which no other label does. */
-            bufsize_t note = b->position + 1;
-            while (note < len && data[note] != ']' && !markdown_core_is_whitespace(data[note])) {
-                note++;
-            }
-            fields[count++] =
-                (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_FOOTNOTE, b->position + 1, note};
-        } else if (line && label) {
-            fields[count++] =
-                (markdown_core_field){MARKDOWN_CORE_SLOT_LABEL, MARKDOWN_CORE_KIND_REFERENCE, b->position, stop};
-        }
-        markdown_core_inline_open(inline_state, opens, start, caret && label ? b->position + 1 : b->position, fields,
-                                  count);
-    }
-}
+static const markdown_core_text_construct LINK_CONSTRUCTS[] = {{"[", MARKDOWN_CORE_LABEL_CONSTRUCT(S_start)}};
+static const markdown_core_compile_ops LINK_TOKENS[LINK_KINDS] = {
+    [LINK_GROUP] = {.enter = S_open, .exit = S_close, .asked = true}};
 
 static const markdown_core_inline_ops LINK_INLINES = {
-    .report = report_open,
+    .constructs = LINK_CONSTRUCTS,
+    .construct_count = sizeof(LINK_CONSTRUCTS) / sizeof(LINK_CONSTRUCTS[0]),
+    .tokens = LINK_TOKENS,
+    .token_count = LINK_KINDS,
+    .left = S_left,
     .precedence = MARKDOWN_CORE_INLINE_FALLBACK,
-    .match = match_bracket,
     .closes = LINK_CLOSES,
     .close_count = sizeof(LINK_CLOSES) / sizeof(LINK_CLOSES[0]),
     .closer = ']',
-    .terminates = "[",
-    .dispatch = "[",
 };
 
 /* A paragraph's text opens with its link reference definitions, which the
@@ -1167,7 +1146,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .spaces = LINK_SPACES,
     .state_size = sizeof(S_state),
     .dispose_parser = dispose_parser,
-    .bracket_size = sizeof(S_tail),
+    .run_state_size = sizeof(S_asked),
     .opens = &LINK_OPENS,
     .name = "link",
     .inlines = &LINK_INLINES,

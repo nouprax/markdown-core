@@ -71,37 +71,6 @@ static int segment_width(const unsigned char *str, bufsize_t len, bool *word) {
     return (classes & MARKDOWN_CORE_UNICODE_NUMBER) || topic_joiner(scalar) ? width : 0;
 }
 
-/* A `#` opens a topic at the start of the input or after a character that is
- * none of a letter, a mark, a decimal digit, `_`, a joiner, and `&`, which
- * begins a character reference with it, as twitter-text bounds a hashtag;
- * that character begins at the last non-continuation byte before `at`. */
-static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize_t at) {
-    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-    bufsize_t before = at;
-    if (!at) {
-        return true;
-    }
-    if (data[at - 1] < 0x80) {
-        return data[at - 1] == '-' || (!SEGMENT_BYTES[data[at - 1]] && data[at - 1] != '&');
-    }
-    do {
-        before--;
-    } while (before && (data[before] & 0xc0) == 0x80);
-    int32_t scalar;
-    markdown_core_utf8proc_decode(data + before, at - before, &scalar);
-    return !(markdown_core_utf8proc_classes(scalar) &
-             (MARKDOWN_CORE_UNICODE_LETTER | MARKDOWN_CORE_UNICODE_MARK | MARKDOWN_CORE_UNICODE_DECIMAL)) &&
-           !topic_joiner(scalar);
-}
-
-/* The topic whose `#` is at `at`, given up with its name, from past the `#`
- * to `stop`, kept on the run's node (markdown_core_inline_open). */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_state *inline_state, bufsize_t at,
-                                                         bufsize_t stop) {
-    const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, stop};
-    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_TOPIC, at, at + 1, &name, 1);
-}
-
 /* Where a name read from `data` stops: runs of segment characters joined by
  * single `/` signs, a `/` belonging to it only when a segment character
  * follows. `word` is set when it holds a word character. */
@@ -127,35 +96,6 @@ static bufsize_t name_end(const unsigned char *data, bufsize_t length, bool *wor
     }
 }
 
-/* THE END OF THE TOPIC whose `#` is at `at`, or 0 when there is none. The
- * name is runs of segment characters joined by single `/` signs: a `/`
- * belongs to it only when a segment character follows, so a name neither
- * starts nor ends with one. A name of numbers alone, or one followed at once
- * by `#` or `://`, is not a topic. */
-static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t at) {
-    const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-    const bufsize_t len = markdown_core_inline_size(inline_state);
-    if (!topic_opener(inline_state, at)) {
-        return 0;
-    }
-    bool word = false;
-    const bufsize_t end = at + 1 + name_end(data + at + 1, len - at - 1, &word);
-    /* The name may go on with the input, and what follows it decides
-     * whether it is one; a name the input's end cuts short is a field, as
-     * is one a `/` the input ends with may go on from. The character after
-     * it is read whole, up to four bytes, and after a `/` the one after
-     * that, as `://` is. */
-    if (end + (end < len && data[end] == '/' ? 5 : 4) > len) {
-        markdown_core_inline_saw_end(inline_state);
-    }
-    if (!word || (end < len && data[end] == '#') ||
-        (len - end >= 3 && data[end] == ':' && data[end + 1] == '/' && data[end + 2] == '/')) {
-        S_report(inline_state, at, end);
-        return 0;
-    }
-    return end;
-}
-
 /* THE TOPIC A RUN'S TEXT FOUND (the element's run record): the text scan
  * asks at a `#` whether a topic starts there, and the match at that `#`
  * reads the end the question found, `end` past the `#` at `at`. */
@@ -163,30 +103,76 @@ typedef struct {
     bufsize_t at, end;
 } topic_run;
 
-static bool is_inline_start(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                            bufsize_t at) {
-    const bufsize_t end = topic_end(inline_state, at);
-    topic_run *run = markdown_core_run_state(inline_state, self);
-    if (run) {
-        *run = (topic_run){at, end};
+/* THE TOPIC AS A CONSTRUCT (plan symbols-cleanroom.md 23.10): a `#` where
+ * a topic starts reads it whole; at any other the `#` is text, which the
+ * data it meets runs on over (`passes`). */
+static bool S_opener(const unsigned char *data, uint32_t at) {
+    if (!at) {
+        return true;
     }
-    return end != 0;
+    if (data[at - 1] < 0x80) {
+        return data[at - 1] == '-' || (!SEGMENT_BYTES[data[at - 1]] && data[at - 1] != '&');
+    }
+    uint32_t before = at;
+    do {
+        before--;
+    } while (before && (data[before] & 0xc0) == 0x80);
+    int32_t scalar;
+    markdown_core_utf8proc_decode(data + before, (bufsize_t)(at - before), &scalar);
+    return !(markdown_core_utf8proc_classes(scalar) &
+             (MARKDOWN_CORE_UNICODE_LETTER | MARKDOWN_CORE_UNICODE_MARK | MARKDOWN_CORE_UNICODE_DECIMAL)) &&
+           !topic_joiner(scalar);
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    if (character != '#') {
-        return NULL;
+/* topic_end, read by the tokenizer. */
+static uint32_t S_end(markdown_core_tokenizer *tokenizer, uint32_t at) {
+    const unsigned char *data = tokenizer->data;
+    const uint32_t len = tokenizer->size;
+    if (!S_opener(data, at)) {
+        return 0;
     }
-    const bufsize_t start = markdown_core_inline_offset(inline_state);
-    const topic_run *run = markdown_core_run_state(inline_state, self);
-    const bufsize_t end = run && run->end && run->at == start ? run->end : topic_end(inline_state, start);
+    bool word = false;
+    const uint32_t end = at + 1 + (uint32_t)name_end(data + at + 1, (bufsize_t)(len - at - 1), &word);
+    if (end + (end < len && data[end] == '/' ? 5 : 4) > len) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (!word || (end < len && data[end] == '#') ||
+        (len - end >= 3 && data[end] == ':' && data[end + 1] == '/' && data[end + 2] == '/')) {
+        const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, (bufsize_t)at + 1,
+                                          (bufsize_t)end};
+        markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_TOPIC, (bufsize_t)at, (bufsize_t)at + 1, &name, 1);
+        return 0;
+    }
+    return end;
+}
+
+enum { TOPIC_NAME, TOPIC_KINDS };
+
+static markdown_core_state S_topic(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint32_t end = S_end(tokenizer, tokenizer->position);
     if (!end) {
-        return NULL;
+        return markdown_core_nok(tokenizer);
     }
-    markdown_core_inline_seek(inline_state, end);
-    /* The name views the input without its `#`; the node covers both. */
+    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + TOPIC_NAME));
+    markdown_core_consume_to(tokenizer, end);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + TOPIC_NAME));
+    return markdown_core_ok(tokenizer);
+}
+
+static uint32_t S_passes(markdown_core_tokenizer *tokenizer, const void *context, uint32_t at) {
+    (void)context;
+    return S_end(tokenizer, at) ? at : at + 1;
+}
+
+static const markdown_core_text_construct TOPIC_CONSTRUCTS[] = {{"#", {.start = S_topic, .passes = S_passes}}};
+
+/* The name views the input without its `#`; the node covers both. */
+static void S_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const bufsize_t start = (bufsize_t)token->start, end = (bufsize_t)token->end;
     markdown_core_node *topic =
         markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TOPIC, start, end - 1,
                                           markdown_core_inline_take(inline_state, start + 1, end - start - 1));
@@ -194,14 +180,16 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, topic);
         markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_NAME, start + 1, end);
     }
-    return topic;
+    markdown_core_compile_append(compiler, topic);
 }
 
+static const markdown_core_compile_ops TOPIC_TOKENS[TOPIC_KINDS] = {[TOPIC_NAME] = {.exit = S_made}};
+
 static const markdown_core_inline_ops TOPIC_INLINES = {
-    .match = match,
-    .starts = is_inline_start,
-    .terminates = "#",
-    .dispatch = "#",
+    .constructs = TOPIC_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = TOPIC_TOKENS,
+    .token_count = TOPIC_KINDS,
 };
 
 /* A topic reads as its `#` and its name in a name. */

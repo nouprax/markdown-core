@@ -3,12 +3,14 @@
 #include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
 #include "footnote.h"
+#include "attention.h"
+#include "label.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
-/* An inline note's bracket, opened by a `^[`: a body of its own
- * (bracket.h). */
-static const markdown_core_bracket_shape MARKDOWN_CORE_FOOTNOTE_BRACKET = {
+/* An inline note's label, opened by a `^[`: a body of its own
+ * (label.h). */
+static const markdown_core_label_shape MARKDOWN_CORE_FOOTNOTE_BRACKET = {
     .width = 2, .mark = -1, .own = true, .closer = ']', .kind = MARKDOWN_CORE_KIND_FOOTNOTE};
 
 const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .folds = true};
@@ -16,127 +18,8 @@ const markdown_core_space MARKDOWN_CORE_FOOTNOTE_SPACE = {.name = "footnote", .f
 enum { FOOTNOTE_LABELS };
 static const markdown_core_space *const FOOTNOTE_SPACES[] = {[FOOTNOTE_LABELS] = &MARKDOWN_CORE_FOOTNOTE_SPACE, NULL};
 
-static const markdown_core_mention *markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
-                                                                             markdown_core_inline_state *inline_state,
-                                                                             bufsize_t label_start,
-                                                                             bufsize_t after_close);
-static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
-                                                                   bracket *opener, bufsize_t after_close);
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start);
-/* The definition record a call's label names, or NULL when the document
- * defines no such label that the call's root sees. The record's label IS the call's normal form -- the
- * lookup matched it byte for byte -- so the call takes its id from there
- * rather than normalizing the same label a second time. */
-static const markdown_core_mention *markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
-                                                                             markdown_core_inline_state *inline_state,
-                                                                             bufsize_t label_start,
-                                                                             bufsize_t after_close) {
-    if (after_close - label_start < 2) {
-        return NULL;
-    }
-    /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
-     * aliases, so the only allocation in here is the labels' own
-     * normalization. */
-    markdown_core_chunk label = markdown_core_inline_take(inline_state, label_start + 1, after_close - label_start - 2);
-    bool failed = false;
-    const markdown_core_mention *record = markdown_core_parser_find_definition(
-        inline_state->owner_parser, self->spaces[FOOTNOTE_LABELS], &label,
-        markdown_core_inline_state_root_offset(inline_state, label_start), &failed);
-    if (failed) {
-        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-    }
-    return record;
-}
-
-static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
-                                                                   bracket *opener, bufsize_t after_close) {
-    /* A call is a Cite of one Citation whose referent is a footnote. */
-    markdown_core_node *cite = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITE);
-    markdown_core_node *citation =
-        cite ? markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITATION) : NULL;
-    if (citation) {
-        markdown_core_scaffold_append(cite, citation);
-    }
-    if (!citation) {
-        if (cite) {
-            markdown_core_parser_release_node(inline_state->owner_parser, cite);
-        }
-        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        return NULL;
-    }
-    citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
-    markdown_core_inline_state_place(inline_state, cite, opener->position - opener->shape->width, after_close - 1);
-    markdown_core_inline_state_place(inline_state, citation, opener->position, after_close - 2);
-    return cite;
-}
-
-static markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_core_element_instance *self,
-                                                                      markdown_core_parser *parser,
-                                                                      markdown_core_inline_state *inline_state,
-                                                                      bracket *opener) {
-    markdown_core_node *cite, *footnote;
-    /* The consumed body is inspected once by markdown_core_inline_parse_inline, never once per
-     * ancestor. Invalid openers keep their already parsed content as text. */
-    if (inline_state->nonblank_end <= opener->position ||
-        !markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
-                                             MARKDOWN_CORE_NODE_CITE)) {
-        markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
-        markdown_core_inline_pop_bracket(inline_state);
-        return make_str(inline_state, markdown_core_inline_offset(inline_state) - 1,
-                        markdown_core_inline_offset(inline_state) - 1,
-                        markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 1, 1));
-    }
-    cite = markdown_core_inline_make_footnote_cite(inline_state, opener, markdown_core_inline_offset(inline_state));
-    footnote = cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
-    if (!footnote) {
-        if (cite) {
-            markdown_core_parser_release_node(parser, cite);
-        }
-        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        markdown_core_inline_pop_bracket(inline_state);
-        return NULL;
-    }
-    markdown_core_inline_state_place(inline_state, footnote, opener->position - 2,
-                                     markdown_core_inline_offset(inline_state) - 1);
-    markdown_core_inline_settle_bracket(inline_state, opener);
-    markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-    markdown_core_inline_take_bracket_content(parser, inline_state, opener, footnote);
-    markdown_core_scaffold_insert_before(opener->inl_text, cite);
-    /* The note is its Citation's own field, as the affixes are. */
-    markdown_core_scaffold_first(cite)->as.citation->note = footnote;
-    markdown_core_inline_settle_note(parser, inline_state, footnote);
-    /* The note is a footnote of no label, which the document lists from
-     * where it starts: its place is in its root's content. */
-    const markdown_core_chunk none = {0};
-    if (!parser->error) {
-        markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &none,
-                                     markdown_core_parser_source_at(parser, footnote->place.start), NULL, footnote);
-    }
-    markdown_core_parser_release_node(parser, opener->inl_text);
-    markdown_core_brackets(inline_state)->no_link_openers = opener->outer_no_link_openers;
-    markdown_core_inline_pop_bracket(inline_state);
-    return NULL;
-}
-
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    /* An inline note opens a bracket, which only a dialect that closes one
-     * reads. */
-    if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[' ||
-        !markdown_core_inline_bracket_closes(self, inline_state)) {
-        return NULL;
-    }
-    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (2));
-    markdown_core_node *node = make_str(
-        inline_state, markdown_core_inline_offset(inline_state) - 2, markdown_core_inline_offset(inline_state) - 1,
-        markdown_core_inline_take(inline_state, markdown_core_inline_offset(inline_state) - 2, 2));
-    if (node) {
-        markdown_core_inline_push_bracket(self, inline_state, &MARKDOWN_CORE_FOOTNOTE_BRACKET, node);
-    }
-    return node;
-}
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                markdown_core_node *node, markdown_core_reader *reader,
                                const markdown_core_node *joining, bool *taken) {
@@ -147,41 +30,233 @@ static const markdown_core_edit_ops FOOTNOTE_EDIT = {
     .reopens = true,
 };
 
-static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser,
-                                                   markdown_core_inline_state *inline_state, bracket *opener);
+/* THE FOOTNOTE'S TEXT (plan symbols-cleanroom.md 23.12): a `^[` opens a
+ * label (label.h) where the dialect closes one; its own rule makes an
+ * inline note of it, a NOTE group over its body, and the shared call rule
+ * makes a `[^label]` the document defines a call, a CALL group of what
+ * the call read (S_call), whole. */
+enum { FOOTNOTE_NOTE, FOOTNOTE_CALL, FOOTNOTE_KINDS };
 
-/* THE FOOTNOTE'S RULES FOR A `]` (element.h, markdown_core_close_rule): an
- * inline note's `^[` closes by its own rule alone, always made, as text
- * when its body is no note; a `[^label]` the document defines is a call,
- * after every other rule. */
-static markdown_core_bracket_match S_close_note(const markdown_core_element_instance *self,
-                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                                bracket *opener, markdown_core_node **made) {
-    *made = markdown_core_inline_close_inline_footnote(self, parser, inline_state, opener);
+/* WHAT THE CALL RULE READ: where the cite starts and its label's caret
+ * is, where the label's field ends, and the definition's name, kept at
+ * `name`, `name_size` bytes. */
+typedef struct S_call {
+    uint32_t start, position, end;
+    uint32_t name, name_size;
+} S_call;
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    if (markdown_core_code_at(tokenizer, 1) != '[' ||
+        !markdown_core_label_closes(self, ((const markdown_core_inline_state *)tokenizer->reader)->dialect)) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_label_open(tokenizer, &MARKDOWN_CORE_FOOTNOTE_BRACKET);
+}
+
+static markdown_core_bracket_match S_end_note(const markdown_core_element_instance *self,
+                                              markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
+                                              markdown_core_label_made *made) {
+    const unsigned char *data = tokenizer->data;
+    const uint32_t close = made->past - 1;
+    /* A body of nothing but spaces and tabs is no note, and its label is
+     * text. */
+    uint32_t at = close;
+    while (at > label->position && markdown_core_is_space_or_tab(data[at - 1])) {
+        at--;
+    }
+    made->links = -1;
+    if (at == label->position ||
+        !markdown_core_attention_allows(tokenizer, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_CITE)) {
+        made->kind = MARKDOWN_CORE_TOKEN_NONE;
+        return BRACKET_MATCHED;
+    }
+    made->kind = (uint16_t)(self->token_base + FOOTNOTE_NOTE);
+    made->holder = MARKDOWN_CORE_NODE_NONE;
     return BRACKET_MATCHED;
 }
 
-static markdown_core_bracket_match S_close_call(const markdown_core_element_instance *self,
-                                                markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                                bracket *opener, markdown_core_node **made) {
-    (void)made;
-    return markdown_core_footnote_close_reference(self, parser, inline_state, opener) ? BRACKET_MATCHED
-                                                                                      : BRACKET_UNMATCHED;
+static markdown_core_bracket_match S_end_call(const markdown_core_element_instance *self,
+                                              markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
+                                              markdown_core_label_made *made) {
+    const markdown_core_opener opener = *label;
+    markdown_core_inline_state *inline_state = tokenizer->reader;
+    const markdown_core_events *events = &tokenizer->events;
+    const markdown_core_dialect *dialect = inline_state->dialect;
+    const unsigned char *data = tokenizer->data;
+    const uint32_t after = made->past;
+    const size_t first = (size_t)opener.enter + 2;
+    if (first >= opener.close) {
+        return BRACKET_UNMATCHED;
+    }
+    /* The label's first token is text: what compile makes of it is a
+     * Text node. */
+    const markdown_core_token *token = markdown_core_event_token(events, first);
+    const markdown_core_compile_ops *ops = token->kind < dialect->token_kinds ? dialect->compiles[token->kind] : NULL;
+    if (!ops || !ops->plain) {
+        return BRACKET_UNMATCHED;
+    }
+    /* THE CARET IS THE EVIDENCE: the source spells it. */
+    const bool caret = opener.position < tokenizer->size && data[opener.position] == '^' &&
+                       (token->end - token->start > 1 || first + 2 < opener.close);
+    if (!caret) {
+        return BRACKET_UNMATCHED;
+    }
+    const markdown_core_mention *definition = NULL;
+    if (after - opener.position >= 2) {
+        markdown_core_chunk text = {(unsigned char *)data + opener.position + 1,
+                                    (bufsize_t)(after - opener.position - 2), 0};
+        bool failed = false;
+        definition = markdown_core_parser_find_definition(
+            inline_state->owner_parser, self->spaces[FOOTNOTE_LABELS], &text,
+            markdown_core_inline_state_root_offset(inline_state, (int)opener.position), &failed);
+        if (failed) {
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        }
+    }
+    if (!definition) {
+        /* A call whose label names no definition, which a cursor in it may
+         * name: no later rule reads its label. */
+        const markdown_core_field call = {MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_CITATION,
+                                          (bufsize_t)opener.position + 1, (bufsize_t)after - 1};
+        markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_CITE, (bufsize_t)opener.start,
+                                   (bufsize_t)opener.position + 1, &call, 1);
+        return BRACKET_UNMATCHED;
+    }
+    if (!markdown_core_attention_allows(tokenizer, MARKDOWN_CORE_NODE_NONE, MARKDOWN_CORE_NODE_CITE)) {
+        return BRACKET_UNMATCHED;
+    }
+    /* The call's label, after its caret, without the whitespace before
+     * its `]`. */
+    uint32_t end = after - 1;
+    while (end > opener.position + 1 && markdown_core_is_whitespace(data[end - 1])) {
+        end--;
+    }
+    const markdown_core_chunk name = markdown_core_mention_name(definition);
+    S_call call = {.start = opener.start, .position = opener.position, .end = end, .name_size = (uint32_t)name.len};
+    call.name = markdown_core_events_keep(&tokenizer->events, name.data, (size_t)name.len + 1);
+    const uint32_t kept = markdown_core_events_keep(&tokenizer->events, &call, sizeof(call));
+    if (call.name == UINT32_MAX || kept == UINT32_MAX) {
+        return BRACKET_REJECTED;
+    }
+    made->kind = (uint16_t)(self->token_base + FOOTNOTE_CALL);
+    made->data = kept;
+    made->from = opener.start + opener.shape->kept;
+    made->holder = MARKDOWN_CORE_NODE_NONE;
+    return BRACKET_MATCHED;
 }
 
+/* A call is a Cite of one Citation whose referent is a footnote, placed
+ * from the cite's start `start` and the label's caret `position` up to
+ * `after`, past the `]`. */
+static markdown_core_node *S_cite(markdown_core_inline_state *inline_state, bufsize_t start, bufsize_t position,
+                                  bufsize_t after) {
+    markdown_core_node *cite = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITE);
+    markdown_core_node *citation =
+        cite ? markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITATION) : NULL;
+    if (!citation) {
+        if (cite) {
+            markdown_core_parser_release_node(inline_state->owner_parser, cite);
+        }
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        return NULL;
+    }
+    markdown_core_scaffold_append(cite, citation);
+    citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
+    markdown_core_inline_state_place(inline_state, cite, start, after - 1);
+    markdown_core_inline_state_place(inline_state, citation, position, after - 2);
+    return cite;
+}
+
+/* COMPILE: an inline note is a call whose citation's note holds the body;
+ * a call is its cite alone. */
+static void S_note_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const bufsize_t start = (bufsize_t)token->start, after = (bufsize_t)token->end;
+    markdown_core_node *cite = S_cite(inline_state, start, start + 2, after);
+    markdown_core_node *footnote =
+        cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
+    if (!footnote) {
+        if (cite) {
+            markdown_core_parser_release_node(parser, cite);
+        }
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        compiler->failed = true;
+        return;
+    }
+    markdown_core_inline_state_place(inline_state, footnote, start, after - 1);
+    /* The note is its Citation's own field, as the affixes are. */
+    markdown_core_scaffold_first(cite)->as.citation->note = footnote;
+    if (markdown_core_compile_append(compiler, cite)) {
+        markdown_core_compile_push(compiler, footnote);
+    }
+}
+
+static void S_note_close(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)token;
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    markdown_core_node *footnote = markdown_core_compile_pop(compiler);
+    markdown_core_inline_settle_note(parser, inline_state, footnote);
+    /* The note is a footnote of no label, which the document lists from
+     * where it starts: its place is in its root's content. */
+    const markdown_core_chunk none = {0};
+    if (!parser->error) {
+        markdown_core_parser_declare(parser, self->spaces[FOOTNOTE_LABELS], &none,
+                                     markdown_core_parser_source_at(parser, footnote->place.start), NULL, footnote);
+    }
+}
+
+static void S_call_made(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const S_call *call = markdown_core_events_kept(compiler->events, token->data);
+    markdown_core_node *cite =
+        S_cite(inline_state, (bufsize_t)call->start, (bufsize_t)call->position, (bufsize_t)token->end);
+    if (!cite) {
+        compiler->failed = true;
+        return;
+    }
+    markdown_core_node *citation = markdown_core_scaffold_first(cite);
+    const markdown_core_field_to fields = markdown_core_inline_fields(inline_state, citation);
+    markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_FOOTNOTE, (bufsize_t)call->position + 1, (bufsize_t)call->end);
+    /* The call's label is its normal form: the key the lookup matched. */
+    unsigned char *id = markdown_core_alloc(1, (size_t)call->name_size + 1);
+    if (!id) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        markdown_core_parser_release_node(inline_state->owner_parser, cite);
+        compiler->failed = true;
+        return;
+    }
+    memcpy(id, markdown_core_events_kept(compiler->events, call->name), (size_t)call->name_size);
+    id[call->name_size] = '\0';
+    citation->as.citation->value = (markdown_core_chunk){id, (bufsize_t)call->name_size, 1};
+    markdown_core_compile_append(compiler, cite);
+}
+
+static const markdown_core_text_construct FOOTNOTE_CONSTRUCTS[] = {{"^", MARKDOWN_CORE_LABEL_CONSTRUCT(S_start)}};
+static const markdown_core_compile_ops FOOTNOTE_TOKENS[FOOTNOTE_KINDS] = {
+    [FOOTNOTE_NOTE] = {.enter = S_note_open, .exit = S_note_close, .asked = true},
+    [FOOTNOTE_CALL] = {.enter = S_call_made, .opaque = true, .asked = true}};
+
 static const markdown_core_close_rule FOOTNOTE_CLOSES[] = {
-    {.precedence = 0, .mine = true, .close = S_close_note},
-    {.precedence = 20, .close = S_close_call},
+    {.precedence = 0, .mine = true, .end = S_end_note},
+    {.precedence = 20, .end = S_end_call},
 };
 
 static const markdown_core_inline_ops FOOTNOTE_INLINES = {
+    .constructs = FOOTNOTE_CONSTRUCTS,
+    .construct_count = sizeof(FOOTNOTE_CONSTRUCTS) / sizeof(FOOTNOTE_CONSTRUCTS[0]),
+    .tokens = FOOTNOTE_TOKENS,
+    .token_count = FOOTNOTE_KINDS,
     .closes = FOOTNOTE_CLOSES,
     .close_count = sizeof(FOOTNOTE_CLOSES) / sizeof(FOOTNOTE_CLOSES[0]),
     .closer = ']',
-    .match = match,
-    .terminates = "^",
-    .dispatch = "^",
 };
 
 static const markdown_core_open_ops FOOTNOTE_OPENS = {
@@ -202,148 +277,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .opens = &FOOTNOTE_OPENS,
     .lines = &FOOTNOTE_LINES,
 };
-
-static bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser,
-                                                   markdown_core_inline_state *inline_state, bracket *opener) {
-    bufsize_t initial_pos = markdown_core_inline_offset(inline_state);
-    markdown_core_node *label = markdown_core_scaffold_next(opener->inl_text);
-    if (label && label->kind == MARKDOWN_CORE_NODE_TEXT) {
-
-        markdown_core_chunk *literal = label->as.literal;
-
-        // A footnote call opens with a caret the SOURCE spells literally.
-        //
-        // This used to test the decoded first byte, so `[\^a]` and `[&#94;a]`
-        // opened calls too — and neither could ever resolve, because the label
-        // was reconstructed from a different coordinate space than the one the
-        // lookup key came from. What they produced instead was a rebuilt `[^`
-        // prefix over decoded bytes: `[\^abc] x` came back as `[^^abc] x`, an
-        // invented caret, and `[&#94;a]` as `[^#94;a]`.
-        //
-        // `opener->position` is the byte after the '[', which is where the
-        // caret must be. The bounds test comes first because that is the order
-        // a subscript and its guard belong in -- D4 is what happens when they
-        // are the other way round. It is REDUNDANT here and the proof is worth
-        // writing down rather than rediscovering: reaching this function means
-        // a ']' was consumed, and that ']' is after the '[', so
-        // `opener->position <= initial_pos - 2 < markdown_core_inline_size(inline_state)`. No mutant
-        // kills it, measured; it is kept because a reader should not have to
-        // reconstruct that argument before touching the line.
-        //
-        // AND THE DOCUMENT DEFINES THAT LABEL. Both halves of Step 9a's rule
-        // are here now, and the second one is what makes the failure path
-        // ordinary: a `[^label]` nothing defines is not a footnote call, so it
-        // is an unmatched `[`, which CommonMark specifies -- remove the
-        // delimiter-stack entry, emit a literal `]`, and leave the interior
-        // alone. Every one of its three failure branches says NOT re-parenting
-        // is what failure means, and the interior nodes exist because core
-        // inline parsing built them before any footnote code ran (§5.7, Q2).
-        // What used to happen instead was that the call succeeded on the caret
-        // alone, and the post-pass that could not resolve it replaced the whole
-        // span with one flat literal -- freeing nodes core had already built,
-        // for a construct that turned out not to exist.
-        //
-        // The definition set is filled by the block phase, which has finished
-        // by the time any inline is parsed, so "defines" is answered over the
-        // WHOLE document here and not over a prefix of it.
-        /* THE CARET IS THE EVIDENCE, and it is separated from the definedness
-         * test so that the case where the first holds and the second does not
-         * can be reported. `[^x]` is footnote syntax and nothing else; a reader
-         * who writes it and gets prose has no other way to find out. */
-        bool caret_written = opener->position < markdown_core_inline_size(inline_state) &&
-                             markdown_core_inline_char_at(inline_state, opener->position) == '^' &&
-                             (literal->len > 1 || markdown_core_scaffold_next(label));
-        const markdown_core_mention *definition =
-            caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
-                          : NULL;
-        if (caret_written && !definition) {
-            /* A call whose label names no definition, which a cursor in it
-             * may name (markdown_core_inline_open): no later rule reads its
-             * bracket. */
-            const markdown_core_field call = {MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_CITATION,
-                                              opener->position + 1, initial_pos - 1};
-            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, opener->position - opener->shape->width,
-                                      opener->position + 1, &call, 1);
-        }
-        if (definition) {
-            if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
-                                                     MARKDOWN_CORE_NODE_CITE)) {
-                return false;
-            }
-
-            // Before we got this far, the `markdown_core_inline_handle_close_bracket` function may have
-            // advanced the current state beyond our footnote's actual closing
-            // bracket, ie if it went looking for a `markdown_core_inline_link_label`.
-            // Let's just rewind the inline state's position:
-            markdown_core_inline_seek(inline_state, initial_pos);
-
-            markdown_core_node *fnref = markdown_core_inline_make_footnote_cite(inline_state, opener, initial_pos);
-            if (!fnref) {
-                markdown_core_inline_pop_bracket(inline_state);
-                return true;
-            }
-            /* The call's label, after its caret, without the whitespace
-             * before its `]`. */
-            const unsigned char *data = markdown_core_inline_window(inline_state, 0).data;
-            bufsize_t end = initial_pos - 1;
-            while (end > opener->position + 1 && markdown_core_is_whitespace(data[end - 1])) {
-                end--;
-            }
-            const markdown_core_field_to fields =
-                markdown_core_inline_fields(inline_state, markdown_core_scaffold_first(fnref));
-            markdown_core_field_add(&fields, MARKDOWN_CORE_SLOT_FOOTNOTE, opener->position + 1, end);
-            /* The call's label is its normal form: the key the lookup
-             * matched, copied rather than computed again. */
-            const markdown_core_chunk defined = markdown_core_mention_name(definition);
-            unsigned char *id = markdown_core_alloc(1, (size_t)defined.len + 1);
-            if (!id) {
-                inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-                markdown_core_parser_release_node(parser, fnref);
-                markdown_core_inline_pop_bracket(inline_state);
-                return true;
-            }
-            memcpy(id, defined.data, (size_t)defined.len + 1);
-            markdown_core_chunk *value = &markdown_core_scaffold_first(fnref)->as.citation->value;
-            value->data = id;
-            value->len = defined.len;
-            value->alloc = 1;
-
-            markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-            // sometimes, the footnote reference text gets parsed into multiple nodes
-            // i.e. '[^example]' parsed into '[', '^exam', 'ple]'.
-            // this happens for ex with the autolink element. when the autolinker
-            // finds the 'w' character, it will split the text into multiple nodes
-            // in hopes of being able to match a 'www.' substring.
-            //
-            // because this function is called one character at a time via the
-            // `parse_inlines` function, and the current markdown_core_inline_offset(inline_state) is pointing at the
-            // closing ] brace, and because we copy all the text between the [ ]
-            // braces, we should be able to safely ignore and delete any nodes after
-            // the opener->inl_text->next.
-            //
-            // therefore, here we walk thru the list and free them all up
-            /* A valid definition label contains no ']'; a completed inline
-             * footnote necessarily does. This label therefore cannot own a
-             * committed Footnote from the parser collection. */
-            /* Read after the delimiters are processed, which may have
-             * wrapped the label's first node: `[^a^b]` makes `^a^` a
-             * superscript. */
-            markdown_core_node *next_node;
-            markdown_core_node *current_node = markdown_core_scaffold_next(opener->inl_text);
-            while (current_node) {
-                next_node = markdown_core_scaffold_next(current_node);
-                markdown_core_parser_release_node(parser, current_node);
-                current_node = next_node;
-            }
-
-            markdown_core_inline_replace_bracket_opener(inline_state, opener, fnref);
-            markdown_core_inline_pop_bracket(inline_state);
-            return true;
-        }
-    }
-    return false;
-}
 
 static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         markdown_core_node **container, markdown_core_reader *reader,

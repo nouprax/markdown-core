@@ -30,7 +30,7 @@ extern "C" {
  *   moves that one out to the edit's room for it first (markdown_core_seam_out).
  * - MEETS: past the edit, at each place it stands empty again, it asks
  *   whether it stands where the old reading stood at one of the old tail's
- *   seams (blocks.c, S_resumes, S_resumes_in and S_seam_meets): each holder
+ *   seams (blocks.c, S_seams; an inline reading's, inlines.c, S_start): each holder
  *   asks of its own state, which no other holder's reading knows.
  * - SPLICE: it takes the old tail back from that seam on, after the
  *   children it made (markdown_core_seam_join), and stops.

@@ -1,33 +1,14 @@
 #ifndef MARKDOWN_CORE_CITATION_STATE_H
 #define MARKDOWN_CORE_CITATION_STATE_H
 #include "services.h"
-#include "delimiter.h"
 #include "inline_internal.h"
 
-/* Citation candidates borrow token nodes until the enclosing bracket chooses
- * their owner. They retain source coordinates, never a second inline tree. */
+/* A key as its bytes spell it: the token's bytes, the key's inside them,
+ * and whether it is suppressed (`-@key`). */
 typedef struct citation_token {
-    markdown_core_stack_item item;
-    markdown_core_node *node;
-    delimiter *boundary;
-    struct bracket *tail;
-    bufsize_t start, key_start, key_end, end, tail_start;
+    bufsize_t start, key_start, key_end, end;
     bool key, suppress;
 } citation_token;
-
-MARKDOWN_CORE_STACK_OF(citation_token, citation_token)
-
-/* The tokens read in a body, in source order: an instance of the engine's
- * stack (stack.h). */
-typedef markdown_core_stack citation_tokens;
-
-/* WHAT A BRACKET HOLDS OF CITATIONS (the citation element's bracket
- * record, bracket.h): the tokens read in its body, and the author key a
- * `[` right after it makes the bracket the key's tail. */
-typedef struct {
-    citation_tokens citations;
-    citation_token *author;
-} markdown_core_citation_bracket;
 
 /* A brace of a run: where it starts, where it closes, the brace around it,
  * whether it may be a key and holds anything, and whether a code span or a
@@ -48,12 +29,19 @@ typedef struct {
     bool ready;
 } citation_brace_index;
 
-/* ONE RUN'S CITATIONS (the citation element's run record): the
- * tokens read outside every bracket, each bracket keeping its own, and the
- * run's brace index, built the first time a braced key is read. */
+/* ONE RUN'S CITATIONS (the citation element's run record): the run's
+ * brace index, built the first time a braced key is read. */
+typedef struct markdown_core_citation_entry markdown_core_citation_entry;
 typedef struct {
-    citation_tokens tokens;
     citation_brace_index braces;
+    /* The reading's (citation.c, THE CITATION'S TEXT): whether it read a
+     * token outside every label; the label whose end is read again and
+     * the author it is read with (markdown_core_label_again); and, as it
+     * compiles, the items of the bibliographies open there. */
+    bool held, again;
+    uint32_t label, author;
+    markdown_core_citation_entry *entries;
+    size_t entry_count, entry_room, base;
 } markdown_core_citation_run;
 
 /* THE CITATION GRAMMAR'S WORK (the citation element's parse record):

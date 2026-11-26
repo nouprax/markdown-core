@@ -333,27 +333,13 @@ static markdown_core_inline_state *prepare_heading(const markdown_core_element_i
                                                    markdown_core_parser *parser, markdown_core_node *node) {
     markdown_core_inline_state inline_state;
     markdown_core_inline_start_inlines(parser, node, true, &inline_state);
-    while (!parser->error && !inline_state.error) {
-        unsigned char c = markdown_core_inline_peek_char(&inline_state);
-        /* Attribute ownership and opaque tokens are decided by the same
-         * cursor as every inline. A live bracket makes this declaration
-         * unwritable as a reference label; only its remaining inlines depend
-         * on the document's completed symbol table. */
-        if ((inline_state.delims.last && delimiter_last(&inline_state.delims)->kind == DELIMITER_FIELD) ||
-            (inline_state.pos >= inline_state.opaque_end &&
-             (c == '[' || c == ']' ||
-              ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
-            markdown_core_inline_state *parked = markdown_core_alloc(1, sizeof(inline_state));
-            if (parked) {
-                *parked = inline_state;
-                return parked;
-            }
-            inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-            break;
+    if (!markdown_core_inline_settles(parser, &inline_state)) {
+        markdown_core_inline_state *parked = markdown_core_alloc(1, sizeof(inline_state));
+        if (parked) {
+            *parked = inline_state;
+            return parked;
         }
-        if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
-            break;
-        }
+        inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     if (!parser->error && !inline_state.error) {
         const markdown_core_heading_run *run = markdown_core_run_state(&inline_state, self);

@@ -46,6 +46,11 @@ bool markdown_core_compile(markdown_core_compiler *compiler, const markdown_core
             if (handlers->enter) {
                 handlers->enter(compiler, token, event.token);
             }
+            if (handlers->opaque) {
+                while (compiler->at + 1 < events->count && events->items[compiler->at + 1].token != event.token) {
+                    compiler->at++;
+                }
+            }
         } else if (handlers->exit) {
             handlers->exit(compiler, token, event.token);
         }

@@ -1,6 +1,7 @@
 #include "alloc.h"
 #include "formula_scanners.h"
 #include "formula.h"
+#include "attention.h"
 #include "element.h"
 #include "inline_internal.h"
 
@@ -235,23 +236,6 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
     return 1;
 }
 
-static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                               bufsize_t len) {
-    bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
-    markdown_core_node *node;
-
-    (void)parser;
-    /* The cursor is at the run's FIRST byte here, and at its last in
-     * `strikethrough` -- which is why each of them used to compute the columns
-     * from a different end. The shared constructor is told the range. */
-    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)(offset + len - 1));
-    if (!node) {
-        return NULL;
-    }
-    markdown_core_inline_state_set_offset(inline_state, (int)(offset + len));
-    return node;
-}
-
 static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
                                bool *closes);
 
@@ -262,64 +246,6 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
 
 static bool formula_body_admitted(markdown_core_delimiter_rule rule, const unsigned char *body, bufsize_t len) {
     return rule != FORMULA_DELIM_DOLLAR_INLINE || !len || body[0] != '`' || (len >= 2 && body[len - 1] == '`');
-}
-
-static markdown_core_node *match_formula_delimiter(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, markdown_core_node *parent,
-                                                   markdown_core_inline_state *inline_state,
-                                                   markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
-                                                   int can_close) {
-    if (can_open) {
-        int start = markdown_core_inline_state_get_offset(inline_state);
-        int from = start + len;
-        int close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
-        markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
-        /* An opener with no closer opens a formula once one follows. */
-        if (close < 0) {
-            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_FORMULA, start, from, NULL, 0);
-        }
-        if (close >= 0 && formula_body_admitted(rule, input->data + from, close - from)) {
-            /* A dynamic parent's policy is observed at delimiter reduction, in
-             * source order with other deferred replacements. Keep that lifetime
-             * (and exactly one policy decision) rather than asking early and
-             * asking again in the token dispatcher. Fixed owners need no such
-             * deferred transaction: this opaque production is already complete. */
-            if (!markdown_core_node_allows(parent) &&
-                markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA)) {
-                markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, parent, rule,
-                                                                start, from, close, close + len);
-                if (formula) {
-                    markdown_core_inline_state_set_offset(inline_state, close + len);
-                }
-                return formula;
-            }
-            markdown_core_inline_state_set_opaque_body_end(inline_state, close);
-        }
-    }
-    /* A rejected backtick-body candidate is ordinary inline grammar. Its
-     * lexical closer can be hidden by a code span or bracket scope, so retain
-     * the alternating delimiter state until that grammar resolves the range.
-     * Both recognized and deferred pairs use the same literal constructor. */
-    markdown_core_node *node = make_delimiter_text(parser, inline_state, len);
-
-    if (!node) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-
-    if (can_open || can_close) {
-        markdown_core_inline_state_push_delimiter(inline_state, self, rule, can_open, can_close, node);
-    }
-    return node;
-}
-
-static int dollar_inline_can_open(markdown_core_chunk *chunk, bufsize_t offset) {
-    return offset + 1 < chunk->len && !markdown_core_is_whitespace(chunk->data[offset + 1]);
-}
-
-static int dollar_inline_can_close(markdown_core_chunk *chunk, bufsize_t offset) {
-    return offset > 0 && !markdown_core_is_whitespace(chunk->data[offset - 1]) &&
-           (offset + 1 >= chunk->len || !markdown_core_isdigit((char)chunk->data[offset + 1]));
 }
 
 static bufsize_t scan_backslash_close(const unsigned char *data, bufsize_t len, bufsize_t offset,
@@ -371,91 +297,6 @@ static int scan_formula_closer(const unsigned char *data, int length, int at, ma
     return 1;
 }
 
-/* ONE OPEN FORMULA PER FORM. A delimiter of a form opens only while no opener
- * of that form is waiting on the stack, and closes only while one is, so a
- * form's delimiters alternate opener, closer, opener, closer, and a closer's
- * nearest unmatched opener is always the one directly before it. That is the
- * index's word for step A4 -- a scanner whose body is opaque -- said on the
- * delimiter stack the module names: from its opener on, a body runs to the
- * first closer of its form, and an opener inside it is the body's own bytes.
- * It is also what keeps the pairing linear. Without the gate, `\\(a \\(b\\) c\\)`
- * paired the inner `\\(` first and then let the outer closer take the outer
- * opener across the inner formula, so every level of a nest built a literal
- * the next level threw away, and a paragraph of thousands of nested openers
- * and closers copied bodies of growing length.
- *
- * The gate is the stack's own count, asked at the scan (`has_unmatched_opener`,
- * kept at every push and removal), so it costs nothing and needs no memory of
- * its own. A gated delimiter is still the text it was written as, and a pair
- * that fails its shape test in `insert_formula` releases its bytes the same
- * way.
- *
- * A backslash CLOSER with nothing to close is left to the base language
- * entirely: `\\]` is then CommonMark's escaped backslash followed by a
- * bracket closer, and the base scanner must see that `]`, or `[bar\\]` stops
- * being a reference (CommonMark 0.31.2 example 558). */
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    int offset = markdown_core_inline_state_get_offset(inline_state);
-    int len = (int)chunk->len;
-    bufsize_t opener_len;
-    bufsize_t closer_len;
-    int open;
-
-    /* Every delimiter is at most three bytes, and the byte after a `$` says
-     * whether it opens or closes. */
-    if (offset + 3 > len) {
-        markdown_core_inline_state_saw_end(inline_state);
-    }
-
-    if (character == '$') {
-        if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_DISPLAY);
-            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open,
-                                           open);
-        }
-
-        if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
-            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_INLINE);
-            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_INLINE, 1,
-                                           !open && dollar_inline_can_open(chunk, (bufsize_t)offset),
-                                           open && dollar_inline_can_close(chunk, (bufsize_t)offset));
-        }
-    } else if (character == '\\') {
-        opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
-        if (opener_len) {
-            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
-            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                                           opener_len, !open, 0);
-        }
-
-        opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
-        if (opener_len) {
-            open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
-            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                                           opener_len, !open, 0);
-        }
-
-        closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-        if (closer_len &&
-            markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
-            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                                           closer_len, 0, 1);
-        }
-
-        closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
-        if (closer_len &&
-            markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
-            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                                           closer_len, 0, 1);
-        }
-    }
-
-    return NULL;
-}
-
 static markdown_core_formula_mode mode_for_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_DOLLAR_DISPLAY || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY
                ? MARKDOWN_CORE_FORMULA_MODE_STANDALONE
@@ -464,19 +305,6 @@ static markdown_core_formula_mode mode_for_delim(markdown_core_delimiter_rule de
 
 static int is_backslash_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
-}
-
-static void free_nodes_through(markdown_core_parser *parser, markdown_core_node *first, markdown_core_node *last) {
-    markdown_core_node *node = first;
-
-    while (node) {
-        markdown_core_node *next = markdown_core_scaffold_next(node);
-        markdown_core_parser_release_node(parser, node);
-        if (node == last) {
-            break;
-        }
-        node = next;
-    }
 }
 
 /* micromark-element-math's padding rule (Q18): when a body BEGINS AND ENDS
@@ -597,34 +425,205 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
     return formula;
 }
 
-static void insert_formula(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_inline_state *inline_state, delimiter *opener, delimiter *closer) {
-    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
-    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
-    markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
-    markdown_core_node *holder = markdown_core_scaffold_parent(opener_node);
-    bufsize_t from = markdown_core_delimiter_position(opener);
-    bufsize_t close = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
-    if (rule != markdown_core_delimiter_rule_of(closer) ||
-        (is_backslash_delim(rule) &&
-         markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer)) ||
-        !formula_body_admitted(rule, chunk->data + from, close - from) || !holder ||
-        !markdown_core_node_can_contain_type(holder, MARKDOWN_CORE_NODE_FORMULA)) {
-        /* The pair makes no formula, but the delimiters between are gone
-         * all the same: no reading from between may settle. */
-        markdown_core_inline_state_undecide(inline_state, opener_node->place.start);
-        return;
-    }
-    markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, holder, rule,
-                                                    from - markdown_core_delimiter_length(opener), from, close,
-                                                    markdown_core_delimiter_position(closer));
-    if (!formula) {
-        return;
-    }
-    markdown_core_scaffold_insert_before(opener_node, formula);
-    free_nodes_through(parser, opener_node, closer_node);
+/* THE FORMULA'S RUNS (plan symbols-cleanroom.md 23.10): a delimiter is a
+ * sequence of the attention (attention.h) whose rule is its form, and the
+ * forms alternate as `match` above says, by the counts the run record
+ * keeps. An opener whose closer the opaque scan finds, of an admitted body
+ * in a fixed owner that takes a formula, is the formula at once, a SPAN
+ * token over the two and the body; any other pair the attention's pass
+ * pairs is one when its body is admitted (`S_covers`). */
+enum { FORMULA_SPAN = MARKDOWN_CORE_ATTENTION_KINDS, FORMULA_KINDS };
+enum { FORMULA_FORMS = 4 };
+
+/* A run's record: where the opaque scan of each form found no closer
+ * from, and where the body of an opener whose pair is left to the pass
+ * ends. */
+typedef struct formula_record {
+    uint32_t failed[FORMULA_FORMS];
+    uint32_t opaque;
+} formula_record;
+
+static unsigned S_form(markdown_core_delimiter_rule rule) { return (unsigned)(rule - FORMULA_DELIM_DOLLAR_INLINE); }
+
+/* A span's word: its rule and the lengths of its opener and closer. */
+static uint32_t S_span_word(markdown_core_delimiter_rule rule, uint32_t open, uint32_t close) {
+    return (uint32_t)rule | open << 8 | close << 16;
 }
+
+/* The first closer of `rule` from `from`, or -1. */
+static int64_t S_find(markdown_core_tokenizer *tokenizer, formula_record *record, markdown_core_delimiter_rule rule,
+                      uint32_t from) {
+    const unsigned form = S_form(rule);
+    if (record->failed[form] && from >= record->failed[form] - 1) {
+        markdown_core_met_end(tokenizer);
+        return -1;
+    }
+    const int size = (int)tokenizer->size;
+    for (int at = (int)from; at < size;) {
+        bool closes = false;
+        const int width = scan_formula_closer(tokenizer->data, size, at, rule, &closes);
+        if (closes) {
+            if (at + width >= size) {
+                markdown_core_met_end(tokenizer);
+            }
+            return at;
+        }
+        at += width;
+    }
+    markdown_core_met_end(tokenizer);
+    record->failed[form] = from + 1;
+    return -1;
+}
+
+/* Whether a run of `rule` on the stack opened that none closed: the runs
+ * of a form alternate. */
+static bool S_open(const markdown_core_tokenizer *tokenizer, markdown_core_delimiter_rule rule) {
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    return inline_state->delim_openers[rule] > inline_state->delim_closers[rule];
+}
+
+static markdown_core_state S_run(markdown_core_tokenizer *tokenizer, markdown_core_delimiter_rule rule, uint32_t length,
+                                 bool opens, bool closes) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    formula_record *record = markdown_core_read_record(tokenizer, self->run_offset);
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    const uint32_t start = tokenizer->position, from = start + length;
+    if (opens) {
+        const int64_t close = S_find(tokenizer, record, rule, from);
+        /* An opener with no closer opens a formula once one follows. */
+        if (close < 0) {
+            markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_FORMULA, (bufsize_t)start, (bufsize_t)from, NULL,
+                                       0);
+        }
+        if (close >= 0 && formula_body_admitted(rule, tokenizer->data + from, (bufsize_t)((uint32_t)close - from))) {
+            /* A dynamic owner's policy is asked as the pass pairs, in
+             * order with the other pairs; a fixed one takes it now. */
+            markdown_core_node *owner = inline_state->owner;
+            if (!markdown_core_node_allows(owner) &&
+                markdown_core_node_can_contain_type(owner, MARKDOWN_CORE_NODE_FORMULA)) {
+                const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + FORMULA_SPAN));
+                markdown_core_consume_to(tokenizer, (uint32_t)close + length);
+                markdown_core_exit(tokenizer, (uint16_t)(self->token_base + FORMULA_SPAN));
+                if (token != UINT32_MAX) {
+                    tokenizer->events.tokens[token].data = S_span_word(rule, length, length);
+                }
+                return markdown_core_ok(tokenizer);
+            }
+            record->opaque = (uint32_t)close;
+        }
+    }
+    /* A run that can do neither is its text. */
+    const unsigned kind = opens || closes ? MARKDOWN_CORE_ATTENTION_SEQUENCE : MARKDOWN_CORE_ATTENTION_LITERAL;
+    const uint32_t token = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + kind));
+    markdown_core_consume_to(tokenizer, from);
+    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + kind));
+    if (token != UINT32_MAX && kind == MARKDOWN_CORE_ATTENTION_SEQUENCE) {
+        tokenizer->events.tokens[token].data = markdown_core_attention_word(opens, closes, (unsigned)rule, length);
+        markdown_core_attention_count(tokenizer, (unsigned)rule, opens, closes);
+    }
+    return markdown_core_ok(tokenizer);
+}
+
+static bool S_can_open(const unsigned char *data, uint32_t size, uint32_t at) {
+    return at + 1 < size && !markdown_core_is_whitespace(data[at + 1]);
+}
+
+static bool S_can_close(const unsigned char *data, uint32_t size, uint32_t at) {
+    return at > 0 && !markdown_core_is_whitespace(data[at - 1]) &&
+           (at + 1 >= size || !markdown_core_isdigit((char)data[at + 1]));
+}
+
+/* The forms as `match` reads them. */
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    (void)self;
+    const unsigned char *data = tokenizer->data;
+    const bufsize_t size = (bufsize_t)tokenizer->size, at = (bufsize_t)tokenizer->position;
+    /* Every delimiter is at most three bytes, and the byte after a `$`
+     * says whether it opens or closes. */
+    if (at + 3 > size) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (code == '$') {
+        if (scan_formula_dollar_display_open(data, size, at)) {
+            const bool open = S_open(tokenizer, FORMULA_DELIM_DOLLAR_DISPLAY);
+            return S_run(tokenizer, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open, open);
+        }
+        if (scan_formula_dollar_inline_open(data, size, at)) {
+            const bool open = S_open(tokenizer, FORMULA_DELIM_DOLLAR_INLINE);
+            return S_run(tokenizer, FORMULA_DELIM_DOLLAR_INLINE, 1,
+                         !open && S_can_open(data, (uint32_t)size, (uint32_t)at),
+                         open && S_can_close(data, (uint32_t)size, (uint32_t)at));
+        }
+        return markdown_core_nok(tokenizer);
+    }
+    bufsize_t length = scan_formula_latex_backslash_display_open(data, size, at);
+    if (length) {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, (uint32_t)length,
+                     !S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY), false);
+    }
+    length = scan_formula_latex_backslash_inline_open(data, size, at);
+    if (length) {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, (uint32_t)length,
+                     !S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE), false);
+    }
+    length = scan_backslash_close(data, size, at, ']', 2);
+    if (length && S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY, (uint32_t)length, false, true);
+    }
+    length = scan_backslash_close(data, size, at, ')', 2);
+    if (length && S_open(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
+        return S_run(tokenizer, FORMULA_DELIM_LATEX_BACKSLASH_INLINE, (uint32_t)length, false, true);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+/* No settle point inside the body of an opener whose pair is left to the
+ * pass. */
+static bool S_holds(const markdown_core_tokenizer *tokenizer, const void *context) {
+    const markdown_core_element_instance *self = context;
+    const formula_record *record = markdown_core_read_record(tokenizer, self->run_offset);
+    return tokenizer->position < record->opaque;
+}
+
+/* A pair the pass made is a formula when its body is admitted and the
+ * owner takes one. */
+static bool S_covers(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
+                     markdown_core_node_type holder, const markdown_core_token *opener,
+                     const markdown_core_token *closer, uint32_t *word) {
+    (void)self;
+    const markdown_core_delimiter_rule rule = (markdown_core_delimiter_rule)markdown_core_attention_rule(opener->data);
+    const uint32_t open = markdown_core_attention_length(opener->data);
+    const uint32_t close = markdown_core_attention_length(closer->data);
+    if ((is_backslash_delim(rule) && open != close) ||
+        !formula_body_admitted(rule, tokenizer->data + opener->end, (bufsize_t)(closer->start - opener->end)) ||
+        !markdown_core_attention_allows(tokenizer, holder, MARKDOWN_CORE_NODE_FORMULA)) {
+        return false;
+    }
+    *word = S_span_word(rule, open, close);
+    return true;
+}
+
+static void S_span(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_inline_state *inline_state = markdown_core_compile_state(compiler);
+    const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
+    const markdown_core_delimiter_rule rule = (markdown_core_delimiter_rule)(token->data & 0xffu);
+    const uint32_t open = token->data >> 8 & 0xffu, close = token->data >> 16;
+    markdown_core_node *formula =
+        make_formula_span(self->element, inline_state->owner_parser, inline_state,
+                          markdown_core_compile_parent(compiler), rule, (bufsize_t)token->start,
+                          (bufsize_t)(token->start + open), (bufsize_t)(token->end - close), (bufsize_t)token->end);
+    if (!formula && !inline_state->error) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+    }
+    markdown_core_compile_append(compiler, formula);
+}
+
+static const markdown_core_text_construct FORMULA_CONSTRUCTS[] = {
+    {"$\\", {.start = S_start, .resolve_all = markdown_core_attention_resolve, .late = true, .holds = S_holds}}};
+static const markdown_core_compile_ops FORMULA_TOKENS[FORMULA_KINDS] = {
+    MARKDOWN_CORE_ATTENTION_OPS, [FORMULA_SPAN] = {.exit = S_span, .opaque = true, .asked = true}};
 
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_FORMULA,
                                                             MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_NONE};
@@ -776,10 +775,12 @@ static const markdown_core_content_ops FORMULA_CONTENT = {
 };
 
 static const markdown_core_inline_ops FORMULA_INLINES = {
-    .match = match,
-    .insert = insert_formula,
-    .terminates = "$",
-    .dispatch = "$\\",
+    .constructs = FORMULA_CONSTRUCTS,
+    .construct_count = 1,
+    .tokens = FORMULA_TOKENS,
+    .token_count = FORMULA_KINDS,
+    .covers = S_covers,
+    .cover = FORMULA_SPAN,
 };
 
 static const markdown_core_open_ops FORMULA_OPENS = {
@@ -841,6 +842,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .contain = &FORMULA_CONTAIN,
     .content = &FORMULA_CONTENT,
     .inlines = &FORMULA_INLINES,
+    .run_state_size = sizeof(formula_record),
     .opens = &FORMULA_OPENS,
     .lines = &FORMULA_LINES,
 };
