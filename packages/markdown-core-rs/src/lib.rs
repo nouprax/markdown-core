@@ -12,6 +12,7 @@
 #![allow(clippy::too_many_lines)]
 
 extern crate alloc;
+mod ahead;
 pub mod ast;
 mod choice;
 mod construct;

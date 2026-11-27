@@ -11,7 +11,7 @@
 use crate::event::{Event, Kind, Link, Name, Point, VOID_EVENTS};
 use crate::parser::ParseState;
 use crate::resolve::{call as call_resolve, Name as ResolveName};
-use crate::state::{call, State};
+use crate::state::{call, Name as StateName, State};
 use crate::subtokenize::Subresult;
 
 use crate::util::{constant::TAB_SIZE, edit_map::EditMap};
@@ -37,7 +37,7 @@ pub enum Container {
 /// Info used to tokenize a container.
 ///
 /// Practically, these fields are only used for list items.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ContainerState {
     /// Kind.
     pub kind: Container,
@@ -198,6 +198,18 @@ pub struct Document<'a> {
     pub first: bool,
 }
 
+/// State of a lookahead over later lines ([`ahead`][crate::ahead]).
+#[derive(Debug, Default)]
+pub struct Ahead {
+    /// Containers around the flow of the current line, set by the document
+    /// before it feeds the line to its flow.
+    pub stack: Vec<ContainerState>,
+    /// State a later line is tested with, in a lookahead tokenizer.
+    pub test: Option<StateName>,
+    /// Whether a later line passed the test, in a lookahead tokenizer.
+    pub found: bool,
+}
+
 /// Label starts and matched labels of text.
 #[derive(Debug, Default)]
 pub struct Labels {
@@ -263,6 +275,8 @@ pub struct Tokenizer<'a> {
     pub parse_state: &'a ParseState<'a>,
     /// Container state, used by the document tokenizer.
     pub document: Document<'a>,
+    /// Lookahead state, used by the flow tokenizer.
+    pub ahead: Ahead,
     /// Label state, used by the text tokenizer.
     pub labels: Labels,
     /// Identifiers this tokenizer defined.
@@ -301,6 +315,7 @@ impl<'a> Tokenizer<'a> {
             events: vec![],
             parse_state,
             document: Document::default(),
+            ahead: Ahead::default(),
             labels: Labels::default(),
             definitions: Definitions::default(),
             map: EditMap::new(),
@@ -537,6 +552,12 @@ impl<'a> Tokenizer<'a> {
     /// Tokenize.
     pub fn push(&mut self, from: (usize, usize), to: (usize, usize), state: State) -> State {
         push_impl(self, from, to, state, false)
+    }
+
+    /// Tokenize `from..to` as all there is, ending in [`State::Ok`][], and
+    /// without resolving.
+    pub fn run(&mut self, from: (usize, usize), to: (usize, usize), state: State) -> State {
+        push_impl(self, from, to, state, true)
     }
 
     /// Flush.

@@ -20,6 +20,7 @@ pub enum State {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(clippy::enum_variant_names)]
 pub enum Name {
+    Ahead(crate::ahead::Step),
     Attention(construct::attention::Step),
     Autolink(construct::autolink::Step),
     BlankLine(construct::blank_line::Step),
@@ -68,6 +69,7 @@ pub enum Name {
 /// Call the corresponding state for a state name.
 pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
     match name {
+        Name::Ahead(step) => crate::ahead::step(tokenizer, step),
         Name::Attention(step) => construct::attention::step(tokenizer, step),
         Name::Autolink(step) => construct::autolink::step(tokenizer, step),
         Name::BlankLine(step) => construct::blank_line::step(tokenizer, step),

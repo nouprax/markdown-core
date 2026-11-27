@@ -20,7 +20,7 @@
 
 use crate::choice::{self, Choice, Item, List};
 use crate::construct::{
-    blank_line, code_indented, content, heading_atx, heading_setext, html_flow, raw_flow, table,
+    blank_line, code_indented, comment, content, heading_atx, heading_setext, html_flow, raw_flow, table,
     thematic_break,
 };
 use crate::event::Name;
@@ -56,6 +56,10 @@ pub const CHOICE: Choice = Choice::new(
         Item {
             starts: thematic_break::STARTS,
             step: StateName::ThematicBreak(thematic_break::Step::Start),
+        },
+        Item {
+            starts: comment::FLOW,
+            step: StateName::Comment(comment::Step::FlowStart),
         },
         Item {
             starts: table::STARTS,

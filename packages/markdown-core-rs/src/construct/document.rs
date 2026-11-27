@@ -39,7 +39,7 @@ impl Container {
     }
 
     /// State that continues an open container of this kind.
-    fn cont(self) -> StateName {
+    pub fn cont(self) -> StateName {
         match self {
             Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
             Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
@@ -342,6 +342,20 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
         .unwrap_or(State::Next(StateName::Flow(flow::Step::Start)));
 
     tokenizer.document.exits.push(None);
+
+    // The containers of this line, which a lookahead continues: a lax line
+    // that does not continue a paragraph closes the ones that did not
+    // continue.
+    let count = if child.lax {
+        tokenizer.document.continued
+    } else {
+        tokenizer.document.stack.len()
+    };
+    child.ahead.stack.clear();
+    child
+        .ahead
+        .stack
+        .extend_from_slice(&tokenizer.document.stack[..count]);
 
     let state = child.push(
         (child.point.index, child.point.vs),

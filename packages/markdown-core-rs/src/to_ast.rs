@@ -334,6 +334,12 @@ impl<'a> Compiler<'a> {
             }
             Block::CodeIndented => self.code_indented(index),
             Block::CodeFenced => self.code_fenced(index),
+            Block::Comment => Node::new(
+                Kind::Comment {
+                    literal: self.fenced_literal(index, Name::CommentFence, Name::CommentChunk),
+                },
+                self.runs(self.lead(index), self.last(index).1),
+            ),
             Block::HtmlFlow => {
                 let literal = self.lines(index, Name::HtmlFlowData);
                 let kind = match html_comment_block(&literal) {
@@ -961,9 +967,17 @@ impl<'a> Compiler<'a> {
                     None => Kind::Html { literal },
                 }
             }
-            Inline::Comment => Kind::Comment {
-                literal: self.fused(index, Name::CommentText),
-            },
+            Inline::Comment => {
+                let literal = self.fused(index, Name::CommentText);
+                Kind::Comment {
+                    // In a table cell, an escaped pipe is the cell's.
+                    literal: if self.cell {
+                        literal.replace("\\|", "|")
+                    } else {
+                        literal
+                    },
+                }
+            }
             Inline::Autolink => {
                 let mut dest = String::new();
                 let mut text = None;

@@ -574,6 +574,72 @@ pub enum Name {
     ///       ^^^^^
     /// ```
     Comment,
+    /// Comment (flow) chunk.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CommentFlow`][Name::CommentFlow]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`comment`][crate::construct::comment]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | %%
+    /// > | a
+    ///     ^
+    ///   | %%
+    /// ```
+    CommentChunk,
+    /// Comment (flow) fence.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CommentFlow`][Name::CommentFlow]
+    /// * **Content model**:
+    ///   [`CommentSequence`][Name::CommentSequence],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`comment`][crate::construct::comment]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | %%
+    ///     ^^
+    ///   | a
+    /// > | %%
+    ///     ^^
+    /// ```
+    CommentFence,
+    /// Whole comment (flow).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [flow content][crate::construct::flow]
+    /// * **Content model**:
+    ///   [`CommentChunk`][Name::CommentChunk],
+    ///   [`CommentFence`][Name::CommentFence],
+    ///   [`LineEnd`][Name::LineEnd]
+    /// * **Construct**:
+    ///   [`comment`][crate::construct::comment]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | %%
+    ///     ^^
+    /// > | a
+    ///     ^
+    /// > | %%
+    ///     ^^
+    /// ```
+    CommentFlow,
     /// Comment sequence.
     ///
     /// ## Info
@@ -2904,6 +2970,7 @@ pub enum Block {
     Footnote,
     MathFlow,
     Frontmatter,
+    Comment,
 }
 
 /// Inlines.
@@ -2974,6 +3041,7 @@ impl Name {
             Name::MathText => Role::Inline(Inline::MathText),
             Name::HtmlText => Role::Inline(Inline::HtmlText),
             Name::Comment => Role::Inline(Inline::Comment),
+            Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
             Name::AutolinkLiteralProtocol
             | Name::AutolinkLiteralWww
@@ -3006,6 +3074,8 @@ impl Name {
             | Name::CodeFlowChunk
             | Name::CodeTextData
             | Name::CodeTextSequence
+            | Name::CommentChunk
+            | Name::CommentFence
             | Name::CommentSequence
             | Name::CommentText
             | Name::Content
@@ -3105,7 +3175,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 68] = [
+pub const VOID_EVENTS: [Name; 69] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3164,6 +3234,7 @@ pub const VOID_EVENTS: [Name; 68] = [
     Name::MathFlowChunk,
     Name::MathTextData,
     Name::MathTextSequence,
+    Name::CommentChunk,
     Name::CommentSequence,
     Name::CommentText,
     Name::ReferenceMarker,
