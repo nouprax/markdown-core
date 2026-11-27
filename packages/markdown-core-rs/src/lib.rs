@@ -13,6 +13,7 @@
 
 extern crate alloc;
 pub mod ast;
+mod choice;
 mod construct;
 pub mod dump;
 mod event;

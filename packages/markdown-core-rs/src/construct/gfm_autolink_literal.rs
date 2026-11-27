@@ -144,6 +144,7 @@
 //! [sanitize_uri]: crate::util::sanitize_uri
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 
+use crate::choice::Starts;
 use crate::event::{Event, Kind, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -152,6 +153,12 @@ use crate::util::{
     slice::{Position, Slice},
 };
 use alloc::vec::Vec;
+
+/// Bytes the protocol kind (`https://a.b`) can start at.
+pub const PROTOCOL: Starts = Starts::Bytes(b"Hh");
+
+/// Bytes the `www.` kind (`www.a.b`) can start at.
+pub const WWW: Starts = Starts::Bytes(b"Ww");
 
 /// Start of protocol autolink literal.
 ///

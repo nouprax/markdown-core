@@ -76,6 +76,7 @@
 //! [html-strong]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-strong-element
 //! [html-del]: https://html.spec.whatwg.org/multipage/edits.html#the-del-element
 
+use crate::choice::Starts;
 use crate::event::{Event, Kind, Name, Point};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -86,6 +87,9 @@ use crate::util::char::{
     Kind as CharacterKind,
 };
 use alloc::{vec, vec::Vec};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"*_~");
 
 /// Attentention sequence that we can take markers from.
 #[derive(Debug)]

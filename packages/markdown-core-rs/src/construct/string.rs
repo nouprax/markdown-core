@@ -12,6 +12,7 @@
 //!
 //! [text]: crate::construct::text
 
+use crate::choice::{self, Choice, Entry, List};
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{character_escape, character_reference, partial_data};
 use crate::resolve::Name as ResolveName;
@@ -19,8 +20,23 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 
-/// Characters that can start something in string.
-const MARKERS: [u8; 2] = *b"&\\";
+/// Constructs in string, in the order they are tried.
+///
+/// Data when none of these matched.
+pub const CHOICE: Choice = Choice::new(
+    &[
+        Entry {
+            starts: character_reference::STARTS,
+            step: StateName::CharacterReference(character_reference::Step::Start),
+        },
+        Entry {
+            starts: character_escape::STARTS,
+            step: StateName::CharacterEscape(character_escape::Step::Start),
+        },
+    ],
+    StateName::String(Step::Before),
+    StateName::String(Step::BeforeData),
+);
 
 /// Start of string.
 ///
@@ -39,29 +55,12 @@ fn start(_tokenizer: &mut Tokenizer) -> State {
 ///        ^
 /// ````
 fn before(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        None => {
-            tokenizer.register_resolver(ResolveName::Data);
-            tokenizer.register_resolver(ResolveName::String);
-            State::Ok
-        }
-        Some(b'&') => {
-            tokenizer.attempt(
-                State::Next(StateName::String(Step::Before)),
-                State::Next(StateName::String(Step::BeforeData)),
-            );
-            State::Retry(StateName::CharacterReference(
-                character_reference::Step::Start,
-            ))
-        }
-        Some(b'\\') => {
-            tokenizer.attempt(
-                State::Next(StateName::String(Step::Before)),
-                State::Next(StateName::String(Step::BeforeData)),
-            );
-            State::Retry(StateName::CharacterEscape(character_escape::Step::Start))
-        }
-        _ => State::Retry(StateName::String(Step::BeforeData)),
+    if tokenizer.current.is_none() {
+        tokenizer.register_resolver(ResolveName::Data);
+        tokenizer.register_resolver(ResolveName::String);
+        State::Ok
+    } else {
+        State::Retry(choice::start(List::String))
     }
 }
 
@@ -74,7 +73,7 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 fn before_data(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(State::Next(StateName::String(Step::Before)), State::Nok);
     State::Retry(StateName::Data(partial_data::Step::Start {
-        markers: &MARKERS,
+        list: List::String,
     }))
 }
 

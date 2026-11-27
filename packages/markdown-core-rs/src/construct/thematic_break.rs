@@ -56,11 +56,15 @@
 //! [list-item]: crate::construct::list_item
 //! [html]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-hr-element
 
+use crate::choice::Starts;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::{TAB_SIZE, THEMATIC_BREAK_MARKER_COUNT_MIN};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\t *-_");
 
 /// Start of thematic break.
 ///

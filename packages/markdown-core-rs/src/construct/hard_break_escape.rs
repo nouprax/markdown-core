@@ -44,9 +44,13 @@
 //! [hard_break_trailing]: crate::construct::partial_whitespace
 //! [html]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-br-element
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\\");
 
 /// Start of hard break (escape).
 ///

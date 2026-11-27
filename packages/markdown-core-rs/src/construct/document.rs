@@ -19,6 +19,46 @@ use crate::tokenizer::{Container, ContainerState, Tokenizer};
 use crate::util::skip;
 use alloc::{boxed::Box, vec::Vec};
 
+/// Containers, in the order a new one is tried.
+const CONTAINERS: [Container; 3] = [
+    Container::BlockQuote,
+    Container::ListItem,
+    Container::GfmFootnoteDefinition,
+];
+
+impl Container {
+    /// State that starts a new container of this kind.
+    fn start(self) -> StateName {
+        match self {
+            Container::BlockQuote => StateName::BlockQuote(block_quote::Step::Start),
+            Container::ListItem => StateName::ListItem(list_item::Step::Start),
+            Container::GfmFootnoteDefinition => {
+                StateName::GfmFootnoteDefinition(gfm_footnote_definition::Step::Start)
+            }
+        }
+    }
+
+    /// State that continues an open container of this kind.
+    fn cont(self) -> StateName {
+        match self {
+            Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
+            Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
+            Container::GfmFootnoteDefinition => {
+                StateName::GfmFootnoteDefinition(gfm_footnote_definition::Step::ContStart)
+            }
+        }
+    }
+
+    /// Event name of a container of this kind.
+    fn name(self) -> Name {
+        match self {
+            Container::BlockQuote => Name::BlockQuote,
+            Container::ListItem => Name::ListItem,
+            Container::GfmFootnoteDefinition => Name::GfmFootnoteDefinition,
+        }
+    }
+}
+
 /// Phases where we can exit containers.
 #[derive(Debug, PartialEq)]
 enum Phase {
@@ -98,13 +138,7 @@ fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.document.continued < tokenizer.document.stack.len() {
         let container = &tokenizer.document.stack[tokenizer.document.continued];
 
-        let name = match container.kind {
-            Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
-            Container::GfmFootnoteDefinition => {
-                StateName::GfmFootnoteDefinition(gfm_footnote_definition::Step::ContStart)
-            }
-            Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
-        };
+        let name = container.kind.cont();
 
         tokenizer.attempt(
             State::Next(StateName::Document(Step::ContainerExistingAfter)),
@@ -154,93 +188,50 @@ fn container_new_before(tokenizer: &mut Tokenizer) -> State {
         }
     }
 
-    // Check for a new container.
-    // Block quote?
-    // Add a new container at the end of the stack.
+    // Add a placeholder for a new container at the end of the stack, and
+    // swap it with the first existing container that did not continue.
     let tail = tokenizer.document.stack.len();
     tokenizer.document.stack.push(ContainerState {
-        kind: Container::BlockQuote,
+        kind: CONTAINERS[0],
         blank_initial: false,
         size: 0,
     });
-    // Swap the existing container with the new one.
     tokenizer
         .document
         .stack
         .swap(tokenizer.document.continued, tail);
-
-    tokenizer.attempt(
-        State::Next(StateName::Document(Step::ContainerNewAfter)),
-        State::Next(StateName::Document(Step::ContainerNewBeforeNotBlockQuote)),
-    );
-    State::Retry(StateName::BlockQuote(block_quote::Step::Start))
+    State::Retry(StateName::Document(Step::ContainerNew { index: 0 }))
 }
 
-/// At new container, but not a block quote.
+/// At new container `index` of [`CONTAINERS`][], or a later one.
 //
 /// ```markdown
 /// > | * a
 ///     ^
 /// ```
-fn container_new_before_not_block_quote(tokenizer: &mut Tokenizer) -> State {
-    // List item?
-    // We replace the empty block quote container for this new list item one.
-    tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
-        kind: Container::ListItem,
-        blank_initial: false,
-        size: 0,
-    };
-
-    tokenizer.attempt(
-        State::Next(StateName::Document(Step::ContainerNewAfter)),
-        State::Next(StateName::Document(Step::ContainerNewBeforeNotList)),
-    );
-    State::Retry(StateName::ListItem(list_item::Step::Start))
-}
-
-/// At new container, but not a block quote or list item.
-//
-/// ```markdown
-/// > | a
-///     ^
-/// ```
-fn container_new_before_not_list(tokenizer: &mut Tokenizer) -> State {
-    // Footnote definition?
-    // We replace the empty list item container for this new footnote
-    // definition one.
-    tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
-        kind: Container::GfmFootnoteDefinition,
-        blank_initial: false,
-        size: 0,
-    };
-
-    tokenizer.attempt(
-        State::Next(StateName::Document(Step::ContainerNewAfter)),
-        State::Next(StateName::Document(
-            Step::ContainerNewBeforeNotFootnoteDefinition,
-        )),
-    );
-    State::Retry(StateName::GfmFootnoteDefinition(
-        gfm_footnote_definition::Step::Start,
-    ))
-}
-
-/// At new container, but not a block quote, list item, or footnote definition.
-//
-/// ```markdown
-/// > | a
-///     ^
-/// ```
-fn container_new_before_not_footnote_definition(tokenizer: &mut Tokenizer) -> State {
-    // It wasn’t a new block quote, list item, or footnote definition.
-    // Swap the new container (in the middle) with the existing one (at the end).
-    // Drop what was in the middle.
-    tokenizer
-        .document
-        .stack
-        .swap_remove(tokenizer.document.continued);
-
-    State::Retry(StateName::Document(Step::ContainersAfter))
+fn container_new(tokenizer: &mut Tokenizer, index: usize) -> State {
+    if index == CONTAINERS.len() {
+        // It wasn’t a new container.
+        // Swap the placeholder (in the middle) with the existing one (at the
+        // end), and drop the placeholder.
+        tokenizer
+            .document
+            .stack
+            .swap_remove(tokenizer.document.continued);
+        State::Retry(StateName::Document(Step::ContainersAfter))
+    } else {
+        let kind = CONTAINERS[index];
+        tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
+            kind,
+            blank_initial: false,
+            size: 0,
+        };
+        tokenizer.attempt(
+            State::Next(StateName::Document(Step::ContainerNewAfter)),
+            State::Next(StateName::Document(Step::ContainerNew { index: index + 1 })),
+        );
+        State::Retry(kind.start())
+    }
 }
 
 /// After new container.
@@ -464,11 +455,7 @@ fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
         let mut exits = Vec::with_capacity(stack_close.len());
 
         while let Some(container) = stack_close.pop() {
-            let name = match container.kind {
-                Container::BlockQuote => Name::BlockQuote,
-                Container::GfmFootnoteDefinition => Name::GfmFootnoteDefinition,
-                Container::ListItem => Name::ListItem,
-            };
+            let name = container.kind.name();
 
             exits.push(Event {
                 kind: Kind::Exit,
@@ -603,9 +590,7 @@ pub enum Step {
     ContainerExistingBefore,
     ContainerExistingAfter,
     ContainerNewBefore,
-    ContainerNewBeforeNotBlockQuote,
-    ContainerNewBeforeNotList,
-    ContainerNewBeforeNotFootnoteDefinition,
+    ContainerNew { index: usize },
     ContainerNewAfter,
     ContainersAfter,
     FlowEnd,
@@ -626,11 +611,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ContainerExistingBefore => container_existing_before(tokenizer),
         Step::ContainerExistingAfter => container_existing_after(tokenizer),
         Step::ContainerNewBefore => container_new_before(tokenizer),
-        Step::ContainerNewBeforeNotBlockQuote => container_new_before_not_block_quote(tokenizer),
-        Step::ContainerNewBeforeNotList => container_new_before_not_list(tokenizer),
-        Step::ContainerNewBeforeNotFootnoteDefinition => {
-            container_new_before_not_footnote_definition(tokenizer)
-        }
+        Step::ContainerNew { index } => container_new(tokenizer, index),
         Step::ContainerNewAfter => container_new_after(tokenizer),
         Step::ContainersAfter => containers_after(tokenizer),
         Step::FlowEnd => flow_end(tokenizer),

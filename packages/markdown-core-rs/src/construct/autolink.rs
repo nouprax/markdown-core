@@ -121,10 +121,14 @@
 //! [sanitize_uri]: crate::util::sanitize_uri
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::{AUTOLINK_DOMAIN_SIZE_MAX, AUTOLINK_SCHEME_SIZE_MAX};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"<");
 
 /// Start of an autolink.
 ///

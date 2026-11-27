@@ -22,6 +22,7 @@
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
 //! > [whitespace][crate::construct::partial_whitespace].
 
+use crate::choice::{self, Choice, Entry, List};
 use crate::construct::gfm_autolink_literal::resolve as resolve_gfm_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
@@ -34,24 +35,67 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 
-/// Characters that can start something in text.
-const MARKERS: [u8; 15] = [
-    b'!',  // `label_start_image`
-    b'$',  // `raw_text` (math (text))
-    b'&',  // `character_reference`
-    b'*',  // `attention` (emphasis, strong)
-    b'<',  // `autolink`, `html_text`
-    b'H',  // `gfm_autolink_literal` (`protocol` kind)
-    b'W',  // `gfm_autolink_literal` (`www.` kind)
-    b'[',  // `label_start_link`
-    b'\\', // `character_escape`, `hard_break_escape`
-    b']',  // `label_end`, `gfm_label_start_footnote`
-    b'_',  // `attention` (emphasis, strong)
-    b'`',  // `raw_text` (code (text))
-    b'h',  // `gfm_autolink_literal` (`protocol` kind)
-    b'w',  // `gfm_autolink_literal` (`www.` kind)
-    b'~',  // `attention` (gfm strikethrough)
-];
+/// Constructs in text, in the order they are tried.
+///
+/// Data when none of these matched.
+pub const CHOICE: Choice = Choice::new(
+    &[
+        Entry {
+            starts: label_start_image::STARTS,
+            step: StateName::LabelStartImage(label_start_image::Step::Start),
+        },
+        Entry {
+            starts: raw_text::STARTS,
+            step: StateName::RawText(raw_text::Step::Start),
+        },
+        Entry {
+            starts: character_reference::STARTS,
+            step: StateName::CharacterReference(character_reference::Step::Start),
+        },
+        Entry {
+            starts: attention::STARTS,
+            step: StateName::Attention(attention::Step::Start),
+        },
+        Entry {
+            starts: autolink::STARTS,
+            step: StateName::Autolink(autolink::Step::Start),
+        },
+        Entry {
+            starts: html_text::STARTS,
+            step: StateName::HtmlText(html_text::Step::Start),
+        },
+        Entry {
+            starts: gfm_autolink_literal::PROTOCOL,
+            step: StateName::GfmAutolinkLiteral(gfm_autolink_literal::Step::ProtocolStart),
+        },
+        Entry {
+            starts: gfm_autolink_literal::WWW,
+            step: StateName::GfmAutolinkLiteral(gfm_autolink_literal::Step::WwwStart),
+        },
+        Entry {
+            starts: gfm_label_start_footnote::STARTS,
+            step: StateName::GfmLabelStartFootnote(gfm_label_start_footnote::Step::Start),
+        },
+        Entry {
+            starts: label_start_link::STARTS,
+            step: StateName::LabelStartLink(label_start_link::Step::Start),
+        },
+        Entry {
+            starts: character_escape::STARTS,
+            step: StateName::CharacterEscape(character_escape::Step::Start),
+        },
+        Entry {
+            starts: hard_break_escape::STARTS,
+            step: StateName::HardBreakEscape(hard_break_escape::Step::Start),
+        },
+        Entry {
+            starts: label_end::STARTS,
+            step: StateName::LabelEnd(label_end::Step::Start),
+        },
+    ],
+    StateName::Text(Step::Before),
+    StateName::Text(Step::BeforeData),
+);
 
 /// Start of text.
 ///
@@ -80,143 +124,13 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        None => {
-            tokenizer.register_resolver(ResolveName::Data);
-            tokenizer.register_resolver(ResolveName::Text);
-            State::Ok
-        }
-        Some(b'!') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::LabelStartImage(label_start_image::Step::Start))
-        }
-        // raw (text) (code (text), math (text))
-        Some(b'$' | b'`') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::RawText(raw_text::Step::Start))
-        }
-        Some(b'&') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::CharacterReference(
-                character_reference::Step::Start,
-            ))
-        }
-        // attention (emphasis, gfm strikethrough, strong)
-        Some(b'*' | b'_' | b'~') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::Attention(attention::Step::Start))
-        }
-        // `autolink`, `html_text` (order does not matter).
-        Some(b'<') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeHtml)),
-            );
-            State::Retry(StateName::Autolink(autolink::Step::Start))
-        }
-        Some(b'H' | b'h') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::GfmAutolinkLiteral(
-                gfm_autolink_literal::Step::ProtocolStart,
-            ))
-        }
-        Some(b'W' | b'w') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::GfmAutolinkLiteral(
-                gfm_autolink_literal::Step::WwwStart,
-            ))
-        }
-        Some(b'[') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeLabelStartLink)),
-            );
-            State::Retry(StateName::GfmLabelStartFootnote(
-                gfm_label_start_footnote::Step::Start,
-            ))
-        }
-        Some(b'\\') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeHardBreakEscape)),
-            );
-            State::Retry(StateName::CharacterEscape(character_escape::Step::Start))
-        }
-        Some(b']') => {
-            tokenizer.attempt(
-                State::Next(StateName::Text(Step::Before)),
-                State::Next(StateName::Text(Step::BeforeData)),
-            );
-            State::Retry(StateName::LabelEnd(label_end::Step::Start))
-        }
-        _ => State::Retry(StateName::Text(Step::BeforeData)),
+    if tokenizer.current.is_none() {
+        tokenizer.register_resolver(ResolveName::Data);
+        tokenizer.register_resolver(ResolveName::Text);
+        State::Ok
+    } else {
+        State::Retry(choice::start(List::Text))
     }
-}
-
-/// Before html (text).
-///
-/// At `<`, which wasn’t an autolink.
-///
-/// ```markdown
-/// > | a <b>
-///       ^
-/// ```
-fn before_html(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(
-        State::Next(StateName::Text(Step::Before)),
-        State::Next(StateName::Text(Step::BeforeData)),
-    );
-    State::Retry(StateName::HtmlText(html_text::Step::Start))
-}
-
-/// Before hard break escape.
-///
-/// At `\`, which wasn’t a character escape.
-///
-/// ```markdown
-/// > | a \␊
-///       ^
-/// ```
-fn before_hard_break_escape(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(
-        State::Next(StateName::Text(Step::Before)),
-        State::Next(StateName::Text(Step::BeforeData)),
-    );
-    State::Retry(StateName::HardBreakEscape(hard_break_escape::Step::Start))
-}
-
-/// Before label start (link).
-///
-/// At `[`, which wasn’t a GFM label start (footnote).
-///
-/// ```markdown
-/// > | [a](b)
-///     ^
-/// ```
-fn before_label_start_link(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(
-        State::Next(StateName::Text(Step::Before)),
-        State::Next(StateName::Text(Step::BeforeData)),
-    );
-    State::Retry(StateName::LabelStartLink(label_start_link::Step::Start))
 }
 
 /// Before data.
@@ -228,7 +142,7 @@ fn before_label_start_link(tokenizer: &mut Tokenizer) -> State {
 fn before_data(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(State::Next(StateName::Text(Step::Before)), State::Nok);
     State::Retry(StateName::Data(partial_data::Step::Start {
-        markers: &MARKERS,
+        list: List::Text,
     }))
 }
 
@@ -247,9 +161,6 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 pub enum Step {
     Start,
     Before,
-    BeforeHtml,
-    BeforeHardBreakEscape,
-    BeforeLabelStartLink,
     BeforeData,
 }
 
@@ -264,9 +175,6 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::Start => start(tokenizer),
         Step::Before => before(tokenizer),
-        Step::BeforeHtml => before_html(tokenizer),
-        Step::BeforeHardBreakEscape => before_hard_break_escape(tokenizer),
-        Step::BeforeLabelStartLink => before_label_start_link(tokenizer),
         Step::BeforeData => before_data(tokenizer),
     }
 }

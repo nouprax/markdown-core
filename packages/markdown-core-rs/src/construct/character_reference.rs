@@ -68,6 +68,7 @@
 //! [character_references]: crate::util::constant::CHARACTER_REFERENCES
 //! [html]: https://html.spec.whatwg.org/multipage/parsing.html#character-reference-state
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -75,6 +76,9 @@ use crate::util::{
     character_reference::{decode_named, value_max, value_test},
     slice::Slice,
 };
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"&");
 
 /// Start of character reference.
 ///

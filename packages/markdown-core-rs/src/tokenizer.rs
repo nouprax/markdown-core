@@ -24,7 +24,7 @@ use alloc::{boxed::Box, string::String, vec, vec::Vec};
 /// They parse a portion at the start of one or more lines.
 /// The rest of those lines is a different content type (specifically, flow),
 /// which they “contain”.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Container {
     /// [Block quote][crate::construct::block_quote].
     BlockQuote,

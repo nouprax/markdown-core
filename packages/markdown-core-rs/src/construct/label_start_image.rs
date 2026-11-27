@@ -32,10 +32,14 @@
 //! [label_end]: crate::construct::label_end
 //! [html_img]: https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"!");
 
 /// Start of label (image) start.
 ///

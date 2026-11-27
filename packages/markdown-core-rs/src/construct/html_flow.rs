@@ -98,6 +98,7 @@
 //! [html_block_names]: crate::util::constant::HTML_BLOCK_NAMES
 //! [html_parsing]: https://html.spec.whatwg.org/multipage/parsing.html#parsing
 
+use crate::choice::Starts;
 use crate::construct::partial_space_or_tab::{
     space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
@@ -109,6 +110,9 @@ use crate::util::{
     constant::{HTML_BLOCK_NAMES, HTML_CDATA_PREFIX, HTML_RAW_NAMES, HTML_RAW_SIZE_MAX, TAB_SIZE},
     slice::Slice,
 };
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\t <");
 
 /// Symbol for `<script>` (condition 1).
 const RAW: u8 = 1;

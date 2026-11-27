@@ -111,9 +111,13 @@
 //! [raw_flow]: crate::construct::raw_flow
 //! [html_code]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-code-element
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"$`");
 
 /// Start of raw (text).
 ///

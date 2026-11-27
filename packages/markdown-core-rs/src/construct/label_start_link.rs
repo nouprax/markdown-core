@@ -31,10 +31,14 @@
 //! [label_end]: crate::construct::label_end
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"[");
 
 /// Start of label (link) start.
 ///

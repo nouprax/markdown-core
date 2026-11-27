@@ -41,9 +41,13 @@
 //! [character_reference]: crate::construct::character_reference
 //! [hard_break_escape]: crate::construct::hard_break_escape
 
+use crate::choice::Starts;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\\");
 
 /// Start of character escape.
 ///

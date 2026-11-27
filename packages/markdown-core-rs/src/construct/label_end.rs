@@ -179,6 +179,7 @@
 //! [html_img]: https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element
 //! [html_sup]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-sub-and-sup-elements
 
+use crate::choice::Starts;
 use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
 use crate::construct::{partial_destination, partial_label, partial_title};
 use crate::event::{Event, Kind, Name};
@@ -193,6 +194,9 @@ use crate::util::{
     slice::{Position, Slice},
 };
 use alloc::{string::String, vec};
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"]");
 
 /// Start of label end.
 ///

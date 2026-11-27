@@ -138,6 +138,7 @@
 //! [html_code]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-code-element
 //! [html_pre]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element
 
+use crate::choice::Starts;
 use crate::construct::partial_non_lazy_continuation;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Link, Name};
@@ -147,6 +148,9 @@ use crate::util::{
     constant::{CODE_FENCED_SEQUENCE_SIZE_MIN, MATH_FLOW_SEQUENCE_SIZE_MIN, TAB_SIZE},
     slice::{Position, Slice},
 };
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"\t $`~");
 
 /// Start of raw.
 ///

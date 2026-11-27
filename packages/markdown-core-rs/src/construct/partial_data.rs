@@ -6,6 +6,7 @@
 //! [string]: crate::construct::string
 //! [text]: crate::construct::text
 
+use crate::choice::List;
 use crate::event::{Kind, Name};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
@@ -18,17 +19,17 @@ use alloc::vec;
 /// > | abc
 ///     ^
 /// ```
-fn start(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
-    // Make sure to eat the first `markers`.
+fn start(tokenizer: &mut Tokenizer, list: List) -> State {
+    // At a byte that can start a construct, none did: eat it as data.
     if let Some(byte) = tokenizer.current {
-        if markers.contains(&byte) {
+        if list.get().marks(byte) {
             tokenizer.enter(Name::Data);
             tokenizer.consume();
-            return State::Next(StateName::Data(Step::Inside { markers }));
+            return State::Next(StateName::Data(Step::Inside { list }));
         }
     }
 
-    State::Retry(StateName::Data(Step::AtBreak { markers }))
+    State::Retry(StateName::Data(Step::AtBreak { list }))
 }
 
 /// Before something.
@@ -37,17 +38,17 @@ fn start(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
 /// > | abc
 ///     ^
 /// ```
-fn at_break(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
+fn at_break(tokenizer: &mut Tokenizer, list: List) -> State {
     if let Some(byte) = tokenizer.current {
-        if !markers.contains(&byte) {
+        if !list.get().marks(byte) {
             if byte == b'\n' {
                 tokenizer.enter(Name::LineEnding);
                 tokenizer.consume();
                 tokenizer.exit(Name::LineEnding);
-                return State::Next(StateName::Data(Step::AtBreak { markers }));
+                return State::Next(StateName::Data(Step::AtBreak { list }));
             }
             tokenizer.enter(Name::Data);
-            return State::Retry(StateName::Data(Step::Inside { markers }));
+            return State::Retry(StateName::Data(Step::Inside { list }));
         }
     }
 
@@ -60,16 +61,16 @@ fn at_break(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
 /// > | abc
 ///     ^^^
 /// ```
-fn inside(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
+fn inside(tokenizer: &mut Tokenizer, list: List) -> State {
     if let Some(byte) = tokenizer.current {
-        if byte != b'\n' && !markers.contains(&byte) {
+        if byte != b'\n' && !list.get().marks(byte) {
             tokenizer.consume();
-            return State::Next(StateName::Data(Step::Inside { markers }));
+            return State::Next(StateName::Data(Step::Inside { list }));
         }
     }
 
     tokenizer.exit(Name::Data);
-    State::Retry(StateName::Data(Step::AtBreak { markers }))
+    State::Retry(StateName::Data(Step::AtBreak { list }))
 }
 
 /// Merge adjacent data events.
@@ -112,9 +113,9 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 /// Steps of this construct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
-    Start { markers: &'static [u8] },
-    Inside { markers: &'static [u8] },
-    AtBreak { markers: &'static [u8] },
+    Start { list: List },
+    Inside { list: List },
+    AtBreak { list: List },
 }
 
 impl From<Step> for StateName {
@@ -126,8 +127,8 @@ impl From<Step> for StateName {
 /// Run a step.
 pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
-        Step::Start { markers } => start(tokenizer, markers),
-        Step::Inside { markers } => inside(tokenizer, markers),
-        Step::AtBreak { markers } => at_break(tokenizer, markers),
+        Step::Start { list } => start(tokenizer, list),
+        Step::Inside { list } => inside(tokenizer, list),
+        Step::AtBreak { list } => at_break(tokenizer, list),
     }
 }

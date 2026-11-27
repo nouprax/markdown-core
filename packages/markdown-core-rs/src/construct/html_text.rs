@@ -51,11 +51,15 @@
 //! [html_flow]: crate::construct::html_flow
 //! [html_parsing]: https://html.spec.whatwg.org/multipage/parsing.html#parsing
 
+use crate::choice::Starts;
 use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::HTML_CDATA_PREFIX;
+
+/// Bytes this construct can start at.
+pub const STARTS: Starts = Starts::Bytes(b"<");
 
 /// Start of HTML (text).
 ///
