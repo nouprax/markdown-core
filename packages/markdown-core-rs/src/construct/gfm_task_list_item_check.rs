@@ -55,18 +55,13 @@ use crate::tokenizer::Tokenizer;
 /// > | * [x] y.
 ///       ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer
-        .tokenize_state
-        .document_at_first_paragraph_of_list_item
-        && tokenizer.current == Some(b'[')
-        && tokenizer.previous.is_none()
-    {
+fn start(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.document.first && tokenizer.current == Some(b'[') && tokenizer.previous.is_none() {
         tokenizer.enter(Name::GfmTaskListItemCheck);
         tokenizer.enter(Name::GfmTaskListItemMarker);
         tokenizer.consume();
         tokenizer.exit(Name::GfmTaskListItemMarker);
-        State::Next(StateName::GfmTaskListItemCheckInside)
+        State::Next(StateName::GfmTaskListItemCheck(Step::Inside))
     } else {
         State::Nok
     }
@@ -78,19 +73,19 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | * [x] y.
 ///        ^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
+fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\t' | b'\n' | b' ') => {
             tokenizer.enter(Name::GfmTaskListItemValueUnchecked);
             tokenizer.consume();
             tokenizer.exit(Name::GfmTaskListItemValueUnchecked);
-            State::Next(StateName::GfmTaskListItemCheckClose)
+            State::Next(StateName::GfmTaskListItemCheck(Step::Close))
         }
         Some(b'X' | b'x') => {
             tokenizer.enter(Name::GfmTaskListItemValueChecked);
             tokenizer.consume();
             tokenizer.exit(Name::GfmTaskListItemValueChecked);
-            State::Next(StateName::GfmTaskListItemCheckClose)
+            State::Next(StateName::GfmTaskListItemCheck(Step::Close))
         }
         _ => State::Nok,
     }
@@ -102,14 +97,14 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
 /// > | * [x] y.
 ///         ^
 /// ```
-pub fn close(tokenizer: &mut Tokenizer) -> State {
+fn close(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b']') => {
             tokenizer.enter(Name::GfmTaskListItemMarker);
             tokenizer.consume();
             tokenizer.exit(Name::GfmTaskListItemMarker);
             tokenizer.exit(Name::GfmTaskListItemCheck);
-            State::Next(StateName::GfmTaskListItemCheckAfter)
+            State::Next(StateName::GfmTaskListItemCheck(Step::After))
         }
         _ => State::Nok,
     }
@@ -121,7 +116,7 @@ pub fn close(tokenizer: &mut Tokenizer) -> State {
 /// > | * [x] y.
 ///          ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // EOL in paragraph means there must be something else after it.
         Some(b'\n') => State::Ok,
@@ -130,10 +125,10 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
         Some(b'\t' | b' ') => {
             tokenizer.check(State::Ok, State::Nok);
             tokenizer.attempt(
-                State::Next(StateName::GfmTaskListItemCheckAfterSpaceOrTab),
+                State::Next(StateName::GfmTaskListItemCheck(Step::AfterSpaceOrTab)),
                 State::Nok,
             );
-            State::Retry(space_or_tab(tokenizer))
+            State::Retry(space_or_tab())
         }
         // EOF, or non-whitespace, both wrong.
         _ => State::Nok,
@@ -146,11 +141,38 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
 /// > | * [x] y.
 ///           ^
 /// ```
-pub fn after_space_or_tab(tokenizer: &mut Tokenizer) -> State {
+fn after_space_or_tab(tokenizer: &mut Tokenizer) -> State {
     // End of paragraph, after whitespace, after check, is not okay.
     if tokenizer.current.is_none() {
         State::Nok
     } else {
         State::Ok
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Inside,
+    Close,
+    After,
+    AfterSpaceOrTab,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::GfmTaskListItemCheck(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Inside => inside(tokenizer),
+        Step::Close => close(tokenizer),
+        Step::After => after(tokenizer),
+        Step::AfterSpaceOrTab => after_space_or_tab(tokenizer),
     }
 }

@@ -21,13 +21,13 @@ use crate::tokenizer::Tokenizer;
 ///            ^
 ///   | b
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
             tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::NonLazyContinuationAfter)
+            State::Next(StateName::NonLazyContinuation(Step::After))
         }
         _ => State::Nok,
     }
@@ -40,10 +40,31 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | b
 ///     ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.lazy {
         State::Nok
     } else {
         State::Ok
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    After,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::NonLazyContinuation(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::After => after(tokenizer),
     }
 }

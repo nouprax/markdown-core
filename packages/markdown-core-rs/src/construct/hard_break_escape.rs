@@ -55,11 +55,11 @@ use crate::tokenizer::Tokenizer;
 ///      ^
 ///   | b
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'\\') {
         tokenizer.enter(Name::HardBreakEscape);
         tokenizer.consume();
-        State::Next(StateName::HardBreakEscapeAfter)
+        State::Next(StateName::HardBreakEscape(Step::After))
     } else {
         State::Nok
     }
@@ -72,12 +72,33 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 ///       ^
 ///   | b
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
             tokenizer.exit(Name::HardBreakEscape);
             State::Ok
         }
         _ => State::Nok,
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    After,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::HardBreakEscape(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::After => after(tokenizer),
     }
 }

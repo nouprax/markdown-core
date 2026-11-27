@@ -86,13 +86,13 @@ use crate::util::{
 /// > | a&#x9;b
 ///      ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'&') {
         tokenizer.enter(Name::CharacterReference);
         tokenizer.enter(Name::CharacterReferenceMarker);
         tokenizer.consume();
         tokenizer.exit(Name::CharacterReferenceMarker);
-        State::Next(StateName::CharacterReferenceOpen)
+        State::Next(StateName::CharacterReference(Step::Open))
     } else {
         State::Nok
     }
@@ -109,16 +109,18 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | a&#x9;b
 ///       ^
 /// ```
-pub fn open(tokenizer: &mut Tokenizer) -> State {
+fn open(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'#') = tokenizer.current {
         tokenizer.enter(Name::CharacterReferenceMarkerNumeric);
         tokenizer.consume();
         tokenizer.exit(Name::CharacterReferenceMarkerNumeric);
-        State::Next(StateName::CharacterReferenceNumeric)
+        State::Next(StateName::CharacterReference(Step::Numeric))
     } else {
-        tokenizer.tokenize_state.marker = b'&';
         tokenizer.enter(Name::CharacterReferenceValue);
-        State::Retry(StateName::CharacterReferenceValue)
+        State::Retry(StateName::CharacterReference(Step::Value {
+            marker: b'&',
+            size: 0,
+        }))
     }
 }
 
@@ -130,18 +132,22 @@ pub fn open(tokenizer: &mut Tokenizer) -> State {
 /// > | a&#x9;b
 ///        ^
 /// ```
-pub fn numeric(tokenizer: &mut Tokenizer) -> State {
+fn numeric(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'x' | b'X') = tokenizer.current {
         tokenizer.enter(Name::CharacterReferenceMarkerHexadecimal);
         tokenizer.consume();
         tokenizer.exit(Name::CharacterReferenceMarkerHexadecimal);
         tokenizer.enter(Name::CharacterReferenceValue);
-        tokenizer.tokenize_state.marker = b'x';
-        State::Next(StateName::CharacterReferenceValue)
+        State::Next(StateName::CharacterReference(Step::Value {
+            marker: b'x',
+            size: 0,
+        }))
     } else {
         tokenizer.enter(Name::CharacterReferenceValue);
-        tokenizer.tokenize_state.marker = b'#';
-        State::Retry(StateName::CharacterReferenceValue)
+        State::Retry(StateName::CharacterReference(Step::Value {
+            marker: b'#',
+            size: 0,
+        }))
     }
 }
 
@@ -158,20 +164,18 @@ pub fn numeric(tokenizer: &mut Tokenizer) -> State {
 /// > | a&#x9;b
 ///         ^
 /// ```
-pub fn value(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b';')) && tokenizer.tokenize_state.size > 0 {
+fn value(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
+    if matches!(tokenizer.current, Some(b';')) && size > 0 {
         // Named.
-        if tokenizer.tokenize_state.marker == b'&' {
+        if marker == b'&' {
             // Guaranteed to be valid ASCII bytes.
             let slice = Slice::from_indices(
                 tokenizer.parse_state.bytes,
-                tokenizer.point.index - tokenizer.tokenize_state.size,
+                tokenizer.point.index - size,
                 tokenizer.point.index,
             );
 
             if decode_named(slice.as_str()).is_none() {
-                tokenizer.tokenize_state.marker = 0;
-                tokenizer.tokenize_state.size = 0;
                 return State::Nok;
             }
         }
@@ -181,22 +185,43 @@ pub fn value(tokenizer: &mut Tokenizer) -> State {
         tokenizer.consume();
         tokenizer.exit(Name::CharacterReferenceMarkerSemi);
         tokenizer.exit(Name::CharacterReference);
-        tokenizer.tokenize_state.marker = 0;
-        tokenizer.tokenize_state.size = 0;
         return State::Ok;
     }
 
     if let Some(byte) = tokenizer.current {
-        if tokenizer.tokenize_state.size < value_max(tokenizer.tokenize_state.marker)
-            && value_test(tokenizer.tokenize_state.marker)(&byte)
-        {
-            tokenizer.tokenize_state.size += 1;
+        if size < value_max(marker) && value_test(marker)(&byte) {
             tokenizer.consume();
-            return State::Next(StateName::CharacterReferenceValue);
+            return State::Next(StateName::CharacterReference(Step::Value {
+                marker,
+                size: size + 1,
+            }));
         }
     }
 
-    tokenizer.tokenize_state.marker = 0;
-    tokenizer.tokenize_state.size = 0;
     State::Nok
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Open,
+    Numeric,
+    Value { marker: u8, size: usize },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::CharacterReference(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Open => open(tokenizer),
+        Step::Numeric => numeric(tokenizer),
+        Step::Value { marker, size } => value(tokenizer, marker, size),
+    }
 }

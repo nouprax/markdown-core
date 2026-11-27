@@ -77,13 +77,13 @@ use alloc::vec;
 /// > | ## aa
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::HeadingAtx);
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::HeadingAtxBefore), State::Nok);
-        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
+        tokenizer.attempt(State::Next(StateName::HeadingAtx(Step::Before)), State::Nok);
+        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::HeadingAtxBefore)
+        State::Retry(StateName::HeadingAtx(Step::Before))
     }
 }
 
@@ -93,10 +93,10 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | ## aa
 ///     ^
 /// ```
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     if Some(b'#') == tokenizer.current {
         tokenizer.enter(Name::HeadingAtxSequence);
-        State::Retry(StateName::HeadingAtxSequenceOpen)
+        State::Retry(StateName::HeadingAtx(Step::SequenceOpen { size: 0 }))
     } else {
         State::Nok
     }
@@ -108,21 +108,16 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | ## aa
 ///     ^
 /// ```
-pub fn sequence_open(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(b'#')
-        && tokenizer.tokenize_state.size < HEADING_ATX_OPENING_FENCE_SIZE_MAX
-    {
-        tokenizer.tokenize_state.size += 1;
+fn sequence_open(tokenizer: &mut Tokenizer, size: usize) -> State {
+    if tokenizer.current == Some(b'#') && size < HEADING_ATX_OPENING_FENCE_SIZE_MAX {
         tokenizer.consume();
-        State::Next(StateName::HeadingAtxSequenceOpen)
+        State::Next(StateName::HeadingAtx(Step::SequenceOpen { size: size + 1 }))
     }
     // Always at least one `#`.
     else if matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ')) {
-        tokenizer.tokenize_state.size = 0;
         tokenizer.exit(Name::HeadingAtxSequence);
-        State::Retry(StateName::HeadingAtxAtBreak)
+        State::Retry(StateName::HeadingAtx(Step::AtBreak))
     } else {
-        tokenizer.tokenize_state.size = 0;
         State::Nok
     }
 }
@@ -133,7 +128,7 @@ pub fn sequence_open(tokenizer: &mut Tokenizer) -> State {
 /// > | ## aa
 ///       ^
 /// ```
-pub fn at_break(tokenizer: &mut Tokenizer) -> State {
+fn at_break(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::HeadingAtx);
@@ -143,12 +138,15 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
             State::Ok
         }
         Some(b'\t' | b' ') => {
-            tokenizer.attempt(State::Next(StateName::HeadingAtxAtBreak), State::Nok);
-            State::Retry(space_or_tab(tokenizer))
+            tokenizer.attempt(
+                State::Next(StateName::HeadingAtx(Step::AtBreak)),
+                State::Nok,
+            );
+            State::Retry(space_or_tab())
         }
         Some(b'#') => {
             tokenizer.enter(Name::HeadingAtxSequence);
-            State::Retry(StateName::HeadingAtxSequenceFurther)
+            State::Retry(StateName::HeadingAtx(Step::SequenceFurther))
         }
         Some(_) => {
             tokenizer.enter_link(
@@ -159,7 +157,7 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
                     content: Content::Text,
                 },
             );
-            State::Retry(StateName::HeadingAtxData)
+            State::Retry(StateName::HeadingAtx(Step::Data))
         }
     }
 }
@@ -172,13 +170,13 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
 /// > | ## aa ##
 ///           ^
 /// ```
-pub fn sequence_further(tokenizer: &mut Tokenizer) -> State {
+fn sequence_further(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'#') = tokenizer.current {
         tokenizer.consume();
-        State::Next(StateName::HeadingAtxSequenceFurther)
+        State::Next(StateName::HeadingAtx(Step::SequenceFurther))
     } else {
         tokenizer.exit(Name::HeadingAtxSequence);
-        State::Retry(StateName::HeadingAtxAtBreak)
+        State::Retry(StateName::HeadingAtx(Step::AtBreak))
     }
 }
 
@@ -188,16 +186,16 @@ pub fn sequence_further(tokenizer: &mut Tokenizer) -> State {
 /// > | ## aa
 ///        ^
 /// ```
-pub fn data(tokenizer: &mut Tokenizer) -> State {
+fn data(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // Note: `#` for closing sequence must be preceded by whitespace, otherwise it’s just text.
         None | Some(b'\t' | b'\n' | b' ') => {
             tokenizer.exit(Name::Data);
-            State::Retry(StateName::HeadingAtxAtBreak)
+            State::Retry(StateName::HeadingAtx(Step::AtBreak))
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::HeadingAtxData)
+            State::Next(StateName::HeadingAtx(Step::Data))
         }
     }
 }
@@ -265,4 +263,33 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
     tokenizer.map.consume(&mut tokenizer.events);
     None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    SequenceOpen { size: usize },
+    AtBreak,
+    SequenceFurther,
+    Data,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::HeadingAtx(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::SequenceOpen { size } => sequence_open(tokenizer, size),
+        Step::AtBreak => at_break(tokenizer),
+        Step::SequenceFurther => sequence_further(tokenizer),
+        Step::Data => data(tokenizer),
+    }
 }

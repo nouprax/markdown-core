@@ -24,6 +24,11 @@
 
 use crate::construct::gfm_autolink_literal::resolve as resolve_gfm_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
+use crate::construct::{
+    attention, autolink, character_escape, character_reference, gfm_autolink_literal,
+    gfm_label_start_footnote, gfm_task_list_item_check, hard_break_escape, html_text, label_end,
+    label_start_image, label_start_link, partial_data, raw_text,
+};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
@@ -58,13 +63,14 @@ const MARKERS: [u8; 15] = [
 /// > | abc
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.markers = &MARKERS;
+fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::TextBefore),
-        State::Next(StateName::TextBefore),
+        State::Next(StateName::Text(Step::Before)),
+        State::Next(StateName::Text(Step::Before)),
     );
-    State::Retry(StateName::GfmTaskListItemCheckStart)
+    State::Retry(StateName::GfmTaskListItemCheck(
+        gfm_task_list_item_check::Step::Start,
+    ))
 }
 
 /// Before text.
@@ -73,7 +79,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | abc
 ///     ^
 /// ```
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
             tokenizer.register_resolver(ResolveName::Data);
@@ -82,78 +88,86 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
         }
         Some(b'!') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::LabelStartImageStart)
+            State::Retry(StateName::LabelStartImage(label_start_image::Step::Start))
         }
         // raw (text) (code (text), math (text))
         Some(b'$' | b'`') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::RawTextStart)
+            State::Retry(StateName::RawText(raw_text::Step::Start))
         }
         Some(b'&') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::CharacterReferenceStart)
+            State::Retry(StateName::CharacterReference(
+                character_reference::Step::Start,
+            ))
         }
         // attention (emphasis, gfm strikethrough, strong)
         Some(b'*' | b'_' | b'~') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::AttentionStart)
+            State::Retry(StateName::Attention(attention::Step::Start))
         }
         // `autolink`, `html_text` (order does not matter).
         Some(b'<') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeHtml),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeHtml)),
             );
-            State::Retry(StateName::AutolinkStart)
+            State::Retry(StateName::Autolink(autolink::Step::Start))
         }
         Some(b'H' | b'h') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::GfmAutolinkLiteralProtocolStart)
+            State::Retry(StateName::GfmAutolinkLiteral(
+                gfm_autolink_literal::Step::ProtocolStart,
+            ))
         }
         Some(b'W' | b'w') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::GfmAutolinkLiteralWwwStart)
+            State::Retry(StateName::GfmAutolinkLiteral(
+                gfm_autolink_literal::Step::WwwStart,
+            ))
         }
         Some(b'[') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeLabelStartLink),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeLabelStartLink)),
             );
-            State::Retry(StateName::GfmLabelStartFootnoteStart)
+            State::Retry(StateName::GfmLabelStartFootnote(
+                gfm_label_start_footnote::Step::Start,
+            ))
         }
         Some(b'\\') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeHardBreakEscape),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeHardBreakEscape)),
             );
-            State::Retry(StateName::CharacterEscapeStart)
+            State::Retry(StateName::CharacterEscape(character_escape::Step::Start))
         }
         Some(b']') => {
             tokenizer.attempt(
-                State::Next(StateName::TextBefore),
-                State::Next(StateName::TextBeforeData),
+                State::Next(StateName::Text(Step::Before)),
+                State::Next(StateName::Text(Step::BeforeData)),
             );
-            State::Retry(StateName::LabelEndStart)
+            State::Retry(StateName::LabelEnd(label_end::Step::Start))
         }
-        _ => State::Retry(StateName::TextBeforeData),
+        _ => State::Retry(StateName::Text(Step::BeforeData)),
     }
 }
 
@@ -165,12 +179,12 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b>
 ///       ^
 /// ```
-pub fn before_html(tokenizer: &mut Tokenizer) -> State {
+fn before_html(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::TextBefore),
-        State::Next(StateName::TextBeforeData),
+        State::Next(StateName::Text(Step::Before)),
+        State::Next(StateName::Text(Step::BeforeData)),
     );
-    State::Retry(StateName::HtmlTextStart)
+    State::Retry(StateName::HtmlText(html_text::Step::Start))
 }
 
 /// Before hard break escape.
@@ -181,12 +195,12 @@ pub fn before_html(tokenizer: &mut Tokenizer) -> State {
 /// > | a \␊
 ///       ^
 /// ```
-pub fn before_hard_break_escape(tokenizer: &mut Tokenizer) -> State {
+fn before_hard_break_escape(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::TextBefore),
-        State::Next(StateName::TextBeforeData),
+        State::Next(StateName::Text(Step::Before)),
+        State::Next(StateName::Text(Step::BeforeData)),
     );
-    State::Retry(StateName::HardBreakEscapeStart)
+    State::Retry(StateName::HardBreakEscape(hard_break_escape::Step::Start))
 }
 
 /// Before label start (link).
@@ -197,12 +211,12 @@ pub fn before_hard_break_escape(tokenizer: &mut Tokenizer) -> State {
 /// > | [a](b)
 ///     ^
 /// ```
-pub fn before_label_start_link(tokenizer: &mut Tokenizer) -> State {
+fn before_label_start_link(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::TextBefore),
-        State::Next(StateName::TextBeforeData),
+        State::Next(StateName::Text(Step::Before)),
+        State::Next(StateName::Text(Step::BeforeData)),
     );
-    State::Retry(StateName::LabelStartLinkStart)
+    State::Retry(StateName::LabelStartLink(label_start_link::Step::Start))
 }
 
 /// Before data.
@@ -211,9 +225,11 @@ pub fn before_label_start_link(tokenizer: &mut Tokenizer) -> State {
 /// > | a
 ///     ^
 /// ```
-pub fn before_data(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(State::Next(StateName::TextBefore), State::Nok);
-    State::Retry(StateName::DataStart)
+fn before_data(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(State::Next(StateName::Text(Step::Before)), State::Nok);
+    State::Retry(StateName::Data(partial_data::Step::Start {
+        markers: &MARKERS,
+    }))
 }
 
 /// Resolve whitespace.
@@ -224,4 +240,33 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
     tokenizer.map.consume(&mut tokenizer.events);
     None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    BeforeHtml,
+    BeforeHardBreakEscape,
+    BeforeLabelStartLink,
+    BeforeData,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Text(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::BeforeHtml => before_html(tokenizer),
+        Step::BeforeHardBreakEscape => before_hard_break_escape(tokenizer),
+        Step::BeforeLabelStartLink => before_label_start_link(tokenizer),
+        Step::BeforeData => before_data(tokenizer),
+    }
 }

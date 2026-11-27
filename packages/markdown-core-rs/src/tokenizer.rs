@@ -8,7 +8,7 @@
 //!
 //! [`attempt`]: Tokenizer::attempt
 
-use crate::event::{Content, Event, Kind, Link, Name, Point, VOID_EVENTS};
+use crate::event::{Event, Kind, Link, Name, Point, VOID_EVENTS};
 use crate::parser::ParseState;
 use crate::resolve::{call as call_resolve, Name as ResolveName};
 use crate::state::{call, State};
@@ -174,92 +174,56 @@ struct Progress {
     point: Point,
 }
 
-/// A lot of shared fields used to tokenize things.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug)]
-pub struct TokenizeState<'a> {
-    // Couple complex fields used to tokenize the document.
-    /// Tokenizer, used to tokenize flow in document.
-    pub document_child: Option<Box<Tokenizer<'a>>>,
-    /// State, used to tokenize containers.
-    pub document_child_state: Option<State>,
-    /// Stack of currently active containers.
-    pub document_container_stack: Vec<ContainerState>,
-    /// How many active containers continued.
-    pub document_continued: usize,
-    /// Index of last `data`.
-    pub document_data_index: Option<usize>,
+/// Container state of the document tokenizer.
+#[derive(Debug, Default)]
+pub struct Document<'a> {
+    /// Tokenizer of the flow inside the containers.
+    pub child: Option<Box<Tokenizer<'a>>>,
+    /// State of the child tokenizer.
+    pub state: Option<State>,
+    /// Stack of currently open containers.
+    pub stack: Vec<ContainerState>,
+    /// How many open containers continued on this line.
+    pub continued: usize,
+    /// Index of the last `data`.
+    pub data: Option<usize>,
     /// Container exits by line number.
-    pub document_exits: Vec<Option<Vec<Event>>>,
-    /// Whether the previous flow was a paragraph or a definition.
-    pub document_lazy_accepting_before: bool,
+    pub exits: Vec<Option<Vec<Event>>>,
+    /// Whether the previous flow was a paragraph or a definition, so a lazy
+    /// line can continue it.
+    pub open: bool,
     /// Whether this is the first paragraph (potentially after definitions) in
     /// a list item.
     /// Used for GFM task list items.
-    pub document_at_first_paragraph_of_list_item: bool,
+    pub first: bool,
+}
 
-    // Couple of very frequent settings for parsing whitespace.
-    pub space_or_tab_eol_content: Option<Content>,
-    pub space_or_tab_eol_connect: bool,
-    pub space_or_tab_eol_ok: bool,
-    pub space_or_tab_connect: bool,
-    pub space_or_tab_content: Option<Content>,
-    pub space_or_tab_min: usize,
-    pub space_or_tab_max: usize,
-    pub space_or_tab_size: usize,
-    pub space_or_tab_token: Name,
+/// Label starts and matched labels of text.
+#[derive(Debug, Default)]
+pub struct Labels {
+    /// Usable label starts.
+    pub starts: Vec<LabelStart>,
+    /// Unusable label starts.
+    pub loose: Vec<LabelStart>,
+    /// Matched images, links, and footnote calls.
+    pub pairs: Vec<Label>,
+}
 
-    // Couple of media related fields.
-    /// List of usable label starts.
-    ///
-    /// Used when tokenizing [text content][crate::construct::text].
-    pub label_starts: Vec<LabelStart>,
-    /// List of unusable label starts.
-    ///
-    /// Used when tokenizing [text content][crate::construct::text].
-    pub label_starts_loose: Vec<LabelStart>,
-    /// Stack of images and links.
-    ///
-    /// Used when tokenizing [text content][crate::construct::text].
-    pub labels: Vec<Label>,
+/// Normalized identifiers defined so far.
+#[derive(Debug, Default)]
+pub struct Definitions {
+    /// Link definitions.
+    pub links: Vec<String>,
+    /// GFM footnote definitions.
+    pub notes: Vec<String>,
+}
 
-    /// List of defined definition identifiers.
-    pub definitions: Vec<String>,
-    /// List of defined GFM footnote definition identifiers.
-    pub gfm_footnote_definitions: Vec<String>,
-
-    /// Whether to connect events.
-    pub connect: bool,
-    /// Marker.
-    pub marker: u8,
-    /// Secondary marker.
-    pub marker_b: u8,
-    /// Several markers.
-    pub markers: &'static [u8],
-    /// Whether something was seen.
-    pub seen: bool,
-    /// Size.
-    pub size: usize,
-    /// Secondary size.
-    pub size_b: usize,
-    /// Tertiary size.
-    pub size_c: usize,
-    /// Index.
-    pub start: usize,
-    /// Index.
-    pub end: usize,
-    /// Slot for an event name.
-    pub token_1: Name,
-    /// Slot for an event name.
-    pub token_2: Name,
-    /// Slot for an event name.
-    pub token_3: Name,
-    /// Slot for an event name.
-    pub token_4: Name,
-    /// Slot for an event name.
-    pub token_5: Name,
-    /// Slot for an event name.
-    pub token_6: Name,
+impl Definitions {
+    /// Move all identifiers of `other` into `self`.
+    pub fn append(&mut self, other: &mut Definitions) {
+        self.notes.append(&mut other.notes);
+        self.links.append(&mut other.links);
+    }
 }
 
 /// A tokenizer itself.
@@ -297,8 +261,12 @@ pub struct Tokenizer<'a> {
     pub resolvers: Vec<ResolveName>,
     /// Shared parsing state across tokenizers.
     pub parse_state: &'a ParseState<'a>,
-    /// A lot of shared fields used to tokenize things.
-    pub tokenize_state: TokenizeState<'a>,
+    /// Container state, used by the document tokenizer.
+    pub document: Document<'a>,
+    /// Label state, used by the text tokenizer.
+    pub labels: Labels,
+    /// Identifiers this tokenizer defined.
+    pub definitions: Definitions,
     /// Whether we would be interrupting something.
     ///
     /// Used when tokenizing [flow content][crate::construct::flow].
@@ -332,46 +300,9 @@ impl<'a> Tokenizer<'a> {
             stack: vec![],
             events: vec![],
             parse_state,
-            tokenize_state: TokenizeState {
-                connect: false,
-                document_container_stack: vec![],
-                document_exits: vec![],
-                document_continued: 0,
-                document_lazy_accepting_before: false,
-                document_data_index: None,
-                document_child_state: None,
-                document_child: None,
-                document_at_first_paragraph_of_list_item: false,
-                definitions: vec![],
-                gfm_footnote_definitions: vec![],
-                end: 0,
-                label_starts: vec![],
-                label_starts_loose: vec![],
-                marker: 0,
-                marker_b: 0,
-                markers: &[],
-                labels: vec![],
-                seen: false,
-                size: 0,
-                size_b: 0,
-                size_c: 0,
-                space_or_tab_eol_content: None,
-                space_or_tab_eol_connect: false,
-                space_or_tab_eol_ok: false,
-                space_or_tab_connect: false,
-                space_or_tab_content: None,
-                space_or_tab_min: 0,
-                space_or_tab_max: 0,
-                space_or_tab_size: 0,
-                space_or_tab_token: Name::SpaceOrTab,
-                start: 0,
-                token_1: Name::Data,
-                token_2: Name::Data,
-                token_3: Name::Data,
-                token_4: Name::Data,
-                token_5: Name::Data,
-                token_6: Name::Data,
-            },
+            document: Document::default(),
+            labels: Labels::default(),
+            definitions: Definitions::default(),
             map: EditMap::new(),
             interrupt: false,
             pierce: false,
@@ -617,19 +548,15 @@ impl<'a> Tokenizer<'a> {
 
         let mut value = Subresult {
             done: false,
-            gfm_footnote_definitions: self.tokenize_state.gfm_footnote_definitions.split_off(0),
-            definitions: self.tokenize_state.definitions.split_off(0),
+            definitions: core::mem::take(&mut self.definitions),
         };
 
         if resolve {
             let resolvers = self.resolvers.split_off(0);
             let mut index = 0;
-            let defs = &mut value.definitions;
-            let fn_defs = &mut value.gfm_footnote_definitions;
             while index < resolvers.len() {
                 if let Some(mut result) = call_resolve(self, resolvers[index]) {
-                    fn_defs.append(&mut result.gfm_footnote_definitions);
-                    defs.append(&mut result.definitions);
+                    value.definitions.append(&mut result.definitions);
                 }
                 index += 1;
             }
@@ -658,7 +585,7 @@ fn enter_impl(tokenizer: &mut Tokenizer, name: Name, link: Option<Link>) {
     let mut point = tokenizer.point.clone();
     move_point_back(tokenizer, &mut point);
 
-    tokenizer.stack.push(name.clone());
+    tokenizer.stack.push(name);
     tokenizer.events.push(Event {
         kind: Kind::Enter,
         name,

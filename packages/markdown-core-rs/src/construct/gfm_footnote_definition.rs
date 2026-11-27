@@ -165,6 +165,7 @@
 //! [html_section]: https://html.spec.whatwg.org/multipage/sections.html#the-section-element
 //! [html_sup]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-sub-and-sup-elements
 
+use crate::construct::blank_line;
 use crate::construct::partial_space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
@@ -184,17 +185,17 @@ use crate::util::{
 /// > | [^a]: b
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::GfmFootnoteDefinition);
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
-            State::Next(StateName::GfmFootnoteDefinitionLabelBefore),
+            State::Next(StateName::GfmFootnoteDefinition(Step::LabelBefore)),
             State::Nok,
         );
-        State::Retry(space_or_tab_min_max(tokenizer, 1, TAB_SIZE - 1))
+        State::Retry(space_or_tab_min_max(1, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::GfmFootnoteDefinitionLabelBefore)
+        State::Retry(StateName::GfmFootnoteDefinition(Step::LabelBefore))
     }
 }
 
@@ -204,7 +205,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | [^a]: b
 ///     ^
 /// ```
-pub fn label_before(tokenizer: &mut Tokenizer) -> State {
+fn label_before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'[') => {
             tokenizer.enter(Name::GfmFootnoteDefinitionPrefix);
@@ -212,7 +213,7 @@ pub fn label_before(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::GfmFootnoteDefinitionLabelMarker);
             tokenizer.consume();
             tokenizer.exit(Name::GfmFootnoteDefinitionLabelMarker);
-            State::Next(StateName::GfmFootnoteDefinitionLabelAtMarker)
+            State::Next(StateName::GfmFootnoteDefinition(Step::LabelAtMarker))
         }
         _ => State::Nok,
     }
@@ -224,7 +225,7 @@ pub fn label_before(tokenizer: &mut Tokenizer) -> State {
 /// > | [^a]: b
 ///      ^
 /// ```
-pub fn label_at_marker(tokenizer: &mut Tokenizer) -> State {
+fn label_at_marker(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'^') {
         tokenizer.enter(Name::GfmFootnoteDefinitionMarker);
         tokenizer.consume();
@@ -238,7 +239,9 @@ pub fn label_at_marker(tokenizer: &mut Tokenizer) -> State {
                 content: Content::String,
             },
         );
-        State::Next(StateName::GfmFootnoteDefinitionLabelInside)
+        State::Next(StateName::GfmFootnoteDefinition(Step::LabelInside {
+            size: 0,
+        }))
     } else {
         State::Nok
     }
@@ -253,34 +256,31 @@ pub fn label_at_marker(tokenizer: &mut Tokenizer) -> State {
 /// > | [^a]: b
 ///       ^
 /// ```
-pub fn label_inside(tokenizer: &mut Tokenizer) -> State {
+fn label_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
     // Too long.
-    if tokenizer.tokenize_state.size > LINK_REFERENCE_SIZE_MAX
+    if size > LINK_REFERENCE_SIZE_MAX
         // Space or tab is not supported by GFM for some reason (`\n` and
         // `[` make sense).
         || matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ' | b'['))
         // Closing brace with nothing.
-        || (matches!(tokenizer.current, Some(b']')) && tokenizer.tokenize_state.size == 0)
+        || (matches!(tokenizer.current, Some(b']')) && size == 0)
     {
-        tokenizer.tokenize_state.size = 0;
         State::Nok
     } else if matches!(tokenizer.current, Some(b']')) {
-        tokenizer.tokenize_state.size = 0;
         tokenizer.exit(Name::Data);
         tokenizer.exit(Name::GfmFootnoteDefinitionLabelString);
         tokenizer.enter(Name::GfmFootnoteDefinitionLabelMarker);
         tokenizer.consume();
         tokenizer.exit(Name::GfmFootnoteDefinitionLabelMarker);
         tokenizer.exit(Name::GfmFootnoteDefinitionLabel);
-        State::Next(StateName::GfmFootnoteDefinitionLabelAfter)
+        State::Next(StateName::GfmFootnoteDefinition(Step::LabelAfter))
     } else {
         let next = if matches!(tokenizer.current.unwrap(), b'\\') {
-            StateName::GfmFootnoteDefinitionLabelEscape
+            StateName::GfmFootnoteDefinition(Step::LabelEscape { size: size + 1 })
         } else {
-            StateName::GfmFootnoteDefinitionLabelInside
+            StateName::GfmFootnoteDefinition(Step::LabelInside { size: size + 1 })
         };
         tokenizer.consume();
-        tokenizer.tokenize_state.size += 1;
         State::Next(next)
     }
 }
@@ -294,14 +294,15 @@ pub fn label_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | [^a\*b]: c
 ///         ^
 /// ```
-pub fn label_escape(tokenizer: &mut Tokenizer) -> State {
+fn label_escape(tokenizer: &mut Tokenizer, size: usize) -> State {
     match tokenizer.current {
         Some(b'[' | b'\\' | b']') => {
-            tokenizer.tokenize_state.size += 1;
             tokenizer.consume();
-            State::Next(StateName::GfmFootnoteDefinitionLabelInside)
+            State::Next(StateName::GfmFootnoteDefinition(Step::LabelInside {
+                size: size + 1,
+            }))
         }
-        _ => State::Retry(StateName::GfmFootnoteDefinitionLabelInside),
+        _ => State::Retry(StateName::GfmFootnoteDefinition(Step::LabelInside { size })),
     }
 }
 
@@ -311,7 +312,7 @@ pub fn label_escape(tokenizer: &mut Tokenizer) -> State {
 /// > | [^a]: b
 ///         ^
 /// ```
-pub fn label_after(tokenizer: &mut Tokenizer) -> State {
+fn label_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b':') => {
             let end = skip::to_back(
@@ -332,19 +333,19 @@ pub fn label_after(tokenizer: &mut Tokenizer) -> State {
             // Note: we don’t care about uniqueness.
             // It’s likely that that doesn’t happen very frequently.
             // It is more likely that it wastes precious time.
-            tokenizer.tokenize_state.gfm_footnote_definitions.push(id);
+            tokenizer.definitions.notes.push(id);
 
             tokenizer.enter(Name::DefinitionMarker);
             tokenizer.consume();
             tokenizer.exit(Name::DefinitionMarker);
             tokenizer.attempt(
-                State::Next(StateName::GfmFootnoteDefinitionWhitespaceAfter),
+                State::Next(StateName::GfmFootnoteDefinition(Step::WhitespaceAfter)),
                 State::Nok,
             );
             // Any whitespace after the marker is eaten, forming indented code
             // is not possible.
             // No space is also fine, just like a block quote marker.
-            State::Next(space_or_tab_min_max(tokenizer, 0, usize::MAX))
+            State::Next(space_or_tab_min_max(0, usize::MAX))
         }
         _ => State::Nok,
     }
@@ -356,7 +357,7 @@ pub fn label_after(tokenizer: &mut Tokenizer) -> State {
 /// > | [^a]: b
 ///           ^
 /// ```
-pub fn whitespace_after(tokenizer: &mut Tokenizer) -> State {
+fn whitespace_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.exit(Name::GfmFootnoteDefinitionPrefix);
     State::Ok
 }
@@ -368,12 +369,12 @@ pub fn whitespace_after(tokenizer: &mut Tokenizer) -> State {
 /// > |     c
 ///     ^
 /// ```
-pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
+fn cont_start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.check(
-        State::Next(StateName::GfmFootnoteDefinitionContBlank),
-        State::Next(StateName::GfmFootnoteDefinitionContFilled),
+        State::Next(StateName::GfmFootnoteDefinition(Step::ContBlank)),
+        State::Next(StateName::GfmFootnoteDefinition(Step::ContFilled)),
     );
-    State::Retry(StateName::BlankLineStart)
+    State::Retry(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// Start of footnote definition continuation, at a blank line.
@@ -383,9 +384,9 @@ pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
 /// > | ␠␠␊
 ///     ^
 /// ```
-pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
+fn cont_blank(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        State::Retry(indent(tokenizer, 0, TAB_SIZE))
+        State::Retry(indent(0, TAB_SIZE))
     } else {
         State::Ok
     }
@@ -398,25 +399,59 @@ pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
 /// > |     c
 ///     ^
 /// ```
-pub fn cont_filled(tokenizer: &mut Tokenizer) -> State {
+fn cont_filled(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume exactly `TAB_SIZE`.
-        State::Retry(indent(tokenizer, TAB_SIZE, TAB_SIZE))
+        State::Retry(indent(TAB_SIZE, TAB_SIZE))
     } else {
         State::Nok
     }
 }
 
 /// The indentation a continuation line consumes for the definition.
-fn indent(tokenizer: &mut Tokenizer, min: usize, max: usize) -> StateName {
-    space_or_tab_with_options(
-        tokenizer,
-        SpaceOrTabOptions {
-            kind: Name::GfmFootnoteDefinitionIndent,
-            min,
-            max,
-            content: None,
-            connect: false,
-        },
-    )
+fn indent(min: usize, max: usize) -> StateName {
+    space_or_tab_with_options(SpaceOrTabOptions {
+        kind: Name::GfmFootnoteDefinitionIndent,
+        min,
+        max,
+        content: None,
+        connect: false,
+    })
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    LabelBefore,
+    LabelAtMarker,
+    LabelInside { size: usize },
+    LabelEscape { size: usize },
+    LabelAfter,
+    WhitespaceAfter,
+    ContStart,
+    ContBlank,
+    ContFilled,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::GfmFootnoteDefinition(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::LabelBefore => label_before(tokenizer),
+        Step::LabelAtMarker => label_at_marker(tokenizer),
+        Step::LabelInside { size } => label_inside(tokenizer, size),
+        Step::LabelEscape { size } => label_escape(tokenizer, size),
+        Step::LabelAfter => label_after(tokenizer),
+        Step::WhitespaceAfter => whitespace_after(tokenizer),
+        Step::ContStart => cont_start(tokenizer),
+        Step::ContBlank => cont_blank(tokenizer),
+        Step::ContFilled => cont_filled(tokenizer),
+    }
 }

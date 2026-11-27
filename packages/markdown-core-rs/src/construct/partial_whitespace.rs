@@ -128,7 +128,7 @@ fn trim_data(
         // The whole data is whitespace.
         // We can be very fast: we only change the event names.
         if index == 0 {
-            tokenizer.events[exit_index - 1].name = name.clone();
+            tokenizer.events[exit_index - 1].name = name;
             tokenizer.events[exit_index].name = name;
             return;
         }
@@ -146,7 +146,7 @@ fn trim_data(
                 vec![
                     Event {
                         kind: Kind::Enter,
-                        name: name.clone(),
+                        name,
                         point: enter_point.clone(),
                         link: None,
                     },

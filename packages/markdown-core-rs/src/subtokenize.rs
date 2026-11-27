@@ -17,18 +17,18 @@
 //! whole document needs to be parsed up to the level of definitions, before
 //! any level that can include references can be parsed.
 
+use crate::construct::{content, string, text};
 use crate::event::{Content, Event, Kind, Name, VOID_EVENTS};
 use crate::parser::ParseState;
 use crate::state::{Name as StateName, State};
-use crate::tokenizer::Tokenizer;
+use crate::tokenizer::{Definitions, Tokenizer};
 use crate::util::{edit_map::EditMap, skip};
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 
 #[derive(Debug)]
 pub struct Subresult {
     pub done: bool,
-    pub gfm_footnote_definitions: Vec<String>,
-    pub definitions: Vec<String>,
+    pub definitions: Definitions,
 }
 
 /// Link two [`Event`][]s.
@@ -83,8 +83,7 @@ pub fn subtokenize(
     let mut index = 0;
     let mut value = Subresult {
         done: true,
-        gfm_footnote_definitions: vec![],
-        definitions: vec![],
+        definitions: Definitions::default(),
     };
     let mut acc = (0, 0);
 
@@ -109,9 +108,9 @@ pub fn subtokenize(
                 );
                 // Substate.
                 let mut state = State::Next(match link.content {
-                    Content::Content => StateName::ContentDefinitionBefore,
-                    Content::String => StateName::StringStart,
-                    _ => StateName::TextStart,
+                    Content::Content => StateName::Content(content::Step::DefinitionBefore),
+                    Content::String => StateName::String(string::Step::Start),
+                    _ => StateName::Text(text::Step::Start),
                 });
 
                 // Check if this is the first paragraph, after zero or more
@@ -137,9 +136,7 @@ pub fn subtokenize(
                     if events[before].kind == Kind::Exit
                         && events[before].name == Name::ListItemPrefix
                     {
-                        tokenizer
-                            .tokenize_state
-                            .document_at_first_paragraph_of_list_item = true;
+                        tokenizer.document.first = true;
                     }
                 }
 
@@ -165,9 +162,6 @@ pub fn subtokenize(
                 }
 
                 let mut result = tokenizer.flush(state, true);
-                value
-                    .gfm_footnote_definitions
-                    .append(&mut result.gfm_footnote_definitions);
                 value.definitions.append(&mut result.definitions);
                 value.done = false;
 

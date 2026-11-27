@@ -51,13 +51,13 @@ use crate::tokenizer::Tokenizer;
 /// > | a\*b
 ///      ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'\\') {
         tokenizer.enter(Name::CharacterEscape);
         tokenizer.enter(Name::CharacterEscapeMarker);
         tokenizer.consume();
         tokenizer.exit(Name::CharacterEscapeMarker);
-        State::Next(StateName::CharacterEscapeInside)
+        State::Next(StateName::CharacterEscape(Step::Inside))
     } else {
         State::Nok
     }
@@ -69,7 +69,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | a\*b
 ///       ^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
+fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // ASCII punctuation.
         Some(b'!'..=b'/' | b':'..=b'@' | b'['..=b'`' | b'{'..=b'~') => {
@@ -80,5 +80,26 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
             State::Ok
         }
         _ => State::Nok,
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Inside,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::CharacterEscape(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Inside => inside(tokenizer),
     }
 }

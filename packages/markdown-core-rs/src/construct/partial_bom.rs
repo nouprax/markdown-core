@@ -34,10 +34,10 @@ const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
 /// > | 0xEF 0xBB 0xBF
 ///     ^^^^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(BOM[0]) {
         tokenizer.enter(Name::ByteOrderMark);
-        State::Retry(StateName::BomInside)
+        State::Retry(StateName::Bom(Step::Inside { size: 0 }))
     } else {
         State::Nok
     }
@@ -49,19 +49,37 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | 0xEF 0xBB 0xBF
 ///     ^^^^ ^^^^ ^^^^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(BOM[tokenizer.tokenize_state.size]) {
-        tokenizer.tokenize_state.size += 1;
+fn inside(tokenizer: &mut Tokenizer, size: usize) -> State {
+    if tokenizer.current == Some(BOM[size]) {
         tokenizer.consume();
-        if tokenizer.tokenize_state.size == BOM.len() {
+        if size + 1 == BOM.len() {
             tokenizer.exit(Name::ByteOrderMark);
-            tokenizer.tokenize_state.size = 0;
             State::Ok
         } else {
-            State::Next(StateName::BomInside)
+            State::Next(StateName::Bom(Step::Inside { size: size + 1 }))
         }
     } else {
-        tokenizer.tokenize_state.size = 0;
         State::Nok
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Inside { size: usize },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Bom(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Inside { size } => inside(tokenizer, size),
     }
 }

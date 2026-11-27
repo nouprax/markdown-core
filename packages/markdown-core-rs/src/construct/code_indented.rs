@@ -69,12 +69,15 @@ use crate::util::constant::TAB_SIZE;
 /// > |     aaa
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     // Do not interrupt paragraphs.
     if !tokenizer.interrupt && matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.enter(Name::CodeIndented);
-        tokenizer.attempt(State::Next(StateName::CodeIndentedAtBreak), State::Nok);
-        State::Retry(space_or_tab_min_max(tokenizer, TAB_SIZE, TAB_SIZE))
+        tokenizer.attempt(
+            State::Next(StateName::CodeIndented(Step::AtBreak)),
+            State::Nok,
+        );
+        State::Retry(space_or_tab_min_max(TAB_SIZE, TAB_SIZE))
     } else {
         State::Nok
     }
@@ -86,19 +89,19 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > |     aaa
 ///         ^  ^
 /// ```
-pub fn at_break(tokenizer: &mut Tokenizer) -> State {
+fn at_break(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        None => State::Retry(StateName::CodeIndentedAfter),
+        None => State::Retry(StateName::CodeIndented(Step::After)),
         Some(b'\n') => {
             tokenizer.attempt(
-                State::Next(StateName::CodeIndentedAtBreak),
-                State::Next(StateName::CodeIndentedAfter),
+                State::Next(StateName::CodeIndented(Step::AtBreak)),
+                State::Next(StateName::CodeIndented(Step::After)),
             );
-            State::Retry(StateName::CodeIndentedFurtherStart)
+            State::Retry(StateName::CodeIndented(Step::FurtherStart))
         }
         _ => {
             tokenizer.enter(Name::CodeFlowChunk);
-            State::Retry(StateName::CodeIndentedInside)
+            State::Retry(StateName::CodeIndented(Step::Inside))
         }
     }
 }
@@ -109,15 +112,15 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
 /// > |     aaa
 ///         ^^^^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
+fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::CodeFlowChunk);
-            State::Retry(StateName::CodeIndentedAtBreak)
+            State::Retry(StateName::CodeIndented(Step::AtBreak))
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::CodeIndentedInside)
+            State::Next(StateName::CodeIndented(Step::Inside))
         }
     }
 }
@@ -128,7 +131,7 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
 /// > |     aaa
 ///            ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.exit(Name::CodeIndented);
     // Feel free to interrupt.
     tokenizer.interrupt = false;
@@ -142,7 +145,7 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
 ///            ^
 ///   |     bbb
 /// ```
-pub fn further_start(tokenizer: &mut Tokenizer) -> State {
+fn further_start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.lazy || tokenizer.pierce {
         return State::Nok;
     }
@@ -151,10 +154,13 @@ pub fn further_start(tokenizer: &mut Tokenizer) -> State {
         tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
         tokenizer.exit(Name::LineEnding);
-        State::Next(StateName::CodeIndentedFurtherStart)
+        State::Next(StateName::CodeIndented(Step::FurtherStart))
     } else {
-        tokenizer.attempt(State::Ok, State::Next(StateName::CodeIndentedFurtherBegin));
-        State::Retry(space_or_tab_min_max(tokenizer, TAB_SIZE, TAB_SIZE))
+        tokenizer.attempt(
+            State::Ok,
+            State::Next(StateName::CodeIndented(Step::FurtherBegin)),
+        );
+        State::Retry(space_or_tab_min_max(TAB_SIZE, TAB_SIZE))
     }
 }
 
@@ -165,10 +171,13 @@ pub fn further_start(tokenizer: &mut Tokenizer) -> State {
 /// > |   bbb
 ///     ^
 /// ```
-pub fn further_begin(tokenizer: &mut Tokenizer) -> State {
+fn further_begin(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::CodeIndentedFurtherAfter), State::Nok);
-        State::Retry(space_or_tab(tokenizer))
+        tokenizer.attempt(
+            State::Next(StateName::CodeIndented(Step::FurtherAfter)),
+            State::Nok,
+        );
+        State::Retry(space_or_tab())
     } else {
         State::Nok
     }
@@ -181,9 +190,40 @@ pub fn further_begin(tokenizer: &mut Tokenizer) -> State {
 /// > |   bbb
 ///       ^
 /// ```
-pub fn further_after(tokenizer: &mut Tokenizer) -> State {
+fn further_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'\n') => State::Retry(StateName::CodeIndentedFurtherStart),
+        Some(b'\n') => State::Retry(StateName::CodeIndented(Step::FurtherStart)),
         _ => State::Nok,
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    AtBreak,
+    After,
+    FurtherStart,
+    Inside,
+    FurtherBegin,
+    FurtherAfter,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::CodeIndented(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::AtBreak => at_break(tokenizer),
+        Step::After => after(tokenizer),
+        Step::FurtherStart => further_start(tokenizer),
+        Step::Inside => inside(tokenizer),
+        Step::FurtherBegin => further_begin(tokenizer),
+        Step::FurtherAfter => further_after(tokenizer),
     }
 }

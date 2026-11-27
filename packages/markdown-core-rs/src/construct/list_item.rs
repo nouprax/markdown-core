@@ -61,6 +61,7 @@
 use crate::construct::partial_space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
+use crate::construct::{blank_line, thematic_break};
 use crate::event::{Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -79,14 +80,14 @@ use alloc::{vec, vec::Vec};
 /// > | * a
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItem);
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::ListItemBefore), State::Nok);
-        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
+        tokenizer.attempt(State::Next(StateName::ListItem(Step::Before)), State::Nok);
+        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::ListItemBefore)
+        State::Retry(StateName::ListItem(Step::Before))
     }
 }
 
@@ -96,19 +97,22 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///     ^
 /// ```
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     // Unordered.
     if matches!(tokenizer.current, Some(b'*' | b'-')) {
-        tokenizer.check(State::Nok, State::Next(StateName::ListItemBeforeUnordered));
-        State::Retry(StateName::ThematicBreakStart)
+        tokenizer.check(
+            State::Nok,
+            State::Next(StateName::ListItem(Step::BeforeUnordered)),
+        );
+        State::Retry(StateName::ThematicBreak(thematic_break::Step::Start))
     } else if tokenizer.current == Some(b'+') {
-        State::Retry(StateName::ListItemBeforeUnordered)
+        State::Retry(StateName::ListItem(Step::BeforeUnordered))
     }
     // Ordered.
     else if tokenizer.current == Some(b'1')
         || (matches!(tokenizer.current, Some(b'0'..=b'9')) && !tokenizer.interrupt)
     {
-        State::Retry(StateName::ListItemBeforeOrdered)
+        State::Retry(StateName::ListItem(Step::BeforeOrdered))
     } else {
         State::Nok
     }
@@ -122,9 +126,9 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///     ^
 /// ```
-pub fn before_unordered(tokenizer: &mut Tokenizer) -> State {
+fn before_unordered(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemPrefix);
-    State::Retry(StateName::ListItemMarker)
+    State::Retry(StateName::ListItem(Step::Marker))
 }
 
 /// At ordered list item value.
@@ -133,10 +137,10 @@ pub fn before_unordered(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///     ^
 /// ```
-pub fn before_ordered(tokenizer: &mut Tokenizer) -> State {
+fn before_ordered(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemPrefix);
     tokenizer.enter(Name::ListItemValue);
-    State::Retry(StateName::ListItemValue)
+    State::Retry(StateName::ListItem(Step::Value { size: 0 }))
 }
 
 /// In ordered list item value.
@@ -145,20 +149,15 @@ pub fn before_ordered(tokenizer: &mut Tokenizer) -> State {
 /// > | 1. a
 ///     ^
 /// ```
-pub fn value(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b'.' | b')'))
-        && (!tokenizer.interrupt || tokenizer.tokenize_state.size < 2)
-    {
+fn value(tokenizer: &mut Tokenizer, size: usize) -> State {
+    if matches!(tokenizer.current, Some(b'.' | b')')) && (!tokenizer.interrupt || size < 2) {
         tokenizer.exit(Name::ListItemValue);
-        State::Retry(StateName::ListItemMarker)
-    } else if matches!(tokenizer.current, Some(b'0'..=b'9'))
-        && tokenizer.tokenize_state.size + 1 < LIST_ITEM_VALUE_SIZE_MAX
+        State::Retry(StateName::ListItem(Step::Marker))
+    } else if matches!(tokenizer.current, Some(b'0'..=b'9')) && size + 1 < LIST_ITEM_VALUE_SIZE_MAX
     {
-        tokenizer.tokenize_state.size += 1;
         tokenizer.consume();
-        State::Next(StateName::ListItemValue)
+        State::Next(StateName::ListItem(Step::Value { size: size + 1 }))
     } else {
-        tokenizer.tokenize_state.size = 0;
         State::Nok
     }
 }
@@ -171,11 +170,11 @@ pub fn value(tokenizer: &mut Tokenizer) -> State {
 /// > | 1. b
 ///      ^
 /// ```
-pub fn marker(tokenizer: &mut Tokenizer) -> State {
+fn marker(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemMarker);
     tokenizer.consume();
     tokenizer.exit(Name::ListItemMarker);
-    State::Next(StateName::ListItemMarkerAfter)
+    State::Next(StateName::ListItem(Step::MarkerAfter))
 }
 
 /// After list item marker.
@@ -186,13 +185,12 @@ pub fn marker(tokenizer: &mut Tokenizer) -> State {
 /// > | 1. b
 ///       ^
 /// ```
-pub fn marker_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.size = 1;
+fn marker_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.check(
-        State::Next(StateName::ListItemAfter),
-        State::Next(StateName::ListItemMarkerAfterFilled),
+        State::Next(StateName::ListItem(Step::After { blank: true })),
+        State::Next(StateName::ListItem(Step::MarkerAfterFilled)),
     );
-    State::Retry(StateName::BlankLineStart)
+    State::Retry(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// After list item marker.
@@ -203,15 +201,13 @@ pub fn marker_after(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///      ^
 /// ```
-pub fn marker_after_filled(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.size = 0;
-
+fn marker_after_filled(tokenizer: &mut Tokenizer) -> State {
     // Attempt to parse up to the largest allowed indent, `nok` if there is more whitespace.
     tokenizer.attempt(
-        State::Next(StateName::ListItemAfter),
-        State::Next(StateName::ListItemPrefixOther),
+        State::Next(StateName::ListItem(Step::After { blank: false })),
+        State::Next(StateName::ListItem(Step::PrefixOther)),
     );
-    State::Retry(StateName::ListItemWhitespace)
+    State::Retry(StateName::ListItem(Step::Whitespace))
 }
 
 /// After marker, at whitespace.
@@ -220,9 +216,12 @@ pub fn marker_after_filled(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///      ^
 /// ```
-pub fn whitespace(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(State::Next(StateName::ListItemWhitespaceAfter), State::Nok);
-    State::Retry(space_or_tab_min_max(tokenizer, 1, TAB_SIZE))
+fn whitespace(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::ListItem(Step::WhitespaceAfter)),
+        State::Nok,
+    );
+    State::Retry(space_or_tab_min_max(1, TAB_SIZE))
 }
 
 /// After acceptable whitespace.
@@ -231,7 +230,7 @@ pub fn whitespace(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///      ^
 /// ```
-pub fn whitespace_after(tokenizer: &mut Tokenizer) -> State {
+fn whitespace_after(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'\t' | b' ') = tokenizer.current {
         State::Nok
     } else {
@@ -245,13 +244,13 @@ pub fn whitespace_after(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///      ^
 /// ```
-pub fn prefix_other(tokenizer: &mut Tokenizer) -> State {
+fn prefix_other(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\t' | b' ') => {
             tokenizer.enter(Name::SpaceOrTab);
             tokenizer.consume();
             tokenizer.exit(Name::SpaceOrTab);
-            State::Next(StateName::ListItemAfter)
+            State::Next(StateName::ListItem(Step::After { blank: false }))
         }
         _ => State::Nok,
     }
@@ -263,10 +262,7 @@ pub fn prefix_other(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///       ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
-    let blank = tokenizer.tokenize_state.size == 1;
-    tokenizer.tokenize_state.size = 0;
-
+fn after(tokenizer: &mut Tokenizer, blank: bool) -> State {
     if blank && tokenizer.interrupt {
         State::Nok
     } else {
@@ -288,8 +284,7 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
             prefix += 1;
         }
 
-        let container = &mut tokenizer.tokenize_state.document_container_stack
-            [tokenizer.tokenize_state.document_continued];
+        let container = &mut tokenizer.document.stack[tokenizer.document.continued];
 
         container.blank_initial = blank;
         container.size = prefix;
@@ -307,12 +302,12 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
 /// > |   b
 ///     ^
 /// ```
-pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
+fn cont_start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.check(
-        State::Next(StateName::ListItemContBlank),
-        State::Next(StateName::ListItemContFilled),
+        State::Next(StateName::ListItem(Step::ContBlank)),
+        State::Next(StateName::ListItem(Step::ContFilled)),
     );
-    State::Retry(StateName::BlankLineStart)
+    State::Retry(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// Start of blank list item continuation.
@@ -323,16 +318,15 @@ pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 ///   |   b
 /// ```
-pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
-    let container = &mut tokenizer.tokenize_state.document_container_stack
-        [tokenizer.tokenize_state.document_continued];
+fn cont_blank(tokenizer: &mut Tokenizer) -> State {
+    let container = &mut tokenizer.document.stack[tokenizer.document.continued];
     let size = container.size;
 
     if container.blank_initial {
         State::Nok
     } else if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume, optionally, at most `size`.
-        State::Retry(indent(tokenizer, 0, size))
+        State::Retry(indent(0, size))
     } else {
         State::Ok
     }
@@ -345,16 +339,15 @@ pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
 /// > |   b
 ///     ^
 /// ```
-pub fn cont_filled(tokenizer: &mut Tokenizer) -> State {
-    let container = &mut tokenizer.tokenize_state.document_container_stack
-        [tokenizer.tokenize_state.document_continued];
+fn cont_filled(tokenizer: &mut Tokenizer) -> State {
+    let container = &mut tokenizer.document.stack[tokenizer.document.continued];
     let size = container.size;
 
     container.blank_initial = false;
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume exactly `size`.
-        State::Retry(indent(tokenizer, size, size))
+        State::Retry(indent(size, size))
     } else {
         State::Nok
     }
@@ -452,7 +445,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
             b'.' | b')' => Name::ListOrdered,
             _ => Name::ListUnordered,
         };
-        list_start.name = name.clone();
+        list_start.name = name;
         list_end.name = name;
 
         tokenizer.map.add(list_item.2, 0, vec![list_start]);
@@ -466,15 +459,59 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 }
 
 /// The indentation a continuation line consumes for the list item.
-fn indent(tokenizer: &mut Tokenizer, min: usize, max: usize) -> StateName {
-    space_or_tab_with_options(
-        tokenizer,
-        SpaceOrTabOptions {
-            kind: Name::ListItemIndent,
-            min,
-            max,
-            content: None,
-            connect: false,
-        },
-    )
+fn indent(min: usize, max: usize) -> StateName {
+    space_or_tab_with_options(SpaceOrTabOptions {
+        kind: Name::ListItemIndent,
+        min,
+        max,
+        content: None,
+        connect: false,
+    })
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    BeforeOrdered,
+    BeforeUnordered,
+    Value { size: usize },
+    Marker,
+    MarkerAfter,
+    After { blank: bool },
+    MarkerAfterFilled,
+    Whitespace,
+    WhitespaceAfter,
+    PrefixOther,
+    ContStart,
+    ContBlank,
+    ContFilled,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::ListItem(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::BeforeOrdered => before_ordered(tokenizer),
+        Step::BeforeUnordered => before_unordered(tokenizer),
+        Step::Value { size } => value(tokenizer, size),
+        Step::Marker => marker(tokenizer),
+        Step::MarkerAfter => marker_after(tokenizer),
+        Step::After { blank } => after(tokenizer, blank),
+        Step::MarkerAfterFilled => marker_after_filled(tokenizer),
+        Step::Whitespace => whitespace(tokenizer),
+        Step::WhitespaceAfter => whitespace_after(tokenizer),
+        Step::PrefixOther => prefix_other(tokenizer),
+        Step::ContStart => cont_start(tokenizer),
+        Step::ContBlank => cont_blank(tokenizer),
+        Step::ContFilled => cont_filled(tokenizer),
+    }
 }

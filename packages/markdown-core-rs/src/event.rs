@@ -3,7 +3,7 @@
 use crate::util::constant::TAB_SIZE;
 
 /// Semantic label of a span.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Name {
     /// Attention sequence.
     ///
@@ -2845,7 +2845,7 @@ pub const VOID_EVENTS: [Name; 62] = [
 ];
 
 /// Embedded content type.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Content {
     /// Represents [flow content][crate::construct::flow].
     Flow,

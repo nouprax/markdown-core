@@ -48,13 +48,13 @@ use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 /// > | a [^b] c
 ///       ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'[') {
         tokenizer.enter(Name::GfmFootnoteCallLabel);
         tokenizer.enter(Name::LabelMarker);
         tokenizer.consume();
         tokenizer.exit(Name::LabelMarker);
-        State::Next(StateName::GfmLabelStartFootnoteOpen)
+        State::Next(StateName::GfmLabelStartFootnote(Step::Open))
     } else {
         State::Nok
     }
@@ -66,14 +66,14 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | a [^b] c
 ///        ^
 /// ```
-pub fn open(tokenizer: &mut Tokenizer) -> State {
+fn open(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'^') => {
             tokenizer.enter(Name::GfmFootnoteCallMarker);
             tokenizer.consume();
             tokenizer.exit(Name::GfmFootnoteCallMarker);
             tokenizer.exit(Name::GfmFootnoteCallLabel);
-            tokenizer.tokenize_state.label_starts.push(LabelStart {
+            tokenizer.labels.starts.push(LabelStart {
                 kind: LabelKind::GfmFootnote,
                 start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
                 inactive: false,
@@ -82,5 +82,26 @@ pub fn open(tokenizer: &mut Tokenizer) -> State {
             State::Ok
         }
         _ => State::Nok,
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Open,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::GfmLabelStartFootnote(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Open => open(tokenizer),
     }
 }

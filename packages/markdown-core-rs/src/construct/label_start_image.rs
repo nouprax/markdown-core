@@ -43,13 +43,13 @@ use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 /// > | a ![b] c
 ///       ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'!') {
         tokenizer.enter(Name::LabelImage);
         tokenizer.enter(Name::LabelImageMarker);
         tokenizer.consume();
         tokenizer.exit(Name::LabelImageMarker);
-        State::Next(StateName::LabelStartImageOpen)
+        State::Next(StateName::LabelStartImage(Step::Open))
     } else {
         State::Nok
     }
@@ -61,14 +61,14 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | a ![b] c
 ///        ^
 /// ```
-pub fn open(tokenizer: &mut Tokenizer) -> State {
+fn open(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'[') => {
             tokenizer.enter(Name::LabelMarker);
             tokenizer.consume();
             tokenizer.exit(Name::LabelMarker);
             tokenizer.exit(Name::LabelImage);
-            State::Next(StateName::LabelStartImageAfter)
+            State::Next(StateName::LabelStartImage(Step::After))
         }
         _ => State::Nok,
     }
@@ -97,16 +97,39 @@ pub fn open(tokenizer: &mut Tokenizer) -> State {
 /// <p>!<a href=\"b\">^a</a></p>
 /// <p>!<a href=\"c\">^a</a></p>
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'^') {
         State::Nok
     } else {
-        tokenizer.tokenize_state.label_starts.push(LabelStart {
+        tokenizer.labels.starts.push(LabelStart {
             kind: LabelKind::Image,
             start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
             inactive: false,
         });
         tokenizer.register_resolver_before(ResolveName::Label);
         State::Ok
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Open,
+    After,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::LabelStartImage(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Open => open(tokenizer),
+        Step::After => after(tokenizer),
     }
 }

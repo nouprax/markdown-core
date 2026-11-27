@@ -63,12 +63,12 @@ use crate::tokenizer::Tokenizer;
 /// > | ␊
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::BlankLineAfter), State::Nok);
-        State::Retry(space_or_tab(tokenizer))
+        tokenizer.attempt(State::Next(StateName::BlankLine(Step::After)), State::Nok);
+        State::Retry(space_or_tab())
     } else {
-        State::Retry(StateName::BlankLineAfter)
+        State::Retry(StateName::BlankLine(Step::After))
     }
 }
 
@@ -80,9 +80,30 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | ␊
 ///     ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => State::Ok,
         _ => State::Nok,
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    After,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::BlankLine(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::After => after(tokenizer),
     }
 }

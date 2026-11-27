@@ -68,14 +68,17 @@ use crate::util::constant::{TAB_SIZE, THEMATIC_BREAK_MARKER_COUNT_MIN};
 /// > | ***
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ThematicBreak);
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::ThematicBreakBefore), State::Nok);
-        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
+        tokenizer.attempt(
+            State::Next(StateName::ThematicBreak(Step::Before)),
+            State::Nok,
+        );
+        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::ThematicBreakBefore)
+        State::Retry(StateName::ThematicBreak(Step::Before))
     }
 }
 
@@ -85,12 +88,12 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | ***
 ///     ^
 /// ```
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'*' | b'-' | b'_') => {
-            tokenizer.tokenize_state.marker = tokenizer.current.unwrap();
-            State::Retry(StateName::ThematicBreakAtBreak)
-        }
+        Some(b'*' | b'-' | b'_') => State::Retry(StateName::ThematicBreak(Step::AtBreak {
+            marker: tokenizer.current.unwrap(),
+            size: 0,
+        })),
         _ => State::Nok,
     }
 }
@@ -101,22 +104,18 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | ***
 ///     ^
 /// ```
-pub fn at_break(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
+fn at_break(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
+    if tokenizer.current == Some(marker) {
         tokenizer.enter(Name::ThematicBreakSequence);
-        State::Retry(StateName::ThematicBreakSequence)
-    } else if tokenizer.tokenize_state.size >= THEMATIC_BREAK_MARKER_COUNT_MIN
+        State::Retry(StateName::ThematicBreak(Step::Sequence { marker, size }))
+    } else if size >= THEMATIC_BREAK_MARKER_COUNT_MIN
         && matches!(tokenizer.current, None | Some(b'\n'))
     {
-        tokenizer.tokenize_state.marker = 0;
-        tokenizer.tokenize_state.size = 0;
         tokenizer.exit(Name::ThematicBreak);
         // Feel free to interrupt.
         tokenizer.interrupt = false;
         State::Ok
     } else {
-        tokenizer.tokenize_state.marker = 0;
-        tokenizer.tokenize_state.size = 0;
         State::Nok
     }
 }
@@ -127,17 +126,47 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
 /// > | ***
 ///     ^
 /// ```
-pub fn sequence(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
+fn sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
+    if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        tokenizer.tokenize_state.size += 1;
-        State::Next(StateName::ThematicBreakSequence)
+        State::Next(StateName::ThematicBreak(Step::Sequence {
+            marker,
+            size: size + 1,
+        }))
     } else if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.exit(Name::ThematicBreakSequence);
-        tokenizer.attempt(State::Next(StateName::ThematicBreakAtBreak), State::Nok);
-        State::Retry(space_or_tab(tokenizer))
+        tokenizer.attempt(
+            State::Next(StateName::ThematicBreak(Step::AtBreak { marker, size })),
+            State::Nok,
+        );
+        State::Retry(space_or_tab())
     } else {
         tokenizer.exit(Name::ThematicBreakSequence);
-        State::Retry(StateName::ThematicBreakAtBreak)
+        State::Retry(StateName::ThematicBreak(Step::AtBreak { marker, size }))
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    Sequence { marker: u8, size: usize },
+    AtBreak { marker: u8, size: usize },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::ThematicBreak(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::Sequence { marker, size } => sequence(tokenizer, marker, size),
+        Step::AtBreak { marker, size } => at_break(tokenizer, marker, size),
     }
 }

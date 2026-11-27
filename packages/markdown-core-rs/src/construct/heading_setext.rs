@@ -86,7 +86,7 @@ use alloc::vec;
 /// > | ==
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if !tokenizer.lazy
         && !tokenizer.pierce
         // Require a paragraph before.
@@ -101,10 +101,13 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
         tokenizer.enter(Name::HeadingSetextUnderline);
 
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(State::Next(StateName::HeadingSetextBefore), State::Nok);
-            State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE - 1))
+            tokenizer.attempt(
+                State::Next(StateName::HeadingSetext(Step::Before)),
+                State::Nok,
+            );
+            State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
         } else {
-            State::Retry(StateName::HeadingSetextBefore)
+            State::Retry(StateName::HeadingSetext(Step::Before))
         }
     } else {
         State::Nok
@@ -118,12 +121,13 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | ==
 ///     ^
 /// ```
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'-' | b'=') => {
-            tokenizer.tokenize_state.marker = tokenizer.current.unwrap();
             tokenizer.enter(Name::HeadingSetextUnderlineSequence);
-            State::Retry(StateName::HeadingSetextInside)
+            State::Retry(StateName::HeadingSetext(Step::Inside {
+                marker: tokenizer.current.unwrap(),
+            }))
         }
         _ => State::Nok,
     }
@@ -136,19 +140,21 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | ==
 ///     ^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
+fn inside(tokenizer: &mut Tokenizer, marker: u8) -> State {
+    if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        State::Next(StateName::HeadingSetextInside)
+        State::Next(StateName::HeadingSetext(Step::Inside { marker }))
     } else {
-        tokenizer.tokenize_state.marker = 0;
         tokenizer.exit(Name::HeadingSetextUnderlineSequence);
 
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(State::Next(StateName::HeadingSetextAfter), State::Nok);
-            State::Retry(space_or_tab(tokenizer))
+            tokenizer.attempt(
+                State::Next(StateName::HeadingSetext(Step::After)),
+                State::Nok,
+            );
+            State::Retry(space_or_tab())
         } else {
-            State::Retry(StateName::HeadingSetextAfter)
+            State::Retry(StateName::HeadingSetext(Step::After))
         }
     }
 }
@@ -160,7 +166,7 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
 /// > | ==
 ///       ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             // Feel free to interrupt.
@@ -275,4 +281,29 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
     tokenizer.map.consume(&mut tokenizer.events);
     None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    Inside { marker: u8 },
+    After,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::HeadingSetext(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::Inside { marker } => inside(tokenizer, marker),
+        Step::After => after(tokenizer),
+    }
 }

@@ -116,15 +116,16 @@ struct Sequence {
 /// > | **
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     // Emphasis/strong:
     if (matches!(tokenizer.current, Some(b'*' | b'_')))
         // GFM strikethrough:
         || (tokenizer.current == Some(b'~'))
     {
-        tokenizer.tokenize_state.marker = tokenizer.current.unwrap();
         tokenizer.enter(Name::AttentionSequence);
-        State::Retry(StateName::AttentionInside)
+        State::Retry(StateName::Attention(Step::Inside {
+            marker: tokenizer.current.unwrap(),
+        }))
     } else {
         State::Nok
     }
@@ -136,14 +137,13 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | **
 ///     ^^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
+fn inside(tokenizer: &mut Tokenizer, marker: u8) -> State {
+    if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        State::Next(StateName::AttentionInside)
+        State::Next(StateName::Attention(Step::Inside { marker }))
     } else {
         tokenizer.exit(Name::AttentionSequence);
         tokenizer.register_resolver(ResolveName::Attention);
-        tokenizer.tokenize_state.marker = 0;
         State::Ok
     }
 }
@@ -353,25 +353,25 @@ fn match_sequences(
         vec![
             Event {
                 kind: Kind::Enter,
-                name: group_name.clone(),
+                name: group_name,
                 point: sequences[open].end_point.clone(),
                 link: None,
             },
             Event {
                 kind: Kind::Enter,
-                name: seq_name.clone(),
+                name: seq_name,
                 point: sequences[open].end_point.clone(),
                 link: None,
             },
             Event {
                 kind: Kind::Exit,
-                name: seq_name.clone(),
+                name: seq_name,
                 point: open_exit.clone(),
                 link: None,
             },
             Event {
                 kind: Kind::Enter,
-                name: text_name.clone(),
+                name: text_name,
                 point: open_exit,
                 link: None,
             },
@@ -390,7 +390,7 @@ fn match_sequences(
             },
             Event {
                 kind: Kind::Enter,
-                name: seq_name.clone(),
+                name: seq_name,
                 point: close_enter,
                 link: None,
             },
@@ -431,4 +431,25 @@ fn match_sequences(
     }
 
     next
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Inside { marker: u8 },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Attention(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Inside { marker } => inside(tokenizer, marker),
+    }
 }

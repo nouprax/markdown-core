@@ -41,22 +41,45 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::link;
 use crate::tokenizer::Tokenizer;
 
+/// Event names a caller gives a title.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Names {
+    /// Whole title.
+    pub whole: Name,
+    /// Opening and closing marker.
+    pub marker: Name,
+    /// Text between the markers.
+    pub text: Name,
+}
+
+/// Title being read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Title {
+    names: Names,
+    /// Closing marker.
+    close: u8,
+    /// Whether data before connects to the next data.
+    connect: bool,
+}
+
 /// Start of title.
 ///
 /// ```markdown
 /// > | "a"
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer, names: Names) -> State {
     match tokenizer.current {
-        Some(b'"' | b'\'' | b'(') => {
-            let marker = tokenizer.current.unwrap();
-            tokenizer.tokenize_state.marker = if marker == b'(' { b')' } else { marker };
-            tokenizer.enter(tokenizer.tokenize_state.token_1.clone());
-            tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
+        Some(marker @ (b'"' | b'\'' | b'(')) => {
+            tokenizer.enter(names.whole);
+            tokenizer.enter(names.marker);
             tokenizer.consume();
-            tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-            State::Next(StateName::TitleBegin)
+            tokenizer.exit(names.marker);
+            State::Next(StateName::Title(Step::Begin(Title {
+                names,
+                close: if marker == b'(' { b')' } else { marker },
+                connect: false,
+            })))
         }
         _ => State::Nok,
     }
@@ -70,18 +93,16 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | "a"
 ///      ^
 /// ```
-pub fn begin(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
-        tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
+fn begin(tokenizer: &mut Tokenizer, title: Title) -> State {
+    if tokenizer.current == Some(title.close) {
+        tokenizer.enter(title.names.marker);
         tokenizer.consume();
-        tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
-        tokenizer.tokenize_state.marker = 0;
-        tokenizer.tokenize_state.connect = false;
+        tokenizer.exit(title.names.marker);
+        tokenizer.exit(title.names.whole);
         State::Ok
     } else {
-        tokenizer.enter(tokenizer.tokenize_state.token_3.clone());
-        State::Retry(StateName::TitleAtBreak)
+        tokenizer.enter(title.names.text);
+        State::Retry(StateName::Title(Step::AtBreak(title)))
     }
 }
 
@@ -91,23 +112,20 @@ pub fn begin(tokenizer: &mut Tokenizer) -> State {
 /// > | "a"
 ///      ^
 /// ```
-pub fn at_break(tokenizer: &mut Tokenizer) -> State {
+fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
     if let Some(byte) = tokenizer.current {
-        if byte == tokenizer.tokenize_state.marker {
-            tokenizer.exit(tokenizer.tokenize_state.token_3.clone());
-            State::Retry(StateName::TitleBegin)
+        if byte == title.close {
+            tokenizer.exit(title.names.text);
+            State::Retry(StateName::Title(Step::Begin(title)))
         } else if byte == b'\n' {
             tokenizer.attempt(
-                State::Next(StateName::TitleAfterEol),
-                State::Next(StateName::TitleNok),
+                State::Next(StateName::Title(Step::AfterEol(title))),
+                State::Nok,
             );
-            State::Retry(space_or_tab_eol_with_options(
-                tokenizer,
-                Options {
-                    content: Some(Content::String),
-                    connect: tokenizer.tokenize_state.connect,
-                },
-            ))
+            State::Retry(space_or_tab_eol_with_options(Options {
+                content: Some(Content::String),
+                connect: title.connect,
+            }))
         } else {
             tokenizer.enter_link(
                 Name::Data,
@@ -118,17 +136,17 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
                 },
             );
 
-            if tokenizer.tokenize_state.connect {
+            if title.connect {
                 let index = tokenizer.events.len() - 1;
                 link(&mut tokenizer.events, index);
             } else {
-                tokenizer.tokenize_state.connect = true;
+                title.connect = true;
             }
 
-            State::Retry(StateName::TitleInside)
+            State::Retry(StateName::Title(Step::Inside(title)))
         }
     } else {
-        State::Retry(StateName::TitleNok)
+        State::Nok
     }
 }
 
@@ -139,21 +157,9 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
 /// > | b"
 ///     ^
 /// ```
-pub fn after_eol(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.connect = true;
-    State::Retry(StateName::TitleAtBreak)
-}
-
-/// In title, at something that isn’t allowed.
-///
-/// ```markdown
-/// > | "a
-///       ^
-/// ```
-pub fn nok(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.marker = 0;
-    tokenizer.tokenize_state.connect = false;
-    State::Nok
+fn after_eol(mut title: Title) -> State {
+    title.connect = true;
+    State::Retry(StateName::Title(Step::AtBreak(title)))
 }
 
 /// In text.
@@ -162,20 +168,18 @@ pub fn nok(tokenizer: &mut Tokenizer) -> State {
 /// > | "a"
 ///      ^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker)
-        || matches!(tokenizer.current, None | Some(b'\n'))
-    {
+fn inside(tokenizer: &mut Tokenizer, title: Title) -> State {
+    if tokenizer.current == Some(title.close) || matches!(tokenizer.current, None | Some(b'\n')) {
         tokenizer.exit(Name::Data);
-        State::Retry(StateName::TitleAtBreak)
+        State::Retry(StateName::Title(Step::AtBreak(title)))
     } else {
-        let name = if tokenizer.current == Some(b'\\') {
-            StateName::TitleEscape
+        let next = if tokenizer.current == Some(b'\\') {
+            Step::Escape(title)
         } else {
-            StateName::TitleInside
+            Step::Inside(title)
         };
         tokenizer.consume();
-        State::Next(name)
+        State::Next(StateName::Title(next))
     }
 }
 
@@ -185,12 +189,41 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
 /// > | "a\*b"
 ///      ^
 /// ```
-pub fn escape(tokenizer: &mut Tokenizer) -> State {
+fn escape(tokenizer: &mut Tokenizer, title: Title) -> State {
     match tokenizer.current {
         Some(b'"' | b'\'' | b')' | b'\\') => {
             tokenizer.consume();
-            State::Next(StateName::TitleInside)
+            State::Next(StateName::Title(Step::Inside(title)))
         }
-        _ => State::Retry(StateName::TitleInside),
+        _ => State::Retry(StateName::Title(Step::Inside(title))),
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start(Names),
+    Begin(Title),
+    AfterEol(Title),
+    AtBreak(Title),
+    Escape(Title),
+    Inside(Title),
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Title(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start(names) => start(tokenizer, names),
+        Step::Begin(title) => begin(tokenizer, title),
+        Step::AfterEol(title) => after_eol(title),
+        Step::AtBreak(title) => at_break(tokenizer, title),
+        Step::Escape(title) => escape(tokenizer, title),
+        Step::Inside(title) => inside(tokenizer, title),
     }
 }

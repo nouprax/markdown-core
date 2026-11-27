@@ -18,17 +18,17 @@ use alloc::vec;
 /// > | abc
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
     // Make sure to eat the first `markers`.
     if let Some(byte) = tokenizer.current {
-        if tokenizer.tokenize_state.markers.contains(&byte) {
+        if markers.contains(&byte) {
             tokenizer.enter(Name::Data);
             tokenizer.consume();
-            return State::Next(StateName::DataInside);
+            return State::Next(StateName::Data(Step::Inside { markers }));
         }
     }
 
-    State::Retry(StateName::DataAtBreak)
+    State::Retry(StateName::Data(Step::AtBreak { markers }))
 }
 
 /// Before something.
@@ -37,17 +37,17 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | abc
 ///     ^
 /// ```
-pub fn at_break(tokenizer: &mut Tokenizer) -> State {
+fn at_break(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
     if let Some(byte) = tokenizer.current {
-        if !tokenizer.tokenize_state.markers.contains(&byte) {
+        if !markers.contains(&byte) {
             if byte == b'\n' {
                 tokenizer.enter(Name::LineEnding);
                 tokenizer.consume();
                 tokenizer.exit(Name::LineEnding);
-                return State::Next(StateName::DataAtBreak);
+                return State::Next(StateName::Data(Step::AtBreak { markers }));
             }
             tokenizer.enter(Name::Data);
-            return State::Retry(StateName::DataInside);
+            return State::Retry(StateName::Data(Step::Inside { markers }));
         }
     }
 
@@ -60,16 +60,16 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
 /// > | abc
 ///     ^^^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
+fn inside(tokenizer: &mut Tokenizer, markers: &'static [u8]) -> State {
     if let Some(byte) = tokenizer.current {
-        if byte != b'\n' && !tokenizer.tokenize_state.markers.contains(&byte) {
+        if byte != b'\n' && !markers.contains(&byte) {
             tokenizer.consume();
-            return State::Next(StateName::DataInside);
+            return State::Next(StateName::Data(Step::Inside { markers }));
         }
     }
 
     tokenizer.exit(Name::Data);
-    State::Retry(StateName::DataAtBreak)
+    State::Retry(StateName::Data(Step::AtBreak { markers }))
 }
 
 /// Merge adjacent data events.
@@ -107,4 +107,27 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
     tokenizer.map.consume(&mut tokenizer.events);
     None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start { markers: &'static [u8] },
+    Inside { markers: &'static [u8] },
+    AtBreak { markers: &'static [u8] },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Data(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start { markers } => start(tokenizer, markers),
+        Step::Inside { markers } => inside(tokenizer, markers),
+        Step::AtBreak { markers } => at_break(tokenizer, markers),
+    }
 }

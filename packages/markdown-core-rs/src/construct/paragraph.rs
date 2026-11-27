@@ -53,10 +53,10 @@ use crate::tokenizer::Tokenizer;
 ///     ^
 ///   | def
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     debug_assert!(tokenizer.current.is_some());
     tokenizer.enter(Name::Paragraph);
-    State::Retry(StateName::ParagraphLineStart)
+    State::Retry(StateName::Paragraph(Step::LineStart { connect: false }))
 }
 
 /// Start of a line in a paragraph.
@@ -67,7 +67,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | def
 ///     ^
 /// ```
-pub fn line_start(tokenizer: &mut Tokenizer) -> State {
+fn line_start(tokenizer: &mut Tokenizer, connect: bool) -> State {
     debug_assert!(tokenizer.current.is_some());
     tokenizer.enter_link(
         Name::Data,
@@ -78,14 +78,12 @@ pub fn line_start(tokenizer: &mut Tokenizer) -> State {
         },
     );
 
-    if tokenizer.tokenize_state.connect {
+    if connect {
         let index = tokenizer.events.len() - 1;
         link(&mut tokenizer.events, index);
-    } else {
-        tokenizer.tokenize_state.connect = true;
     }
 
-    State::Retry(StateName::ParagraphInside)
+    State::Retry(StateName::Paragraph(Step::Inside))
 }
 
 /// In paragraph.
@@ -94,10 +92,9 @@ pub fn line_start(tokenizer: &mut Tokenizer) -> State {
 /// > | abc
 ///     ^^^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
+fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
-            tokenizer.tokenize_state.connect = false;
             tokenizer.exit(Name::Data);
             tokenizer.exit(Name::Paragraph);
             State::Ok
@@ -105,11 +102,34 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
         Some(b'\n') => {
             tokenizer.consume();
             tokenizer.exit(Name::Data);
-            State::Next(StateName::ParagraphLineStart)
+            State::Next(StateName::Paragraph(Step::LineStart { connect: true }))
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::ParagraphInside)
+            State::Next(StateName::Paragraph(Step::Inside))
         }
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    LineStart { connect: bool },
+    Inside,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Paragraph(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::LineStart { connect } => line_start(tokenizer, connect),
+        Step::Inside => inside(tokenizer),
     }
 }

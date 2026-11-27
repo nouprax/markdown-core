@@ -18,6 +18,10 @@
 //! * [Raw (flow)][crate::construct::raw_flow] (code (fenced), math (flow))
 //! * [Thematic break][crate::construct::thematic_break]
 
+use crate::construct::{
+    blank_line, code_indented, content, gfm_table, heading_atx, heading_setext, html_flow,
+    raw_flow, thematic_break,
+};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -32,42 +36,42 @@ use crate::tokenizer::Tokenizer;
 /// > | ***
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'#') => {
             tokenizer.attempt(
-                State::Next(StateName::FlowAfter),
-                State::Next(StateName::FlowBeforeContent),
+                State::Next(StateName::Flow(Step::After)),
+                State::Next(StateName::Flow(Step::BeforeContent)),
             );
-            State::Retry(StateName::HeadingAtxStart)
+            State::Retry(StateName::HeadingAtx(heading_atx::Step::Start))
         }
         Some(b'$' | b'`' | b'~') => {
             tokenizer.attempt(
-                State::Next(StateName::FlowAfter),
-                State::Next(StateName::FlowBeforeContent),
+                State::Next(StateName::Flow(Step::After)),
+                State::Next(StateName::Flow(Step::BeforeContent)),
             );
-            State::Retry(StateName::RawFlowStart)
+            State::Retry(StateName::RawFlow(raw_flow::Step::Start))
         }
         // Note: `-` is also used in setext heading underline so it’s not
         // included here.
         Some(b'*' | b'_') => {
             tokenizer.attempt(
-                State::Next(StateName::FlowAfter),
-                State::Next(StateName::FlowBeforeContent),
+                State::Next(StateName::Flow(Step::After)),
+                State::Next(StateName::Flow(Step::BeforeContent)),
             );
-            State::Retry(StateName::ThematicBreakStart)
+            State::Retry(StateName::ThematicBreak(thematic_break::Step::Start))
         }
         Some(b'<') => {
             tokenizer.attempt(
-                State::Next(StateName::FlowAfter),
-                State::Next(StateName::FlowBeforeHeadingAtx),
+                State::Next(StateName::Flow(Step::After)),
+                State::Next(StateName::Flow(Step::BeforeHeadingAtx)),
             );
-            State::Retry(StateName::HtmlFlowStart)
+            State::Retry(StateName::HtmlFlow(html_flow::Step::Start))
         }
         // Actual parsing: blank line? Indented code? Indented anything?
         // Tables, setext heading underlines, definitions, and Contents are
         // particularly weird.
-        _ => State::Retry(StateName::FlowBlankLineBefore),
+        _ => State::Retry(StateName::Flow(Step::BlankLineBefore)),
     }
 }
 
@@ -77,12 +81,12 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | ␠␠␊
 ///     ^
 /// ```
-pub fn blank_line_before(tokenizer: &mut Tokenizer) -> State {
+fn blank_line_before(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowBlankLineAfter),
-        State::Next(StateName::FlowBeforeCodeIndented),
+        State::Next(StateName::Flow(Step::BlankLineAfter)),
+        State::Next(StateName::Flow(Step::BeforeCodeIndented)),
     );
-    State::Retry(StateName::BlankLineStart)
+    State::Retry(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// At code (indented).
@@ -91,12 +95,12 @@ pub fn blank_line_before(tokenizer: &mut Tokenizer) -> State {
 /// > | ␠␠␠␠a
 ///     ^
 /// ```
-pub fn before_code_indented(tokenizer: &mut Tokenizer) -> State {
+fn before_code_indented(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeRaw),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeRaw)),
     );
-    State::Retry(StateName::CodeIndentedStart)
+    State::Retry(StateName::CodeIndented(code_indented::Step::Start))
 }
 
 /// At raw.
@@ -105,12 +109,12 @@ pub fn before_code_indented(tokenizer: &mut Tokenizer) -> State {
 /// > | ```
 ///     ^
 /// ````
-pub fn before_raw(tokenizer: &mut Tokenizer) -> State {
+fn before_raw(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeHtml),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeHtml)),
     );
-    State::Retry(StateName::RawFlowStart)
+    State::Retry(StateName::RawFlow(raw_flow::Step::Start))
 }
 
 /// At html (flow).
@@ -119,12 +123,12 @@ pub fn before_raw(tokenizer: &mut Tokenizer) -> State {
 /// > | <a>
 ///     ^
 /// ```
-pub fn before_html(tokenizer: &mut Tokenizer) -> State {
+fn before_html(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeHeadingAtx),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeHeadingAtx)),
     );
-    State::Retry(StateName::HtmlFlowStart)
+    State::Retry(StateName::HtmlFlow(html_flow::Step::Start))
 }
 
 /// At heading (atx).
@@ -133,12 +137,12 @@ pub fn before_html(tokenizer: &mut Tokenizer) -> State {
 /// > | # a
 ///     ^
 /// ```
-pub fn before_heading_atx(tokenizer: &mut Tokenizer) -> State {
+fn before_heading_atx(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeHeadingSetext),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeHeadingSetext)),
     );
-    State::Retry(StateName::HeadingAtxStart)
+    State::Retry(StateName::HeadingAtx(heading_atx::Step::Start))
 }
 
 /// At heading (setext).
@@ -148,12 +152,12 @@ pub fn before_heading_atx(tokenizer: &mut Tokenizer) -> State {
 /// > | =
 ///     ^
 /// ```
-pub fn before_heading_setext(tokenizer: &mut Tokenizer) -> State {
+fn before_heading_setext(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeThematicBreak),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeThematicBreak)),
     );
-    State::Retry(StateName::HeadingSetextStart)
+    State::Retry(StateName::HeadingSetext(heading_setext::Step::Start))
 }
 
 /// At thematic break.
@@ -162,12 +166,12 @@ pub fn before_heading_setext(tokenizer: &mut Tokenizer) -> State {
 /// > | ***
 ///     ^
 /// ```
-pub fn before_thematic_break(tokenizer: &mut Tokenizer) -> State {
+fn before_thematic_break(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeGfmTable),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeGfmTable)),
     );
-    State::Retry(StateName::ThematicBreakStart)
+    State::Retry(StateName::ThematicBreak(thematic_break::Step::Start))
 }
 
 /// At GFM table.
@@ -176,12 +180,12 @@ pub fn before_thematic_break(tokenizer: &mut Tokenizer) -> State {
 /// > | | a |
 ///     ^
 /// ```
-pub fn before_gfm_table(tokenizer: &mut Tokenizer) -> State {
+fn before_gfm_table(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::FlowAfter),
-        State::Next(StateName::FlowBeforeContent),
+        State::Next(StateName::Flow(Step::After)),
+        State::Next(StateName::Flow(Step::BeforeContent)),
     );
-    State::Retry(StateName::GfmTableStart)
+    State::Retry(StateName::GfmTable(gfm_table::Step::Start))
 }
 
 /// At content.
@@ -190,9 +194,9 @@ pub fn before_gfm_table(tokenizer: &mut Tokenizer) -> State {
 /// > | a
 ///     ^
 /// ```
-pub fn before_content(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(State::Next(StateName::FlowAfter), State::Nok);
-    State::Retry(StateName::ContentChunkStart)
+fn before_content(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(State::Next(StateName::Flow(Step::After)), State::Nok);
+    State::Retry(StateName::Content(content::Step::ChunkStart))
 }
 
 /// After blank line.
@@ -201,7 +205,7 @@ pub fn before_content(tokenizer: &mut Tokenizer) -> State {
 /// > | ␠␠␊
 ///       ^
 /// ```
-pub fn blank_line_after(tokenizer: &mut Tokenizer) -> State {
+fn blank_line_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Ok,
         Some(b'\n') => {
@@ -210,7 +214,7 @@ pub fn blank_line_after(tokenizer: &mut Tokenizer) -> State {
             tokenizer.exit(Name::BlankLineEnding);
             // Feel free to interrupt.
             tokenizer.interrupt = false;
-            State::Next(StateName::FlowStart)
+            State::Next(StateName::Flow(Step::Start))
         }
         _ => unreachable!("expected eol/eof"),
     }
@@ -222,15 +226,56 @@ pub fn blank_line_after(tokenizer: &mut Tokenizer) -> State {
 /// > | # a␊
 ///        ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Ok,
         Some(b'\n') => {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
             tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::FlowStart)
+            State::Next(StateName::Flow(Step::Start))
         }
         _ => unreachable!("expected eol/eof"),
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    BeforeGfmTable,
+    BeforeCodeIndented,
+    BeforeRaw,
+    BeforeHtml,
+    BeforeHeadingAtx,
+    BeforeHeadingSetext,
+    BeforeThematicBreak,
+    After,
+    BlankLineBefore,
+    BlankLineAfter,
+    BeforeContent,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Flow(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::BeforeGfmTable => before_gfm_table(tokenizer),
+        Step::BeforeCodeIndented => before_code_indented(tokenizer),
+        Step::BeforeRaw => before_raw(tokenizer),
+        Step::BeforeHtml => before_html(tokenizer),
+        Step::BeforeHeadingAtx => before_heading_atx(tokenizer),
+        Step::BeforeHeadingSetext => before_heading_setext(tokenizer),
+        Step::BeforeThematicBreak => before_thematic_break(tokenizer),
+        Step::After => after(tokenizer),
+        Step::BlankLineBefore => blank_line_before(tokenizer),
+        Step::BlankLineAfter => blank_line_after(tokenizer),
+        Step::BeforeContent => before_content(tokenizer),
     }
 }

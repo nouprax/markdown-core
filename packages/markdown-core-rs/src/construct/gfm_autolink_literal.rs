@@ -159,22 +159,25 @@ use alloc::vec::Vec;
 /// > | https://example.com/a?b#c
 ///     ^
 /// ```
-pub fn protocol_start(tokenizer: &mut Tokenizer) -> State {
+fn protocol_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'H' | b'h'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L214>.
             && !matches!(tokenizer.previous, Some(b'A'..=b'Z' | b'a'..=b'z'))
     {
         tokenizer.enter(Name::GfmAutolinkLiteralProtocol);
         tokenizer.attempt(
-            State::Next(StateName::GfmAutolinkLiteralProtocolAfter),
+            State::Next(StateName::GfmAutolinkLiteral(Step::ProtocolAfter)),
             State::Nok,
         );
         tokenizer.attempt(
-            State::Next(StateName::GfmAutolinkLiteralDomainInside),
+            State::Next(StateName::GfmAutolinkLiteral(Step::DomainInside {
+                domain: Domain::default(),
+            })),
             State::Nok,
         );
-        tokenizer.tokenize_state.start = tokenizer.point.index;
-        State::Retry(StateName::GfmAutolinkLiteralProtocolPrefixInside)
+        State::Retry(StateName::GfmAutolinkLiteral(Step::ProtocolPrefixInside {
+            start: tokenizer.point.index,
+        }))
     } else {
         State::Nok
     }
@@ -186,7 +189,7 @@ pub fn protocol_start(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a?b#c
 ///                              ^
 /// ```
-pub fn protocol_after(tokenizer: &mut Tokenizer) -> State {
+fn protocol_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.exit(Name::GfmAutolinkLiteralProtocol);
     State::Ok
 }
@@ -197,36 +200,33 @@ pub fn protocol_after(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a?b#c
 ///     ^^^^^
 /// ```
-pub fn protocol_prefix_inside(tokenizer: &mut Tokenizer) -> State {
+fn protocol_prefix_inside(tokenizer: &mut Tokenizer, start: usize) -> State {
     match tokenizer.current {
         Some(b'A'..=b'Z' | b'a'..=b'z')
             // `5` is size of `https`
-            if tokenizer.point.index - tokenizer.tokenize_state.start < 5 =>
+            if tokenizer.point.index - start < 5 =>
         {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralProtocolPrefixInside)
+            State::Next(StateName::GfmAutolinkLiteral(Step::ProtocolPrefixInside { start }))
         }
         Some(b':') => {
             let slice = Slice::from_indices(
                 tokenizer.parse_state.bytes,
-                tokenizer.tokenize_state.start,
+                start,
                 tokenizer.point.index,
             );
             let name = slice.as_str().to_ascii_lowercase();
 
-            tokenizer.tokenize_state.start = 0;
-
             if name == "http" || name == "https" {
                 tokenizer.consume();
-                State::Next(StateName::GfmAutolinkLiteralProtocolSlashesInside)
+                State::Next(StateName::GfmAutolinkLiteral(Step::ProtocolSlashesInside {
+                    size: 0,
+                }))
             } else {
                 State::Nok
             }
         }
-        _ => {
-            tokenizer.tokenize_state.start = 0;
-            State::Nok
-        }
+        _ => State::Nok,
     }
 }
 
@@ -236,18 +236,17 @@ pub fn protocol_prefix_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a?b#c
 ///           ^^
 /// ```
-pub fn protocol_slashes_inside(tokenizer: &mut Tokenizer) -> State {
+fn protocol_slashes_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
     if tokenizer.current == Some(b'/') {
         tokenizer.consume();
-        if tokenizer.tokenize_state.size == 0 {
-            tokenizer.tokenize_state.size += 1;
-            State::Next(StateName::GfmAutolinkLiteralProtocolSlashesInside)
+        if size == 0 {
+            State::Next(StateName::GfmAutolinkLiteral(Step::ProtocolSlashesInside {
+                size: 1,
+            }))
         } else {
-            tokenizer.tokenize_state.size = 0;
             State::Ok
         }
     } else {
-        tokenizer.tokenize_state.size = 0;
         State::Nok
     }
 }
@@ -258,23 +257,27 @@ pub fn protocol_slashes_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | www.example.com/a?b#c
 ///     ^
 /// ```
-pub fn www_start(tokenizer: &mut Tokenizer) -> State {
+fn www_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'W' | b'w'))
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L156>.
             && matches!(tokenizer.previous, None | Some(b'\t' | b'\n' | b' ' | b'(' | b'*' | b'_' | b'[' | b']' | b'~'))
     {
         tokenizer.enter(Name::GfmAutolinkLiteralWww);
         tokenizer.attempt(
-            State::Next(StateName::GfmAutolinkLiteralWwwAfter),
+            State::Next(StateName::GfmAutolinkLiteral(Step::WwwAfter)),
             State::Nok,
         );
         // Note: we *check*, so we can discard the `www.` we parsed.
         // If it worked, we consider it as a part of the domain.
         tokenizer.check(
-            State::Next(StateName::GfmAutolinkLiteralDomainInside),
+            State::Next(StateName::GfmAutolinkLiteral(Step::DomainInside {
+                domain: Domain::default(),
+            })),
             State::Nok,
         );
-        State::Retry(StateName::GfmAutolinkLiteralWwwPrefixInside)
+        State::Retry(StateName::GfmAutolinkLiteral(Step::WwwPrefixInside {
+            size: 0,
+        }))
     } else {
         State::Nok
     }
@@ -286,7 +289,7 @@ pub fn www_start(tokenizer: &mut Tokenizer) -> State {
 /// > | www.example.com/a?b#c
 ///                          ^
 /// ```
-pub fn www_after(tokenizer: &mut Tokenizer) -> State {
+fn www_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.exit(Name::GfmAutolinkLiteralWww);
     State::Ok
 }
@@ -297,22 +300,19 @@ pub fn www_after(tokenizer: &mut Tokenizer) -> State {
 /// > | www.example.com
 ///     ^^^^
 /// ```
-pub fn www_prefix_inside(tokenizer: &mut Tokenizer) -> State {
+fn www_prefix_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
     match tokenizer.current {
-        Some(b'.') if tokenizer.tokenize_state.size == 3 => {
-            tokenizer.tokenize_state.size = 0;
+        Some(b'.') if size == 3 => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralWwwPrefixAfter)
+            State::Next(StateName::GfmAutolinkLiteral(Step::WwwPrefixAfter))
         }
-        Some(b'W' | b'w') if tokenizer.tokenize_state.size < 3 => {
-            tokenizer.tokenize_state.size += 1;
+        Some(b'W' | b'w') if size < 3 => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralWwwPrefixInside)
+            State::Next(StateName::GfmAutolinkLiteral(Step::WwwPrefixInside {
+                size: size + 1,
+            }))
         }
-        _ => {
-            tokenizer.tokenize_state.size = 0;
-            State::Nok
-        }
+        _ => State::Nok,
     }
 }
 
@@ -322,7 +322,7 @@ pub fn www_prefix_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | www.example.com
 ///         ^
 /// ```
-pub fn www_prefix_after(tokenizer: &mut Tokenizer) -> State {
+fn www_prefix_after(tokenizer: &mut Tokenizer) -> State {
     // If there is *anything*, we can link.
     if tokenizer.current.is_none() {
         State::Nok
@@ -337,33 +337,35 @@ pub fn www_prefix_after(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a
 ///             ^^^^^^^^^^^
 /// ```
-pub fn domain_inside(tokenizer: &mut Tokenizer) -> State {
+fn domain_inside(tokenizer: &mut Tokenizer, mut domain: Domain) -> State {
     match tokenizer.current {
         // Check whether this marker, which is a trailing punctuation
         // marker, optionally followed by more trailing markers, and then
         // followed by an end.
         Some(b'.' | b'_') => {
             tokenizer.check(
-                State::Next(StateName::GfmAutolinkLiteralDomainAfter),
-                State::Next(StateName::GfmAutolinkLiteralDomainAtPunctuation),
+                State::Next(StateName::GfmAutolinkLiteral(Step::DomainAfter { domain })),
+                State::Next(StateName::GfmAutolinkLiteral(Step::DomainAtPunctuation {
+                    domain,
+                })),
             );
-            State::Retry(StateName::GfmAutolinkLiteralTrail)
+            State::Retry(StateName::GfmAutolinkLiteral(Step::Trail))
         }
         // Dashes and continuation bytes are fine.
         Some(b'-' | 0x80..=0xBF) => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralDomainInside)
+            State::Next(StateName::GfmAutolinkLiteral(Step::DomainInside { domain }))
         }
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
             if kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
                 == CharacterKind::Other
             {
-                tokenizer.tokenize_state.seen = true;
+                domain.seen = true;
                 tokenizer.consume();
-                State::Next(StateName::GfmAutolinkLiteralDomainInside)
+                State::Next(StateName::GfmAutolinkLiteral(Step::DomainInside { domain }))
             } else {
-                State::Retry(StateName::GfmAutolinkLiteralDomainAfter)
+                State::Retry(StateName::GfmAutolinkLiteral(Step::DomainAfter { domain }))
             }
         }
     }
@@ -375,20 +377,20 @@ pub fn domain_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com
 ///                    ^
 /// ```
-pub fn domain_at_punctuation(tokenizer: &mut Tokenizer) -> State {
+fn domain_at_punctuation(tokenizer: &mut Tokenizer, mut domain: Domain) -> State {
     // There is an underscore in the last segment of the domain
     if matches!(tokenizer.current, Some(b'_')) {
-        tokenizer.tokenize_state.marker = b'_';
+        domain.last = true;
     }
     // Otherwise, it’s a `.`: save the last segment underscore in the
     // penultimate segment slot.
     else {
-        tokenizer.tokenize_state.marker_b = tokenizer.tokenize_state.marker;
-        tokenizer.tokenize_state.marker = 0;
+        domain.penult = domain.last;
+        domain.last = false;
     }
 
     tokenizer.consume();
-    State::Next(StateName::GfmAutolinkLiteralDomainInside)
+    State::Next(StateName::GfmAutolinkLiteral(Step::DomainInside { domain }))
 }
 
 /// After domain
@@ -397,24 +399,21 @@ pub fn domain_at_punctuation(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a
 ///                        ^
 /// ```
-pub fn domain_after(tokenizer: &mut Tokenizer) -> State {
+fn domain_after(_tokenizer: &mut Tokenizer, domain: Domain) -> State {
     // No underscores allowed in last two segments.
-    let result = if tokenizer.tokenize_state.marker_b == b'_'
-        || tokenizer.tokenize_state.marker == b'_'
+    if domain.penult
+        || domain.last
         // At least one character must be seen.
-        || !tokenizer.tokenize_state.seen
+        || !domain.seen
     // Note: that’s GH says a dot is needed, but it’s not true:
     // <https://github.com/github/cmark-gfm/issues/279>
     {
         State::Nok
     } else {
-        State::Retry(StateName::GfmAutolinkLiteralPathInside)
-    };
-
-    tokenizer.tokenize_state.seen = false;
-    tokenizer.tokenize_state.marker = 0;
-    tokenizer.tokenize_state.marker_b = 0;
-    result
+        State::Retry(StateName::GfmAutolinkLiteral(Step::PathInside {
+            path: Path::default(),
+        }))
+    }
 }
 
 /// In path.
@@ -423,18 +422,18 @@ pub fn domain_after(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a
 ///                        ^^
 /// ```
-pub fn path_inside(tokenizer: &mut Tokenizer) -> State {
+fn path_inside(tokenizer: &mut Tokenizer, mut path: Path) -> State {
     match tokenizer.current {
         // Continuation bytes are fine, we’ve already checked the first one.
         Some(0x80..=0xBF) => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralPathInside)
+            State::Next(StateName::GfmAutolinkLiteral(Step::PathInside { path }))
         }
         // Count opening parens.
         Some(b'(') => {
-            tokenizer.tokenize_state.size += 1;
+            path.open += 1;
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralPathInside)
+            State::Next(StateName::GfmAutolinkLiteral(Step::PathInside { path }))
         }
         // Check whether this trailing punctuation marker is optionally
         // followed by more trailing markers, and then followed
@@ -445,18 +444,20 @@ pub fn path_inside(tokenizer: &mut Tokenizer) -> State {
             b'!' | b'"' | b'&' | b'\'' | b')' | b'*' | b',' | b'.' | b':' | b';' | b'<' | b'?'
             | b']' | b'_' | b'~',
         ) => {
-            let next = if tokenizer.current == Some(b')')
-                && tokenizer.tokenize_state.size_b < tokenizer.tokenize_state.size
-            {
-                StateName::GfmAutolinkLiteralPathAtPunctuation
+            let next = if tokenizer.current == Some(b')') && path.close < path.open {
+                State::Next(StateName::GfmAutolinkLiteral(Step::PathAtPunctuation {
+                    path,
+                }))
             } else {
-                StateName::GfmAutolinkLiteralPathAfter
+                State::Ok
             };
             tokenizer.check(
-                State::Next(next),
-                State::Next(StateName::GfmAutolinkLiteralPathAtPunctuation),
+                next,
+                State::Next(StateName::GfmAutolinkLiteral(Step::PathAtPunctuation {
+                    path,
+                })),
             );
-            State::Retry(StateName::GfmAutolinkLiteralTrail)
+            State::Retry(StateName::GfmAutolinkLiteral(Step::Trail))
         }
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
@@ -464,10 +465,10 @@ pub fn path_inside(tokenizer: &mut Tokenizer) -> State {
                 || kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
                     == CharacterKind::Whitespace
             {
-                State::Retry(StateName::GfmAutolinkLiteralPathAfter)
+                State::Ok
             } else {
                 tokenizer.consume();
-                State::Next(StateName::GfmAutolinkLiteralPathInside)
+                State::Next(StateName::GfmAutolinkLiteral(Step::PathInside { path }))
             }
         }
     }
@@ -479,26 +480,14 @@ pub fn path_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com/a"b
 ///                          ^
 /// ```
-pub fn path_at_punctuation(tokenizer: &mut Tokenizer) -> State {
+fn path_at_punctuation(tokenizer: &mut Tokenizer, mut path: Path) -> State {
     // Count closing parens.
     if tokenizer.current == Some(b')') {
-        tokenizer.tokenize_state.size_b += 1;
+        path.close += 1;
     }
 
     tokenizer.consume();
-    State::Next(StateName::GfmAutolinkLiteralPathInside)
-}
-
-/// At end of path, reset parens.
-///
-/// ```markdown
-/// > | https://example.com/asd(qwe).
-///                                 ^
-/// ```
-pub fn path_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.size = 0;
-    tokenizer.tokenize_state.size_b = 0;
-    State::Ok
+    State::Next(StateName::GfmAutolinkLiteral(Step::PathInside { path }))
 }
 
 /// In trail of domain or path.
@@ -507,21 +496,21 @@ pub fn path_after(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com").
 ///                        ^
 /// ```
-pub fn trail(tokenizer: &mut Tokenizer) -> State {
+fn trail(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // Regular trailing punctuation.
         Some(
             b'!' | b'"' | b'\'' | b')' | b'*' | b',' | b'.' | b':' | b';' | b'?' | b'_' | b'~',
         ) => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralTrail)
+            State::Next(StateName::GfmAutolinkLiteral(Step::Trail))
         }
         // `&` followed by one or more alphabeticals and then a `;`, is
         // as a whole considered as trailing punctuation.
         // In all other cases, it is considered as continuation of the URL.
         Some(b'&') => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralTrailCharRefStart)
+            State::Next(StateName::GfmAutolinkLiteral(Step::TrailCharRefStart))
         }
         // `<` is an end.
         Some(b'<') => State::Ok,
@@ -530,7 +519,7 @@ pub fn trail(tokenizer: &mut Tokenizer) -> State {
         // Check that it is not followed by `(` or `[`.
         Some(b']') => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralTrailBracketAfter)
+            State::Next(StateName::GfmAutolinkLiteral(Step::TrailBracketAfter))
         }
         _ => {
             // Whitespace is the end of the URL, anything else is continuation.
@@ -554,7 +543,7 @@ pub fn trail(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com](
 ///                         ^
 /// ```
-pub fn trail_bracket_after(tokenizer: &mut Tokenizer) -> State {
+fn trail_bracket_after(tokenizer: &mut Tokenizer) -> State {
     // Whitespace or something that could start a resource or reference is the end.
     // Switch back to trail otherwise.
     if matches!(
@@ -563,7 +552,7 @@ pub fn trail_bracket_after(tokenizer: &mut Tokenizer) -> State {
     ) {
         State::Ok
     } else {
-        State::Retry(StateName::GfmAutolinkLiteralTrail)
+        State::Retry(StateName::GfmAutolinkLiteral(Step::Trail))
     }
 }
 
@@ -573,9 +562,9 @@ pub fn trail_bracket_after(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com&amp;).
 ///                         ^
 /// ```
-pub fn trail_char_ref_start(tokenizer: &mut Tokenizer) -> State {
+fn trail_char_ref_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'A'..=b'Z' | b'a'..=b'z')) {
-        State::Retry(StateName::GfmAutolinkLiteralTrailCharRefInside)
+        State::Retry(StateName::GfmAutolinkLiteral(Step::TrailCharRefInside))
     } else {
         State::Nok
     }
@@ -587,16 +576,16 @@ pub fn trail_char_ref_start(tokenizer: &mut Tokenizer) -> State {
 /// > | https://example.com&amp;).
 ///                         ^
 /// ```
-pub fn trail_char_ref_inside(tokenizer: &mut Tokenizer) -> State {
+fn trail_char_ref_inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'A'..=b'Z' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralTrailCharRefInside)
+            State::Next(StateName::GfmAutolinkLiteral(Step::TrailCharRefInside))
         }
         // Switch back to trail if this is well-formed.
         Some(b';') => {
             tokenizer.consume();
-            State::Next(StateName::GfmAutolinkLiteralTrail)
+            State::Next(StateName::GfmAutolinkLiteral(Step::Trail))
         }
         _ => State::Nok,
     }
@@ -678,7 +667,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                             // Add the link.
                             replace.push(Event {
                                 kind: Kind::Enter,
-                                name: range.2.clone(),
+                                name: range.2,
                                 point: point.clone(),
                                 link: None,
                             });
@@ -686,7 +675,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                                 point.shift_to(tokenizer.parse_state.bytes, start_index + range.1);
                             replace.push(Event {
                                 kind: Kind::Exit,
-                                name: range.2.clone(),
+                                name: range.2,
                                 point: point.clone(),
                                 link: None,
                             });
@@ -835,5 +824,76 @@ fn peek_bytes_email_domain(bytes: &[u8], start: usize, xmpp: bool) -> Option<usi
         Some(index)
     } else {
         None
+    }
+}
+
+/// What a domain has seen so far.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Domain {
+    /// Whether a character other than punctuation was seen.
+    seen: bool,
+    /// Whether the last segment has an underscore.
+    last: bool,
+    /// Whether the segment before the last has an underscore.
+    penult: bool,
+}
+
+/// The parens a path has seen so far.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Path {
+    /// Opening parens.
+    open: usize,
+    /// Closing parens.
+    close: usize,
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    ProtocolStart,
+    ProtocolAfter,
+    ProtocolPrefixInside { start: usize },
+    ProtocolSlashesInside { size: usize },
+    WwwAfter,
+    WwwStart,
+    WwwPrefixInside { size: usize },
+    WwwPrefixAfter,
+    DomainInside { domain: Domain },
+    DomainAtPunctuation { domain: Domain },
+    DomainAfter { domain: Domain },
+    PathInside { path: Path },
+    PathAtPunctuation { path: Path },
+    Trail,
+    TrailCharRefStart,
+    TrailCharRefInside,
+    TrailBracketAfter,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::GfmAutolinkLiteral(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::ProtocolStart => protocol_start(tokenizer),
+        Step::ProtocolAfter => protocol_after(tokenizer),
+        Step::ProtocolPrefixInside { start } => protocol_prefix_inside(tokenizer, start),
+        Step::ProtocolSlashesInside { size } => protocol_slashes_inside(tokenizer, size),
+        Step::WwwAfter => www_after(tokenizer),
+        Step::WwwStart => www_start(tokenizer),
+        Step::WwwPrefixInside { size } => www_prefix_inside(tokenizer, size),
+        Step::WwwPrefixAfter => www_prefix_after(tokenizer),
+        Step::DomainInside { domain } => domain_inside(tokenizer, domain),
+        Step::DomainAtPunctuation { domain } => domain_at_punctuation(tokenizer, domain),
+        Step::DomainAfter { domain } => domain_after(tokenizer, domain),
+        Step::PathInside { path } => path_inside(tokenizer, path),
+        Step::PathAtPunctuation { path } => path_at_punctuation(tokenizer, path),
+        Step::Trail => trail(tokenizer),
+        Step::TrailCharRefStart => trail_char_ref_start(tokenizer),
+        Step::TrailCharRefInside => trail_char_ref_inside(tokenizer),
+        Step::TrailBracketAfter => trail_bracket_after(tokenizer),
     }
 }

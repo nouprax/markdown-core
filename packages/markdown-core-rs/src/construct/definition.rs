@@ -103,6 +103,7 @@
 
 use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
+use crate::construct::{partial_destination, partial_label, partial_title};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -118,7 +119,7 @@ use crate::util::{
 /// > | [a]: b "c"
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     // Do not interrupt paragraphs (but do follow definitions).
     if !tokenizer.interrupt
         || (!tokenizer.events.is_empty()
@@ -134,10 +135,10 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
             // Note: arbitrary whitespace allowed even if code (indented) is on.
-            tokenizer.attempt(State::Next(StateName::DefinitionBefore), State::Nok);
-            State::Retry(space_or_tab(tokenizer))
+            tokenizer.attempt(State::Next(StateName::Definition(Step::Before)), State::Nok);
+            State::Retry(space_or_tab())
         } else {
-            State::Retry(StateName::DefinitionBefore)
+            State::Retry(StateName::Definition(Step::Before))
         }
     } else {
         State::Nok
@@ -150,17 +151,20 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///     ^
 /// ```
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'[') => {
-            tokenizer.tokenize_state.token_1 = Name::DefinitionLabel;
-            tokenizer.tokenize_state.token_2 = Name::DefinitionLabelMarker;
-            tokenizer.tokenize_state.token_3 = Name::DefinitionLabelString;
             tokenizer.attempt(
-                State::Next(StateName::DefinitionLabelAfter),
-                State::Next(StateName::DefinitionLabelNok),
+                State::Next(StateName::Definition(Step::LabelAfter)),
+                State::Nok,
             );
-            State::Retry(StateName::LabelStart)
+            State::Retry(StateName::Label(partial_label::Step::Start(
+                partial_label::Names {
+                    whole: Name::DefinitionLabel,
+                    marker: Name::DefinitionLabelMarker,
+                    text: Name::DefinitionLabelString,
+                },
+            )))
         }
         _ => State::Nok,
     }
@@ -172,14 +176,10 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///        ^
 /// ```
-pub fn label_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::Data;
-    tokenizer.tokenize_state.token_2 = Name::Data;
-    tokenizer.tokenize_state.token_3 = Name::Data;
-
+fn label_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b':') => {
-            tokenizer.tokenize_state.end = skip::to_back(
+            let end = skip::to_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
                 &[Name::DefinitionLabelString],
@@ -188,23 +188,10 @@ pub fn label_after(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::DefinitionMarker);
             tokenizer.consume();
             tokenizer.exit(Name::DefinitionMarker);
-            State::Next(StateName::DefinitionMarkerAfter)
+            State::Next(StateName::Definition(Step::MarkerAfter { end }))
         }
         _ => State::Nok,
     }
-}
-
-/// At a non-label
-///
-/// ```markdown
-/// > | []
-///     ^
-/// ```
-pub fn label_nok(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::Data;
-    tokenizer.tokenize_state.token_2 = Name::Data;
-    tokenizer.tokenize_state.token_3 = Name::Data;
-    State::Nok
 }
 
 /// After marker.
@@ -213,12 +200,12 @@ pub fn label_nok(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///         ^
 /// ```
-pub fn marker_after(tokenizer: &mut Tokenizer) -> State {
+fn marker_after(tokenizer: &mut Tokenizer, end: usize) -> State {
     tokenizer.attempt(
-        State::Next(StateName::DefinitionDestinationBefore),
-        State::Next(StateName::DefinitionDestinationBefore),
+        State::Next(StateName::Definition(Step::DestinationBefore { end })),
+        State::Next(StateName::Definition(Step::DestinationBefore { end })),
     );
-    State::Retry(space_or_tab_eol(tokenizer))
+    State::Retry(space_or_tab_eol())
 }
 
 /// Before destination.
@@ -227,18 +214,23 @@ pub fn marker_after(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///          ^
 /// ```
-pub fn destination_before(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::DefinitionDestination;
-    tokenizer.tokenize_state.token_2 = Name::DefinitionDestinationLiteral;
-    tokenizer.tokenize_state.token_3 = Name::DefinitionDestinationLiteralMarker;
-    tokenizer.tokenize_state.token_4 = Name::DefinitionDestinationRaw;
-    tokenizer.tokenize_state.token_5 = Name::DefinitionDestinationString;
-    tokenizer.tokenize_state.size_b = usize::MAX;
+fn destination_before(tokenizer: &mut Tokenizer, end: usize) -> State {
     tokenizer.attempt(
-        State::Next(StateName::DefinitionDestinationAfter),
-        State::Next(StateName::DefinitionDestinationMissing),
+        State::Next(StateName::Definition(Step::DestinationAfter { end })),
+        State::Nok,
     );
-    State::Retry(StateName::DestinationStart)
+    State::Retry(StateName::Destination(partial_destination::Step::Start(
+        partial_destination::Options {
+            names: partial_destination::Names {
+                whole: Name::DefinitionDestination,
+                literal: Name::DefinitionDestinationLiteral,
+                marker: Name::DefinitionDestinationLiteralMarker,
+                raw: Name::DefinitionDestinationRaw,
+                text: Name::DefinitionDestinationString,
+            },
+            limit: usize::MAX,
+        },
+    )))
 }
 
 /// After destination.
@@ -247,30 +239,12 @@ pub fn destination_before(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///           ^
 /// ```
-pub fn destination_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::Data;
-    tokenizer.tokenize_state.token_2 = Name::Data;
-    tokenizer.tokenize_state.token_3 = Name::Data;
-    tokenizer.tokenize_state.token_4 = Name::Data;
-    tokenizer.tokenize_state.token_5 = Name::Data;
-    tokenizer.tokenize_state.size_b = 0;
+fn destination_after(tokenizer: &mut Tokenizer, end: usize) -> State {
     tokenizer.attempt(
-        State::Next(StateName::DefinitionAfter),
-        State::Next(StateName::DefinitionAfter),
+        State::Next(StateName::Definition(Step::After { end })),
+        State::Next(StateName::Definition(Step::After { end })),
     );
-    State::Retry(StateName::DefinitionTitleBefore)
-}
-
-/// Without destination.
-pub fn destination_missing(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::Data;
-    tokenizer.tokenize_state.token_2 = Name::Data;
-    tokenizer.tokenize_state.token_3 = Name::Data;
-    tokenizer.tokenize_state.token_4 = Name::Data;
-    tokenizer.tokenize_state.token_5 = Name::Data;
-    tokenizer.tokenize_state.size_b = 0;
-    tokenizer.tokenize_state.end = 0;
-    State::Nok
+    State::Retry(StateName::Definition(Step::TitleBefore))
 }
 
 /// After definition.
@@ -281,15 +255,15 @@ pub fn destination_missing(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///               ^
 /// ```
-pub fn after(tokenizer: &mut Tokenizer) -> State {
+fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
-            State::Next(StateName::DefinitionAfterWhitespace),
+            State::Next(StateName::Definition(Step::AfterWhitespace { end })),
             State::Nok,
         );
-        State::Retry(space_or_tab(tokenizer))
+        State::Retry(space_or_tab())
     } else {
-        State::Retry(StateName::DefinitionAfterWhitespace)
+        State::Retry(StateName::Definition(Step::AfterWhitespace { end }))
     }
 }
 
@@ -301,7 +275,7 @@ pub fn after(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///               ^
 /// ```
-pub fn after_whitespace(tokenizer: &mut Tokenizer) -> State {
+fn after_whitespace(tokenizer: &mut Tokenizer, end: usize) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Definition);
@@ -309,27 +283,22 @@ pub fn after_whitespace(tokenizer: &mut Tokenizer) -> State {
             // Note: we don’t care about uniqueness.
             // It’s likely that that doesn’t happen very frequently.
             // It is more likely that it wastes precious time.
-            tokenizer.tokenize_state.definitions.push(
+            tokenizer.definitions.links.push(
                 // Note: we don’t care about virtual spaces, so `as_str` is fine.
                 normalize_identifier(
                     Slice::from_position(
                         tokenizer.parse_state.bytes,
-                        &Position::from_exit_event(&tokenizer.events, tokenizer.tokenize_state.end),
+                        &Position::from_exit_event(&tokenizer.events, end),
                     )
                     .as_str(),
                 ),
             );
 
-            tokenizer.tokenize_state.end = 0;
-
             // You’d be interrupting.
             tokenizer.interrupt = true;
             State::Ok
         }
-        _ => {
-            tokenizer.tokenize_state.end = 0;
-            State::Nok
-        }
+        _ => State::Nok,
     }
 }
 
@@ -341,13 +310,13 @@ pub fn after_whitespace(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///           ^
 /// ```
-pub fn title_before(tokenizer: &mut Tokenizer) -> State {
+fn title_before(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b'\n' | b' ')) {
         tokenizer.attempt(
-            State::Next(StateName::DefinitionTitleBeforeMarker),
+            State::Next(StateName::Definition(Step::TitleBeforeMarker)),
             State::Nok,
         );
-        State::Retry(space_or_tab_eol(tokenizer))
+        State::Retry(space_or_tab_eol())
     } else {
         State::Nok
     }
@@ -360,12 +329,18 @@ pub fn title_before(tokenizer: &mut Tokenizer) -> State {
 /// > | "c"
 ///     ^
 /// ```
-pub fn title_before_marker(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::DefinitionTitle;
-    tokenizer.tokenize_state.token_2 = Name::DefinitionTitleMarker;
-    tokenizer.tokenize_state.token_3 = Name::DefinitionTitleString;
-    tokenizer.attempt(State::Next(StateName::DefinitionTitleAfter), State::Nok);
-    State::Retry(StateName::TitleStart)
+fn title_before_marker(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::Definition(Step::TitleAfter)),
+        State::Nok,
+    );
+    State::Retry(StateName::Title(partial_title::Step::Start(
+        partial_title::Names {
+            whole: Name::DefinitionTitle,
+            marker: Name::DefinitionTitleMarker,
+            text: Name::DefinitionTitleString,
+        },
+    )))
 }
 
 /// After title.
@@ -374,18 +349,15 @@ pub fn title_before_marker(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///               ^
 /// ```
-pub fn title_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.token_1 = Name::Data;
-    tokenizer.tokenize_state.token_2 = Name::Data;
-    tokenizer.tokenize_state.token_3 = Name::Data;
+fn title_after(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
-            State::Next(StateName::DefinitionTitleAfterOptionalWhitespace),
+            State::Next(StateName::Definition(Step::TitleAfterOptionalWhitespace)),
             State::Nok,
         );
-        State::Retry(space_or_tab(tokenizer))
+        State::Retry(space_or_tab())
     } else {
-        State::Retry(StateName::DefinitionTitleAfterOptionalWhitespace)
+        State::Retry(StateName::Definition(Step::TitleAfterOptionalWhitespace))
     }
 }
 
@@ -395,9 +367,50 @@ pub fn title_after(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b "c"
 ///               ^
 /// ```
-pub fn title_after_optional_whitespace(tokenizer: &mut Tokenizer) -> State {
+fn title_after_optional_whitespace(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => State::Ok,
         _ => State::Nok,
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    LabelAfter,
+    MarkerAfter { end: usize },
+    DestinationBefore { end: usize },
+    DestinationAfter { end: usize },
+    TitleBefore,
+    After { end: usize },
+    AfterWhitespace { end: usize },
+    TitleBeforeMarker,
+    TitleAfter,
+    TitleAfterOptionalWhitespace,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Definition(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::LabelAfter => label_after(tokenizer),
+        Step::MarkerAfter { end } => marker_after(tokenizer, end),
+        Step::DestinationBefore { end } => destination_before(tokenizer, end),
+        Step::DestinationAfter { end } => destination_after(tokenizer, end),
+        Step::TitleBefore => title_before(tokenizer),
+        Step::After { end } => after(tokenizer, end),
+        Step::AfterWhitespace { end } => after_whitespace(tokenizer, end),
+        Step::TitleBeforeMarker => title_before_marker(tokenizer),
+        Step::TitleAfter => title_after(tokenizer),
+        Step::TitleAfterOptionalWhitespace => title_after_optional_whitespace(tokenizer),
     }
 }

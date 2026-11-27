@@ -85,6 +85,30 @@ use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
+/// Event names a caller gives a destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Names {
+    /// Whole destination.
+    pub whole: Name,
+    /// Enclosed (`<a>`) destination.
+    pub literal: Name,
+    /// `<` and `>` of an enclosed destination.
+    pub marker: Name,
+    /// Raw (`a`) destination.
+    pub raw: Name,
+    /// Text of either kind.
+    pub text: Name,
+}
+
+/// Options a caller gives a destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Options {
+    /// Event names.
+    pub names: Names,
+    /// Most unbalanced `(` allowed in a raw destination.
+    pub limit: usize,
+}
+
 /// Start of destination.
 ///
 /// ```markdown
@@ -93,22 +117,23 @@ use crate::tokenizer::Tokenizer;
 /// > | aa
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer, options: Options) -> State {
+    let names = options.names;
     match tokenizer.current {
         Some(b'<') => {
-            tokenizer.enter(tokenizer.tokenize_state.token_1.clone());
-            tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
-            tokenizer.enter(tokenizer.tokenize_state.token_3.clone());
+            tokenizer.enter(names.whole);
+            tokenizer.enter(names.literal);
+            tokenizer.enter(names.marker);
             tokenizer.consume();
-            tokenizer.exit(tokenizer.tokenize_state.token_3.clone());
-            State::Next(StateName::DestinationEnclosedBefore)
+            tokenizer.exit(names.marker);
+            State::Next(StateName::Destination(Step::EnclosedBefore(names)))
         }
         // ASCII control, space, closing paren, but *not* `\0`.
         None | Some(0x01..=0x1F | b' ' | b')' | 0x7F) => State::Nok,
         Some(_) => {
-            tokenizer.enter(tokenizer.tokenize_state.token_1.clone());
-            tokenizer.enter(tokenizer.tokenize_state.token_4.clone());
-            tokenizer.enter(tokenizer.tokenize_state.token_5.clone());
+            tokenizer.enter(names.whole);
+            tokenizer.enter(names.raw);
+            tokenizer.enter(names.text);
             tokenizer.enter_link(
                 Name::Data,
                 Link {
@@ -117,7 +142,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
                     content: Content::String,
                 },
             );
-            State::Retry(StateName::DestinationRaw)
+            State::Retry(StateName::Destination(Step::Raw(options, 0)))
         }
     }
 }
@@ -128,16 +153,16 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | <aa>
 ///      ^
 /// ```
-pub fn enclosed_before(tokenizer: &mut Tokenizer) -> State {
+fn enclosed_before(tokenizer: &mut Tokenizer, names: Names) -> State {
     if let Some(b'>') = tokenizer.current {
-        tokenizer.enter(tokenizer.tokenize_state.token_3.clone());
+        tokenizer.enter(names.marker);
         tokenizer.consume();
-        tokenizer.exit(tokenizer.tokenize_state.token_3.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
+        tokenizer.exit(names.marker);
+        tokenizer.exit(names.literal);
+        tokenizer.exit(names.whole);
         State::Ok
     } else {
-        tokenizer.enter(tokenizer.tokenize_state.token_5.clone());
+        tokenizer.enter(names.text);
         tokenizer.enter_link(
             Name::Data,
             Link {
@@ -146,7 +171,7 @@ pub fn enclosed_before(tokenizer: &mut Tokenizer) -> State {
                 content: Content::String,
             },
         );
-        State::Retry(StateName::DestinationEnclosed)
+        State::Retry(StateName::Destination(Step::Enclosed(names)))
     }
 }
 
@@ -156,21 +181,21 @@ pub fn enclosed_before(tokenizer: &mut Tokenizer) -> State {
 /// > | <aa>
 ///      ^
 /// ```
-pub fn enclosed(tokenizer: &mut Tokenizer) -> State {
+fn enclosed(tokenizer: &mut Tokenizer, names: Names) -> State {
     match tokenizer.current {
         None | Some(b'\n' | b'<') => State::Nok,
         Some(b'>') => {
             tokenizer.exit(Name::Data);
-            tokenizer.exit(tokenizer.tokenize_state.token_5.clone());
-            State::Retry(StateName::DestinationEnclosedBefore)
+            tokenizer.exit(names.text);
+            State::Retry(StateName::Destination(Step::EnclosedBefore(names)))
         }
         Some(b'\\') => {
             tokenizer.consume();
-            State::Next(StateName::DestinationEnclosedEscape)
+            State::Next(StateName::Destination(Step::EnclosedEscape(names)))
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::DestinationEnclosed)
+            State::Next(StateName::Destination(Step::Enclosed(names)))
         }
     }
 }
@@ -181,56 +206,48 @@ pub fn enclosed(tokenizer: &mut Tokenizer) -> State {
 /// > | <a\*a>
 ///        ^
 /// ```
-pub fn enclosed_escape(tokenizer: &mut Tokenizer) -> State {
+fn enclosed_escape(tokenizer: &mut Tokenizer, names: Names) -> State {
     match tokenizer.current {
         Some(b'<' | b'>' | b'\\') => {
             tokenizer.consume();
-            State::Next(StateName::DestinationEnclosed)
+            State::Next(StateName::Destination(Step::Enclosed(names)))
         }
-        _ => State::Retry(StateName::DestinationEnclosed),
+        _ => State::Retry(StateName::Destination(Step::Enclosed(names))),
     }
 }
 
-/// In raw destination.
+/// In raw destination, with `open` unbalanced `(`.
 ///
 /// ```markdown
 /// > | aa
 ///     ^
 /// ```
-pub fn raw(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.tokenize_state.size == 0
-        && matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ' | b')'))
-    {
+fn raw(tokenizer: &mut Tokenizer, options: Options, open: usize) -> State {
+    if open == 0 && matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ' | b')')) {
         tokenizer.exit(Name::Data);
-        tokenizer.exit(tokenizer.tokenize_state.token_5.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_4.clone());
-        tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
-        tokenizer.tokenize_state.size = 0;
+        tokenizer.exit(options.names.text);
+        tokenizer.exit(options.names.raw);
+        tokenizer.exit(options.names.whole);
         State::Ok
-    } else if tokenizer.tokenize_state.size < tokenizer.tokenize_state.size_b
-        && tokenizer.current == Some(b'(')
-    {
+    } else if open < options.limit && tokenizer.current == Some(b'(') {
         tokenizer.consume();
-        tokenizer.tokenize_state.size += 1;
-        State::Next(StateName::DestinationRaw)
+        State::Next(StateName::Destination(Step::Raw(options, open + 1)))
     } else if tokenizer.current == Some(b')') {
         tokenizer.consume();
-        tokenizer.tokenize_state.size -= 1;
-        State::Next(StateName::DestinationRaw)
+        State::Next(StateName::Destination(Step::Raw(options, open - 1)))
     }
     // ASCII control (but *not* `\0`) and space and `(`.
     else if matches!(
         tokenizer.current,
         None | Some(0x01..=0x1F | b' ' | b'(' | 0x7F)
     ) {
-        tokenizer.tokenize_state.size = 0;
         State::Nok
     } else if tokenizer.current == Some(b'\\') {
         tokenizer.consume();
-        State::Next(StateName::DestinationRawEscape)
+        State::Next(StateName::Destination(Step::RawEscape(options, open)))
     } else {
         tokenizer.consume();
-        State::Next(StateName::DestinationRaw)
+        State::Next(StateName::Destination(Step::Raw(options, open)))
     }
 }
 
@@ -240,12 +257,41 @@ pub fn raw(tokenizer: &mut Tokenizer) -> State {
 /// > | a\*a
 ///       ^
 /// ```
-pub fn raw_escape(tokenizer: &mut Tokenizer) -> State {
+fn raw_escape(tokenizer: &mut Tokenizer, options: Options, open: usize) -> State {
     match tokenizer.current {
         Some(b'(' | b')' | b'\\') => {
             tokenizer.consume();
-            State::Next(StateName::DestinationRaw)
+            State::Next(StateName::Destination(Step::Raw(options, open)))
         }
-        _ => State::Retry(StateName::DestinationRaw),
+        _ => State::Retry(StateName::Destination(Step::Raw(options, open))),
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start(Options),
+    EnclosedBefore(Names),
+    Enclosed(Names),
+    EnclosedEscape(Names),
+    Raw(Options, usize),
+    RawEscape(Options, usize),
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Destination(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start(options) => start(tokenizer, options),
+        Step::EnclosedBefore(names) => enclosed_before(tokenizer, names),
+        Step::Enclosed(names) => enclosed(tokenizer, names),
+        Step::EnclosedEscape(names) => enclosed_escape(tokenizer, names),
+        Step::Raw(options, open) => raw(tokenizer, options, open),
+        Step::RawEscape(options, open) => raw_escape(tokenizer, options, open),
     }
 }

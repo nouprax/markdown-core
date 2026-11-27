@@ -23,6 +23,7 @@
 //! [definition]: crate::construct::definition
 //! [paragraph]: crate::construct::paragraph
 
+use crate::construct::{definition, paragraph};
 use crate::event::{Content, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -36,7 +37,7 @@ use alloc::vec;
 /// > | abc
 ///     ^
 /// ```
-pub fn chunk_start(tokenizer: &mut Tokenizer) -> State {
+fn chunk_start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => unreachable!("unexpected eol/eof"),
         _ => {
@@ -48,7 +49,7 @@ pub fn chunk_start(tokenizer: &mut Tokenizer) -> State {
                     content: Content::Content,
                 },
             );
-            State::Retry(StateName::ContentChunkInside)
+            State::Retry(StateName::Content(Step::ChunkInside))
         }
     }
 }
@@ -59,7 +60,7 @@ pub fn chunk_start(tokenizer: &mut Tokenizer) -> State {
 /// > | abc
 ///     ^^^
 /// ```
-pub fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
+fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Content);
@@ -70,7 +71,7 @@ pub fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::ContentChunkInside)
+            State::Next(StateName::Content(Step::ChunkInside))
         }
     }
 }
@@ -81,12 +82,12 @@ pub fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]: b
 ///     ^
 /// ```
-pub fn definition_before(tokenizer: &mut Tokenizer) -> State {
+fn definition_before(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::ContentDefinitionAfter),
-        State::Next(StateName::ParagraphStart),
+        State::Next(StateName::Content(Step::DefinitionAfter)),
+        State::Next(StateName::Paragraph(paragraph::Step::Start)),
     );
-    State::Retry(StateName::DefinitionStart)
+    State::Retry(StateName::Definition(definition::Step::Start))
 }
 
 /// After a definition.
@@ -96,7 +97,7 @@ pub fn definition_before(tokenizer: &mut Tokenizer) -> State {
 ///           ^
 ///   | c
 /// ```
-pub fn definition_after(tokenizer: &mut Tokenizer) -> State {
+fn definition_after(tokenizer: &mut Tokenizer) -> State {
     debug_assert!(matches!(tokenizer.current, None | Some(b'\n')));
     if tokenizer.current.is_none() {
         State::Ok
@@ -104,7 +105,7 @@ pub fn definition_after(tokenizer: &mut Tokenizer) -> State {
         tokenizer.enter(Name::LineEnding);
         tokenizer.consume();
         tokenizer.exit(Name::LineEnding);
-        State::Next(StateName::ContentDefinitionBefore)
+        State::Next(StateName::Content(Step::DefinitionBefore))
     }
 }
 
@@ -185,4 +186,29 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Subresult {
         tokenizer.parse_state,
         Some(&Content::Content),
     )
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    ChunkStart,
+    ChunkInside,
+    DefinitionBefore,
+    DefinitionAfter,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Content(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::ChunkStart => chunk_start(tokenizer),
+        Step::ChunkInside => chunk_inside(tokenizer),
+        Step::DefinitionBefore => definition_before(tokenizer),
+        Step::DefinitionAfter => definition_after(tokenizer),
+    }
 }

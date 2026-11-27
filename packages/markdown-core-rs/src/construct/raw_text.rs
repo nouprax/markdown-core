@@ -123,32 +123,33 @@ use crate::tokenizer::Tokenizer;
 /// > | \`a`
 ///      ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     // Code (text):
-    if ((tokenizer.current == Some(b'`'))
+    if (tokenizer.current == Some(b'`')
         // Math (text):
-        || (tokenizer.current == Some(b'$')))
+        || tokenizer.current == Some(b'$'))
         // Not the same marker (except when escaped).
         && (tokenizer.previous != tokenizer.current
             || (!tokenizer.events.is_empty()
                 && tokenizer.events[tokenizer.events.len() - 1].name == Name::CharacterEscape))
     {
         let marker = tokenizer.current.unwrap();
-        if marker == b'`' {
-            tokenizer.tokenize_state.token_1 = Name::CodeText;
-            tokenizer.tokenize_state.token_2 = Name::CodeTextSequence;
-            tokenizer.tokenize_state.token_3 = Name::CodeTextData;
-        } else {
-            tokenizer.tokenize_state.token_1 = Name::MathText;
-            tokenizer.tokenize_state.token_2 = Name::MathTextSequence;
-            tokenizer.tokenize_state.token_3 = Name::MathTextData;
-        }
-        tokenizer.tokenize_state.marker = marker;
-        tokenizer.enter(tokenizer.tokenize_state.token_1.clone());
-        tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
-        State::Retry(StateName::RawTextSequenceOpen)
+        let (whole, sequence, _) = names(marker);
+        tokenizer.enter(whole);
+        tokenizer.enter(sequence);
+        State::Retry(StateName::RawText(Step::SequenceOpen { marker, size: 0 }))
     } else {
         State::Nok
+    }
+}
+
+/// The token names of raw text with `marker`: the whole, its sequences and
+/// its data.
+fn names(marker: u8) -> (Name, Name, Name) {
+    if marker == b'`' {
+        (Name::CodeText, Name::CodeTextSequence, Name::CodeTextData)
+    } else {
+        (Name::MathText, Name::MathTextSequence, Name::MathTextData)
     }
 }
 
@@ -158,14 +159,16 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`
 ///     ^
 /// ```
-pub fn sequence_open(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
-        tokenizer.tokenize_state.size += 1;
+fn sequence_open(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
+    if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        State::Next(StateName::RawTextSequenceOpen)
+        State::Next(StateName::RawText(Step::SequenceOpen {
+            marker,
+            size: size + 1,
+        }))
     } else {
-        tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-        State::Retry(StateName::RawTextBetween)
+        tokenizer.exit(names(marker).1);
+        State::Retry(StateName::RawText(Step::Between { marker, size }))
     }
 }
 
@@ -175,29 +178,26 @@ pub fn sequence_open(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`
 ///      ^^
 /// ```
-pub fn between(tokenizer: &mut Tokenizer) -> State {
+fn between(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
     match tokenizer.current {
-        None => {
-            tokenizer.tokenize_state.marker = 0;
-            tokenizer.tokenize_state.size = 0;
-            tokenizer.tokenize_state.token_1 = Name::Data;
-            tokenizer.tokenize_state.token_2 = Name::Data;
-            tokenizer.tokenize_state.token_3 = Name::Data;
-            State::Nok
-        }
+        None => State::Nok,
         Some(b'\n') => {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
             tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::RawTextBetween)
+            State::Next(StateName::RawText(Step::Between { marker, size }))
         }
         _ => {
-            if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
-                tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
-                State::Retry(StateName::RawTextSequenceClose)
+            if tokenizer.current == Some(marker) {
+                tokenizer.enter(names(marker).1);
+                State::Retry(StateName::RawText(Step::SequenceClose {
+                    marker,
+                    size,
+                    close: 0,
+                }))
             } else {
-                tokenizer.enter(tokenizer.tokenize_state.token_3.clone());
-                State::Retry(StateName::RawTextData)
+                tokenizer.enter(names(marker).2);
+                State::Retry(StateName::RawText(Step::Data { marker, size }))
             }
         }
     }
@@ -209,15 +209,13 @@ pub fn between(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`
 ///      ^
 /// ```
-pub fn data(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, None | Some(b'\n'))
-        || tokenizer.current == Some(tokenizer.tokenize_state.marker)
-    {
-        tokenizer.exit(tokenizer.tokenize_state.token_3.clone());
-        State::Retry(StateName::RawTextBetween)
+fn data(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
+    if matches!(tokenizer.current, None | Some(b'\n')) || tokenizer.current == Some(marker) {
+        tokenizer.exit(names(marker).2);
+        State::Retry(StateName::RawText(Step::Between { marker, size }))
     } else {
         tokenizer.consume();
-        State::Next(StateName::RawTextData)
+        State::Next(StateName::RawText(Step::Data { marker, size }))
     }
 }
 
@@ -227,29 +225,70 @@ pub fn data(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`
 ///       ^
 /// ```
-pub fn sequence_close(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.current == Some(tokenizer.tokenize_state.marker) {
-        tokenizer.tokenize_state.size_b += 1;
+fn sequence_close(tokenizer: &mut Tokenizer, marker: u8, size: usize, close: usize) -> State {
+    let (whole, sequence, data) = names(marker);
+    if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        State::Next(StateName::RawTextSequenceClose)
+        State::Next(StateName::RawText(Step::SequenceClose {
+            marker,
+            size,
+            close: close + 1,
+        }))
     } else {
-        tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-        if tokenizer.tokenize_state.size == tokenizer.tokenize_state.size_b {
-            tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
-            tokenizer.tokenize_state.marker = 0;
-            tokenizer.tokenize_state.size = 0;
-            tokenizer.tokenize_state.size_b = 0;
-            tokenizer.tokenize_state.token_1 = Name::Data;
-            tokenizer.tokenize_state.token_2 = Name::Data;
-            tokenizer.tokenize_state.token_3 = Name::Data;
+        tokenizer.exit(sequence);
+        if size == close {
+            tokenizer.exit(whole);
             State::Ok
         } else {
             // More or less accents: mark as data.
             let len = tokenizer.events.len();
-            tokenizer.events[len - 2].name = tokenizer.tokenize_state.token_3.clone();
-            tokenizer.events[len - 1].name = tokenizer.tokenize_state.token_3.clone();
-            tokenizer.tokenize_state.size_b = 0;
-            State::Retry(StateName::RawTextBetween)
+            tokenizer.events[len - 2].name = data;
+            tokenizer.events[len - 1].name = data;
+            State::Retry(StateName::RawText(Step::Between { marker, size }))
         }
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    SequenceOpen {
+        marker: u8,
+        size: usize,
+    },
+    Between {
+        marker: u8,
+        size: usize,
+    },
+    Data {
+        marker: u8,
+        size: usize,
+    },
+    SequenceClose {
+        marker: u8,
+        size: usize,
+        close: usize,
+    },
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::RawText(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::SequenceOpen { marker, size } => sequence_open(tokenizer, marker, size),
+        Step::Between { marker, size } => between(tokenizer, marker, size),
+        Step::Data { marker, size } => data(tokenizer, marker, size),
+        Step::SequenceClose {
+            marker,
+            size,
+            close,
+        } => sequence_close(tokenizer, marker, size, close),
     }
 }

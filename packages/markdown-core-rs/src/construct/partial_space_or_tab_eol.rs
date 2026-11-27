@@ -28,7 +28,7 @@ use crate::subtokenize::link;
 use crate::tokenizer::Tokenizer;
 
 /// Configuration.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Options {
     /// Connect this whitespace to the previous.
     pub connect: bool,
@@ -36,173 +36,146 @@ pub struct Options {
     pub content: Option<Content>,
 }
 
+/// Steps of `space_or_tab_eol`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    /// At the start.
+    ///
+    /// ```markdown
+    /// > | a␠␠␊
+    ///      ^
+    ///   | ␠␠b
+    /// ```
+    Start(Options),
+    /// After initial whitespace, at optional eol.
+    ///
+    /// ```markdown
+    /// > | a␠␠␊
+    ///        ^
+    ///   | ␠␠b
+    /// ```
+    AfterFirst(Options),
+    /// After optional whitespace, at optional eol; with whether whitespace
+    /// was seen.
+    ///
+    /// ```markdown
+    /// > | a␠␠␊
+    ///        ^
+    ///   | ␠␠b
+    /// ```
+    AtEol(Options, bool),
+    /// After eol.
+    ///
+    /// ```markdown
+    ///   | a␠␠␊
+    /// > | ␠␠b
+    ///     ^
+    /// ```
+    AfterEol(Options),
+    /// After optional final whitespace.
+    ///
+    /// ```markdown
+    ///   | a␠␠␊
+    /// > | ␠␠b
+    ///       ^
+    /// ```
+    AfterMore,
+}
+
 /// `space_or_tab_eol`
-pub fn space_or_tab_eol(tokenizer: &mut Tokenizer) -> StateName {
-    space_or_tab_eol_with_options(
-        tokenizer,
-        Options {
-            content: None,
-            connect: false,
-        },
-    )
+pub fn space_or_tab_eol() -> StateName {
+    space_or_tab_eol_with_options(Options {
+        content: None,
+        connect: false,
+    })
 }
 
 /// `space_or_tab_eol`, with the given options.
-pub fn space_or_tab_eol_with_options(tokenizer: &mut Tokenizer, options: Options) -> StateName {
-    tokenizer.tokenize_state.space_or_tab_eol_content = options.content;
-    tokenizer.tokenize_state.space_or_tab_eol_connect = options.connect;
-    StateName::SpaceOrTabEolStart
+pub fn space_or_tab_eol_with_options(options: Options) -> StateName {
+    StateName::SpaceOrTabEol(Step::Start(options))
 }
 
-/// Start of whitespace with at most one eol.
-///
-/// ```markdown
-/// > | a␠␠b
-///      ^
-/// > | a␠␠␊
-///      ^
-///   | ␠␠b
-/// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        Some(b'\t' | b' ') => {
-            tokenizer.attempt(
-                State::Next(StateName::SpaceOrTabEolAfterFirst),
-                State::Next(StateName::SpaceOrTabEolAtEol),
+/// Whitespace on one line with `options`.
+fn whitespace(options: Options) -> StateName {
+    space_or_tab_with_options(SpaceOrTabOptions {
+        kind: Name::SpaceOrTab,
+        min: 1,
+        max: usize::MAX,
+        content: options.content,
+        connect: options.connect,
+    })
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start(options) => {
+            if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+                tokenizer.attempt(
+                    State::Next(StateName::SpaceOrTabEol(Step::AfterFirst(options))),
+                    State::Next(StateName::SpaceOrTabEol(Step::AtEol(options, false))),
+                );
+                State::Retry(whitespace(options))
+            } else {
+                State::Retry(StateName::SpaceOrTabEol(Step::AtEol(options, false)))
+            }
+        }
+        Step::AfterFirst(options) => {
+            debug_assert!(options.content.is_none(), "expected no content");
+            // If the above ever errors, set `connect: true` in that case.
+            State::Retry(StateName::SpaceOrTabEol(Step::AtEol(options, true)))
+        }
+        Step::AtEol(mut options, ok) => {
+            if let Some(b'\n') = tokenizer.current {
+                if let Some(content) = options.content {
+                    tokenizer.enter_link(
+                        Name::LineEnding,
+                        Link {
+                            previous: None,
+                            next: None,
+                            content,
+                        },
+                    );
+                } else {
+                    tokenizer.enter(Name::LineEnding);
+                }
+
+                if options.connect {
+                    let index = tokenizer.events.len() - 1;
+                    link(&mut tokenizer.events, index);
+                } else if options.content.is_some() {
+                    options.connect = true;
+                }
+
+                tokenizer.consume();
+                tokenizer.exit(Name::LineEnding);
+                State::Next(StateName::SpaceOrTabEol(Step::AfterEol(options)))
+            } else if ok {
+                State::Ok
+            } else {
+                State::Nok
+            }
+        }
+        Step::AfterEol(options) => {
+            if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+                tokenizer.attempt(
+                    State::Next(StateName::SpaceOrTabEol(Step::AfterMore)),
+                    State::Nok,
+                );
+                State::Retry(whitespace(options))
+            } else {
+                State::Retry(StateName::SpaceOrTabEol(Step::AfterMore))
+            }
+        }
+        Step::AfterMore => {
+            debug_assert!(
+                !matches!(tokenizer.current, None | Some(b'\n')),
+                "did not expect blank line"
             );
-
-            State::Retry(space_or_tab_with_options(
-                tokenizer,
-                SpaceOrTabOptions {
-                    kind: Name::SpaceOrTab,
-                    min: 1,
-                    max: usize::MAX,
-                    content: tokenizer.tokenize_state.space_or_tab_eol_content.clone(),
-                    connect: tokenizer.tokenize_state.space_or_tab_eol_connect,
-                },
-            ))
-        }
-        _ => State::Retry(StateName::SpaceOrTabEolAtEol),
-    }
-}
-
-/// After initial whitespace, at optional eol.
-///
-/// ```markdown
-/// > | a␠␠b
-///        ^
-/// > | a␠␠␊
-///        ^
-///   | ␠␠b
-/// ```
-pub fn after_first(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.space_or_tab_eol_ok = true;
-    debug_assert!(
-        tokenizer.tokenize_state.space_or_tab_eol_content.is_none(),
-        "expected no content"
-    );
-    // If the above ever errors, set `tokenizer.tokenize_state.space_or_tab_eol_connect: true` in that case.
-    State::Retry(StateName::SpaceOrTabEolAtEol)
-}
-
-/// After optional whitespace, at eol.
-///
-/// ```markdown
-/// > | a␠␠b
-///        ^
-/// > | a␠␠␊
-///        ^
-///   | ␠␠b
-/// > | a␊
-///      ^
-///   | ␠␠b
-/// ```
-pub fn at_eol(tokenizer: &mut Tokenizer) -> State {
-    if let Some(b'\n') = tokenizer.current {
-        if let Some(ref content) = tokenizer.tokenize_state.space_or_tab_eol_content {
-            tokenizer.enter_link(
-                Name::LineEnding,
-                Link {
-                    previous: None,
-                    next: None,
-                    content: content.clone(),
-                },
-            );
-        } else {
-            tokenizer.enter(Name::LineEnding);
-        }
-
-        if tokenizer.tokenize_state.space_or_tab_eol_connect {
-            let index = tokenizer.events.len() - 1;
-            link(&mut tokenizer.events, index);
-        } else if tokenizer.tokenize_state.space_or_tab_eol_content.is_some() {
-            tokenizer.tokenize_state.space_or_tab_eol_connect = true;
-        }
-
-        tokenizer.consume();
-        tokenizer.exit(Name::LineEnding);
-        State::Next(StateName::SpaceOrTabEolAfterEol)
-    } else {
-        let ok = tokenizer.tokenize_state.space_or_tab_eol_ok;
-        tokenizer.tokenize_state.space_or_tab_eol_content = None;
-        tokenizer.tokenize_state.space_or_tab_eol_connect = false;
-        tokenizer.tokenize_state.space_or_tab_eol_ok = false;
-        if ok {
+            // If the above ever starts erroring, gracefully `State::Nok` on it.
+            // Currently it doesn’t happen, as we only use this in content, which does
+            // not allow blank lines.
             State::Ok
-        } else {
-            State::Nok
         }
     }
-}
-
-/// After eol.
-///
-/// ```markdown
-///   | a␠␠␊
-/// > | ␠␠b
-///     ^
-///   | a␊
-/// > | ␠␠b
-///     ^
-/// ```
-pub fn after_eol(tokenizer: &mut Tokenizer) -> State {
-    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::SpaceOrTabEolAfterMore), State::Nok);
-        State::Retry(space_or_tab_with_options(
-            tokenizer,
-            SpaceOrTabOptions {
-                kind: Name::SpaceOrTab,
-                min: 1,
-                max: usize::MAX,
-                content: tokenizer.tokenize_state.space_or_tab_eol_content.clone(),
-                connect: tokenizer.tokenize_state.space_or_tab_eol_connect,
-            },
-        ))
-    } else {
-        State::Retry(StateName::SpaceOrTabEolAfterMore)
-    }
-}
-
-/// After optional final whitespace.
-///
-/// ```markdown
-///   | a␠␠␊
-/// > | ␠␠b
-///       ^
-///   | a␊
-/// > | ␠␠b
-///       ^
-/// ```
-pub fn after_more(tokenizer: &mut Tokenizer) -> State {
-    debug_assert!(
-        !matches!(tokenizer.current, None | Some(b'\n')),
-        "did not expect blank line"
-    );
-    // If the above ever starts erroring, gracefully `State::Nok` on it.
-    // Currently it doesn’t happen, as we only use this in content, which does
-    // not allow blank lines.
-    tokenizer.tokenize_state.space_or_tab_eol_content = None;
-    tokenizer.tokenize_state.space_or_tab_eol_connect = false;
-    tokenizer.tokenize_state.space_or_tab_eol_ok = false;
-    State::Ok
 }

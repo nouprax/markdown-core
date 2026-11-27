@@ -9,6 +9,9 @@
 //! * [List item][crate::construct::list_item]
 //! * [GFM: Footnote definition][crate::construct::gfm_footnote_definition]
 
+use crate::construct::{
+    block_quote, flow, frontmatter, gfm_footnote_definition, list_item, partial_bom,
+};
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::divide_events;
@@ -53,18 +56,18 @@ enum Phase {
 /// > | a
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.document_child = Some(Box::new(Tokenizer::new(
+fn start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.document.child = Some(Box::new(Tokenizer::new(
         tokenizer.point.clone(),
         tokenizer.parse_state,
     )));
 
     tokenizer.attempt(
-        State::Next(StateName::DocumentBeforeFrontmatter),
-        State::Next(StateName::DocumentBeforeFrontmatter),
+        State::Next(StateName::Document(Step::BeforeFrontmatter)),
+        State::Next(StateName::Document(Step::BeforeFrontmatter)),
     );
 
-    State::Retry(StateName::BomStart)
+    State::Retry(StateName::Bom(partial_bom::Step::Start))
 }
 
 /// At optional frontmatter.
@@ -75,12 +78,12 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 ///   | title: Venus
 ///   | ---
 /// ```
-pub fn before_frontmatter(tokenizer: &mut Tokenizer) -> State {
+fn before_frontmatter(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
-        State::Next(StateName::DocumentContainerNewBefore),
-        State::Next(StateName::DocumentContainerNewBefore),
+        State::Next(StateName::Document(Step::ContainerNewBefore)),
+        State::Next(StateName::Document(Step::ContainerNewBefore)),
     );
-    State::Retry(StateName::FrontmatterStart)
+    State::Retry(StateName::Frontmatter(frontmatter::Step::Start))
 }
 
 /// At optional existing containers.
@@ -90,30 +93,29 @@ pub fn before_frontmatter(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///     ^
 /// ```
-pub fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
+fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
     // If there are more existing containers, check whether the next one continues.
-    if tokenizer.tokenize_state.document_continued
-        < tokenizer.tokenize_state.document_container_stack.len()
-    {
-        let container = &tokenizer.tokenize_state.document_container_stack
-            [tokenizer.tokenize_state.document_continued];
+    if tokenizer.document.continued < tokenizer.document.stack.len() {
+        let container = &tokenizer.document.stack[tokenizer.document.continued];
 
         let name = match container.kind {
-            Container::BlockQuote => StateName::BlockQuoteContStart,
-            Container::GfmFootnoteDefinition => StateName::GfmFootnoteDefinitionContStart,
-            Container::ListItem => StateName::ListItemContStart,
+            Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
+            Container::GfmFootnoteDefinition => {
+                StateName::GfmFootnoteDefinition(gfm_footnote_definition::Step::ContStart)
+            }
+            Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
         };
 
         tokenizer.attempt(
-            State::Next(StateName::DocumentContainerExistingAfter),
-            State::Next(StateName::DocumentContainerNewBefore),
+            State::Next(StateName::Document(Step::ContainerExistingAfter)),
+            State::Next(StateName::Document(Step::ContainerNewBefore)),
         );
 
         State::Retry(name)
     }
     // Otherwise, check new containers.
     else {
-        State::Retry(StateName::DocumentContainerNewBefore)
+        State::Retry(StateName::Document(Step::ContainerNewBefore))
     }
 }
 
@@ -124,9 +126,9 @@ pub fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
 /// > |   b
 ///       ^
 /// ```
-pub fn container_existing_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.document_continued += 1;
-    State::Retry(StateName::DocumentContainerExistingBefore)
+fn container_existing_after(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.document.continued += 1;
+    State::Retry(StateName::Document(Step::ContainerExistingBefore))
 }
 
 /// At new containers.
@@ -137,46 +139,41 @@ pub fn container_existing_after(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///     ^
 /// ```
-pub fn container_new_before(tokenizer: &mut Tokenizer) -> State {
+fn container_new_before(tokenizer: &mut Tokenizer) -> State {
     // If we have completely continued, restore the flow’s past `interrupt`
     // status.
-    if tokenizer.tokenize_state.document_continued
-        == tokenizer.tokenize_state.document_container_stack.len()
-    {
-        let child = tokenizer.tokenize_state.document_child.as_ref().unwrap();
+    if tokenizer.document.continued == tokenizer.document.stack.len() {
+        let child = tokenizer.document.child.as_ref().unwrap();
 
         tokenizer.interrupt = child.interrupt;
 
         // …and if we’re in a concrete construct, new containers can’t “pierce”
         // into them.
         if child.concrete {
-            return State::Retry(StateName::DocumentContainersAfter);
+            return State::Retry(StateName::Document(Step::ContainersAfter));
         }
     }
 
     // Check for a new container.
     // Block quote?
     // Add a new container at the end of the stack.
-    let tail = tokenizer.tokenize_state.document_container_stack.len();
-    tokenizer
-        .tokenize_state
-        .document_container_stack
-        .push(ContainerState {
-            kind: Container::BlockQuote,
-            blank_initial: false,
-            size: 0,
-        });
+    let tail = tokenizer.document.stack.len();
+    tokenizer.document.stack.push(ContainerState {
+        kind: Container::BlockQuote,
+        blank_initial: false,
+        size: 0,
+    });
     // Swap the existing container with the new one.
     tokenizer
-        .tokenize_state
-        .document_container_stack
-        .swap(tokenizer.tokenize_state.document_continued, tail);
+        .document
+        .stack
+        .swap(tokenizer.document.continued, tail);
 
     tokenizer.attempt(
-        State::Next(StateName::DocumentContainerNewAfter),
-        State::Next(StateName::DocumentContainerNewBeforeNotBlockQuote),
+        State::Next(StateName::Document(Step::ContainerNewAfter)),
+        State::Next(StateName::Document(Step::ContainerNewBeforeNotBlockQuote)),
     );
-    State::Retry(StateName::BlockQuoteStart)
+    State::Retry(StateName::BlockQuote(block_quote::Step::Start))
 }
 
 /// At new container, but not a block quote.
@@ -185,21 +182,20 @@ pub fn container_new_before(tokenizer: &mut Tokenizer) -> State {
 /// > | * a
 ///     ^
 /// ```
-pub fn container_new_before_not_block_quote(tokenizer: &mut Tokenizer) -> State {
+fn container_new_before_not_block_quote(tokenizer: &mut Tokenizer) -> State {
     // List item?
     // We replace the empty block quote container for this new list item one.
-    tokenizer.tokenize_state.document_container_stack
-        [tokenizer.tokenize_state.document_continued] = ContainerState {
+    tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
         kind: Container::ListItem,
         blank_initial: false,
         size: 0,
     };
 
     tokenizer.attempt(
-        State::Next(StateName::DocumentContainerNewAfter),
-        State::Next(StateName::DocumentContainerNewBeforeNotList),
+        State::Next(StateName::Document(Step::ContainerNewAfter)),
+        State::Next(StateName::Document(Step::ContainerNewBeforeNotList)),
     );
-    State::Retry(StateName::ListItemStart)
+    State::Retry(StateName::ListItem(list_item::Step::Start))
 }
 
 /// At new container, but not a block quote or list item.
@@ -208,22 +204,25 @@ pub fn container_new_before_not_block_quote(tokenizer: &mut Tokenizer) -> State 
 /// > | a
 ///     ^
 /// ```
-pub fn container_new_before_not_list(tokenizer: &mut Tokenizer) -> State {
+fn container_new_before_not_list(tokenizer: &mut Tokenizer) -> State {
     // Footnote definition?
     // We replace the empty list item container for this new footnote
     // definition one.
-    tokenizer.tokenize_state.document_container_stack
-        [tokenizer.tokenize_state.document_continued] = ContainerState {
+    tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
         kind: Container::GfmFootnoteDefinition,
         blank_initial: false,
         size: 0,
     };
 
     tokenizer.attempt(
-        State::Next(StateName::DocumentContainerNewAfter),
-        State::Next(StateName::DocumentContainerNewBeforeNotGfmFootnoteDefinition),
+        State::Next(StateName::Document(Step::ContainerNewAfter)),
+        State::Next(StateName::Document(
+            Step::ContainerNewBeforeNotFootnoteDefinition,
+        )),
     );
-    State::Retry(StateName::GfmFootnoteDefinitionStart)
+    State::Retry(StateName::GfmFootnoteDefinition(
+        gfm_footnote_definition::Step::Start,
+    ))
 }
 
 /// At new container, but not a block quote, list item, or footnote definition.
@@ -232,16 +231,16 @@ pub fn container_new_before_not_list(tokenizer: &mut Tokenizer) -> State {
 /// > | a
 ///     ^
 /// ```
-pub fn container_new_before_not_footnote_definition(tokenizer: &mut Tokenizer) -> State {
+fn container_new_before_not_footnote_definition(tokenizer: &mut Tokenizer) -> State {
     // It wasn’t a new block quote, list item, or footnote definition.
     // Swap the new container (in the middle) with the existing one (at the end).
     // Drop what was in the middle.
     tokenizer
-        .tokenize_state
-        .document_container_stack
-        .swap_remove(tokenizer.tokenize_state.document_continued);
+        .document
+        .stack
+        .swap_remove(tokenizer.document.continued);
 
-    State::Retry(StateName::DocumentContainersAfter)
+    State::Retry(StateName::Document(Step::ContainersAfter))
 }
 
 /// After new container.
@@ -252,38 +251,28 @@ pub fn container_new_before_not_footnote_definition(tokenizer: &mut Tokenizer) -
 /// > | > b
 ///       ^
 /// ```
-pub fn container_new_after(tokenizer: &mut Tokenizer) -> State {
+fn container_new_after(tokenizer: &mut Tokenizer) -> State {
     // It was a new block quote, list item, or footnote definition.
     // Swap the new container (in the middle) with the existing one (at the end).
     // Take the new container.
     let container = tokenizer
-        .tokenize_state
-        .document_container_stack
-        .swap_remove(tokenizer.tokenize_state.document_continued);
+        .document
+        .stack
+        .swap_remove(tokenizer.document.continued);
 
     // If we did not continue all existing containers, and there is a new one,
     // close the flow and those containers.
-    if tokenizer.tokenize_state.document_continued
-        != tokenizer.tokenize_state.document_container_stack.len()
-    {
+    if tokenizer.document.continued != tokenizer.document.stack.len() {
         exit_containers(tokenizer, &Phase::Prefix);
     }
 
     // We are “piercing” into the flow with a new container.
-    tokenizer
-        .tokenize_state
-        .document_child
-        .as_mut()
-        .unwrap()
-        .pierce = true;
+    tokenizer.document.child.as_mut().unwrap().pierce = true;
 
-    tokenizer
-        .tokenize_state
-        .document_container_stack
-        .push(container);
-    tokenizer.tokenize_state.document_continued += 1;
+    tokenizer.document.stack.push(container);
+    tokenizer.document.continued += 1;
     tokenizer.interrupt = false;
-    State::Retry(StateName::DocumentContainerNewBefore)
+    State::Retry(StateName::Document(Step::ContainerNewBefore))
 }
 
 /// After containers, at flow.
@@ -294,22 +283,21 @@ pub fn container_new_after(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///       ^
 /// ```
-pub fn containers_after(tokenizer: &mut Tokenizer) -> State {
-    let child = tokenizer.tokenize_state.document_child.as_mut().unwrap();
+fn containers_after(tokenizer: &mut Tokenizer) -> State {
+    let child = tokenizer.document.child.as_mut().unwrap();
 
-    child.lazy = tokenizer.tokenize_state.document_continued
-        != tokenizer.tokenize_state.document_container_stack.len();
+    child.lazy = tokenizer.document.continued != tokenizer.document.stack.len();
     child.define_skip(tokenizer.point.clone());
 
     if tokenizer.current.is_none() {
-        State::Retry(StateName::DocumentFlowEnd)
+        State::Retry(StateName::Document(Step::FlowEnd))
     } else {
         let current = tokenizer.events.len();
-        let previous = tokenizer.tokenize_state.document_data_index;
+        let previous = tokenizer.document.data;
         if let Some(previous) = previous {
             tokenizer.events[previous].link.as_mut().unwrap().next = Some(current);
         }
-        tokenizer.tokenize_state.document_data_index = Some(current);
+        tokenizer.document.data = Some(current);
         tokenizer.enter_link(
             Name::Data,
             Link {
@@ -318,7 +306,7 @@ pub fn containers_after(tokenizer: &mut Tokenizer) -> State {
                 content: Content::Flow,
             },
         );
-        State::Retry(StateName::DocumentFlowInside)
+        State::Retry(StateName::Document(Step::FlowInside))
     }
 }
 
@@ -328,21 +316,21 @@ pub fn containers_after(tokenizer: &mut Tokenizer) -> State {
 /// > | * ab
 ///       ^
 /// ```
-pub fn flow_inside(tokenizer: &mut Tokenizer) -> State {
+fn flow_inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
             tokenizer.exit(Name::Data);
-            State::Retry(StateName::DocumentFlowEnd)
+            State::Retry(StateName::Document(Step::FlowEnd))
         }
         // Note: EOL is part of data.
         Some(b'\n') => {
             tokenizer.consume();
             tokenizer.exit(Name::Data);
-            State::Next(StateName::DocumentFlowEnd)
+            State::Next(StateName::Document(Step::FlowEnd))
         }
         Some(_) => {
             tokenizer.consume();
-            State::Next(StateName::DocumentFlowInside)
+            State::Next(StateName::Document(Step::FlowInside))
         }
     }
 }
@@ -354,15 +342,15 @@ pub fn flow_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///     ^  ^
 /// ```
-pub fn flow_end(tokenizer: &mut Tokenizer) -> State {
-    let child = tokenizer.tokenize_state.document_child.as_mut().unwrap();
+fn flow_end(tokenizer: &mut Tokenizer) -> State {
+    let child = tokenizer.document.child.as_mut().unwrap();
     let state = tokenizer
-        .tokenize_state
-        .document_child_state
+        .document
+        .state
         .take()
-        .unwrap_or(State::Next(StateName::FlowStart));
+        .unwrap_or(State::Next(StateName::Flow(flow::Step::Start)));
 
-    tokenizer.tokenize_state.document_exits.push(None);
+    tokenizer.document.exits.push(None);
 
     let state = child.push(
         (child.point.index, child.point.vs),
@@ -370,7 +358,7 @@ pub fn flow_end(tokenizer: &mut Tokenizer) -> State {
         state,
     );
 
-    tokenizer.tokenize_state.document_child_state = Some(state);
+    tokenizer.document.state = Some(state);
 
     // If we’re in a lazy line, and the previous (lazy or not) line is something
     // that can be lazy, and this line is that too, allow it.
@@ -427,60 +415,52 @@ pub fn flow_end(tokenizer: &mut Tokenizer) -> State {
     // Reset “piercing”.
     child.pierce = false;
 
-    if child.lazy
-        && tokenizer.tokenize_state.document_lazy_accepting_before
-        && document_lazy_continuation_current
-    {
-        tokenizer.tokenize_state.document_continued =
-            tokenizer.tokenize_state.document_container_stack.len();
+    if child.lazy && tokenizer.document.open && document_lazy_continuation_current {
+        tokenizer.document.continued = tokenizer.document.stack.len();
     }
 
-    if tokenizer.tokenize_state.document_continued
-        != tokenizer.tokenize_state.document_container_stack.len()
-    {
+    if tokenizer.document.continued != tokenizer.document.stack.len() {
         // `Phase::After` doesn’t deal with flow: it only generates exits for
         // containers.
         exit_containers(tokenizer, &Phase::After);
     }
 
     if tokenizer.current.is_none() {
-        tokenizer.tokenize_state.document_continued = 0;
+        tokenizer.document.continued = 0;
         exit_containers(tokenizer, &Phase::Eof);
         resolve(tokenizer);
         State::Ok
     } else {
-        tokenizer.tokenize_state.document_continued = 0;
-        tokenizer.tokenize_state.document_lazy_accepting_before =
-            document_lazy_continuation_current;
+        tokenizer.document.continued = 0;
+        tokenizer.document.open = document_lazy_continuation_current;
         // Containers would only be interrupting if we’ve continued.
         tokenizer.interrupt = false;
-        State::Retry(StateName::DocumentContainerExistingBefore)
+        State::Retry(StateName::Document(Step::ContainerExistingBefore))
     }
 }
 
 /// Close containers (and flow if needed).
 fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
     let mut stack_close = tokenizer
-        .tokenize_state
-        .document_container_stack
-        .split_off(tokenizer.tokenize_state.document_continued);
+        .document
+        .stack
+        .split_off(tokenizer.document.continued);
 
-    let child = tokenizer.tokenize_state.document_child.as_mut().unwrap();
+    let child = tokenizer.document.child.as_mut().unwrap();
 
     // Flush if needed.
     if *phase != Phase::After {
         let state = tokenizer
-            .tokenize_state
-            .document_child_state
+            .document
+            .state
             .take()
-            .unwrap_or(State::Next(StateName::FlowStart));
+            .unwrap_or(State::Next(StateName::Flow(flow::Step::Start)));
 
         child.flush(state, false);
     }
 
     if !stack_close.is_empty() {
-        let index = tokenizer.tokenize_state.document_exits.len()
-            - (if *phase == Phase::After { 2 } else { 1 });
+        let index = tokenizer.document.exits.len() - (if *phase == Phase::After { 2 } else { 1 });
         let mut exits = Vec::with_capacity(stack_close.len());
 
         while let Some(container) = stack_close.pop() {
@@ -492,7 +472,7 @@ fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
 
             exits.push(Event {
                 kind: Kind::Exit,
-                name: name.clone(),
+                name,
                 point: tokenizer.point.clone(),
                 link: None,
             });
@@ -514,18 +494,18 @@ fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
         }
 
         debug_assert!(
-            tokenizer.tokenize_state.document_exits[index].is_none(),
+            tokenizer.document.exits[index].is_none(),
             "expected no exits yet"
         );
-        tokenizer.tokenize_state.document_exits[index] = Some(exits);
+        tokenizer.document.exits[index] = Some(exits);
     }
 
     child.interrupt = false;
 }
 
 // Inject everything together.
-fn resolve(tokenizer: &mut Tokenizer) {
-    let child = tokenizer.tokenize_state.document_child.as_mut().unwrap();
+pub fn resolve(tokenizer: &mut Tokenizer) {
+    let child = tokenizer.document.child.as_mut().unwrap();
 
     // First, add the container exits into `child`.
     let mut child_index = 0;
@@ -551,8 +531,8 @@ fn resolve(tokenizer: &mut Tokenizer) {
                 inject_index = child_index + 1;
             }
 
-            if line < tokenizer.tokenize_state.document_exits.len() {
-                if let Some(mut exits) = tokenizer.tokenize_state.document_exits[line].take() {
+            if line < tokenizer.document.exits.len() {
+                if let Some(mut exits) = tokenizer.document.exits[line].take() {
                     let mut exit_index = 0;
                     while exit_index < exits.len() {
                         exits[exit_index].point = point.clone();
@@ -595,8 +575,8 @@ fn resolve(tokenizer: &mut Tokenizer) {
     // Now, add some final container exits due to the EOF.
     // We can’t inject them into the child earlier, as they are “outside” its
     // linked data.
-    if line < tokenizer.tokenize_state.document_exits.len() {
-        if let Some(mut exits) = tokenizer.tokenize_state.document_exits[line].take() {
+    if line < tokenizer.document.exits.len() {
+        if let Some(mut exits) = tokenizer.document.exits[line].take() {
             let mut exit_index = 0;
             while exit_index < exits.len() {
                 exits[exit_index].point = tokenizer.point.clone();
@@ -612,8 +592,48 @@ fn resolve(tokenizer: &mut Tokenizer) {
         .resolvers
         .append(&mut child.resolvers.split_off(0));
 
-    tokenizer
-        .tokenize_state
-        .definitions
-        .append(&mut child.tokenize_state.definitions.split_off(0));
+    tokenizer.definitions.append(&mut child.definitions);
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    BeforeFrontmatter,
+    ContainerExistingBefore,
+    ContainerExistingAfter,
+    ContainerNewBefore,
+    ContainerNewBeforeNotBlockQuote,
+    ContainerNewBeforeNotList,
+    ContainerNewBeforeNotFootnoteDefinition,
+    ContainerNewAfter,
+    ContainersAfter,
+    FlowEnd,
+    FlowInside,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Document(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::BeforeFrontmatter => before_frontmatter(tokenizer),
+        Step::ContainerExistingBefore => container_existing_before(tokenizer),
+        Step::ContainerExistingAfter => container_existing_after(tokenizer),
+        Step::ContainerNewBefore => container_new_before(tokenizer),
+        Step::ContainerNewBeforeNotBlockQuote => container_new_before_not_block_quote(tokenizer),
+        Step::ContainerNewBeforeNotList => container_new_before_not_list(tokenizer),
+        Step::ContainerNewBeforeNotFootnoteDefinition => {
+            container_new_before_not_footnote_definition(tokenizer)
+        }
+        Step::ContainerNewAfter => container_new_after(tokenizer),
+        Step::ContainersAfter => containers_after(tokenizer),
+        Step::FlowEnd => flow_end(tokenizer),
+        Step::FlowInside => flow_inside(tokenizer),
+    }
 }

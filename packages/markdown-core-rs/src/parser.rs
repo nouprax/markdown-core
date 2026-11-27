@@ -1,10 +1,11 @@
 //! Turn bytes of markdown into events.
 
+use crate::construct::document;
 use crate::event::{Event, Point};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::subtokenize;
-use crate::tokenizer::Tokenizer;
-use alloc::{string::String, vec, vec::Vec};
+use crate::tokenizer::{Definitions, Tokenizer};
+use alloc::vec::Vec;
 
 /// Info needed, in all content types, when parsing markdown.
 ///
@@ -14,10 +15,8 @@ use alloc::{string::String, vec, vec::Vec};
 pub struct ParseState<'a> {
     /// List of chars.
     pub bytes: &'a [u8],
-    /// Set of defined definition identifiers.
-    pub definitions: Vec<String>,
-    /// Set of defined GFM footnote definition identifiers.
-    pub gfm_footnote_definitions: Vec<String>,
+    /// Identifiers defined in the whole document.
+    pub definitions: Definitions,
 }
 
 /// Turn a string of markdown into events.
@@ -28,8 +27,7 @@ pub fn parse(value: &str) -> (Vec<Event>, &[u8]) {
 
     let mut parse_state = ParseState {
         bytes,
-        definitions: vec![],
-        gfm_footnote_definitions: vec![],
+        definitions: Definitions::default(),
     };
 
     let start = Point {
@@ -43,16 +41,13 @@ pub fn parse(value: &str) -> (Vec<Event>, &[u8]) {
     let state = tokenizer.push(
         (0, 0),
         (parse_state.bytes.len(), 0),
-        State::Next(StateName::DocumentStart),
+        State::Next(StateName::Document(document::Step::Start)),
     );
     let mut result = tokenizer.flush(state, true);
     let mut events = tokenizer.events;
 
     loop {
-        let fn_defs = &mut parse_state.gfm_footnote_definitions;
-        let defs = &mut parse_state.definitions;
-        fn_defs.append(&mut result.gfm_footnote_definitions);
-        defs.append(&mut result.definitions);
+        parse_state.definitions.append(&mut result.definitions);
 
         if result.done {
             return (events, parse_state.bytes);

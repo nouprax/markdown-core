@@ -33,7 +33,7 @@
 
 use crate::event::Name;
 use crate::resolve::Name as ResolveName;
-use crate::state::State;
+use crate::state::{Name as StateName, State};
 use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 
 /// Start of label (link) start.
@@ -42,7 +42,7 @@ use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 /// > | a [b] c
 ///       ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'[') {
         let start = tokenizer.events.len();
         tokenizer.enter(Name::LabelLink);
@@ -50,7 +50,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
         tokenizer.consume();
         tokenizer.exit(Name::LabelMarker);
         tokenizer.exit(Name::LabelLink);
-        tokenizer.tokenize_state.label_starts.push(LabelStart {
+        tokenizer.labels.starts.push(LabelStart {
             kind: LabelKind::Link,
             start: (start, tokenizer.events.len() - 1),
             inactive: false,
@@ -59,5 +59,24 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
         State::Ok
     } else {
         State::Nok
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::LabelStartLink(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
     }
 }

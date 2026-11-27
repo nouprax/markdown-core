@@ -58,9 +58,9 @@ use crate::util::constant::TAB_SIZE;
 /// > | > a
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::BlockQuote);
-    State::Retry(StateName::BlockQuoteContStart)
+    State::Retry(StateName::BlockQuote(Step::ContStart))
 }
 
 /// Start of block quote continuation.
@@ -72,12 +72,15 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///     ^
 /// ```
-pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
+fn cont_start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::BlockQuoteContBefore), State::Nok);
-        State::Retry(space_or_tab_min_max(tokenizer, 1, TAB_SIZE - 1))
+        tokenizer.attempt(
+            State::Next(StateName::BlockQuote(Step::ContBefore)),
+            State::Nok,
+        );
+        State::Retry(space_or_tab_min_max(1, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::BlockQuoteContBefore)
+        State::Retry(StateName::BlockQuote(Step::ContBefore))
     }
 }
 
@@ -90,14 +93,14 @@ pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///     ^
 /// ```
-pub fn cont_before(tokenizer: &mut Tokenizer) -> State {
+fn cont_before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'>') => {
             tokenizer.enter(Name::BlockQuotePrefix);
             tokenizer.enter(Name::BlockQuoteMarker);
             tokenizer.consume();
             tokenizer.exit(Name::BlockQuoteMarker);
-            State::Next(StateName::BlockQuoteContAfter)
+            State::Next(StateName::BlockQuote(Step::ContAfter))
         }
         _ => State::Nok,
     }
@@ -111,7 +114,7 @@ pub fn cont_before(tokenizer: &mut Tokenizer) -> State {
 /// > | >b
 ///      ^
 /// ```
-pub fn cont_after(tokenizer: &mut Tokenizer) -> State {
+fn cont_after(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'\t' | b' ') = tokenizer.current {
         tokenizer.enter(Name::SpaceOrTab);
         tokenizer.consume();
@@ -120,4 +123,29 @@ pub fn cont_after(tokenizer: &mut Tokenizer) -> State {
 
     tokenizer.exit(Name::BlockQuotePrefix);
     State::Ok
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    ContStart,
+    ContBefore,
+    ContAfter,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::BlockQuote(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::ContStart => cont_start(tokenizer),
+        Step::ContBefore => cont_before(tokenizer),
+        Step::ContAfter => cont_after(tokenizer),
+    }
 }

@@ -13,6 +13,7 @@
 //! [text]: crate::construct::text
 
 use crate::construct::partial_whitespace::resolve_whitespace;
+use crate::construct::{character_escape, character_reference, partial_data};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
@@ -27,9 +28,8 @@ const MARKERS: [u8; 2] = *b"&\\";
 /// > | ```js
 ///        ^
 /// ````
-pub fn start(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.markers = &MARKERS;
-    State::Retry(StateName::StringBefore)
+fn start(_tokenizer: &mut Tokenizer) -> State {
+    State::Retry(StateName::String(Step::Before))
 }
 
 /// Before string.
@@ -38,7 +38,7 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | ```js
 ///        ^
 /// ````
-pub fn before(tokenizer: &mut Tokenizer) -> State {
+fn before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
             tokenizer.register_resolver(ResolveName::Data);
@@ -47,19 +47,21 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
         }
         Some(b'&') => {
             tokenizer.attempt(
-                State::Next(StateName::StringBefore),
-                State::Next(StateName::StringBeforeData),
+                State::Next(StateName::String(Step::Before)),
+                State::Next(StateName::String(Step::BeforeData)),
             );
-            State::Retry(StateName::CharacterReferenceStart)
+            State::Retry(StateName::CharacterReference(
+                character_reference::Step::Start,
+            ))
         }
         Some(b'\\') => {
             tokenizer.attempt(
-                State::Next(StateName::StringBefore),
-                State::Next(StateName::StringBeforeData),
+                State::Next(StateName::String(Step::Before)),
+                State::Next(StateName::String(Step::BeforeData)),
             );
-            State::Retry(StateName::CharacterEscapeStart)
+            State::Retry(StateName::CharacterEscape(character_escape::Step::Start))
         }
-        _ => State::Retry(StateName::StringBeforeData),
+        _ => State::Retry(StateName::String(Step::BeforeData)),
     }
 }
 
@@ -69,13 +71,38 @@ pub fn before(tokenizer: &mut Tokenizer) -> State {
 /// > | ```js
 ///        ^
 /// ````
-pub fn before_data(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(State::Next(StateName::StringBefore), State::Nok);
-    State::Retry(StateName::DataStart)
+fn before_data(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(State::Next(StateName::String(Step::Before)), State::Nok);
+    State::Retry(StateName::Data(partial_data::Step::Start {
+        markers: &MARKERS,
+    }))
 }
 
 /// Resolve whitespace in string.
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     resolve_whitespace(tokenizer, false, false);
     None
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start,
+    Before,
+    BeforeData,
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::String(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start => start(tokenizer),
+        Step::Before => before(tokenizer),
+        Step::BeforeData => before_data(tokenizer),
+    }
 }

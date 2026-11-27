@@ -68,20 +68,48 @@ use crate::subtokenize::link;
 use crate::tokenizer::Tokenizer;
 use crate::util::constant::LINK_REFERENCE_SIZE_MAX;
 
+/// Event names a caller gives a label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Names {
+    /// Whole label.
+    pub whole: Name,
+    /// Opening and closing marker.
+    pub marker: Name,
+    /// Text between the markers.
+    pub text: Name,
+}
+
+/// Label being read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Label {
+    names: Names,
+    /// Whether data before connects to the next data.
+    connect: bool,
+    /// Whether a non-whitespace byte was seen.
+    seen: bool,
+    /// Bytes inside so far.
+    size: usize,
+}
+
 /// Start of label.
 ///
 /// ```markdown
 /// > | [a]
 ///     ^
 /// ```
-pub fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer, names: Names) -> State {
     debug_assert_eq!(tokenizer.current, Some(b'['), "expected `[`");
-    tokenizer.enter(tokenizer.tokenize_state.token_1.clone());
-    tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
+    tokenizer.enter(names.whole);
+    tokenizer.enter(names.marker);
     tokenizer.consume();
-    tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-    tokenizer.enter(tokenizer.tokenize_state.token_3.clone());
-    State::Next(StateName::LabelAtBreak)
+    tokenizer.exit(names.marker);
+    tokenizer.enter(names.text);
+    State::Next(StateName::Label(Step::AtBreak(Label {
+        names,
+        connect: false,
+        seen: false,
+        size: 0,
+    })))
 }
 
 /// In label, at something, before something else.
@@ -90,36 +118,30 @@ pub fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]
 ///      ^
 /// ```
-pub fn at_break(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.tokenize_state.size > LINK_REFERENCE_SIZE_MAX
+fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
+    if label.size > LINK_REFERENCE_SIZE_MAX
         || matches!(tokenizer.current, None | Some(b'['))
-        || (matches!(tokenizer.current, Some(b']')) && !tokenizer.tokenize_state.seen)
+        || (matches!(tokenizer.current, Some(b']')) && !label.seen)
     {
-        State::Retry(StateName::LabelNok)
+        State::Nok
     } else {
         match tokenizer.current {
             Some(b'\n') => {
                 tokenizer.attempt(
-                    State::Next(StateName::LabelEolAfter),
-                    State::Next(StateName::LabelNok),
+                    State::Next(StateName::Label(Step::EolAfter(label))),
+                    State::Nok,
                 );
-                State::Retry(space_or_tab_eol_with_options(
-                    tokenizer,
-                    Options {
-                        content: Some(Content::String),
-                        connect: tokenizer.tokenize_state.connect,
-                    },
-                ))
+                State::Retry(space_or_tab_eol_with_options(Options {
+                    content: Some(Content::String),
+                    connect: label.connect,
+                }))
             }
             Some(b']') => {
-                tokenizer.exit(tokenizer.tokenize_state.token_3.clone());
-                tokenizer.enter(tokenizer.tokenize_state.token_2.clone());
+                tokenizer.exit(label.names.text);
+                tokenizer.enter(label.names.marker);
                 tokenizer.consume();
-                tokenizer.exit(tokenizer.tokenize_state.token_2.clone());
-                tokenizer.exit(tokenizer.tokenize_state.token_1.clone());
-                tokenizer.tokenize_state.connect = false;
-                tokenizer.tokenize_state.seen = false;
-                tokenizer.tokenize_state.size = 0;
+                tokenizer.exit(label.names.marker);
+                tokenizer.exit(label.names.whole);
                 State::Ok
             }
             _ => {
@@ -132,14 +154,14 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
                     },
                 );
 
-                if tokenizer.tokenize_state.connect {
+                if label.connect {
                     let index = tokenizer.events.len() - 1;
                     link(&mut tokenizer.events, index);
                 } else {
-                    tokenizer.tokenize_state.connect = true;
+                    label.connect = true;
                 }
 
-                State::Retry(StateName::LabelInside)
+                State::Retry(StateName::Label(Step::Inside(label)))
             }
         }
     }
@@ -152,22 +174,9 @@ pub fn at_break(tokenizer: &mut Tokenizer) -> State {
 /// > | b]
 ///     ^
 /// ```
-pub fn eol_after(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.connect = true;
-    State::Retry(StateName::LabelAtBreak)
-}
-
-/// In label, on something disallowed.
-///
-/// ```markdown
-/// > | []
-///      ^
-/// ```
-pub fn nok(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.tokenize_state.connect = false;
-    tokenizer.tokenize_state.seen = false;
-    tokenizer.tokenize_state.size = 0;
-    State::Nok
+fn eol_after(mut label: Label) -> State {
+    label.connect = true;
+    State::Retry(StateName::Label(Step::AtBreak(label)))
 }
 
 /// In label, in text.
@@ -176,27 +185,27 @@ pub fn nok(tokenizer: &mut Tokenizer) -> State {
 /// > | [a]
 ///      ^
 /// ```
-pub fn inside(tokenizer: &mut Tokenizer) -> State {
+fn inside(tokenizer: &mut Tokenizer, mut label: Label) -> State {
     match tokenizer.current {
         None | Some(b'\n' | b'[' | b']') => {
             tokenizer.exit(Name::Data);
-            State::Retry(StateName::LabelAtBreak)
+            State::Retry(StateName::Label(Step::AtBreak(label)))
         }
         Some(byte) => {
-            if tokenizer.tokenize_state.size > LINK_REFERENCE_SIZE_MAX {
+            if label.size > LINK_REFERENCE_SIZE_MAX {
                 tokenizer.exit(Name::Data);
-                State::Retry(StateName::LabelAtBreak)
+                State::Retry(StateName::Label(Step::AtBreak(label)))
             } else {
                 tokenizer.consume();
-                tokenizer.tokenize_state.size += 1;
-                if !tokenizer.tokenize_state.seen && !matches!(byte, b'\t' | b' ') {
-                    tokenizer.tokenize_state.seen = true;
+                label.size += 1;
+                if !matches!(byte, b'\t' | b' ') {
+                    label.seen = true;
                 }
-                State::Next(if matches!(byte, b'\\') {
-                    StateName::LabelEscape
+                State::Next(StateName::Label(if byte == b'\\' {
+                    Step::Escape(label)
                 } else {
-                    StateName::LabelInside
-                })
+                    Step::Inside(label)
+                }))
             }
         }
     }
@@ -208,13 +217,40 @@ pub fn inside(tokenizer: &mut Tokenizer) -> State {
 /// > | [a\*a]
 ///        ^
 /// ```
-pub fn escape(tokenizer: &mut Tokenizer) -> State {
+fn escape(tokenizer: &mut Tokenizer, mut label: Label) -> State {
     match tokenizer.current {
         Some(b'[' | b'\\' | b']') => {
             tokenizer.consume();
-            tokenizer.tokenize_state.size += 1;
-            State::Next(StateName::LabelInside)
+            label.size += 1;
+            State::Next(StateName::Label(Step::Inside(label)))
         }
-        _ => State::Retry(StateName::LabelInside),
+        _ => State::Retry(StateName::Label(Step::Inside(label))),
+    }
+}
+
+/// Steps of this construct.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Step {
+    Start(Names),
+    AtBreak(Label),
+    EolAfter(Label),
+    Escape(Label),
+    Inside(Label),
+}
+
+impl From<Step> for StateName {
+    fn from(step: Step) -> StateName {
+        StateName::Label(step)
+    }
+}
+
+/// Run a step.
+pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
+    match step {
+        Step::Start(names) => start(tokenizer, names),
+        Step::AtBreak(label) => at_break(tokenizer, label),
+        Step::EolAfter(label) => eol_after(label),
+        Step::Escape(label) => escape(tokenizer, label),
+        Step::Inside(label) => inside(tokenizer, label),
     }
 }
