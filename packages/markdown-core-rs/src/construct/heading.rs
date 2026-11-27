@@ -130,7 +130,7 @@ fn crosses(events: &[Event], parse_state: &ParseState, first: usize, cut: usize)
         &mut tokenizer,
         events,
         first,
-        State::Next(StateName::Text(text::Step::Start)),
+        State::Next(StateName::Text(text::Step::Before)),
     );
     tokenizer.flush(state, false);
     let list = &tokenizer.events;

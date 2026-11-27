@@ -1,4 +1,5 @@
-//! GFM: Task list item check occurs in the [text][] content type.
+//! Task list item check occurs at the end of a [list item][list_item]'s
+//! prefix.
 //!
 //! ## Grammar
 //!
@@ -6,57 +7,46 @@
 //! (<small>see [construct][crate::construct] for character groups</small>):
 //!
 //! ```bnf
-//! gfm_task_list_item_check ::= '[' (0x09 | ' ' | 'X' | 'x') ']'
+//! ; Restriction: the value is one Unicode scalar, no line ending.
+//! task_list_item_check ::= '[' value ']' 1*space_or_tab
 //! ```
 //!
-//! The check is only allowed at the start of the first paragraph, optionally
-//! following zero or more definitions or a blank line, in a list item.
-//! The check must be followed by whitespace, which is in turn followed by
-//! non-whitespace.
-//!
-//! ## HTML
-//!
-//! Checks relate to the `<input>` element, in the checkbox state
-//! (`type=checkbox`), in HTML.
-//! See [*§ 4.10.5.1.15 Checkbox state (`type=checkbox`)*][html-input-checkbox]
-//! in the HTML spec for more info.
-//!
-//! ## Recommendation
-//!
-//! It is recommended to use lowercase `x` (instead of uppercase `X`), because
-//! in markdown, it is more common to use lowercase in places where casing does
-//! not matter.
-//! It is also recommended to use a space (instead of a tab), as there is no
-//! benefit of using tabs in this case.
+//! The check is the first thing after the list item marker and its
+//! padding, before the first block of the item is decided: `- [?] # a` is
+//! an item checked `?` holding a heading.
+//! It does not count toward the item's indent: continuation lines align with
+//! the content after the marker, as without a check.
+//! The whitespace after the check is part of it, so a line with nothing else
+//! leaves the item empty, with no paragraph that a lax line could continue.
+//! Its value is any one scalar, kept as written: `x`, a space, `?`, `🚀` or
+//! `]`.
 //!
 //! ## Tokens
 //!
+//! * [`SpaceOrTab`][Name::SpaceOrTab]
 //! * [`TaskListItemCheck`][Name::TaskListItemCheck]
 //! * [`TaskListItemMarker`][Name::TaskListItemMarker]
-//! * [`TaskListItemValueChecked`][Name::TaskListItemValueChecked]
-//! * [`TaskListItemValueUnchecked`][Name::TaskListItemValueUnchecked]
+//! * [`TaskListItemValue`][Name::TaskListItemValue]
 //!
 //! ## References
 //!
-//! * [`micromark-extension-gfm-task-list-item`](https://github.com/micromark/micromark-extension-gfm-task-list-item)
 //! * [*§ 5.3 Task list items (extension)* in `GFM`](https://github.github.com/gfm/#task-list-items-extension-)
 //!
-//! [text]: crate::construct::text
-//! [html-input-checkbox]: https://html.spec.whatwg.org/multipage/input.html#checkbox-state-(type=checkbox)
+//! [list_item]: crate::construct::list_item
 
 use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
-/// At start of task list item check.
+/// At the check, after the list item marker and its padding.
 ///
 /// ```markdown
 /// > | * [x] y.
 ///       ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.document.first && tokenizer.current == Some(b'[') && tokenizer.previous.is_none() {
+    if tokenizer.current == Some(b'[') {
         tokenizer.enter(Name::TaskListItemCheck);
         tokenizer.enter(Name::TaskListItemMarker);
         tokenizer.consume();
@@ -67,87 +57,84 @@ fn start(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
-/// In task list item check.
+/// At the value: one scalar, of as many bytes as its first says.
 ///
 /// ```markdown
 /// > | * [x] y.
 ///        ^
 /// ```
 fn inside(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        Some(b'\t' | b'\n' | b' ') => {
-            tokenizer.enter(Name::TaskListItemValueUnchecked);
-            tokenizer.consume();
-            tokenizer.exit(Name::TaskListItemValueUnchecked);
-            State::Next(StateName::TaskListItemCheck(Step::Close))
-        }
-        Some(b'X' | b'x') => {
-            tokenizer.enter(Name::TaskListItemValueChecked);
-            tokenizer.consume();
-            tokenizer.exit(Name::TaskListItemValueChecked);
-            State::Next(StateName::TaskListItemCheck(Step::Close))
-        }
-        _ => State::Nok,
+    let size = match tokenizer.current {
+        None | Some(b'\n' | b'\r') => return State::Nok,
+        Some(0xF0..=0xFF) => 4,
+        Some(0xE0..=0xEF) => 3,
+        Some(0xC0..=0xDF) => 2,
+        Some(_) => 1,
+    };
+    tokenizer.enter(Name::TaskListItemValue);
+    State::Redo(StateName::TaskListItemCheck(Step::Value { size }))
+}
+
+/// In the value, with `size` bytes of it left.
+///
+/// ```markdown
+/// > | * [x] y.
+///        ^
+/// ```
+fn value(tokenizer: &mut Tokenizer, size: usize) -> State {
+    if size == 0 {
+        tokenizer.exit(Name::TaskListItemValue);
+        State::Redo(StateName::TaskListItemCheck(Step::Close))
+    } else {
+        tokenizer.consume();
+        State::Next(StateName::TaskListItemCheck(Step::Value { size: size - 1 }))
     }
 }
 
-/// At close of task list item check.
+/// At the closing bracket.
 ///
 /// ```markdown
 /// > | * [x] y.
 ///         ^
 /// ```
 fn close(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        Some(b']') => {
-            tokenizer.enter(Name::TaskListItemMarker);
-            tokenizer.consume();
-            tokenizer.exit(Name::TaskListItemMarker);
-            tokenizer.exit(Name::TaskListItemCheck);
-            State::Next(StateName::TaskListItemCheck(Step::After))
-        }
-        _ => State::Nok,
+    if tokenizer.current == Some(b']') {
+        tokenizer.enter(Name::TaskListItemMarker);
+        tokenizer.consume();
+        tokenizer.exit(Name::TaskListItemMarker);
+        State::Next(StateName::TaskListItemCheck(Step::After))
+    } else {
+        State::Nok
     }
 }
 
-/// After task list item check.
+/// After the check, at the whitespace it needs.
 ///
 /// ```markdown
 /// > | * [x] y.
 ///          ^
 /// ```
 fn after(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        // EOL in paragraph means there must be something else after it.
-        Some(b'\n') => State::Ok,
-        // Space or tab?
-        // Check what comes after.
-        Some(b'\t' | b' ') => {
-            tokenizer.check(State::Ok, State::Nok);
-            tokenizer.attempt(
-                State::Next(StateName::TaskListItemCheck(Step::AfterSpaceOrTab)),
-                State::Nok,
-            );
-            State::Redo(space_or_tab())
-        }
-        // EOF, or non-whitespace, both wrong.
-        _ => State::Nok,
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(
+            State::Next(StateName::TaskListItemCheck(Step::End)),
+            State::Nok,
+        );
+        State::Redo(space_or_tab())
+    } else {
+        State::Nok
     }
 }
 
-/// After whitespace, after task list item check.
+/// After the whitespace.
 ///
 /// ```markdown
 /// > | * [x] y.
 ///           ^
 /// ```
-fn after_space_or_tab(tokenizer: &mut Tokenizer) -> State {
-    // End of paragraph, after whitespace, after check, is not okay.
-    if tokenizer.current.is_none() {
-        State::Nok
-    } else {
-        State::Ok
-    }
+fn end(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.exit(Name::TaskListItemCheck);
+    State::Ok
 }
 
 /// Steps of this construct.
@@ -155,9 +142,10 @@ fn after_space_or_tab(tokenizer: &mut Tokenizer) -> State {
 pub enum Step {
     Start,
     Inside,
+    Value { size: usize },
     Close,
     After,
-    AfterSpaceOrTab,
+    End,
 }
 
 impl From<Step> for StateName {
@@ -171,8 +159,9 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::Start => start(tokenizer),
         Step::Inside => inside(tokenizer),
+        Step::Value { size } => value(tokenizer, size),
         Step::Close => close(tokenizer),
         Step::After => after(tokenizer),
-        Step::AfterSpaceOrTab => after_space_or_tab(tokenizer),
+        Step::End => end(tokenizer),
     }
 }

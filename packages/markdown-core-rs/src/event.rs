@@ -1,5 +1,6 @@
 //! Semantic labels of things happening.
 
+use crate::tokenizer::continues;
 use crate::util::constant::TAB_SIZE;
 
 /// Semantic label of a span.
@@ -2550,16 +2551,16 @@ pub enum Name {
     ///     ^^^^^
     /// ```
     TableRow,
-    /// GFM extension: task list item check.
+    /// Task list item check.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [text content][crate::construct::text]
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
     /// * **Content model**:
+    ///   [`SpaceOrTab`][Name::SpaceOrTab],
     ///   [`TaskListItemMarker`][Name::TaskListItemMarker],
-    ///   [`TaskListItemValueChecked`][Name::TaskListItemValueChecked],
-    ///   [`TaskListItemValueUnchecked`][Name::TaskListItemValueUnchecked]
+    ///   [`TaskListItemValue`][Name::TaskListItemValue]
     /// * **Construct**:
     ///   [`task_list_item_check`][crate::construct::task_list_item_check]
     ///
@@ -2570,7 +2571,7 @@ pub enum Name {
     ///       ^^^
     /// ```
     TaskListItemCheck,
-    /// GFM extension: task list item check marker.
+    /// Task list item check marker.
     ///
     /// ## Info
     ///
@@ -2588,7 +2589,8 @@ pub enum Name {
     ///       ^ ^
     /// ```
     TaskListItemMarker,
-    /// GFM extension: task list item value: checked.
+    /// Task list item value: the one scalar between the brackets, kept as
+    /// written.
     ///
     /// ## Info
     ///
@@ -2605,25 +2607,7 @@ pub enum Name {
     /// > | * [x] y.
     ///        ^
     /// ```
-    TaskListItemValueChecked,
-    /// GFM extension: task list item value: unchecked.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`TaskListItemCheck`][Name::TaskListItemCheck]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`task_list_item_check`][crate::construct::task_list_item_check]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | * [ ] z.
-    ///        ^
-    /// ```
-    TaskListItemValueUnchecked,
+    TaskListItemValue,
     /// Whole hard break (escape).
     ///
     /// ## Info
@@ -4220,8 +4204,7 @@ impl Name {
             | Name::TableRow
             | Name::TaskListItemCheck
             | Name::TaskListItemMarker
-            | Name::TaskListItemValueChecked
-            | Name::TaskListItemValueUnchecked
+            | Name::TaskListItemValue
             | Name::HeadingAtxSequence
             | Name::HeadingAtxText
             | Name::HeadingSetextText
@@ -4280,7 +4263,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 96] = [
+pub const VOID_EVENTS: [Name; 95] = [
     Name::DefinitionBodyMarker,
     Name::AttributesMarker,
     Name::AttributeId,
@@ -4328,8 +4311,7 @@ pub const VOID_EVENTS: [Name; 96] = [
     Name::TableDelimiterMarker,
     Name::TableDelimiterFiller,
     Name::TaskListItemMarker,
-    Name::TaskListItemValueChecked,
-    Name::TaskListItemValueUnchecked,
+    Name::TaskListItemValue,
     Name::FrontmatterSequence,
     Name::HardBreakEscape,
     Name::HardBreakTail,
@@ -4412,7 +4394,7 @@ pub struct Link {
 pub struct Point {
     /// 1-indexed line number.
     pub line: usize,
-    /// 1-indexed column number.
+    /// 1-indexed column number, in scalars.
     ///
     /// This is increased up to a tab stop for tabs.
     /// Some editors count tabs as 1 character, so this position is not the
@@ -4446,9 +4428,11 @@ impl Point {
                     next.index += 1;
                     next.column += 1 + vs;
                 }
-                _ => {
+                byte => {
                     next.index += 1;
-                    next.column += 1;
+                    if !continues(byte) {
+                        next.column += 1;
+                    }
                 }
             }
         }

@@ -458,7 +458,7 @@ fn spaces(parse_state: &ParseState, events: &[Event], index: usize) -> usize {
                 &mut field,
                 events,
                 index,
-                State::Next(StateName::Text(text::Step::Start)),
+                State::Next(StateName::Text(text::Step::Before)),
             );
             field.flush(state, false);
             text_spaces(parse_state, &field.events)

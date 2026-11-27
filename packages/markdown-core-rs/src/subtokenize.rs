@@ -18,11 +18,11 @@
 //! any level that can include references can be parsed.
 
 use crate::construct::{content, string, text};
-use crate::event::{Content, Event, Kind, Name, VOID_EVENTS};
+use crate::event::{Content, Event, Kind, VOID_EVENTS};
 use crate::parser::ParseState;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::{Definitions, Tokenizer};
-use crate::util::{edit_map::EditMap, skip};
+use crate::util::edit_map::EditMap;
 use alloc::{vec, vec::Vec};
 
 #[derive(Debug)]
@@ -108,34 +108,8 @@ pub fn subtokenize(
                 let mut state = State::Next(match link.content {
                     Content::Content => StateName::Content(content::Step::DefinitionBefore),
                     Content::String => StateName::String(string::Step::Start),
-                    _ => StateName::Text(text::Step::Start),
+                    _ => StateName::Text(text::Step::Before),
                 });
-
-                // Check if this is the first paragraph, after zero or more
-                // definitions (or a blank line), in a list item.
-                // Used for GFM task list items.
-                if index > 2
-                    && events[index - 1].kind == Kind::Enter
-                    && events[index - 1].name == Name::Paragraph
-                {
-                    let before = skip::opt_back(
-                        events,
-                        index - 2,
-                        &[
-                            Name::BlankLineEnding,
-                            Name::Definition,
-                            Name::LineEnding,
-                            Name::SpaceOrTab,
-                            Name::ContainerIndent,
-                        ],
-                    );
-
-                    if events[before].kind == Kind::Exit
-                        && events[before].name == Name::ListItemPrefix
-                    {
-                        tokenizer.document.first = true;
-                    }
-                }
 
                 state = feed(&mut tokenizer, events, index, state);
 

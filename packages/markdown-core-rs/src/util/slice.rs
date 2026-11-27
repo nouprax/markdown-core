@@ -1,6 +1,7 @@
 //! Deal with bytes.
 
 use crate::event::{Event, Kind, Point};
+use crate::tokenizer::continues;
 use crate::util::constant::TAB_SIZE;
 use alloc::{format, string::String, vec};
 use core::str;
@@ -12,6 +13,8 @@ pub fn advance(bytes: &[u8], point: &Point, index: usize) -> Point {
     while at < index {
         column = if bytes[at] == b'\t' {
             ((column - 1) / TAB_SIZE + 1) * TAB_SIZE + 1
+        } else if continues(bytes[at]) {
+            column
         } else {
             column + 1
         };

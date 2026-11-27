@@ -552,20 +552,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn paragraph(&mut self, index: usize) -> Node {
-        // A task check is the list item's marker, not paragraph content.
-        let mut start = self.start(index);
-        let mut from = index + 1;
-        if let Some(first) = self.inside(index).first().copied() {
-            if self.name(first) == Name::TaskListItemCheck {
-                from = self.exits[first] + 1;
-                if let Some(next) = self.children(from, self.exits[index]).first() {
-                    if self.name(*next) == Name::SpaceOrTab {
-                        from = self.exits[*next] + 1;
-                    }
-                }
-                start = self.events[from].point.index;
-            }
-        }
+        let start = self.start(index);
+        let from = index + 1;
         let mut content = self.content_range(from, self.exits[index], true);
         let mut anchor = None;
         if let Some(identifier) = self.child(index, Name::BlockIdentifier) {
@@ -914,27 +902,12 @@ impl<'a> Compiler<'a> {
         node
     }
 
-    /// The task marker of the list item at `index`: the check its first
-    /// paragraph starts with.
+    /// The task marker of the list item at `index`: the value of the check
+    /// that ends its prefix.
     fn marker(&self, index: usize) -> Option<String> {
-        let paragraph = self.inside(index).into_iter().find(|child| {
-            !between(self.name(*child)) && self.name(*child) != Name::ListItemPrefix
-        })?;
-        if self.name(paragraph) != Name::Paragraph {
-            return None;
-        }
-        let check = *self.inside(paragraph).first()?;
-        if self.name(check) != Name::TaskListItemCheck {
-            return None;
-        }
-        self.inside(check)
-            .into_iter()
-            .find(|child| {
-                matches!(
-                    self.name(*child),
-                    Name::TaskListItemValueChecked | Name::TaskListItemValueUnchecked
-                )
-            })
+        let prefix = self.child(index, Name::ListItemPrefix)?;
+        let check = self.child(prefix, Name::TaskListItemCheck)?;
+        self.child(check, Name::TaskListItemValue)
             .map(|value| self.text(value).to_string())
     }
 
@@ -1123,7 +1096,9 @@ impl<'a> Compiler<'a> {
         for index in self.children(from, to) {
             let name = self.name(index);
             let at_line_start = line_start;
-            line_start = false;
+            // The prefixes of the containers around a line go before it.
+            line_start =
+                at_line_start && matches!(name, Name::ContainerIndent | Name::BlockQuotePrefix);
             let after_data = data_end.take();
             match name.role() {
                 Role::Space(Space::Whitespace) if at_line_start => {}

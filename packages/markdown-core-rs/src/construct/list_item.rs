@@ -61,7 +61,7 @@
 use crate::construct::partial_space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
-use crate::construct::{blank_line, thematic_break};
+use crate::construct::{blank_line, task_list_item_check, thematic_break};
 use crate::event::{Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -289,10 +289,33 @@ fn after(tokenizer: &mut Tokenizer, blank: bool) -> State {
         container.blank_initial = blank;
         container.size = prefix;
 
-        tokenizer.exit(Name::ListItemPrefix);
-        tokenizer.register_resolver_before(ResolveName::ListItem);
-        State::Ok
+        if blank {
+            State::Redo(StateName::ListItem(Step::PrefixEnd))
+        } else {
+            // A task check ends the prefix, past the item's indent.
+            tokenizer.attempt(
+                State::Next(StateName::ListItem(Step::PrefixEnd)),
+                State::Next(StateName::ListItem(Step::PrefixEnd)),
+            );
+            State::Redo(StateName::TaskListItemCheck(
+                task_list_item_check::Step::Start,
+            ))
+        }
     }
+}
+
+/// At the end of the list item prefix.
+///
+/// ```markdown
+/// > | * a
+///       ^
+/// > | * [x] b
+///           ^
+/// ```
+fn prefix_end(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.exit(Name::ListItemPrefix);
+    tokenizer.register_resolver_before(ResolveName::ListItem);
+    State::Ok
 }
 
 /// Start of list item continuation.
@@ -483,6 +506,7 @@ pub enum Step {
     Whitespace,
     WhitespaceAfter,
     PrefixOther,
+    PrefixEnd,
     ContStart,
     ContBlank,
     ContFilled,
@@ -509,6 +533,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Whitespace => whitespace(tokenizer),
         Step::WhitespaceAfter => whitespace_after(tokenizer),
         Step::PrefixOther => prefix_other(tokenizer),
+        Step::PrefixEnd => prefix_end(tokenizer),
         Step::ContStart => cont_start(tokenizer),
         Step::ContBlank => cont_blank(tokenizer),
         Step::ContFilled => cont_filled(tokenizer),

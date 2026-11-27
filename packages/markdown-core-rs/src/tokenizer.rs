@@ -257,10 +257,6 @@ pub struct Document<'a> {
     /// Whether the previous flow was a paragraph or a definition, so a lazy
     /// line can continue it.
     pub open: bool,
-    /// Whether this is the first paragraph (potentially after definitions) in
-    /// a list item.
-    /// Used for GFM task list items.
-    pub first: bool,
 }
 
 /// State of a lookahead over later lines ([`ahead`][crate::ahead]).
@@ -514,7 +510,7 @@ impl<'a> Tokenizer<'a> {
                     self.line_start = self.point.clone();
 
                     self.account_for_potential_skip();
-                } else {
+                } else if !continues(byte) {
                     self.point.column += 1;
                 }
             }
@@ -789,6 +785,12 @@ fn push_impl(
     }
 
     state
+}
+
+/// Whether `byte` continues a scalar: columns count scalars, so tab stops
+/// fall where characters put them.
+pub fn continues(byte: u8) -> bool {
+    (0x80..0xC0).contains(&byte)
 }
 
 /// Figure out how to handle a byte.
