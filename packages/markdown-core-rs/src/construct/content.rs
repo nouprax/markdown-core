@@ -138,6 +138,8 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Result<Option<Subresult>, message::
                     let event = &tokenizer.events[enter_index];
 
                     if event.name != Name::SpaceOrTab
+                        && event.name != Name::ListItemIndent
+                        && event.name != Name::GfmFootnoteDefinitionIndent
                         && event.name != Name::BlockQuotePrefix
                         && event.name != Name::BlockQuoteMarker
                     {

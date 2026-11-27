@@ -34,13 +34,16 @@
 )]
 
 extern crate alloc;
+pub mod ast;
 mod configuration;
 mod construct;
+pub mod dump;
 mod event;
 mod parser;
 mod resolve;
 mod state;
 mod subtokenize;
+mod to_ast;
 mod to_html;
 mod to_mdast;
 mod tokenizer;
@@ -161,4 +164,60 @@ pub fn to_mdast(value: &str, options: &ParseOptions) -> Result<mdast::Node, mess
     let (events, parse_state) = parser::parse(value, options)?;
     let node = to_mdast::compile(&events, parse_state.bytes)?;
     Ok(node)
+}
+
+/// The one dialect: every construct the canonical AST knows.
+fn dialect() -> ParseOptions {
+    ParseOptions {
+        constructs: Constructs {
+            frontmatter: true,
+            math_flow: true,
+            math_text: true,
+            ..Constructs::gfm()
+        },
+        ..ParseOptions::default()
+    }
+}
+
+/// Parse `source` into the canonical AST.
+pub fn parse(source: &str) -> ast::Node {
+    let options = dialect();
+    let (events, parse_state) =
+        parser::parse(source, &options).expect("expected the dialect to parse every input");
+    to_ast::compile(&events, parse_state.bytes)
+}
+
+/// The event stream of `source`, one line per event, for debugging.
+#[doc(hidden)]
+pub fn events(source: &str) -> String {
+    use core::fmt::Write;
+    let options = dialect();
+    let (events, _) =
+        parser::parse(source, &options).expect("expected the dialect to parse every input");
+    let mut out = String::new();
+    let mut depth = 0usize;
+    for event in &events {
+        if event.kind == event::Kind::Exit {
+            depth -= 1;
+        }
+        let _ = writeln!(
+            out,
+            "{}{:?} {:?} {}:{}@{}{}",
+            "  ".repeat(depth),
+            event.kind,
+            event.name,
+            event.point.line,
+            event.point.column,
+            event.point.index,
+            if event.point.vs > 0 {
+                alloc::format!("+{}", event.point.vs)
+            } else {
+                String::new()
+            }
+        );
+        if event.kind == event::Kind::Enter {
+            depth += 1;
+        }
+    }
+    out
 }

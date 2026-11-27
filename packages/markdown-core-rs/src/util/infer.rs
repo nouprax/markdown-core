@@ -58,7 +58,10 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
                 if events[before].name == Name::ListItem {
                     before -= 1;
 
-                    if events[before].name == Name::SpaceOrTab {
+                    if matches!(
+                        events[before].name,
+                        Name::SpaceOrTab | Name::ListItemIndent | Name::GfmFootnoteDefinitionIndent
+                    ) {
                         before -= 2;
                     }
 
@@ -117,7 +120,10 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
                 // List item.
                 let mut before = index - 2;
 
-                if events[before].name == Name::SpaceOrTab {
+                if matches!(
+                    events[before].name,
+                    Name::SpaceOrTab | Name::ListItemIndent | Name::GfmFootnoteDefinitionIndent
+                ) {
                     before -= 2;
                 }
 

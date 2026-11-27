@@ -3284,6 +3284,12 @@ pub enum Name {
     ///     ^ ^ ^ ^
     /// ```
     SpaceOrTab,
+    /// The indentation a list item's continuation line consumes
+    /// (micromark `listItemIndent`).
+    ListItemIndent,
+    /// The indentation a footnote definition's continuation line consumes
+    /// (micromark `gfmFootnoteDefinitionIndent`).
+    GfmFootnoteDefinitionIndent,
     /// Strong.
     ///
     /// ## Info
@@ -3381,7 +3387,7 @@ pub enum Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 76] = [
+pub const VOID_EVENTS: [Name; 78] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3456,6 +3462,8 @@ pub const VOID_EVENTS: [Name; 76] = [
     Name::ResourceMarker,
     Name::ResourceTitleMarker,
     Name::SpaceOrTab,
+    Name::ListItemIndent,
+    Name::GfmFootnoteDefinitionIndent,
     Name::StrongSequence,
     Name::ThematicBreakSequence,
 ];

@@ -165,7 +165,9 @@
 //! [html_section]: https://html.spec.whatwg.org/multipage/sections.html#the-section-element
 //! [html_sup]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-sub-and-sup-elements
 
-use crate::construct::partial_space_or_tab::space_or_tab_min_max;
+use crate::construct::partial_space_or_tab::{
+    space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
+};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -400,7 +402,7 @@ pub fn cont_start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        State::Retry(space_or_tab_min_max(tokenizer, 0, TAB_SIZE))
+        State::Retry(indent(tokenizer, 0, TAB_SIZE))
     } else {
         State::Ok
     }
@@ -416,8 +418,22 @@ pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
 pub fn cont_filled(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume exactly `TAB_SIZE`.
-        State::Retry(space_or_tab_min_max(tokenizer, TAB_SIZE, TAB_SIZE))
+        State::Retry(indent(tokenizer, TAB_SIZE, TAB_SIZE))
     } else {
         State::Nok
     }
+}
+
+/// The indentation a continuation line consumes for the definition.
+fn indent(tokenizer: &mut Tokenizer, min: usize, max: usize) -> StateName {
+    space_or_tab_with_options(
+        tokenizer,
+        SpaceOrTabOptions {
+            kind: Name::GfmFootnoteDefinitionIndent,
+            min,
+            max,
+            content: None,
+            connect: false,
+        },
+    )
 }

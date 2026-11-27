@@ -58,7 +58,9 @@
 //! [html_ul]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-ul-element
 //! [commonmark_block]: https://spec.commonmark.org/0.31/#phase-1-block-structure
 
-use crate::construct::partial_space_or_tab::space_or_tab_min_max;
+use crate::construct::partial_space_or_tab::{
+    space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
+};
 use crate::event::{Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -342,7 +344,7 @@ pub fn cont_blank(tokenizer: &mut Tokenizer) -> State {
         State::Nok
     } else if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume, optionally, at most `size`.
-        State::Retry(space_or_tab_min_max(tokenizer, 0, size))
+        State::Retry(indent(tokenizer, 0, size))
     } else {
         State::Ok
     }
@@ -364,7 +366,7 @@ pub fn cont_filled(tokenizer: &mut Tokenizer) -> State {
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume exactly `size`.
-        State::Retry(space_or_tab_min_max(tokenizer, size, size))
+        State::Retry(indent(tokenizer, size, size))
     } else {
         State::Nok
     }
@@ -400,6 +402,8 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                         previous.3 + 1,
                         &[
                             Name::SpaceOrTab,
+                            Name::ListItemIndent,
+                            Name::GfmFootnoteDefinitionIndent,
                             Name::LineEnding,
                             Name::BlankLineEnding,
                             Name::BlockQuotePrefix,
@@ -471,4 +475,18 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
     tokenizer.map.consume(&mut tokenizer.events);
     None
+}
+
+/// The indentation a continuation line consumes for the list item.
+fn indent(tokenizer: &mut Tokenizer, min: usize, max: usize) -> StateName {
+    space_or_tab_with_options(
+        tokenizer,
+        SpaceOrTabOptions {
+            kind: Name::ListItemIndent,
+            min,
+            max,
+            content: None,
+            connect: false,
+        },
+    )
 }

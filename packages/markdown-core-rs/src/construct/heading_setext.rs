@@ -197,7 +197,13 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
         let paragraph_exit_before = skip::opt_back(
             &tokenizer.events,
             enter - 1,
-            &[Name::SpaceOrTab, Name::LineEnding, Name::BlockQuotePrefix],
+            &[
+                Name::SpaceOrTab,
+                Name::ListItemIndent,
+                Name::GfmFootnoteDefinitionIndent,
+                Name::LineEnding,
+                Name::BlockQuotePrefix,
+            ],
         );
 
         // There’s a paragraph before: this is a setext heading.

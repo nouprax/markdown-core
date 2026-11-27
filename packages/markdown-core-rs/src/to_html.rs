@@ -1367,6 +1367,8 @@ fn on_exit_list_item(context: &mut CompileContext) {
             Name::BlockQuotePrefix,
             Name::LineEnding,
             Name::SpaceOrTab,
+            Name::ListItemIndent,
+            Name::GfmFootnoteDefinitionIndent,
             // Also ignore things that don’t contribute to the document.
             Name::Definition,
             Name::GfmFootnoteDefinition,

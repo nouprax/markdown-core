@@ -16,4 +16,7 @@ pub mod normalize_identifier;
 pub mod sanitize_uri;
 pub mod skip;
 pub mod slice;
+#[rustfmt::skip]
+pub mod tables;
+pub mod classes;
 pub mod unicode;
