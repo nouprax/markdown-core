@@ -7,10 +7,11 @@
 //!
 //! ```bnf
 //! ; Restriction: no blank lines.
-//! ; Restriction: markers must match (in case of `(` with `)`).
+//! ; Restriction: markers must match (in case of `(` with `)`), and a
+//! ; parenthesized title holds `(` only escaped.
 //! title ::= marker *(title_byte | title_escape) marker
 //! title_byte ::= code - '\\' - marker
-//! title_escape ::= '\\' ['\\' | marker]
+//! title_escape ::= '\\' ['\\' | marker | ')']
 //! marker ::= '"' | '\'' | '('
 //! ```
 //!
@@ -172,6 +173,9 @@ fn inside(tokenizer: &mut Tokenizer, title: Title) -> State {
     if tokenizer.current == Some(title.close) || matches!(tokenizer.current, None | Some(b'\n')) {
         tokenizer.exit(Name::Data);
         State::Redo(StateName::Title(Step::AtBreak(title)))
+    } else if title.close == b')' && tokenizer.current == Some(b'(') {
+        // A parenthesized title holds a `(` only escaped.
+        State::Nok
     } else {
         let next = if tokenizer.current == Some(b'\\') {
             Step::Escape(title)
@@ -191,7 +195,7 @@ fn inside(tokenizer: &mut Tokenizer, title: Title) -> State {
 /// ```
 fn escape(tokenizer: &mut Tokenizer, title: Title) -> State {
     match tokenizer.current {
-        Some(b'"' | b'\'' | b')' | b'\\') => {
+        Some(b'"' | b'\'' | b'(' | b')' | b'\\') => {
             tokenizer.consume();
             State::Next(StateName::Title(Step::Inside(title)))
         }

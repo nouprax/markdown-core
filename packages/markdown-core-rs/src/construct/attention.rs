@@ -277,6 +277,9 @@ struct Sequence {
     end_point: Point,
     /// The number of markers we can still use.
     size: usize,
+    /// The number of markers in the run as written, which the rule of three
+    /// counts.
+    run: usize,
     /// Whether this sequence can open attention.
     open: bool,
     /// Whether this sequence can close attention.
@@ -355,13 +358,14 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                     && sequence_close.stack == sequence_open.stack
                 {
                     // If the opening can close or the closing can open,
-                    // and the close size *is not* a multiple of three,
-                    // but the sum of the opening and closing size *is*
-                    // multiple of three, then **don’t** match.
+                    // and the closing run *is not* a multiple of three,
+                    // but the sum of the opening and closing runs *is*
+                    // multiple of three, then **don’t** match: the runs
+                    // as written, not what earlier matches left of them.
                     if spec.three
                         && (sequence_open.close || sequence_close.open)
-                        && sequence_close.size % 3 != 0
-                        && (sequence_open.size + sequence_close.size) % 3 == 0
+                        && sequence_close.run % 3 != 0
+                        && (sequence_open.run + sequence_close.run) % 3 == 0
                     {
                         continue;
                     }
@@ -533,6 +537,7 @@ fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
                     start_point: enter.point.clone(),
                     end_point: exit.point.clone(),
                     size,
+                    run: size,
                     open,
                     close,
                 });

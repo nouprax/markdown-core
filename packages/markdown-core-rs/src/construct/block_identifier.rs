@@ -349,7 +349,7 @@ fn close(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        None => State::Redo(StateName::BlockIdentifier(Step::Done)),
+        None if end(tokenizer) => State::Redo(StateName::BlockIdentifier(Step::Done)),
         Some(b'\n') => {
             tokenizer.check(
                 State::Next(StateName::BlockIdentifier(Step::Done)),
@@ -373,9 +373,12 @@ fn after(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn follow(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        None => State::Ok,
-        // A line of other containers does not follow.
-        _ if tokenizer.lazy => State::Nok,
+        None if end(tokenizer) => State::Ok,
+        // The end of a container, at a line that closes it or holds no
+        // more of it, is content that follows, and so is a line of other
+        // containers.
+        None => State::Nok,
+        _ if tokenizer.lazy || tokenizer.closing => State::Nok,
         Some(b'\n') => State::Ok,
         Some(b'\t' | b' ') => {
             tokenizer.attempt(
@@ -386,6 +389,13 @@ fn follow(tokenizer: &mut Tokenizer) -> State {
         }
         _ => State::Nok,
     }
+}
+
+/// Whether the cursor is at the end of the input, which may stand for the
+/// blank line after an identifier line, rather than at the end of its
+/// container.
+fn end(tokenizer: &Tokenizer) -> bool {
+    tokenizer.point.index >= tokenizer.parse_state.bytes.len()
 }
 
 /// In the check, after whitespace on the line after.

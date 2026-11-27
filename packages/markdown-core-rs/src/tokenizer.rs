@@ -368,6 +368,9 @@ pub struct Tokenizer<'a> {
     pub pierce: bool,
     /// Whether this line is lazy: there are less containers than before.
     pub lazy: bool,
+    /// Whether the current line closes a container of the flow, so that
+    /// nothing on it is the flow’s but its line ending.
+    pub closing: bool,
     /// The line a definition marker is due on, after a
     /// [definition term][crate::construct::definition_term]: a definition
     /// body opens there.
@@ -401,6 +404,7 @@ impl<'a> Tokenizer<'a> {
             pierce: false,
             concrete: false,
             lazy: false,
+            closing: false,
             term: None,
             resolvers: vec![],
         }

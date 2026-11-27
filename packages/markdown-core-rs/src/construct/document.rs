@@ -328,6 +328,11 @@ fn containers_after(tokenizer: &mut Tokenizer) -> State {
     let child = tokenizer.document.child.as_mut().unwrap();
 
     child.lazy = tokenizer.document.continued != tokenizer.document.stack.len();
+    child.closing = tokenizer
+        .document
+        .stack
+        .iter()
+        .any(|container| container.closed);
     // A lax line after flow that takes one (a paragraph, a callout header)
     // is read as if it interrupts that flow.
     if child.lazy && tokenizer.document.open {
