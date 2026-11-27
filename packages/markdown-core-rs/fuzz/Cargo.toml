@@ -1,5 +1,5 @@
 [package]
-name = "markdown-fuzz"
+name = "markdown-core-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 publish = false
@@ -12,7 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 honggfuzz = "0.5"
 
-[dependencies.markdown]
+[dependencies.markdown-core]
 path = ".."
 
 # Prevent this from interfering with workspaces
@@ -20,13 +20,13 @@ path = ".."
 members = ["."]
 
 [[bin]]
-name = "markdown_libfuzz"
-path = "fuzz_targets/markdown_libfuzz.rs"
+name = "libfuzz"
+path = "cases/libfuzz.rs"
 test = false
 doc = false
 
 [[bin]]
-name = "markdown_honggfuzz"
-path = "fuzz_targets/markdown_honggfuzz.rs"
+name = "hfuzz"
+path = "cases/hfuzz.rs"
 test = false
 doc = false

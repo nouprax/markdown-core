@@ -21,7 +21,7 @@ use core::str;
 /// ## Examples
 ///
 /// ```rust ignore
-/// use markdown::util::decode_character_reference::decode_named;
+/// use markdown_core::util::decode_character_reference::decode_named;
 ///
 /// assert_eq!(decode_named("amp"), "&");
 /// assert_eq!(decode_named("AElig"), "Æ");
@@ -54,7 +54,7 @@ pub fn decode_named(value: &str) -> Option<String> {
 /// ## Examples
 ///
 /// ```rust ignore
-/// use markdown::util::decode_character_reference::decode_numeric;
+/// use markdown_core::util::decode_character_reference::decode_numeric;
 ///
 /// assert_eq!(decode_numeric("123", 10), "{");
 /// assert_eq!(decode_numeric("9", 16), "\t");

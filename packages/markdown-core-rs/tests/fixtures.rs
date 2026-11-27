@@ -94,8 +94,8 @@ fn fixtures() {
                 continue;
             }
             file_total += 1;
-            let document = markdown::parse(&case.markdown);
-            let actual = markdown::dump::dump(&document, &case.markdown);
+            let document = markdown_core::parse(&case.markdown);
+            let actual = markdown_core::dump::dump(&document, &case.markdown);
             if actual == case.expected {
                 file_passed += 1;
             } else if shown < show {

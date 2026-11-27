@@ -23,9 +23,9 @@ fn main() {
         }
     };
     if events {
-        print!("{}", markdown::events(&source));
+        print!("{}", markdown_core::events(&source));
     } else {
-        let document = markdown::parse(&source);
-        print!("{}", markdown::dump::dump(&document, &source));
+        let document = markdown_core::parse(&source);
+        print!("{}", markdown_core::dump::dump(&document, &source));
     }
 }

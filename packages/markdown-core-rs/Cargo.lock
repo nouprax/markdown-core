@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "markdown"
+name = "markdown-core"
 version = "1.0.0"

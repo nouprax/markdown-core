@@ -26,7 +26,7 @@ use alloc::string::String;
 /// ## Examples
 ///
 /// ```rust ignore
-/// markdown::util::normalize_identifier::normalize_identifier;
+/// markdown_core::util::normalize_identifier::normalize_identifier;
 ///
 /// assert_eq!(normalize_identifier(" a "), "a");
 /// assert_eq!(normalize_identifier("a\t\r\nb"), "a b");
