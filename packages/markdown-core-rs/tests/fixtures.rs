@@ -59,19 +59,19 @@ fn load(text: &str) -> Vec<Example> {
 
 #[test]
 fn fixtures() {
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../markdown-core/tests/fixtures");
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../markdown-core/tests/fixtures");
     let show: usize = env::var("FIXTURES_SHOW")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
-    let only = env::var("FIXTURES_ONLY").ok();
+    let filter = env::var("FIXTURES_ONLY").ok();
     let example = env::var("FIXTURES_EXAMPLE")
         .ok()
         .and_then(|value| value.parse::<usize>().ok());
-    let mut names: Vec<String> = fs::read_dir(&directory)
+    let mut names: Vec<String> = fs::read_dir(&folder)
         .expect("expected the C fixtures")
-        .filter_map(|entry| {
-            let name = entry.ok()?.file_name().into_string().ok()?;
+        .filter_map(|item| {
+            let name = item.ok()?.file_name().into_string().ok()?;
             name.ends_with(".txt").then_some(name)
         })
         .collect();
@@ -81,12 +81,12 @@ fn fixtures() {
     let mut shown = 0;
     let mut report = String::new();
     for name in &names {
-        if let Some(only) = &only {
-            if !name.starts_with(only.as_str()) {
+        if let Some(filter) = &filter {
+            if !name.starts_with(filter.as_str()) {
                 continue;
             }
         }
-        let text = fs::read_to_string(directory.join(name)).expect("expected a fixture");
+        let text = fs::read_to_string(folder.join(name)).expect("expected a fixture");
         let mut file_total = 0;
         let mut file_passed = 0;
         for case in load(&text) {

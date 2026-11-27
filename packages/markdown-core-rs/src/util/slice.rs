@@ -5,7 +5,7 @@ use crate::util::constant::TAB_SIZE;
 use alloc::{format, string::String, vec};
 use core::str;
 
-/// A range between two points.
+/// A span between two points.
 #[derive(Debug)]
 pub struct Position<'a> {
     /// Start point.
@@ -40,13 +40,13 @@ impl<'a> Position<'a> {
     }
 }
 
-/// Bytes belonging to a range.
+/// Bytes belonging to a span.
 ///
 /// Includes info on virtual spaces before and after the bytes.
 #[derive(Debug)]
 pub struct Slice<'a> {
     /// Bytes.
-    pub bytes: &'a [u8],
+    pub source: &'a [u8],
     /// Number of virtual spaces before the bytes.
     pub before: usize,
     /// Number of virtual spaces after the bytes.
@@ -55,7 +55,7 @@ pub struct Slice<'a> {
 
 impl<'a> Slice<'a> {
     /// Get a slice for a position.
-    pub fn from_position(bytes: &'a [u8], position: &Position) -> Slice<'a> {
+    pub fn from_position(source: &'a [u8], position: &Position) -> Slice<'a> {
         let mut before = position.start.vs;
         let mut after = position.end.vs;
         let mut start = position.start.index;
@@ -76,7 +76,7 @@ impl<'a> Slice<'a> {
         }
 
         Slice {
-            bytes: &bytes[start..end],
+            source: &source[start..end],
             before,
             after,
         }
@@ -85,9 +85,9 @@ impl<'a> Slice<'a> {
     /// Get a slice for two indices.
     ///
     /// > 👉 **Note**: indices cannot represent virtual spaces.
-    pub fn from_indices(bytes: &'a [u8], start: usize, end: usize) -> Slice<'a> {
+    pub fn from_indices(source: &'a [u8], start: usize, end: usize) -> Slice<'a> {
         Slice {
-            bytes: &bytes[start..end],
+            source: &source[start..end],
             before: 0,
             after: 0,
         }
@@ -95,14 +95,14 @@ impl<'a> Slice<'a> {
 
     /// Get the size of this slice, including virtual spaces.
     pub fn len(&self) -> usize {
-        self.bytes.len() + self.before + self.after
+        self.source.len() + self.before + self.after
     }
 
     /// Turn the slice into a `&str`.
     ///
     /// > 👉 **Note**: cannot represent virtual spaces.
     pub fn as_str(&self) -> &str {
-        str::from_utf8(self.bytes).unwrap()
+        str::from_utf8(self.source).unwrap()
     }
 
     /// Turn the slice into a `String`.

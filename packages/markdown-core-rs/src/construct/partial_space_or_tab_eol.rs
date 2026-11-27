@@ -115,21 +115,21 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                     State::Next(StateName::SpaceOrTabEol(Step::AfterFirst(options))),
                     State::Next(StateName::SpaceOrTabEol(Step::AtEol(options, false))),
                 );
-                State::Retry(whitespace(options))
+                State::Redo(whitespace(options))
             } else {
-                State::Retry(StateName::SpaceOrTabEol(Step::AtEol(options, false)))
+                State::Redo(StateName::SpaceOrTabEol(Step::AtEol(options, false)))
             }
         }
         Step::AfterFirst(options) => {
             debug_assert!(options.content.is_none(), "expected no content");
             // If the above ever errors, set `connect: true` in that case.
-            State::Retry(StateName::SpaceOrTabEol(Step::AtEol(options, true)))
+            State::Redo(StateName::SpaceOrTabEol(Step::AtEol(options, true)))
         }
         Step::AtEol(mut options, ok) => {
             if let Some(b'\n') = tokenizer.current {
                 if let Some(content) = options.content {
                     tokenizer.enter_link(
-                        Name::LineEnding,
+                        Name::LineEnd,
                         Link {
                             previous: None,
                             next: None,
@@ -137,7 +137,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                         },
                     );
                 } else {
-                    tokenizer.enter(Name::LineEnding);
+                    tokenizer.enter(Name::LineEnd);
                 }
 
                 if options.connect {
@@ -148,7 +148,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                 }
 
                 tokenizer.consume();
-                tokenizer.exit(Name::LineEnding);
+                tokenizer.exit(Name::LineEnd);
                 State::Next(StateName::SpaceOrTabEol(Step::AfterEol(options)))
             } else if ok {
                 State::Ok
@@ -162,9 +162,9 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                     State::Next(StateName::SpaceOrTabEol(Step::AfterMore)),
                     State::Nok,
                 );
-                State::Retry(whitespace(options))
+                State::Redo(whitespace(options))
             } else {
-                State::Retry(StateName::SpaceOrTabEol(Step::AfterMore))
+                State::Redo(StateName::SpaceOrTabEol(Step::AfterMore))
             }
         }
         Step::AfterMore => {

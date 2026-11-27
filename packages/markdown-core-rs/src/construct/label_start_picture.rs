@@ -19,8 +19,8 @@
 //!
 //! ## Tokens
 //!
-//! * [`LabelImage`][Name::LabelImage]
-//! * [`LabelImageMarker`][Name::LabelImageMarker]
+//! * [`LabelPicture`][Name::LabelPicture]
+//! * [`LabelPictureMarker`][Name::LabelPictureMarker]
 //! * [`LabelMarker`][Name::LabelMarker]
 //!
 //! ## References
@@ -39,7 +39,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"!");
+pub const STARTS: Starts = Starts::Codes(b"!");
 
 /// Start of label (image) start.
 ///
@@ -49,11 +49,11 @@ pub const STARTS: Starts = Starts::Bytes(b"!");
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'!') {
-        tokenizer.enter(Name::LabelImage);
-        tokenizer.enter(Name::LabelImageMarker);
+        tokenizer.enter(Name::LabelPicture);
+        tokenizer.enter(Name::LabelPictureMarker);
         tokenizer.consume();
-        tokenizer.exit(Name::LabelImageMarker);
-        State::Next(StateName::LabelStartImage(Step::Open))
+        tokenizer.exit(Name::LabelPictureMarker);
+        State::Next(StateName::LabelStartPicture(Step::Open))
     } else {
         State::Nok
     }
@@ -71,8 +71,8 @@ fn open(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::LabelMarker);
             tokenizer.consume();
             tokenizer.exit(Name::LabelMarker);
-            tokenizer.exit(Name::LabelImage);
-            State::Next(StateName::LabelStartImage(Step::After))
+            tokenizer.exit(Name::LabelPicture);
+            State::Next(StateName::LabelStartPicture(Step::After))
         }
         _ => State::Nok,
     }
@@ -106,11 +106,11 @@ fn after(tokenizer: &mut Tokenizer) -> State {
         State::Nok
     } else {
         tokenizer.labels.starts.push(LabelStart {
-            kind: LabelKind::Image,
+            kind: LabelKind::Picture,
             start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
             inactive: false,
         });
-        tokenizer.register_resolver_before(ResolveName::Label);
+        tokenizer.add_resolver_before(ResolveName::Label);
         State::Ok
     }
 }
@@ -125,7 +125,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::LabelStartImage(step)
+        StateName::LabelStartPicture(step)
     }
 }
 

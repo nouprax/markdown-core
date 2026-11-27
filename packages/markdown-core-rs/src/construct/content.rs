@@ -1,12 +1,12 @@
 //! Content occurs in the [flow][] content type.
 //!
-//! Content contains zero or more [definition][definition]s, followed by zero
-//! or one [paragraph][].
+//! Content contains zero or more [definition]s, followed by zero
+//! or one [paragraph][prose].
 //!
 //! The constructs found in flow are:
 //!
 //! * [Definition][crate::construct::definition]
-//! * [Paragraph][crate::construct::paragraph]
+//! * [Paragraph][crate::construct::prose]
 //!
 //! ## Tokens
 //!
@@ -21,9 +21,9 @@
 //!
 //! [flow]: crate::construct::flow
 //! [definition]: crate::construct::definition
-//! [paragraph]: crate::construct::paragraph
+//! [prose]: crate::construct::prose
 
-use crate::construct::{definition, paragraph};
+use crate::construct::{definition, prose};
 use crate::event::{Content, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -49,7 +49,7 @@ fn chunk_start(tokenizer: &mut Tokenizer) -> State {
                     content: Content::Content,
                 },
             );
-            State::Retry(StateName::Content(Step::ChunkInside))
+            State::Redo(StateName::Content(Step::ChunkInside))
         }
     }
 }
@@ -64,7 +64,7 @@ fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Content);
-            tokenizer.register_resolver_before(ResolveName::Content);
+            tokenizer.add_resolver_before(ResolveName::Content);
             // You’d be interrupting.
             tokenizer.interrupt = true;
             State::Ok
@@ -85,9 +85,9 @@ fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
 fn definition_before(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
         State::Next(StateName::Content(Step::DefinitionAfter)),
-        State::Next(StateName::Paragraph(paragraph::Step::Start)),
+        State::Next(StateName::Prose(prose::Step::Start)),
     );
-    State::Retry(StateName::Definition(definition::Step::Start))
+    State::Redo(StateName::Definition(definition::Step::Start))
 }
 
 /// After a definition.
@@ -102,9 +102,9 @@ fn definition_after(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
         State::Ok
     } else {
-        tokenizer.enter(Name::LineEnding);
+        tokenizer.enter(Name::LineEnd);
         tokenizer.consume();
-        tokenizer.exit(Name::LineEnding);
+        tokenizer.exit(Name::LineEnd);
         State::Next(StateName::Content(Step::DefinitionBefore))
     }
 }
@@ -125,7 +125,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Subresult {
                 let mut enter_index = exit_index + 1;
 
                 if enter_index == tokenizer.events.len()
-                    || tokenizer.events[enter_index].name != Name::LineEnding
+                    || tokenizer.events[enter_index].name != Name::LineEnd
                 {
                     break;
                 }
@@ -139,7 +139,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Subresult {
 
                     if event.name != Name::SpaceOrTab
                         && event.name != Name::ListItemIndent
-                        && event.name != Name::GfmFootnoteDefinitionIndent
+                        && event.name != Name::FootnoteDefinitionIndent
                         && event.name != Name::BlockQuotePrefix
                         && event.name != Name::BlockQuoteMarker
                     {

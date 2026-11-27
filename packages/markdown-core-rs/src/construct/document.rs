@@ -7,10 +7,10 @@
 //!
 //! * [Block quote][crate::construct::block_quote]
 //! * [List item][crate::construct::list_item]
-//! * [GFM: Footnote definition][crate::construct::gfm_footnote_definition]
+//! * [GFM: Footnote definition][crate::construct::footnote_definition]
 
 use crate::construct::{
-    block_quote, flow, frontmatter, gfm_footnote_definition, list_item, partial_bom,
+    block_quote, flow, footnote_definition, frontmatter, list_item, partial_bom,
 };
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -23,7 +23,7 @@ use alloc::{boxed::Box, vec::Vec};
 const CONTAINERS: [Container; 3] = [
     Container::BlockQuote,
     Container::ListItem,
-    Container::GfmFootnoteDefinition,
+    Container::FootnoteDefinition,
 ];
 
 impl Container {
@@ -32,8 +32,8 @@ impl Container {
         match self {
             Container::BlockQuote => StateName::BlockQuote(block_quote::Step::Start),
             Container::ListItem => StateName::ListItem(list_item::Step::Start),
-            Container::GfmFootnoteDefinition => {
-                StateName::GfmFootnoteDefinition(gfm_footnote_definition::Step::Start)
+            Container::FootnoteDefinition => {
+                StateName::FootnoteDefinition(footnote_definition::Step::Start)
             }
         }
     }
@@ -43,8 +43,8 @@ impl Container {
         match self {
             Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
             Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
-            Container::GfmFootnoteDefinition => {
-                StateName::GfmFootnoteDefinition(gfm_footnote_definition::Step::ContStart)
+            Container::FootnoteDefinition => {
+                StateName::FootnoteDefinition(footnote_definition::Step::ContStart)
             }
         }
     }
@@ -54,7 +54,7 @@ impl Container {
         match self {
             Container::BlockQuote => Name::BlockQuote,
             Container::ListItem => Name::ListItem,
-            Container::GfmFootnoteDefinition => Name::GfmFootnoteDefinition,
+            Container::FootnoteDefinition => Name::FootnoteDefinition,
         }
     }
 }
@@ -107,7 +107,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Document(Step::BeforeFrontmatter)),
     );
 
-    State::Retry(StateName::Bom(partial_bom::Step::Start))
+    State::Redo(StateName::Bom(partial_bom::Step::Start))
 }
 
 /// At optional frontmatter.
@@ -123,7 +123,7 @@ fn before_frontmatter(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Document(Step::ContainerNewBefore)),
         State::Next(StateName::Document(Step::ContainerNewBefore)),
     );
-    State::Retry(StateName::Frontmatter(frontmatter::Step::Start))
+    State::Redo(StateName::Frontmatter(frontmatter::Step::Start))
 }
 
 /// At optional existing containers.
@@ -133,7 +133,7 @@ fn before_frontmatter(tokenizer: &mut Tokenizer) -> State {
 /// > | > b
 ///     ^
 /// ```
-fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
+fn container_old_before(tokenizer: &mut Tokenizer) -> State {
     // If there are more existing containers, check whether the next one continues.
     if tokenizer.document.continued < tokenizer.document.stack.len() {
         let container = &tokenizer.document.stack[tokenizer.document.continued];
@@ -141,15 +141,15 @@ fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
         let name = container.kind.cont();
 
         tokenizer.attempt(
-            State::Next(StateName::Document(Step::ContainerExistingAfter)),
+            State::Next(StateName::Document(Step::ContainerOldAfter)),
             State::Next(StateName::Document(Step::ContainerNewBefore)),
         );
 
-        State::Retry(name)
+        State::Redo(name)
     }
     // Otherwise, check new containers.
     else {
-        State::Retry(StateName::Document(Step::ContainerNewBefore))
+        State::Redo(StateName::Document(Step::ContainerNewBefore))
     }
 }
 
@@ -160,9 +160,9 @@ fn container_existing_before(tokenizer: &mut Tokenizer) -> State {
 /// > |   b
 ///       ^
 /// ```
-fn container_existing_after(tokenizer: &mut Tokenizer) -> State {
+fn container_old_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.document.continued += 1;
-    State::Retry(StateName::Document(Step::ContainerExistingBefore))
+    State::Redo(StateName::Document(Step::ContainerOldBefore))
 }
 
 /// At new containers.
@@ -184,7 +184,7 @@ fn container_new_before(tokenizer: &mut Tokenizer) -> State {
         // …and if we’re in a concrete construct, new containers can’t “pierce”
         // into them.
         if child.concrete {
-            return State::Retry(StateName::Document(Step::ContainersAfter));
+            return State::Redo(StateName::Document(Step::ContainersAfter));
         }
     }
 
@@ -200,7 +200,7 @@ fn container_new_before(tokenizer: &mut Tokenizer) -> State {
         .document
         .stack
         .swap(tokenizer.document.continued, tail);
-    State::Retry(StateName::Document(Step::ContainerNew { index: 0 }))
+    State::Redo(StateName::Document(Step::ContainerNew { index: 0 }))
 }
 
 /// At new container `index` of [`CONTAINERS`][], or a later one.
@@ -218,7 +218,7 @@ fn container_new(tokenizer: &mut Tokenizer, index: usize) -> State {
             .document
             .stack
             .swap_remove(tokenizer.document.continued);
-        State::Retry(StateName::Document(Step::ContainersAfter))
+        State::Redo(StateName::Document(Step::ContainersAfter))
     } else {
         let kind = CONTAINERS[index];
         tokenizer.document.stack[tokenizer.document.continued] = ContainerState {
@@ -230,7 +230,7 @@ fn container_new(tokenizer: &mut Tokenizer, index: usize) -> State {
             State::Next(StateName::Document(Step::ContainerNewAfter)),
             State::Next(StateName::Document(Step::ContainerNew { index: index + 1 })),
         );
-        State::Retry(kind.start())
+        State::Redo(kind.start())
     }
 }
 
@@ -263,7 +263,7 @@ fn container_new_after(tokenizer: &mut Tokenizer) -> State {
     tokenizer.document.stack.push(container);
     tokenizer.document.continued += 1;
     tokenizer.interrupt = false;
-    State::Retry(StateName::Document(Step::ContainerNewBefore))
+    State::Redo(StateName::Document(Step::ContainerNewBefore))
 }
 
 /// After containers, at flow.
@@ -277,11 +277,11 @@ fn container_new_after(tokenizer: &mut Tokenizer) -> State {
 fn containers_after(tokenizer: &mut Tokenizer) -> State {
     let child = tokenizer.document.child.as_mut().unwrap();
 
-    child.lazy = tokenizer.document.continued != tokenizer.document.stack.len();
+    child.lax = tokenizer.document.continued != tokenizer.document.stack.len();
     child.define_skip(tokenizer.point.clone());
 
     if tokenizer.current.is_none() {
-        State::Retry(StateName::Document(Step::FlowEnd))
+        State::Redo(StateName::Document(Step::FlowEnd))
     } else {
         let current = tokenizer.events.len();
         let previous = tokenizer.document.data;
@@ -297,7 +297,7 @@ fn containers_after(tokenizer: &mut Tokenizer) -> State {
                 content: Content::Flow,
             },
         );
-        State::Retry(StateName::Document(Step::FlowInside))
+        State::Redo(StateName::Document(Step::FlowInside))
     }
 }
 
@@ -311,7 +311,7 @@ fn flow_inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
             tokenizer.exit(Name::Data);
-            State::Retry(StateName::Document(Step::FlowEnd))
+            State::Redo(StateName::Document(Step::FlowEnd))
         }
         // Note: EOL is part of data.
         Some(b'\n') => {
@@ -380,33 +380,33 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     //     ^
     //   | ```
     // ```
-    let mut document_lazy_continuation_current = false;
+    let mut document_lax_continuation_current = false;
     let mut stack_index = child.stack.len();
 
     // Use two algo’s: one for when we’re suspended or in multiline things
     // like definitions, another for when we fed the line ending and closed.
-    while !document_lazy_continuation_current && stack_index > 0 {
+    while !document_lax_continuation_current && stack_index > 0 {
         stack_index -= 1;
         let name = &child.stack[stack_index];
-        if name == &Name::Content || name == &Name::GfmTableHead {
-            document_lazy_continuation_current = true;
+        if name == &Name::Content || name == &Name::TableHead {
+            document_lax_continuation_current = true;
         }
     }
 
     // …another because we parse each “rest” line as a paragraph, and we passed
     // a EOL already.
-    if !document_lazy_continuation_current && !child.events.is_empty() {
-        let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnding]);
+    if !document_lax_continuation_current && !child.events.is_empty() {
+        let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnd]);
         let name = &child.events[before].name;
-        if name == &Name::Content || name == &Name::HeadingSetextUnderline {
-            document_lazy_continuation_current = true;
+        if name == &Name::Content || name == &Name::HeaderSetextUnderline {
+            document_lax_continuation_current = true;
         }
     }
 
     // Reset “piercing”.
     child.pierce = false;
 
-    if child.lazy && tokenizer.document.open && document_lazy_continuation_current {
+    if child.lax && tokenizer.document.open && document_lax_continuation_current {
         tokenizer.document.continued = tokenizer.document.stack.len();
     }
 
@@ -423,10 +423,10 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
         State::Ok
     } else {
         tokenizer.document.continued = 0;
-        tokenizer.document.open = document_lazy_continuation_current;
+        tokenizer.document.open = document_lax_continuation_current;
         // Containers would only be interrupting if we’ve continued.
         tokenizer.interrupt = false;
-        State::Retry(StateName::Document(Step::ContainerExistingBefore))
+        State::Redo(StateName::Document(Step::ContainerOldBefore))
     }
 }
 
@@ -502,12 +502,12 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
         if child.events[child_index].kind == Kind::Exit
             && matches!(
                 child.events[child_index].name,
-                Name::LineEnding | Name::BlankLineEnding
+                Name::LineEnd | Name::BlankLineEnd
             )
         {
-            // Inject before `Enter:LineEnding`.
-            let mut inject_index = child_index - 1;
-            let mut point = &child.events[inject_index].point;
+            // Inject before `Enter:LineEnd`.
+            let mut insert_index = child_index - 1;
+            let mut point = &child.events[insert_index].point;
 
             while child_index + 1 < child.events.len()
                 && child.events[child_index + 1].kind == Kind::Exit
@@ -515,7 +515,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                 child_index += 1;
                 point = &child.events[child_index].point;
                 // Inject after `Exit:*`.
-                inject_index = child_index + 1;
+                insert_index = child_index + 1;
             }
 
             if line < tokenizer.document.exits.len() {
@@ -526,7 +526,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
                         exit_index += 1;
                     }
 
-                    child.map.add(inject_index, 0, exits);
+                    child.map.add(insert_index, 0, exits);
                 }
             }
 
@@ -587,8 +587,8 @@ pub fn resolve(tokenizer: &mut Tokenizer) {
 pub enum Step {
     Start,
     BeforeFrontmatter,
-    ContainerExistingBefore,
-    ContainerExistingAfter,
+    ContainerOldBefore,
+    ContainerOldAfter,
     ContainerNewBefore,
     ContainerNew { index: usize },
     ContainerNewAfter,
@@ -608,8 +608,8 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::Start => start(tokenizer),
         Step::BeforeFrontmatter => before_frontmatter(tokenizer),
-        Step::ContainerExistingBefore => container_existing_before(tokenizer),
-        Step::ContainerExistingAfter => container_existing_after(tokenizer),
+        Step::ContainerOldBefore => container_old_before(tokenizer),
+        Step::ContainerOldAfter => container_old_after(tokenizer),
         Step::ContainerNewBefore => container_new_before(tokenizer),
         Step::ContainerNew { index } => container_new(tokenizer, index),
         Step::ContainerNewAfter => container_new_after(tokenizer),

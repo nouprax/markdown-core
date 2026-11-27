@@ -11,11 +11,11 @@
 use crate::event::Event;
 use alloc::{vec, vec::Vec};
 
-/// Shift `previous` and `next` links according to `jumps`.
+/// Shift `previous` and `next` links according to `leaps`.
 ///
 /// This fixes links in case there are events removed or added between them.
-fn shift_links(events: &mut [Event], jumps: &[(usize, usize, usize)]) {
-    let mut jump_index = 0;
+fn shift_links(events: &mut [Event], leaps: &[(usize, usize, usize)]) {
+    let mut leap_index = 0;
     let mut index = 0;
     let mut add = 0;
     let mut rm = 0;
@@ -23,10 +23,10 @@ fn shift_links(events: &mut [Event], jumps: &[(usize, usize, usize)]) {
     while index < events.len() {
         let rm_curr = rm;
 
-        while jump_index < jumps.len() && jumps[jump_index].0 <= index {
-            add = jumps[jump_index].2;
-            rm = jumps[jump_index].1;
-            jump_index += 1;
+        while leap_index < leaps.len() && leaps[leap_index].0 <= index {
+            add = leaps[leap_index].2;
+            rm = leaps[leap_index].1;
+            leap_index += 1;
         }
 
         // Ignore items that will be removed.
@@ -37,10 +37,10 @@ fn shift_links(events: &mut [Event], jumps: &[(usize, usize, usize)]) {
                 if let Some(next) = link.next {
                     events[next].link.as_mut().unwrap().previous = Some(index + add - rm);
 
-                    while jump_index < jumps.len() && jumps[jump_index].0 <= next {
-                        add = jumps[jump_index].2;
-                        rm = jumps[jump_index].1;
-                        jump_index += 1;
+                    while leap_index < leaps.len() && leaps[leap_index].0 <= next {
+                        add = leaps[leap_index].2;
+                        rm = leaps[leap_index].1;
+                        leap_index += 1;
                     }
 
                     events[index].link.as_mut().unwrap().next = Some(next + add - rm);
@@ -84,7 +84,7 @@ impl EditMap {
         }
 
         // Calculate jumps: where items in the current list move to.
-        let mut jumps = Vec::with_capacity(self.map.len());
+        let mut leaps = Vec::with_capacity(self.map.len());
         let mut index = 0;
         let mut add_acc = 0;
         let mut remove_acc = 0;
@@ -92,11 +92,11 @@ impl EditMap {
             let (at, remove, add) = &self.map[index];
             remove_acc += remove;
             add_acc += add.len();
-            jumps.push((*at, remove_acc, add_acc));
+            leaps.push((*at, remove_acc, add_acc));
             index += 1;
         }
 
-        shift_links(events, &jumps);
+        shift_links(events, &leaps);
 
         let len_before = events.len();
         let mut index = self.map.len();

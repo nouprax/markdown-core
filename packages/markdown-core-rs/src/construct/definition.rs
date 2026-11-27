@@ -19,7 +19,7 @@
 //! for grammar, notes, and recommendations on each part.
 //!
 //! The `destination`, `label`, and `title` parts are interpreted as the
-//! [string][] content type.
+//! [string][plain] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -38,7 +38,7 @@
 //! [a]
 //! ```
 //!
-//! Importantly, while labels *can* include [string][] content (character
+//! Importantly, while labels *can* include [string][plain] content (character
 //! escapes and character references), these are not considered when matching.
 //! To illustrate, neither definition matches the reference:
 //!
@@ -53,7 +53,7 @@
 //! [`destination`][destination].
 //! For info on how characters are encoded as `href` on `<a>` or `src` on
 //! `<img>` when compiling, see
-//! [`sanitize_uri`][sanitize_uri].
+//! `sanitize_uri` of markdown-rs.
 //!
 //! ## HTML
 //!
@@ -72,15 +72,15 @@
 //! * [`DefinitionDestinationLiteral`][Name::DefinitionDestinationLiteral]
 //! * [`DefinitionDestinationLiteralMarker`][Name::DefinitionDestinationLiteralMarker]
 //! * [`DefinitionDestinationRaw`][Name::DefinitionDestinationRaw]
-//! * [`DefinitionDestinationString`][Name::DefinitionDestinationString]
+//! * [`DefinitionDestinationText`][Name::DefinitionDestinationText]
 //! * [`DefinitionLabel`][Name::DefinitionLabel]
 //! * [`DefinitionLabelMarker`][Name::DefinitionLabelMarker]
-//! * [`DefinitionLabelString`][Name::DefinitionLabelString]
+//! * [`DefinitionLabelText`][Name::DefinitionLabelText]
 //! * [`DefinitionMarker`][Name::DefinitionMarker]
 //! * [`DefinitionTitle`][Name::DefinitionTitle]
 //! * [`DefinitionTitleMarker`][Name::DefinitionTitleMarker]
-//! * [`DefinitionTitleString`][Name::DefinitionTitleString]
-//! * [`LineEnding`][Name::LineEnding]
+//! * [`DefinitionTitleText`][Name::DefinitionTitleText]
+//! * [`LineEnd`][Name::LineEnd]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -89,14 +89,13 @@
 //! * [*§ 4.7 Link reference definitions* in `CommonMark`](https://spec.commonmark.org/0.31/#link-reference-definitions)
 //!
 //! [content]: crate::construct::content
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
 //! [destination]: crate::construct::partial_destination
 //! [label]: crate::construct::partial_label
 //! [label_end]: crate::construct::label_end
 //! [title]: crate::construct::partial_title
-//! [sanitize_uri]: crate::util::sanitize_uri::sanitize
 //! [normalize_identifier]: crate::util::normalize_identifier
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 //! [html_img]: https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element
@@ -126,7 +125,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             && tokenizer.events[skip::opt_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
-                &[Name::LineEnding, Name::SpaceOrTab],
+                &[Name::LineEnd, Name::SpaceOrTab],
             )]
             .name
                 == Name::Definition)
@@ -136,9 +135,9 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
             // Note: arbitrary whitespace allowed even if code (indented) is on.
             tokenizer.attempt(State::Next(StateName::Definition(Step::Before)), State::Nok);
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         } else {
-            State::Retry(StateName::Definition(Step::Before))
+            State::Redo(StateName::Definition(Step::Before))
         }
     } else {
         State::Nok
@@ -158,11 +157,11 @@ fn before(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::Definition(Step::LabelAfter)),
                 State::Nok,
             );
-            State::Retry(StateName::Label(partial_label::Step::Start(
+            State::Redo(StateName::Label(partial_label::Step::Start(
                 partial_label::Names {
                     whole: Name::DefinitionLabel,
                     marker: Name::DefinitionLabelMarker,
-                    text: Name::DefinitionLabelString,
+                    text: Name::DefinitionLabelText,
                 },
             )))
         }
@@ -182,7 +181,7 @@ fn label_after(tokenizer: &mut Tokenizer) -> State {
             let end = skip::to_back(
                 &tokenizer.events,
                 tokenizer.events.len() - 1,
-                &[Name::DefinitionLabelString],
+                &[Name::DefinitionLabelText],
             );
 
             tokenizer.enter(Name::DefinitionMarker);
@@ -205,7 +204,7 @@ fn marker_after(tokenizer: &mut Tokenizer, end: usize) -> State {
         State::Next(StateName::Definition(Step::DestinationBefore { end })),
         State::Next(StateName::Definition(Step::DestinationBefore { end })),
     );
-    State::Retry(space_or_tab_eol())
+    State::Redo(space_or_tab_eol())
 }
 
 /// Before destination.
@@ -219,14 +218,14 @@ fn destination_before(tokenizer: &mut Tokenizer, end: usize) -> State {
         State::Next(StateName::Definition(Step::DestinationAfter { end })),
         State::Nok,
     );
-    State::Retry(StateName::Destination(partial_destination::Step::Start(
+    State::Redo(StateName::Destination(partial_destination::Step::Start(
         partial_destination::Options {
             names: partial_destination::Names {
                 whole: Name::DefinitionDestination,
                 literal: Name::DefinitionDestinationLiteral,
                 marker: Name::DefinitionDestinationLiteralMarker,
                 raw: Name::DefinitionDestinationRaw,
-                text: Name::DefinitionDestinationString,
+                text: Name::DefinitionDestinationText,
             },
             limit: usize::MAX,
         },
@@ -244,7 +243,7 @@ fn destination_after(tokenizer: &mut Tokenizer, end: usize) -> State {
         State::Next(StateName::Definition(Step::After { end })),
         State::Next(StateName::Definition(Step::After { end })),
     );
-    State::Retry(StateName::Definition(Step::TitleBefore))
+    State::Redo(StateName::Definition(Step::TitleBefore))
 }
 
 /// After definition.
@@ -261,9 +260,9 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
             State::Next(StateName::Definition(Step::AfterWhitespace { end })),
             State::Nok,
         );
-        State::Retry(space_or_tab())
+        State::Redo(space_or_tab())
     } else {
-        State::Retry(StateName::Definition(Step::AfterWhitespace { end }))
+        State::Redo(StateName::Definition(Step::AfterWhitespace { end }))
     }
 }
 
@@ -287,7 +286,7 @@ fn after_whitespace(tokenizer: &mut Tokenizer, end: usize) -> State {
                 // Note: we don’t care about virtual spaces, so `as_str` is fine.
                 normalize_identifier(
                     Slice::from_position(
-                        tokenizer.parse_state.bytes,
+                        tokenizer.parse_state.source,
                         &Position::from_exit_event(&tokenizer.events, end),
                     )
                     .as_str(),
@@ -316,7 +315,7 @@ fn title_before(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::Definition(Step::TitleBeforeMarker)),
             State::Nok,
         );
-        State::Retry(space_or_tab_eol())
+        State::Redo(space_or_tab_eol())
     } else {
         State::Nok
     }
@@ -334,11 +333,11 @@ fn title_before_marker(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Definition(Step::TitleAfter)),
         State::Nok,
     );
-    State::Retry(StateName::Title(partial_title::Step::Start(
+    State::Redo(StateName::Title(partial_title::Step::Start(
         partial_title::Names {
             whole: Name::DefinitionTitle,
             marker: Name::DefinitionTitleMarker,
-            text: Name::DefinitionTitleString,
+            text: Name::DefinitionTitleText,
         },
     )))
 }
@@ -355,9 +354,9 @@ fn title_after(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::Definition(Step::TitleAfterOptionalWhitespace)),
             State::Nok,
         );
-        State::Retry(space_or_tab())
+        State::Redo(space_or_tab())
     } else {
-        State::Retry(StateName::Definition(Step::TitleAfterOptionalWhitespace))
+        State::Redo(StateName::Definition(Step::TitleAfterOptionalWhitespace))
     }
 }
 

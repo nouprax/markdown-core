@@ -10,7 +10,7 @@
 //!
 //! * [document][]
 //! * [flow][]
-//! * [string][]
+//! * [string][plain]
 //! * [text][]
 //!
 //! Content types also have a *rest* thing: after all things are parsed,
@@ -44,15 +44,15 @@
 //! * [content][]
 //! * [definition][]
 //! * [hard break (escape)][hard_break_escape]
-//! * [heading (atx)][heading_atx]
-//! * [heading (setext)][heading_setext]
+//! * [heading (atx)][header_atx]
+//! * [heading (setext)][header_setext]
 //! * [html (flow)][html_flow]
 //! * [html (text)][html_text]
 //! * [label end][label_end]
-//! * [label start (image)][label_start_image]
+//! * [label start (image)][label_start_picture]
 //! * [label start (link)][label_start_link]
 //! * [list item][list_item]
-//! * [paragraph][]
+//! * [paragraph][prose]
 //! * [raw (flow)][raw_flow] (code (fenced), extensions: math (flow))
 //! * [raw (text)][raw_text] (code (text), extensions: math (text))
 //! * [thematic break][thematic_break]
@@ -63,11 +63,11 @@
 //! The following constructs are extensions found in markdown:
 //!
 //! * [frontmatter][]
-//! * [gfm autolink literal][gfm_autolink_literal]
-//! * [gfm footnote definition][gfm_footnote_definition]
-//! * [gfm label start footnote][gfm_label_start_footnote]
-//! * [gfm table][gfm_table]
-//! * [gfm task list item check][gfm_task_list_item_check]
+//! * [gfm autolink literal][autolink_literal]
+//! * [gfm footnote definition][footnote_definition]
+//! * [gfm label start footnote][label_start_footnote]
+//! * [gfm table][table]
+//! * [gfm task list item check][task_list_item_check]
 //!
 //! There are also several small subroutines typically used in different places:
 //!
@@ -75,7 +75,7 @@
 //! * [data][partial_data]
 //! * [destination][partial_destination]
 //! * [label][partial_label]
-//! * [non lazy continuation][partial_non_lazy_continuation]
+//! * [non lazy continuation][partial_non_lax_continuation]
 //! * [space or tab][partial_space_or_tab]
 //! * [space or tab, eol][partial_space_or_tab_eol]
 //! * [title][partial_title]
@@ -143,6 +143,7 @@
 
 pub mod attention;
 pub mod autolink;
+pub mod autolink_literal;
 pub mod blank_line;
 pub mod block_quote;
 pub mod character_escape;
@@ -152,33 +153,32 @@ pub mod content;
 pub mod definition;
 pub mod document;
 pub mod flow;
+pub mod footnote_definition;
 pub mod frontmatter;
-pub mod gfm_autolink_literal;
-pub mod gfm_footnote_definition;
-pub mod gfm_label_start_footnote;
-pub mod gfm_table;
-pub mod gfm_task_list_item_check;
 pub mod hard_break_escape;
-pub mod heading_atx;
-pub mod heading_setext;
+pub mod header_atx;
+pub mod header_setext;
 pub mod html_flow;
 pub mod html_text;
 pub mod label_end;
-pub mod label_start_image;
+pub mod label_start_footnote;
 pub mod label_start_link;
+pub mod label_start_picture;
 pub mod list_item;
-pub mod paragraph;
 pub mod partial_bom;
 pub mod partial_data;
 pub mod partial_destination;
 pub mod partial_label;
-pub mod partial_non_lazy_continuation;
+pub mod partial_non_lax_continuation;
 pub mod partial_space_or_tab;
 pub mod partial_space_or_tab_eol;
 pub mod partial_title;
 pub mod partial_whitespace;
+pub mod plain;
+pub mod prose;
 pub mod raw_flow;
 pub mod raw_text;
-pub mod string;
+pub mod table;
+pub mod task_list_item_check;
 pub mod text;
 pub mod thematic_break;

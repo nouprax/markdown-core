@@ -12,16 +12,16 @@
 //!
 //! * [Blank line][crate::construct::blank_line]
 //! * [Code (indented)][crate::construct::code_indented]
-//! * [Heading (atx)][crate::construct::heading_atx]
-//! * [Heading (setext)][crate::construct::heading_setext]
+//! * [Heading (atx)][crate::construct::header_atx]
+//! * [Heading (setext)][crate::construct::header_setext]
 //! * [HTML (flow)][crate::construct::html_flow]
 //! * [Raw (flow)][crate::construct::raw_flow] (code (fenced), math (flow))
 //! * [Thematic break][crate::construct::thematic_break]
 
-use crate::choice::{self, Choice, Entry, List};
+use crate::choice::{self, Choice, Item, List};
 use crate::construct::{
-    blank_line, code_indented, content, gfm_table, heading_atx, heading_setext, html_flow,
-    raw_flow, thematic_break,
+    blank_line, code_indented, content, header_atx, header_setext, html_flow, raw_flow, table,
+    thematic_break,
 };
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
@@ -33,33 +33,33 @@ use crate::tokenizer::Tokenizer;
 /// matched.
 pub const CHOICE: Choice = Choice::new(
     &[
-        Entry {
+        Item {
             starts: code_indented::STARTS,
             step: StateName::CodeIndented(code_indented::Step::Start),
         },
-        Entry {
+        Item {
             starts: raw_flow::STARTS,
             step: StateName::RawFlow(raw_flow::Step::Start),
         },
-        Entry {
+        Item {
             starts: html_flow::STARTS,
             step: StateName::HtmlFlow(html_flow::Step::Start),
         },
-        Entry {
-            starts: heading_atx::STARTS,
-            step: StateName::HeadingAtx(heading_atx::Step::Start),
+        Item {
+            starts: header_atx::STARTS,
+            step: StateName::HeaderAtx(header_atx::Step::Start),
         },
-        Entry {
-            starts: heading_setext::STARTS,
-            step: StateName::HeadingSetext(heading_setext::Step::Start),
+        Item {
+            starts: header_setext::STARTS,
+            step: StateName::HeaderSetext(header_setext::Step::Start),
         },
-        Entry {
+        Item {
             starts: thematic_break::STARTS,
             step: StateName::ThematicBreak(thematic_break::Step::Start),
         },
-        Entry {
-            starts: gfm_table::STARTS,
-            step: StateName::GfmTable(gfm_table::Step::Start),
+        Item {
+            starts: table::STARTS,
+            step: StateName::Table(table::Step::Start),
         },
     ],
     StateName::Flow(Step::After),
@@ -81,7 +81,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Flow(Step::BlankLineAfter)),
         State::Next(choice::start(List::Flow)),
     );
-    State::Retry(StateName::BlankLine(blank_line::Step::Start))
+    State::Redo(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// At content.
@@ -92,7 +92,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before_content(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(State::Next(StateName::Flow(Step::After)), State::Nok);
-    State::Retry(StateName::Content(content::Step::ChunkStart))
+    State::Redo(StateName::Content(content::Step::ChunkStart))
 }
 
 /// After blank line.
@@ -105,9 +105,9 @@ fn blank_line_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Ok,
         Some(b'\n') => {
-            tokenizer.enter(Name::BlankLineEnding);
+            tokenizer.enter(Name::BlankLineEnd);
             tokenizer.consume();
-            tokenizer.exit(Name::BlankLineEnding);
+            tokenizer.exit(Name::BlankLineEnd);
             // Feel free to interrupt.
             tokenizer.interrupt = false;
             State::Next(StateName::Flow(Step::Start))
@@ -126,9 +126,9 @@ fn after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => State::Ok,
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnding);
+            tokenizer.enter(Name::LineEnd);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnding);
+            tokenizer.exit(Name::LineEnd);
             State::Next(StateName::Flow(Step::Start))
         }
         _ => unreachable!("expected eol/eof"),

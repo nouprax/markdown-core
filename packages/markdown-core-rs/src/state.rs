@@ -9,7 +9,7 @@ pub enum State {
     /// Move to [`Name`][] next.
     Next(Name),
     /// Retry in [`Name`][].
-    Retry(Name),
+    Redo(Name),
     /// The state is successful.
     Ok,
     /// The state is not successful.
@@ -36,26 +36,26 @@ pub enum Name {
     Document(construct::document::Step),
     Flow(construct::flow::Step),
     Frontmatter(construct::frontmatter::Step),
-    GfmAutolinkLiteral(construct::gfm_autolink_literal::Step),
-    GfmFootnoteDefinition(construct::gfm_footnote_definition::Step),
-    GfmLabelStartFootnote(construct::gfm_label_start_footnote::Step),
-    GfmTable(construct::gfm_table::Step),
-    GfmTaskListItemCheck(construct::gfm_task_list_item_check::Step),
+    AutolinkLiteral(construct::autolink_literal::Step),
+    FootnoteDefinition(construct::footnote_definition::Step),
+    LabelStartFootnote(construct::label_start_footnote::Step),
+    Table(construct::table::Step),
+    TaskListItemCheck(construct::task_list_item_check::Step),
     HardBreakEscape(construct::hard_break_escape::Step),
-    HeadingAtx(construct::heading_atx::Step),
-    HeadingSetext(construct::heading_setext::Step),
+    HeaderAtx(construct::header_atx::Step),
+    HeaderSetext(construct::header_setext::Step),
     HtmlFlow(construct::html_flow::Step),
     HtmlText(construct::html_text::Step),
     Label(construct::partial_label::Step),
     LabelEnd(construct::label_end::Step),
-    LabelStartImage(construct::label_start_image::Step),
+    LabelStartPicture(construct::label_start_picture::Step),
     LabelStartLink(construct::label_start_link::Step),
     ListItem(construct::list_item::Step),
-    NonLazyContinuation(construct::partial_non_lazy_continuation::Step),
-    Paragraph(construct::paragraph::Step),
+    NonLaxContinuation(construct::partial_non_lax_continuation::Step),
+    Prose(construct::prose::Step),
     RawFlow(construct::raw_flow::Step),
     RawText(construct::raw_text::Step),
-    String(construct::string::Step),
+    Plain(construct::plain::Step),
     Text(construct::text::Step),
     ThematicBreak(construct::thematic_break::Step),
     Title(construct::partial_title::Step),
@@ -83,34 +83,28 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> State {
         Name::Document(step) => construct::document::step(tokenizer, step),
         Name::Flow(step) => construct::flow::step(tokenizer, step),
         Name::Frontmatter(step) => construct::frontmatter::step(tokenizer, step),
-        Name::GfmAutolinkLiteral(step) => construct::gfm_autolink_literal::step(tokenizer, step),
-        Name::GfmFootnoteDefinition(step) => {
-            construct::gfm_footnote_definition::step(tokenizer, step)
-        }
-        Name::GfmLabelStartFootnote(step) => {
-            construct::gfm_label_start_footnote::step(tokenizer, step)
-        }
-        Name::GfmTable(step) => construct::gfm_table::step(tokenizer, step),
-        Name::GfmTaskListItemCheck(step) => {
-            construct::gfm_task_list_item_check::step(tokenizer, step)
-        }
+        Name::AutolinkLiteral(step) => construct::autolink_literal::step(tokenizer, step),
+        Name::FootnoteDefinition(step) => construct::footnote_definition::step(tokenizer, step),
+        Name::LabelStartFootnote(step) => construct::label_start_footnote::step(tokenizer, step),
+        Name::Table(step) => construct::table::step(tokenizer, step),
+        Name::TaskListItemCheck(step) => construct::task_list_item_check::step(tokenizer, step),
         Name::HardBreakEscape(step) => construct::hard_break_escape::step(tokenizer, step),
-        Name::HeadingAtx(step) => construct::heading_atx::step(tokenizer, step),
-        Name::HeadingSetext(step) => construct::heading_setext::step(tokenizer, step),
+        Name::HeaderAtx(step) => construct::header_atx::step(tokenizer, step),
+        Name::HeaderSetext(step) => construct::header_setext::step(tokenizer, step),
         Name::HtmlFlow(step) => construct::html_flow::step(tokenizer, step),
         Name::HtmlText(step) => construct::html_text::step(tokenizer, step),
         Name::Label(step) => construct::partial_label::step(tokenizer, step),
         Name::LabelEnd(step) => construct::label_end::step(tokenizer, step),
-        Name::LabelStartImage(step) => construct::label_start_image::step(tokenizer, step),
+        Name::LabelStartPicture(step) => construct::label_start_picture::step(tokenizer, step),
         Name::LabelStartLink(step) => construct::label_start_link::step(tokenizer, step),
         Name::ListItem(step) => construct::list_item::step(tokenizer, step),
-        Name::NonLazyContinuation(step) => {
-            construct::partial_non_lazy_continuation::step(tokenizer, step)
+        Name::NonLaxContinuation(step) => {
+            construct::partial_non_lax_continuation::step(tokenizer, step)
         }
-        Name::Paragraph(step) => construct::paragraph::step(tokenizer, step),
+        Name::Prose(step) => construct::prose::step(tokenizer, step),
         Name::RawFlow(step) => construct::raw_flow::step(tokenizer, step),
         Name::RawText(step) => construct::raw_text::step(tokenizer, step),
-        Name::String(step) => construct::string::step(tokenizer, step),
+        Name::Plain(step) => construct::plain::step(tokenizer, step),
         Name::Text(step) => construct::text::step(tokenizer, step),
         Name::ThematicBreak(step) => construct::thematic_break::step(tokenizer, step),
         Name::Title(step) => construct::partial_title::step(tokenizer, step),

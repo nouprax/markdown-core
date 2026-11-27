@@ -19,10 +19,10 @@
 //! ## HTML
 //!
 //! When asterisk/underscore sequences match, and two markers can be “taken”
-//! from them, they together relate to the `<strong>` element in HTML.
+//! from them, they together relate to the `<bold>` element in HTML.
 //! When one marker can be taken, they relate to the `<em>` element.
 //! See [*§ 4.5.2 The `em` element*][html-em] and
-//! [*§ 4.5.3 The `strong` element*][html-strong] in the HTML spec for more
+//! [*§ 4.5.3 The `bold` element*][html-bold] in the HTML spec for more
 //! info.
 //!
 //! When tilde sequences match, they together relate to the `<del>` element in
@@ -54,12 +54,12 @@
 //! * [`Emphasis`][Name::Emphasis]
 //! * [`EmphasisSequence`][Name::EmphasisSequence]
 //! * [`EmphasisText`][Name::EmphasisText]
-//! * [`GfmStrikethrough`][Name::GfmStrikethrough]
-//! * [`GfmStrikethroughSequence`][Name::GfmStrikethroughSequence]
-//! * [`GfmStrikethroughText`][Name::GfmStrikethroughText]
-//! * [`Strong`][Name::Strong]
-//! * [`StrongSequence`][Name::StrongSequence]
-//! * [`StrongText`][Name::StrongText]
+//! * [`Strike`][Name::Strike]
+//! * [`StrikeSequence`][Name::StrikeSequence]
+//! * [`StrikeText`][Name::StrikeText]
+//! * [`Bold`][Name::Bold]
+//! * [`BoldSequence`][Name::BoldSequence]
+//! * [`BoldText`][Name::BoldText]
 //!
 //! > 👉 **Note**: while parsing, [`AttentionSequence`][Name::AttentionSequence]
 //! > is used, which is later compiled away.
@@ -73,7 +73,7 @@
 //!
 //! [text]: crate::construct::text
 //! [html-em]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-em-element
-//! [html-strong]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-strong-element
+//! [html-bold]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-strong-element
 //! [html-del]: https://html.spec.whatwg.org/multipage/edits.html#the-del-element
 
 use crate::choice::Starts;
@@ -83,13 +83,13 @@ use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
 use crate::util::char::{
-    after_index as char_after_index, before_index as char_before_index, classify_opt,
+    after_index as char_after_index, before_index as char_before_index, class_opt,
     Kind as CharacterKind,
 };
 use alloc::{vec, vec::Vec};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"*+=^_~");
+pub const STARTS: Starts = Starts::Codes(b"*+=^_~");
 
 /// Byte that is transparent when looking at the neighbours of a run: the
 /// character before or after a run is found past any of these.
@@ -103,7 +103,7 @@ enum Rule {
     /// `_`: emphasis, strong.
     Underscore,
     /// `~~`: strikethrough.
-    Strikethrough,
+    Strike,
     /// `~`: subscript.
     Subscript,
     /// `^`: superscript.
@@ -126,7 +126,7 @@ enum Flank {
 
 /// What a body may contain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Body {
+enum Inner {
     /// Any inline content; the neighbours decide (see [`Flank`][]).
     Inline,
     /// No whitespace; every run can open and close.
@@ -153,9 +153,9 @@ struct Spec {
     /// Whether a run must be exactly `min` markers.
     exact: bool,
     flank: Flank,
-    body: Body,
+    inner: Inner,
     /// Node of a pair taking one marker of each run.
-    single: Option<Names>,
+    lone: Option<Names>,
     /// Node of a pair taking two markers of each run.
     double: Option<Names>,
 }
@@ -166,10 +166,10 @@ const EMPHASIS: Names = Names {
     text: Name::EmphasisText,
 };
 
-const STRONG: Names = Names {
-    whole: Name::Strong,
-    sequence: Name::StrongSequence,
-    text: Name::StrongText,
+const BOLD: Names = Names {
+    whole: Name::Bold,
+    sequence: Name::BoldSequence,
+    text: Name::BoldText,
 };
 
 impl Rule {
@@ -179,7 +179,7 @@ impl Rule {
             b'*' => Rule::Asterisk,
             b'_' => Rule::Underscore,
             b'~' if size == 1 => Rule::Subscript,
-            b'~' => Rule::Strikethrough,
+            b'~' => Rule::Strike,
             b'^' => Rule::Superscript,
             b'+' => Rule::Insertion,
             b'=' => Rule::Mark,
@@ -195,8 +195,8 @@ impl Rule {
             three: false,
             exact: false,
             flank: Flank::Free,
-            body: Body::Inline,
-            single: None,
+            inner: Inner::Inline,
+            lone: None,
             double: Some(names),
         };
         let word = |names| Spec {
@@ -205,8 +205,8 @@ impl Rule {
             three: false,
             exact: false,
             flank: Flank::Free,
-            body: Body::Word,
-            single: Some(names),
+            inner: Inner::Word,
+            lone: Some(names),
             double: None,
         };
         match self {
@@ -220,16 +220,16 @@ impl Rule {
                 } else {
                     Flank::Bound
                 },
-                body: Body::Inline,
-                single: Some(EMPHASIS),
-                double: Some(STRONG),
+                inner: Inner::Inline,
+                lone: Some(EMPHASIS),
+                double: Some(BOLD),
             },
-            Rule::Strikethrough => Spec {
+            Rule::Strike => Spec {
                 exact: true,
                 ..pair(Names {
-                    whole: Name::GfmStrikethrough,
-                    sequence: Name::GfmStrikethroughSequence,
-                    text: Name::GfmStrikethroughText,
+                    whole: Name::Strike,
+                    sequence: Name::StrikeSequence,
+                    text: Name::StrikeText,
                 })
             },
             Rule::Insertion => pair(Names {
@@ -291,7 +291,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(marker @ (b'*' | b'+' | b'=' | b'^' | b'_' | b'~')) => {
             tokenizer.enter(Name::AttentionSequence);
-            State::Retry(StateName::Attention(Step::Inside { marker, size: 0 }))
+            State::Redo(StateName::Attention(Step::Inside { marker, size: 0 }))
         }
         _ => State::Nok,
     }
@@ -314,7 +314,7 @@ fn inside(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         }))
     } else {
         tokenizer.exit(Name::AttentionSequence);
-        tokenizer.register_resolver(ResolveName::Attention);
+        tokenizer.add_resolver(ResolveName::Attention);
         State::Ok
     }
 }
@@ -322,7 +322,7 @@ fn inside(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
 /// Resolve sequences.
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     // Find all sequences, gather info about them.
-    let mut sequences = get_sequences(tokenizer);
+    let mut sequences = read_sequences(tokenizer);
 
     // Now walk through them and match them.
     let mut close = 0;
@@ -343,7 +343,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 let sequence_open = &sequences[open];
 
                 // A word body cannot reach past whitespace.
-                if spec.body == Body::Word && sequence_open.spaces != sequence_close.spaces {
+                if spec.inner == Inner::Word && sequence_open.spaces != sequence_close.spaces {
                     break;
                 }
 
@@ -389,18 +389,18 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 }
 
 /// Classify the character next to a run, past transparent bytes.
-fn neighbour(bytes: &[u8], index: usize, after: bool) -> CharacterKind {
+fn near(source: &[u8], index: usize, after: bool) -> CharacterKind {
     let mut index = index;
     if after {
-        while index < bytes.len() && bytes[index] == TRANSPARENT {
+        while index < source.len() && source[index] == TRANSPARENT {
             index += 1;
         }
-        classify_opt(char_after_index(bytes, index))
+        class_opt(char_after_index(source, index))
     } else {
-        while index > 0 && bytes[index - 1] == TRANSPARENT {
+        while index > 0 && source[index - 1] == TRANSPARENT {
             index -= 1;
         }
-        classify_opt(char_before_index(bytes, index))
+        class_opt(char_before_index(source, index))
     }
 }
 
@@ -411,12 +411,12 @@ fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool,
     let punct_before = *before == CharacterKind::Punctuation;
     let punct_after = *after == CharacterKind::Punctuation;
     let left = !space_after && (!punct_after || space_before || punct_before);
-    let right = !space_before && (!punct_before || space_after || punct_after);
+    let end = !space_before && (!punct_before || space_after || punct_after);
     match flank {
-        Flank::Free => (left, right),
+        Flank::Free => (left, end),
         Flank::Bound => (
-            left && (!right || punct_before),
-            right && (!left || punct_after),
+            left && (!end || punct_before),
+            end && (!left || punct_after),
         ),
     }
 }
@@ -426,13 +426,13 @@ fn flanks(flank: Flank, before: &CharacterKind, after: &CharacterKind) -> (bool,
 fn spaces(tokenizer: &Tokenizer, index: usize) -> usize {
     let event = &tokenizer.events[index];
     match event.name {
-        Name::LineEnding => 1,
+        Name::LineEnd => 1,
         Name::Data => {
             let end = tokenizer.events[index + 1].point.index;
             usize::from(
-                tokenizer.parse_state.bytes[event.point.index..end]
+                tokenizer.parse_state.source[event.point.index..end]
                     .iter()
-                    .any(|byte| matches!(byte, b'\t' | b'\n' | b' ')),
+                    .any(|code| matches!(code, b'\t' | b'\n' | b' ')),
             )
         }
         _ => 0,
@@ -440,8 +440,8 @@ fn spaces(tokenizer: &Tokenizer, index: usize) -> usize {
 }
 
 /// Get sequences.
-fn get_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
-    let bytes = tokenizer.parse_state.bytes;
+fn read_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
+    let source = tokenizer.parse_state.source;
     let mut index = 0;
     let mut stack = vec![];
     let mut sequences = vec![];
@@ -456,17 +456,17 @@ fn get_sequences(tokenizer: &mut Tokenizer) -> Vec<Sequence> {
             if enter.kind == Kind::Enter {
                 let end = index + 1;
                 let exit = &tokenizer.events[end];
-                let marker = bytes[enter.point.index];
+                let marker = source[enter.point.index];
                 let size = exit.point.index - enter.point.index;
                 let rule = Rule::of(marker, size);
                 let spec = rule.spec();
-                let (open, close) = if spec.body == Body::Word {
+                let (open, close) = if spec.inner == Inner::Word {
                     (true, true)
                 } else if size < spec.min || (spec.exact && size != spec.min) {
                     (false, false)
                 } else {
-                    let before = neighbour(bytes, enter.point.index, false);
-                    let after = neighbour(bytes, exit.point.index, true);
+                    let before = near(source, enter.point.index, false);
+                    let after = near(source, exit.point.index, true);
                     flanks(spec.flank, &before, &after)
                 };
 
@@ -543,9 +543,9 @@ fn match_sequences(
         between += 1;
     }
 
-    let names = if take == 1 { spec.single } else { spec.double }
+    let names = if take == 1 { spec.lone } else { spec.double }
         .expect("expected a node for the markers taken");
-    let (group_name, seq_name, text_name) = (names.whole, names.sequence, names.text);
+    let (whole_name, seq_name, text_name) = (names.whole, names.sequence, names.text);
     let open_index = sequences[open].index;
     let close_index = sequences[close].index;
     let open_exit = sequences[open].end_point.clone();
@@ -578,7 +578,7 @@ fn match_sequences(
         vec![
             Event {
                 kind: Kind::Enter,
-                name: group_name,
+                name: whole_name,
                 point: sequences[open].end_point.clone(),
                 link: None,
             },
@@ -627,7 +627,7 @@ fn match_sequences(
             },
             Event {
                 kind: Kind::Exit,
-                name: group_name,
+                name: whole_name,
                 point: sequences[close].start_point.clone(),
                 link: None,
             },

@@ -1,4 +1,4 @@
-//! Character references occur in the [string][] and [text][] content types.
+//! Character references occur in the [string][plain] and [text][] content types.
 //!
 //! ## Grammar
 //!
@@ -61,7 +61,7 @@
 //! * [`character-reference.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/character-reference.js)
 //! * [*§ 2.5 Entity and numeric character references* in `CommonMark`](https://spec.commonmark.org/0.31/#entity-and-numeric-character-references)
 //!
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
 //! [character_escape]: crate::construct::character_reference
 //! [decode_numeric]: crate::util::character_reference::decode_numeric
@@ -78,7 +78,7 @@ use crate::util::{
 };
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"&");
+pub const STARTS: Starts = Starts::Codes(b"&");
 
 /// Start of character reference.
 ///
@@ -121,7 +121,7 @@ fn open(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::CharacterReference(Step::Numeric))
     } else {
         tokenizer.enter(Name::CharacterReferenceValue);
-        State::Retry(StateName::CharacterReference(Step::Value {
+        State::Redo(StateName::CharacterReference(Step::Value {
             marker: b'&',
             size: 0,
         }))
@@ -148,7 +148,7 @@ fn numeric(tokenizer: &mut Tokenizer) -> State {
         }))
     } else {
         tokenizer.enter(Name::CharacterReferenceValue);
-        State::Retry(StateName::CharacterReference(Step::Value {
+        State::Redo(StateName::CharacterReference(Step::Value {
             marker: b'#',
             size: 0,
         }))
@@ -174,7 +174,7 @@ fn value(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         if marker == b'&' {
             // Guaranteed to be valid ASCII bytes.
             let slice = Slice::from_indices(
-                tokenizer.parse_state.bytes,
+                tokenizer.parse_state.source,
                 tokenizer.point.index - size,
                 tokenizer.point.index,
             );
@@ -192,8 +192,8 @@ fn value(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         return State::Ok;
     }
 
-    if let Some(byte) = tokenizer.current {
-        if size < value_max(marker) && value_test(marker)(&byte) {
+    if let Some(code) = tokenizer.current {
+        if size < value_max(marker) && value_test(marker)(&code) {
             tokenizer.consume();
             return State::Next(StateName::CharacterReference(Step::Value {
                 marker,

@@ -38,7 +38,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"[");
+pub const STARTS: Starts = Starts::Codes(b"[");
 
 /// Start of label (link) start.
 ///
@@ -59,7 +59,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             start: (start, tokenizer.events.len() - 1),
             inactive: false,
         });
-        tokenizer.register_resolver_before(ResolveName::Label);
+        tokenizer.add_resolver_before(ResolveName::Label);
         State::Ok
     } else {
         State::Nok

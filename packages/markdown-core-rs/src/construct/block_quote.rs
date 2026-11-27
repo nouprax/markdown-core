@@ -60,7 +60,7 @@ use crate::util::constant::TAB_SIZE;
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::BlockQuote);
-    State::Retry(StateName::BlockQuote(Step::ContStart))
+    State::Redo(StateName::BlockQuote(Step::ContStart))
 }
 
 /// Start of block quote continuation.
@@ -78,9 +78,9 @@ fn cont_start(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::BlockQuote(Step::ContBefore)),
             State::Nok,
         );
-        State::Retry(space_or_tab_min_max(1, TAB_SIZE - 1))
+        State::Redo(space_or_tab_min_max(1, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::BlockQuote(Step::ContBefore))
+        State::Redo(StateName::BlockQuote(Step::ContBefore))
     }
 }
 

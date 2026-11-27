@@ -12,7 +12,7 @@
 //!
 //! [text]: crate::construct::text
 
-use crate::choice::{self, Choice, Entry, List};
+use crate::choice::{self, Choice, Item, List};
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{character_escape, character_reference, partial_data};
 use crate::resolve::Name as ResolveName;
@@ -25,17 +25,17 @@ use crate::tokenizer::Tokenizer;
 /// Data when none of these matched.
 pub const CHOICE: Choice = Choice::new(
     &[
-        Entry {
+        Item {
             starts: character_reference::STARTS,
             step: StateName::CharacterReference(character_reference::Step::Start),
         },
-        Entry {
+        Item {
             starts: character_escape::STARTS,
             step: StateName::CharacterEscape(character_escape::Step::Start),
         },
     ],
-    StateName::String(Step::Before),
-    StateName::String(Step::BeforeData),
+    StateName::Plain(Step::Before),
+    StateName::Plain(Step::BeforeData),
 );
 
 /// Start of string.
@@ -45,7 +45,7 @@ pub const CHOICE: Choice = Choice::new(
 ///        ^
 /// ````
 fn start(_tokenizer: &mut Tokenizer) -> State {
-    State::Retry(StateName::String(Step::Before))
+    State::Redo(StateName::Plain(Step::Before))
 }
 
 /// Before string.
@@ -56,11 +56,11 @@ fn start(_tokenizer: &mut Tokenizer) -> State {
 /// ````
 fn before(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
-        tokenizer.register_resolver(ResolveName::Data);
-        tokenizer.register_resolver(ResolveName::String);
+        tokenizer.add_resolver(ResolveName::Data);
+        tokenizer.add_resolver(ResolveName::Plain);
         State::Ok
     } else {
-        State::Retry(choice::start(List::String))
+        State::Redo(choice::start(List::Plain))
     }
 }
 
@@ -71,9 +71,9 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 ///        ^
 /// ````
 fn before_data(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(State::Next(StateName::String(Step::Before)), State::Nok);
-    State::Retry(StateName::Data(partial_data::Step::Start {
-        list: List::String,
+    tokenizer.attempt(State::Next(StateName::Plain(Step::Before)), State::Nok);
+    State::Redo(StateName::Data(partial_data::Step::Start {
+        list: List::Plain,
     }))
 }
 
@@ -93,7 +93,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::String(step)
+        StateName::Plain(step)
     }
 }
 

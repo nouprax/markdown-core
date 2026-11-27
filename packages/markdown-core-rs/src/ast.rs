@@ -8,7 +8,7 @@
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
-/// A byte range of the document source.
+/// A byte span of the document source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -65,14 +65,14 @@ impl Node {
                 list.extend(title.iter().flatten());
                 list.extend(content);
             }
-            Kind::Paragraph { content }
-            | Kind::Heading { content, .. }
+            Kind::Prose { content }
+            | Kind::Header { content, .. }
             | Kind::ListItem { content, .. }
             | Kind::TableCell { content }
             | Kind::DirectiveLabel { content }
             | Kind::Emphasis { content }
-            | Kind::Strong { content }
-            | Kind::Strikethrough { content }
+            | Kind::Bold { content }
+            | Kind::Strike { content }
             | Kind::Mark { content }
             | Kind::Insertion { content }
             | Kind::Span { content }
@@ -142,14 +142,14 @@ impl Node {
                 list.extend(title.iter_mut().flatten());
                 list.extend(content);
             }
-            Kind::Paragraph { content }
-            | Kind::Heading { content, .. }
+            Kind::Prose { content }
+            | Kind::Header { content, .. }
             | Kind::ListItem { content, .. }
             | Kind::TableCell { content }
             | Kind::DirectiveLabel { content }
             | Kind::Emphasis { content }
-            | Kind::Strong { content }
-            | Kind::Strikethrough { content }
+            | Kind::Bold { content }
+            | Kind::Strike { content }
             | Kind::Mark { content }
             | Kind::Insertion { content }
             | Kind::Span { content }
@@ -234,10 +234,10 @@ pub enum Kind {
         title: Option<Vec<Node>>,
         content: Vec<Node>,
     },
-    Paragraph {
+    Prose {
         content: Vec<Node>,
     },
-    Heading {
+    Header {
         level: u8,
         content: Vec<Node>,
     },
@@ -247,7 +247,7 @@ pub enum Kind {
         start: Option<u64>,
         variant: Option<Variant>,
         delimiter: Option<Delimiter>,
-        tight: bool,
+        dense: bool,
         items: Vec<Node>,
     },
     ListItem {
@@ -256,7 +256,7 @@ pub enum Kind {
     },
     CodeBlock {
         info: Option<String>,
-        language: Option<String>,
+        script: Option<String>,
         literal: String,
         fenced: bool,
         closed: bool,
@@ -316,10 +316,10 @@ pub enum Kind {
     Emphasis {
         content: Vec<Node>,
     },
-    Strong {
+    Bold {
         content: Vec<Node>,
     },
-    Strikethrough {
+    Strike {
         content: Vec<Node>,
     },
     Mark {
@@ -414,9 +414,9 @@ pub enum Delimiter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Flow {
     None,
-    Left,
+    Start,
     Center,
-    Right,
+    End,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -445,12 +445,12 @@ pub enum Destination {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dimensions {
     pub width: u32,
-    pub height: Option<u32>,
+    pub depth: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Referent {
-    Bib { key: String, mode: Mode },
+    Bib { id: String, mode: Mode },
     Footnote(Note),
     Specimen { label: String },
 }
@@ -472,7 +472,7 @@ pub struct Fields {
     pub time: Option<Value>,
     pub date: Option<Value>,
     pub authors: Option<Value>,
-    pub keywords: Option<Value>,
+    pub terms: Option<Value>,
     pub abstract_: Option<Value>,
     pub state: Option<Value>,
     pub comment: Option<Value>,

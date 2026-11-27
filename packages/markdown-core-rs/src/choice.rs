@@ -15,7 +15,7 @@
 //! * [`create-tokenizer.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark/dev/lib/create-tokenizer.js)
 //! * [`constructs.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark/dev/lib/constructs.js)
 
-use crate::construct::{flow, string, text};
+use crate::construct::{flow, plain, text};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
@@ -23,25 +23,25 @@ use crate::tokenizer::Tokenizer;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Starts {
     /// Any byte, and the end of the input.
-    Any,
+    All,
     /// One of these bytes.
-    Bytes(&'static [u8]),
+    Codes(&'static [u8]),
 }
 
 impl Starts {
-    /// Whether `byte` (`None` is the end of the input) can start the
+    /// Whether `code` (`None` is the end of the input) can start the
     /// construct.
-    fn matches(self, byte: Option<u8>) -> bool {
+    fn matches(self, code: Option<u8>) -> bool {
         match self {
-            Starts::Any => true,
-            Starts::Bytes(bytes) => matches!(byte, Some(byte) if bytes.contains(&byte)),
+            Starts::All => true,
+            Starts::Codes(source) => matches!(code, Some(code) if source.contains(&code)),
         }
     }
 }
 
 /// One construct in a list.
 #[derive(Debug)]
-pub struct Entry {
+pub struct Item {
     /// Bytes the construct can start at.
     pub starts: Starts,
     /// Start state of the construct.
@@ -52,7 +52,7 @@ pub struct Entry {
 #[derive(Debug)]
 pub struct Choice {
     /// Constructs, in the order they are tried.
-    entries: &'static [Entry],
+    entries: &'static [Item],
     /// State after a construct succeeded.
     ok: StateName,
     /// State when no construct succeeded.
@@ -63,22 +63,22 @@ pub struct Choice {
 
 impl Choice {
     /// Make a list.
-    pub const fn new(entries: &'static [Entry], ok: StateName, fallback: StateName) -> Choice {
+    pub const fn new(entries: &'static [Item], ok: StateName, fallback: StateName) -> Choice {
         let mut marks = [false; 256];
         let mut index = 0;
         while index < entries.len() {
             match entries[index].starts {
-                Starts::Any => {
-                    let mut byte = 0;
-                    while byte < 256 {
-                        marks[byte] = true;
-                        byte += 1;
+                Starts::All => {
+                    let mut code = 0;
+                    while code < 256 {
+                        marks[code] = true;
+                        code += 1;
                     }
                 }
-                Starts::Bytes(bytes) => {
+                Starts::Codes(source) => {
                     let mut at = 0;
-                    while at < bytes.len() {
-                        marks[bytes[at] as usize] = true;
+                    while at < source.len() {
+                        marks[source[at] as usize] = true;
                         at += 1;
                     }
                 }
@@ -93,9 +93,9 @@ impl Choice {
         }
     }
 
-    /// Whether `byte` can start some construct in this list.
-    pub fn marks(&self, byte: u8) -> bool {
-        self.marks[byte as usize]
+    /// Whether `code` can start some construct in this list.
+    pub fn marks(&self, code: u8) -> bool {
+        self.marks[code as usize]
     }
 }
 
@@ -104,30 +104,30 @@ impl Choice {
 pub enum List {
     Flow,
     Text,
-    String,
+    Plain,
 }
 
 impl List {
     /// Get the constructs of this list.
-    pub fn get(self) -> &'static Choice {
+    pub fn choice(self) -> &'static Choice {
         match self {
             List::Flow => &flow::CHOICE,
             List::Text => &text::CHOICE,
-            List::String => &string::CHOICE,
+            List::Plain => &plain::CHOICE,
         }
     }
 }
 
 /// At the entry `index` of `list`, or a later one.
 fn at(tokenizer: &mut Tokenizer, list: List, mut index: usize) -> State {
-    let choice = list.get();
+    let choice = list.choice();
 
     while index < choice.entries.len() && !choice.entries[index].starts.matches(tokenizer.current) {
         index += 1;
     }
 
     if index == choice.entries.len() {
-        State::Retry(choice.fallback)
+        State::Redo(choice.fallback)
     } else {
         tokenizer.attempt(
             State::Next(choice.ok),
@@ -136,7 +136,7 @@ fn at(tokenizer: &mut Tokenizer, list: List, mut index: usize) -> State {
                 index: index + 1,
             })),
         );
-        State::Retry(choice.entries[index].step)
+        State::Redo(choice.entries[index].step)
     }
 }
 

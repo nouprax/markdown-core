@@ -25,7 +25,7 @@
 //! before it.
 //! Escaped parens do not count in balancing.
 //!
-//! The destination is interpreted as the [string][] content type.
+//! The destination is interpreted as the [string][plain] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -50,7 +50,7 @@
 //! languages, result in a parse error.
 //! In markdown, there are no errors, and URLs are normalized.
 //! In addition, unicode characters are percent encoded
-//! ([`sanitize_uri`][sanitize_uri]).
+//! (`sanitize_uri` of markdown-rs).
 //! For example:
 //!
 //! ```markdown
@@ -75,11 +75,10 @@
 //! * [`micromark-factory-destination/index.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-factory-destination/dev/index.js)
 //!
 //! [definition]: crate::construct::definition
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
 //! [label_end]: crate::construct::label_end
-//! [sanitize_uri]: crate::util::sanitize_uri
 
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -139,10 +138,10 @@ fn start(tokenizer: &mut Tokenizer, options: Options) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::String,
+                    content: Content::Plain,
                 },
             );
-            State::Retry(StateName::Destination(Step::Raw(options, 0)))
+            State::Redo(StateName::Destination(Step::Raw(options, 0)))
         }
     }
 }
@@ -168,10 +167,10 @@ fn enclosed_before(tokenizer: &mut Tokenizer, names: Names) -> State {
             Link {
                 previous: None,
                 next: None,
-                content: Content::String,
+                content: Content::Plain,
             },
         );
-        State::Retry(StateName::Destination(Step::Enclosed(names)))
+        State::Redo(StateName::Destination(Step::Enclosed(names)))
     }
 }
 
@@ -187,7 +186,7 @@ fn enclosed(tokenizer: &mut Tokenizer, names: Names) -> State {
         Some(b'>') => {
             tokenizer.exit(Name::Data);
             tokenizer.exit(names.text);
-            State::Retry(StateName::Destination(Step::EnclosedBefore(names)))
+            State::Redo(StateName::Destination(Step::EnclosedBefore(names)))
         }
         Some(b'\\') => {
             tokenizer.consume();
@@ -212,7 +211,7 @@ fn enclosed_escape(tokenizer: &mut Tokenizer, names: Names) -> State {
             tokenizer.consume();
             State::Next(StateName::Destination(Step::Enclosed(names)))
         }
-        _ => State::Retry(StateName::Destination(Step::Enclosed(names))),
+        _ => State::Redo(StateName::Destination(Step::Enclosed(names))),
     }
 }
 
@@ -263,7 +262,7 @@ fn raw_escape(tokenizer: &mut Tokenizer, options: Options, open: usize) -> State
             tokenizer.consume();
             State::Next(StateName::Destination(Step::Raw(options, open)))
         }
-        _ => State::Retry(StateName::Destination(Step::Raw(options, open))),
+        _ => State::Redo(StateName::Destination(Step::Raw(options, open))),
     }
 }
 

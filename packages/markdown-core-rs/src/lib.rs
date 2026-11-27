@@ -29,8 +29,8 @@ use alloc::string::String;
 
 /// Parse `source` into the canonical AST.
 pub fn parse(source: &str) -> ast::Node {
-    let (events, bytes) = parser::parse(source);
-    to_ast::compile(&events, bytes)
+    let (events, source) = parser::parse(source);
+    to_ast::compile(&events, source)
 }
 
 /// The event stream of `source`, one line per event, for debugging.

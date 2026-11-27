@@ -24,10 +24,10 @@ use crate::tokenizer::Tokenizer;
 fn start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnding);
+            tokenizer.enter(Name::LineEnd);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::NonLazyContinuation(Step::After))
+            tokenizer.exit(Name::LineEnd);
+            State::Next(StateName::NonLaxContinuation(Step::After))
         }
         _ => State::Nok,
     }
@@ -41,7 +41,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn after(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.lazy {
+    if tokenizer.lax {
         State::Nok
     } else {
         State::Ok
@@ -57,7 +57,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::NonLazyContinuation(step)
+        StateName::NonLaxContinuation(step)
     }
 }
 

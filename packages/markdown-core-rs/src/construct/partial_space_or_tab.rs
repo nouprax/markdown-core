@@ -111,9 +111,9 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
                     link(&mut tokenizer.events, index);
                 }
 
-                State::Retry(StateName::SpaceOrTab(Step::Inside(options, 0)))
+                State::Redo(StateName::SpaceOrTab(Step::Inside(options, 0)))
             } else {
-                State::Retry(StateName::SpaceOrTab(Step::After(options, 0)))
+                State::Redo(StateName::SpaceOrTab(Step::After(options, 0)))
             }
         }
         Step::Inside(options, size) => match tokenizer.current {
@@ -123,7 +123,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
             }
             _ => {
                 tokenizer.exit(options.kind);
-                State::Retry(StateName::SpaceOrTab(Step::After(options, size)))
+                State::Redo(StateName::SpaceOrTab(Step::After(options, size)))
             }
         },
         Step::After(options, size) => {

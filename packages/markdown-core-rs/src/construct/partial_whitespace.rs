@@ -1,4 +1,4 @@
-//! Trailing whitespace occurs in [string][] and [text][].
+//! Trailing whitespace occurs in [string][plain] and [text][].
 //!
 //! ## Grammar
 //!
@@ -42,7 +42,7 @@
 //!
 //! ## Tokens
 //!
-//! * [`HardBreakTrailing`][Name::HardBreakTrailing]
+//! * [`HardBreakTail`][Name::HardBreakTail]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -50,7 +50,7 @@
 //! * [`initialize/text.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark/dev/lib/initialize/text.js)
 //! * [*§ 6.7 Hard line breaks* in `CommonMark`](https://spec.commonmark.org/0.31/#hard-line-breaks)
 //!
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
 //! [hard_break_escape]: crate::construct::hard_break_escape
 //! [character_escape]: crate::construct::character_escape
@@ -74,10 +74,10 @@ pub fn resolve_whitespace(tokenizer: &mut Tokenizer, hard_break: bool, trim_whol
 
         if event.kind == Kind::Exit && event.name == Name::Data {
             let trim_start = (trim_whole && index == 1)
-                || (index > 1 && tokenizer.events[index - 2].name == Name::LineEnding);
+                || (index > 1 && tokenizer.events[index - 2].name == Name::LineEnd);
             let trim_end = (trim_whole && index == tokenizer.events.len() - 1)
                 || (index + 1 < tokenizer.events.len()
-                    && tokenizer.events[index + 1].name == Name::LineEnding);
+                    && tokenizer.events[index + 1].name == Name::LineEnd);
 
             trim_data(tokenizer, index, trim_start, trim_end, hard_break);
         }
@@ -97,30 +97,30 @@ fn trim_data(
     hard_break: bool,
 ) {
     let mut slice = Slice::from_position(
-        tokenizer.parse_state.bytes,
+        tokenizer.parse_state.source,
         &Position::from_exit_event(&tokenizer.events, exit_index),
     );
 
     if trim_end {
-        let mut index = slice.bytes.len();
-        let mut spaces_only = slice.after == 0;
+        let mut index = slice.source.len();
+        let mut all_spaces = slice.after == 0;
         while index > 0 {
-            match slice.bytes[index - 1] {
+            match slice.source[index - 1] {
                 b' ' => {}
-                b'\t' => spaces_only = false,
+                b'\t' => all_spaces = false,
                 _ => break,
             }
 
             index -= 1;
         }
 
-        let diff = slice.bytes.len() - index;
+        let diff = slice.source.len() - index;
         let name = if hard_break
-            && spaces_only
+            && all_spaces
             && diff >= HARD_BREAK_PREFIX_SIZE_MIN
             && exit_index + 1 < tokenizer.events.len()
         {
-            Name::HardBreakTrailing
+            Name::HardBreakTail
         } else {
             Name::SpaceOrTab
         };
@@ -160,14 +160,14 @@ fn trim_data(
             );
 
             tokenizer.events[exit_index].point = enter_point;
-            slice.bytes = &slice.bytes[..index];
+            slice.source = &slice.source[..index];
         }
     }
 
     if trim_start {
         let mut index = 0;
-        while index < slice.bytes.len() {
-            match slice.bytes[index] {
+        while index < slice.source.len() {
+            match slice.source[index] {
                 b' ' | b'\t' => index += 1,
                 _ => break,
             }
@@ -175,7 +175,7 @@ fn trim_data(
 
         // The whole data is whitespace.
         // We can be very fast: we only change the event names.
-        if index == slice.bytes.len() {
+        if index == slice.source.len() {
             tokenizer.events[exit_index - 1].name = Name::SpaceOrTab;
             tokenizer.events[exit_index].name = Name::SpaceOrTab;
             return;

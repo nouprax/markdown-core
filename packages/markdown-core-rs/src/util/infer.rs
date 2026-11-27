@@ -34,7 +34,7 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
         } else {
             balance -= 1;
 
-            if balance == 1 && event.name == Name::BlankLineEnding {
+            if balance == 1 && event.name == Name::BlankLineEnd {
                 // Blank line directly after item, which is just a prefix.
                 //
                 // ```markdown
@@ -42,7 +42,7 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
                 //      ^
                 //   | - a
                 // ```
-                let mut at_empty_list_item = false;
+                let mut at_bare_list_item = false;
                 // Blank line at block quote prefix:
                 //
                 // ```markdown
@@ -50,7 +50,7 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
                 //        ^
                 //   | * a
                 // ```
-                let mut at_empty_block_quote = false;
+                let mut at_bare_block_quote = false;
 
                 // List.
                 let mut before = index - 2;
@@ -60,7 +60,7 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
 
                     if matches!(
                         events[before].name,
-                        Name::SpaceOrTab | Name::ListItemIndent | Name::GfmFootnoteDefinitionIndent
+                        Name::SpaceOrTab | Name::ListItemIndent | Name::FootnoteDefinitionIndent
                     ) {
                         before -= 2;
                     }
@@ -68,13 +68,13 @@ pub fn list_loose(events: &[Event], mut index: usize, include_items: bool) -> bo
                     if events[before].name == Name::BlockQuote
                         && events[before - 1].name == Name::BlockQuotePrefix
                     {
-                        at_empty_block_quote = true;
+                        at_bare_block_quote = true;
                     } else if events[before].name == Name::ListItemPrefix {
-                        at_empty_list_item = true;
+                        at_bare_list_item = true;
                     }
                 }
 
-                if !at_empty_list_item && !at_empty_block_quote {
+                if !at_bare_list_item && !at_bare_block_quote {
                     return true;
                 }
             }
@@ -107,7 +107,7 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
         } else {
             balance -= 1;
 
-            if balance == 1 && event.name == Name::BlankLineEnding {
+            if balance == 1 && event.name == Name::BlankLineEnd {
                 // Blank line directly after a prefix:
                 //
                 // ```markdown
@@ -122,7 +122,7 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
 
                 if matches!(
                     events[before].name,
-                    Name::SpaceOrTab | Name::ListItemIndent | Name::GfmFootnoteDefinitionIndent
+                    Name::SpaceOrTab | Name::ListItemIndent | Name::FootnoteDefinitionIndent
                 ) {
                     before -= 2;
                 }
@@ -149,13 +149,10 @@ pub fn list_item_loose(events: &[Event], mut index: usize) -> bool {
 }
 
 /// Figure out the alignment of a GFM table.
-pub fn gfm_table_align(events: &[Event], mut index: usize) -> Vec<Flow> {
-    debug_assert!(
-        matches!(events[index].name, Name::GfmTable),
-        "expected table"
-    );
+pub fn table_sides(events: &[Event], mut index: usize) -> Vec<Flow> {
+    debug_assert!(matches!(events[index].name, Name::Table), "expected table");
     let mut in_delimiter_row = false;
-    let mut align = vec![];
+    let mut side = vec![];
 
     while index < events.len() {
         let event = &events[index];
@@ -163,36 +160,36 @@ pub fn gfm_table_align(events: &[Event], mut index: usize) -> Vec<Flow> {
         if in_delimiter_row {
             if event.kind == Kind::Enter {
                 // Start of alignment value: set a new column.
-                if event.name == Name::GfmTableDelimiterCellValue {
-                    align.push(if events[index + 1].name == Name::GfmTableDelimiterMarker {
-                        Flow::Left
+                if event.name == Name::TableDelimiterCellValue {
+                    side.push(if events[index + 1].name == Name::TableDelimiterMarker {
+                        Flow::Start
                     } else {
                         Flow::None
                     });
                 }
             } else {
                 // End of alignment value: change the column.
-                if event.name == Name::GfmTableDelimiterCellValue {
-                    if events[index - 1].name == Name::GfmTableDelimiterMarker {
-                        let align_index = align.len() - 1;
-                        align[align_index] = if align[align_index] == Flow::Left {
+                if event.name == Name::TableDelimiterCellValue {
+                    if events[index - 1].name == Name::TableDelimiterMarker {
+                        let side_index = side.len() - 1;
+                        side[side_index] = if side[side_index] == Flow::Start {
                             Flow::Center
                         } else {
-                            Flow::Right
+                            Flow::End
                         }
                     }
                 }
                 // Done!
-                else if event.name == Name::GfmTableDelimiterRow {
+                else if event.name == Name::TableDelimiterRow {
                     break;
                 }
             }
-        } else if event.kind == Kind::Enter && event.name == Name::GfmTableDelimiterRow {
+        } else if event.kind == Kind::Enter && event.name == Name::TableDelimiterRow {
             in_delimiter_row = true;
         }
 
         index += 1;
     }
 
-    align
+    side
 }

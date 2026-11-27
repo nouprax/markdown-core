@@ -85,9 +85,9 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(State::Next(StateName::ListItem(Step::Before)), State::Nok);
-        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
+        State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::ListItem(Step::Before))
+        State::Redo(StateName::ListItem(Step::Before))
     }
 }
 
@@ -104,15 +104,15 @@ fn before(tokenizer: &mut Tokenizer) -> State {
             State::Nok,
             State::Next(StateName::ListItem(Step::BeforeUnordered)),
         );
-        State::Retry(StateName::ThematicBreak(thematic_break::Step::Start))
+        State::Redo(StateName::ThematicBreak(thematic_break::Step::Start))
     } else if tokenizer.current == Some(b'+') {
-        State::Retry(StateName::ListItem(Step::BeforeUnordered))
+        State::Redo(StateName::ListItem(Step::BeforeUnordered))
     }
     // Ordered.
     else if tokenizer.current == Some(b'1')
         || (matches!(tokenizer.current, Some(b'0'..=b'9')) && !tokenizer.interrupt)
     {
-        State::Retry(StateName::ListItem(Step::BeforeOrdered))
+        State::Redo(StateName::ListItem(Step::BeforeOrdered))
     } else {
         State::Nok
     }
@@ -128,7 +128,7 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before_unordered(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemPrefix);
-    State::Retry(StateName::ListItem(Step::Marker))
+    State::Redo(StateName::ListItem(Step::Marker))
 }
 
 /// At ordered list item value.
@@ -140,7 +140,7 @@ fn before_unordered(tokenizer: &mut Tokenizer) -> State {
 fn before_ordered(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemPrefix);
     tokenizer.enter(Name::ListItemValue);
-    State::Retry(StateName::ListItem(Step::Value { size: 0 }))
+    State::Redo(StateName::ListItem(Step::Value { size: 0 }))
 }
 
 /// In ordered list item value.
@@ -152,7 +152,7 @@ fn before_ordered(tokenizer: &mut Tokenizer) -> State {
 fn value(tokenizer: &mut Tokenizer, size: usize) -> State {
     if matches!(tokenizer.current, Some(b'.' | b')')) && (!tokenizer.interrupt || size < 2) {
         tokenizer.exit(Name::ListItemValue);
-        State::Retry(StateName::ListItem(Step::Marker))
+        State::Redo(StateName::ListItem(Step::Marker))
     } else if matches!(tokenizer.current, Some(b'0'..=b'9')) && size + 1 < LIST_ITEM_VALUE_SIZE_MAX
     {
         tokenizer.consume();
@@ -190,7 +190,7 @@ fn marker_after(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::ListItem(Step::After { blank: true })),
         State::Next(StateName::ListItem(Step::MarkerAfterFilled)),
     );
-    State::Retry(StateName::BlankLine(blank_line::Step::Start))
+    State::Redo(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// After list item marker.
@@ -207,7 +207,7 @@ fn marker_after_filled(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::ListItem(Step::After { blank: false })),
         State::Next(StateName::ListItem(Step::PrefixOther)),
     );
-    State::Retry(StateName::ListItem(Step::Whitespace))
+    State::Redo(StateName::ListItem(Step::Whitespace))
 }
 
 /// After marker, at whitespace.
@@ -221,7 +221,7 @@ fn whitespace(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::ListItem(Step::WhitespaceAfter)),
         State::Nok,
     );
-    State::Retry(space_or_tab_min_max(1, TAB_SIZE))
+    State::Redo(space_or_tab_min_max(1, TAB_SIZE))
 }
 
 /// After acceptable whitespace.
@@ -272,7 +272,7 @@ fn after(tokenizer: &mut Tokenizer, blank: bool) -> State {
             &[Name::ListItem],
         );
         let mut prefix = Slice::from_position(
-            tokenizer.parse_state.bytes,
+            tokenizer.parse_state.source,
             &Position {
                 start: &tokenizer.events[start].point,
                 end: &tokenizer.point,
@@ -290,7 +290,7 @@ fn after(tokenizer: &mut Tokenizer, blank: bool) -> State {
         container.size = prefix;
 
         tokenizer.exit(Name::ListItemPrefix);
-        tokenizer.register_resolver_before(ResolveName::ListItem);
+        tokenizer.add_resolver_before(ResolveName::ListItem);
         State::Ok
     }
 }
@@ -307,7 +307,7 @@ fn cont_start(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::ListItem(Step::ContBlank)),
         State::Next(StateName::ListItem(Step::ContFilled)),
     );
-    State::Retry(StateName::BlankLine(blank_line::Step::Start))
+    State::Redo(StateName::BlankLine(blank_line::Step::Start))
 }
 
 /// Start of blank list item continuation.
@@ -326,7 +326,7 @@ fn cont_blank(tokenizer: &mut Tokenizer) -> State {
         State::Nok
     } else if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume, optionally, at most `size`.
-        State::Retry(indent(0, size))
+        State::Redo(indent(0, size))
     } else {
         State::Ok
     }
@@ -347,7 +347,7 @@ fn cont_filled(tokenizer: &mut Tokenizer) -> State {
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         // Consume exactly `size`.
-        State::Retry(indent(size, size))
+        State::Redo(indent(size, size))
     } else {
         State::Nok
     }
@@ -369,7 +369,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 let end = skip::opt(&tokenizer.events, index, &[Name::ListItem]) - 1;
                 let marker = skip::to(&tokenizer.events, index, &[Name::ListItemMarker]);
                 // Guaranteed to be a valid ASCII byte.
-                let marker = tokenizer.parse_state.bytes[tokenizer.events[marker].point.index];
+                let marker = tokenizer.parse_state.source[tokenizer.events[marker].point.index];
                 let current = (marker, balance, index, end);
 
                 let mut list_index = lists_wip.len();
@@ -384,9 +384,9 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                         &[
                             Name::SpaceOrTab,
                             Name::ListItemIndent,
-                            Name::GfmFootnoteDefinitionIndent,
-                            Name::LineEnding,
-                            Name::BlankLineEnding,
+                            Name::FootnoteDefinitionIndent,
+                            Name::LineEnd,
+                            Name::BlankLineEnd,
                             Name::BlockQuotePrefix,
                         ],
                     );

@@ -63,7 +63,7 @@
 //!
 //! The **complete** production of HTML (flow) is not allowed to interrupt
 //! content.
-//! That means that a blank line is needed between a [paragraph][] and it.
+//! That means that a blank line is needed between a [paragraph][prose] and it.
 //! However, [HTML (text)][html_text] has a similar production, which will
 //! typically kick-in instead.
 //!
@@ -84,7 +84,7 @@
 //!
 //! * [`HtmlFlow`][Name::HtmlFlow]
 //! * [`HtmlFlowData`][Name::HtmlFlowData]
-//! * [`LineEnding`][Name::LineEnding]
+//! * [`LineEnd`][Name::LineEnd]
 //!
 //! ## References
 //!
@@ -93,7 +93,7 @@
 //!
 //! [flow]: crate::construct::flow
 //! [html_text]: crate::construct::html_text
-//! [paragraph]: crate::construct::paragraph
+//! [prose]: crate::construct::prose
 //! [html_raw_names]: crate::util::constant::HTML_RAW_NAMES
 //! [html_block_names]: crate::util::constant::HTML_BLOCK_NAMES
 //! [html_parsing]: https://html.spec.whatwg.org/multipage/parsing.html#parsing
@@ -102,7 +102,7 @@ use crate::choice::Starts;
 use crate::construct::partial_space_or_tab::{
     space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
-use crate::construct::{blank_line, partial_non_lazy_continuation};
+use crate::construct::{blank_line, partial_non_lax_continuation};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -112,7 +112,7 @@ use crate::util::{
 };
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\t <");
+pub const STARTS: Starts = Starts::Codes(b"\t <");
 
 /// Symbol for `<script>` (condition 1).
 const RAW: u8 = 1;
@@ -140,7 +140,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(State::Next(StateName::HtmlFlow(Step::Before)), State::Nok);
-        State::Retry(space_or_tab_with_options(SpaceOrTabOptions {
+        State::Redo(space_or_tab_with_options(SpaceOrTabOptions {
             kind: Name::HtmlFlowData,
             min: 0,
             max: TAB_SIZE - 1,
@@ -148,7 +148,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             content: None,
         }))
     } else {
-        State::Retry(StateName::HtmlFlow(Step::Before))
+        State::Redo(StateName::HtmlFlow(Step::Before))
     }
 }
 
@@ -186,7 +186,7 @@ fn open(tokenizer: &mut Tokenizer) -> State {
         }
         Some(b'/') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlFlow(Step::TagCloseStart {
+            State::Next(StateName::HtmlFlow(Step::ElementCloseStart {
                 start: tokenizer.point.index,
             }))
         }
@@ -202,9 +202,9 @@ fn open(tokenizer: &mut Tokenizer) -> State {
             }))
         }
         // ASCII alphabetical.
-        Some(b'A'..=b'Z' | b'a'..=b'z') => State::Retry(StateName::HtmlFlow(Step::TagName {
+        Some(b'A'..=b'Z' | b'a'..=b'z') => State::Redo(StateName::HtmlFlow(Step::ElementName {
             start: tokenizer.point.index,
-            closing: false,
+            shut: false,
         })),
         _ => State::Nok,
     }
@@ -293,13 +293,10 @@ fn cdata_open_inside(tokenizer: &mut Tokenizer, size: usize) -> State {
 /// > | </x>
 ///       ^
 /// ```
-fn tag_close_start(tokenizer: &mut Tokenizer, start: usize) -> State {
+fn element_close_start(tokenizer: &mut Tokenizer, start: usize) -> State {
     if let Some(b'A'..=b'Z' | b'a'..=b'z') = tokenizer.current {
         tokenizer.consume();
-        State::Next(StateName::HtmlFlow(Step::TagName {
-            start,
-            closing: true,
-        }))
+        State::Next(StateName::HtmlFlow(Step::ElementName { start, shut: true }))
     } else {
         State::Nok
     }
@@ -313,51 +310,51 @@ fn tag_close_start(tokenizer: &mut Tokenizer, start: usize) -> State {
 /// > | </ab>
 ///       ^^
 /// ```
-fn tag_name(tokenizer: &mut Tokenizer, start: usize, closing: bool) -> State {
+fn element_name(tokenizer: &mut Tokenizer, start: usize, shut: bool) -> State {
     match tokenizer.current {
         None | Some(b'\t' | b'\n' | b' ' | b'/' | b'>') => {
-            let closing_tag = closing;
+            let shut_element = shut;
             let slash = matches!(tokenizer.current, Some(b'/'));
             // Guaranteed to be valid ASCII bytes.
             let slice =
-                Slice::from_indices(tokenizer.parse_state.bytes, start, tokenizer.point.index);
+                Slice::from_indices(tokenizer.parse_state.source, start, tokenizer.point.index);
             let name = slice
                 .as_str()
                 // The line ending case might result in a `\r` that is already accounted for.
                 .trim()
                 .to_ascii_lowercase();
 
-            if !slash && !closing_tag && HTML_RAW_NAMES.contains(&name.as_str()) {
+            if !slash && !shut_element && HTML_RAW_NAMES.contains(&name.as_str()) {
                 let kind = RAW;
                 // Do not form containers.
                 tokenizer.concrete = true;
-                State::Retry(StateName::HtmlFlow(Step::Continuation { kind }))
+                State::Redo(StateName::HtmlFlow(Step::Continuation { kind }))
             } else if HTML_BLOCK_NAMES.contains(&name.as_str()) {
                 let kind = BASIC;
 
                 if slash {
                     tokenizer.consume();
-                    State::Next(StateName::HtmlFlow(Step::BasicSelfClosing { kind }))
+                    State::Next(StateName::HtmlFlow(Step::BasicSelfShut { kind }))
                 } else {
                     // Do not form containers.
                     tokenizer.concrete = true;
-                    State::Retry(StateName::HtmlFlow(Step::Continuation { kind }))
+                    State::Redo(StateName::HtmlFlow(Step::Continuation { kind }))
                 }
             } else {
                 // Do not support complete HTML when interrupting.
-                if tokenizer.interrupt && !tokenizer.lazy {
+                if tokenizer.interrupt && !tokenizer.lax {
                     State::Nok
-                } else if closing_tag {
-                    State::Retry(StateName::HtmlFlow(Step::CompleteClosingTagAfter))
+                } else if shut_element {
+                    State::Redo(StateName::HtmlFlow(Step::CompleteShutElementAfter))
                 } else {
-                    State::Retry(StateName::HtmlFlow(Step::CompleteAttributeNameBefore))
+                    State::Redo(StateName::HtmlFlow(Step::CompleteAttributeNameBefore))
                 }
             }
         }
         // ASCII alphanumerical and `-`.
         Some(b'-' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlFlow(Step::TagName { start, closing }))
+            State::Next(StateName::HtmlFlow(Step::ElementName { start, shut }))
         }
         Some(_) => State::Nok,
     }
@@ -369,7 +366,7 @@ fn tag_name(tokenizer: &mut Tokenizer, start: usize, closing: bool) -> State {
 /// > | <div/>
 ///          ^
 /// ```
-fn basic_self_closing(tokenizer: &mut Tokenizer, kind: u8) -> State {
+fn basic_self_shut(tokenizer: &mut Tokenizer, kind: u8) -> State {
     if let Some(b'>') = tokenizer.current {
         tokenizer.consume();
         // Do not form containers.
@@ -386,13 +383,13 @@ fn basic_self_closing(tokenizer: &mut Tokenizer, kind: u8) -> State {
 /// > | <x/>
 ///        ^
 /// ```
-fn complete_closing_tag_after(tokenizer: &mut Tokenizer) -> State {
+fn complete_shut_element_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\t' | b' ') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlFlow(Step::CompleteClosingTagAfter))
+            State::Next(StateName::HtmlFlow(Step::CompleteShutElementAfter))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::CompleteEnd)),
+        _ => State::Redo(StateName::HtmlFlow(Step::CompleteEnd)),
     }
 }
 
@@ -430,7 +427,7 @@ fn complete_attribute_name_before(tokenizer: &mut Tokenizer) -> State {
             tokenizer.consume();
             State::Next(StateName::HtmlFlow(Step::CompleteAttributeName))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::CompleteEnd)),
+        _ => State::Redo(StateName::HtmlFlow(Step::CompleteEnd)),
     }
 }
 
@@ -451,7 +448,7 @@ fn complete_attribute_name(tokenizer: &mut Tokenizer) -> State {
             tokenizer.consume();
             State::Next(StateName::HtmlFlow(Step::CompleteAttributeName))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::CompleteAttributeNameAfter)),
+        _ => State::Redo(StateName::HtmlFlow(Step::CompleteAttributeNameAfter)),
     }
 }
 
@@ -474,7 +471,7 @@ fn complete_attribute_name_after(tokenizer: &mut Tokenizer) -> State {
             tokenizer.consume();
             State::Next(StateName::HtmlFlow(Step::CompleteAttributeValueBefore))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::CompleteAttributeNameBefore)),
+        _ => State::Redo(StateName::HtmlFlow(Step::CompleteAttributeNameBefore)),
     }
 }
 
@@ -501,7 +498,7 @@ fn complete_attribute_value_before(tokenizer: &mut Tokenizer) -> State {
                 quote,
             }))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::CompleteAttributeValueUnquoted)),
+        _ => State::Redo(StateName::HtmlFlow(Step::CompleteAttributeValueUnquoted)),
     }
 }
 
@@ -536,7 +533,7 @@ fn complete_attribute_value_quoted(tokenizer: &mut Tokenizer, quote: u8) -> Stat
 fn complete_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\t' | b'\n' | b' ' | b'"' | b'\'' | b'/' | b'<' | b'=' | b'>' | b'`') => {
-            State::Retry(StateName::HtmlFlow(Step::CompleteAttributeNameAfter))
+            State::Redo(StateName::HtmlFlow(Step::CompleteAttributeNameAfter))
         }
         Some(_) => {
             tokenizer.consume();
@@ -554,7 +551,7 @@ fn complete_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn complete_attribute_value_quoted_after(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'\t' | b' ' | b'/' | b'>') = tokenizer.current {
-        State::Retry(StateName::HtmlFlow(Step::CompleteAttributeNameBefore))
+        State::Redo(StateName::HtmlFlow(Step::CompleteAttributeNameBefore))
     } else {
         State::Nok
     }
@@ -586,7 +583,7 @@ fn complete_after(tokenizer: &mut Tokenizer) -> State {
         None | Some(b'\n') => {
             // Do not form containers.
             tokenizer.concrete = true;
-            State::Retry(StateName::HtmlFlow(Step::Continuation { kind: COMPLETE }))
+            State::Redo(StateName::HtmlFlow(Step::Continuation { kind: COMPLETE }))
         }
         Some(b'\t' | b' ') => {
             tokenizer.consume();
@@ -610,7 +607,9 @@ fn continuation(tokenizer: &mut Tokenizer, kind: u8) -> State {
         }))
     } else if kind == RAW && tokenizer.current == Some(b'<') {
         tokenizer.consume();
-        State::Next(StateName::HtmlFlow(Step::ContinuationRawTagOpen { kind }))
+        State::Next(StateName::HtmlFlow(Step::ContinuationRawElementOpen {
+            kind,
+        }))
     } else if kind == DECLARATION && tokenizer.current == Some(b'>') {
         tokenizer.consume();
         State::Next(StateName::HtmlFlow(Step::ContinuationClose))
@@ -628,10 +627,10 @@ fn continuation(tokenizer: &mut Tokenizer, kind: u8) -> State {
             State::Next(StateName::HtmlFlow(Step::ContinuationAfter)),
             State::Next(StateName::HtmlFlow(Step::ContinuationStart { kind })),
         );
-        State::Retry(StateName::HtmlFlow(Step::BlankLineBefore))
+        State::Redo(StateName::HtmlFlow(Step::BlankLineBefore))
     } else if matches!(tokenizer.current, None | Some(b'\n')) {
         tokenizer.exit(Name::HtmlFlowData);
-        State::Retry(StateName::HtmlFlow(Step::ContinuationStart { kind }))
+        State::Redo(StateName::HtmlFlow(Step::ContinuationStart { kind }))
     } else {
         tokenizer.consume();
         State::Next(StateName::HtmlFlow(Step::Continuation { kind }))
@@ -647,11 +646,11 @@ fn continuation(tokenizer: &mut Tokenizer, kind: u8) -> State {
 /// ```
 fn continuation_start(tokenizer: &mut Tokenizer, kind: u8) -> State {
     tokenizer.check(
-        State::Next(StateName::HtmlFlow(Step::ContinuationStartNonLazy { kind })),
+        State::Next(StateName::HtmlFlow(Step::ContinuationStartNonLax { kind })),
         State::Next(StateName::HtmlFlow(Step::ContinuationAfter)),
     );
-    State::Retry(StateName::NonLazyContinuation(
-        partial_non_lazy_continuation::Step::Start,
+    State::Redo(StateName::NonLaxContinuation(
+        partial_non_lax_continuation::Step::Start,
     ))
 }
 
@@ -662,12 +661,12 @@ fn continuation_start(tokenizer: &mut Tokenizer, kind: u8) -> State {
 ///        ^
 ///   | asd
 /// ```
-fn continuation_start_non_lazy(tokenizer: &mut Tokenizer, kind: u8) -> State {
+fn continuation_start_non_lax(tokenizer: &mut Tokenizer, kind: u8) -> State {
     match tokenizer.current {
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnding);
+            tokenizer.enter(Name::LineEnd);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnding);
+            tokenizer.exit(Name::LineEnd);
             State::Next(StateName::HtmlFlow(Step::ContinuationBefore { kind }))
         }
         _ => unreachable!("expected eol"),
@@ -683,10 +682,10 @@ fn continuation_start_non_lazy(tokenizer: &mut Tokenizer, kind: u8) -> State {
 /// ```
 fn continuation_before(tokenizer: &mut Tokenizer, kind: u8) -> State {
     match tokenizer.current {
-        None | Some(b'\n') => State::Retry(StateName::HtmlFlow(Step::ContinuationStart { kind })),
+        None | Some(b'\n') => State::Redo(StateName::HtmlFlow(Step::ContinuationStart { kind })),
         _ => {
             tokenizer.enter(Name::HtmlFlowData);
-            State::Retry(StateName::HtmlFlow(Step::Continuation { kind }))
+            State::Redo(StateName::HtmlFlow(Step::Continuation { kind }))
         }
     }
 }
@@ -705,7 +704,7 @@ fn continuation_comment_inside(tokenizer: &mut Tokenizer, kind: u8) -> State {
                 kind,
             }))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::Continuation { kind })),
+        _ => State::Redo(StateName::HtmlFlow(Step::Continuation { kind })),
     }
 }
 
@@ -715,16 +714,16 @@ fn continuation_comment_inside(tokenizer: &mut Tokenizer, kind: u8) -> State {
 /// > | <script>console.log(1)</script>
 ///                            ^
 /// ```
-fn continuation_raw_tag_open(tokenizer: &mut Tokenizer, kind: u8) -> State {
+fn continuation_raw_element_open(tokenizer: &mut Tokenizer, kind: u8) -> State {
     match tokenizer.current {
         Some(b'/') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlFlow(Step::ContinuationRawEndTag {
+            State::Next(StateName::HtmlFlow(Step::ContinuationRawEndElement {
                 kind,
                 start: tokenizer.point.index,
             }))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::Continuation { kind })),
+        _ => State::Redo(StateName::HtmlFlow(Step::Continuation { kind })),
     }
 }
 
@@ -734,29 +733,29 @@ fn continuation_raw_tag_open(tokenizer: &mut Tokenizer, kind: u8) -> State {
 /// > | <script>console.log(1)</script>
 ///                             ^^^^^^
 /// ```
-fn continuation_raw_end_tag(tokenizer: &mut Tokenizer, kind: u8, start: usize) -> State {
+fn continuation_raw_end_element(tokenizer: &mut Tokenizer, kind: u8, start: usize) -> State {
     match tokenizer.current {
         Some(b'>') => {
             // Guaranteed to be valid ASCII bytes.
             let slice =
-                Slice::from_indices(tokenizer.parse_state.bytes, start, tokenizer.point.index);
+                Slice::from_indices(tokenizer.parse_state.source, start, tokenizer.point.index);
             let name = slice.as_str().to_ascii_lowercase();
 
             if HTML_RAW_NAMES.contains(&name.as_str()) {
                 tokenizer.consume();
                 State::Next(StateName::HtmlFlow(Step::ContinuationClose))
             } else {
-                State::Retry(StateName::HtmlFlow(Step::Continuation { kind }))
+                State::Redo(StateName::HtmlFlow(Step::Continuation { kind }))
             }
         }
         Some(b'A'..=b'Z' | b'a'..=b'z') if tokenizer.point.index - start < HTML_RAW_SIZE_MAX => {
             tokenizer.consume();
-            State::Next(StateName::HtmlFlow(Step::ContinuationRawEndTag {
+            State::Next(StateName::HtmlFlow(Step::ContinuationRawEndElement {
                 kind,
                 start,
             }))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::Continuation { kind })),
+        _ => State::Redo(StateName::HtmlFlow(Step::Continuation { kind })),
     }
 }
 
@@ -774,7 +773,7 @@ fn continuation_cdata_inside(tokenizer: &mut Tokenizer, kind: u8) -> State {
                 kind,
             }))
         }
-        _ => State::Retry(StateName::HtmlFlow(Step::Continuation { kind })),
+        _ => State::Redo(StateName::HtmlFlow(Step::Continuation { kind })),
     }
 }
 
@@ -802,7 +801,7 @@ fn continuation_declaration_inside(tokenizer: &mut Tokenizer, kind: u8) -> State
         tokenizer.consume();
         State::Next(StateName::HtmlFlow(Step::ContinuationClose))
     } else {
-        State::Retry(StateName::HtmlFlow(Step::Continuation { kind }))
+        State::Redo(StateName::HtmlFlow(Step::Continuation { kind }))
     }
 }
 
@@ -816,7 +815,7 @@ fn continuation_close(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::HtmlFlowData);
-            State::Retry(StateName::HtmlFlow(Step::ContinuationAfter))
+            State::Redo(StateName::HtmlFlow(Step::ContinuationAfter))
         }
         _ => {
             tokenizer.consume();
@@ -848,9 +847,9 @@ fn continuation_after(tokenizer: &mut Tokenizer) -> State {
 ///   |
 /// ```
 fn blank_line_before(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.enter(Name::LineEnding);
+    tokenizer.enter(Name::LineEnd);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnding);
+    tokenizer.exit(Name::LineEnd);
     State::Next(StateName::BlankLine(blank_line::Step::Start))
 }
 
@@ -863,10 +862,10 @@ pub enum Step {
     DeclarationOpen,
     CommentOpenInside { kind: u8 },
     CdataOpenInside { size: usize },
-    TagCloseStart { start: usize },
-    TagName { start: usize, closing: bool },
-    BasicSelfClosing { kind: u8 },
-    CompleteClosingTagAfter,
+    ElementCloseStart { start: usize },
+    ElementName { start: usize, shut: bool },
+    BasicSelfShut { kind: u8 },
+    CompleteShutElementAfter,
     CompleteEnd,
     CompleteAttributeNameBefore,
     CompleteAttributeName,
@@ -883,11 +882,11 @@ pub enum Step {
     ContinuationStart { kind: u8 },
     ContinuationBefore { kind: u8 },
     ContinuationCommentInside { kind: u8 },
-    ContinuationRawTagOpen { kind: u8 },
-    ContinuationRawEndTag { kind: u8, start: usize },
+    ContinuationRawElementOpen { kind: u8 },
+    ContinuationRawEndElement { kind: u8, start: usize },
     ContinuationClose,
     ContinuationCdataInside { kind: u8 },
-    ContinuationStartNonLazy { kind: u8 },
+    ContinuationStartNonLax { kind: u8 },
 }
 
 impl From<Step> for StateName {
@@ -905,10 +904,10 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::DeclarationOpen => declaration_open(tokenizer),
         Step::CommentOpenInside { kind } => comment_open_inside(tokenizer, kind),
         Step::CdataOpenInside { size } => cdata_open_inside(tokenizer, size),
-        Step::TagCloseStart { start } => tag_close_start(tokenizer, start),
-        Step::TagName { start, closing } => tag_name(tokenizer, start, closing),
-        Step::BasicSelfClosing { kind } => basic_self_closing(tokenizer, kind),
-        Step::CompleteClosingTagAfter => complete_closing_tag_after(tokenizer),
+        Step::ElementCloseStart { start } => element_close_start(tokenizer, start),
+        Step::ElementName { start, shut } => element_name(tokenizer, start, shut),
+        Step::BasicSelfShut { kind } => basic_self_shut(tokenizer, kind),
+        Step::CompleteShutElementAfter => complete_shut_element_after(tokenizer),
         Step::CompleteEnd => complete_end(tokenizer),
         Step::CompleteAttributeNameBefore => complete_attribute_name_before(tokenizer),
         Step::CompleteAttributeName => complete_attribute_name(tokenizer),
@@ -929,12 +928,12 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ContinuationStart { kind } => continuation_start(tokenizer, kind),
         Step::ContinuationBefore { kind } => continuation_before(tokenizer, kind),
         Step::ContinuationCommentInside { kind } => continuation_comment_inside(tokenizer, kind),
-        Step::ContinuationRawTagOpen { kind } => continuation_raw_tag_open(tokenizer, kind),
-        Step::ContinuationRawEndTag { kind, start } => {
-            continuation_raw_end_tag(tokenizer, kind, start)
+        Step::ContinuationRawElementOpen { kind } => continuation_raw_element_open(tokenizer, kind),
+        Step::ContinuationRawEndElement { kind, start } => {
+            continuation_raw_end_element(tokenizer, kind, start)
         }
         Step::ContinuationClose => continuation_close(tokenizer),
         Step::ContinuationCdataInside { kind } => continuation_cdata_inside(tokenizer, kind),
-        Step::ContinuationStartNonLazy { kind } => continuation_start_non_lazy(tokenizer, kind),
+        Step::ContinuationStartNonLax { kind } => continuation_start_non_lax(tokenizer, kind),
     }
 }

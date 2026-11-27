@@ -3,8 +3,8 @@
 //! Most of these constants are magic numbers, such as the number of markers
 //! needed to parse [code (fenced)][raw_flow]
 //! ([`CODE_FENCED_SEQUENCE_SIZE_MIN`][]) or the max number of allowed markers
-//! in a [heading (atx)][heading_atx]
-//! ([`HEADING_ATX_OPENING_FENCE_SIZE_MAX`][]).
+//! in a [heading (atx)][header_atx]
+//! ([`HEADER_ATX_OPEN_FENCE_SIZE_MAX`][]).
 //!
 //! Some constants are instead lists of things, such as the list of tag names
 //! considered in the **raw** production of [HTML (flow)][html_flow]
@@ -12,7 +12,7 @@
 //! ([`CHARACTER_REFERENCES`][]).
 //!
 //! [raw_flow]: crate::construct::raw_flow
-//! [heading_atx]: crate::construct::heading_atx
+//! [header_atx]: crate::construct::header_atx
 //! [html_flow]: crate::construct::html_flow
 
 /// The number of characters allowed in a protocol of an [autolink][].
@@ -80,13 +80,13 @@ pub const FRONTMATTER_SEQUENCE_SIZE: usize = 3;
 /// [whitespace]: crate::construct::partial_whitespace
 pub const HARD_BREAK_PREFIX_SIZE_MIN: usize = 2;
 
-/// The max number of markers allowed to form a [heading (atx)][heading_atx].
+/// The max number of markers allowed to form a [heading (atx)][header_atx].
 ///
 /// This limitation is imposed by HTML, which imposes a max heading rank of
 /// `6`.
 ///
-/// [heading_atx]: crate::construct::heading_atx
-pub const HEADING_ATX_OPENING_FENCE_SIZE_MAX: usize = 6;
+/// [header_atx]: crate::construct::header_atx
+pub const HEADER_ATX_OPEN_FENCE_SIZE_MAX: usize = 6;
 
 /// List of HTML tag names that form the **basic** production of
 /// [HTML (flow)][html_flow].
@@ -2422,18 +2422,18 @@ mod tests {
 
         assert_eq!(
             CHARACTER_REFERENCE_NAMED_SIZE_MAX,
-            longest(&CHARACTER_REFERENCES.map(|d| d.0)).unwrap().len(),
+            widest(&CHARACTER_REFERENCES.map(|d| d.0)).unwrap().len(),
             "`CHARACTER_REFERENCE_NAMED_SIZE_MAX`"
         );
 
         assert_eq!(
             HTML_RAW_SIZE_MAX,
-            longest(&HTML_RAW_NAMES).unwrap().len(),
+            widest(&HTML_RAW_NAMES).unwrap().len(),
             "`HTML_RAW_SIZE_MAX`"
         );
     }
 
-    fn longest<'a>(list: &[&'a str]) -> Option<&'a str> {
+    fn widest<'a>(list: &[&'a str]) -> Option<&'a str> {
         let mut max = 0;
         let mut result = None;
         for name in list {

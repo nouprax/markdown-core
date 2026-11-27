@@ -2,7 +2,7 @@
 //!
 //! The walk is recursive over the event tree: a handler takes the index of an
 //! enter event and builds that token's node from the events up to its exit.
-//! Positions come from the events alone: a node's runs are its token's range
+//! Positions come from the events alone: a node's runs are its token's span
 //! less the prefixes of the containers around it.
 
 use crate::ast::{
@@ -12,7 +12,7 @@ use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
     character_reference::decode as decode_character_reference,
     classes::{anchor, normalize_label},
-    infer::{gfm_table_align, list_loose},
+    infer::{list_loose, table_sides},
     slice::{Position, Slice},
 };
 use alloc::{
@@ -24,30 +24,30 @@ use alloc::{
 };
 use core::str;
 
-/// Build the document of `bytes` from its `events`.
-pub fn compile(events: &[Event], bytes: &[u8]) -> Node {
-    let mut compiler = Compiler::new(events, bytes);
+/// Build the document of `source` from its `events`.
+pub fn compile(events: &[Event], source: &[u8]) -> Node {
+    let mut compiler = Compiler::new(events, source);
     let content = compiler.blocks(0, events.len());
     let mut document = Node::new(
         Kind::Document {
             metadata: None,
             content,
         },
-        vec![Span::new(0, line_start_before_end(bytes))],
+        vec![Span::new(0, line_start_before_end(source))],
     );
-    name_headings(&mut document);
+    name_headers(&mut document);
     document
 }
 
-/// Where the document's range ends: before one final line ending.
-fn line_start_before_end(bytes: &[u8]) -> usize {
-    let mut end = bytes.len();
-    if end > 0 && bytes[end - 1] == b'\n' {
+/// Where the document's span ends: before one final line ending.
+fn line_start_before_end(source: &[u8]) -> usize {
+    let mut end = source.len();
+    if end > 0 && source[end - 1] == b'\n' {
         end -= 1;
-        if end > 0 && bytes[end - 1] == b'\r' {
+        if end > 0 && source[end - 1] == b'\r' {
             end -= 1;
         }
-    } else if end > 0 && bytes[end - 1] == b'\r' {
+    } else if end > 0 && source[end - 1] == b'\r' {
         end -= 1;
     }
     end
@@ -55,19 +55,19 @@ fn line_start_before_end(bytes: &[u8]) -> usize {
 
 struct Compiler<'a> {
     events: &'a [Event],
-    bytes: &'a [u8],
+    source: &'a [u8],
     /// The index of the exit of each enter event.
     exits: Vec<usize>,
     /// Container prefixes of continuation lines, with the whitespace before
     /// them: gaps between the runs of the leaves they interrupt.
-    gaps: Vec<Span>,
+    holes: Vec<Span>,
     /// Whether a table cell's content is being compiled, where `\|` in
     /// code is a pipe.
     cell: bool,
 }
 
 /// Text read in an inline content list and not yet a node.
-struct Pending {
+struct Draft {
     start: usize,
     end: usize,
     literal: String,
@@ -77,7 +77,7 @@ struct Pending {
 fn prefix(name: Name) -> bool {
     matches!(
         name,
-        Name::BlockQuotePrefix | Name::ListItemIndent | Name::GfmFootnoteDefinitionIndent
+        Name::BlockQuotePrefix | Name::ListItemIndent | Name::FootnoteDefinitionIndent
     )
 }
 
@@ -85,15 +85,15 @@ fn prefix(name: Name) -> bool {
 fn between(name: Name) -> bool {
     matches!(
         name,
-        Name::LineEnding | Name::BlankLineEnding | Name::SpaceOrTab | Name::ByteOrderMark
+        Name::LineEnd | Name::BlankLineEnd | Name::SpaceOrTab | Name::Bom
     ) || prefix(name)
 }
 
 impl<'a> Compiler<'a> {
-    fn new(events: &'a [Event], bytes: &'a [u8]) -> Compiler<'a> {
+    fn new(events: &'a [Event], source: &'a [u8]) -> Compiler<'a> {
         let mut exits = vec![0; events.len()];
         let mut stack = vec![];
-        let mut gaps = vec![];
+        let mut holes = vec![];
         for (index, event) in events.iter().enumerate() {
             match event.kind {
                 EventKind::Enter => stack.push(index),
@@ -101,22 +101,22 @@ impl<'a> Compiler<'a> {
                     let enter = stack.pop().expect("expected an enter for each exit");
                     exits[enter] = index;
                     if prefix(event.name) {
-                        gaps.push(Span::new(events[enter].point.index, event.point.index));
+                        holes.push(Span::new(events[enter].point.index, event.point.index));
                     }
                 }
             }
         }
-        for gap in &mut gaps {
-            while gap.start > 0 && matches!(bytes[gap.start - 1], b' ' | b'\t') {
-                gap.start -= 1;
+        for hole in &mut holes {
+            while hole.start > 0 && matches!(source[hole.start - 1], b' ' | b'\t') {
+                hole.start -= 1;
             }
         }
-        gaps.sort_by_key(|gap: &Span| gap.start);
+        holes.sort_by_key(|hole: &Span| hole.start);
         Compiler {
             events,
-            bytes,
+            source,
             exits,
-            gaps,
+            holes,
             cell: false,
         }
     }
@@ -134,7 +134,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn slice(&self, start: usize, end: usize) -> &'a str {
-        str::from_utf8(&self.bytes[start..end]).expect("expected events at char boundaries")
+        str::from_utf8(&self.source[start..end]).expect("expected events at char boundaries")
     }
 
     fn text(&self, index: usize) -> &'a str {
@@ -145,44 +145,44 @@ impl<'a> Compiler<'a> {
     /// ends inside written as spaces.
     fn value(&self, index: usize) -> String {
         Slice::from_position(
-            self.bytes,
+            self.source,
             &Position::from_exit_event(self.events, self.exits[index]),
         )
         .serialize()
     }
 
-    /// The runs of the leaf `start..end`: the range less the prefixes of
+    /// The runs of the leaf `start..end`: the span less the prefixes of
     /// the containers around it.
     fn runs(&self, start: usize, end: usize) -> Vec<Span> {
         let end = end.max(start);
         let mut runs = vec![];
         let mut from = start;
-        for gap in &self.gaps {
-            if gap.end <= from {
+        for hole in &self.holes {
+            if hole.end <= from {
                 continue;
             }
-            if gap.start < from {
-                from = gap.end.min(end);
+            if hole.start < from {
+                from = hole.end.min(end);
                 continue;
             }
-            if gap.start >= end {
+            if hole.start >= end {
                 break;
             }
-            if gap.start > from {
-                runs.push(Span::new(from, gap.start));
+            if hole.start > from {
+                runs.push(Span::new(from, hole.start));
             }
-            from = gap.end.min(end);
+            from = hole.end.min(end);
         }
         runs.push(Span::new(from, end));
         // Runs that touch are one run.
-        let mut merged: Vec<Span> = vec![];
+        let mut fused: Vec<Span> = vec![];
         for run in runs {
-            match merged.last_mut() {
+            match fused.last_mut() {
                 Some(last) if last.end == run.start => last.end = run.end,
-                _ => merged.push(run),
+                _ => fused.push(run),
             }
         }
-        merged
+        fused
     }
 
     /// The one run of the container `start..end`, which holds the prefixes
@@ -224,7 +224,7 @@ impl<'a> Compiler<'a> {
 
     /// `at` past the spaces and tabs from it, up to `end`.
     fn skip(&self, mut at: usize, end: usize) -> usize {
-        while at < end && matches!(self.bytes[at], b' ' | b'\t') {
+        while at < end && matches!(self.source[at], b' ' | b'\t') {
             at += 1;
         }
         at
@@ -261,7 +261,7 @@ impl<'a> Compiler<'a> {
                 continue;
             }
             match event.name {
-                Name::BlankLineEnding => {
+                Name::BlankLineEnd => {
                     found = Some(event.point.index);
                     index = self.exits[index] + 1;
                 }
@@ -295,34 +295,34 @@ impl<'a> Compiler<'a> {
             Role::Inline(_) | Role::Space(_) | Role::Part => return None,
         };
         let node = match block {
-            Block::Paragraph => self.paragraph(index),
-            Block::HeadingAtx => {
+            Block::Prose => self.prose(index),
+            Block::HeaderAtx => {
                 let level = self
-                    .child(index, Name::HeadingAtxSequence)
+                    .child(index, Name::HeaderAtxSequence)
                     .map_or(1, |sequence| self.text(sequence).len());
-                let content = match self.child(index, Name::HeadingAtxText) {
+                let content = match self.child(index, Name::HeaderAtxText) {
                     Some(text) => self.inlines(text),
                     None => vec![],
                 };
                 Node::new(
-                    Kind::Heading {
+                    Kind::Header {
                         level: u8::try_from(level).unwrap_or(6),
                         content,
                     },
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
-            Block::HeadingSetext => {
-                let level = match self.child(index, Name::HeadingSetextUnderline) {
+            Block::HeaderSetext => {
+                let level = match self.child(index, Name::HeaderSetextUnderline) {
                     Some(underline) if self.text(underline).contains('-') => 2,
                     _ => 1,
                 };
-                let content = match self.child(index, Name::HeadingSetextText) {
+                let content = match self.child(index, Name::HeaderSetextText) {
                     Some(text) => self.inlines(text),
                     None => vec![],
                 };
                 Node::new(
-                    Kind::Heading { level, content },
+                    Kind::Header { level, content },
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
@@ -359,10 +359,10 @@ impl<'a> Compiler<'a> {
             Block::Table => self.table(index),
             Block::Footnote => {
                 let label = self
-                    .child(index, Name::GfmFootnoteDefinitionPrefix)
-                    .and_then(|prefix| self.child(prefix, Name::GfmFootnoteDefinitionLabel))
-                    .and_then(|label| self.child(label, Name::GfmFootnoteDefinitionLabelString))
-                    .map(|string| normalize_label(self.text(string)));
+                    .child(index, Name::FootnoteDefinitionPrefix)
+                    .and_then(|prefix| self.child(prefix, Name::FootnoteDefinitionLabel))
+                    .and_then(|label| self.child(label, Name::FootnoteDefinitionLabelText))
+                    .map(|plain| normalize_label(self.text(plain)));
                 let (last, content_end) = self.last(index);
                 let end = self.blank_tail(last).unwrap_or(content_end);
                 let runs = Self::whole(self.lead(index), end);
@@ -382,12 +382,12 @@ impl<'a> Compiler<'a> {
         Some(node)
     }
 
-    fn paragraph(&mut self, index: usize) -> Node {
+    fn prose(&mut self, index: usize) -> Node {
         // A task check is the list item's marker, not paragraph content.
         let mut start = self.start(index);
         let mut from = index + 1;
         if let Some(first) = self.inside(index).first().copied() {
-            if self.name(first) == Name::GfmTaskListItemCheck {
+            if self.name(first) == Name::TaskListItemCheck {
                 from = self.exits[first] + 1;
                 if let Some(next) = self.children(from, self.exits[index]).first() {
                     if self.name(*next) == Name::SpaceOrTab {
@@ -397,9 +397,9 @@ impl<'a> Compiler<'a> {
                 start = self.events[from].point.index;
             }
         }
-        let content = self.inline_range(from, self.exits[index]);
+        let content = self.inline_span(from, self.exits[index]);
         Node::new(
-            Kind::Paragraph { content },
+            Kind::Prose { content },
             self.runs(self.skip(start, self.end(index)), self.end(index)),
         )
     }
@@ -415,7 +415,7 @@ impl<'a> Compiler<'a> {
             if name == data {
                 line.push_str(&self.value(child));
                 open = true;
-            } else if name == Name::LineEnding {
+            } else if name == Name::LineEnd {
                 literal.push_str(&line);
                 literal.push('\n');
                 line.clear();
@@ -433,12 +433,12 @@ impl<'a> Compiler<'a> {
         let mut literal = self.lines(index, Name::CodeFlowChunk);
         // Blank lines at the end are not the code's.
         while literal.ends_with('\n') {
-            let body = &literal[..literal.len() - 1];
-            let line = body.rfind('\n').map_or(0, |at| at + 1);
-            if body[line..]
+            let rest = &literal[..literal.len() - 1];
+            let line = rest.rfind('\n').map_or(0, |at| at + 1);
+            if rest[line..]
                 .bytes()
-                .all(|byte| matches!(byte, b' ' | b'\t'))
-                && !body.is_empty()
+                .all(|code| matches!(code, b' ' | b'\t'))
+                && !rest.is_empty()
             {
                 literal.truncate(line);
             } else {
@@ -451,7 +451,7 @@ impl<'a> Compiler<'a> {
         Node::new(
             Kind::CodeBlock {
                 info: None,
-                language: None,
+                script: None,
                 literal,
                 fenced: false,
                 closed: true,
@@ -482,10 +482,10 @@ impl<'a> Compiler<'a> {
                 })
                 .collect();
             if let (Some(first), Some(last)) = (parts.first(), parts.last()) {
-                info = Some(self.string(*first, self.exits[*last] + 1));
+                info = Some(self.plain(*first, self.exits[*last] + 1));
             }
         }
-        let language = info.as_ref().map(|info| {
+        let script = info.as_ref().map(|info| {
             info.trim_start_matches([' ', '\t'])
                 .split([' ', '\t'])
                 .next()
@@ -502,7 +502,7 @@ impl<'a> Compiler<'a> {
         Node::new(
             Kind::CodeBlock {
                 info,
-                language,
+                script,
                 literal,
                 fenced: true,
                 closed,
@@ -524,7 +524,7 @@ impl<'a> Compiler<'a> {
                 if fences > 1 {
                     break;
                 }
-            } else if name == Name::LineEnding {
+            } else if name == Name::LineEnd {
                 if let Some(text) = line.take() {
                     literal.push_str(&text);
                     literal.push('\n');
@@ -560,7 +560,7 @@ impl<'a> Compiler<'a> {
                         value = self.text(found).parse::<u64>().ok();
                     }
                     if let Some(found) = self.child(prefix, Name::ListItemMarker) {
-                        marker = self.bytes[self.start(found)];
+                        marker = self.source[self.start(found)];
                     }
                 }
             }
@@ -591,7 +591,7 @@ impl<'a> Compiler<'a> {
                 start: start_value,
                 variant,
                 delimiter,
-                tight: !loose,
+                dense: !loose,
                 items,
             },
             Self::whole(start, end),
@@ -602,7 +602,7 @@ impl<'a> Compiler<'a> {
         let (last, content_end) = self.last(index);
         // An item with no content is closed by the blank line after it.
         let end = if self.name(last) == Name::ListItemPrefix {
-            line_stop(self.bytes, content_end)
+            line_stop(self.source, content_end)
         } else {
             self.blank_tail(last).unwrap_or(content_end)
         };
@@ -615,14 +615,14 @@ impl<'a> Compiler<'a> {
     /// The task marker of the list item at `index`: the check its first
     /// paragraph starts with.
     fn task(&self, index: usize) -> Option<String> {
-        let paragraph = self.inside(index).into_iter().find(|child| {
+        let prose = self.inside(index).into_iter().find(|child| {
             !between(self.name(*child)) && self.name(*child) != Name::ListItemPrefix
         })?;
-        if self.name(paragraph) != Name::Paragraph {
+        if self.name(prose) != Name::Prose {
             return None;
         }
-        let check = *self.inside(paragraph).first()?;
-        if self.name(check) != Name::GfmTaskListItemCheck {
+        let check = *self.inside(prose).first()?;
+        if self.name(check) != Name::TaskListItemCheck {
             return None;
         }
         self.inside(check)
@@ -630,7 +630,7 @@ impl<'a> Compiler<'a> {
             .find(|child| {
                 matches!(
                     self.name(*child),
-                    Name::GfmTaskListItemValueChecked | Name::GfmTaskListItemValueUnchecked
+                    Name::TaskListItemValueChecked | Name::TaskListItemValueUnchecked
                 )
             })
             .map(|value| self.text(value).to_string())
@@ -639,16 +639,16 @@ impl<'a> Compiler<'a> {
     fn definition(&self, index: usize) -> Node {
         let label = self
             .child(index, Name::DefinitionLabel)
-            .and_then(|label| self.child(label, Name::DefinitionLabelString))
-            .map(|string| normalize_label(self.text(string)))
+            .and_then(|label| self.child(label, Name::DefinitionLabelText))
+            .map(|plain| normalize_label(self.text(plain)))
             .unwrap_or_default();
         let dest = self
             .child(index, Name::DefinitionDestination)
             .map(|dest| self.destination(dest))
             .unwrap_or_default();
         let title = self.child(index, Name::DefinitionTitle).map(|title| {
-            self.child(title, Name::DefinitionTitleString)
-                .map(|string| self.string(string, self.exits[string] + 1))
+            self.child(title, Name::DefinitionTitleText)
+                .map(|plain| self.plain(plain, self.exits[plain] + 1))
                 .unwrap_or_default()
         });
         Node::new(
@@ -665,19 +665,19 @@ impl<'a> Compiler<'a> {
     fn destination(&self, index: usize) -> String {
         if matches!(
             self.name(index),
-            Name::DefinitionDestinationString | Name::ResourceDestinationString
+            Name::DefinitionDestinationText | Name::ResourceDestinationText
         ) {
-            return self.string(index, self.exits[index] + 1);
+            return self.plain(index, self.exits[index] + 1);
         }
         for child in self.inside(index) {
             if matches!(
                 self.name(child),
                 Name::DefinitionDestinationLiteral
                     | Name::DefinitionDestinationRaw
-                    | Name::DefinitionDestinationString
+                    | Name::DefinitionDestinationText
                     | Name::ResourceDestinationLiteral
                     | Name::ResourceDestinationRaw
-                    | Name::ResourceDestinationString
+                    | Name::ResourceDestinationText
             ) {
                 return self.destination(child);
             }
@@ -686,17 +686,17 @@ impl<'a> Compiler<'a> {
     }
 
     fn table(&mut self, index: usize) -> Node {
-        let columns = gfm_table_align(self.events, index);
+        let columns = table_sides(self.events, index);
         let mut head = vec![];
         let mut content = vec![];
         for child in self.inside(index) {
             let into = match self.name(child) {
-                Name::GfmTableHead => &mut head,
-                Name::GfmTableBody => &mut content,
+                Name::TableHead => &mut head,
+                Name::TableRest => &mut content,
                 _ => continue,
             };
             for row in self.inside(child) {
-                if self.name(row) == Name::GfmTableRow {
+                if self.name(row) == Name::TableRow {
                     into.push(self.row(row, columns.len()));
                 }
             }
@@ -714,11 +714,11 @@ impl<'a> Compiler<'a> {
     fn row(&mut self, index: usize, width: usize) -> Node {
         let mut cells = vec![];
         for child in self.inside(index) {
-            if self.name(child) != Name::GfmTableCell {
+            if self.name(child) != Name::TableCell {
                 continue;
             }
             self.cell = true;
-            let content = match self.child(child, Name::GfmTableCellText) {
+            let content = match self.child(child, Name::TableCellText) {
                 Some(text) => self.inlines(text),
                 None => vec![],
             };
@@ -727,7 +727,7 @@ impl<'a> Compiler<'a> {
             let mut start = self.start(child);
             let mut end = self.end(child);
             for part in self.inside(child) {
-                if self.name(part) == Name::GfmTableCellDivider {
+                if self.name(part) == Name::TableCellDivider {
                     if self.start(part) == start {
                         start = self.end(part);
                     } else {
@@ -756,13 +756,13 @@ impl<'a> Compiler<'a> {
     // Strings.
 
     /// The decoded value of the string content in events `from..to`.
-    fn string(&self, from: usize, to: usize) -> String {
+    fn plain(&self, from: usize, to: usize) -> String {
         let mut value = String::new();
         let mut index = from;
         while index < to {
             if self.events[index].kind == EventKind::Enter {
                 match self.name(index) {
-                    Name::Data | Name::SpaceOrTab | Name::LineEnding => {
+                    Name::Data | Name::SpaceOrTab | Name::LineEnd => {
                         value.push_str(self.text(index));
                         index = self.exits[index];
                     }
@@ -801,15 +801,15 @@ impl<'a> Compiler<'a> {
 
     /// The inline content inside the token at `index`.
     fn inlines(&mut self, index: usize) -> Vec<Node> {
-        self.inline_range(index + 1, self.exits[index])
+        self.inline_span(index + 1, self.exits[index])
     }
 
-    fn inline_range(&mut self, from: usize, to: usize) -> Vec<Node> {
+    fn inline_span(&mut self, from: usize, to: usize) -> Vec<Node> {
         let mut nodes = vec![];
-        let mut pending: Option<Pending> = None;
+        let mut draft: Option<Draft> = None;
         let mut hard = false;
         let mut line_start = true;
-        let mut skip_ending = false;
+        let mut skip_end = false;
         for index in self.children(from, to) {
             let name = self.name(index);
             let at_line_start = line_start;
@@ -818,31 +818,31 @@ impl<'a> Compiler<'a> {
                 Role::Space(Space::Whitespace) if at_line_start => {}
                 Role::Inline(Inline::Data) | Role::Space(Space::Whitespace) => {
                     let literal = self.value(index);
-                    push_text(&mut pending, self.start(index), self.end(index), &literal);
+                    push_text(&mut draft, self.start(index), self.end(index), &literal);
                 }
                 Role::Inline(Inline::CharacterEscape) => {
                     let literal = self.text(index)[1..].to_string();
-                    push_text(&mut pending, self.start(index), self.end(index), &literal);
+                    push_text(&mut draft, self.start(index), self.end(index), &literal);
                 }
                 Role::Inline(Inline::CharacterReference) => {
                     let literal = self.reference(index);
-                    push_text(&mut pending, self.start(index), self.end(index), &literal);
+                    push_text(&mut draft, self.start(index), self.end(index), &literal);
                 }
-                Role::Inline(Inline::HardBreakTrailing) => {
-                    push_text(&mut pending, self.start(index), self.end(index), "");
+                Role::Inline(Inline::HardBreakTail) => {
+                    push_text(&mut draft, self.start(index), self.end(index), "");
                     hard = true;
                 }
-                Role::Space(Space::LineEnding) => {
+                Role::Space(Space::LineEnd) => {
                     line_start = true;
-                    if skip_ending {
-                        skip_ending = false;
+                    if skip_end {
+                        skip_end = false;
                         continue;
                     }
-                    if let Some(text) = &mut pending {
+                    if let Some(text) = &mut draft {
                         let trimmed = text.literal.trim_end_matches([' ', '\t']).len();
                         text.literal.truncate(trimmed);
                     }
-                    self.flush(&mut nodes, &mut pending);
+                    self.flush(&mut nodes, &mut draft);
                     let kind = if hard {
                         Kind::LineBreak
                     } else {
@@ -855,27 +855,27 @@ impl<'a> Compiler<'a> {
                     ));
                 }
                 Role::Inline(Inline::HardBreakEscape) => {
-                    self.flush(&mut nodes, &mut pending);
+                    self.flush(&mut nodes, &mut draft);
                     // The break covers the backslash and the line ending.
-                    let end = line_end(self.bytes, self.end(index));
+                    let end = line_end(self.source, self.end(index));
                     nodes.push(Node::new(
                         Kind::LineBreak,
                         self.runs(self.start(index), end),
                     ));
-                    skip_ending = true;
+                    skip_end = true;
                 }
                 Role::Inline(_)
-                | Role::Space(Space::BlankLineEnding)
+                | Role::Space(Space::BlankLineEnd)
                 | Role::Part
                 | Role::Block(_) => {
-                    self.flush(&mut nodes, &mut pending);
+                    self.flush(&mut nodes, &mut draft);
                     if let Some(node) = self.inline(index) {
                         nodes.push(node);
                     }
                 }
             }
         }
-        self.flush(&mut nodes, &mut pending);
+        self.flush(&mut nodes, &mut draft);
         // Whitespace at the end of the content is not content.
         if let Some(Node {
             kind: Kind::Text { literal },
@@ -897,8 +897,8 @@ impl<'a> Compiler<'a> {
         nodes
     }
 
-    fn flush(&self, nodes: &mut Vec<Node>, pending: &mut Option<Pending>) {
-        if let Some(text) = pending.take() {
+    fn flush(&self, nodes: &mut Vec<Node>, draft: &mut Option<Draft>) {
+        if let Some(text) = draft.take() {
             if !text.literal.is_empty() {
                 nodes.push(Node::new(
                     Kind::Text {
@@ -921,11 +921,11 @@ impl<'a> Compiler<'a> {
             Inline::Emphasis => Kind::Emphasis {
                 content: self.part(index, Name::EmphasisText),
             },
-            Inline::Strong => Kind::Strong {
-                content: self.part(index, Name::StrongText),
+            Inline::Bold => Kind::Bold {
+                content: self.part(index, Name::BoldText),
             },
-            Inline::Strikethrough => Kind::Strikethrough {
-                content: self.part(index, Name::GfmStrikethroughText),
+            Inline::Strike => Kind::Strike {
+                content: self.part(index, Name::StrikeText),
             },
             Inline::Insertion => Kind::Insertion {
                 content: self.part(index, Name::InsertionText),
@@ -950,7 +950,7 @@ impl<'a> Compiler<'a> {
                 let mut literal = String::new();
                 for child in self.inside(index) {
                     match self.name(child) {
-                        Name::HtmlTextData | Name::LineEnding => {
+                        Name::HtmlTextData | Name::LineEnd => {
                             literal.push_str(&self.value(child));
                         }
                         _ => {}
@@ -994,8 +994,8 @@ impl<'a> Compiler<'a> {
             Inline::Literal => {
                 let literal = self.text(index).to_string();
                 let dest = match name {
-                    Name::GfmAutolinkLiteralWww => format!("http://{}", literal),
-                    Name::GfmAutolinkLiteralEmail => format!("mailto:{}", literal),
+                    Name::AutolinkLiteralWww => format!("http://{}", literal),
+                    Name::AutolinkLiteralEmail => format!("mailto:{}", literal),
                     _ => literal.clone(),
                 };
                 Kind::Link {
@@ -1023,11 +1023,11 @@ impl<'a> Compiler<'a> {
                     citations: vec![citation],
                 }
             }
-            // Text, compiled by `inline_range`.
+            // Text, compiled by `inline_span`.
             Inline::Data
             | Inline::CharacterEscape
             | Inline::CharacterReference
-            | Inline::HardBreakTrailing
+            | Inline::HardBreakTail
             | Inline::HardBreakEscape => return None,
         };
         Some(Node::new(kind, runs))
@@ -1050,15 +1050,15 @@ impl<'a> Compiler<'a> {
                 literal.push_str(&self.text(child).replace("\\|", "|"));
             } else if name == data {
                 literal.push_str(self.text(child));
-            } else if name == Name::LineEnding {
+            } else if name == Name::LineEnd {
                 literal.push(' ');
             }
         }
-        let bytes = literal.as_bytes();
-        if bytes.len() > 2
-            && bytes[0] == b' '
-            && bytes[bytes.len() - 1] == b' '
-            && !bytes.iter().all(|byte| *byte == b' ')
+        let source = literal.as_bytes();
+        if source.len() > 2
+            && source[0] == b' '
+            && source[source.len() - 1] == b' '
+            && !source.iter().all(|code| *code == b' ')
         {
             literal = literal[1..literal.len() - 1].to_string();
         }
@@ -1081,17 +1081,17 @@ impl<'a> Compiler<'a> {
             }
             if let Some(found) = self.child(resource, Name::ResourceTitle) {
                 title = Some(
-                    self.child(found, Name::ResourceTitleString)
-                        .map(|string| self.string(string, self.exits[string] + 1))
+                    self.child(found, Name::ResourceTitleText)
+                        .map(|plain| self.plain(plain, self.exits[plain] + 1))
                         .unwrap_or_default(),
                 );
             }
         } else {
             let reference = self
                 .child(index, Name::Reference)
-                .and_then(|reference| self.child(reference, Name::ReferenceString));
+                .and_then(|reference| self.child(reference, Name::ReferenceText));
             let written = match (reference, text) {
-                (Some(string), _) => self.text(string),
+                (Some(plain), _) => self.text(plain),
                 (None, Some(text)) => self.text(text),
                 (None, None) => "",
             };
@@ -1115,14 +1115,14 @@ impl<'a> Compiler<'a> {
 }
 
 /// Add text to the pending text.
-fn push_text(pending: &mut Option<Pending>, start: usize, end: usize, literal: &str) {
-    match pending {
+fn push_text(draft: &mut Option<Draft>, start: usize, end: usize, literal: &str) {
+    match draft {
         Some(text) => {
             text.end = end;
             text.literal.push_str(literal);
         }
         None => {
-            *pending = Some(Pending {
+            *draft = Some(Draft {
                 start,
                 end,
                 literal: literal.to_string(),
@@ -1133,16 +1133,16 @@ fn push_text(pending: &mut Option<Pending>, start: usize, end: usize, literal: &
 
 /// The end of the line ending at `index`, if one is there.
 /// Where the line holding `index` ends, before its line ending.
-fn line_stop(bytes: &[u8], mut index: usize) -> usize {
-    while index < bytes.len() && !matches!(bytes[index], b'\r' | b'\n') {
+fn line_stop(source: &[u8], mut index: usize) -> usize {
+    while index < source.len() && !matches!(source[index], b'\r' | b'\n') {
         index += 1;
     }
     index
 }
 
-fn line_end(bytes: &[u8], index: usize) -> usize {
-    match bytes.get(index) {
-        Some(b'\r') if bytes.get(index + 1) == Some(&b'\n') => index + 2,
+fn line_end(source: &[u8], index: usize) -> usize {
+    match source.get(index) {
+        Some(b'\r') if source.get(index + 1) == Some(&b'\n') => index + 2,
         Some(b'\r' | b'\n') => index + 1,
         _ => index,
     }
@@ -1152,10 +1152,10 @@ fn line_end(bytes: &[u8], index: usize) -> usize {
 
 /// Give every heading without an explicit anchor its automatic one, in
 /// source order, after every explicit anchor of the document is reserved.
-fn name_headings(document: &mut Node) {
+fn name_headers(document: &mut Node) {
     let mut taken = BTreeSet::new();
     reserve(document, &mut taken);
-    assign(document, &mut taken);
+    allot(document, &mut taken);
 }
 
 fn reserve(node: &Node, taken: &mut BTreeSet<String>) {
@@ -1167,12 +1167,12 @@ fn reserve(node: &Node, taken: &mut BTreeSet<String>) {
     }
 }
 
-fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
+fn allot(node: &mut Node, taken: &mut BTreeSet<String>) {
     if node.anchor.is_none() {
-        if let Kind::Heading { content, .. } = &node.kind {
+        if let Kind::Header { content, .. } = &node.kind {
             let mut base = String::new();
             for child in content {
-                project(child, &mut base);
+                flatten(child, &mut base);
             }
             if base.is_empty() {
                 base.push_str("section");
@@ -1188,12 +1188,12 @@ fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
         }
     }
     for child in node.owned_mut() {
-        assign(child, taken);
+        allot(child, taken);
     }
 }
 
 /// The anchor projection of an inline node, appended to `base`.
-fn project(node: &Node, base: &mut String) {
+fn flatten(node: &Node, base: &mut String) {
     match &node.kind {
         Kind::Text { literal } | Kind::Code { literal } | Kind::Formula { literal, .. } => {
             base.push_str(&anchor(literal));
@@ -1224,14 +1224,14 @@ fn project(node: &Node, base: &mut String) {
                 } = &citation.kind
                 {
                     match referent {
-                        Referent::Bib { key, .. } => {
+                        Referent::Bib { id, .. } => {
                             for child in prefix {
-                                project(child, base);
+                                flatten(child, base);
                             }
                             base.push_str(&anchor("@"));
-                            base.push_str(&anchor(key));
+                            base.push_str(&anchor(id));
                             for child in suffix {
-                                project(child, base);
+                                flatten(child, base);
                             }
                         }
                         Referent::Specimen { label } => {
@@ -1245,10 +1245,10 @@ fn project(node: &Node, base: &mut String) {
         }
         Kind::Directive {
             label: Some(label), ..
-        } => project(label, base),
+        } => flatten(label, base),
         Kind::Emphasis { content }
-        | Kind::Strong { content }
-        | Kind::Strikethrough { content }
+        | Kind::Bold { content }
+        | Kind::Strike { content }
         | Kind::Mark { content }
         | Kind::Insertion { content }
         | Kind::Span { content }
@@ -1258,7 +1258,7 @@ fn project(node: &Node, base: &mut String) {
         | Kind::Embedded { content, .. }
         | Kind::DirectiveLabel { content } => {
             for child in content {
-                project(child, base);
+                flatten(child, base);
             }
         }
         _ => {}

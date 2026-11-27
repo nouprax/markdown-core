@@ -38,7 +38,7 @@
 //! It can be indented up to a separate 3 spaces or tabs.
 //! A bigger indent makes it part of the content instead of a fence.
 //!
-//! The `info` and `meta` parts are interpreted as the [string][] content type.
+//! The `info` and `meta` parts are interpreted as the [string][plain] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //! Math (flow) does not support `info`.
@@ -112,7 +112,7 @@
 //! * [`CodeFencedFenceMeta`][Name::CodeFencedFenceMeta]
 //! * [`CodeFencedFenceSequence`][Name::CodeFencedFenceSequence]
 //! * [`CodeFlowChunk`][Name::CodeFlowChunk]
-//! * [`LineEnding`][Name::LineEnding]
+//! * [`LineEnd`][Name::LineEnd]
 //! * [`MathFlow`][Name::MathFlow]
 //! * [`MathFlowFence`][Name::MathFlowFence]
 //! * [`MathFlowFenceMeta`][Name::MathFlowFenceMeta]
@@ -129,7 +129,7 @@
 //! > 👉 **Note**: math is not specified anywhere.
 //!
 //! [flow]: crate::construct::flow
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
@@ -139,7 +139,7 @@
 //! [html_pre]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element
 
 use crate::choice::Starts;
-use crate::construct::partial_non_lazy_continuation;
+use crate::construct::partial_non_lax_continuation;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -150,7 +150,7 @@ use crate::util::{
 };
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\t $`~");
+pub const STARTS: Starts = Starts::Codes(b"\t $`~");
 
 /// Start of raw.
 ///
@@ -166,11 +166,11 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::RawFlow(Step::BeforeSequenceOpen)),
             State::Nok,
         );
-        return State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1));
+        return State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1));
     }
 
     if matches!(tokenizer.current, Some(b'$' | b'`' | b'~')) {
-        return State::Retry(StateName::RawFlow(Step::BeforeSequenceOpen));
+        return State::Redo(StateName::RawFlow(Step::BeforeSequenceOpen));
     }
 
     State::Nok
@@ -191,7 +191,7 @@ fn before_sequence_open(tokenizer: &mut Tokenizer) -> State {
     if let Some(event) = tail {
         if event.name == Name::SpaceOrTab {
             prefix = Slice::from_position(
-                tokenizer.parse_state.bytes,
+                tokenizer.parse_state.source,
                 &Position::from_exit_event(&tokenizer.events, tokenizer.events.len() - 1),
             )
             .len();
@@ -209,7 +209,7 @@ fn before_sequence_open(tokenizer: &mut Tokenizer) -> State {
         tokenizer.enter(names.whole);
         tokenizer.enter(names.fence);
         tokenizer.enter(names.sequence);
-        State::Retry(StateName::RawFlow(Step::SequenceOpen { fence }))
+        State::Redo(StateName::RawFlow(Step::SequenceOpen { fence }))
     } else {
         State::Nok
     }
@@ -293,9 +293,9 @@ fn sequence_open(tokenizer: &mut Tokenizer, mut fence: Fence) -> State {
         tokenizer.exit(names(fence.marker).sequence);
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
             tokenizer.attempt(State::Next(next), State::Nok);
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         } else {
-            State::Retry(next)
+            State::Redo(next)
         }
     }
 }
@@ -315,11 +315,11 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             // Do not form containers.
             tokenizer.concrete = true;
             tokenizer.check(
-                State::Next(StateName::RawFlow(Step::AtNonLazyBreak { fence })),
+                State::Next(StateName::RawFlow(Step::AtNonLaxBreak { fence })),
                 State::Next(StateName::RawFlow(Step::After { fence })),
             );
-            State::Retry(StateName::NonLazyContinuation(
-                partial_non_lazy_continuation::Step::Start,
+            State::Redo(StateName::NonLaxContinuation(
+                partial_non_lax_continuation::Step::Start,
             ))
         }
         _ => {
@@ -329,10 +329,10 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::String,
+                    content: Content::Plain,
                 },
             );
-            State::Retry(StateName::RawFlow(Step::Info { fence }))
+            State::Redo(StateName::RawFlow(Step::Info { fence }))
         }
     }
 }
@@ -350,7 +350,7 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Data);
             tokenizer.exit(names(fence.marker).info);
-            State::Retry(StateName::RawFlow(Step::InfoBefore { fence }))
+            State::Redo(StateName::RawFlow(Step::InfoBefore { fence }))
         }
         Some(b'\t' | b' ') => {
             tokenizer.exit(Name::Data);
@@ -359,13 +359,13 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 State::Next(StateName::RawFlow(Step::MetaBefore { fence })),
                 State::Nok,
             );
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         }
-        Some(byte) => {
+        Some(code) => {
             // This looks like code (text) / math (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
             // used as strikethrough in text.
-            if fence.marker == byte && matches!(byte, b'$' | b'`') {
+            if fence.marker == code && matches!(code, b'$' | b'`') {
                 tokenizer.concrete = false;
                 State::Nok
             } else {
@@ -386,7 +386,7 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 /// ```
 fn meta_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
-        None | Some(b'\n') => State::Retry(StateName::RawFlow(Step::InfoBefore { fence })),
+        None | Some(b'\n') => State::Redo(StateName::RawFlow(Step::InfoBefore { fence })),
         _ => {
             tokenizer.enter(names(fence.marker).meta);
             tokenizer.enter_link(
@@ -394,10 +394,10 @@ fn meta_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::String,
+                    content: Content::Plain,
                 },
             );
-            State::Retry(StateName::RawFlow(Step::Meta { fence }))
+            State::Redo(StateName::RawFlow(Step::Meta { fence }))
         }
     }
 }
@@ -415,13 +415,13 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Data);
             tokenizer.exit(names(fence.marker).meta);
-            State::Retry(StateName::RawFlow(Step::InfoBefore { fence }))
+            State::Redo(StateName::RawFlow(Step::InfoBefore { fence }))
         }
-        Some(byte) => {
+        Some(code) => {
             // This looks like code (text) / math (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
             // used as strikethrough in text.
-            if fence.marker == byte && matches!(byte, b'$' | b'`') {
+            if fence.marker == code && matches!(code, b'$' | b'`') {
                 tokenizer.concrete = false;
                 State::Nok
             } else {
@@ -441,14 +441,14 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 ///                   ^
 ///   | ~~~
 /// ```
-fn at_non_lazy_break(tokenizer: &mut Tokenizer, fence: Fence) -> State {
+fn at_non_lax_break(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     tokenizer.attempt(
         State::Next(StateName::RawFlow(Step::After { fence })),
         State::Next(StateName::RawFlow(Step::ContentBefore { fence })),
     );
-    tokenizer.enter(Name::LineEnding);
+    tokenizer.enter(Name::LineEnd);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnding);
+    tokenizer.exit(Name::LineEnd);
     State::Next(StateName::RawFlow(Step::CloseStart { fence }))
 }
 
@@ -469,9 +469,9 @@ fn close_start(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             State::Nok,
         );
 
-        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
+        State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::RawFlow(Step::BeforeSequenceClose { fence }))
+        State::Redo(StateName::RawFlow(Step::BeforeSequenceClose { fence }))
     }
 }
 
@@ -486,7 +486,7 @@ fn close_start(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 fn before_sequence_close(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     if tokenizer.current == Some(fence.marker) {
         tokenizer.enter(names(fence.marker).sequence);
-        State::Retry(StateName::RawFlow(Step::SequenceClose { fence, close: 0 }))
+        State::Redo(StateName::RawFlow(Step::SequenceClose { fence, close: 0 }))
     } else {
         State::Nok
     }
@@ -515,9 +515,9 @@ fn sequence_close(tokenizer: &mut Tokenizer, fence: Fence, close: usize) -> Stat
                 State::Next(StateName::RawFlow(Step::SequenceCloseAfter { fence })),
                 State::Nok,
             );
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         } else {
-            State::Retry(StateName::RawFlow(Step::SequenceCloseAfter { fence }))
+            State::Redo(StateName::RawFlow(Step::SequenceCloseAfter { fence }))
         }
     } else {
         State::Nok
@@ -551,9 +551,9 @@ fn sequence_close_after(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 ///   | ~~~
 /// ```
 fn content_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
-    tokenizer.enter(Name::LineEnding);
+    tokenizer.enter(Name::LineEnd);
     tokenizer.consume();
-    tokenizer.exit(Name::LineEnding);
+    tokenizer.exit(Name::LineEnd);
     State::Next(StateName::RawFlow(Step::ContentStart { fence }))
 }
 
@@ -571,9 +571,9 @@ fn content_start(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             State::Next(StateName::RawFlow(Step::BeforeContentChunk { fence })),
             State::Nok,
         );
-        State::Retry(space_or_tab_min_max(0, fence.prefix))
+        State::Redo(space_or_tab_min_max(0, fence.prefix))
     } else {
-        State::Retry(StateName::RawFlow(Step::BeforeContentChunk { fence }))
+        State::Redo(StateName::RawFlow(Step::BeforeContentChunk { fence }))
     }
 }
 
@@ -589,16 +589,16 @@ fn before_content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.check(
-                State::Next(StateName::RawFlow(Step::AtNonLazyBreak { fence })),
+                State::Next(StateName::RawFlow(Step::AtNonLaxBreak { fence })),
                 State::Next(StateName::RawFlow(Step::After { fence })),
             );
-            State::Retry(StateName::NonLazyContinuation(
-                partial_non_lazy_continuation::Step::Start,
+            State::Redo(StateName::NonLaxContinuation(
+                partial_non_lax_continuation::Step::Start,
             ))
         }
         _ => {
             tokenizer.enter(names(fence.marker).chunk);
-            State::Retry(StateName::RawFlow(Step::ContentChunk { fence }))
+            State::Redo(StateName::RawFlow(Step::ContentChunk { fence }))
         }
     }
 }
@@ -615,7 +615,7 @@ fn content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(names(fence.marker).chunk);
-            State::Retry(StateName::RawFlow(Step::BeforeContentChunk { fence }))
+            State::Redo(StateName::RawFlow(Step::BeforeContentChunk { fence }))
         }
         _ => {
             tokenizer.consume();
@@ -651,7 +651,7 @@ pub enum Step {
     Info { fence: Fence },
     MetaBefore { fence: Fence },
     Meta { fence: Fence },
-    AtNonLazyBreak { fence: Fence },
+    AtNonLaxBreak { fence: Fence },
     CloseStart { fence: Fence },
     BeforeSequenceClose { fence: Fence },
     SequenceClose { fence: Fence, close: usize },
@@ -679,7 +679,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Info { fence } => info(tokenizer, fence),
         Step::MetaBefore { fence } => meta_before(tokenizer, fence),
         Step::Meta { fence } => meta(tokenizer, fence),
-        Step::AtNonLazyBreak { fence } => at_non_lazy_break(tokenizer, fence),
+        Step::AtNonLaxBreak { fence } => at_non_lax_break(tokenizer, fence),
         Step::CloseStart { fence } => close_start(tokenizer, fence),
         Step::BeforeSequenceClose { fence } => before_sequence_close(tokenizer, fence),
         Step::SequenceClose { fence, close } => sequence_close(tokenizer, fence, close),

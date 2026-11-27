@@ -6,9 +6,9 @@
 use std::{env, fs, process};
 
 fn main() {
-    let arguments: Vec<String> = env::args().skip(1).collect();
-    let (events, path) = match arguments.as_slice() {
-        [flag, path] if flag == "--events" => (true, path),
+    let words: Vec<String> = env::args().skip(1).collect();
+    let (events, path) = match words.as_slice() {
+        [switch, path] if switch == "--events" => (true, path),
         [path] => (false, path),
         _ => {
             eprintln!("usage: markdown-core [--events] FILE");

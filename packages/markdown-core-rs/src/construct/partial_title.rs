@@ -21,7 +21,7 @@
 //! contain blank lines.
 //! They are allowed to be blank themselves.
 //!
-//! The title is interpreted as the [string][] content type.
+//! The title is interpreted as the [string][plain] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -30,7 +30,7 @@
 //! * [`micromark-factory-title/index.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-factory-title/dev/index.js)
 //!
 //! [definition]: crate::construct::definition
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
 //! [label_end]: crate::construct::label_end
@@ -75,7 +75,7 @@ fn start(tokenizer: &mut Tokenizer, names: Names) -> State {
             tokenizer.enter(names.marker);
             tokenizer.consume();
             tokenizer.exit(names.marker);
-            State::Next(StateName::Title(Step::Begin(Title {
+            State::Next(StateName::Title(Step::Lead(Title {
                 names,
                 close: if marker == b'(' { b')' } else { marker },
                 connect: false,
@@ -93,7 +93,7 @@ fn start(tokenizer: &mut Tokenizer, names: Names) -> State {
 /// > | "a"
 ///      ^
 /// ```
-fn begin(tokenizer: &mut Tokenizer, title: Title) -> State {
+fn lead(tokenizer: &mut Tokenizer, title: Title) -> State {
     if tokenizer.current == Some(title.close) {
         tokenizer.enter(title.names.marker);
         tokenizer.consume();
@@ -102,7 +102,7 @@ fn begin(tokenizer: &mut Tokenizer, title: Title) -> State {
         State::Ok
     } else {
         tokenizer.enter(title.names.text);
-        State::Retry(StateName::Title(Step::AtBreak(title)))
+        State::Redo(StateName::Title(Step::AtBreak(title)))
     }
 }
 
@@ -113,17 +113,17 @@ fn begin(tokenizer: &mut Tokenizer, title: Title) -> State {
 ///      ^
 /// ```
 fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
-    if let Some(byte) = tokenizer.current {
-        if byte == title.close {
+    if let Some(code) = tokenizer.current {
+        if code == title.close {
             tokenizer.exit(title.names.text);
-            State::Retry(StateName::Title(Step::Begin(title)))
-        } else if byte == b'\n' {
+            State::Redo(StateName::Title(Step::Lead(title)))
+        } else if code == b'\n' {
             tokenizer.attempt(
                 State::Next(StateName::Title(Step::AfterEol(title))),
                 State::Nok,
             );
-            State::Retry(space_or_tab_eol_with_options(Options {
-                content: Some(Content::String),
+            State::Redo(space_or_tab_eol_with_options(Options {
+                content: Some(Content::Plain),
                 connect: title.connect,
             }))
         } else {
@@ -132,7 +132,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::String,
+                    content: Content::Plain,
                 },
             );
 
@@ -143,7 +143,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
                 title.connect = true;
             }
 
-            State::Retry(StateName::Title(Step::Inside(title)))
+            State::Redo(StateName::Title(Step::Inside(title)))
         }
     } else {
         State::Nok
@@ -159,7 +159,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
 /// ```
 fn after_eol(mut title: Title) -> State {
     title.connect = true;
-    State::Retry(StateName::Title(Step::AtBreak(title)))
+    State::Redo(StateName::Title(Step::AtBreak(title)))
 }
 
 /// In text.
@@ -171,7 +171,7 @@ fn after_eol(mut title: Title) -> State {
 fn inside(tokenizer: &mut Tokenizer, title: Title) -> State {
     if tokenizer.current == Some(title.close) || matches!(tokenizer.current, None | Some(b'\n')) {
         tokenizer.exit(Name::Data);
-        State::Retry(StateName::Title(Step::AtBreak(title)))
+        State::Redo(StateName::Title(Step::AtBreak(title)))
     } else {
         let next = if tokenizer.current == Some(b'\\') {
             Step::Escape(title)
@@ -195,7 +195,7 @@ fn escape(tokenizer: &mut Tokenizer, title: Title) -> State {
             tokenizer.consume();
             State::Next(StateName::Title(Step::Inside(title)))
         }
-        _ => State::Retry(StateName::Title(Step::Inside(title))),
+        _ => State::Redo(StateName::Title(Step::Inside(title))),
     }
 }
 
@@ -203,7 +203,7 @@ fn escape(tokenizer: &mut Tokenizer, title: Title) -> State {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
     Start(Names),
-    Begin(Title),
+    Lead(Title),
     AfterEol(Title),
     AtBreak(Title),
     Escape(Title),
@@ -220,7 +220,7 @@ impl From<Step> for StateName {
 pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::Start(names) => start(tokenizer, names),
-        Step::Begin(title) => begin(tokenizer, title),
+        Step::Lead(title) => lead(tokenizer, title),
         Step::AfterEol(title) => after_eol(title),
         Step::AtBreak(title) => at_break(tokenizer, title),
         Step::Escape(title) => escape(tokenizer, title),

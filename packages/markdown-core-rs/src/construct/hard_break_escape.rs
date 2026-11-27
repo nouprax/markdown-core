@@ -12,7 +12,7 @@
 //! ```
 //!
 //! It is also possible to create a hard break with a
-//! [hard break (trailing)][hard_break_trailing].
+//! [hard break (trailing)][hard_break_tail].
 //!
 //! Punctuation characters can be escaped with a similar
 //! construct: a [character escape][character_escape] is a backslash followed
@@ -41,7 +41,7 @@
 //! [text]: crate::construct::text
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
-//! [hard_break_trailing]: crate::construct::partial_whitespace
+//! [hard_break_tail]: crate::construct::partial_whitespace
 //! [html]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-br-element
 
 use crate::choice::Starts;
@@ -50,7 +50,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\\");
+pub const STARTS: Starts = Starts::Codes(b"\\");
 
 /// Start of hard break (escape).
 ///

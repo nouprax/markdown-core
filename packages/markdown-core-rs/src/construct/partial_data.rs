@@ -1,9 +1,9 @@
-//! Data occurs in the [string][] and [text][] content types.
+//! Data occurs in the [string][plain] and [text][] content types.
 //!
 //! It can include anything (except for line endings) and stops at certain
 //! characters.
 //!
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
 
 use crate::choice::List;
@@ -21,15 +21,15 @@ use alloc::vec;
 /// ```
 fn start(tokenizer: &mut Tokenizer, list: List) -> State {
     // At a byte that can start a construct, none did: eat it as data.
-    if let Some(byte) = tokenizer.current {
-        if list.get().marks(byte) {
+    if let Some(code) = tokenizer.current {
+        if list.choice().marks(code) {
             tokenizer.enter(Name::Data);
             tokenizer.consume();
             return State::Next(StateName::Data(Step::Inside { list }));
         }
     }
 
-    State::Retry(StateName::Data(Step::AtBreak { list }))
+    State::Redo(StateName::Data(Step::AtBreak { list }))
 }
 
 /// Before something.
@@ -39,16 +39,16 @@ fn start(tokenizer: &mut Tokenizer, list: List) -> State {
 ///     ^
 /// ```
 fn at_break(tokenizer: &mut Tokenizer, list: List) -> State {
-    if let Some(byte) = tokenizer.current {
-        if !list.get().marks(byte) {
-            if byte == b'\n' {
-                tokenizer.enter(Name::LineEnding);
+    if let Some(code) = tokenizer.current {
+        if !list.choice().marks(code) {
+            if code == b'\n' {
+                tokenizer.enter(Name::LineEnd);
                 tokenizer.consume();
-                tokenizer.exit(Name::LineEnding);
+                tokenizer.exit(Name::LineEnd);
                 return State::Next(StateName::Data(Step::AtBreak { list }));
             }
             tokenizer.enter(Name::Data);
-            return State::Retry(StateName::Data(Step::Inside { list }));
+            return State::Redo(StateName::Data(Step::Inside { list }));
         }
     }
 
@@ -62,15 +62,15 @@ fn at_break(tokenizer: &mut Tokenizer, list: List) -> State {
 ///     ^^^
 /// ```
 fn inside(tokenizer: &mut Tokenizer, list: List) -> State {
-    if let Some(byte) = tokenizer.current {
-        if byte != b'\n' && !list.get().marks(byte) {
+    if let Some(code) = tokenizer.current {
+        if code != b'\n' && !list.choice().marks(code) {
             tokenizer.consume();
             return State::Next(StateName::Data(Step::Inside { list }));
         }
     }
 
     tokenizer.exit(Name::Data);
-    State::Retry(StateName::Data(Step::AtBreak { list }))
+    State::Redo(StateName::Data(Step::AtBreak { list }))
 }
 
 /// Merge adjacent data events.

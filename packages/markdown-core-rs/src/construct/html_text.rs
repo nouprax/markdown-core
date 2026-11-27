@@ -59,7 +59,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::HTML_CDATA_PREFIX;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"<");
+pub const STARTS: Starts = Starts::Codes(b"<");
 
 /// Start of HTML (text).
 ///
@@ -96,7 +96,7 @@ fn open(tokenizer: &mut Tokenizer) -> State {
         }
         Some(b'/') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagCloseStart))
+            State::Next(StateName::HtmlText(Step::ElementCloseStart))
         }
         Some(b'?') => {
             tokenizer.consume();
@@ -105,7 +105,7 @@ fn open(tokenizer: &mut Tokenizer) -> State {
         // ASCII alphabetical.
         Some(b'A'..=b'Z' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpen))
+            State::Next(StateName::HtmlText(Step::ElementOpen))
         }
         _ => State::Nok,
     }
@@ -167,7 +167,7 @@ fn comment(tokenizer: &mut Tokenizer) -> State {
         None => State::Nok,
         Some(b'\n') => {
             tokenizer.attempt(State::Next(StateName::HtmlText(Step::Comment)), State::Nok);
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b'-') => {
             tokenizer.consume();
@@ -192,7 +192,7 @@ fn comment_close(tokenizer: &mut Tokenizer) -> State {
             tokenizer.consume();
             State::Next(StateName::HtmlText(Step::CommentEnd))
         }
-        _ => State::Retry(StateName::HtmlText(Step::Comment)),
+        _ => State::Redo(StateName::HtmlText(Step::Comment)),
     }
 }
 /// In comment, after `-`.
@@ -203,9 +203,9 @@ fn comment_close(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn comment_end(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'>') => State::Retry(StateName::HtmlText(Step::End)),
-        Some(b'-') => State::Retry(StateName::HtmlText(Step::CommentClose)),
-        _ => State::Retry(StateName::HtmlText(Step::Comment)),
+        Some(b'>') => State::Redo(StateName::HtmlText(Step::End)),
+        Some(b'-') => State::Redo(StateName::HtmlText(Step::CommentClose)),
+        _ => State::Redo(StateName::HtmlText(Step::Comment)),
     }
 }
 
@@ -242,7 +242,7 @@ fn cdata(tokenizer: &mut Tokenizer) -> State {
         None => State::Nok,
         Some(b'\n') => {
             tokenizer.attempt(State::Next(StateName::HtmlText(Step::Cdata)), State::Nok);
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b']') => {
             tokenizer.consume();
@@ -267,7 +267,7 @@ fn cdata_close(tokenizer: &mut Tokenizer) -> State {
             tokenizer.consume();
             State::Next(StateName::HtmlText(Step::CdataEnd))
         }
-        _ => State::Retry(StateName::HtmlText(Step::Cdata)),
+        _ => State::Redo(StateName::HtmlText(Step::Cdata)),
     }
 }
 
@@ -279,9 +279,9 @@ fn cdata_close(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn cdata_end(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'>') => State::Retry(StateName::HtmlText(Step::End)),
-        Some(b']') => State::Retry(StateName::HtmlText(Step::CdataClose)),
-        _ => State::Retry(StateName::HtmlText(Step::Cdata)),
+        Some(b'>') => State::Redo(StateName::HtmlText(Step::End)),
+        Some(b']') => State::Redo(StateName::HtmlText(Step::CdataClose)),
+        _ => State::Redo(StateName::HtmlText(Step::Cdata)),
     }
 }
 
@@ -293,13 +293,13 @@ fn cdata_end(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn declaration(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        None | Some(b'>') => State::Retry(StateName::HtmlText(Step::End)),
+        None | Some(b'>') => State::Redo(StateName::HtmlText(Step::End)),
         Some(b'\n') => {
             tokenizer.attempt(
                 State::Next(StateName::HtmlText(Step::Declaration)),
                 State::Nok,
             );
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         _ => {
             tokenizer.consume();
@@ -322,7 +322,7 @@ fn instruction(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::HtmlText(Step::Instruction)),
                 State::Nok,
             );
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b'?') => {
             tokenizer.consume();
@@ -343,8 +343,8 @@ fn instruction(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn instruction_close(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'>') => State::Retry(StateName::HtmlText(Step::End)),
-        _ => State::Retry(StateName::HtmlText(Step::Instruction)),
+        Some(b'>') => State::Redo(StateName::HtmlText(Step::End)),
+        _ => State::Redo(StateName::HtmlText(Step::Instruction)),
     }
 }
 
@@ -354,12 +354,12 @@ fn instruction_close(tokenizer: &mut Tokenizer) -> State {
 /// > | a </b> c
 ///         ^
 /// ```
-fn tag_close_start(tokenizer: &mut Tokenizer) -> State {
+fn element_close_start(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // ASCII alphabetical.
         Some(b'A'..=b'Z' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagClose))
+            State::Next(StateName::HtmlText(Step::ElementClose))
         }
         _ => State::Nok,
     }
@@ -371,14 +371,14 @@ fn tag_close_start(tokenizer: &mut Tokenizer) -> State {
 /// > | a </b> c
 ///          ^
 /// ```
-fn tag_close(tokenizer: &mut Tokenizer) -> State {
+fn element_close(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // ASCII alphanumerical and `-`.
         Some(b'-' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagClose))
+            State::Next(StateName::HtmlText(Step::ElementClose))
         }
-        _ => State::Retry(StateName::HtmlText(Step::TagCloseBetween)),
+        _ => State::Redo(StateName::HtmlText(Step::ElementCloseBetween)),
     }
 }
 
@@ -388,20 +388,20 @@ fn tag_close(tokenizer: &mut Tokenizer) -> State {
 /// > | a </b> c
 ///          ^
 /// ```
-fn tag_close_between(tokenizer: &mut Tokenizer) -> State {
+fn element_close_between(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
             tokenizer.attempt(
-                State::Next(StateName::HtmlText(Step::TagCloseBetween)),
+                State::Next(StateName::HtmlText(Step::ElementCloseBetween)),
                 State::Nok,
             );
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b'\t' | b' ') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagCloseBetween))
+            State::Next(StateName::HtmlText(Step::ElementCloseBetween))
         }
-        _ => State::Retry(StateName::HtmlText(Step::End)),
+        _ => State::Redo(StateName::HtmlText(Step::End)),
     }
 }
 
@@ -411,15 +411,15 @@ fn tag_close_between(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b> c
 ///         ^
 /// ```
-fn tag_open(tokenizer: &mut Tokenizer) -> State {
+fn element_open(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // ASCII alphanumerical and `-`.
         Some(b'-' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpen))
+            State::Next(StateName::HtmlText(Step::ElementOpen))
         }
         Some(b'\t' | b'\n' | b' ' | b'/' | b'>') => {
-            State::Retry(StateName::HtmlText(Step::TagOpenBetween))
+            State::Redo(StateName::HtmlText(Step::ElementOpenBetween))
         }
         _ => State::Nok,
     }
@@ -431,18 +431,18 @@ fn tag_open(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b> c
 ///         ^
 /// ```
-fn tag_open_between(tokenizer: &mut Tokenizer) -> State {
+fn element_open_between(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
             tokenizer.attempt(
-                State::Next(StateName::HtmlText(Step::TagOpenBetween)),
+                State::Next(StateName::HtmlText(Step::ElementOpenBetween)),
                 State::Nok,
             );
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b'\t' | b' ') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenBetween))
+            State::Next(StateName::HtmlText(Step::ElementOpenBetween))
         }
         Some(b'/') => {
             tokenizer.consume();
@@ -451,9 +451,9 @@ fn tag_open_between(tokenizer: &mut Tokenizer) -> State {
         // ASCII alphabetical and `:` and `_`.
         Some(b':' | b'A'..=b'Z' | b'_' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeName))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeName))
         }
-        _ => State::Retry(StateName::HtmlText(Step::End)),
+        _ => State::Redo(StateName::HtmlText(Step::End)),
     }
 }
 
@@ -463,14 +463,14 @@ fn tag_open_between(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b c> d
 ///          ^
 /// ```
-fn tag_open_attribute_name(tokenizer: &mut Tokenizer) -> State {
+fn element_open_attribute_name(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // ASCII alphabetical and `-`, `.`, `:`, and `_`.
         Some(b'-' | b'.' | b'0'..=b'9' | b':' | b'A'..=b'Z' | b'_' | b'a'..=b'z') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeName))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeName))
         }
-        _ => State::Retry(StateName::HtmlText(Step::TagOpenAttributeNameAfter)),
+        _ => State::Redo(StateName::HtmlText(Step::ElementOpenAttributeNameAfter)),
     }
 }
 
@@ -481,24 +481,24 @@ fn tag_open_attribute_name(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b c> d
 ///           ^
 /// ```
-fn tag_open_attribute_name_after(tokenizer: &mut Tokenizer) -> State {
+fn element_open_attribute_name_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
             tokenizer.attempt(
-                State::Next(StateName::HtmlText(Step::TagOpenAttributeNameAfter)),
+                State::Next(StateName::HtmlText(Step::ElementOpenAttributeNameAfter)),
                 State::Nok,
             );
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b'\t' | b' ') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeNameAfter))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeNameAfter))
         }
         Some(b'=') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeValueBefore))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueBefore))
         }
-        _ => State::Retry(StateName::HtmlText(Step::TagOpenBetween)),
+        _ => State::Redo(StateName::HtmlText(Step::ElementOpenBetween)),
     }
 }
 
@@ -509,30 +509,30 @@ fn tag_open_attribute_name_after(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b c=d> e
 ///            ^
 /// ```
-fn tag_open_attribute_value_before(tokenizer: &mut Tokenizer) -> State {
+fn element_open_attribute_value_before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'<' | b'=' | b'>' | b'`') => State::Nok,
         Some(b'\n') => {
             tokenizer.attempt(
-                State::Next(StateName::HtmlText(Step::TagOpenAttributeValueBefore)),
+                State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueBefore)),
                 State::Nok,
             );
-            State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+            State::Redo(StateName::HtmlText(Step::LineEndBefore))
         }
         Some(b'\t' | b' ') => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeValueBefore))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueBefore))
         }
         Some(b'"' | b'\'') => {
             let marker = tokenizer.current.unwrap();
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeValueQuoted {
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueQuoted {
                 marker,
             }))
         }
         Some(_) => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeValueUnquoted))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueUnquoted))
         }
     }
 }
@@ -543,25 +543,27 @@ fn tag_open_attribute_value_before(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b c="d"> e
 ///             ^
 /// ```
-fn tag_open_attribute_value_quoted(tokenizer: &mut Tokenizer, marker: u8) -> State {
+fn element_open_attribute_value_quoted(tokenizer: &mut Tokenizer, marker: u8) -> State {
     if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        State::Next(StateName::HtmlText(Step::TagOpenAttributeValueQuotedAfter))
+        State::Next(StateName::HtmlText(
+            Step::ElementOpenAttributeValueQuotedAfter,
+        ))
     } else {
         match tokenizer.current {
             None => State::Nok,
             Some(b'\n') => {
                 tokenizer.attempt(
-                    State::Next(StateName::HtmlText(Step::TagOpenAttributeValueQuoted {
+                    State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueQuoted {
                         marker,
                     })),
                     State::Nok,
                 );
-                State::Retry(StateName::HtmlText(Step::LineEndingBefore))
+                State::Redo(StateName::HtmlText(Step::LineEndBefore))
             }
             _ => {
                 tokenizer.consume();
-                State::Next(StateName::HtmlText(Step::TagOpenAttributeValueQuoted {
+                State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueQuoted {
                     marker,
                 }))
             }
@@ -575,15 +577,15 @@ fn tag_open_attribute_value_quoted(tokenizer: &mut Tokenizer, marker: u8) -> Sta
 /// > | a <b c=d> e
 ///            ^
 /// ```
-fn tag_open_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
+fn element_open_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'"' | b'\'' | b'<' | b'=' | b'`') => State::Nok,
         Some(b'\t' | b'\n' | b' ' | b'/' | b'>') => {
-            State::Retry(StateName::HtmlText(Step::TagOpenBetween))
+            State::Redo(StateName::HtmlText(Step::ElementOpenBetween))
         }
         Some(_) => {
             tokenizer.consume();
-            State::Next(StateName::HtmlText(Step::TagOpenAttributeValueUnquoted))
+            State::Next(StateName::HtmlText(Step::ElementOpenAttributeValueUnquoted))
         }
     }
 }
@@ -595,10 +597,10 @@ fn tag_open_attribute_value_unquoted(tokenizer: &mut Tokenizer) -> State {
 /// > | a <b c="d"> e
 ///               ^
 /// ```
-fn tag_open_attribute_value_quoted_after(tokenizer: &mut Tokenizer) -> State {
+fn element_open_attribute_value_quoted_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\t' | b'\n' | b' ' | b'/' | b'>') => {
-            State::Retry(StateName::HtmlText(Step::TagOpenBetween))
+            State::Redo(StateName::HtmlText(Step::ElementOpenBetween))
         }
         _ => State::Nok,
     }
@@ -632,14 +634,14 @@ fn end(tokenizer: &mut Tokenizer) -> State {
 ///            ^
 ///   | b-->
 /// ```
-fn line_ending_before(tokenizer: &mut Tokenizer) -> State {
+fn line_end_before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\n') => {
             tokenizer.exit(Name::HtmlTextData);
-            tokenizer.enter(Name::LineEnding);
+            tokenizer.enter(Name::LineEnd);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::HtmlText(Step::LineEndingAfter))
+            tokenizer.exit(Name::LineEnd);
+            State::Next(StateName::HtmlText(Step::LineEndAfter))
         }
         _ => unreachable!("expected eol"),
     }
@@ -655,15 +657,15 @@ fn line_ending_before(tokenizer: &mut Tokenizer) -> State {
 /// > | b-->
 ///     ^
 /// ```
-fn line_ending_after(tokenizer: &mut Tokenizer) -> State {
+fn line_end_after(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
-            State::Next(StateName::HtmlText(Step::LineEndingAfterPrefix)),
+            State::Next(StateName::HtmlText(Step::LineEndAfterPrefix)),
             State::Nok,
         );
-        State::Retry(space_or_tab())
+        State::Redo(space_or_tab())
     } else {
-        State::Retry(StateName::HtmlText(Step::LineEndingAfterPrefix))
+        State::Redo(StateName::HtmlText(Step::LineEndAfterPrefix))
     }
 }
 
@@ -677,7 +679,7 @@ fn line_ending_after(tokenizer: &mut Tokenizer) -> State {
 /// > | b-->
 ///     ^
 /// ```
-fn line_ending_after_prefix(tokenizer: &mut Tokenizer) -> State {
+fn line_end_after_prefix(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::HtmlTextData);
     State::Ok
 }
@@ -688,17 +690,17 @@ pub enum Step {
     Start,
     Open,
     DeclarationOpen,
-    TagCloseStart,
-    TagClose,
-    TagCloseBetween,
-    TagOpen,
-    TagOpenBetween,
-    TagOpenAttributeName,
-    TagOpenAttributeNameAfter,
-    TagOpenAttributeValueBefore,
-    TagOpenAttributeValueQuoted { marker: u8 },
-    TagOpenAttributeValueQuotedAfter,
-    TagOpenAttributeValueUnquoted,
+    ElementCloseStart,
+    ElementClose,
+    ElementCloseBetween,
+    ElementOpen,
+    ElementOpenBetween,
+    ElementOpenAttributeName,
+    ElementOpenAttributeNameAfter,
+    ElementOpenAttributeValueBefore,
+    ElementOpenAttributeValueQuoted { marker: u8 },
+    ElementOpenAttributeValueQuotedAfter,
+    ElementOpenAttributeValueUnquoted,
     Cdata,
     CdataOpenInside { size: usize },
     CdataClose,
@@ -711,9 +713,9 @@ pub enum Step {
     End,
     Instruction,
     InstructionClose,
-    LineEndingBefore,
-    LineEndingAfter,
-    LineEndingAfterPrefix,
+    LineEndBefore,
+    LineEndAfter,
+    LineEndAfterPrefix,
 }
 
 impl From<Step> for StateName {
@@ -728,19 +730,21 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Start => start(tokenizer),
         Step::Open => open(tokenizer),
         Step::DeclarationOpen => declaration_open(tokenizer),
-        Step::TagCloseStart => tag_close_start(tokenizer),
-        Step::TagClose => tag_close(tokenizer),
-        Step::TagCloseBetween => tag_close_between(tokenizer),
-        Step::TagOpen => tag_open(tokenizer),
-        Step::TagOpenBetween => tag_open_between(tokenizer),
-        Step::TagOpenAttributeName => tag_open_attribute_name(tokenizer),
-        Step::TagOpenAttributeNameAfter => tag_open_attribute_name_after(tokenizer),
-        Step::TagOpenAttributeValueBefore => tag_open_attribute_value_before(tokenizer),
-        Step::TagOpenAttributeValueQuoted { marker } => {
-            tag_open_attribute_value_quoted(tokenizer, marker)
+        Step::ElementCloseStart => element_close_start(tokenizer),
+        Step::ElementClose => element_close(tokenizer),
+        Step::ElementCloseBetween => element_close_between(tokenizer),
+        Step::ElementOpen => element_open(tokenizer),
+        Step::ElementOpenBetween => element_open_between(tokenizer),
+        Step::ElementOpenAttributeName => element_open_attribute_name(tokenizer),
+        Step::ElementOpenAttributeNameAfter => element_open_attribute_name_after(tokenizer),
+        Step::ElementOpenAttributeValueBefore => element_open_attribute_value_before(tokenizer),
+        Step::ElementOpenAttributeValueQuoted { marker } => {
+            element_open_attribute_value_quoted(tokenizer, marker)
         }
-        Step::TagOpenAttributeValueQuotedAfter => tag_open_attribute_value_quoted_after(tokenizer),
-        Step::TagOpenAttributeValueUnquoted => tag_open_attribute_value_unquoted(tokenizer),
+        Step::ElementOpenAttributeValueQuotedAfter => {
+            element_open_attribute_value_quoted_after(tokenizer)
+        }
+        Step::ElementOpenAttributeValueUnquoted => element_open_attribute_value_unquoted(tokenizer),
         Step::Cdata => cdata(tokenizer),
         Step::CdataOpenInside { size } => cdata_open_inside(tokenizer, size),
         Step::CdataClose => cdata_close(tokenizer),
@@ -753,8 +757,8 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::End => end(tokenizer),
         Step::Instruction => instruction(tokenizer),
         Step::InstructionClose => instruction_close(tokenizer),
-        Step::LineEndingBefore => line_ending_before(tokenizer),
-        Step::LineEndingAfter => line_ending_after(tokenizer),
-        Step::LineEndingAfterPrefix => line_ending_after_prefix(tokenizer),
+        Step::LineEndBefore => line_end_before(tokenizer),
+        Step::LineEndAfter => line_end_after(tokenizer),
+        Step::LineEndAfterPrefix => line_end_after_prefix(tokenizer),
     }
 }

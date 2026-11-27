@@ -1,4 +1,4 @@
-//! Character escapes occur in the [string][] and [text][] content types.
+//! Character escapes occur in the [string][plain] and [text][] content types.
 //!
 //! ## Grammar
 //!
@@ -36,7 +36,7 @@
 //! * [`character-escape.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/character-escape.js)
 //! * [*§ 2.4 Backslash escapes* in `CommonMark`](https://spec.commonmark.org/0.31/#backslash-escapes)
 //!
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
 //! [character_reference]: crate::construct::character_reference
 //! [hard_break_escape]: crate::construct::hard_break_escape
@@ -47,7 +47,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\\");
+pub const STARTS: Starts = Starts::Codes(b"\\");
 
 /// Start of character escape.
 ///

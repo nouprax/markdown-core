@@ -20,8 +20,8 @@
 //!
 //! ## Tokens
 //!
-//! * [`GfmFootnoteCallLabel`][Name::GfmFootnoteCallLabel]
-//! * [`GfmFootnoteCallMarker`][Name::GfmFootnoteCallMarker]
+//! * [`FootnoteCallLabel`][Name::FootnoteCallLabel]
+//! * [`FootnoteCallMarker`][Name::FootnoteCallMarker]
 //! * [`LabelMarker`][Name::LabelMarker]
 //!
 //! ## References
@@ -44,7 +44,7 @@ use crate::state::{Name as StateName, State};
 use crate::tokenizer::{LabelKind, LabelStart, Tokenizer};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"[");
+pub const STARTS: Starts = Starts::Codes(b"[");
 
 /// Start of label (footnote) start.
 ///
@@ -54,11 +54,11 @@ pub const STARTS: Starts = Starts::Bytes(b"[");
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'[') {
-        tokenizer.enter(Name::GfmFootnoteCallLabel);
+        tokenizer.enter(Name::FootnoteCallLabel);
         tokenizer.enter(Name::LabelMarker);
         tokenizer.consume();
         tokenizer.exit(Name::LabelMarker);
-        State::Next(StateName::GfmLabelStartFootnote(Step::Open))
+        State::Next(StateName::LabelStartFootnote(Step::Open))
     } else {
         State::Nok
     }
@@ -73,16 +73,16 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 fn open(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'^') => {
-            tokenizer.enter(Name::GfmFootnoteCallMarker);
+            tokenizer.enter(Name::FootnoteCallMarker);
             tokenizer.consume();
-            tokenizer.exit(Name::GfmFootnoteCallMarker);
-            tokenizer.exit(Name::GfmFootnoteCallLabel);
+            tokenizer.exit(Name::FootnoteCallMarker);
+            tokenizer.exit(Name::FootnoteCallLabel);
             tokenizer.labels.starts.push(LabelStart {
-                kind: LabelKind::GfmFootnote,
+                kind: LabelKind::Footnote,
                 start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
                 inactive: false,
             });
-            tokenizer.register_resolver_before(ResolveName::Label);
+            tokenizer.add_resolver_before(ResolveName::Label);
             State::Ok
         }
         _ => State::Nok,
@@ -98,7 +98,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::GfmLabelStartFootnote(step)
+        StateName::LabelStartFootnote(step)
     }
 }
 

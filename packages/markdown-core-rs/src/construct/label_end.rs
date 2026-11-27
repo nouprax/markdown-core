@@ -31,7 +31,7 @@
 //! of the definition after normalizing with
 //! [`normalize_identifier`][].
 //!
-//! Importantly, while the label of a full reference *can* include [string][]
+//! Importantly, while the label of a full reference *can* include [string][plain]
 //! content, and in case of collapsed and shortcut references even [text][]
 //! content, that content is not considered when matching.
 //! To illustrate, neither label matches the definition:
@@ -44,23 +44,23 @@
 //!
 //! When the resource or reference matches, the destination forms the `href`
 //! attribute in case of a [label start (link)][label_start_link], and an
-//! `src` attribute in case of a [label start (image)][label_start_image].
+//! `src` attribute in case of a [label start (image)][label_start_picture].
 //! The title is formed, optionally, on either `<a>` or `<img>`.
-//! When matched with a [gfm label start (footnote)][gfm_label_start_footnote],
+//! When matched with a [gfm label start (footnote)][label_start_footnote],
 //! no reference or resource can follow the label end.
 //!
 //! For info on how to encode characters in URLs, see
 //! [`destination`][destination].
 //! For info on how characters are encoded as `href` on `<a>` or `src` on
 //! `<img>` when compiling, see
-//! [`sanitize_uri`][sanitize_uri].
+//! `sanitize_uri` of markdown-rs.
 //!
-//! In case of a matched [gfm label start (footnote)][gfm_label_start_footnote],
+//! In case of a matched [gfm label start (footnote)][label_start_footnote],
 //! a counter is injected.
 //! In case of a matched [label start (link)][label_start_link], the interpreted
 //! content between it and the label end, is placed between the opening and
 //! closing tags.
-//! In case of a matched [label start (image)][label_start_image], the text is
+//! In case of a matched [label start (image)][label_start_picture], the text is
 //! also interpreted, but used *without* the resulting tags:
 //!
 //! ```markdown
@@ -106,10 +106,10 @@
 //! When matched with a [label start (link)][label_start_link], they together
 //! relate to the `<a>` element in HTML.
 //! See [*§ 4.5.1 The `a` element*][html_a] in the HTML spec for more info.
-//! It can also match with [label start (image)][label_start_image], in which
+//! It can also match with [label start (image)][label_start_picture], in which
 //! case they form an `<img>` element.
 //! See [*§ 4.8.3 The `img` element*][html_img] in the HTML spec for more info.
-//! It can also match with [gfm label start (footnote)][gfm_label_start_footnote],
+//! It can also match with [gfm label start (footnote)][label_start_footnote],
 //! in which case they form `<sup>` and `<a>` elements in HTML.
 //! See [*§ 4.5.19 The `sub` and `sup` elements*][html_sup] and
 //! [*§ 4.5.1 The `a` element*][html_a] in the HTML spec for more info.
@@ -128,27 +128,27 @@
 //! ## Tokens
 //!
 //! * [`Data`][Name::Data]
-//! * [`GfmFootnoteCall`][Name::GfmFootnoteCall]
-//! * [`Image`][Name::Image]
+//! * [`FootnoteCall`][Name::FootnoteCall]
+//! * [`Picture`][Name::Picture]
 //! * [`Label`][Name::Label]
 //! * [`LabelEnd`][Name::LabelEnd]
 //! * [`LabelMarker`][Name::LabelMarker]
 //! * [`LabelText`][Name::LabelText]
-//! * [`LineEnding`][Name::LineEnding]
+//! * [`LineEnd`][Name::LineEnd]
 //! * [`Link`][Name::Link]
 //! * [`Reference`][Name::Reference]
 //! * [`ReferenceMarker`][Name::ReferenceMarker]
-//! * [`ReferenceString`][Name::ReferenceString]
+//! * [`ReferenceText`][Name::ReferenceText]
 //! * [`Resource`][Name::Resource]
 //! * [`ResourceDestination`][Name::ResourceDestination]
 //! * [`ResourceDestinationLiteral`][Name::ResourceDestinationLiteral]
 //! * [`ResourceDestinationLiteralMarker`][Name::ResourceDestinationLiteralMarker]
 //! * [`ResourceDestinationRaw`][Name::ResourceDestinationRaw]
-//! * [`ResourceDestinationString`][Name::ResourceDestinationString]
+//! * [`ResourceDestinationText`][Name::ResourceDestinationText]
 //! * [`ResourceMarker`][Name::ResourceMarker]
 //! * [`ResourceTitle`][Name::ResourceTitle]
 //! * [`ResourceTitleMarker`][Name::ResourceTitleMarker]
-//! * [`ResourceTitleString`][Name::ResourceTitleString]
+//! * [`ResourceTitleText`][Name::ResourceTitleText]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -163,17 +163,16 @@
 //! > See [`github/cmark-gfm#270`](https://github.com/github/cmark-gfm/issues/270)
 //! > for the related issue.
 //!
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [text]: crate::construct::text
 //! [destination]: crate::construct::partial_destination
 //! [title]: crate::construct::partial_title
 //! [label]: crate::construct::partial_label
-//! [label_start_image]: crate::construct::label_start_image
+//! [label_start_picture]: crate::construct::label_start_picture
 //! [label_start_link]: crate::construct::label_start_link
-//! [gfm_label_start_footnote]: crate::construct::gfm_label_start_footnote
+//! [label_start_footnote]: crate::construct::label_start_footnote
 //! [definition]: crate::construct::definition
 //! [autolink]: crate::construct::autolink
-//! [sanitize_uri]: crate::util::sanitize_uri::sanitize
 //! [normalize_identifier]: crate::util::normalize_identifier::normalize_identifier
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 //! [html_img]: https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element
@@ -196,7 +195,7 @@ use crate::util::{
 use alloc::{string::String, vec};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"]");
+pub const STARTS: Starts = Starts::Codes(b"]");
 
 /// Start of label end.
 ///
@@ -226,7 +225,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             //
             // We can’t have that, so it’s just balanced brackets.
             if label_start.inactive {
-                return State::Retry(StateName::LabelEnd(Step::Nok));
+                return State::Redo(StateName::LabelEnd(Step::Nok));
             }
 
             tokenizer.enter(Name::LabelEnd);
@@ -264,17 +263,17 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
 
     // We don’t care about virtual spaces, so `indices` and `as_str` are fine.
     let mut id = normalize_identifier(
-        Slice::from_indices(tokenizer.parse_state.bytes, indices.0, indices.1).as_str(),
+        Slice::from_indices(tokenizer.parse_state.source, indices.0, indices.1).as_str(),
     );
 
     // See if this matches a footnote definition.
-    if start.kind == LabelKind::GfmFootnote {
+    if start.kind == LabelKind::Footnote {
         if tokenizer.parse_state.definitions.notes.contains(&id) {
-            return State::Retry(StateName::LabelEnd(Step::Ok { end }));
+            return State::Redo(StateName::LabelEnd(Step::Ok { end }));
         }
 
         // Nope, this might be a normal link?
-        tokenizer.labels.starts[start_index].kind = LabelKind::GfmUndefinedFootnote;
+        tokenizer.labels.starts[start_index].kind = LabelKind::UndefinedFootnote;
         let mut new_id = String::new();
         new_id.push('^');
         new_id.push_str(&id);
@@ -294,7 +293,7 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
                     StateName::LabelEnd(Step::Nok)
                 }),
             );
-            State::Retry(StateName::LabelEnd(Step::ResourceStart))
+            State::Redo(StateName::LabelEnd(Step::ResourceStart))
         }
         // Full (`[asd][fgh]`) or collapsed (`[asd][]`) reference?
         Some(b'[') => {
@@ -306,10 +305,10 @@ fn after(tokenizer: &mut Tokenizer, end: usize) -> State {
                     StateName::LabelEnd(Step::Nok)
                 }),
             );
-            State::Retry(StateName::LabelEnd(Step::ReferenceFull))
+            State::Redo(StateName::LabelEnd(Step::ReferenceFull))
         }
         // Shortcut (`[asd]`) reference?
-        _ => State::Retry(if defined {
+        _ => State::Redo(if defined {
             StateName::LabelEnd(Step::Ok { end })
         } else {
             StateName::LabelEnd(Step::Nok)
@@ -332,7 +331,7 @@ fn reference_not_full(tokenizer: &mut Tokenizer, end: usize) -> State {
         State::Next(StateName::LabelEnd(Step::Ok { end })),
         State::Next(StateName::LabelEnd(Step::Nok)),
     );
-    State::Retry(StateName::LabelEnd(Step::ReferenceCollapsed))
+    State::Redo(StateName::LabelEnd(Step::ReferenceCollapsed))
 }
 
 /// Done, we found something.
@@ -355,11 +354,11 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
     // longer viable for use (as they would otherwise contain a link).
     // These link starts are still looking for balanced closing brackets, so
     // we can’t remove them, but we can mark them.
-    if label_start.kind != LabelKind::Image {
+    if label_start.kind != LabelKind::Picture {
         let mut index = 0;
         while index < tokenizer.labels.starts.len() {
             let label_start = &mut tokenizer.labels.starts[index];
-            if label_start.kind != LabelKind::Image {
+            if label_start.kind != LabelKind::Picture {
                 label_start.inactive = true;
             }
             index += 1;
@@ -371,7 +370,7 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
         start: label_start.start,
         end: (end, tokenizer.events.len() - 1),
     });
-    tokenizer.register_resolver_before(ResolveName::Label);
+    tokenizer.add_resolver_before(ResolveName::Label);
     State::Ok
 }
 
@@ -424,9 +423,9 @@ fn resource_before(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::LabelEnd(Step::ResourceOpen)),
             State::Next(StateName::LabelEnd(Step::ResourceOpen)),
         );
-        State::Retry(space_or_tab_eol())
+        State::Redo(space_or_tab_eol())
     } else {
-        State::Retry(StateName::LabelEnd(Step::ResourceOpen))
+        State::Redo(StateName::LabelEnd(Step::ResourceOpen))
     }
 }
 
@@ -438,20 +437,20 @@ fn resource_before(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn resource_open(tokenizer: &mut Tokenizer) -> State {
     if let Some(b')') = tokenizer.current {
-        State::Retry(StateName::LabelEnd(Step::ResourceEnd))
+        State::Redo(StateName::LabelEnd(Step::ResourceEnd))
     } else {
         tokenizer.attempt(
             State::Next(StateName::LabelEnd(Step::ResourceDestinationAfter)),
             State::Nok,
         );
-        State::Retry(StateName::Destination(partial_destination::Step::Start(
+        State::Redo(StateName::Destination(partial_destination::Step::Start(
             partial_destination::Options {
                 names: partial_destination::Names {
                     whole: Name::ResourceDestination,
                     literal: Name::ResourceDestinationLiteral,
                     marker: Name::ResourceDestinationLiteralMarker,
                     raw: Name::ResourceDestinationRaw,
-                    text: Name::ResourceDestinationString,
+                    text: Name::ResourceDestinationText,
                 },
                 limit: RESOURCE_DESTINATION_BALANCE_MAX,
             },
@@ -471,9 +470,9 @@ fn resource_destination_after(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::LabelEnd(Step::ResourceBetween)),
             State::Next(StateName::LabelEnd(Step::ResourceEnd)),
         );
-        State::Retry(space_or_tab_eol())
+        State::Redo(space_or_tab_eol())
     } else {
-        State::Retry(StateName::LabelEnd(Step::ResourceEnd))
+        State::Redo(StateName::LabelEnd(Step::ResourceEnd))
     }
 }
 
@@ -490,15 +489,15 @@ fn resource_between(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::LabelEnd(Step::ResourceTitleAfter)),
                 State::Nok,
             );
-            State::Retry(StateName::Title(partial_title::Step::Start(
+            State::Redo(StateName::Title(partial_title::Step::Start(
                 partial_title::Names {
                     whole: Name::ResourceTitle,
                     marker: Name::ResourceTitleMarker,
-                    text: Name::ResourceTitleString,
+                    text: Name::ResourceTitleText,
                 },
             )))
         }
-        _ => State::Retry(StateName::LabelEnd(Step::ResourceEnd)),
+        _ => State::Redo(StateName::LabelEnd(Step::ResourceEnd)),
     }
 }
 
@@ -514,9 +513,9 @@ fn resource_title_after(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::LabelEnd(Step::ResourceEnd)),
             State::Next(StateName::LabelEnd(Step::ResourceEnd)),
         );
-        State::Retry(space_or_tab_eol())
+        State::Redo(space_or_tab_eol())
     } else {
-        State::Retry(StateName::LabelEnd(Step::ResourceEnd))
+        State::Redo(StateName::LabelEnd(Step::ResourceEnd))
     }
 }
 
@@ -552,11 +551,11 @@ fn reference_full(tokenizer: &mut Tokenizer) -> State {
                 State::Next(StateName::LabelEnd(Step::ReferenceFullAfter)),
                 State::Nok,
             );
-            State::Retry(StateName::Label(partial_label::Step::Start(
+            State::Redo(StateName::Label(partial_label::Step::Start(
                 partial_label::Names {
                     whole: Name::Reference,
                     marker: Name::ReferenceMarker,
-                    text: Name::ReferenceString,
+                    text: Name::ReferenceText,
                 },
             )))
         }
@@ -578,13 +577,13 @@ fn reference_full_after(tokenizer: &mut Tokenizer) -> State {
         // We don’t care about virtual spaces, so `as_str` is fine.
         .contains(&normalize_identifier(
             Slice::from_position(
-                tokenizer.parse_state.bytes,
+                tokenizer.parse_state.source,
                 &Position::from_exit_event(
                     &tokenizer.events,
                     skip::to_back(
                         &tokenizer.events,
                         tokenizer.events.len() - 1,
-                        &[Name::ReferenceString],
+                        &[Name::ReferenceText],
                     ),
                 ),
             )
@@ -643,7 +642,7 @@ fn reference_collapsed_open(tokenizer: &mut Tokenizer) -> State {
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     // Inject labels.
     let labels = tokenizer.labels.pairs.split_off(0);
-    inject_labels(tokenizer, &labels);
+    insert_labels(tokenizer, &labels);
     // Handle loose starts.
     let starts = tokenizer.labels.starts.split_off(0);
     mark_as_data(tokenizer, &starts);
@@ -655,15 +654,15 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 }
 
 /// Inject links/images/footnotes.
-fn inject_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
+fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
     // Add grouping events.
     let mut index = 0;
     while index < labels.len() {
         let label = &labels[index];
-        let group_name = if label.kind == LabelKind::GfmFootnote {
-            Name::GfmFootnoteCall
-        } else if label.kind == LabelKind::Image {
-            Name::Image
+        let whole_name = if label.kind == LabelKind::Footnote {
+            Name::FootnoteCall
+        } else if label.kind == LabelKind::Picture {
+            Name::Picture
         } else {
             Name::Link
         };
@@ -672,7 +671,7 @@ fn inject_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
         // not match, we need to inject the caret as data.
         let mut caret = vec![];
 
-        if label.kind == LabelKind::GfmUndefinedFootnote {
+        if label.kind == LabelKind::UndefinedFootnote {
             // Add caret.
             caret.push(Event {
                 kind: Kind::Enter,
@@ -704,7 +703,7 @@ fn inject_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             vec![
                 Event {
                     kind: Kind::Enter,
-                    name: group_name,
+                    name: whole_name,
                     point: tokenizer.events[label.start.0].point.clone(),
                     link: None,
                 },
@@ -765,7 +764,7 @@ fn inject_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
             0,
             vec![Event {
                 kind: Kind::Exit,
-                name: group_name,
+                name: whole_name,
                 point: tokenizer.events[label.end.1].point.clone(),
                 link: None,
             }],

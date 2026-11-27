@@ -44,7 +44,7 @@
 //! languages, result in a parse error.
 //! In markdown, there are no errors, and URLs are normalized.
 //! In addition, many characters are percent encoded
-//! ([`sanitize_uri`][sanitize_uri]).
+//! (`sanitize_uri` of markdown-rs).
 //! For example:
 //!
 //! ```markdown
@@ -118,7 +118,6 @@
 //! [label_end]: crate::construct::label_end
 //! [autolink_scheme_size_max]: crate::util::constant::AUTOLINK_SCHEME_SIZE_MAX
 //! [autolink_domain_size_max]: crate::util::constant::AUTOLINK_DOMAIN_SIZE_MAX
-//! [sanitize_uri]: crate::util::sanitize_uri
 //! [html_a]: https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element
 
 use crate::choice::Starts;
@@ -128,7 +127,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::{AUTOLINK_DOMAIN_SIZE_MAX, AUTOLINK_SCHEME_SIZE_MAX};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"<");
+pub const STARTS: Starts = Starts::Codes(b"<");
 
 /// Start of an autolink.
 ///
@@ -167,7 +166,7 @@ fn open(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::Autolink(Step::SchemeOrEmailAtext))
         }
         Some(b'@') => State::Nok,
-        _ => State::Retry(StateName::Autolink(Step::EmailAtext)),
+        _ => State::Redo(StateName::Autolink(Step::EmailAtext)),
     }
 }
 
@@ -184,11 +183,11 @@ fn scheme_or_email_atext(tokenizer: &mut Tokenizer) -> State {
         // ASCII alphanumeric and `+`, `-`, and `.`.
         Some(b'+' | b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') => {
             // Count the previous alphabetical from `open` too.
-            State::Retry(StateName::Autolink(Step::SchemeInsideOrEmailAtext {
+            State::Redo(StateName::Autolink(Step::SchemeInsideOrEmailAtext {
                 size: 1,
             }))
         }
-        _ => State::Retry(StateName::Autolink(Step::EmailAtext)),
+        _ => State::Redo(StateName::Autolink(Step::EmailAtext)),
     }
 }
 
@@ -215,7 +214,7 @@ fn scheme_inside_or_email_atext(tokenizer: &mut Tokenizer, size: usize) -> State
                 size: size + 1,
             }))
         }
-        _ => State::Retry(StateName::Autolink(Step::EmailAtext)),
+        _ => State::Redo(StateName::Autolink(Step::EmailAtext)),
     }
 }
 
@@ -254,7 +253,7 @@ fn email_atext(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'@') => {
             tokenizer.consume();
-            State::Next(StateName::Autolink(Step::EmailAtSignOrDot))
+            State::Next(StateName::Autolink(Step::EmailAtMarkOrDot))
         }
         // ASCII atext.
         //
@@ -289,11 +288,11 @@ fn email_atext(tokenizer: &mut Tokenizer) -> State {
 /// > | a<user.name@example.com>b
 ///                 ^       ^
 /// ```
-fn email_at_sign_or_dot(tokenizer: &mut Tokenizer) -> State {
+fn email_at_mark_or_dot(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // ASCII alphanumeric.
         Some(b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') => {
-            State::Retry(StateName::Autolink(Step::EmailValue { size: 0 }))
+            State::Redo(StateName::Autolink(Step::EmailValue { size: 0 }))
         }
         _ => State::Nok,
     }
@@ -309,7 +308,7 @@ fn email_label(tokenizer: &mut Tokenizer, size: usize) -> State {
     match tokenizer.current {
         Some(b'.') => {
             tokenizer.consume();
-            State::Next(StateName::Autolink(Step::EmailAtSignOrDot))
+            State::Next(StateName::Autolink(Step::EmailAtMarkOrDot))
         }
         Some(b'>') => {
             let index = tokenizer.events.len();
@@ -323,7 +322,7 @@ fn email_label(tokenizer: &mut Tokenizer, size: usize) -> State {
             tokenizer.exit(Name::Autolink);
             State::Ok
         }
-        _ => State::Retry(StateName::Autolink(Step::EmailValue { size })),
+        _ => State::Redo(StateName::Autolink(Step::EmailValue { size })),
     }
 }
 
@@ -360,7 +359,7 @@ pub enum Step {
     SchemeOrEmailAtext,
     SchemeInsideOrEmailAtext { size: usize },
     UrlInside,
-    EmailAtSignOrDot,
+    EmailAtMarkOrDot,
     EmailAtext,
     EmailValue { size: usize },
     EmailLabel { size: usize },
@@ -380,7 +379,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::SchemeOrEmailAtext => scheme_or_email_atext(tokenizer),
         Step::SchemeInsideOrEmailAtext { size } => scheme_inside_or_email_atext(tokenizer, size),
         Step::UrlInside => url_inside(tokenizer),
-        Step::EmailAtSignOrDot => email_at_sign_or_dot(tokenizer),
+        Step::EmailAtMarkOrDot => email_at_mark_or_dot(tokenizer),
         Step::EmailAtext => email_atext(tokenizer),
         Step::EmailValue { size } => email_value(tokenizer, size),
         Step::EmailLabel { size } => email_label(tokenizer, size),

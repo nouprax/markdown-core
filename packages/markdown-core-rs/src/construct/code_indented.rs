@@ -38,7 +38,7 @@
 //!
 //! * [`CodeIndented`][Name::CodeIndented]
 //! * [`CodeFlowChunk`][Name::CodeFlowChunk]
-//! * [`LineEnding`][Name::LineEnding]
+//! * [`LineEnd`][Name::LineEnd]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -61,7 +61,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::TAB_SIZE;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\t ");
+pub const STARTS: Starts = Starts::Codes(b"\t ");
 
 /// Start of code (indented).
 ///
@@ -81,7 +81,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::CodeIndented(Step::AtBreak)),
             State::Nok,
         );
-        State::Retry(space_or_tab_min_max(TAB_SIZE, TAB_SIZE))
+        State::Redo(space_or_tab_min_max(TAB_SIZE, TAB_SIZE))
     } else {
         State::Nok
     }
@@ -95,17 +95,17 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn at_break(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        None => State::Retry(StateName::CodeIndented(Step::After)),
+        None => State::Redo(StateName::CodeIndented(Step::After)),
         Some(b'\n') => {
             tokenizer.attempt(
                 State::Next(StateName::CodeIndented(Step::AtBreak)),
                 State::Next(StateName::CodeIndented(Step::After)),
             );
-            State::Retry(StateName::CodeIndented(Step::FurtherStart))
+            State::Redo(StateName::CodeIndented(Step::FurtherStart))
         }
         _ => {
             tokenizer.enter(Name::CodeFlowChunk);
-            State::Retry(StateName::CodeIndented(Step::Inside))
+            State::Redo(StateName::CodeIndented(Step::Inside))
         }
     }
 }
@@ -120,7 +120,7 @@ fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::CodeFlowChunk);
-            State::Retry(StateName::CodeIndented(Step::AtBreak))
+            State::Redo(StateName::CodeIndented(Step::AtBreak))
         }
         _ => {
             tokenizer.consume();
@@ -150,21 +150,21 @@ fn after(tokenizer: &mut Tokenizer) -> State {
 ///   |     bbb
 /// ```
 fn further_start(tokenizer: &mut Tokenizer) -> State {
-    if tokenizer.lazy || tokenizer.pierce {
+    if tokenizer.lax || tokenizer.pierce {
         return State::Nok;
     }
 
     if tokenizer.current == Some(b'\n') {
-        tokenizer.enter(Name::LineEnding);
+        tokenizer.enter(Name::LineEnd);
         tokenizer.consume();
-        tokenizer.exit(Name::LineEnding);
+        tokenizer.exit(Name::LineEnd);
         State::Next(StateName::CodeIndented(Step::FurtherStart))
     } else {
         tokenizer.attempt(
             State::Ok,
-            State::Next(StateName::CodeIndented(Step::FurtherBegin)),
+            State::Next(StateName::CodeIndented(Step::FurtherLead)),
         );
-        State::Retry(space_or_tab_min_max(TAB_SIZE, TAB_SIZE))
+        State::Redo(space_or_tab_min_max(TAB_SIZE, TAB_SIZE))
     }
 }
 
@@ -175,13 +175,13 @@ fn further_start(tokenizer: &mut Tokenizer) -> State {
 /// > |   bbb
 ///     ^
 /// ```
-fn further_begin(tokenizer: &mut Tokenizer) -> State {
+fn further_lead(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
             State::Next(StateName::CodeIndented(Step::FurtherAfter)),
             State::Nok,
         );
-        State::Retry(space_or_tab())
+        State::Redo(space_or_tab())
     } else {
         State::Nok
     }
@@ -196,7 +196,7 @@ fn further_begin(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn further_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'\n') => State::Retry(StateName::CodeIndented(Step::FurtherStart)),
+        Some(b'\n') => State::Redo(StateName::CodeIndented(Step::FurtherStart)),
         _ => State::Nok,
     }
 }
@@ -209,7 +209,7 @@ pub enum Step {
     After,
     FurtherStart,
     Inside,
-    FurtherBegin,
+    FurtherLead,
     FurtherAfter,
 }
 
@@ -227,7 +227,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::After => after(tokenizer),
         Step::FurtherStart => further_start(tokenizer),
         Step::Inside => inside(tokenizer),
-        Step::FurtherBegin => further_begin(tokenizer),
+        Step::FurtherLead => further_lead(tokenizer),
         Step::FurtherAfter => further_after(tokenizer),
     }
 }

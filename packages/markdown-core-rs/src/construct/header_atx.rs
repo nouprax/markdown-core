@@ -18,7 +18,7 @@
 //! without it.
 //!
 //! In markdown, it is also possible to create headings with a
-//! [heading (setext)][heading_setext] construct.
+//! [heading (setext)][header_setext] construct.
 //! The benefit of setext headings is that their text can include line endings,
 //! and by extensions also hard breaks (e.g., with
 //! [hard break (escape)][hard_break_escape]).
@@ -45,9 +45,9 @@
 //!
 //! ## Tokens
 //!
-//! * [`HeadingAtx`][Name::HeadingAtx]
-//! * [`HeadingAtxSequence`][Name::HeadingAtxSequence]
-//! * [`HeadingAtxText`][Name::HeadingAtxText]
+//! * [`HeaderAtx`][Name::HeaderAtx]
+//! * [`HeaderAtxSequence`][Name::HeaderAtxSequence]
+//! * [`HeaderAtxText`][Name::HeaderAtxText]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -56,7 +56,7 @@
 //! * [*§ 4.2 ATX headings* in `CommonMark`](https://spec.commonmark.org/0.31/#atx-headings)
 //!
 //! [flow]: crate::construct::flow
-//! [heading_setext]: crate::construct::heading_setext
+//! [header_setext]: crate::construct::header_setext
 //! [hard_break_escape]: crate::construct::hard_break_escape
 //! [html]: https://html.spec.whatwg.org/multipage/sections.html#the-h1,-h2,-h3,-h4,-h5,-and-h6-elements
 //! [wiki_setext]: https://en.wikipedia.org/wiki/Setext
@@ -69,11 +69,11 @@ use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
 use crate::tokenizer::Tokenizer;
-use crate::util::constant::{HEADING_ATX_OPENING_FENCE_SIZE_MAX, TAB_SIZE};
+use crate::util::constant::{HEADER_ATX_OPEN_FENCE_SIZE_MAX, TAB_SIZE};
 use alloc::vec;
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\t #");
+pub const STARTS: Starts = Starts::Codes(b"\t #");
 
 /// Start of a heading (atx).
 ///
@@ -82,12 +82,12 @@ pub const STARTS: Starts = Starts::Bytes(b"\t #");
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.enter(Name::HeadingAtx);
+    tokenizer.enter(Name::HeaderAtx);
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-        tokenizer.attempt(State::Next(StateName::HeadingAtx(Step::Before)), State::Nok);
-        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
+        tokenizer.attempt(State::Next(StateName::HeaderAtx(Step::Before)), State::Nok);
+        State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::HeadingAtx(Step::Before))
+        State::Redo(StateName::HeaderAtx(Step::Before))
     }
 }
 
@@ -99,8 +99,8 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
     if Some(b'#') == tokenizer.current {
-        tokenizer.enter(Name::HeadingAtxSequence);
-        State::Retry(StateName::HeadingAtx(Step::SequenceOpen { size: 0 }))
+        tokenizer.enter(Name::HeaderAtxSequence);
+        State::Redo(StateName::HeaderAtx(Step::SequenceOpen { size: 0 }))
     } else {
         State::Nok
     }
@@ -113,14 +113,14 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn sequence_open(tokenizer: &mut Tokenizer, size: usize) -> State {
-    if tokenizer.current == Some(b'#') && size < HEADING_ATX_OPENING_FENCE_SIZE_MAX {
+    if tokenizer.current == Some(b'#') && size < HEADER_ATX_OPEN_FENCE_SIZE_MAX {
         tokenizer.consume();
-        State::Next(StateName::HeadingAtx(Step::SequenceOpen { size: size + 1 }))
+        State::Next(StateName::HeaderAtx(Step::SequenceOpen { size: size + 1 }))
     }
     // Always at least one `#`.
     else if matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b' ')) {
-        tokenizer.exit(Name::HeadingAtxSequence);
-        State::Retry(StateName::HeadingAtx(Step::AtBreak))
+        tokenizer.exit(Name::HeaderAtxSequence);
+        State::Redo(StateName::HeaderAtx(Step::AtBreak))
     } else {
         State::Nok
     }
@@ -135,22 +135,19 @@ fn sequence_open(tokenizer: &mut Tokenizer, size: usize) -> State {
 fn at_break(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
-            tokenizer.exit(Name::HeadingAtx);
-            tokenizer.register_resolver(ResolveName::HeadingAtx);
+            tokenizer.exit(Name::HeaderAtx);
+            tokenizer.add_resolver(ResolveName::HeaderAtx);
             // Feel free to interrupt.
             tokenizer.interrupt = false;
             State::Ok
         }
         Some(b'\t' | b' ') => {
-            tokenizer.attempt(
-                State::Next(StateName::HeadingAtx(Step::AtBreak)),
-                State::Nok,
-            );
-            State::Retry(space_or_tab())
+            tokenizer.attempt(State::Next(StateName::HeaderAtx(Step::AtBreak)), State::Nok);
+            State::Redo(space_or_tab())
         }
         Some(b'#') => {
-            tokenizer.enter(Name::HeadingAtxSequence);
-            State::Retry(StateName::HeadingAtx(Step::SequenceFurther))
+            tokenizer.enter(Name::HeaderAtxSequence);
+            State::Redo(StateName::HeaderAtx(Step::SequenceFurther))
         }
         Some(_) => {
             tokenizer.enter_link(
@@ -161,7 +158,7 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
                     content: Content::Text,
                 },
             );
-            State::Retry(StateName::HeadingAtx(Step::Data))
+            State::Redo(StateName::HeaderAtx(Step::Data))
         }
     }
 }
@@ -177,10 +174,10 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
 fn sequence_further(tokenizer: &mut Tokenizer) -> State {
     if let Some(b'#') = tokenizer.current {
         tokenizer.consume();
-        State::Next(StateName::HeadingAtx(Step::SequenceFurther))
+        State::Next(StateName::HeaderAtx(Step::SequenceFurther))
     } else {
-        tokenizer.exit(Name::HeadingAtxSequence);
-        State::Retry(StateName::HeadingAtx(Step::AtBreak))
+        tokenizer.exit(Name::HeaderAtxSequence);
+        State::Redo(StateName::HeaderAtx(Step::AtBreak))
     }
 }
 
@@ -195,11 +192,11 @@ fn data(tokenizer: &mut Tokenizer) -> State {
         // Note: `#` for closing sequence must be preceded by whitespace, otherwise it’s just text.
         None | Some(b'\t' | b'\n' | b' ') => {
             tokenizer.exit(Name::Data);
-            State::Retry(StateName::HeadingAtx(Step::AtBreak))
+            State::Redo(StateName::HeaderAtx(Step::AtBreak))
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::HeadingAtx(Step::Data))
+            State::Next(StateName::HeaderAtx(Step::Data))
         }
     }
 }
@@ -207,16 +204,16 @@ fn data(tokenizer: &mut Tokenizer) -> State {
 /// Resolve heading (atx).
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     let mut index = 0;
-    let mut heading_inside = false;
+    let mut header_inside = false;
     let mut data_start: Option<usize> = None;
     let mut data_end: Option<usize> = None;
 
     while index < tokenizer.events.len() {
         let event = &tokenizer.events[index];
 
-        if event.name == Name::HeadingAtx {
+        if event.name == Name::HeaderAtx {
             if event.kind == Kind::Enter {
-                heading_inside = true;
+                header_inside = true;
             } else {
                 if let Some(start) = data_start {
                     // If `start` is some, `end` is too.
@@ -227,7 +224,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                         0,
                         vec![Event {
                             kind: Kind::Enter,
-                            name: Name::HeadingAtxText,
+                            name: Name::HeaderAtxText,
                             point: tokenizer.events[start].point.clone(),
                             link: None,
                         }],
@@ -241,18 +238,18 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                         0,
                         vec![Event {
                             kind: Kind::Exit,
-                            name: Name::HeadingAtxText,
+                            name: Name::HeaderAtxText,
                             point: tokenizer.events[end].point.clone(),
                             link: None,
                         }],
                     );
                 }
 
-                heading_inside = false;
+                header_inside = false;
                 data_start = None;
                 data_end = None;
             }
-        } else if heading_inside && event.name == Name::Data {
+        } else if header_inside && event.name == Name::Data {
             if event.kind == Kind::Enter {
                 if data_start.is_none() {
                     data_start = Some(index);
@@ -282,7 +279,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::HeadingAtx(step)
+        StateName::HeaderAtx(step)
     }
 }
 

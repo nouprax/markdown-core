@@ -12,10 +12,10 @@
 //! As this construct occurs in flow, like all flow constructs, it must be
 //! followed by an eol (line ending) or eof (end of file).
 //!
-//! Blank lines are sometimes needed, such as to differentiate a [paragraph][]
+//! Blank lines are sometimes needed, such as to differentiate a [paragraph][prose]
 //! from a definition.
 //! In several cases, blank lines are not needed between flow constructs,
-//! such as between two [heading (atx)][heading_atx]s.
+//! such as between two [heading (atx)][header_atx]s.
 //! Sometimes, whether blank lines are present, changes the behavior of how
 //! HTML is rendered, such as whether blank lines are present inside or between
 //! [list items][list_item].
@@ -44,9 +44,9 @@
 //! * [`blank-line.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/blank-line.js)
 //! * [*§ 4.9 Blank lines* in `CommonMark`](https://spec.commonmark.org/0.31/#blank-lines)
 //!
-//! [heading_atx]: crate::construct::heading_atx
+//! [header_atx]: crate::construct::header_atx
 //! [list_item]: crate::construct::list_item
-//! [paragraph]: crate::construct::paragraph
+//! [prose]: crate::construct::prose
 //! [flow]: crate::construct::flow
 
 use crate::construct::partial_space_or_tab::space_or_tab;
@@ -66,9 +66,9 @@ use crate::tokenizer::Tokenizer;
 fn start(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(State::Next(StateName::BlankLine(Step::After)), State::Nok);
-        State::Retry(space_or_tab())
+        State::Redo(space_or_tab())
     } else {
-        State::Retry(StateName::BlankLine(Step::After))
+        State::Redo(StateName::BlankLine(Step::After))
     }
 }
 

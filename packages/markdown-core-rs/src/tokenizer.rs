@@ -30,8 +30,8 @@ pub enum Container {
     BlockQuote,
     /// [List item][crate::construct::list_item].
     ListItem,
-    /// [GFM: Footnote definition][crate::construct::gfm_footnote_definition].
-    GfmFootnoteDefinition,
+    /// [GFM: Footnote definition][crate::construct::footnote_definition].
+    FootnoteDefinition,
 }
 
 /// Info used to tokenize a container.
@@ -49,13 +49,13 @@ pub struct ContainerState {
 
 /// How to handle a byte.
 #[derive(Debug, PartialEq)]
-enum ByteAction {
+enum CodeAction {
     /// This is a normal byte.
     ///
     /// Includes replaced bytes.
     Normal(u8),
     /// This byte must be ignored.
-    Ignore,
+    Skip,
     /// This is a new byte.
     Insert(u8),
 }
@@ -70,8 +70,8 @@ pub enum LabelKind {
     ///       ^^
     /// ```
     ///
-    /// Construct: [Label start (image)][crate::construct::label_start_image].
-    Image,
+    /// Construct: [Label start (image)][crate::construct::label_start_picture].
+    Picture,
     /// Label (image) link.
     ///
     /// ```markdown
@@ -88,8 +88,8 @@ pub enum LabelKind {
     ///       ^^
     /// ```
     ///
-    /// Construct: [GFM: Label start (footnote)][crate::construct::gfm_label_start_footnote].
-    GfmFootnote,
+    /// Construct: [GFM: Label start (footnote)][crate::construct::label_start_footnote].
+    Footnote,
     /// GFM: Label (footnote) link, not matching a footnote definition, so
     /// handled as a label (link) start.
     ///
@@ -99,7 +99,7 @@ pub enum LabelKind {
     /// ```
     ///
     /// Construct: [Label end][crate::construct::label_end].
-    GfmUndefinedFootnote,
+    UndefinedFootnote,
 }
 
 /// Label start, looking for an end.
@@ -149,7 +149,7 @@ struct Attempt {
     /// It is not needed to discard an [`AttemptKind::Attempt`] that has a
     /// `nok` of [`State::Nok`][], because that means it is used in *another*
     /// attempt, which will receive that `Nok`, and has to handle it.
-    progress: Option<Progress>,
+    spot: Option<Spot>,
 }
 
 /// The internal state of a tokenizer.
@@ -157,7 +157,7 @@ struct Attempt {
 /// Not to be confused with states from the state machine, this instead is all
 /// the information on where we currently are and what’s going on.
 #[derive(Clone, Debug)]
-struct Progress {
+struct Spot {
     /// Length of `events`.
     ///
     /// It’s not allowed to remove events, so reverting will just pop stuff off.
@@ -281,7 +281,7 @@ pub struct Tokenizer<'a> {
     /// Used when tokenizing [document content][crate::construct::document].
     pub pierce: bool,
     /// Whether this line is lazy: there are less containers than before.
-    pub lazy: bool,
+    pub lax: bool,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -307,20 +307,20 @@ impl<'a> Tokenizer<'a> {
             interrupt: false,
             pierce: false,
             concrete: false,
-            lazy: false,
+            lax: false,
             resolvers: vec![],
         }
     }
 
     /// Register a resolver.
-    pub fn register_resolver(&mut self, name: ResolveName) {
+    pub fn add_resolver(&mut self, name: ResolveName) {
         if !self.resolvers.contains(&name) {
             self.resolvers.push(name);
         }
     }
 
     /// Register a resolver, before others.
-    pub fn register_resolver_before(&mut self, name: ResolveName) {
+    pub fn add_resolver_before(&mut self, name: ResolveName) {
         if !self.resolvers.contains(&name) {
             self.resolvers.insert(0, name);
         }
@@ -356,10 +356,10 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Prepare for a next byte to get consumed.
-    fn expect(&mut self, byte: Option<u8>) {
+    fn expect(&mut self, code: Option<u8>) {
         debug_assert!(self.consumed, "expected previous byte to be consumed");
         self.consumed = false;
-        self.current = byte;
+        self.current = code;
     }
 
     /// Consume the current byte.
@@ -379,21 +379,21 @@ impl<'a> Tokenizer<'a> {
 
     /// Move to the next (virtual) byte.
     fn move_one(&mut self) {
-        match byte_action(self.parse_state.bytes, &self.point) {
-            ByteAction::Ignore => {
+        match code_action(self.parse_state.source, &self.point) {
+            CodeAction::Skip => {
                 self.point.index += 1;
             }
-            ByteAction::Insert(byte) => {
-                self.previous = Some(byte);
+            CodeAction::Insert(code) => {
+                self.previous = Some(code);
                 self.point.column += 1;
                 self.point.vs += 1;
             }
-            ByteAction::Normal(byte) => {
-                self.previous = Some(byte);
+            CodeAction::Normal(code) => {
+                self.previous = Some(code);
                 self.point.vs = 0;
                 self.point.index += 1;
 
-                if byte == b'\n' {
+                if code == b'\n' {
                     self.point.line += 1;
                     self.point.column = 1;
 
@@ -470,8 +470,8 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Capture the tokenizer progress.
-    fn capture(&mut self) -> Progress {
-        Progress {
+    fn capture(&mut self) -> Spot {
+        Spot {
             previous: self.previous,
             current: self.current,
             point: self.point.clone(),
@@ -481,7 +481,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Apply tokenizer progress.
-    fn free(&mut self, previous: Progress) {
+    fn free(&mut self, previous: Spot) {
         self.previous = previous.previous;
         self.current = previous.current;
         self.point = previous.point;
@@ -503,10 +503,10 @@ impl<'a> Tokenizer<'a> {
         // Always capture (and restore) when checking.
         // No need to capture (and restore) when `nok` is `State::Nok`, because the
         // parent attempt will do it.
-        let progress = Some(self.capture());
+        let spot = Some(self.capture());
         let attempt = Attempt {
             kind: AttemptKind::Check,
-            progress,
+            spot,
             ok,
             nok,
         };
@@ -519,7 +519,7 @@ impl<'a> Tokenizer<'a> {
         // Always capture (and restore) when checking.
         // No need to capture (and restore) when `nok` is `State::Nok`, because the
         // parent attempt will do it.
-        let progress = if nok == State::Nok {
+        let spot = if nok == State::Nok {
             None
         } else {
             Some(self.capture())
@@ -527,7 +527,7 @@ impl<'a> Tokenizer<'a> {
 
         let attempt = Attempt {
             kind: AttemptKind::Attempt,
-            progress,
+            spot,
             ok,
             nok,
         };
@@ -572,8 +572,8 @@ impl<'a> Tokenizer<'a> {
 fn move_point_back(tokenizer: &mut Tokenizer, point: &mut Point) {
     while point.index > 0 {
         point.index -= 1;
-        let action = byte_action(tokenizer.parse_state.bytes, point);
-        if !matches!(action, ByteAction::Ignore) {
+        let action = code_action(tokenizer.parse_state.source, point);
+        if !matches!(action, CodeAction::Skip) {
             point.index += 1;
             break;
         }
@@ -615,8 +615,8 @@ fn push_impl(
             State::Ok | State::Nok => {
                 if let Some(attempt) = tokenizer.attempts.pop() {
                     if attempt.kind == AttemptKind::Check || state == State::Nok {
-                        if let Some(progress) = attempt.progress {
-                            tokenizer.free(progress);
+                        if let Some(spot) = attempt.spot {
+                            tokenizer.free(spot);
                         }
                     }
 
@@ -637,28 +637,28 @@ fn push_impl(
                 let action = if tokenizer.point.index < to.0
                     || (tokenizer.point.index == to.0 && tokenizer.point.vs < to.1)
                 {
-                    Some(byte_action(tokenizer.parse_state.bytes, &tokenizer.point))
+                    Some(code_action(tokenizer.parse_state.source, &tokenizer.point))
                 } else if flush {
                     None
                 } else {
                     break;
                 };
 
-                if let Some(ByteAction::Ignore) = action {
+                if let Some(CodeAction::Skip) = action {
                     tokenizer.move_one();
                 } else {
-                    let byte =
-                        if let Some(ByteAction::Insert(byte) | ByteAction::Normal(byte)) = action {
-                            Some(byte)
+                    let code =
+                        if let Some(CodeAction::Insert(code) | CodeAction::Normal(code)) = action {
+                            Some(code)
                         } else {
                             None
                         };
 
-                    tokenizer.expect(byte);
+                    tokenizer.expect(code);
                     state = call(tokenizer, name);
                 }
             }
-            State::Retry(name) => {
+            State::Redo(name) => {
                 state = call(tokenizer, name);
             }
         }
@@ -676,20 +676,20 @@ fn push_impl(
 }
 
 /// Figure out how to handle a byte.
-fn byte_action(bytes: &[u8], point: &Point) -> ByteAction {
-    if point.index < bytes.len() {
-        let byte = bytes[point.index];
+fn code_action(source: &[u8], point: &Point) -> CodeAction {
+    if point.index < source.len() {
+        let code = source[point.index];
 
-        if byte == b'\r' {
+        if code == b'\r' {
             // CRLF.
-            if point.index < bytes.len() - 1 && bytes[point.index + 1] == b'\n' {
-                ByteAction::Ignore
+            if point.index < source.len() - 1 && source[point.index + 1] == b'\n' {
+                CodeAction::Skip
             }
             // CR.
             else {
-                ByteAction::Normal(b'\n')
+                CodeAction::Normal(b'\n')
             }
-        } else if byte == b'\t' {
+        } else if code == b'\t' {
             let remainder = point.column % TAB_SIZE;
             let vs = if remainder == 0 {
                 0
@@ -700,17 +700,17 @@ fn byte_action(bytes: &[u8], point: &Point) -> ByteAction {
             // On the tab itself, first send it.
             if point.vs == 0 {
                 if vs == 0 {
-                    ByteAction::Normal(byte)
+                    CodeAction::Normal(code)
                 } else {
-                    ByteAction::Insert(byte)
+                    CodeAction::Insert(code)
                 }
             } else if vs == 0 {
-                ByteAction::Normal(b' ')
+                CodeAction::Normal(b' ')
             } else {
-                ByteAction::Insert(b' ')
+                CodeAction::Insert(b' ')
             }
         } else {
-            ByteAction::Normal(byte)
+            CodeAction::Normal(code)
         }
     } else {
         unreachable!("out of bounds")

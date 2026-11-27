@@ -48,7 +48,7 @@ pub fn decode_named(value: &str) -> Option<String> {
 ///
 /// This returns a `String` form of the associated character or a replacement
 /// character for C0 control characters (except for ASCII whitespace), C1
-/// control characters, lone surrogates, noncharacters, and out of range
+/// control characters, lone surrogates, noncharacters, and out of span
 /// characters.
 ///
 /// ## Examples
@@ -80,7 +80,7 @@ pub fn decode_numeric(value: &str, radix: u32) -> String {
             '\0'..='\u{08}' | '\u{0B}' | '\u{0E}'..='\u{1F}' |
             // Control character (DEL) of C0, and C1 controls.
             '\u{7F}'..='\u{9F}'
-            // Lone surrogates, noncharacters, and out of range are handled by
+            // Lone surrogates, noncharacters, and out of span are handled by
             // Rust.
         ) {
             return char.into();

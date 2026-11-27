@@ -44,7 +44,7 @@
 //! * [`FrontmatterFence`][Name::FrontmatterFence]
 //! * [`FrontmatterSequence`][Name::FrontmatterSequence]
 //! * [`FrontmatterChunk`][Name::FrontmatterChunk]
-//! * [`LineEnding`][Name::LineEnding]
+//! * [`LineEnd`][Name::LineEnd]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
@@ -73,7 +73,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         tokenizer.enter(Name::Frontmatter);
         tokenizer.enter(Name::FrontmatterFence);
         tokenizer.enter(Name::FrontmatterSequence);
-        State::Retry(StateName::Frontmatter(Step::OpenSequence {
+        State::Redo(StateName::Frontmatter(Step::OpenSequence {
             marker,
             size: 0,
         }))
@@ -105,9 +105,9 @@ fn open_sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
                 State::Next(StateName::Frontmatter(Step::OpenAfter { marker })),
                 State::Nok,
             );
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         } else {
-            State::Retry(StateName::Frontmatter(Step::OpenAfter { marker }))
+            State::Redo(StateName::Frontmatter(Step::OpenAfter { marker }))
         }
     } else {
         State::Nok
@@ -125,9 +125,9 @@ fn open_sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
 fn open_after(tokenizer: &mut Tokenizer, marker: u8) -> State {
     if let Some(b'\n') = tokenizer.current {
         tokenizer.exit(Name::FrontmatterFence);
-        tokenizer.enter(Name::LineEnding);
+        tokenizer.enter(Name::LineEnd);
         tokenizer.consume();
-        tokenizer.exit(Name::LineEnding);
+        tokenizer.exit(Name::LineEnd);
         tokenizer.attempt(
             State::Next(StateName::Frontmatter(Step::After)),
             State::Next(StateName::Frontmatter(Step::ContentStart { marker })),
@@ -150,7 +150,7 @@ fn close_start(tokenizer: &mut Tokenizer, marker: u8) -> State {
     if tokenizer.current == Some(marker) {
         tokenizer.enter(Name::FrontmatterFence);
         tokenizer.enter(Name::FrontmatterSequence);
-        State::Retry(StateName::Frontmatter(Step::CloseSequence {
+        State::Redo(StateName::Frontmatter(Step::CloseSequence {
             marker,
             size: 0,
         }))
@@ -182,9 +182,9 @@ fn close_sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
                 State::Next(StateName::Frontmatter(Step::CloseAfter)),
                 State::Nok,
             );
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         } else {
-            State::Retry(StateName::Frontmatter(Step::CloseAfter))
+            State::Redo(StateName::Frontmatter(Step::CloseAfter))
         }
     } else {
         State::Nok
@@ -219,10 +219,10 @@ fn close_after(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn content_start(tokenizer: &mut Tokenizer, marker: u8) -> State {
     match tokenizer.current {
-        None | Some(b'\n') => State::Retry(StateName::Frontmatter(Step::ContentEnd { marker })),
+        None | Some(b'\n') => State::Redo(StateName::Frontmatter(Step::ContentEnd { marker })),
         Some(_) => {
             tokenizer.enter(Name::FrontmatterChunk);
-            State::Retry(StateName::Frontmatter(Step::ContentInside { marker }))
+            State::Redo(StateName::Frontmatter(Step::ContentInside { marker }))
         }
     }
 }
@@ -239,7 +239,7 @@ fn content_inside(tokenizer: &mut Tokenizer, marker: u8) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::FrontmatterChunk);
-            State::Retry(StateName::Frontmatter(Step::ContentEnd { marker }))
+            State::Redo(StateName::Frontmatter(Step::ContentEnd { marker }))
         }
         Some(_) => {
             tokenizer.consume();
@@ -260,9 +260,9 @@ fn content_end(tokenizer: &mut Tokenizer, marker: u8) -> State {
     match tokenizer.current {
         None => State::Nok,
         Some(b'\n') => {
-            tokenizer.enter(Name::LineEnding);
+            tokenizer.enter(Name::LineEnd);
             tokenizer.consume();
-            tokenizer.exit(Name::LineEnding);
+            tokenizer.exit(Name::LineEnd);
             tokenizer.attempt(
                 State::Next(StateName::Frontmatter(Step::After)),
                 State::Next(StateName::Frontmatter(Step::ContentStart { marker })),

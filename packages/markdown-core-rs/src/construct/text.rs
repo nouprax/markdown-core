@@ -1,7 +1,7 @@
 //! The text content type.
 //!
 //! **Text** contains phrasing content such as
-//! [attention][crate::construct::attention] (emphasis, gfm strikethrough, strong),
+//! [attention] (emphasis, gfm strikethrough, strong),
 //! [raw (text)][crate::construct::raw_text] (code (text), math (text)), and actual text.
 //!
 //! The constructs found in text are:
@@ -11,24 +11,24 @@
 //! * [Character escape][crate::construct::character_escape]
 //! * [Character reference][crate::construct::character_reference]
 //! * [Raw (text)][crate::construct::raw_text] (code (text), math (text))
-//! * [GFM: Label start (footnote)][crate::construct::gfm_label_start_footnote]
-//! * [GFM: Task list item check][crate::construct::gfm_task_list_item_check]
+//! * [GFM: Label start (footnote)][crate::construct::label_start_footnote]
+//! * [GFM: Task list item check][crate::construct::task_list_item_check]
 //! * [Hard break (escape)][crate::construct::hard_break_escape]
 //! * [HTML (text)][crate::construct::html_text]
-//! * [Label start (image)][crate::construct::label_start_image]
+//! * [Label start (image)][crate::construct::label_start_picture]
 //! * [Label start (link)][crate::construct::label_start_link]
 //! * [Label end][crate::construct::label_end]
 //!
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
 //! > [whitespace][crate::construct::partial_whitespace].
 
-use crate::choice::{self, Choice, Entry, List};
-use crate::construct::gfm_autolink_literal::resolve as resolve_gfm_autolink_literal;
+use crate::choice::{self, Choice, Item, List};
+use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
-    attention, autolink, character_escape, character_reference, gfm_autolink_literal,
-    gfm_label_start_footnote, gfm_task_list_item_check, hard_break_escape, html_text, label_end,
-    label_start_image, label_start_link, partial_data, raw_text,
+    attention, autolink, autolink_literal, character_escape, character_reference,
+    hard_break_escape, html_text, label_end, label_start_footnote, label_start_link,
+    label_start_picture, partial_data, raw_text, task_list_item_check,
 };
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -40,55 +40,55 @@ use crate::tokenizer::Tokenizer;
 /// Data when none of these matched.
 pub const CHOICE: Choice = Choice::new(
     &[
-        Entry {
-            starts: label_start_image::STARTS,
-            step: StateName::LabelStartImage(label_start_image::Step::Start),
+        Item {
+            starts: label_start_picture::STARTS,
+            step: StateName::LabelStartPicture(label_start_picture::Step::Start),
         },
-        Entry {
+        Item {
             starts: raw_text::STARTS,
             step: StateName::RawText(raw_text::Step::Start),
         },
-        Entry {
+        Item {
             starts: character_reference::STARTS,
             step: StateName::CharacterReference(character_reference::Step::Start),
         },
-        Entry {
+        Item {
             starts: attention::STARTS,
             step: StateName::Attention(attention::Step::Start),
         },
-        Entry {
+        Item {
             starts: autolink::STARTS,
             step: StateName::Autolink(autolink::Step::Start),
         },
-        Entry {
+        Item {
             starts: html_text::STARTS,
             step: StateName::HtmlText(html_text::Step::Start),
         },
-        Entry {
-            starts: gfm_autolink_literal::PROTOCOL,
-            step: StateName::GfmAutolinkLiteral(gfm_autolink_literal::Step::ProtocolStart),
+        Item {
+            starts: autolink_literal::PROTOCOL,
+            step: StateName::AutolinkLiteral(autolink_literal::Step::ProtocolStart),
         },
-        Entry {
-            starts: gfm_autolink_literal::WWW,
-            step: StateName::GfmAutolinkLiteral(gfm_autolink_literal::Step::WwwStart),
+        Item {
+            starts: autolink_literal::WWW,
+            step: StateName::AutolinkLiteral(autolink_literal::Step::WwwStart),
         },
-        Entry {
-            starts: gfm_label_start_footnote::STARTS,
-            step: StateName::GfmLabelStartFootnote(gfm_label_start_footnote::Step::Start),
+        Item {
+            starts: label_start_footnote::STARTS,
+            step: StateName::LabelStartFootnote(label_start_footnote::Step::Start),
         },
-        Entry {
+        Item {
             starts: label_start_link::STARTS,
             step: StateName::LabelStartLink(label_start_link::Step::Start),
         },
-        Entry {
+        Item {
             starts: character_escape::STARTS,
             step: StateName::CharacterEscape(character_escape::Step::Start),
         },
-        Entry {
+        Item {
             starts: hard_break_escape::STARTS,
             step: StateName::HardBreakEscape(hard_break_escape::Step::Start),
         },
-        Entry {
+        Item {
             starts: label_end::STARTS,
             step: StateName::LabelEnd(label_end::Step::Start),
         },
@@ -112,8 +112,8 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Text(Step::Before)),
         State::Next(StateName::Text(Step::Before)),
     );
-    State::Retry(StateName::GfmTaskListItemCheck(
-        gfm_task_list_item_check::Step::Start,
+    State::Redo(StateName::TaskListItemCheck(
+        task_list_item_check::Step::Start,
     ))
 }
 
@@ -125,11 +125,11 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
-        tokenizer.register_resolver(ResolveName::Data);
-        tokenizer.register_resolver(ResolveName::Text);
+        tokenizer.add_resolver(ResolveName::Data);
+        tokenizer.add_resolver(ResolveName::Text);
         State::Ok
     } else {
-        State::Retry(choice::start(List::Text))
+        State::Redo(choice::start(List::Text))
     }
 }
 
@@ -141,7 +141,7 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before_data(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(State::Next(StateName::Text(Step::Before)), State::Nok);
-    State::Retry(StateName::Data(partial_data::Step::Start {
+    State::Redo(StateName::Data(partial_data::Step::Start {
         list: List::Text,
     }))
 }
@@ -150,7 +150,7 @@ fn before_data(tokenizer: &mut Tokenizer) -> State {
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     resolve_whitespace(tokenizer, true, true);
 
-    resolve_gfm_autolink_literal(tokenizer);
+    resolve_autolink_literal(tokenizer);
 
     tokenizer.map.consume(&mut tokenizer.events);
     None

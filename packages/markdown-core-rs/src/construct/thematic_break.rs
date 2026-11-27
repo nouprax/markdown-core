@@ -32,7 +32,7 @@
 //! For these reasons, it is recommend to not use spaces or tabs between the
 //! markers.
 //! Thematic breaks formed with dashes (without whitespace) can also form
-//! [heading (setext)][heading_setext].
+//! [heading (setext)][header_setext].
 //! As dashes and underscores frequently occur in natural language and URLs, it
 //! is recommended to use asterisks for thematic breaks to distinguish from
 //! such use.
@@ -52,7 +52,7 @@
 //! * [*§ 4.1 Thematic breaks* in `CommonMark`](https://spec.commonmark.org/0.31/#thematic-breaks)
 //!
 //! [flow]: crate::construct::flow
-//! [heading_setext]: crate::construct::heading_setext
+//! [header_setext]: crate::construct::header_setext
 //! [list-item]: crate::construct::list_item
 //! [html]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-hr-element
 
@@ -64,7 +64,7 @@ use crate::tokenizer::Tokenizer;
 use crate::util::constant::{TAB_SIZE, THEMATIC_BREAK_MARKER_COUNT_MIN};
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\t *-_");
+pub const STARTS: Starts = Starts::Codes(b"\t *-_");
 
 /// Start of thematic break.
 ///
@@ -80,9 +80,9 @@ fn start(tokenizer: &mut Tokenizer) -> State {
             State::Next(StateName::ThematicBreak(Step::Before)),
             State::Nok,
         );
-        State::Retry(space_or_tab_min_max(0, TAB_SIZE - 1))
+        State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1))
     } else {
-        State::Retry(StateName::ThematicBreak(Step::Before))
+        State::Redo(StateName::ThematicBreak(Step::Before))
     }
 }
 
@@ -94,7 +94,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
-        Some(b'*' | b'-' | b'_') => State::Retry(StateName::ThematicBreak(Step::AtBreak {
+        Some(b'*' | b'-' | b'_') => State::Redo(StateName::ThematicBreak(Step::AtBreak {
             marker: tokenizer.current.unwrap(),
             size: 0,
         })),
@@ -111,7 +111,7 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 fn at_break(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
     if tokenizer.current == Some(marker) {
         tokenizer.enter(Name::ThematicBreakSequence);
-        State::Retry(StateName::ThematicBreak(Step::Sequence { marker, size }))
+        State::Redo(StateName::ThematicBreak(Step::Sequence { marker, size }))
     } else if size >= THEMATIC_BREAK_MARKER_COUNT_MIN
         && matches!(tokenizer.current, None | Some(b'\n'))
     {
@@ -143,10 +143,10 @@ fn sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
             State::Next(StateName::ThematicBreak(Step::AtBreak { marker, size })),
             State::Nok,
         );
-        State::Retry(space_or_tab())
+        State::Redo(space_or_tab())
     } else {
         tokenizer.exit(Name::ThematicBreakSequence);
-        State::Retry(StateName::ThematicBreak(Step::AtBreak { marker, size }))
+        State::Redo(StateName::ThematicBreak(Step::AtBreak { marker, size }))
     }
 }
 

@@ -31,10 +31,10 @@
 //!
 //! ## Tokens
 //!
-//! * [`GfmTaskListItemCheck`][Name::GfmTaskListItemCheck]
-//! * [`GfmTaskListItemMarker`][Name::GfmTaskListItemMarker]
-//! * [`GfmTaskListItemValueChecked`][Name::GfmTaskListItemValueChecked]
-//! * [`GfmTaskListItemValueUnchecked`][Name::GfmTaskListItemValueUnchecked]
+//! * [`TaskListItemCheck`][Name::TaskListItemCheck]
+//! * [`TaskListItemMarker`][Name::TaskListItemMarker]
+//! * [`TaskListItemValueChecked`][Name::TaskListItemValueChecked]
+//! * [`TaskListItemValueUnchecked`][Name::TaskListItemValueUnchecked]
 //!
 //! ## References
 //!
@@ -57,11 +57,11 @@ use crate::tokenizer::Tokenizer;
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.document.first && tokenizer.current == Some(b'[') && tokenizer.previous.is_none() {
-        tokenizer.enter(Name::GfmTaskListItemCheck);
-        tokenizer.enter(Name::GfmTaskListItemMarker);
+        tokenizer.enter(Name::TaskListItemCheck);
+        tokenizer.enter(Name::TaskListItemMarker);
         tokenizer.consume();
-        tokenizer.exit(Name::GfmTaskListItemMarker);
-        State::Next(StateName::GfmTaskListItemCheck(Step::Inside))
+        tokenizer.exit(Name::TaskListItemMarker);
+        State::Next(StateName::TaskListItemCheck(Step::Inside))
     } else {
         State::Nok
     }
@@ -76,16 +76,16 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b'\t' | b'\n' | b' ') => {
-            tokenizer.enter(Name::GfmTaskListItemValueUnchecked);
+            tokenizer.enter(Name::TaskListItemValueUnchecked);
             tokenizer.consume();
-            tokenizer.exit(Name::GfmTaskListItemValueUnchecked);
-            State::Next(StateName::GfmTaskListItemCheck(Step::Close))
+            tokenizer.exit(Name::TaskListItemValueUnchecked);
+            State::Next(StateName::TaskListItemCheck(Step::Close))
         }
         Some(b'X' | b'x') => {
-            tokenizer.enter(Name::GfmTaskListItemValueChecked);
+            tokenizer.enter(Name::TaskListItemValueChecked);
             tokenizer.consume();
-            tokenizer.exit(Name::GfmTaskListItemValueChecked);
-            State::Next(StateName::GfmTaskListItemCheck(Step::Close))
+            tokenizer.exit(Name::TaskListItemValueChecked);
+            State::Next(StateName::TaskListItemCheck(Step::Close))
         }
         _ => State::Nok,
     }
@@ -100,11 +100,11 @@ fn inside(tokenizer: &mut Tokenizer) -> State {
 fn close(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         Some(b']') => {
-            tokenizer.enter(Name::GfmTaskListItemMarker);
+            tokenizer.enter(Name::TaskListItemMarker);
             tokenizer.consume();
-            tokenizer.exit(Name::GfmTaskListItemMarker);
-            tokenizer.exit(Name::GfmTaskListItemCheck);
-            State::Next(StateName::GfmTaskListItemCheck(Step::After))
+            tokenizer.exit(Name::TaskListItemMarker);
+            tokenizer.exit(Name::TaskListItemCheck);
+            State::Next(StateName::TaskListItemCheck(Step::After))
         }
         _ => State::Nok,
     }
@@ -125,10 +125,10 @@ fn after(tokenizer: &mut Tokenizer) -> State {
         Some(b'\t' | b' ') => {
             tokenizer.check(State::Ok, State::Nok);
             tokenizer.attempt(
-                State::Next(StateName::GfmTaskListItemCheck(Step::AfterSpaceOrTab)),
+                State::Next(StateName::TaskListItemCheck(Step::AfterSpaceOrTab)),
                 State::Nok,
             );
-            State::Retry(space_or_tab())
+            State::Redo(space_or_tab())
         }
         // EOF, or non-whitespace, both wrong.
         _ => State::Nok,
@@ -162,7 +162,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::GfmTaskListItemCheck(step)
+        StateName::TaskListItemCheck(step)
     }
 }
 

@@ -21,7 +21,7 @@
 //! Labels can contain line endings and whitespace, but they are not allowed to
 //! contain blank lines, and they must not be blank themselves.
 //!
-//! The label is interpreted as the [string][] content type.
+//! The label is interpreted as the [string][plain] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -41,7 +41,7 @@
 //! >
 //! > The thing that contains `x` is not a single thing when parsing markdown,
 //! > but instead constists of an opening
-//! > ([label start (image)][label_start_image] or
+//! > ([label start (image)][label_start_picture] or
 //! > [label start (link)][label_start_link]) and a closing
 //! > ([label end][label_end]), so as to allow further phrasing such as
 //! > [code (text)][raw_text] or [attention][].
@@ -51,11 +51,11 @@
 //! * [`micromark-factory-label/index.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-factory-label/dev/index.js)
 //!
 //! [definition]: crate::construct::definition
-//! [string]: crate::construct::string
+//! [plain]: crate::construct::plain
 //! [attention]: crate::construct::attention
 //! [character_escape]: crate::construct::character_escape
 //! [character_reference]: crate::construct::character_reference
-//! [label_start_image]: crate::construct::label_start_image
+//! [label_start_picture]: crate::construct::label_start_picture
 //! [label_start_link]: crate::construct::label_start_link
 //! [label_end]: crate::construct::label_end
 //! [raw_text]: crate::construct::raw_text
@@ -131,8 +131,8 @@ fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
                     State::Next(StateName::Label(Step::EolAfter(label))),
                     State::Nok,
                 );
-                State::Retry(space_or_tab_eol_with_options(Options {
-                    content: Some(Content::String),
+                State::Redo(space_or_tab_eol_with_options(Options {
+                    content: Some(Content::Plain),
                     connect: label.connect,
                 }))
             }
@@ -150,7 +150,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
                     Link {
                         previous: None,
                         next: None,
-                        content: Content::String,
+                        content: Content::Plain,
                     },
                 );
 
@@ -161,7 +161,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
                     label.connect = true;
                 }
 
-                State::Retry(StateName::Label(Step::Inside(label)))
+                State::Redo(StateName::Label(Step::Inside(label)))
             }
         }
     }
@@ -176,7 +176,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
 /// ```
 fn eol_after(mut label: Label) -> State {
     label.connect = true;
-    State::Retry(StateName::Label(Step::AtBreak(label)))
+    State::Redo(StateName::Label(Step::AtBreak(label)))
 }
 
 /// In label, in text.
@@ -189,19 +189,19 @@ fn inside(tokenizer: &mut Tokenizer, mut label: Label) -> State {
     match tokenizer.current {
         None | Some(b'\n' | b'[' | b']') => {
             tokenizer.exit(Name::Data);
-            State::Retry(StateName::Label(Step::AtBreak(label)))
+            State::Redo(StateName::Label(Step::AtBreak(label)))
         }
-        Some(byte) => {
+        Some(code) => {
             if label.size > LINK_REFERENCE_SIZE_MAX {
                 tokenizer.exit(Name::Data);
-                State::Retry(StateName::Label(Step::AtBreak(label)))
+                State::Redo(StateName::Label(Step::AtBreak(label)))
             } else {
                 tokenizer.consume();
                 label.size += 1;
-                if !matches!(byte, b'\t' | b' ') {
+                if !matches!(code, b'\t' | b' ') {
                     label.seen = true;
                 }
-                State::Next(StateName::Label(if byte == b'\\' {
+                State::Next(StateName::Label(if code == b'\\' {
                     Step::Escape(label)
                 } else {
                     Step::Inside(label)
@@ -224,7 +224,7 @@ fn escape(tokenizer: &mut Tokenizer, mut label: Label) -> State {
             label.size += 1;
             State::Next(StateName::Label(Step::Inside(label)))
         }
-        _ => State::Retry(StateName::Label(Step::Inside(label))),
+        _ => State::Redo(StateName::Label(Step::Inside(label))),
     }
 }
 
