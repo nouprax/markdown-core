@@ -22,8 +22,8 @@
 
 use crate::choice::{self, Choice, Entry, List};
 use crate::construct::{
-    blank_line, block_identifier, callout, code_indented, comment, content, formula, heading_atx,
-    heading_setext, html_flow, raw_flow, table, thematic_break,
+    blank_line, block_identifier, callout, code_indented, comment, content, directive_leaf,
+    formula, heading_atx, heading_setext, html_flow, raw_flow, table, thematic_break,
 };
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
@@ -66,6 +66,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: thematic_break::STARTS,
             step: StateName::ThematicBreak(thematic_break::Step::Start),
+        },
+        Entry {
+            starts: directive_leaf::STARTS,
+            step: StateName::DirectiveLeaf(directive_leaf::Step::Start),
         },
         Entry {
             starts: comment::FLOW,

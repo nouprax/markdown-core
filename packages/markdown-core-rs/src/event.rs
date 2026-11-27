@@ -266,6 +266,131 @@ pub enum Name {
     ///         ^^^^
     /// ```
     CalloutVariant,
+    /// Whole directive (leaf).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [flow content][crate::construct::flow]
+    /// * **Content model**:
+    ///   [`DirectiveLeafSequence`][Name::DirectiveLeafSequence],
+    ///   [`DirectiveNameText`][Name::DirectiveNameText],
+    ///   [`DirectiveLabel`][Name::DirectiveLabel],
+    ///   [`Attributes`][Name::Attributes],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`directive_leaf`][crate::construct::directive_leaf]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | ::a[b]{.c}
+    ///     ^^^^^^^^^^
+    /// ```
+    DirectiveLeaf,
+    /// Directive (leaf) sequence.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveLeaf`][Name::DirectiveLeaf]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_leaf`][crate::construct::directive_leaf]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | ::a[b]
+    ///     ^^
+    /// ```
+    DirectiveLeafSequence,
+    /// Whole directive (container).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [document content][crate::construct::document]
+    /// * **Content model**:
+    ///   [`DirectiveContainerFence`][Name::DirectiveContainerFence],
+    ///   [flow content][crate::construct::flow]
+    /// * **Construct**:
+    ///   [`directive_container`][crate::construct::directive_container]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | :::a
+    ///     ^^^^
+    /// > | b
+    ///     ^
+    /// > | :::
+    ///     ^^^
+    /// ```
+    DirectiveContainer,
+    /// Directive (container) fence.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveContainer`][Name::DirectiveContainer]
+    /// * **Content model**:
+    ///   [`DirectiveContainerSequence`][Name::DirectiveContainerSequence],
+    ///   [`DirectiveNameText`][Name::DirectiveNameText],
+    ///   [`DirectiveLabel`][Name::DirectiveLabel],
+    ///   [`DirectiveClass`][Name::DirectiveClass],
+    ///   [`Attributes`][Name::Attributes],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`directive_container`][crate::construct::directive_container]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | :::a
+    ///     ^^^^
+    ///   | b
+    /// > | :::
+    ///     ^^^
+    /// ```
+    DirectiveContainerFence,
+    /// Directive (container) sequence.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveContainerFence`][Name::DirectiveContainerFence]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_container`][crate::construct::directive_container]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | :::a
+    ///     ^^^
+    /// ```
+    DirectiveContainerSequence,
+    /// Class word of a nameless directive (container).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveContainerFence`][Name::DirectiveContainerFence]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_container`][crate::construct::directive_container]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | ::: a
+    ///         ^
+    /// ```
+    DirectiveClass,
     /// Whole directive (text).
     ///
     /// ## Info
@@ -3591,6 +3716,8 @@ pub enum Block {
     Frontmatter,
     Comment,
     Identifier,
+    DirectiveLeaf,
+    DirectiveContainer,
 }
 
 /// Inlines.
@@ -3650,6 +3777,8 @@ impl Name {
             Name::FormulaFlow => Role::Block(Block::Formula),
             Name::BlockIdentifierLine => Role::Block(Block::Identifier),
             Name::Frontmatter => Role::Block(Block::Frontmatter),
+            Name::DirectiveLeaf => Role::Block(Block::DirectiveLeaf),
+            Name::DirectiveContainer => Role::Block(Block::DirectiveContainer),
             Name::Data => Role::Inline(Inline::Data),
             Name::CharacterEscape => Role::Inline(Inline::CharacterEscape),
             Name::CharacterReference => Role::Inline(Inline::CharacterReference),
@@ -3712,6 +3841,10 @@ impl Name {
             | Name::CrossLinkLabel
             | Name::CrossLinkMarker
             | Name::DirectiveTextMarker
+            | Name::DirectiveLeafSequence
+            | Name::DirectiveContainerFence
+            | Name::DirectiveContainerSequence
+            | Name::DirectiveClass
             | Name::DirectiveNameText
             | Name::DirectiveLabel
             | Name::DirectiveLabelMarker
@@ -3832,7 +3965,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 91] = [
+pub const VOID_EVENTS: [Name; 94] = [
     Name::AttributesMarker,
     Name::AttributeId,
     Name::AttributeClass,
@@ -3907,6 +4040,9 @@ pub const VOID_EVENTS: [Name; 91] = [
     Name::CrossLinkLabel,
     Name::CrossLinkMarker,
     Name::DirectiveTextMarker,
+    Name::DirectiveLeafSequence,
+    Name::DirectiveContainerSequence,
+    Name::DirectiveClass,
     Name::DirectiveNameText,
     Name::DirectiveLabelMarker,
     Name::DirectiveLabelText,

@@ -386,6 +386,41 @@ impl<'a> Compiler<'a> {
             Block::List => self.list(index),
             Block::Definition => self.reference(index),
             Block::Table => self.table(index),
+            Block::DirectiveLeaf => {
+                let (name, label) = self.directive_head(index);
+                Node::new(
+                    Kind::DirectiveBlock {
+                        name,
+                        label,
+                        content: vec![],
+                    },
+                    self.runs(self.lead(index), self.end(index)),
+                )
+            }
+            Block::DirectiveContainer => {
+                let fence = self.child(index, Name::DirectiveContainerFence);
+                let (name, label) = fence.map_or((None, None), |fence| self.directive_head(fence));
+                let runs = Self::whole(self.lead(index), self.last(index).1);
+                let content = self.block_content(index);
+                let mut node = Node::new(
+                    Kind::DirectiveBlock {
+                        name,
+                        label,
+                        content,
+                    },
+                    runs,
+                );
+                if let Some(fence) = fence {
+                    if let Some(attributes) = self.child(fence, Name::Attributes) {
+                        self.attributes(attributes, &mut node);
+                    }
+                    // A nameless directive’s class word is one class.
+                    if let Some(class) = self.child(fence, Name::DirectiveClass) {
+                        node.attributes.classes.push(self.text(class).to_string());
+                    }
+                }
+                node
+            }
             Block::Footnote => {
                 let label = self
                     .child(index, Name::FootnoteDefinitionPrefix)
@@ -1445,7 +1480,22 @@ impl<'a> Compiler<'a> {
             .child(index, Name::DirectiveNameText)
             .map(|name| self.text(name).to_string())
             .unwrap_or_default();
-        let label = self.child(index, Name::DirectiveLabel).map(|label| {
+        let label = self.directive_label(index);
+        Kind::Directive { name, label }
+    }
+
+    /// The name and the label of the directive (leaf) at `index`, or of the
+    /// opening fence of a directive (container).
+    fn directive_head(&mut self, index: usize) -> (Option<String>, Option<Box<Node>>) {
+        let name = self
+            .child(index, Name::DirectiveNameText)
+            .map(|name| self.text(name).to_string());
+        (name, self.directive_label(index))
+    }
+
+    /// The label of the directive at `index`, from bracket to bracket.
+    fn directive_label(&mut self, index: usize) -> Option<Box<Node>> {
+        self.child(index, Name::DirectiveLabel).map(|label| {
             let runs = self.runs(self.start(label), self.end(label));
             Box::new(Node::new(
                 Kind::DirectiveLabel {
@@ -1453,8 +1503,7 @@ impl<'a> Compiler<'a> {
                 },
                 runs,
             ))
-        });
-        Kind::Directive { name, label }
+        })
     }
 
     /// A cross link or a cross embed.

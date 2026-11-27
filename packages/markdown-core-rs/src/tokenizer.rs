@@ -32,6 +32,8 @@ pub enum Container {
     ListItem,
     /// [GFM: Footnote definition][crate::construct::footnote_definition].
     FootnoteDefinition,
+    /// [Directive (container)][crate::construct::directive_container].
+    Directive,
 }
 
 /// Info used to tokenize a container.
@@ -45,6 +47,8 @@ pub struct ContainerState {
     pub blank_initial: bool,
     /// Size.
     pub size: usize,
+    /// Whether the closing line was seen, after which the container ends.
+    pub closed: bool,
 }
 
 /// How to handle a byte.
@@ -194,6 +198,10 @@ pub struct Document<'a> {
     pub stack: Vec<ContainerState>,
     /// How many open containers continued on this line.
     pub continued: usize,
+    /// The open directive (container) whose closing fence this line is, by
+    /// its index in `stack`: it ends unless a container inside it goes on
+    /// on the line, or flow that is concrete.
+    pub closer: Option<usize>,
     /// Index of the last `data`.
     pub data: Option<usize>,
     /// Container exits by line number.

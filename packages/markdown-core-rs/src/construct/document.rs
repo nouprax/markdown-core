@@ -10,7 +10,8 @@
 //! * [GFM: Footnote definition][crate::construct::footnote_definition]
 
 use crate::construct::{
-    block_quote, flow, footnote_definition, frontmatter, list_item, partial_bom,
+    block_quote, directive_container, flow, footnote_definition, frontmatter, list_item,
+    partial_bom,
 };
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -20,10 +21,11 @@ use crate::util::skip;
 use alloc::{boxed::Box, vec::Vec};
 
 /// Containers, in the order a new one is tried.
-const CONTAINERS: [Container; 3] = [
+const CONTAINERS: [Container; 4] = [
     Container::BlockQuote,
     Container::ListItem,
     Container::FootnoteDefinition,
+    Container::Directive,
 ];
 
 impl Container {
@@ -31,6 +33,7 @@ impl Container {
     fn start(self) -> StateName {
         match self {
             Container::BlockQuote => StateName::BlockQuote(block_quote::Step::Start),
+            Container::Directive => StateName::DirectiveContainer(directive_container::Step::Start),
             Container::ListItem => StateName::ListItem(list_item::Step::Start),
             Container::FootnoteDefinition => {
                 StateName::FootnoteDefinition(footnote_definition::Step::Start)
@@ -42,6 +45,9 @@ impl Container {
     pub fn cont(self) -> StateName {
         match self {
             Container::BlockQuote => StateName::BlockQuote(block_quote::Step::ContStart),
+            Container::Directive => {
+                StateName::DirectiveContainer(directive_container::Step::ContStart)
+            }
             Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
             Container::FootnoteDefinition => {
                 StateName::FootnoteDefinition(footnote_definition::Step::ContStart)
@@ -53,6 +59,7 @@ impl Container {
     fn name(self) -> Name {
         match self {
             Container::BlockQuote => Name::BlockQuote,
+            Container::Directive => Name::DirectiveContainer,
             Container::ListItem => Name::ListItem,
             Container::FootnoteDefinition => Name::FootnoteDefinition,
         }
@@ -188,6 +195,24 @@ fn container_new_before(tokenizer: &mut Tokenizer) -> State {
         }
     }
 
+    // A closing fence of the deepest container that went on, a directive,
+    // ends it: the containers inside it that did not go on close first.
+    if let Some(index) = tokenizer.document.closer.take() {
+        if index + 1 == tokenizer.document.continued {
+            if tokenizer.document.continued != tokenizer.document.stack.len() {
+                exit_containers(tokenizer, &Phase::Prefix);
+            }
+            let size = tokenizer.document.stack[index].size;
+            tokenizer.attempt(
+                State::Next(StateName::Document(Step::CloserAfter)),
+                State::Next(StateName::Document(Step::ContainerNewBefore)),
+            );
+            return State::Redo(StateName::DirectiveContainer(
+                directive_container::Step::CloseStart { size },
+            ));
+        }
+    }
+
     // Add a placeholder for a new container at the end of the stack, and
     // swap it with the first existing container that did not continue.
     let tail = tokenizer.document.stack.len();
@@ -195,12 +220,27 @@ fn container_new_before(tokenizer: &mut Tokenizer) -> State {
         kind: CONTAINERS[0],
         blank_initial: false,
         size: 0,
+        closed: false,
     });
     tokenizer
         .document
         .stack
         .swap(tokenizer.document.continued, tail);
     State::Redo(StateName::Document(Step::ContainerNew { index: 0 }))
+}
+
+/// After the closing fence of a directive (container), which ends after
+/// this line.
+///
+/// ```markdown
+///   | :::a
+/// > | :::
+///        ^
+/// ```
+fn closer_after(tokenizer: &mut Tokenizer) -> State {
+    let index = tokenizer.document.continued - 1;
+    tokenizer.document.stack[index].closed = true;
+    State::Redo(StateName::Document(Step::ContainersAfter))
 }
 
 /// At new container `index` of [`CONTAINERS`][], or a later one.
@@ -225,6 +265,7 @@ fn container_new(tokenizer: &mut Tokenizer, index: usize) -> State {
             kind,
             blank_initial: false,
             size: 0,
+            closed: false,
         };
         tokenizer.attempt(
             State::Next(StateName::Document(Step::ContainerNewAfter)),
@@ -444,6 +485,7 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
         State::Ok
     } else {
         tokenizer.document.continued = 0;
+        tokenizer.document.closer = None;
         tokenizer.document.open = document_lazy_continuation_current;
         // Containers would only be interrupting if we’ve continued.
         tokenizer.interrupt = false;
@@ -615,6 +657,7 @@ pub enum Step {
     ContainerNewBefore,
     ContainerNew { index: usize },
     ContainerNewAfter,
+    CloserAfter,
     ContainersAfter,
     FlowEnd,
     FlowInside,
@@ -636,6 +679,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ContainerNewBefore => container_new_before(tokenizer),
         Step::ContainerNew { index } => container_new(tokenizer, index),
         Step::ContainerNewAfter => container_new_after(tokenizer),
+        Step::CloserAfter => closer_after(tokenizer),
         Step::ContainersAfter => containers_after(tokenizer),
         Step::FlowEnd => flow_end(tokenizer),
         Step::FlowInside => flow_inside(tokenizer),
