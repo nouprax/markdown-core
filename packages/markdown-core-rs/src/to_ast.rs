@@ -1214,6 +1214,7 @@ impl<'a> Compiler<'a> {
             }
             Inline::Media => self.link(index),
             Inline::CrossLink => self.cross_link(index),
+            Inline::Directive => self.directive(index),
             Inline::Topic => Kind::Topic {
                 name: self
                     .child(index, Name::TopicText)
@@ -1436,6 +1437,24 @@ impl<'a> Compiler<'a> {
             literal = literal[1..literal.len() - 1].to_string();
         }
         literal
+    }
+
+    /// A directive in text: its name, and its label from bracket to bracket.
+    fn directive(&mut self, index: usize) -> Kind {
+        let name = self
+            .child(index, Name::DirectiveNameText)
+            .map(|name| self.text(name).to_string())
+            .unwrap_or_default();
+        let label = self.child(index, Name::DirectiveLabel).map(|label| {
+            let runs = self.runs(self.start(label), self.end(label));
+            Box::new(Node::new(
+                Kind::DirectiveLabel {
+                    content: self.label_content(label),
+                },
+                runs,
+            ))
+        });
+        Kind::Directive { name, label }
     }
 
     /// A cross link or a cross embed.

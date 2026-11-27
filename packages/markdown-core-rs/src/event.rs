@@ -266,6 +266,118 @@ pub enum Name {
     ///         ^^^^
     /// ```
     CalloutVariant,
+    /// Whole directive (text).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text]
+    /// * **Content model**:
+    ///   [`DirectiveTextMarker`][Name::DirectiveTextMarker],
+    ///   [`DirectiveNameText`][Name::DirectiveNameText],
+    ///   [`DirectiveLabel`][Name::DirectiveLabel],
+    ///   [`Attributes`][Name::Attributes]
+    /// * **Construct**:
+    ///   [`directive_text`][crate::construct::directive_text]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a :b[c]{.d} e
+    ///       ^^^^^^^^^
+    /// ```
+    DirectiveText,
+    /// Directive (text) marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveText`][Name::DirectiveText]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_text`][crate::construct::directive_text]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a :b[c] d
+    ///       ^
+    /// ```
+    DirectiveTextMarker,
+    /// Directive name.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveText`][Name::DirectiveText]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_text`][crate::construct::directive_text]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a :b[c] d
+    ///        ^
+    /// ```
+    DirectiveNameText,
+    /// Directive label.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveText`][Name::DirectiveText]
+    /// * **Content model**:
+    ///   [`DirectiveLabelMarker`][Name::DirectiveLabelMarker],
+    ///   [`DirectiveLabelText`][Name::DirectiveLabelText]
+    /// * **Construct**:
+    ///   [`directive_text`][crate::construct::directive_text]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a :b[c] d
+    ///         ^^^
+    /// ```
+    DirectiveLabel,
+    /// Directive label marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveLabel`][Name::DirectiveLabel]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_text`][crate::construct::directive_text]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a :b[c] d
+    ///         ^ ^
+    /// ```
+    DirectiveLabelMarker,
+    /// Directive label text: a chunk of it, on one line.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DirectiveLabel`][Name::DirectiveLabel]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`directive_text`][crate::construct::directive_text]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a :b[c] d
+    ///          ^
+    /// ```
+    DirectiveLabelText,
     /// Whole cross link or cross embed.
     ///
     /// ## Info
@@ -3501,6 +3613,7 @@ pub enum Inline {
     HtmlText,
     Comment,
     CrossLink,
+    Directive,
     Topic,
     Autolink,
     Literal,
@@ -3554,6 +3667,7 @@ impl Name {
             Name::HtmlText => Role::Inline(Inline::HtmlText),
             Name::Comment => Role::Inline(Inline::Comment),
             Name::CrossLink => Role::Inline(Inline::CrossLink),
+            Name::DirectiveText => Role::Inline(Inline::Directive),
             Name::Topic => Role::Inline(Inline::Topic),
             Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
@@ -3597,6 +3711,11 @@ impl Name {
             | Name::CommentChunk
             | Name::CrossLinkLabel
             | Name::CrossLinkMarker
+            | Name::DirectiveTextMarker
+            | Name::DirectiveNameText
+            | Name::DirectiveLabel
+            | Name::DirectiveLabelMarker
+            | Name::DirectiveLabelText
             | Name::CrossLinkSeparator
             | Name::CrossLinkDest
             | Name::TopicMarker
@@ -3713,7 +3832,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 87] = [
+pub const VOID_EVENTS: [Name; 91] = [
     Name::AttributesMarker,
     Name::AttributeId,
     Name::AttributeClass,
@@ -3787,6 +3906,10 @@ pub const VOID_EVENTS: [Name; 87] = [
     Name::CommentChunk,
     Name::CrossLinkLabel,
     Name::CrossLinkMarker,
+    Name::DirectiveTextMarker,
+    Name::DirectiveNameText,
+    Name::DirectiveLabelMarker,
+    Name::DirectiveLabelText,
     Name::CrossLinkSeparator,
     Name::CrossLinkDest,
     Name::TopicMarker,

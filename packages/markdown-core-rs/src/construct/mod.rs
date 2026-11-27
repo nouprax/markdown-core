@@ -157,6 +157,7 @@ pub mod comment;
 pub mod content;
 pub mod cross_link;
 pub mod definition;
+pub mod directive_text;
 pub mod document;
 pub mod flow;
 pub mod footnote_definition;
