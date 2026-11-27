@@ -2,14 +2,21 @@
 //! form, read from the Unicode 17 tables (`tables.rs`).
 
 use super::tables::{
-    ANCHOR_CLASSES, ANCHOR_DELTAS, ANCHOR_LEAVES, ANCHOR_PAGES, BLOCKS, FOLDS, FOLD_LEAVES,
-    FOLD_IMAGES, FOLD_PAGES, PAGES,
+    ANCHOR_CLASSES, ANCHOR_DELTAS, ANCHOR_LEAVES, ANCHOR_PAGES, BLOCKS, FOLDS, FOLD_IMAGES,
+    FOLD_LEAVES, FOLD_PAGES, PAGES,
 };
 use alloc::string::String;
 
 pub const WHITESPACE: u8 = 1 << 0;
 pub const PUNCTUATION: u8 = 1 << 1;
 pub const SYMBOL: u8 = 1 << 2;
+pub const LETTER: u8 = 1 << 3;
+pub const NUMBER: u8 = 1 << 4;
+pub const MARK: u8 = 1 << 5;
+/// The Emoji property, outside ASCII.
+pub const EMOJI: u8 = 1 << 6;
+/// Nd, the numbers that are decimal digits.
+pub const DECIMAL: u8 = 1 << 7;
 
 /// The classes of `char`.
 pub fn classes(char: char) -> u8 {

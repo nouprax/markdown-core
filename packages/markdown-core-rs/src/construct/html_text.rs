@@ -546,9 +546,7 @@ fn tag_open_attribute_value_before(tokenizer: &mut Tokenizer) -> State {
 fn tag_open_attribute_value_quoted(tokenizer: &mut Tokenizer, marker: u8) -> State {
     if tokenizer.current == Some(marker) {
         tokenizer.consume();
-        State::Next(StateName::HtmlText(
-            Step::TagOpenAttributeValueQuotedAfter,
-        ))
+        State::Next(StateName::HtmlText(Step::TagOpenAttributeValueQuotedAfter))
     } else {
         match tokenizer.current {
             None => State::Nok,
@@ -741,9 +739,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::TagOpenAttributeValueQuoted { marker } => {
             tag_open_attribute_value_quoted(tokenizer, marker)
         }
-        Step::TagOpenAttributeValueQuotedAfter => {
-            tag_open_attribute_value_quoted_after(tokenizer)
-        }
+        Step::TagOpenAttributeValueQuotedAfter => tag_open_attribute_value_quoted_after(tokenizer),
         Step::TagOpenAttributeValueUnquoted => tag_open_attribute_value_unquoted(tokenizer),
         Step::Cdata => cdata(tokenizer),
         Step::CdataOpenInside { size } => cdata_open_inside(tokenizer, size),

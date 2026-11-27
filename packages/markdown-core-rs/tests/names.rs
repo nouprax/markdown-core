@@ -64,6 +64,7 @@ const STANDARD: &[&str] = &[
     "bytes",
     "closing",
     "directory",
+    "emoji",
     "ending",
     "entry",
     "flag",
@@ -74,6 +75,8 @@ const STANDARD: &[&str] = &[
     "ignore",
     "image",
     "images",
+    "joiner",
+    "joiners",
     "key",
     "keywords",
     "language",
@@ -116,8 +119,7 @@ fn words(name: &str) -> Vec<String> {
 
 fn banned(name: &str) -> bool {
     words(name).iter().any(|word| {
-        !STANDARD.contains(&word.as_str())
-            && word.chars().any(|c| matches!(c, 'g' | 'j' | 'y'))
+        !STANDARD.contains(&word.as_str()) && word.chars().any(|c| matches!(c, 'g' | 'j' | 'y'))
     })
 }
 

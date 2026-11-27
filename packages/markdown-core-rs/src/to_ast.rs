@@ -349,10 +349,7 @@ impl<'a> Compiler<'a> {
                     },
                     None => Kind::HtmlBlock { literal },
                 };
-                Node::new(
-                    kind,
-                    self.runs(self.lead(index), self.last(index).1),
-                )
+                Node::new(kind, self.runs(self.lead(index), self.last(index).1))
             }
             Block::Quote => {
                 let runs = Self::whole(self.lead(index), self.end(index));
@@ -1050,6 +1047,12 @@ impl<'a> Compiler<'a> {
             }
             Inline::Media => self.media(index),
             Inline::CrossLink => self.cross_link(index),
+            Inline::Topic => Kind::Topic {
+                name: self
+                    .child(index, Name::TopicText)
+                    .map(|name| self.text(name).to_string())
+                    .unwrap_or_default(),
+            },
             Inline::FootnoteCall => {
                 let label = self
                     .child(index, Name::Label)
@@ -1133,7 +1136,9 @@ impl<'a> Compiler<'a> {
                 Name::CrossLinkDest => whole.push_str(self.text(child)),
                 Name::CrossLinkSeparator => label = Some(String::new()),
                 Name::CrossLinkLabel => {
-                    label.get_or_insert_with(String::new).push_str(self.text(child));
+                    label
+                        .get_or_insert_with(String::new)
+                        .push_str(self.text(child));
                 }
                 _ => {}
             }
@@ -1262,7 +1267,9 @@ fn dimension(text: &str) -> Option<u32> {
     {
         return None;
     }
-    text.parse::<i32>().ok().and_then(|value| u32::try_from(value).ok())
+    text.parse::<i32>()
+        .ok()
+        .and_then(|value| u32::try_from(value).ok())
 }
 
 /// The body of the HTML comment `html`, if it is one: the bytes between
@@ -1284,7 +1291,10 @@ fn html_comment_block(html: &str) -> Option<&str> {
         return None;
     }
     let close = html[2..].find("-->")? + 2;
-    if !html[close + 3..].trim_end_matches([' ', '\t', '\n']).is_empty() {
+    if !html[close + 3..]
+        .trim_end_matches([' ', '\t', '\n'])
+        .is_empty()
+    {
         return None;
     }
     Some(if close < 4 { "" } else { &html[4..close] })

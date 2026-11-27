@@ -517,12 +517,16 @@ fn head_delimiter_value_before(tokenizer: &mut Tokenizer, mut head: Head) -> Sta
             tokenizer.enter(Name::TableDelimiterMarker);
             tokenizer.consume();
             tokenizer.exit(Name::TableDelimiterMarker);
-            State::Next(StateName::Table(Step::HeadDelimiterLeftAlignmentAfter { head }))
+            State::Next(StateName::Table(Step::HeadDelimiterLeftAlignmentAfter {
+                head,
+            }))
         }
         Some(b'-') => {
             // Align: none.
             head.count += 1;
-            State::Redo(StateName::Table(Step::HeadDelimiterLeftAlignmentAfter { head }))
+            State::Redo(StateName::Table(Step::HeadDelimiterLeftAlignmentAfter {
+                head,
+            }))
         }
         _ => State::Redo(StateName::Table(Step::HeadDelimiterNok)),
     }
@@ -566,11 +570,15 @@ fn head_delimiter_filler(tokenizer: &mut Tokenizer, mut head: Head) -> State {
             tokenizer.enter(Name::TableDelimiterMarker);
             tokenizer.consume();
             tokenizer.exit(Name::TableDelimiterMarker);
-            State::Next(StateName::Table(Step::HeadDelimiterRightAlignmentAfter { head }))
+            State::Next(StateName::Table(Step::HeadDelimiterRightAlignmentAfter {
+                head,
+            }))
         }
         _ => {
             tokenizer.exit(Name::TableDelimiterFiller);
-            State::Redo(StateName::Table(Step::HeadDelimiterRightAlignmentAfter { head }))
+            State::Redo(StateName::Table(Step::HeadDelimiterRightAlignmentAfter {
+                head,
+            }))
         }
     }
 }
@@ -1075,7 +1083,9 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
             head_delimiter_left_alignment_after(tokenizer, head)
         }
         Step::HeadDelimiterFiller { head } => head_delimiter_filler(tokenizer, head),
-        Step::HeadDelimiterRightAlignmentAfter { head } => head_delimiter_right_alignment_after(tokenizer, head),
+        Step::HeadDelimiterRightAlignmentAfter { head } => {
+            head_delimiter_right_alignment_after(tokenizer, head)
+        }
         Step::HeadDelimiterCellAfter { head } => head_delimiter_cell_after(tokenizer, head),
         Step::HeadDelimiterNok => head_delimiter_nok(tokenizer),
         Step::BodyRowStart => body_row_start(tokenizer),

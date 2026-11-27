@@ -142,7 +142,10 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
             State::Ok
         }
         Some(b'\t' | b' ') => {
-            tokenizer.attempt(State::Next(StateName::HeadingAtx(Step::AtBreak)), State::Nok);
+            tokenizer.attempt(
+                State::Next(StateName::HeadingAtx(Step::AtBreak)),
+                State::Nok,
+            );
             State::Redo(space_or_tab())
         }
         Some(b'#') => {

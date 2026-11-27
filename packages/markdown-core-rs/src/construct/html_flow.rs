@@ -607,9 +607,7 @@ fn continuation(tokenizer: &mut Tokenizer, kind: u8) -> State {
         }))
     } else if kind == RAW && tokenizer.current == Some(b'<') {
         tokenizer.consume();
-        State::Next(StateName::HtmlFlow(Step::ContinuationRawTagOpen {
-            kind,
-        }))
+        State::Next(StateName::HtmlFlow(Step::ContinuationRawTagOpen { kind }))
     } else if kind == DECLARATION && tokenizer.current == Some(b'>') {
         tokenizer.consume();
         State::Next(StateName::HtmlFlow(Step::ContinuationClose))

@@ -20,8 +20,8 @@
 
 use crate::choice::{self, Choice, Entry, List};
 use crate::construct::{
-    blank_line, callout, code_indented, comment, content, heading_atx, heading_setext, html_flow, raw_flow, table,
-    thematic_break,
+    blank_line, callout, code_indented, comment, content, heading_atx, heading_setext, html_flow,
+    raw_flow, table, thematic_break,
 };
 use crate::event::Name;
 use crate::state::{Name as StateName, State};

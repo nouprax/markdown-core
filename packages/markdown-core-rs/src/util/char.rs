@@ -41,9 +41,7 @@ pub enum Kind {
 /// In a few cases, it is unicode aware, so we need to find an actual char.
 pub fn before_index(bytes: &[u8], index: usize) -> Option<char> {
     let start = index.saturating_sub(4);
-    String::from_utf8_lossy(&bytes[start..index])
-        .chars()
-        .last()
+    String::from_utf8_lossy(&bytes[start..index]).chars().last()
 }
 
 /// Get a [`char`][] right at `index` in bytes (`&[u8]`).

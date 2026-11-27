@@ -359,6 +359,61 @@ pub enum Name {
     ///         ^^^
     /// ```
     CrossLinkDest,
+    /// Topic.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [text content][crate::construct::text]
+    /// * **Content model**:
+    ///   [`TopicMarker`][Name::TopicMarker],
+    ///   [`TopicText`][Name::TopicText]
+    /// * **Construct**:
+    ///   [`topic`][crate::construct::topic]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a #b c
+    ///       ^^
+    /// ```
+    Topic,
+    /// Topic marker.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Topic`][Name::Topic]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`topic`][crate::construct::topic]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a #b c
+    ///       ^
+    /// ```
+    TopicMarker,
+    /// Topic text: the name.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Topic`][Name::Topic]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`topic`][crate::construct::topic]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a #b/c d
+    ///        ^^^
+    /// ```
+    TopicText,
     /// Whole character escape.
     ///
     /// ## Info
@@ -3180,6 +3235,7 @@ pub enum Inline {
     HtmlText,
     Comment,
     CrossLink,
+    Topic,
     Autolink,
     Literal,
     Media,
@@ -3230,6 +3286,7 @@ impl Name {
             Name::HtmlText => Role::Inline(Inline::HtmlText),
             Name::Comment => Role::Inline(Inline::Comment),
             Name::CrossLink => Role::Inline(Inline::CrossLink),
+            Name::Topic => Role::Inline(Inline::Topic),
             Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
             Name::AutolinkLiteralProtocol
@@ -3273,6 +3330,8 @@ impl Name {
             | Name::CrossLinkMarker
             | Name::CrossLinkSeparator
             | Name::CrossLinkDest
+            | Name::TopicMarker
+            | Name::TopicText
             | Name::CommentFence
             | Name::CommentSequence
             | Name::CommentText
@@ -3373,7 +3432,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 76] = [
+pub const VOID_EVENTS: [Name; 78] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3440,6 +3499,8 @@ pub const VOID_EVENTS: [Name; 76] = [
     Name::CrossLinkMarker,
     Name::CrossLinkSeparator,
     Name::CrossLinkDest,
+    Name::TopicMarker,
+    Name::TopicText,
     Name::CommentSequence,
     Name::CommentText,
     Name::ReferenceMarker,

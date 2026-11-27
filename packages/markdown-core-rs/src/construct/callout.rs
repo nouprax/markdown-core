@@ -99,7 +99,10 @@ fn excl(tokenizer: &mut Tokenizer) -> State {
 
 /// Whether `code` can be in a variant.
 fn variant(code: Option<u8>) -> bool {
-    matches!(code, Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-'))
+    matches!(
+        code,
+        Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-')
+    )
 }
 
 /// After `[!`, at the variant.

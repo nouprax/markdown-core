@@ -198,10 +198,7 @@ fn close(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn flow_start(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::CommentFlow);
-    tokenizer.attempt(
-        State::Next(StateName::Comment(Step::FlowOpen)),
-        State::Nok,
-    );
+    tokenizer.attempt(State::Next(StateName::Comment(Step::FlowOpen)), State::Nok);
     State::Redo(StateName::Comment(Step::FenceStart))
 }
 

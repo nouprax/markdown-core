@@ -188,7 +188,11 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
     let mut enter = skip::to(&tokenizer.events, 0, &[Name::HeadingSetextUnderline]);
 
     while enter < tokenizer.events.len() {
-        let exit = skip::to(&tokenizer.events, enter + 1, &[Name::HeadingSetextUnderline]);
+        let exit = skip::to(
+            &tokenizer.events,
+            enter + 1,
+            &[Name::HeadingSetextUnderline],
+        );
 
         // Find paragraph before
         let paragraph_exit_before = skip::opt_back(
@@ -205,8 +209,11 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 
         // There’s a paragraph before: this is a setext heading.
         if tokenizer.events[paragraph_exit_before].name == Name::Paragraph {
-            let paragraph_enter =
-                skip::to_back(&tokenizer.events, paragraph_exit_before - 1, &[Name::Paragraph]);
+            let paragraph_enter = skip::to_back(
+                &tokenizer.events,
+                paragraph_exit_before - 1,
+                &[Name::Paragraph],
+            );
 
             // Change types of Enter:Paragraph, Exit:Paragraph.
             tokenizer.events[paragraph_enter].name = Name::HeadingSetextText;

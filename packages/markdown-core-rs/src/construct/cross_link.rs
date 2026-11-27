@@ -146,7 +146,11 @@ fn dest(tokenizer: &mut Tokenizer, part: Part, open: bool) -> State {
             }
             tokenizer.consume();
             State::Next(StateName::CrossLink(Step::Dest {
-                part: if code == b'#' { Part::Hash } else { Part::Filled },
+                part: if code == b'#' {
+                    Part::Hash
+                } else {
+                    Part::Filled
+                },
                 open: true,
             }))
         }
