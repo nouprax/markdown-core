@@ -336,8 +336,14 @@ impl<'a> Compiler<'a> {
             Block::CodeFenced => self.code_fenced(index),
             Block::HtmlFlow => {
                 let literal = self.lines(index, Name::HtmlFlowData);
+                let kind = match html_comment_block(&literal) {
+                    Some(inner) => Kind::Comment {
+                        literal: inner.to_string(),
+                    },
+                    None => Kind::HtmlBlock { literal },
+                };
                 Node::new(
-                    Kind::HtmlBlock { literal },
+                    kind,
                     self.runs(self.lead(index), self.last(index).1),
                 )
             }
@@ -1136,6 +1142,20 @@ fn html_comment(html: &str) -> Option<&str> {
     } else {
         rest.strip_suffix("-->")
     }
+}
+
+/// The body of the HTML block `html`, if it holds one comment that its own
+/// `-->` closes, with only whitespace after that closer.
+fn html_comment_block(html: &str) -> Option<&str> {
+    let html = html.trim_start_matches([' ', '\t']);
+    if !html.starts_with("<!--") {
+        return None;
+    }
+    let close = html[2..].find("-->")? + 2;
+    if !html[close + 3..].trim_end_matches([' ', '\t', '\n']).is_empty() {
+        return None;
+    }
+    Some(if close < 4 { "" } else { &html[4..close] })
 }
 
 fn push_text(draft: &mut Option<Draft>, start: usize, end: usize, literal: &str) {
