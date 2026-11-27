@@ -265,7 +265,7 @@ static inline bool S_name_byte(int code) { return code >= 0 && code < 0x100 && !
 static markdown_core_state S_unquoted(markdown_core_tokenizer *tokenizer, int code);
 
 static markdown_core_state S_unquoted_escape(markdown_core_tokenizer *tokenizer, int code) {
-    if (code >= 0 && code < 0x100 && markdown_core_ispunct(code)) {
+    if (code >= 0 && code < 0x100 && markdown_core_ispunct((char)code)) {
         S_recognizer(tokenizer)->work++;
         markdown_core_consume(tokenizer);
         return markdown_core_state_of(S_unquoted);
@@ -316,7 +316,7 @@ static markdown_core_state S_quoted_close(markdown_core_tokenizer *tokenizer, in
 }
 
 static markdown_core_state S_quoted_escape(markdown_core_tokenizer *tokenizer, int code) {
-    if (code >= 0 && code < 0x100 && markdown_core_ispunct(code)) {
+    if (code >= 0 && code < 0x100 && markdown_core_ispunct((char)code)) {
         S_recognizer(tokenizer)->work++;
         markdown_core_consume(tokenizer);
         return markdown_core_state_of(S_quoted);
@@ -1483,7 +1483,7 @@ static markdown_core_state S_tail_at(markdown_core_tokenizer *tokenizer, int cod
 }
 
 static markdown_core_state S_tail_escape(markdown_core_tokenizer *tokenizer, int code) {
-    if (code >= 0 && code < 0x100 && markdown_core_ispunct(code)) {
+    if (code >= 0 && code < 0x100 && markdown_core_ispunct((char)code)) {
         markdown_core_consume(tokenizer);
         return markdown_core_state_of(S_tail);
     }
