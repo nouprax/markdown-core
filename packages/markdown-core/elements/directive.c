@@ -70,63 +70,70 @@ enum { NAME_END = 1 };
 static const uint8_t NAME_BYTES[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END,
                                         [':'] = NAME_END};
 
-static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
-                     bufsize_t *name_len) {
-    bufsize_t start = pos;
-    pos = markdown_core_scan_to_class(NAME_BYTES, NAME_END, data, pos, len);
-    if (pos == start) {
-        return 0;
-    }
-    *name_start = start;
-    *name_len = pos - start;
-    return 1;
-}
+/* Whether `code` goes on a name. */
+static inline bool S_name_code(int code) { return code >= 0 && code < 0x100 && !NAME_BYTES[code]; }
 
 /* Where a name goes on past a cursor. */
 static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
     return markdown_core_scan_to_class(NAME_BYTES, NAME_END, data, 0, length);
 }
 
-/* The only bytes that decide where a label ends: the brackets, and the
- * backslash that escapes the byte after it. Every other byte, of any script,
- * is skipped by the class scan. */
-enum { LABEL_STOP = 1 };
-static const uint8_t LABEL_BYTES[256] = {['['] = LABEL_STOP, [']'] = LABEL_STOP, ['\\'] = LABEL_STOP};
+/* THE LABEL, code by code (micromark's factory-label): `[`, then bytes to
+ * the `]` that closes it, a backslash taking the byte after it; an inner
+ * `[` opens a level, and the 33rd inner level fails (micromark counts the
+ * inner brackets and fails at the 33rd), as does the end. A block's label
+ * (LABEL_LINE) holds no line ending, a text's may. The frame's words: the
+ * levels open, and whether a line ending fails it. */
+enum { LABEL_DEPTH, LABEL_LINE_ONLY };
 
-static inline int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *label_start,
-                             bufsize_t *label_len, bufsize_t *end) {
-    int depth = 1;
-    bufsize_t i;
+static markdown_core_state S_label_body(markdown_core_tokenizer *tokenizer, int code);
 
-    if (pos >= len || data[pos] != '[') {
-        return 0;
-    }
-
-    for (i = pos + 1; (i = markdown_core_scan_to_class(LABEL_BYTES, LABEL_STOP, data, i, len)) < len;) {
-        if (data[i] == '\\') {
-            i += i + 1 < len ? 2 : 1;
-            continue;
-        }
-
-        /* micromark's factory-label.js counts the INNER brackets and fails at
-         * the 33rd (`if (code === 91 && ++balance > 32)`), so 32 nested labels
-         * are a label and 33 are prose. `depth` here starts at 1 for the
-         * label's own `[`, which is the off-by-one this bound accounts for. */
-        if (data[i] == '[') {
-            if (++depth > 33) {
-                return 0;
-            }
-        } else if (--depth == 0) {
-            *label_start = pos + 1;
-            *label_len = i - (pos + 1);
-            *end = i + 1;
-            return 1;
-        }
-        i++;
-    }
-
-    return 0;
+static inline bool S_label_stops(markdown_core_tokenizer *tokenizer, int code) {
+    return code == MARKDOWN_CORE_EOF ||
+           (markdown_core_frame_local(tokenizer)[LABEL_LINE_ONLY] && markdown_core_code_ending(code));
 }
+
+static markdown_core_state S_label_escape(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_label_stops(tokenizer, code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_label_body);
+}
+
+static markdown_core_state S_label_body(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (S_label_stops(tokenizer, code) || (code == '[' && ++words[LABEL_DEPTH] > 33)) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    if (code == ']' && --words[LABEL_DEPTH] == 0) {
+        return markdown_core_ok(tokenizer);
+    }
+    return code == '\\' ? markdown_core_state_of(S_label_escape) : markdown_core_state_of(S_label_body);
+}
+
+static markdown_core_state S_label_open(markdown_core_tokenizer *tokenizer, int code, bool line) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code != '[') {
+        return markdown_core_nok(tokenizer);
+    }
+    words[LABEL_DEPTH] = 1;
+    words[LABEL_LINE_ONLY] = line;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_label_body);
+}
+
+static markdown_core_state S_label_text(markdown_core_tokenizer *tokenizer, int code) {
+    return S_label_open(tokenizer, code, false);
+}
+
+static markdown_core_state S_label_line(markdown_core_tokenizer *tokenizer, int code) {
+    return S_label_open(tokenizer, code, true);
+}
+
+static const markdown_core_construct LABEL_TEXT = {.start = S_label_text};
+static const markdown_core_construct LABEL_LINE = {.start = S_label_line};
 
 static int set_chunk_bytes(markdown_core_chunk *chunk, const unsigned char *data, bufsize_t len) {
     markdown_core_chunk_free(chunk);
@@ -381,7 +388,6 @@ static void S_report_block(const markdown_core_element_instance *self, markdown_
  * parsed of the line after them. */
 typedef struct {
     bufsize_t colon_count, first;
-    int depth;
     parsed_directive parsed;
 } directive_found;
 MARKDOWN_CORE_BLOCK_FOUND_FITS(directive_found, directive_found_fits);
@@ -452,42 +458,16 @@ static markdown_core_state S_named_list(markdown_core_tokenizer *tokenizer, int 
     return S_opener_end(tokenizer, code);
 }
 
-static markdown_core_state S_opener_label(markdown_core_tokenizer *tokenizer, int code);
-
-static markdown_core_state S_opener_escape(markdown_core_tokenizer *tokenizer, int code) {
-    if (markdown_core_code_ending(code)) {
-        return S_opener_failed(tokenizer, code);
-    }
-    markdown_core_consume(tokenizer);
-    return markdown_core_state_of(S_opener_label);
-}
-
-/* micromark's factory-label.js counts the INNER brackets and fails at the
- * 33rd, so 32 nested labels are a label and 33 are prose. */
-static markdown_core_state S_opener_label(markdown_core_tokenizer *tokenizer, int code) {
+/* The label read, through its `]`. */
+static markdown_core_state S_opener_labeled(markdown_core_tokenizer *tokenizer, int code) {
     directive_found *found = S_found(tokenizer);
-    if (markdown_core_code_ending(code)) {
-        return S_opener_failed(tokenizer, code);
-    }
-    if (code == '\\') {
-        markdown_core_consume(tokenizer);
-        return markdown_core_state_of(S_opener_escape);
-    }
-    if (code == '[' && ++found->depth > 33) {
-        return S_opener_failed(tokenizer, code);
-    }
-    if (code == ']' && --found->depth == 0) {
-        found->parsed.label_len = S_offset(tokenizer) - found->parsed.label_start;
-        markdown_core_consume(tokenizer);
-        return markdown_core_state_of(S_named_list);
-    }
-    markdown_core_consume(tokenizer);
-    return markdown_core_state_of(S_opener_label);
+    found->parsed.label_len = S_offset(tokenizer) - 1 - found->parsed.label_start;
+    return S_named_list(tokenizer, code);
 }
 
 static markdown_core_state S_opener_name(markdown_core_tokenizer *tokenizer, int code) {
     directive_found *found = S_found(tokenizer);
-    if (code >= 0 && code < 0x100 && !markdown_core_code_ending(code) && !NAME_BYTES[code]) {
+    if (S_name_code(code)) {
         markdown_core_consume(tokenizer);
         return markdown_core_state_of(S_opener_name);
     }
@@ -498,9 +478,8 @@ static markdown_core_state S_opener_name(markdown_core_tokenizer *tokenizer, int
     if (code == '[') {
         found->parsed.has_label = 1;
         found->parsed.label_start = S_offset(tokenizer) + 1;
-        found->depth = 1;
-        markdown_core_consume(tokenizer);
-        return markdown_core_state_of(S_opener_label);
+        return markdown_core_attempt(tokenizer, &LABEL_LINE, markdown_core_state_of(S_opener_labeled),
+                                     markdown_core_state_of(S_opener_failed), code);
     }
     return S_named_list(tokenizer, code);
 }
@@ -687,55 +666,27 @@ static void S_give_name(markdown_core_tokenizer *tokenizer, bufsize_t colon, buf
     markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
 }
 
-static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
+/* THE TEXT DIRECTIVE, code by code: `:` after no `:`, a name, then a
+ * label (LABEL_TEXT) or, with none, an attribute block the attribute
+ * grammar reads, which is a construct of its own after the directive's
+ * token. A directive with neither gives its name up. The frame's words:
+ * where its `:` is, where its name ends, its token, and where its label
+ * starts past its `[`, 0 for none. */
+enum { TEXT_COLON, TEXT_NAME_END, TEXT_TOKEN, TEXT_LABEL };
+
+/* The directive read through `pos`, its label, if any, read. */
+static markdown_core_state S_text_done(markdown_core_tokenizer *tokenizer) {
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     markdown_core_inline_state *inline_state = tokenizer->reader;
     markdown_core_parser *parser = inline_state->owner_parser;
-    const unsigned char *data = tokenizer->data;
-    const bufsize_t size = (bufsize_t)tokenizer->size;
-    const bufsize_t offset = (bufsize_t)tokenizer->position;
-    if (offset > 0 && data[offset - 1] == ':') {
-        return markdown_core_nok(tokenizer);
-    }
-    if (offset + 1 >= size) {
-        markdown_core_met_end(tokenizer);
-        S_give_name(tokenizer, offset, offset + 1);
-        return markdown_core_nok(tokenizer);
-    }
-    bufsize_t name_start, name_len;
-    if (data[offset + 1] == ':' || !scan_name(data, size, offset + 1, &name_start, &name_len)) {
-        return markdown_core_nok(tokenizer);
-    }
-    bufsize_t pos = name_start + name_len;
-    bufsize_t label_start = 0, label_len = 0;
-    bool has_label = false;
-    if (pos >= size) {
-        markdown_core_met_end(tokenizer);
-    }
-    if (pos < size && data[pos] == '[') {
-        bufsize_t label_end;
-        if (scan_label(data, size, pos, &label_start, &label_len, &label_end)) {
-            has_label = true;
-            pos = label_end;
-        } else {
-            markdown_core_met_end(tokenizer);
-        }
-    }
-    if (pos >= size) {
-        markdown_core_met_end(tokenizer);
-    }
-    const markdown_core_attribute_ops *attributes = S_attributes(self);
-    if (!has_label && !(attributes && pos < size && data[pos] == '{' &&
-                        attributes->block(self->needs[DIRECTIVE_ATTRIBUTES].instance, tokenizer, pos,
-                                          MARKDOWN_CORE_KIND_DIRECTIVE))) {
-        S_give_name(tokenizer, offset, name_start + name_len);
-        return markdown_core_nok(tokenizer);
-    }
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
     uint32_t field = UINT32_MAX;
     bool spaced = false;
-    if (has_label) {
-        markdown_core_node *label = make_label_node(self->element, parser, data + label_start, label_len, 0, 0);
+    if (words[TEXT_LABEL]) {
+        const bufsize_t label_start = (bufsize_t)words[TEXT_LABEL];
+        const bufsize_t label_len = (bufsize_t)tokenizer->position - 1 - label_start;
+        markdown_core_node *label =
+            make_label_node(self->element, parser, tokenizer->data + label_start, label_len, 0, 0);
         if (!label) {
             tokenizer->events.failed = true;
             return markdown_core_nok(tokenizer);
@@ -748,15 +699,89 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
             markdown_core_parser_release_node(parser, label);
         }
     }
-    const uint16_t kind = (uint16_t)(self->token_base + (spaced ? DIRECTIVE_SPACED : DIRECTIVE_TEXT));
-    const uint32_t token = markdown_core_enter(tokenizer, kind);
-    markdown_core_consume_to(tokenizer, (uint32_t)pos);
-    markdown_core_exit(tokenizer, kind);
+    const uint32_t token = words[TEXT_TOKEN];
+    uint16_t kind = (uint16_t)(self->token_base + DIRECTIVE_TEXT);
     if (token != UINT32_MAX) {
-        tokenizer->events.tokens[token].data = field;
+        /* What the label holds decides the token's kind. */
+        markdown_core_token *made = &tokenizer->events.tokens[token];
+        kind = (uint16_t)(self->token_base + (spaced ? DIRECTIVE_SPACED : DIRECTIVE_TEXT));
+        made->kind = kind;
+        made->data = field;
     }
+    markdown_core_exit(tokenizer, kind);
     markdown_core_text_made(tokenizer, MARKDOWN_CORE_NODE_DIRECTIVE);
     return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_text_labeled(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+    }
+    return S_text_done(tokenizer);
+}
+
+/* No label: an attribute block makes it one. */
+static markdown_core_state S_text_bare(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const markdown_core_attribute_ops *attributes = S_attributes(self);
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[TEXT_LABEL] = 0;
+    if (attributes && code == '{' &&
+        attributes->block(self->needs[DIRECTIVE_ATTRIBUTES].instance, tokenizer, (bufsize_t)tokenizer->position,
+                          MARKDOWN_CORE_KIND_DIRECTIVE)) {
+        return S_text_done(tokenizer);
+    }
+    S_give_name(tokenizer, (bufsize_t)words[TEXT_COLON], (bufsize_t)words[TEXT_NAME_END]);
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_text_lost(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_met_end(tokenizer);
+    return S_text_bare(tokenizer, code);
+}
+
+static markdown_core_state S_text_name(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (S_name_code(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_text_name);
+    }
+    words[TEXT_NAME_END] = tokenizer->position;
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (code == '[') {
+        words[TEXT_LABEL] = tokenizer->position + 1;
+        return markdown_core_attempt(tokenizer, &LABEL_TEXT, markdown_core_state_of(S_text_labeled),
+                                     markdown_core_state_of(S_text_lost), code);
+    }
+    return S_text_bare(tokenizer, code);
+}
+
+static markdown_core_state S_text_first(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_EOF) {
+        const uint32_t colon = markdown_core_frame_local(tokenizer)[TEXT_COLON];
+        markdown_core_met_end(tokenizer);
+        S_give_name(tokenizer, (bufsize_t)colon, (bufsize_t)colon + 1);
+        return markdown_core_nok(tokenizer);
+    }
+    if (!S_name_code(code)) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_text_name(tokenizer, code);
+}
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (tokenizer->position > 0 && tokenizer->data[tokenizer->position - 1] == ':') {
+        return markdown_core_nok(tokenizer);
+    }
+    words[TEXT_COLON] = tokenizer->position;
+    words[TEXT_TOKEN] = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + DIRECTIVE_TEXT));
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_text_first);
 }
 
 /* COMPILE: the directive, its name and its label, placed as

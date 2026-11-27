@@ -71,38 +71,6 @@ static int segment_width(const unsigned char *str, bufsize_t len, bool *word) {
     return (classes & MARKDOWN_CORE_UNICODE_NUMBER) || topic_joiner(scalar) ? width : 0;
 }
 
-/* Where a name read from `data` stops: runs of segment characters joined by
- * single `/` signs, a `/` belonging to it only when a segment character
- * follows. `word` is set when it holds a word character. */
-static bufsize_t name_end(const unsigned char *data, bufsize_t length, bool *word) {
-    bufsize_t end = 0;
-    for (;;) {
-        /* A run of ASCII segment characters is read a byte at a time,
-         * looking for a word character only until one is found. */
-        while (!*word && end < length && SEGMENT_BYTES[data[end]]) {
-            *word = SEGMENT_BYTES[data[end++]] == TOPIC_WORD;
-        }
-        while (end < length && SEGMENT_BYTES[data[end]]) {
-            end++;
-        }
-        const int width = segment_width(data + end, length - end, word);
-        if (width) {
-            end += width;
-        } else if (end && end < length && data[end] == '/' && segment_width(data + end + 1, length - end - 1, word)) {
-            end++;
-        } else {
-            return end;
-        }
-    }
-}
-
-/* THE TOPIC A RUN'S TEXT FOUND (the element's run record): the text scan
- * asks at a `#` whether a topic starts there, and the match at that `#`
- * reads the end the question found, `end` past the `#` at `at`. */
-typedef struct {
-    bufsize_t at, end;
-} topic_run;
-
 /* THE TOPIC AS A CONSTRUCT (plan symbols-cleanroom.md 23.10): a `#` where
  * a topic starts reads it whole; at any other the `#` is text, which the
  * data it meets runs on over (`passes`). */
@@ -124,46 +92,62 @@ static bool S_opener(const unsigned char *data, uint32_t at) {
            !topic_joiner(scalar);
 }
 
-/* topic_end, read by the tokenizer. */
-static uint32_t S_end(markdown_core_tokenizer *tokenizer, uint32_t at) {
-    const unsigned char *data = tokenizer->data;
-    const uint32_t len = tokenizer->size;
-    if (!S_opener(data, at)) {
-        return 0;
-    }
-    bool word = false;
-    const uint32_t end = at + 1 + (uint32_t)name_end(data + at + 1, (bufsize_t)(len - at - 1), &word);
-    if (end + (end < len && data[end] == '/' ? 5 : 4) > len) {
-        markdown_core_met_end(tokenizer);
-    }
-    if (!word || (end < len && data[end] == '#') ||
-        (len - end >= 3 && data[end] == ':' && data[end + 1] == '/' && data[end + 2] == '/')) {
-        const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, (bufsize_t)at + 1,
-                                          (bufsize_t)end};
-        markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_TOPIC, (bufsize_t)at, (bufsize_t)at + 1, &name, 1);
-        return 0;
-    }
-    return end;
-}
-
 enum { TOPIC_NAME, TOPIC_KINDS };
 
-static markdown_core_state S_topic(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    const uint32_t end = S_end(tokenizer, tokenizer->position);
-    if (!end) {
+/* THE NAME, code by code: segment characters, each read whole however
+ * many bytes it spans, joined by single `/` signs, a `/` belonging to it
+ * only when a segment character follows; it holds a word character, and
+ * no `#` and no `://` follows it, or the name is given up. The frame's
+ * words: where the `#` is, and whether a word character was read. */
+enum { NAME_HASH, NAME_WORD };
+
+static markdown_core_state S_name(markdown_core_tokenizer *tokenizer, int code) {
+    const unsigned char *data = tokenizer->data;
+    const uint32_t len = tokenizer->size, at = tokenizer->position;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    bool word = words[NAME_WORD];
+    const int width = segment_width(data + at, (bufsize_t)(len - at), &word);
+    if (width || (code == '/' && at > words[NAME_HASH] + 1 &&
+                  segment_width(data + at + 1, (bufsize_t)(len - at - 1), &(bool){false}))) {
+        words[NAME_WORD] = word;
+        markdown_core_consume_to(tokenizer, at + (width ? (uint32_t)width : 1));
+        return markdown_core_state_of(S_name);
+    }
+    const uint32_t hash = words[NAME_HASH];
+    if (at + (code == '/' ? 5 : 4) > len) {
+        markdown_core_met_end(tokenizer);
+    }
+    if (!word || code == '#' || (len - at >= 3 && code == ':' && data[at + 1] == '/' && data[at + 2] == '/')) {
+        const markdown_core_field name = {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, (bufsize_t)hash + 1,
+                                          (bufsize_t)at};
+        markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_TOPIC, (bufsize_t)hash, (bufsize_t)hash + 1, &name, 1);
         return markdown_core_nok(tokenizer);
     }
-    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + TOPIC_NAME));
-    markdown_core_consume_to(tokenizer, end);
-    markdown_core_exit(tokenizer, (uint16_t)(self->token_base + TOPIC_NAME));
+    markdown_core_exit(
+        tokenizer,
+        (uint16_t)(((const markdown_core_element_instance *)markdown_core_self(tokenizer))->token_base + TOPIC_NAME));
     return markdown_core_ok(tokenizer);
 }
 
+/* A `#` where a topic may start. */
+static markdown_core_state S_topic(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (!S_opener(tokenizer->data, tokenizer->position)) {
+        return markdown_core_nok(tokenizer);
+    }
+    words[NAME_HASH] = tokenizer->position;
+    words[NAME_WORD] = false;
+    markdown_core_enter(tokenizer, (uint16_t)(self->token_base + TOPIC_NAME));
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_name);
+}
+
+/* The data runs on over a `#` no topic may start at. */
 static uint32_t S_passes(markdown_core_tokenizer *tokenizer, const void *context, uint32_t at) {
     (void)context;
-    return S_end(tokenizer, at) ? at : at + 1;
+    return S_opener(tokenizer->data, at) ? at : at + 1;
 }
 
 static const markdown_core_text_construct TOPIC_CONSTRUCTS[] = {{"#", {.start = S_topic, .passes = S_passes}}};
@@ -205,6 +189,5 @@ const markdown_core_facet MARKDOWN_CORE_TOPIC_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
     .facets = MARKDOWN_CORE_TOPIC_FACETS,
     .name = "topic",
-    .run_state_size = sizeof(topic_run),
     .inlines = &TOPIC_INLINES,
 };
