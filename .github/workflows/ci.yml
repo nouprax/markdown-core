@@ -1132,6 +1132,23 @@ jobs:
             - name: Release build-tested artifacts to parallel test consumers
               run: echo "Every platform build test passed."
 
+    rust-test:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
+        name: Test - Rust
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: packages/markdown-core-rs
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Check Rust formatting
+              run: cargo fmt --all --check
+            - name: Test the Rust core
+              run: cargo test --workspace --locked
+
     tests-ready:
         name: Tests - Ready
         if: ${{ always() && needs.changes.outputs.required == 'true' }}
@@ -1145,6 +1162,7 @@ jobs:
             - c-test-windows
             - c-debug-test
             - c-sanitizer-test
+            - rust-test
         runs-on: ubuntu-latest
         steps:
             - name: Require every platform test
@@ -1157,6 +1175,7 @@ jobs:
                   C_TEST_WINDOWS: ${{ needs.c-test-windows.result }}
                   C_DEBUG_TEST: ${{ needs.c-debug-test.result }}
                   C_SANITIZER_TEST: ${{ needs.c-sanitizer-test.result }}
+                  RUST_TEST: ${{ needs.rust-test.result }}
               run: |
                   for result in \
                       "$SWIFT_TEST" \
@@ -1166,7 +1185,8 @@ jobs:
                       "$C_TEST" \
                       "$C_TEST_WINDOWS" \
                       "$C_DEBUG_TEST" \
-                      "$C_SANITIZER_TEST"
+                      "$C_SANITIZER_TEST" \
+                      "$RUST_TEST"
                   do
                       if [ "$result" != success ]; then
                           echo "A required test dependency concluded: $result" >&2
