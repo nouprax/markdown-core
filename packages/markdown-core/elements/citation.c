@@ -61,27 +61,6 @@ static bool source_escaped(const markdown_core_element_instance *self, markdown_
     return (at - escape) % 2 != 0;
 }
 
-/* Where the bare key read from `data` stops: key characters, with single
- * internal punctuation each followed by a key character, as Pandoc has it:
- * `@Foo_bar.baz.` keeps `Foo_bar.baz` and `@Foo_bar--baz` stops at
- * `Foo_bar`. */
-static bufsize_t key_end(const unsigned char *data, bufsize_t length) {
-    bufsize_t pos = 0;
-    while (pos < length) {
-        const unsigned char c = data[pos];
-        const int width = citation_key_width(data + pos, length - pos);
-        if (width) {
-            pos += width;
-        } else if (pos && c < 128 && c && strchr(":.#$%&-+?<>~/", c) &&
-                   citation_key_width(data + pos + 1, length - pos - 1)) {
-            pos++;
-        } else {
-            break;
-        }
-    }
-    return pos;
-}
-
 markdown_core_node *markdown_core_inline_new_cite(markdown_core_inline_state *inline_state) {
     return markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITE);
 }
@@ -448,31 +427,6 @@ static void S_give_key(markdown_core_tokenizer *tokenizer, bufsize_t start, bufs
     markdown_core_text_give_up(tokenizer, MARKDOWN_CORE_KIND_CITE, start, at, fields, count);
 }
 
-/* The bare key at `start` as the reading reads it (scan_citation_key):
- * where it ends, or 0. */
-static bufsize_t S_scan(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer,
-                        bufsize_t start) {
-    markdown_core_inline_state *inline_state = tokenizer->reader;
-    markdown_core_citation_work *counts = citation_work(self);
-    const unsigned char *data = tokenizer->data;
-    const bufsize_t len = (bufsize_t)tokenizer->size;
-    bufsize_t pos = start;
-    if (!markdown_core_inline_citation_opener(inline_state, start)) {
-        return 0;
-    }
-    if (data[pos] == '-') {
-        pos++;
-    }
-    if (data[pos] != '@') {
-        return 0;
-    }
-    pos++;
-    const bufsize_t key_start = pos;
-    pos += key_end(data + pos, len - pos);
-    counts->work += (size_t)(pos - key_start) + 1;
-    return pos > key_start ? pos : 0;
-}
-
 /* THE BRACED KEY, code by code: `{`, then bytes to the `}` that closes
  * it, braces nesting; a code span, a tag or an autolink in it, which the
  * text's constructs at its first byte read (markdown_core_skim), is read
@@ -686,6 +640,49 @@ static markdown_core_state S_key_brace(markdown_core_tokenizer *tokenizer, int c
                                markdown_core_state_of(S_unbraced), code);
 }
 
+/* THE BARE KEY, code by code: key characters, read whole, with single
+ * inner punctuation each followed by a key character, as Pandoc has it:
+ * `@Foo_bar.baz.` keeps `Foo_bar.baz` and `@Foo_bar--baz` stops at
+ * `Foo_bar`. The frame's KEY_FROM is where it starts. */
+enum { KEY_FROM = KEY_TOKEN + 1 };
+
+static markdown_core_state S_bare(markdown_core_tokenizer *tokenizer, int code) {
+    const unsigned char *data = tokenizer->data;
+    const uint32_t at = tokenizer->position, size = tokenizer->size;
+    const uint32_t from = markdown_core_frame_local(tokenizer)[KEY_FROM];
+    const int width = code == MARKDOWN_CORE_EOF ? 0 : citation_key_width(data + at, (bufsize_t)(size - at));
+    if (width) {
+        citation_work(markdown_core_self(tokenizer))->work += (size_t)width;
+        markdown_core_consume_to(tokenizer, at + (uint32_t)width);
+        return markdown_core_state_of(S_bare);
+    }
+    if (at > from && code > 0 && code < 128 && strchr(":.#$%&-+?<>~/", code) &&
+        citation_key_width(data + at + 1, (bufsize_t)(size - at - 1))) {
+        citation_work(markdown_core_self(tokenizer))->work++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_bare);
+    }
+    citation_work(markdown_core_self(tokenizer))->work++;
+    if (at == from) {
+        return markdown_core_nok(tokenizer);
+    }
+    return S_key_end(tokenizer);
+}
+
+static markdown_core_state S_bare_first(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[KEY_FROM] = tokenizer->position;
+    return S_bare(tokenizer, code);
+}
+
+/* `-@`: the `@`. */
+static markdown_core_state S_key_sign(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '@') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_bare_first);
+}
+
 static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     markdown_core_inline_state *inline_state = tokenizer->reader;
@@ -735,14 +732,13 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
         markdown_core_consume(tokenizer);
         return markdown_core_state_of(S_key_brace);
     }
-    const bufsize_t end = S_scan(self, tokenizer, at);
-    if (!end) {
+    if (!markdown_core_inline_citation_opener(inline_state, at)) {
         return markdown_core_nok(tokenizer);
     }
     words[KEY_AT] = (uint32_t)at;
     words[KEY_TOKEN] = markdown_core_enter(tokenizer, (uint16_t)(self->token_base + CITATION_KEY));
-    markdown_core_consume_to(tokenizer, (uint32_t)end);
-    return S_key_end(tokenizer);
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(code == '-' ? S_key_sign : S_bare_first);
 }
 
 /* A token read outside every label, which the reading's end decides. */
