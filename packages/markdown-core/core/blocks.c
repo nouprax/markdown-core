@@ -8564,6 +8564,8 @@ static markdown_core_state S_look_visited(markdown_core_tokenizer *tokenizer, in
     reader->number = this_line;
     reader->start = (bufsize_t)lookahead->line_start;
     reader->end = (bufsize_t)lookahead->line_end;
+    /* What the look found reads the line from where its prefixes end. */
+    markdown_core_cursor_move(tokenizer);
     return markdown_core_ok(tokenizer);
 }
 
@@ -8589,8 +8591,11 @@ static markdown_core_state S_look_container(markdown_core_tokenizer *tokenizer, 
     turn->reader = reader;
     turn->joining = markdown_core_parser_lookahead_parent(lookahead);
     turn->look = true;
+    /* The reading stands where the look's cursor does, past what an earlier
+     * look matched of the line (THE SCAN MEMO). */
+    markdown_core_cursor_move(tokenizer);
     return markdown_core_attempt(tokenizer, &lookahead->one, markdown_core_state_of(S_look_carried),
-                                 markdown_core_state_of(S_look_dropped), code);
+                                 markdown_core_state_of(S_look_dropped), markdown_core_code_at(tokenizer, 0));
 }
 
 /* The next line, visited: the reader on it, past what the memo says an

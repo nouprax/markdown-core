@@ -1,4 +1,3 @@
-#include "comment_scanners.h"
 #include "comment.h"
 #include "services.h"
 #include "inline_internal.h"
@@ -35,15 +34,6 @@
  * The block form is the `%%` grammar's alone; the HTML comment block is the
  * inherited grammar's and never passes through here. */
 
-static int is_fence_line(const unsigned char *data, int len, int first_nonspace) {
-    int i = first_nonspace;
-
-    if (i + 2 > len || data[i] != '%' || data[i + 1] != '%') {
-        return 0;
-    }
-    return markdown_core_is_blank_to_line_end(data, i + 2, len);
-}
-
 /* THE STOP LINES (element.h, `stops`): a line whose content is the fence,
  * at any indentation, which takes in every line that closes a reading from
  * an opener in the document's root. */
@@ -64,106 +54,138 @@ static bool comment_stops(const markdown_core_element_instance *self, const unsi
     return true;
 }
 
-/* THE OPENER: a fence line a later fence closes. */
-enum { COMMENT_OPEN, COMMENT_SHUT, COMMENT_KINDS };
+/* THE FENCE LINE (micromark-shaped): `%%` at an indentation of at most
+ * three columns, then only spaces to the line's end. The frame counts the
+ * percent signs. */
+enum { COMMENT_OPEN, COMMENT_SEQUENCE, COMMENT_SHUT, COMMENT_KINDS };
+enum { FENCE_COUNT };
+
+static markdown_core_state S_yes(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_no(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_signs(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == '%' && words[FENCE_COUNT] < 2) {
+        markdown_core_consume(tokenizer);
+        words[FENCE_COUNT]++;
+        return markdown_core_state_of(S_signs);
+    }
+    if (words[FENCE_COUNT] < 2) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_attempt(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_yes),
+                                 markdown_core_state_of(S_no), code);
+}
+
+static markdown_core_state S_fence(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_signs), 0, 3, code);
+}
+
+static const markdown_core_construct COMMENT_FENCE = {.start = S_fence};
 
 /* THE OPENER'S READING, a check of the document's reading: whether a later
  * line under the same prefixes is a fence line (markdown_core_look_next). */
 static markdown_core_state S_closer_line(markdown_core_tokenizer *tokenizer, int code);
 
-static markdown_core_state S_closer_none(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return markdown_core_nok(tokenizer);
+static markdown_core_state S_closer_next(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_look_next(tokenizer, markdown_core_state_of(S_closer_line), markdown_core_state_of(S_no),
+                                   code);
 }
 
-static markdown_core_state S_closer_next(markdown_core_tokenizer *tokenizer, int code) {
-    return markdown_core_look_next(tokenizer, markdown_core_state_of(S_closer_line),
-                                   markdown_core_state_of(S_closer_none), code);
+static markdown_core_state S_closer_found(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_block_turn_of(tokenizer)->parser->error ? markdown_core_nok(tokenizer)
+                                                                 : markdown_core_ok(tokenizer);
 }
 
 static markdown_core_state S_closer_line(markdown_core_tokenizer *tokenizer, int code) {
-    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
-    markdown_core_reader *line = &parser->look->read;
-    if (line->indent < 4 &&
-        is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
-        return parser->error ? markdown_core_nok(tokenizer) : markdown_core_ok(tokenizer);
-    }
-    return S_closer_next(tokenizer, code);
+    return markdown_core_check(tokenizer, &COMMENT_FENCE, markdown_core_state_of(S_closer_found),
+                               markdown_core_state_of(S_closer_next), code);
 }
 
 static const markdown_core_construct COMMENT_CLOSER = {.start = S_closer_next};
 
-/* The reading ends, the reader back on the fence line. */
-static markdown_core_state S_read(markdown_core_tokenizer *tokenizer, bool closed) {
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_parser *parser = turn->parser;
-    if (!closed || parser->error) {
-        return markdown_core_nok(tokenizer);
-    }
-    return markdown_core_block_found(tokenizer, COMMENT_OPEN);
-}
-
+/* The reading ends, back on the fence line. */
 static markdown_core_state S_closed(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    return S_read(tokenizer, true);
+    return markdown_core_block_turn_of(tokenizer)->parser->error ? markdown_core_nok(tokenizer)
+                                                                 : markdown_core_ok(tokenizer);
 }
 
-static markdown_core_state S_unclosed(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    return S_read(tokenizer, false);
-}
-
-static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+static markdown_core_state S_open_rest(markdown_core_tokenizer *tokenizer, int code) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_reader *reader = turn->context->reader;
-    if (reader->indent >= 4 ||
-        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
-        return markdown_core_nok(tokenizer);
-    }
     const markdown_core_look_ask ask = {.container = turn->context->container,
                                         .kind = MARKDOWN_CORE_NODE_COMMENT_BLOCK,
                                         .construct = &COMMENT_CLOSER,
                                         .opener = markdown_core_self(tokenizer)};
-    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_closed), markdown_core_state_of(S_unclosed),
-                              code);
+    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_closed), markdown_core_state_of(S_no), code);
 }
 
+static markdown_core_state S_open_signs(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == '%' && words[FENCE_COUNT] < 2) {
+        markdown_core_consume(tokenizer);
+        words[FENCE_COUNT]++;
+        return markdown_core_state_of(S_open_signs);
+    }
+    if (words[FENCE_COUNT] < 2) {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, COMMENT_SEQUENCE));
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, COMMENT_OPEN));
+    /* The rest of the fence line is blank, and a later fence closes it. */
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_open_rest),
+                               markdown_core_state_of(S_no), code);
+}
+
+static markdown_core_state S_open_first(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '%') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, COMMENT_SEQUENCE));
+    return S_open_signs(tokenizer, code);
+}
+
+static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, COMMENT_OPEN));
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_open_first), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
+}
+
+/* WHERE THE FENCE IS (the start's record), an offset on the line. */
+static void S_sequence(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bufsize_t) = (bufsize_t)(token->start - turn->base);
+}
+
+/* The block opens at its fence as the opener's token exits; the rest of
+ * the fence line, spaces and its ending, is the first line of the block's
+ * content, as a fence's rest is a code block's (blocks.c, THE LEAP), and
+ * no part of its literal, which is found in its text past the `%%`. */
 static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
     (void)token;
     (void)index;
     const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     markdown_core_parser *parser = turn->parser;
-    markdown_core_reader *reader = turn->context->reader;
-    int first_nonspace = reader->nonspace;
+    const bufsize_t fence = *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bufsize_t);
     markdown_core_node *node =
-        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, first_nonspace + 1);
+        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, fence + 1);
     if (!node) {
         return;
     }
     markdown_core_node_set_element(node, self->element);
-    /* Its literal is found in its text past the opening `%%`. */
-    const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
-    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, first_nonspace + 2,
-                            first_nonspace + 2, true);
-    /* The rest of the fence line, spaces and its ending, is the first line
-     * of the block's content, as a fence's rest is a code block's (blocks.c,
-     * THE LEAP), and no part of its literal. */
-    markdown_core_reader_advance(reader, first_nonspace + 2 - reader->offset, false);
+    const markdown_core_field_to fields = {parser, node, NULL, turn->reader, 0, NULL};
+    markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, fence + 2, fence + 2, true);
     *turn->container = node;
     turn->opened = true;
-}
-
-/* Every line reaches the open block until its closer; the closer line closes
- * it and is not added. The lookahead saw this closer before the block opened,
- * through the same container matchers, so an open block always finds it. */
-static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_reader *reader, markdown_core_node *container) {
-    if (reader->indent <= 3 &&
-        is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
-        return MARKDOWN_CORE_TOKEN_CLOSE;
-    }
-    return 1;
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
@@ -281,13 +303,14 @@ static const markdown_core_inline_ops COMMENT_INLINES = {
     .token_count = 1,
 };
 
-/* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
+/* A start only opens at a `%` byte; the fence construct reads the rest. */
 static const markdown_core_block_construct COMMENT_STARTS[] = {
     {.bytes = "%", .indent = 3, .precedence = 1, .construct = {.start = S_start}},
 };
 
 static const markdown_core_compile_ops COMMENT_BLOCK_TOKENS[COMMENT_KINDS] = {
-    [COMMENT_OPEN] = {.enter = S_open},
+    [COMMENT_OPEN] = {.exit = S_open},
+    [COMMENT_SEQUENCE] = {.enter = S_sequence},
     [COMMENT_SHUT] = {.exit = close_comment},
 };
 
@@ -298,14 +321,22 @@ static const markdown_core_open_ops COMMENT_OPENS = {
     .token_count = COMMENT_KINDS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`):
+ * every line reaches the open block until its closer, a fence line, which
+ * closes it and is not added. The lookahead saw this closer before the
+ * block opened, through the same container matchers, so an open block
+ * always finds it. A block of its kind holds no block a lookahead adds. */
+static markdown_core_state S_shut_line(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    /* A block of its kind holds no block a lookahead adds. */
-    return markdown_core_block_verdict(
-        tokenizer, turn->look ? MARKDOWN_CORE_LINE_OFF
-                              : block_matches(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+    return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_CLOSE);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_block_turn_of(tokenizer)->look) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_attempt(tokenizer, &COMMENT_FENCE, markdown_core_state_of(S_shut_line),
+                                 markdown_core_state_of(S_yes), code);
 }
 
 static const markdown_core_line_ops COMMENT_LINES = {

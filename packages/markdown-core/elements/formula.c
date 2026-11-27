@@ -148,60 +148,123 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_trim
     return S_trim_halves(front, front_size, back, back_size);
 }
 
-static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    if (pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == '[' &&
-        markdown_core_is_blank_to_line_end(data, pos + 3, len)) {
-        return FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
-    }
+/* THE FENCE (micromark-shaped): `$$` or `\\[` to open, `$$` or `\\]` to
+ * close, at an indentation of at most three columns, then only spaces to
+ * the line's end. A fence's bytes are the delimiter's, by position. */
+static const char *const FENCE_BYTES[] = {
+    [FORMULA_BLOCK_DELIM_LATEX_BACKSLASH] = "\\\\[",
+    [FORMULA_BLOCK_DELIM_DOLLAR] = "$$",
+};
+static const char *const CLOSER_BYTES[] = {
+    [FORMULA_BLOCK_DELIM_LATEX_BACKSLASH] = "\\\\]",
+    [FORMULA_BLOCK_DELIM_DOLLAR] = "$$",
+};
 
-    if (pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
-        markdown_core_is_blank_to_line_end(data, pos + 2, len)) {
-        return FORMULA_BLOCK_DELIM_DOLLAR;
-    }
+enum { FORMULA_OPEN, FORMULA_SEQUENCE, FORMULA_SHUT, FORMULA_BLOCKS };
+enum { FENCE_DELIM, FENCE_COUNT };
 
-    return FORMULA_BLOCK_DELIM_NONE;
-}
+/* Where the opener's fence is and which delimiter it is (the start's record). */
+typedef struct {
+    bufsize_t fence;
+    int delim;
+} formula_found;
+MARKDOWN_CORE_BLOCK_FOUND_FITS(formula_found, formula_found_fits);
 
-static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bufsize_t pos, int block_delim) {
-    if (block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH) {
-        return pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == ']' &&
-               markdown_core_is_blank_to_line_end(data, pos + 3, len);
-    }
-
-    if (block_delim == FORMULA_BLOCK_DELIM_DOLLAR) {
-        return pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
-               markdown_core_is_blank_to_line_end(data, pos + 2, len);
-    }
-
-    return 0;
-}
-
-enum { FORMULA_OPEN, FORMULA_SHUT, FORMULA_BLOCKS };
-
-static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+static markdown_core_state S_yes(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_reader *reader = turn->context->reader;
-    int *block_delim = MARKDOWN_CORE_BLOCK_FOUND(turn->start, int);
-    *block_delim = scan_formula_block_open(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
-                                           (bufsize_t)reader->nonspace);
-    if (*block_delim == FORMULA_BLOCK_DELIM_NONE) {
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_no(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_nok(tokenizer);
+}
+
+/* The fence's bytes, one code each, then a blank rest: `bytes` names them. */
+static bool S_fence_byte(markdown_core_tokenizer *tokenizer, const char *bytes, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (bytes[words[FENCE_COUNT]] == '\0' || code != (unsigned char)bytes[words[FENCE_COUNT]]) {
+        return false;
+    }
+    markdown_core_consume(tokenizer);
+    words[FENCE_COUNT]++;
+    return true;
+}
+
+static markdown_core_state S_closer_signs(markdown_core_tokenizer *tokenizer, int code) {
+    const char *bytes = CLOSER_BYTES[markdown_core_frame_local(tokenizer)[FENCE_DELIM]];
+    if (S_fence_byte(tokenizer, bytes, code)) {
+        return markdown_core_state_of(S_closer_signs);
+    }
+    if (bytes[markdown_core_frame_local(tokenizer)[FENCE_COUNT]] != '\0') {
         return markdown_core_nok(tokenizer);
     }
-    return markdown_core_block_found(tokenizer, FORMULA_OPEN);
+    return markdown_core_attempt(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_yes),
+                                 markdown_core_state_of(S_no), code);
 }
 
+static markdown_core_state S_closer(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[FENCE_DELIM] =
+        (uint32_t)get_formula(markdown_core_block_turn_of(tokenizer)->node)->block_delim;
+    /* A closer is found at any indentation. */
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_closer_signs), 0, UINT32_MAX, code);
+}
+
+static const markdown_core_construct FORMULA_CLOSER = {.start = S_closer};
+
+static markdown_core_state S_open_signs(markdown_core_tokenizer *tokenizer, int code) {
+    const char *bytes = FENCE_BYTES[markdown_core_frame_local(tokenizer)[FENCE_DELIM]];
+    if (S_fence_byte(tokenizer, bytes, code)) {
+        return markdown_core_state_of(S_open_signs);
+    }
+    if (bytes[markdown_core_frame_local(tokenizer)[FENCE_COUNT]] != '\0') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, FORMULA_SEQUENCE));
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, FORMULA_OPEN));
+    /* The rest of the fence line is blank, and the first line of the content. */
+    return markdown_core_check(tokenizer, &markdown_core_blank_line, markdown_core_state_of(S_yes),
+                               markdown_core_state_of(S_no), code);
+}
+
+static markdown_core_state S_open_first(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == '$') {
+        words[FENCE_DELIM] = FORMULA_BLOCK_DELIM_DOLLAR;
+    } else if (code == '\\') {
+        words[FENCE_DELIM] = FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
+    } else {
+        return markdown_core_nok(tokenizer);
+    }
+    words[FENCE_COUNT] = 0;
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, FORMULA_SEQUENCE));
+    return S_open_signs(tokenizer, code);
+}
+
+static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, FORMULA_OPEN));
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_open_first), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
+}
+
+/* WHERE THE FENCE IS, and which: its bytes on the line say. */
+static void S_block_sequence(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
+    (void)index;
+    markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
+    formula_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, formula_found);
+    found->fence = (bufsize_t)(token->start - turn->base);
+    found->delim = token->end - token->start == 2 ? FORMULA_BLOCK_DELIM_DOLLAR : FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
+}
+
+/* The block opens at its fence as the opener's token exits. */
 static void S_block_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
     (void)token;
     (void)index;
     const markdown_core_element_instance *self = markdown_core_compile_self(compiler);
     markdown_core_block_turn *turn = markdown_core_block_turned(compiler);
     markdown_core_parser *parser = turn->parser;
-    markdown_core_reader *reader = turn->context->reader;
-    const int block_delim = *MARKDOWN_CORE_BLOCK_FOUND(turn->start, int);
-    int first_nonspace = reader->nonspace;
+    const formula_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, formula_found);
     markdown_core_node *node =
-        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_FORMULA_BLOCK, first_nonspace + 1);
+        markdown_core_parser_add_child(parser, *turn->container, MARKDOWN_CORE_NODE_FORMULA_BLOCK, found->fence + 1);
     if (!node) {
         return;
     }
@@ -216,32 +279,15 @@ static void S_block_open(markdown_core_compiler *compiler, const markdown_core_t
     }
 
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-    formula->block_delim = block_delim;
+    formula->block_delim = found->delim;
     /* The rest of the line, spaces and its ending, is the first line of
      * the block's content, as a fence's rest is a code block's (blocks.c,
      * THE LEAP): the literal, trimmed, starts past it. */
-    const int past = first_nonspace + (block_delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3);
-    const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
+    const bufsize_t past = found->fence + (found->delim == FORMULA_BLOCK_DELIM_DOLLAR ? 2 : 3);
+    const markdown_core_field_to fields = {parser, node, NULL, turn->reader, 0, NULL};
     markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_FIELD_FOUND, past, past, true);
-    markdown_core_reader_advance(reader, past - reader->offset, false);
     *turn->container = node;
     turn->opened = true;
-}
-
-static int formula_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_reader *reader, markdown_core_node *container) {
-    node_formula *formula = get_formula(container);
-    int first_nonspace = reader->nonspace;
-
-    /* The closer is the block's end condition: its line closes it and is
-     * no line of its content. */
-    if (scan_formula_block_close(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader),
-                                 (bufsize_t)first_nonspace, formula->block_delim)) {
-        markdown_core_reader_advance(reader, markdown_core_reader_length(reader) - reader->offset, false);
-        return MARKDOWN_CORE_TOKEN_CLOSE;
-    }
-
-    return 1;
 }
 
 static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
@@ -799,13 +845,14 @@ static const markdown_core_inline_ops FORMULA_INLINES = {
     .cover = FORMULA_SPAN,
 };
 
-/* `scan_formula_block_open` accepts only `$$` and `\\[`. */
+/* A fence opens only at `$` or `\\`. */
 static const markdown_core_block_construct FORMULA_STARTS[] = {
     {.bytes = "$\\", .indent = 3, .precedence = 1, .construct = {.start = S_block_start}},
 };
 
 static const markdown_core_compile_ops FORMULA_BLOCK_TOKENS[FORMULA_BLOCKS] = {
-    [FORMULA_OPEN] = {.enter = S_block_open},
+    [FORMULA_OPEN] = {.exit = S_block_open},
+    [FORMULA_SEQUENCE] = {.exit = S_block_sequence},
     [FORMULA_SHUT] = {.exit = close_formula_block},
 };
 
@@ -816,15 +863,21 @@ static const markdown_core_open_ops FORMULA_OPENS = {
     .token_count = FORMULA_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`):
+ * every line reaches the open block until its closer, which closes it and
+ * is no line of its content. A block of its kind holds no block a
+ * lookahead adds. */
+static markdown_core_state S_shut_line(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    /* A block of its kind holds no block a lookahead adds. */
-    return markdown_core_block_verdict(
-        tokenizer, turn->look
-                       ? MARKDOWN_CORE_LINE_OFF
-                       : formula_block_matches(markdown_core_self(tokenizer), turn->parser, turn->reader, turn->node));
+    return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_CLOSE);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_block_turn_of(tokenizer)->look) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_attempt(tokenizer, &FORMULA_CLOSER, markdown_core_state_of(S_shut_line),
+                                 markdown_core_state_of(S_yes), code);
 }
 
 static const markdown_core_line_ops FORMULA_LINES = {
