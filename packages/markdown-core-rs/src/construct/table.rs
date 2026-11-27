@@ -417,8 +417,10 @@ fn head_row_data(tokenizer: &mut Tokenizer, head: Head) -> State {
 ///   | | c    |
 /// ```
 fn head_row_escape(tokenizer: &mut Tokenizer, head: Head) -> State {
+    // A backslash before a pipe keeps it in the cell, even after another
+    // backslash: the pipe is split before any escape is read.
     match tokenizer.current {
-        Some(b'\\' | b'|') => {
+        Some(b'|') => {
             tokenizer.consume();
             State::Next(StateName::Table(Step::HeadRowData { head }))
         }
@@ -750,8 +752,10 @@ fn body_row_data(tokenizer: &mut Tokenizer) -> State {
 ///         ^
 /// ```
 fn body_row_escape(tokenizer: &mut Tokenizer) -> State {
+    // A backslash before a pipe keeps it in the cell, even after another
+    // backslash: the pipe is split before any escape is read.
     match tokenizer.current {
-        Some(b'\\' | b'|') => {
+        Some(b'|') => {
             tokenizer.consume();
             State::Next(StateName::Table(Step::BodyRowData))
         }

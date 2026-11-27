@@ -372,9 +372,13 @@ fn domain_inside(tokenizer: &mut Tokenizer, mut domain: Domain) -> State {
         }
         _ => {
             // Source: <https://github.com/github/cmark-gfm/blob/ef1cfcb/extensions/autolink.c#L12>.
-            if kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index)
-                == CharacterKind::Other
-            {
+            // A domain ends at whitespace, which is a space, a tab or a line
+            // ending, or at punctuation: any other character is in it.
+            let kind = kind_after_index(tokenizer.parse_state.bytes, tokenizer.point.index);
+            let other = kind == CharacterKind::Other
+                || (kind == CharacterKind::Whitespace
+                    && !matches!(tokenizer.current, None | Some(b'\t' | b'\n' | b'\r' | b' ')));
+            if other {
                 domain.seen = true;
                 tokenizer.consume();
                 State::Next(StateName::AutolinkLiteral(Step::DomainInside { domain }))

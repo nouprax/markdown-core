@@ -1185,7 +1185,17 @@ impl<'a> Compiler<'a> {
                     );
                 }
                 Role::Inline(Inline::CharacterEscape) => {
-                    let literal = self.text(index)[1..].to_string();
+                    // In a cell, `\|` is a pipe before escapes are read, so
+                    // an escaped backslash before a pipe is that pipe's
+                    // escape.
+                    let pipe = self.cell
+                        && self.text(index) == "\\\\"
+                        && self.bytes.get(self.end(index)) == Some(&b'|');
+                    let literal = if pipe {
+                        String::new()
+                    } else {
+                        self.text(index)[1..].to_string()
+                    };
                     push_text(
                         &mut draft,
                         self.start(index),
@@ -1820,7 +1830,7 @@ impl<'a> Compiler<'a> {
         }
         let mut dimensions = None;
         if let Some(text) = &label {
-            if let Some((rest, found)) = label_dimensions(text, true) {
+            if let Some((rest, _, found)) = label_dimensions(text, Pipes::Cross) {
                 dimensions = Some(found);
                 label = Some(rest.to_string());
             }
@@ -1891,7 +1901,8 @@ impl<'a> Compiler<'a> {
     /// last separator, or as all of the label.
     fn label_dimensions(&self, index: usize, content: &mut Vec<Node>) -> Option<Dimensions> {
         let (start, end) = (self.start(index), self.end(index));
-        let (rest, dimensions) = label_dimensions(self.text(index), false)?;
+        let pipes = if self.cell { Pipes::Cell } else { Pipes::Image };
+        let (rest, width, dimensions) = label_dimensions(self.text(index), pipes)?;
         let cut = start + rest.len();
         if rest.is_empty() && content.len() > 1 {
             return None;
@@ -1902,8 +1913,9 @@ impl<'a> Compiler<'a> {
             Kind::Text { literal } if from <= cut && to == end => literal,
             _ => return None,
         };
-        // The separator, if any, and the digits: one byte each.
-        let size = end - cut;
+        // The separator, if any, is one byte of the literal, and each digit
+        // one.
+        let size = end - cut - width.saturating_sub(1);
         if size >= literal.len() {
             content.pop();
         } else {
@@ -1945,40 +1957,67 @@ fn unescape(text: &str, references: bool) -> String {
     result
 }
 
+/// How a label's pipes separate dimensions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pipes {
+    /// A cross embed's: `|` or `\|`.
+    Cross,
+    /// An image's: `|`, and a backslash escapes the byte after it.
+    Image,
+    /// An image's in a table cell, where each `\|` is a `|` first.
+    Cell,
+}
+
 /// The dimensions at the end of the embed label `label`, after its last
-/// separator or as all of it, and the label before them: the separator is
-/// `|` or, when `escaped`, `\|`; otherwise a backslash escapes the byte
-/// after it.
-fn label_dimensions(label: &str, escaped: bool) -> Option<(&str, Dimensions)> {
+/// separator or as all of it, the label before them, and the width of the
+/// separator.
+fn label_dimensions(label: &str, pipes: Pipes) -> Option<(&str, usize, Dimensions)> {
     let source = label.as_bytes();
     let mut cut = None;
     let mut index = 0;
+    let mut escape = false;
     while index < source.len() {
-        if source[index] == b'|' {
-            cut = Some((index, index + 1));
-        } else if source[index] == b'\\' && source.get(index + 1) == Some(&b'|') {
-            if escaped {
-                cut = Some((index, index + 2));
-            }
-            index += 1;
-        } else if source[index] == b'\\' && !escaped {
+        let contracted = source[index] == b'\\' && source.get(index + 1) == Some(&b'|');
+        let width = if contracted && pipes != Pipes::Image {
+            2
+        } else {
+            1
+        };
+        let byte = if contracted && pipes == Pipes::Cell {
+            b'|'
+        } else {
+            source[index]
+        };
+        if escape {
+            escape = false;
+        } else if byte == b'|' || (contracted && pipes == Pipes::Cross) {
+            cut = Some((index, index + width));
+        } else if byte == b'\\' && pipes != Pipes::Cross {
             // In an image label, an escaped byte is no separator.
-            index += 1;
+            escape = true;
         }
-        index += 1;
+        index += width;
     }
     let (rest, tail) = match cut {
         Some((before, after)) => (&label[..before], &label[after..]),
         None => ("", label),
     };
+    let width = cut.map_or(0, |(before, after)| after - before);
     if rest.ends_with(|c: char| c.is_ascii_whitespace()) {
         return None;
     }
-    let (width, height) = match tail.split_once('x') {
-        Some((width, height)) => (dimension(width)?, Some(dimension(height)?)),
+    let (across, height) = match tail.split_once('x') {
+        Some((across, height)) => (dimension(across)?, Some(dimension(height)?)),
         None => (dimension(tail)?, None),
     };
-    Some((rest, Dimensions { width, height }))
+    Some((
+        rest,
+        width,
+        Dimensions {
+            width: across,
+            height,
+        },
+    ))
 }
 
 /// A dimension: digits without a leading zero, at most `i32::MAX`.
