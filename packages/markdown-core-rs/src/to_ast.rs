@@ -383,10 +383,12 @@ impl<'a> Compiler<'a> {
                 let content = self.contained(index);
                 Node::new(Kind::Footnote { label, content }, runs)
             }
-            Block::MathFlow => {
-                let literal = self.fenced_literal(index, Name::MathFlowFence, Name::MathFlowChunk);
+            Block::Formula => {
+                let literal = self.fenced_literal(index, Name::FormulaFence, Name::FormulaChunk);
                 Node::new(
-                    Kind::FormulaBlock { literal },
+                    Kind::FormulaBlock {
+                        literal: literal.trim_matches(WHITESPACE).to_string(),
+                    },
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
@@ -528,6 +530,16 @@ impl<'a> Compiler<'a> {
             .count()
             > 1;
         let literal = self.fenced_literal(index, Name::CodeFencedFence, Name::CodeFlowChunk);
+        let runs = self.runs(self.lead(index), self.last(index).1);
+        // A fence whose info string is `formula` is a formula block.
+        if info.as_deref().map(|info| info.trim_matches(WHITESPACE)) == Some("formula") {
+            return Node::new(
+                Kind::FormulaBlock {
+                    literal: literal.trim_matches(WHITESPACE).to_string(),
+                },
+                runs,
+            );
+        }
         Node::new(
             Kind::CodeBlock {
                 info,
@@ -536,7 +548,7 @@ impl<'a> Compiler<'a> {
                 fenced: true,
                 closed,
             },
-            self.runs(self.lead(index), self.last(index).1),
+            runs,
         )
     }
 
@@ -971,14 +983,7 @@ impl<'a> Compiler<'a> {
             Inline::CodeText => Kind::Code {
                 literal: self.code(index, Name::CodeTextData),
             },
-            Inline::MathText => Kind::Formula {
-                // `$$x$$` stands alone; `$x$` is embedded in its text.
-                mode: match self.child(index, Name::MathTextSequence) {
-                    Some(sequence) if self.text(sequence).len() > 1 => Placement::Standalone,
-                    _ => Placement::Embedded,
-                },
-                literal: self.code(index, Name::MathTextData),
-            },
+            Inline::Formula => self.formula(index),
             Inline::HtmlText => {
                 let literal = self.merged(index, Name::HtmlTextData);
                 match html_comment(&literal) {
@@ -1101,7 +1106,52 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// The literal of a code span or inline formula.
+    /// An inline formula.
+    fn formula(&self, index: usize) -> Kind {
+        let mut opener = String::new();
+        let mut body = String::new();
+        for child in self.inside(index) {
+            match self.name(child) {
+                Name::FormulaSequence if opener.is_empty() => opener.push_str(self.text(child)),
+                Name::FormulaText if self.cell => {
+                    body.push_str(&self.text(child).replace("\\|", "|"));
+                }
+                Name::FormulaText => body.push_str(self.text(child)),
+                Name::LineEnding => body.push('\n'),
+                _ => {}
+            }
+        }
+        // `$`...`$` loses its backticks; the backslash forms unescape their
+        // closing bracket.
+        if opener == "$" && body.len() > 1 && body.starts_with('`') && body.ends_with('`') {
+            body = body[1..body.len() - 1].to_string();
+        } else if opener == "\\\\(" {
+            body = body.replace("\\)", ")");
+        } else if opener == "\\\\[" {
+            body = body.replace("\\]", "]");
+        }
+        // One space or line ending off each end, when both ends have one and
+        // the body is not all of them.
+        let pad = |byte: u8| matches!(byte, b' ' | b'\n' | b'\r');
+        let bytes = body.as_bytes();
+        if bytes.len() > 1
+            && pad(bytes[0])
+            && pad(bytes[bytes.len() - 1])
+            && !bytes.iter().all(|byte| pad(*byte))
+        {
+            body = body[1..body.len() - 1].to_string();
+        }
+        Kind::Formula {
+            mode: if opener == "$$" || opener == "\\\\[" {
+                Placement::Standalone
+            } else {
+                Placement::Embedded
+            },
+            literal: body,
+        }
+    }
+
+    /// The literal of a code span.
     fn code(&self, index: usize, data: Name) -> String {
         let mut literal = String::new();
         for child in self.inside(index) {
@@ -1376,6 +1426,10 @@ fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
         assign(child, taken);
     }
 }
+
+/// The anchor projection of an inline node, appended to `base`.
+/// Whitespace that a block literal is trimmed of.
+const WHITESPACE: &[char] = &[' ', '\t', '\n', '\r'];
 
 /// The anchor projection of an inline node, appended to `base`.
 fn flatten(node: &Node, base: &mut String) {

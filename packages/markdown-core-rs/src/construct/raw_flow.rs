@@ -1,5 +1,5 @@
 //! Raw (flow) occurs in the [flow][] content type.
-//! It forms code (fenced) and math (flow).
+//! It forms code (fenced).
 //!
 //! ## Grammar
 //!
@@ -9,7 +9,6 @@
 //! ```bnf
 //! raw_flow ::= fence_open *( eol *byte ) [ eol fence_close ]
 //!
-//! ; Restriction: math (flow) does not support the `info` part.
 //! fence_open ::= sequence [*space_or_tab info [1*space_or_tab meta]] *space_or_tab
 //! ; Restriction: the number of markers in the closing fence sequence must be
 //! ; equal to or greater than the number of markers in the opening fence
@@ -17,10 +16,10 @@
 //! ; Restriction: the marker in the closing fence sequence must match the
 //! ; marker in the opening fence sequence
 //! fence_close ::= sequence *space_or_tab
-//! sequence ::= 3*'`' | 3*'~' | 2*'$'
-//! ; Restriction: the marker cannot occur in `info` if it is the `$` or `` ` `` character.
+//! sequence ::= 3*'`' | 3*'~'
+//! ; Restriction: the marker cannot occur in `info` if it is the `` ` `` character.
 //! info ::= 1*text
-//! ; Restriction: the marker cannot occur in `meta` if it is the `$` or `` ` `` character.
+//! ; Restriction: the marker cannot occur in `meta` if it is the `` ` `` character.
 //! meta ::= 1*text *(*space_or_tab 1*text)
 //! ```
 //!
@@ -41,7 +40,6 @@
 //! The `info` and `meta` parts are interpreted as the [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
-//! Math (flow) does not support `info`.
 //!
 //! The optional `meta` part is ignored: it is not used when parsing or
 //! rendering.
@@ -62,15 +60,6 @@
 //! HTML.
 //! See [*§ 4.4.3 The `pre` element*][html_pre] and the [*§ 4.5.15 The `code`
 //! element*][html_code] in the HTML spec for more info.
-//!
-//! Math (flow) does not relate to HTML elements.
-//! `MathML`, which is sort of like SVG but for math, exists but it doesn’t work
-//! well and isn’t widely supported.
-//! Instead, it is recommended to use client side JavaScript with something like
-//! `KaTeX` or `MathJax` to process the math
-//! For that, the math is compiled as a `<pre>`, and a `<code>` element with two
-//! classes: `language-math` and `math-display`.
-//! Client side JavaScript can look for these classes to process them further.
 //!
 //! The `info` is, when rendering to HTML, typically exposed as a class.
 //! This behavior stems from the HTML spec ([*§ 4.5.15 The `code`
@@ -96,14 +85,6 @@
 //! Code (fenced) is more explicit, similar to code (text), and has support
 //! for specifying the programming language.
 //!
-//! When authoring markdown with math, keep in mind that math doesn’t work in
-//! most places.
-//! Notably, GitHub currently has a really weird crappy client-side regex-based
-//! thing.
-//! But on your own (math-heavy?) site it can be great!
-//! You can use code (fenced) with an info string of `math` to improve this, as
-//! that works in many places.
-//!
 //! ## Tokens
 //!
 //! * [`CodeFenced`][Name::CodeFenced]
@@ -113,20 +94,12 @@
 //! * [`CodeFencedFenceSequence`][Name::CodeFencedFenceSequence]
 //! * [`CodeFlowChunk`][Name::CodeFlowChunk]
 //! * [`LineEnding`][Name::LineEnding]
-//! * [`MathFlow`][Name::MathFlow]
-//! * [`MathFlowFence`][Name::MathFlowFence]
-//! * [`MathFlowFenceMeta`][Name::MathFlowFenceMeta]
-//! * [`MathFlowFenceSequence`][Name::MathFlowFenceSequence]
-//! * [`MathFlowChunk`][Name::MathFlowChunk]
 //! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
 //!
 //! * [`code-fenced.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark-core-commonmark/dev/lib/code-fenced.js)
-//! * [`micromark-extension-math`](https://github.com/micromark/micromark-extension-math)
 //! * [*§ 4.5 Fenced code blocks* in `CommonMark`](https://spec.commonmark.org/0.31/#fenced-code-blocks)
-//!
-//! > 👉 **Note**: math is not specified anywhere.
 //!
 //! [flow]: crate::construct::flow
 //! [plain]: crate::construct::plain
@@ -145,12 +118,12 @@ use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 use crate::util::{
-    constant::{CODE_FENCED_SEQUENCE_SIZE_MIN, MATH_FLOW_SEQUENCE_SIZE_MIN, TAB_SIZE},
+    constant::{CODE_FENCED_SEQUENCE_SIZE_MIN, TAB_SIZE},
     slice::{Position, Slice},
 };
 
 /// Bytes this construct can start at.
-pub const STARTS: Starts = Starts::Bytes(b"\t $`~");
+pub const STARTS: Starts = Starts::Bytes(b"\t `~");
 
 /// Start of raw.
 ///
@@ -169,7 +142,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         return State::Redo(space_or_tab_min_max(0, TAB_SIZE - 1));
     }
 
-    if matches!(tokenizer.current, Some(b'$' | b'`' | b'~')) {
+    if matches!(tokenizer.current, Some(b'`' | b'~')) {
         return State::Redo(StateName::RawFlow(Step::BeforeSequenceOpen));
     }
 
@@ -198,17 +171,15 @@ fn before_sequence_open(tokenizer: &mut Tokenizer) -> State {
         }
     }
 
-    // Code (fenced), math (flow).
-    if matches!(tokenizer.current, Some(b'$' | b'`' | b'~')) {
+    if matches!(tokenizer.current, Some(b'`' | b'~')) {
         let fence = Fence {
             marker: tokenizer.current.unwrap(),
             size: 0,
             prefix,
         };
-        let names = names(fence.marker);
-        tokenizer.enter(names.whole);
-        tokenizer.enter(names.fence);
-        tokenizer.enter(names.sequence);
+        tokenizer.enter(Name::CodeFenced);
+        tokenizer.enter(Name::CodeFencedFence);
+        tokenizer.enter(Name::CodeFencedFenceSequence);
         State::Redo(StateName::RawFlow(Step::SequenceOpen { fence }))
     } else {
         State::Nok
@@ -224,42 +195,6 @@ pub struct Fence {
     prefix: usize,
 }
 
-/// The token names of a fence of `marker`.
-struct Names {
-    whole: Name,
-    fence: Name,
-    sequence: Name,
-    info: Name,
-    meta: Name,
-    chunk: Name,
-}
-
-/// The token names of raw flow with `marker`.
-///
-/// Math (flow) does not support an `info` part: everything after the opening
-/// sequence is the `meta` part.
-fn names(marker: u8) -> Names {
-    if marker == b'$' {
-        Names {
-            whole: Name::MathFlow,
-            fence: Name::MathFlowFence,
-            sequence: Name::MathFlowFenceSequence,
-            info: Name::MathFlowFenceMeta,
-            meta: Name::MathFlowFenceMeta,
-            chunk: Name::MathFlowChunk,
-        }
-    } else {
-        Names {
-            whole: Name::CodeFenced,
-            fence: Name::CodeFencedFence,
-            sequence: Name::CodeFencedFenceSequence,
-            info: Name::CodeFencedFenceInfo,
-            meta: Name::CodeFencedFenceMeta,
-            chunk: Name::CodeFlowChunk,
-        }
-    }
-}
-
 /// In opening fence sequence.
 ///
 /// ```markdown
@@ -273,24 +208,12 @@ fn sequence_open(tokenizer: &mut Tokenizer, mut fence: Fence) -> State {
         fence.size += 1;
         tokenizer.consume();
         State::Next(StateName::RawFlow(Step::SequenceOpen { fence }))
-    } else if fence.size
-        < (if fence.marker == b'$' {
-            MATH_FLOW_SEQUENCE_SIZE_MIN
-        } else {
-            CODE_FENCED_SEQUENCE_SIZE_MIN
-        })
-    {
+    } else if fence.size < CODE_FENCED_SEQUENCE_SIZE_MIN {
         State::Nok
     } else {
-        // Math (flow) does not support an `info` part: everything after the
-        // opening sequence is the `meta` part.
-        let next = if fence.marker == b'$' {
-            StateName::RawFlow(Step::MetaBefore { fence })
-        } else {
-            StateName::RawFlow(Step::InfoBefore { fence })
-        };
+        let next = StateName::RawFlow(Step::InfoBefore { fence });
 
-        tokenizer.exit(names(fence.marker).sequence);
+        tokenizer.exit(Name::CodeFencedFenceSequence);
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
             tokenizer.attempt(State::Next(next), State::Nok);
             State::Redo(space_or_tab())
@@ -311,19 +234,19 @@ fn sequence_open(tokenizer: &mut Tokenizer, mut fence: Fence) -> State {
 fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
-            tokenizer.exit(names(fence.marker).fence);
+            tokenizer.exit(Name::CodeFencedFence);
             // Do not form containers.
             tokenizer.concrete = true;
             tokenizer.check(
                 State::Next(StateName::RawFlow(Step::AtNonLazyBreak { fence })),
-                State::Next(StateName::RawFlow(Step::After { fence })),
+                State::Next(StateName::RawFlow(Step::After)),
             );
             State::Redo(StateName::NonLazyContinuation(
                 partial_non_lazy_continuation::Step::Start,
             ))
         }
         _ => {
-            tokenizer.enter(names(fence.marker).info);
+            tokenizer.enter(Name::CodeFencedFenceInfo);
             tokenizer.enter_link(
                 Name::Data,
                 Link {
@@ -349,12 +272,12 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Data);
-            tokenizer.exit(names(fence.marker).info);
+            tokenizer.exit(Name::CodeFencedFenceInfo);
             State::Redo(StateName::RawFlow(Step::InfoBefore { fence }))
         }
         Some(b'\t' | b' ') => {
             tokenizer.exit(Name::Data);
-            tokenizer.exit(names(fence.marker).info);
+            tokenizer.exit(Name::CodeFencedFenceInfo);
             tokenizer.attempt(
                 State::Next(StateName::RawFlow(Step::MetaBefore { fence })),
                 State::Nok,
@@ -362,10 +285,10 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             State::Redo(space_or_tab())
         }
         Some(byte) => {
-            // This looks like code (text) / math (text).
+            // This looks like code (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
             // used as strikethrough in text.
-            if fence.marker == byte && matches!(byte, b'$' | b'`') {
+            if fence.marker == byte && byte == b'`' {
                 tokenizer.concrete = false;
                 State::Nok
             } else {
@@ -388,7 +311,7 @@ fn meta_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => State::Redo(StateName::RawFlow(Step::InfoBefore { fence })),
         _ => {
-            tokenizer.enter(names(fence.marker).meta);
+            tokenizer.enter(Name::CodeFencedFenceMeta);
             tokenizer.enter_link(
                 Name::Data,
                 Link {
@@ -414,14 +337,14 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::Data);
-            tokenizer.exit(names(fence.marker).meta);
+            tokenizer.exit(Name::CodeFencedFenceMeta);
             State::Redo(StateName::RawFlow(Step::InfoBefore { fence }))
         }
         Some(byte) => {
-            // This looks like code (text) / math (text).
+            // This looks like code (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
             // used as strikethrough in text.
-            if fence.marker == byte && matches!(byte, b'$' | b'`') {
+            if fence.marker == byte && byte == b'`' {
                 tokenizer.concrete = false;
                 State::Nok
             } else {
@@ -443,7 +366,7 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 /// ```
 fn at_non_lazy_break(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     tokenizer.attempt(
-        State::Next(StateName::RawFlow(Step::After { fence })),
+        State::Next(StateName::RawFlow(Step::After)),
         State::Next(StateName::RawFlow(Step::ContentBefore { fence })),
     );
     tokenizer.enter(Name::LineEnding);
@@ -461,7 +384,7 @@ fn at_non_lazy_break(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 ///     ^
 /// ```
 fn close_start(tokenizer: &mut Tokenizer, fence: Fence) -> State {
-    tokenizer.enter(names(fence.marker).fence);
+    tokenizer.enter(Name::CodeFencedFence);
 
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
@@ -485,7 +408,7 @@ fn close_start(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 /// ```
 fn before_sequence_close(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     if tokenizer.current == Some(fence.marker) {
-        tokenizer.enter(names(fence.marker).sequence);
+        tokenizer.enter(Name::CodeFencedFenceSequence);
         State::Redo(StateName::RawFlow(Step::SequenceClose { fence, close: 0 }))
     } else {
         State::Nok
@@ -508,16 +431,16 @@ fn sequence_close(tokenizer: &mut Tokenizer, fence: Fence, close: usize) -> Stat
             close: close + 1,
         }))
     } else if close >= fence.size {
-        tokenizer.exit(names(fence.marker).sequence);
+        tokenizer.exit(Name::CodeFencedFenceSequence);
 
         if matches!(tokenizer.current, Some(b'\t' | b' ')) {
             tokenizer.attempt(
-                State::Next(StateName::RawFlow(Step::SequenceCloseAfter { fence })),
+                State::Next(StateName::RawFlow(Step::SequenceCloseAfter)),
                 State::Nok,
             );
             State::Redo(space_or_tab())
         } else {
-            State::Redo(StateName::RawFlow(Step::SequenceCloseAfter { fence }))
+            State::Redo(StateName::RawFlow(Step::SequenceCloseAfter))
         }
     } else {
         State::Nok
@@ -532,10 +455,10 @@ fn sequence_close(tokenizer: &mut Tokenizer, fence: Fence, close: usize) -> Stat
 /// > | ~~~
 ///        ^
 /// ```
-fn sequence_close_after(tokenizer: &mut Tokenizer, fence: Fence) -> State {
+fn sequence_close_after(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
-            tokenizer.exit(names(fence.marker).fence);
+            tokenizer.exit(Name::CodeFencedFence);
             State::Ok
         }
         _ => State::Nok,
@@ -590,14 +513,14 @@ fn before_content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
         None | Some(b'\n') => {
             tokenizer.check(
                 State::Next(StateName::RawFlow(Step::AtNonLazyBreak { fence })),
-                State::Next(StateName::RawFlow(Step::After { fence })),
+                State::Next(StateName::RawFlow(Step::After)),
             );
             State::Redo(StateName::NonLazyContinuation(
                 partial_non_lazy_continuation::Step::Start,
             ))
         }
         _ => {
-            tokenizer.enter(names(fence.marker).chunk);
+            tokenizer.enter(Name::CodeFlowChunk);
             State::Redo(StateName::RawFlow(Step::ContentChunk { fence }))
         }
     }
@@ -614,7 +537,7 @@ fn before_content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 fn content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
-            tokenizer.exit(names(fence.marker).chunk);
+            tokenizer.exit(Name::CodeFlowChunk);
             State::Redo(StateName::RawFlow(Step::BeforeContentChunk { fence }))
         }
         _ => {
@@ -632,8 +555,8 @@ fn content_chunk(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 /// > | ~~~
 ///        ^
 /// ```
-fn after(tokenizer: &mut Tokenizer, fence: Fence) -> State {
-    tokenizer.exit(names(fence.marker).whole);
+fn after(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.exit(Name::CodeFenced);
     // Feel free to interrupt.
     tokenizer.interrupt = false;
     // No longer concrete.
@@ -655,12 +578,12 @@ pub enum Step {
     CloseStart { fence: Fence },
     BeforeSequenceClose { fence: Fence },
     SequenceClose { fence: Fence, close: usize },
-    SequenceCloseAfter { fence: Fence },
+    SequenceCloseAfter,
     ContentBefore { fence: Fence },
     ContentStart { fence: Fence },
     BeforeContentChunk { fence: Fence },
     ContentChunk { fence: Fence },
-    After { fence: Fence },
+    After,
 }
 
 impl From<Step> for StateName {
@@ -683,11 +606,11 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::CloseStart { fence } => close_start(tokenizer, fence),
         Step::BeforeSequenceClose { fence } => before_sequence_close(tokenizer, fence),
         Step::SequenceClose { fence, close } => sequence_close(tokenizer, fence, close),
-        Step::SequenceCloseAfter { fence } => sequence_close_after(tokenizer, fence),
+        Step::SequenceCloseAfter => sequence_close_after(tokenizer),
         Step::ContentBefore { fence } => content_before(tokenizer, fence),
         Step::ContentStart { fence } => content_start(tokenizer, fence),
         Step::BeforeContentChunk { fence } => before_content_chunk(tokenizer, fence),
         Step::ContentChunk { fence } => content_chunk(tokenizer, fence),
-        Step::After { fence } => after(tokenizer, fence),
+        Step::After => after(tokenizer),
     }
 }

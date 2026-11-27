@@ -89,7 +89,7 @@
 //! `\|`.
 //!
 //! Escapes will typically work, but they are not supported in
-//! [code (text)][raw_text] (and the math (text) extension).
+//! [code (text)][raw_text] (and formulas).
 //! To work around this, GitHub came up with a rather weird “trick”.
 //! When inside a table cell *and* inside code, escaped pipes *are* decoded.
 //! To illustrate:

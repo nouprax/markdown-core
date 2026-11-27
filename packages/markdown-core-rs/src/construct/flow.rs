@@ -15,13 +15,14 @@
 //! * [Heading (atx)][crate::construct::heading_atx]
 //! * [Heading (setext)][crate::construct::heading_setext]
 //! * [HTML (flow)][crate::construct::html_flow]
-//! * [Raw (flow)][crate::construct::raw_flow] (code (fenced), math (flow))
+//! * [Formula][crate::construct::formula] (formula blocks)
+//! * [Raw (flow)][crate::construct::raw_flow] (code (fenced))
 //! * [Thematic break][crate::construct::thematic_break]
 
 use crate::choice::{self, Choice, Entry, List};
 use crate::construct::{
-    blank_line, callout, code_indented, comment, content, heading_atx, heading_setext, html_flow,
-    raw_flow, table, thematic_break,
+    blank_line, callout, code_indented, comment, content, formula, heading_atx, heading_setext,
+    html_flow, raw_flow, table, thematic_break,
 };
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
@@ -40,6 +41,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: callout::STARTS,
             step: StateName::Callout(callout::Step::Start),
+        },
+        Entry {
+            starts: formula::FLOW,
+            step: StateName::Formula(formula::Step::FlowStart),
         },
         Entry {
             starts: raw_flow::STARTS,

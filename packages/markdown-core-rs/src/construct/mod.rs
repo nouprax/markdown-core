@@ -53,8 +53,9 @@
 //! * [label start (link)][label_start_link]
 //! * [list item][list_item]
 //! * [paragraph][paragraph]
-//! * [raw (flow)][raw_flow] (code (fenced), extensions: math (flow))
-//! * [raw (text)][raw_text] (code (text), extensions: math (text))
+//! * [raw (flow)][raw_flow] (code (fenced))
+//! * [raw (text)][raw_text] (code (text))
+//! * [formula][formula] (formulas and formula blocks)
 //! * [thematic break][thematic_break]
 //!
 //! > 👉 **Note**: for performance reasons, hard break (trailing) is formed by
@@ -157,6 +158,7 @@ pub mod definition;
 pub mod document;
 pub mod flow;
 pub mod footnote_definition;
+pub mod formula;
 pub mod frontmatter;
 pub mod hard_break_escape;
 pub mod heading_atx;

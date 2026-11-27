@@ -2627,127 +2627,19 @@ pub enum Name {
     ///     ^^^
     /// ```
     ListUnordered,
-    /// Whole math (flow).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [flow content][crate::construct::flow]
-    /// * **Content model**:
-    ///   [`MathFlowFence`][Name::MathFlowFence],
-    ///   [`MathFlowChunk`][Name::MathFlowChunk],
-    ///   [`LineEnding`][Name::LineEnding],
-    ///   [`SpaceOrTab`][Name::SpaceOrTab]
-    /// * **Construct**:
-    ///   [`raw_flow`][crate::construct::raw_flow]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | $$
-    ///     ^^
-    /// > | \frac{1}{2}
-    ///     ^^^^^^^^^^^
-    /// > | $$
-    ///     ^^
-    /// ```
-    MathFlow,
-    /// A math (flow) fence.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`MathFlow`][Name::MathFlow]
-    /// * **Content model**:
-    ///   [`MathFlowFenceMeta`][Name::MathFlowFenceMeta],
-    ///   [`MathFlowFenceSequence`][Name::MathFlowFenceSequence],
-    ///   [`SpaceOrTab`][Name::SpaceOrTab]
-    /// * **Construct**:
-    ///   [`raw_flow`][crate::construct::raw_flow]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | $$
-    ///     ^^
-    ///   | \frac{1}{2}
-    /// > | $$
-    ///     ^^
-    /// ```
-    MathFlowFence,
-    /// A math (flow) fence meta string.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`MathFlowFence`][Name::MathFlowFence]
-    /// * **Content model**:
-    ///   [string content][crate::construct::string]
-    /// * **Construct**:
-    ///   [`raw_flow`][crate::construct::raw_flow]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | $$alpha bravo
-    ///       ^^^^^^^^^^^
-    ///   | \frac{1}{2}
-    ///   | $$
-    /// ```
-    MathFlowFenceMeta,
-    /// A math (flow) fence sequence.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`MathFlowFenceSequence`][Name::MathFlowFenceSequence]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`raw_flow`][crate::construct::raw_flow]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | $$
-    ///     ^^
-    ///   | \frac{1}{2}
-    /// > | $$
-    ///     ^^
-    /// ```
-    MathFlowFenceSequence,
-    /// A math (flow) chunk.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`MathFlow`][Name::MathFlow]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`raw_flow`][crate::construct::raw_flow]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    ///   | $$
-    /// > | \frac{1}{2}
-    ///     ^^^^^^^^^^^
-    ///   | $$
-    /// ```
-    MathFlowChunk,
-    /// Whole math (text).
+    /// Formula.
     ///
     /// ## Info
     ///
     /// * **Context**:
     ///   [text content][crate::construct::text]
     /// * **Content model**:
-    ///   [`MathTextData`][Name::MathTextData],
-    ///   [`MathTextSequence`][Name::MathTextSequence],
-    ///   [`LineEnding`][Name::LineEnding]
+    ///   [`FormulaSequence`][Name::FormulaSequence],
+    ///   [`FormulaText`][Name::FormulaText],
+    ///   [`LineEnding`][Name::LineEnding],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`raw_text`][crate::construct::raw_text]
+    ///   [`formula`][crate::construct::formula]
     ///
     /// ## Example
     ///
@@ -2755,35 +2647,36 @@ pub enum Name {
     /// > | a $b$ c
     ///       ^^^
     /// ```
-    MathText,
-    /// Math (text) data.
+    Formula,
+    /// Formula text: a line of its body.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`MathText`][Name::MathText]
+    ///   [`Formula`][Name::Formula]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`raw_text`][crate::construct::raw_text]
+    ///   [`formula`][crate::construct::formula]
     ///
     /// ## Example
     ///
     /// ```markdown
-    /// > | a `b` c
+    /// > | a $b$ c
     ///        ^
     /// ```
-    MathTextData,
-    /// Math (text) sequence.
+    FormulaText,
+    /// Formula sequence: a delimiter of a formula or a formula block fence.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`MathText`][Name::MathText]
+    ///   [`Formula`][Name::Formula],
+    ///   [`FormulaFence`][Name::FormulaFence]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`raw_text`][crate::construct::raw_text]
+    ///   [`formula`][crate::construct::formula]
     ///
     /// ## Example
     ///
@@ -2791,7 +2684,73 @@ pub enum Name {
     /// > | a $b$ c
     ///       ^ ^
     /// ```
-    MathTextSequence,
+    FormulaSequence,
+    /// Formula block.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [flow content][crate::construct::flow]
+    /// * **Content model**:
+    ///   [`FormulaFence`][Name::FormulaFence],
+    ///   [`FormulaChunk`][Name::FormulaChunk],
+    ///   [`LineEnding`][Name::LineEnding]
+    /// * **Construct**:
+    ///   [`formula`][crate::construct::formula]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | $$
+    ///     ^^
+    /// > | a
+    ///     ^
+    /// > | $$
+    ///     ^^
+    /// ```
+    FormulaFlow,
+    /// Formula block fence.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`FormulaFlow`][Name::FormulaFlow]
+    /// * **Content model**:
+    ///   [`FormulaSequence`][Name::FormulaSequence],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`formula`][crate::construct::formula]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | $$
+    ///     ^^
+    ///   | a
+    /// > | $$
+    ///     ^^
+    /// ```
+    FormulaFence,
+    /// Formula block chunk: a line of its body.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`FormulaFlow`][Name::FormulaFlow]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`formula`][crate::construct::formula]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | $$
+    /// > | a
+    ///     ^
+    ///   | $$
+    /// ```
+    FormulaChunk,
     /// Paragraph.
     ///
     /// ## Info
@@ -3210,7 +3169,7 @@ pub enum Block {
     Definition,
     Table,
     Footnote,
-    MathFlow,
+    Formula,
     Frontmatter,
     Comment,
 }
@@ -3231,7 +3190,7 @@ pub enum Inline {
     Subscript,
     Superscript,
     CodeText,
-    MathText,
+    Formula,
     HtmlText,
     Comment,
     CrossLink,
@@ -3267,7 +3226,7 @@ impl Name {
             Name::Definition => Role::Block(Block::Definition),
             Name::Table => Role::Block(Block::Table),
             Name::FootnoteDefinition => Role::Block(Block::Footnote),
-            Name::MathFlow => Role::Block(Block::MathFlow),
+            Name::FormulaFlow => Role::Block(Block::Formula),
             Name::Frontmatter => Role::Block(Block::Frontmatter),
             Name::Data => Role::Inline(Inline::Data),
             Name::CharacterEscape => Role::Inline(Inline::CharacterEscape),
@@ -3282,7 +3241,7 @@ impl Name {
             Name::Subscript => Role::Inline(Inline::Subscript),
             Name::Superscript => Role::Inline(Inline::Superscript),
             Name::CodeText => Role::Inline(Inline::CodeText),
-            Name::MathText => Role::Inline(Inline::MathText),
+            Name::Formula => Role::Inline(Inline::Formula),
             Name::HtmlText => Role::Inline(Inline::HtmlText),
             Name::Comment => Role::Inline(Inline::Comment),
             Name::CrossLink => Role::Inline(Inline::CrossLink),
@@ -3403,12 +3362,10 @@ impl Name {
             | Name::ListItemMarker
             | Name::ListItemPrefix
             | Name::ListItemValue
-            | Name::MathFlowFence
-            | Name::MathFlowFenceMeta
-            | Name::MathFlowFenceSequence
-            | Name::MathFlowChunk
-            | Name::MathTextData
-            | Name::MathTextSequence
+            | Name::FormulaFence
+            | Name::FormulaSequence
+            | Name::FormulaChunk
+            | Name::FormulaText
             | Name::Reference
             | Name::ReferenceMarker
             | Name::ReferenceText
@@ -3432,7 +3389,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 78] = [
+pub const VOID_EVENTS: [Name; 77] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3487,10 +3444,9 @@ pub const VOID_EVENTS: [Name; 78] = [
     Name::LineEnding,
     Name::ListItemMarker,
     Name::ListItemValue,
-    Name::MathFlowFenceSequence,
-    Name::MathFlowChunk,
-    Name::MathTextData,
-    Name::MathTextSequence,
+    Name::FormulaSequence,
+    Name::FormulaChunk,
+    Name::FormulaText,
     Name::CalloutFold,
     Name::CalloutMarker,
     Name::CalloutVariant,

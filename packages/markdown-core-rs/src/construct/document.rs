@@ -460,8 +460,10 @@ fn exit_containers(tokenizer: &mut Tokenizer, phase: &Phase) {
 
     let child = tokenizer.document.child.as_mut().unwrap();
 
-    // Flush if needed.
+    // Flush if needed: the line after is no part of the flow, as a lazy line
+    // is not.
     if *phase != Phase::After {
+        child.lazy = true;
         let state = tokenizer
             .document
             .state

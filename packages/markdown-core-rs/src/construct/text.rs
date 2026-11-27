@@ -2,7 +2,7 @@
 //!
 //! **Text** contains phrasing content such as
 //! [attention] (emphasis, gfm strikethrough, strong),
-//! [raw (text)][crate::construct::raw_text] (code (text), math (text)), and actual text.
+//! [raw (text)][crate::construct::raw_text] (code (text)), formulas, and actual text.
 //!
 //! The constructs found in text are:
 //!
@@ -13,7 +13,8 @@
 //! * [Comment][crate::construct::comment]
 //! * [Cross link][crate::construct::cross_link]
 //! * [Topic][crate::construct::topic]
-//! * [Raw (text)][crate::construct::raw_text] (code (text), math (text))
+//! * [Formula][crate::construct::formula]
+//! * [Raw (text)][crate::construct::raw_text] (code (text))
 //! * [GFM: Label start (footnote)][crate::construct::label_start_footnote]
 //! * [GFM: Task list item check][crate::construct::task_list_item_check]
 //! * [Hard break (escape)][crate::construct::hard_break_escape]
@@ -30,8 +31,8 @@ use crate::construct::autolink_literal::resolve as resolve_autolink_literal;
 use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
     attention, autolink, autolink_literal, character_escape, character_reference, comment,
-    cross_link, hard_break_escape, html_text, label_end, label_start_footnote, label_start_image,
-    label_start_link, partial_data, raw_text, task_list_item_check, topic,
+    cross_link, formula, hard_break_escape, html_text, label_end, label_start_footnote,
+    label_start_image, label_start_link, partial_data, raw_text, task_list_item_check, topic,
 };
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -50,6 +51,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: label_start_image::STARTS,
             step: StateName::LabelStartImage(label_start_image::Step::Start),
+        },
+        Entry {
+            starts: formula::STARTS,
+            step: StateName::Formula(formula::Step::Start),
         },
         Entry {
             starts: raw_text::STARTS,
