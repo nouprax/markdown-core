@@ -98,8 +98,6 @@ pub fn subtokenize(
             if link.previous.is_none()
                 && (filter.is_none() || &link.content == *filter.as_ref().unwrap())
             {
-                // Index into `events` pointing to a chunk.
-                let mut link_index = Some(index);
                 // Subtokenizer.
                 let mut tokenizer = Tokenizer::new(event.point.clone(), parse_state);
                 debug_assert!(
@@ -140,26 +138,7 @@ pub fn subtokenize(
                     }
                 }
 
-                // Loop through links to pass them in order to the subtokenizer.
-                while let Some(index) = link_index {
-                    let enter = &events[index];
-                    let link_curr = enter.link.as_ref().expect("expected link");
-                    debug_assert_eq!(enter.kind, Kind::Enter);
-
-                    if link_curr.previous.is_some() {
-                        tokenizer.define_skip(enter.point.clone());
-                    }
-
-                    let end = &events[index + 1].point;
-
-                    state = tokenizer.push(
-                        (enter.point.index, enter.point.vs),
-                        (end.index, end.vs),
-                        state,
-                    );
-
-                    link_index = link_curr.next;
-                }
+                state = feed(&mut tokenizer, events, index, state);
 
                 let mut result = tokenizer.flush(state, true);
                 value.definitions.append(&mut result.definitions);
@@ -175,6 +154,32 @@ pub fn subtokenize(
     map.consume(events);
 
     value
+}
+
+/// Pass the chunks linked from the one at `index` in `events`, in order, to
+/// `tokenizer`.
+pub fn feed(tokenizer: &mut Tokenizer, events: &[Event], index: usize, mut state: State) -> State {
+    let mut link_index = Some(index);
+    while let Some(index) = link_index {
+        let enter = &events[index];
+        let link_curr = enter.link.as_ref().expect("expected link");
+        debug_assert_eq!(enter.kind, Kind::Enter);
+
+        if link_curr.previous.is_some() {
+            tokenizer.define_skip(enter.point.clone());
+        }
+
+        let end = &events[index + 1].point;
+
+        state = tokenizer.push(
+            (enter.point.index, enter.point.vs),
+            (end.index, end.vs),
+            state,
+        );
+
+        link_index = link_curr.next;
+    }
+    state
 }
 
 /// Divide `child_events` over links in `events`, the first of which is at

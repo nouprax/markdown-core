@@ -1,6 +1,6 @@
 //! Turn bytes of markdown into events.
 
-use crate::construct::document;
+use crate::construct::{document, heading};
 use crate::event::{Event, Point};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::subtokenize;
@@ -45,6 +45,7 @@ pub fn parse(value: &str) -> (Vec<Event>, &[u8]) {
     );
     let mut result = tokenizer.flush(state, true);
     let mut events = tokenizer.events;
+    heading::settle(&mut events, &parse_state, &mut result.definitions);
 
     loop {
         parse_state.definitions.append(&mut result.definitions);

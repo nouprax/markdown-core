@@ -71,6 +71,9 @@
 //! * [gfm table][table]
 //! * [gfm task list item check][task_list_item_check]
 //!
+//! Before text is parsed, [heading][] settles the attribute tail and the
+//! reference label of each heading.
+//!
 //! There are also several small subroutines typically used in different places:
 //!
 //! * [attributes][partial_attributes]
@@ -167,6 +170,7 @@ pub mod footnote_definition;
 pub mod formula;
 pub mod frontmatter;
 pub mod hard_break_escape;
+pub mod heading;
 pub mod heading_atx;
 pub mod heading_setext;
 pub mod html_flow;
