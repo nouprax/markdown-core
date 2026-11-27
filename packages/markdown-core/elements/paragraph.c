@@ -23,14 +23,6 @@ static void close_paragraph(markdown_core_compiler *compiler, const markdown_cor
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent, reader);
 }
 
-static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, markdown_core_reader *reader) {
-    (void)reader;
-    (void)self;
-    (void)parser;
-    (void)node;
-    return true;
-}
 static const markdown_core_content_ops PARAGRAPH_CONTENT = {
     .mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inlines = true,
@@ -195,11 +187,17 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
                                markdown_core_state_of(S_goes), code);
 }
 
+/* A lazy line goes on with the paragraph. */
+static markdown_core_state S_lazy(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_ok(tokenizer);
+}
+
 static const markdown_core_line_ops PARAGRAPH_LINES = {
     .shut = &PARAGRAPH_BLOCK_TOKENS[PARAGRAPH_SHUT],
     .continuation = {.start = S_continue},
     .beyond = true,
-    .lazy = accepts_lazy,
+    .lazy = {.start = S_lazy},
     .cuts = true,
 };
 

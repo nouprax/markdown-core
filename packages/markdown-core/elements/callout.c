@@ -267,12 +267,15 @@ static markdown_core_state markdown_core_callout_scan(markdown_core_tokenizer *t
 /* The marker line's text is the callout's title, so a lazy line after it
  * cannot continue a paragraph: it starts the body's first one, as the same
  * text would with the quote's prefix. */
-static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, markdown_core_reader *reader) {
-    (void)self;
+static markdown_core_state S_lazy(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    const markdown_core_node *node = turn->node;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
-           !markdown_core_parser_last_child(node) &&
-           markdown_core_reader_starts(reader, parser, node, reader->number - 1);
+                   !markdown_core_parser_last_child(node) &&
+                   markdown_core_reader_starts(turn->reader, turn->parser, node, turn->reader->number - 1)
+               ? markdown_core_ok(tokenizer)
+               : markdown_core_nok(tokenizer);
 }
 
 static const markdown_core_edit_ops CALLOUT_EDIT = {
@@ -327,7 +330,7 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
 
 static const markdown_core_line_ops CALLOUT_LINES = {
     .continuation = {.start = S_continue},
-    .lazy = accepts_lazy,
+    .lazy = {.start = S_lazy},
     .prefix_bytes = ">",
     .blank_opaque = true,
     .text = {.start = S_title},

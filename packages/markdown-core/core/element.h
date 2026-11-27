@@ -601,15 +601,15 @@ struct markdown_core_line_ops {
      * continue settles for them. */
     bool pending;
     /* A lazy line -- one that did not match every open container's prefix
-     * and opened no block -- is offered to the current block, and `lazy`
-     * says whether it takes the line: a block of text adds it to its text,
-     * any other opens the content the line starts in it (THE CONTENT). A
-     * block that accepts the line takes it as a paragraph takes a lazy
-     * line: the starts that refuse a lazy line (`block_start_context`) open
-     * no block on it, so the line is lazy exactly when it would be after a
-     * paragraph's line. */
-    bool (*lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                 markdown_core_reader *);
+     * and opened no block -- is offered to the current block, and `lazy`, a
+     * check in the document's reading (the turn's `node` the block), says
+     * whether it takes the line, by succeeding: a block of text adds it to
+     * its text, any other opens the content the line starts in it (THE
+     * CONTENT). A block that accepts the line takes it as a paragraph takes
+     * a lazy line: the starts that refuse a lazy line (`block_start_context`)
+     * open no block on it, so the line is lazy exactly when it would be
+     * after a paragraph's line. Its start NULL for none. */
+    markdown_core_construct lazy;
     /* THE TEXT OF ITS LINE: a construct attempted on the line's text from
      * the reader's offset, at the line's TEXT step (blocks.c), in the
      * document's reading, the turn's `node` a block the line opened. It

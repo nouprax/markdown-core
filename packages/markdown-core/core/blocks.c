@@ -523,21 +523,6 @@ static bool S_kind_contains_inlines(const markdown_core_kind_record *kind, markd
             kind->structure->element->content->holds_inlines(kind->structure->element, node));
 }
 
-/* Whether the line may be LAZY: it did not match the prefix of the current
- * block, `matched` being the deepest block whose prefix it did match, and the
- * current block takes such a line as text (its lines' `lazy`). A paragraph takes
- * one; so does a callout on the line after its marker line, whose body the
- * line then starts. The line is lazy if it opens no block, and the starts
- * that refuse a lazy line (`block_start_context`) are no block start on it. */
-static inline bool S_may_be_lazy(markdown_core_parser *parser, const markdown_core_node *matched) {
-    markdown_core_node *current = markdown_core_parser_current(parser);
-    if (current == matched) {
-        return false;
-    }
-    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, current)->structure;
-    return structure && structure->lines->lazy && structure->lines->lazy(structure, parser, current, &parser->at.read);
-}
-
 /* Record where the bytes about to be appended to `node`'s content came from.
  *
  * `column` is a BYTE column counted from 1, which is what every position in
@@ -9118,6 +9103,12 @@ static void S_flow_line(markdown_core_compiler *compiler, const markdown_core_to
 
 const markdown_core_compile_ops MARKDOWN_CORE_FLOW_TOKEN = {.enter = S_flow_line};
 
+/* The current block takes the line if lazy. */
+static markdown_core_state S_lazy_line(markdown_core_tokenizer *tokenizer, int code) {
+    S_walk_of(tokenizer)->lazy = true;
+    return S_open_round(tokenizer, code);
+}
+
 /* The walk down the open blocks ends: at the deepest block the line
  * matched, where the starts are tried, unless a block closed on the line. */
 static markdown_core_state S_matched(markdown_core_tokenizer *tokenizer, int code) {
@@ -9139,9 +9130,27 @@ static markdown_core_state S_matched(markdown_core_tokenizer *tokenizer, int cod
         return S_walk_eol(tokenizer, code);
     }
     walk->last_matched = walk->container;
-    walk->lazy = S_may_be_lazy(parser, walk->container);
+    walk->lazy = false;
     walk->depth = 0;
-    return S_open_round(tokenizer, code);
+    /* Whether the line may be LAZY: it did not match the prefix of the
+     * current block, and that block takes such a line as text (its lines'
+     * `lazy`, a check). A paragraph takes one; so does a callout on the
+     * line after its marker line, whose body the line then starts. The line
+     * is lazy if it opens no block, and the starts that refuse a lazy line
+     * (`block_start_context`) are no block start on it. */
+    markdown_core_node *current = markdown_core_parser_current(parser);
+    const markdown_core_element_instance *structure =
+        current == walk->container ? NULL : markdown_core_parser_block_kind(parser, current)->structure;
+    if (!structure || !structure->lines->lazy.start) {
+        return S_open_round(tokenizer, code);
+    }
+    walk->one = structure->lines->lazy;
+    walk->one.context = structure;
+    walk->turn.node = current;
+    walk->turn.joining = NULL;
+    walk->turn.look = false;
+    return markdown_core_check(tokenizer, &walk->one, markdown_core_state_of(S_lazy_line),
+                               markdown_core_state_of(S_open_round), code);
 }
 
 /* What the continuation of the block the walk stands in said of the line
@@ -9467,7 +9476,7 @@ static markdown_core_state S_text_of(markdown_core_tokenizer *tokenizer, int cod
 
     // A line that may be lazy, opened no block and is not blank is a lazy
     // line: the current block takes it.
-    if (container == walk->last_matched && !reader->blank && S_may_be_lazy(parser, walk->last_matched)) {
+    if (container == walk->last_matched && !reader->blank && walk->lazy) {
         /* A block of text takes it; any other that takes a lazy line opens
          * the content it starts (THE CONTENT). */
         markdown_core_node *current = markdown_core_parser_current(parser);

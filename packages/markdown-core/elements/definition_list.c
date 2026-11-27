@@ -286,15 +286,29 @@ static markdown_core_state S_term_none(markdown_core_tokenizer *tokenizer, int c
     return markdown_core_nok(tokenizer);
 }
 
+/* The look's line holds a definition marker: up to three spaces, `:` or
+ * `~`, whitespace. */
+static markdown_core_state S_term_spaced(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_code_space(code) || markdown_core_code_ending(code) ? markdown_core_ok(tokenizer)
+                                                                             : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_term_marker(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != ':' && code != '~') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_term_spaced);
+}
+
 static markdown_core_state S_term_line(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_parser *parser = turn->parser;
-    if (parser->look->blanks > 1 || !markdown_core_block_definition_marker(&parser->look->read)) {
+    if (parser->look->blanks > 1) {
         return markdown_core_nok(tokenizer);
     }
     *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool) = parser->look->blanks == 0;
-    return markdown_core_ok(tokenizer);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_term_marker), 0, 3, code);
 }
 
 static markdown_core_state S_term_next(markdown_core_tokenizer *tokenizer, int code) {
@@ -466,13 +480,16 @@ static markdown_core_state S_body_none(markdown_core_tokenizer *tokenizer, int c
     return markdown_core_nok(tokenizer);
 }
 
-static markdown_core_state S_body_line(markdown_core_tokenizer *tokenizer, int code) {
+static markdown_core_state S_body_indented(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_body_line(markdown_core_tokenizer *tokenizer, int code) {
     const markdown_core_definition_list_work *work =
         ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
-    const markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
-    return parser->look->read.indent >= work->body->as.definition_body->continuation ? markdown_core_ok(tokenizer)
-                                                                                     : markdown_core_nok(tokenizer);
+    return markdown_core_indent(tokenizer, markdown_core_state_of(S_body_indented), markdown_core_state_of(S_body_none),
+                                (uint32_t)work->body->as.definition_body->continuation, code);
 }
 
 static markdown_core_state S_body_next(markdown_core_tokenizer *tokenizer, int code) {
