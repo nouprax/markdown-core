@@ -11,6 +11,7 @@
 //! The constructs found in flow are:
 //!
 //! * [Blank line][crate::construct::blank_line]
+//! * [Block identifier][crate::construct::block_identifier] (on a line of its own)
 //! * [Code (indented)][crate::construct::code_indented]
 //! * [Heading (atx)][crate::construct::heading_atx]
 //! * [Heading (setext)][crate::construct::heading_setext]
@@ -21,8 +22,8 @@
 
 use crate::choice::{self, Choice, Entry, List};
 use crate::construct::{
-    blank_line, callout, code_indented, comment, content, formula, heading_atx, heading_setext,
-    html_flow, raw_flow, table, thematic_break,
+    blank_line, block_identifier, callout, code_indented, comment, content, formula, heading_atx,
+    heading_setext, html_flow, raw_flow, table, thematic_break,
 };
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
@@ -69,6 +70,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: comment::FLOW,
             step: StateName::Comment(comment::Step::FlowStart),
+        },
+        Entry {
+            starts: block_identifier::FLOW,
+            step: StateName::BlockIdentifier(block_identifier::Step::Start),
         },
         Entry {
             starts: table::STARTS,

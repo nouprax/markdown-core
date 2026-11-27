@@ -66,6 +66,10 @@ struct Compiler<'a> {
     /// Whether a table cell's content is being compiled, where `\|` in
     /// code is a pipe.
     cell: bool,
+    /// The paragraph whose block identifier names the list item around it.
+    lend: Option<usize>,
+    /// The identifier that paragraph lent.
+    lent: Option<String>,
 }
 
 /// Text read in an inline content list and not yet a node.
@@ -122,6 +126,8 @@ impl<'a> Compiler<'a> {
             exits,
             holes,
             cell: false,
+            lend: None,
+            lent: None,
         }
     }
 
@@ -281,6 +287,12 @@ impl<'a> Compiler<'a> {
     fn blocks(&mut self, from: usize, to: usize) -> Vec<Node> {
         let mut nodes = vec![];
         for index in self.children(from, to) {
+            if self.name(index) == Name::BlockIdentifierLine {
+                if let Some(node) = self.identifier_line(index, nodes.last_mut()) {
+                    nodes.push(node);
+                }
+                continue;
+            }
             if let Some(node) = self.block(index) {
                 nodes.push(node);
             }
@@ -395,10 +407,80 @@ impl<'a> Compiler<'a> {
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
-            // Compiled with the dialect’s properties, which are not ported yet.
-            Block::Frontmatter => return None,
+            // Frontmatter compiles with the dialect’s properties, which are
+            // not ported yet; an identifier line with the block before it,
+            // by `blocks`.
+            Block::Frontmatter | Block::Identifier => return None,
         };
         Some(node)
+    }
+
+    /// The identifier line at `index`: it names `owner`, a list, callout
+    /// or table without a name and after a blank line, and its source then
+    /// ends with the line; otherwise it is a paragraph of its text.
+    fn identifier_line(&mut self, index: usize, owner: Option<&mut Node>) -> Option<Node> {
+        let identifier = self.child(index, Name::BlockIdentifier)?;
+        let text = self.text(identifier);
+        let (start, end) = (self.start(identifier), self.end(identifier));
+        let runs = self.runs(start, end);
+        // The line the item starts on names the item: it is an empty
+        // paragraph.
+        if self.lend == Some(index) {
+            self.lend = None;
+            self.lent = Some(text[1..text.len() - 1].to_string());
+            return Some(Node::new(Kind::Paragraph { content: vec![] }, runs));
+        }
+        if let Some(owner) = owner {
+            let kind = matches!(
+                owner.kind,
+                Kind::List { .. } | Kind::Callout { .. } | Kind::Table { .. }
+            );
+            if kind && owner.anchor.is_none() && self.blank_before(start) {
+                owner.anchor = Some(text[1..text.len() - 1].to_string());
+                // The last run goes on to the end of the identifier: less
+                // the prefixes of the containers on the way for a table,
+                // which is a leaf.
+                if let Some(last) = owner.runs.pop() {
+                    if matches!(owner.kind, Kind::Table { .. }) {
+                        owner.runs.extend(self.runs(last.start, end));
+                    } else {
+                        owner.runs.extend(Self::whole(last.start, end));
+                    }
+                }
+                return None;
+            }
+        }
+        Some(Node::new(
+            Kind::Paragraph {
+                content: vec![Node::new(
+                    Kind::Text {
+                        literal: text.to_string(),
+                    },
+                    runs.clone(),
+                )],
+            },
+            runs,
+        ))
+    }
+
+    /// Whether the line before the one of `at` is blank, its container
+    /// markers aside.
+    fn blank_before(&self, at: usize) -> bool {
+        let mut index = at;
+        while index > 0 && self.bytes[index - 1] != b'\n' {
+            index -= 1;
+        }
+        if index == 0 {
+            return false;
+        }
+        index -= 1;
+        while index > 0 && self.bytes[index - 1] != b'\n' {
+            index -= 1;
+            if !matches!(self.bytes[index], b' ' | b'\t' | b'>' | b'\r') {
+                return false;
+            }
+        }
+        true
     }
 
     fn paragraph(&mut self, index: usize) -> Node {
@@ -416,15 +498,39 @@ impl<'a> Compiler<'a> {
                 start = self.events[from].point.index;
             }
         }
-        let content = self.inline_range(from, self.exits[index], true);
-        Node::new(
+        let mut content = self.inline_range(from, self.exits[index], true);
+        let mut anchor = None;
+        if let Some(identifier) = self.child(index, Name::BlockIdentifier) {
+            let text = self.text(identifier);
+            let name = text[1..text.len() - 1].to_string();
+            if self.lend == Some(index) {
+                self.lend = None;
+                self.lent = Some(name);
+            } else if self.children(from, self.exits[index]).iter().all(|child| {
+                matches!(
+                    self.name(*child),
+                    Name::BlockIdentifier | Name::BlockIdentifierTail
+                )
+            }) {
+                // An identifier alone names no paragraph: it is text.
+                content.push(Node::new(
+                    Kind::Text {
+                        literal: text.to_string(),
+                    },
+                    self.runs(self.start(identifier), self.end(identifier)),
+                ));
+            } else {
+                anchor = Some(name);
+            }
+        }
+        let mut node = Node::new(
             Kind::Paragraph { content },
             self.runs(self.skip(start, self.end(index)), self.end(index)),
-        )
+        );
+        node.anchor = anchor;
+        node
     }
 
-    /// The lines of the token at `index`: the `data` on each, every line
-    /// with a line feed, and no line after a final line ending.
     /// The variant, fold, and title of the callout header at `index`.
     fn callout(&mut self, index: usize) -> (Option<String>, Option<bool>, Option<Vec<Node>>) {
         let variant = self
@@ -652,8 +758,30 @@ impl<'a> Compiler<'a> {
         };
         let runs = Self::whole(self.lead(index), end);
         let marker = self.task(index);
+        // The block identifier on the first line of its first paragraph names
+        // the item.
+        let first = self
+            .inside(index)
+            .into_iter()
+            .find(|child| !between(self.name(*child)) && self.name(*child) != Name::ListItemPrefix);
+        if let Some(first) = first {
+            let line = self.events[index].point.line;
+            let named = matches!(
+                self.name(first),
+                Name::Paragraph | Name::BlockIdentifierLine
+            ) && self
+                .child(first, Name::BlockIdentifier)
+                .map_or(false, |identifier| {
+                    self.events[identifier].point.line == line
+                });
+            if named {
+                self.lend = Some(first);
+            }
+        }
         let content = self.contained(index);
-        Node::new(Kind::ListItem { marker, content }, runs)
+        let mut node = Node::new(Kind::ListItem { marker, content }, runs);
+        node.anchor = self.lent.take();
+        node
     }
 
     /// The task marker of the list item at `index`: the check its first
@@ -1478,7 +1606,6 @@ fn assign(node: &mut Node, taken: &mut BTreeSet<String>) {
     }
 }
 
-/// The anchor projection of an inline node, appended to `base`.
 /// Whitespace that a block literal is trimmed of.
 const WHITESPACE: &[char] = &[' ', '\t', '\n', '\r'];
 

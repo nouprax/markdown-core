@@ -71,6 +71,7 @@
 //! [atx]: http://www.aaronsw.com/2002/atx/
 
 use crate::choice::Starts;
+use crate::construct::block_identifier;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
@@ -215,6 +216,8 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                 &[Name::Paragraph],
             );
 
+            // A heading has no block identifier.
+            block_identifier::restore(tokenizer, paragraph_enter, paragraph_exit_before);
             // Change types of Enter:Paragraph, Exit:Paragraph.
             tokenizer.events[paragraph_enter].name = Name::HeadingSetextText;
             tokenizer.events[paragraph_exit_before].name = Name::HeadingSetextText;

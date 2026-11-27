@@ -41,6 +41,7 @@
 //! [raw_text]: crate::construct::raw_text
 //! [html]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-p-element
 
+use crate::construct::block_identifier;
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::link;
@@ -96,6 +97,7 @@ fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
             tokenizer.exit(Name::Data);
+            block_identifier::tail(tokenizer);
             tokenizer.exit(Name::Paragraph);
             State::Ok
         }

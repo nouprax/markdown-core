@@ -2682,6 +2682,64 @@ pub enum Name {
     ///     ^^^
     /// ```
     ListUnordered,
+    /// Block identifier.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Paragraph`][Name::Paragraph]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`block_identifier`][crate::construct::block_identifier]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a #b#
+    ///       ^^^
+    /// ```
+    BlockIdentifier,
+    /// Block identifier tail: what a block identifier cut from the end of a
+    /// paragraph, itself and the whitespace around it.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Paragraph`][Name::Paragraph]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`block_identifier`][crate::construct::block_identifier]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a #b#
+    ///      ^^^^
+    /// ```
+    BlockIdentifierTail,
+    /// Block identifier line.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [flow content][crate::construct::flow]
+    /// * **Content model**:
+    ///   [`BlockIdentifier`][Name::BlockIdentifier],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`block_identifier`][crate::construct::block_identifier]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | - a
+    ///   |
+    /// > | #b#
+    ///     ^^^
+    /// ```
+    BlockIdentifierLine,
     /// Formula.
     ///
     /// ## Info
@@ -3227,6 +3285,7 @@ pub enum Block {
     Formula,
     Frontmatter,
     Comment,
+    Identifier,
 }
 
 /// Inlines.
@@ -3283,6 +3342,7 @@ impl Name {
             Name::Table => Role::Block(Block::Table),
             Name::FootnoteDefinition => Role::Block(Block::Footnote),
             Name::FormulaFlow => Role::Block(Block::Formula),
+            Name::BlockIdentifierLine => Role::Block(Block::Identifier),
             Name::Frontmatter => Role::Block(Block::Frontmatter),
             Name::Data => Role::Inline(Inline::Data),
             Name::CharacterEscape => Role::Inline(Inline::CharacterEscape),
@@ -3421,6 +3481,8 @@ impl Name {
             | Name::ListItemMarker
             | Name::ListItemPrefix
             | Name::ListItemValue
+            | Name::BlockIdentifier
+            | Name::BlockIdentifierTail
             | Name::FormulaFence
             | Name::FormulaSequence
             | Name::FormulaChunk
@@ -3448,7 +3510,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 78] = [
+pub const VOID_EVENTS: [Name; 80] = [
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,
@@ -3504,6 +3566,8 @@ pub const VOID_EVENTS: [Name; 78] = [
     Name::LineEnding,
     Name::ListItemMarker,
     Name::ListItemValue,
+    Name::BlockIdentifier,
+    Name::BlockIdentifierTail,
     Name::FormulaSequence,
     Name::FormulaChunk,
     Name::FormulaText,
