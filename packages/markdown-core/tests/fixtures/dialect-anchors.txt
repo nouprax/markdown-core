@@ -6,7 +6,7 @@
 A paragraph.
 .
 Document scope=1:1..3:12 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+├── Heading scope=1:1..1:11 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
 └── Paragraph scope=3:1..3:12 anchor=null attributes={} children=1
     └── Text scope=3:1..3:12 anchor=null attributes={} literal="A paragraph." children=0
@@ -18,9 +18,9 @@ Document scope=1:1..3:12 anchor=null attributes={} children=2
 ## My Header
 .
 Document scope=1:1..3:12 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+├── Heading scope=1:1..1:11 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
-└── Heading scope=3:1..3:12 anchor="my-header-1" attributes={} level=2 children=1
+└── Heading scope=3:1..3:12 anchor=null attributes={} level=2 children=1
     └── Text scope=3:4..3:12 anchor=null attributes={} literal="My Header" children=0
 ````````````````````````````````
 
@@ -32,7 +32,7 @@ Document scope=1:1..3:12 anchor=null attributes={} children=2
 Document scope=1:1..3:3 anchor=null attributes={} children=2
 ├── Heading scope=1:1..1:8 anchor="x" attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="T" children=0
-└── Heading scope=3:1..3:3 anchor="x-1" attributes={} level=1 children=1
+└── Heading scope=3:1..3:3 anchor=null attributes={} level=1 children=1
     └── Text scope=3:3..3:3 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
@@ -54,24 +54,24 @@ Document scope=1:1..3:3 anchor=null attributes={} children=2
 #   spaced   words
 .
 Document scope=1:1..15:18 anchor=null attributes={} children=8
-├── Heading scope=1:1..1:15 anchor="hello-world" attributes={} level=1 children=1
+├── Heading scope=1:1..1:15 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:15 anchor=null attributes={} literal="Hello, World!" children=0
-├── Heading scope=3:1..3:10 anchor="1-intro" attributes={} level=1 children=1
+├── Heading scope=3:1..3:10 anchor=null attributes={} level=1 children=1
 │   └── Text scope=3:3..3:10 anchor=null attributes={} literal="1. Intro" children=0
-├── Heading scope=5:1..5:5 anchor="ab" attributes={} level=1 children=1
+├── Heading scope=5:1..5:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=5:3..5:5 anchor=null attributes={} literal="A.B" children=0
-├── Heading scope=7:1..7:14 anchor="tada-party" attributes={} level=1 children=1
+├── Heading scope=7:1..7:14 anchor=null attributes={} level=1 children=1
 │   └── Text scope=7:3..7:14 anchor=null attributes={} literal=":tada: Party" children=0
-├── Heading scope=9:1..9:17 anchor="em-and-code" attributes={} level=1 children=3
+├── Heading scope=9:1..9:17 anchor=null attributes={} level=1 children=3
 │   ├── Emphasis scope=9:3..9:6 anchor=null attributes={} children=1
 │   │   └── Text scope=9:4..9:5 anchor=null attributes={} literal="Em" children=0
 │   ├── Text scope=9:7..9:11 anchor=null attributes={} literal=" and " children=0
 │   └── Code scope=9:12..9:17 anchor=null attributes={} literal="code" children=0
-├── Heading scope=11:1..11:5 anchor="section" attributes={} level=1 children=1
+├── Heading scope=11:1..11:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=11:3..11:5 anchor=null attributes={} literal="!!!" children=0
-├── Heading scope=13:1..13:14 anchor="ünïcode-ĝ" attributes={} level=1 children=1
+├── Heading scope=13:1..13:14 anchor=null attributes={} level=1 children=1
 │   └── Text scope=13:3..13:14 anchor=null attributes={} literal="Ünïcode Ĝ" children=0
-└── Heading scope=15:1..15:18 anchor="spaced---words" attributes={} level=1 children=1
+└── Heading scope=15:1..15:18 anchor=null attributes={} level=1 children=1
     └── Text scope=15:5..15:18 anchor=null attributes={} literal="spaced   words" children=0
 ````````````````````````````````
 
@@ -81,7 +81,7 @@ Document scope=1:1..15:18 anchor=null attributes={} children=8
 [[#My Header]]
 .
 Document scope=1:1..3:14 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:11 anchor="my-header" attributes={} level=1 children=1
+├── Heading scope=1:1..1:11 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:11 anchor=null attributes={} literal="My Header" children=0
 └── Paragraph scope=3:1..3:14 anchor=null attributes={} children=1
     └── CrossLink scope=3:1..3:14 anchor=null attributes={} dest=cross(path="",anchor="My Header") label=null children=0
@@ -93,7 +93,7 @@ Document scope=1:1..3:14 anchor=null attributes={} children=2
 # **Strong** *Em* ~~Strike~~ ==Mark== ++Insert++
 .
 Document scope=1:1..1:48 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:48 anchor="strong-em-strike-mark-insert" attributes={} level=1 children=9
+└── Heading scope=1:1..1:48 anchor=null attributes={} level=1 children=9
     ├── Strong scope=1:3..1:12 anchor=null attributes={} children=1
     │   └── Text scope=1:5..1:10 anchor=null attributes={} literal="Strong" children=0
     ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
@@ -116,7 +116,7 @@ Document scope=1:1..1:48 anchor=null attributes={} children=1
 # [Label](/url) ![Alt *Text*](/img) <https://Example.com/X>
 .
 Document scope=1:1..1:59 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:59 anchor="label-alt-text-httpsexamplecomx" attributes={} level=1 children=5
+└── Heading scope=1:1..1:59 anchor=null attributes={} level=1 children=5
     ├── Link scope=1:3..1:15 anchor=null attributes={} dest=url("/url") title=null children=1
     │   └── Text scope=1:4..1:8 anchor=null attributes={} literal="Label" children=0
     ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
@@ -137,7 +137,7 @@ Document scope=1:1..1:59 anchor=null attributes={} children=1
 [^f]: omitted
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:50 anchor="ab-visible---" attributes={} level=1 children=11
+├── Heading scope=1:1..1:50 anchor=null attributes={} level=1 children=11
 │   ├── Formula scope=1:3..1:7 anchor=null attributes={} mode=embedded literal="A+B" children=0
 │   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
 │   ├── HTML scope=1:9..1:11 anchor=null attributes={} literal="<i>" children=0
@@ -167,7 +167,7 @@ Four
 ====
 .
 Document scope=1:1..5:4 anchor=null attributes={} children=1
-└── Heading scope=1:1..5:4 anchor="one-two-three-four" attributes={} level=1 children=7
+└── Heading scope=1:1..5:4 anchor=null attributes={} level=1 children=7
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="One" children=0
     ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:5 anchor=null attributes={} literal="Two" children=0
@@ -183,7 +183,7 @@ Document scope=1:1..5:4 anchor=null attributes={} children=1
 # [[Note Name#Heading!]] ![[Pic#Anchor|Label]] [[#Only]] [[N|]] ![[N#A]]
 .
 Document scope=1:1..1:72 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:72 anchor="note-nameheading-label-only--na" attributes={} level=1 children=9
+└── Heading scope=1:1..1:72 anchor=null attributes={} level=1 children=9
     ├── CrossLink scope=1:3..1:24 anchor=null attributes={} dest=cross(path="Note Name",anchor="Heading!") label=null children=0
     ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
     ├── CrossEmbed scope=1:26..1:46 anchor=null attributes={} dest=cross(path="Pic",anchor="Anchor") label="Label" dimensions=null children=0
@@ -201,7 +201,7 @@ Document scope=1:1..1:72 anchor=null attributes={} children=1
 # :n[One :m[Two] Three] End
 .
 Document scope=1:1..1:27 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:27 anchor="one-two-three-end" attributes={} level=1 children=2
+└── Heading scope=1:1..1:27 anchor=null attributes={} level=1 children=2
     ├── Directive scope=1:3..1:23 anchor=null attributes={} name="n" children=0
     │   └── DirectiveLabel scope=1:5..1:23 anchor=null attributes={} children=3
     │       ├── Text scope=1:6..1:9 anchor=null attributes={} literal="One " children=0
@@ -218,7 +218,7 @@ Document scope=1:1..1:27 anchor=null attributes={} children=1
 # İ ſ ẞ Σ ς Ⅳ ² é a‿b a⁀b _ A—B 😀
 .
 Document scope=1:1..1:53 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:53 anchor="i-ſ-ß-σ-ς-ⅳ-²-é-a‿b-a⁀b-_-ab-" attributes={} level=1 children=1
+└── Heading scope=1:1..1:53 anchor=null attributes={} level=1 children=1
     └── Text scope=1:3..1:53 anchor=null attributes={} literal="İ ſ ẞ Σ ς Ⅳ ² é a‿b a⁀b _ A—B 😀" children=0
 ````````````````````````````````
 
@@ -228,7 +228,7 @@ Document scope=1:1..1:53 anchor=null attributes={} children=1
 # A        　B
 .
 Document scope=1:1..1:33 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:33 anchor="a-----------b" attributes={} level=1 children=1
+└── Heading scope=1:1..1:33 anchor=null attributes={} level=1 children=1
     └── Text scope=1:3..1:33 anchor=null attributes={} literal="A\u000b        　B" children=0
 ````````````````````````````````
 
@@ -242,10 +242,10 @@ Document scope=1:1..1:33 anchor=null attributes={} children=1
 # X {#given id=}
 .
 Document scope=1:1..5:16 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:1 anchor="section" attributes={} level=1 children=0
-├── Heading scope=3:1..3:5 anchor="section-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:1 anchor=null attributes={} level=1 children=0
+├── Heading scope=3:1..3:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=3:3..3:5 anchor=null attributes={} literal="!!!" children=0
-└── Heading scope=5:1..5:16 anchor="x" attributes={} level=1 children=1
+└── Heading scope=5:1..5:16 anchor=null attributes={} level=1 children=1
     └── Text scope=5:3..5:3 anchor=null attributes={} literal="X" children=0
 ````````````````````````````````
 
@@ -265,13 +265,13 @@ Document scope=1:1..5:16 anchor=null attributes={} children=3
 :n{#x-4}
 .
 Document scope=1:1..11:8 anchor=null attributes={} children=6
-├── Heading scope=1:1..1:3 anchor="x" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
-├── Heading scope=3:1..3:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=3:1..3:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="x" children=0
-├── Heading scope=5:1..5:5 anchor="x-1-1" attributes={} level=1 children=1
+├── Heading scope=5:1..5:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=5:3..5:5 anchor=null attributes={} literal="x-1" children=0
-├── Heading scope=7:1..7:3 anchor="x-3" attributes={} level=1 children=1
+├── Heading scope=7:1..7:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=7:3..7:3 anchor=null attributes={} literal="x" children=0
 ├── Paragraph scope=9:1..9:8 anchor=null attributes={} children=1
 │   └── Directive scope=9:1..9:8 anchor="x-2" attributes={} name="n" children=0
@@ -293,7 +293,7 @@ Document scope=1:1..5:3 anchor=null attributes={} children=3
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="A" children=0
 ├── Heading scope=3:1..3:8 anchor="x" attributes={} level=1 children=1
 │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="B" children=0
-└── Heading scope=5:1..5:3 anchor="x-1" attributes={} level=1 children=1
+└── Heading scope=5:1..5:3 anchor=null attributes={} level=1 children=1
     └── Text scope=5:3..5:3 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
@@ -308,7 +308,7 @@ a
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=2
 ├── FormulaBlock scope=1:1..3:3 anchor=null attributes={} literal="a" children=0
-└── Heading scope=5:1..5:3 anchor="x" attributes={} level=1 children=1
+└── Heading scope=5:1..5:3 anchor=null attributes={} level=1 children=1
     └── Text scope=5:3..5:3 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
@@ -324,7 +324,7 @@ Document scope=1:1..3:16 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
 │   ├── Code scope=1:2..1:14 anchor=null attributes={} literal="x{#false k=" children=0
 │   └── Text scope=1:15..1:21 anchor=null attributes={} literal="}] [`x]" children=0
-└── Heading scope=3:1..3:16 anchor="xfalse-k" attributes={} level=1 children=2
+└── Heading scope=3:1..3:16 anchor=null attributes={} level=1 children=2
     ├── Code scope=3:3..3:15 anchor=null attributes={} literal="x{#false k=" children=0
     └── Text scope=3:16..3:16 anchor=null attributes={} literal="}" children=0
 ````````````````````````````````
@@ -337,7 +337,7 @@ Document scope=1:1..3:16 anchor=null attributes={} children=2
 `code`{#x}
 .
 Document scope=1:1..3:10 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:10 anchor=null attributes={} children=1
     └── Code scope=3:1..3:10 anchor="x" attributes={} literal="code" children=0
@@ -351,7 +351,7 @@ Document scope=1:1..3:10 anchor=null attributes={} children=2
 # Other {#x}
 .
 Document scope=1:1..3:12 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Heading scope=3:1..3:12 anchor="x" attributes={} level=1 children=1
     └── Text scope=3:3..3:7 anchor=null attributes={} literal="Other" children=0
@@ -367,7 +367,7 @@ body
 ~~~
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── CodeBlock scope=3:1..5:3 anchor="x" attributes={} info="lang" language="lang" literal="body\n" fenced=true closed=true children=0
 ````````````````````````````````
@@ -380,7 +380,7 @@ Document scope=1:1..5:3 anchor=null attributes={} children=2
 [link](/url){#x}
 .
 Document scope=1:1..3:16 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:16 anchor=null attributes={} children=1
     └── Link scope=3:1..3:16 anchor="x" attributes={} dest=url("/url") title=null children=1
@@ -395,7 +395,7 @@ Document scope=1:1..3:16 anchor=null attributes={} children=2
 ![image](/url){#x}
 .
 Document scope=1:1..3:18 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:18 anchor=null attributes={} children=1
     └── Embed scope=3:1..3:18 anchor="x" attributes={} dest=url("/url") title=null dimensions=null children=1
@@ -410,7 +410,7 @@ Document scope=1:1..3:18 anchor=null attributes={} children=2
 <https://example.com>{#x}
 .
 Document scope=1:1..3:25 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:25 anchor=null attributes={} children=1
     └── Link scope=3:1..3:25 anchor="x" attributes={} dest=url("https://example.com") title=null children=1
@@ -427,7 +427,7 @@ Document scope=1:1..3:25 anchor=null attributes={} children=2
 [ref]: /url {#x}
 .
 Document scope=1:1..5:16 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 ├── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
 │   └── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("ref") title=null children=1
@@ -443,7 +443,7 @@ Document scope=1:1..5:16 anchor=null attributes={} children=3
 Paragraph #x#
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:13 anchor="x" attributes={} children=1
     └── Text scope=3:1..3:9 anchor=null attributes={} literal="Paragraph" children=0
@@ -457,7 +457,7 @@ Document scope=1:1..3:13 anchor=null attributes={} children=2
 :n{#x}
 .
 Document scope=1:1..3:6 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:6 anchor=null attributes={} children=1
     └── Directive scope=3:1..3:6 anchor="x" attributes={} name="n" children=0
@@ -473,7 +473,7 @@ body
 :::
 .
 Document scope=1:1..5:3 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── DirectiveBlock scope=3:1..5:3 anchor="x" attributes={} name="n" children=1
     └── Paragraph scope=4:1..4:4 anchor=null attributes={} children=1
@@ -488,7 +488,7 @@ Document scope=1:1..5:3 anchor=null attributes={} children=2
 :n[`code`{#x} end]
 .
 Document scope=1:1..3:18 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Paragraph scope=3:1..3:18 anchor=null attributes={} children=1
     └── Directive scope=3:1..3:18 anchor=null attributes={} name="n" children=0
@@ -505,7 +505,7 @@ Document scope=1:1..3:18 anchor=null attributes={} children=2
 [^f]: para #x#
 .
 Document scope=1:1..3:14 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Footnote scope=3:1..3:14 anchor=null attributes={} label="f" children=1
     └── Paragraph scope=3:7..3:14 anchor="x" attributes={} children=1
@@ -520,7 +520,7 @@ Document scope=1:1..3:14 anchor=null attributes={} children=2
 [unused]: /url {#x}
 .
 Document scope=1:1..3:19 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Reference scope=3:1..3:19 anchor="x" attributes={} label="unused" dest=url("/url") title=null children=0
 ````````````````````````````````
@@ -531,7 +531,7 @@ Document scope=1:1..3:19 anchor=null attributes={} children=2
 # ` A `  `  B  `
 .
 Document scope=1:1..1:16 anchor=null attributes={} children=1
-└── Heading scope=1:1..1:16 anchor="a---b-" attributes={} level=1 children=3
+└── Heading scope=1:1..1:16 anchor=null attributes={} level=1 children=3
     ├── Code scope=1:3..1:7 anchor=null attributes={} literal="A" children=0
     ├── Text scope=1:8..1:9 anchor=null attributes={} literal="  " children=0
     └── Code scope=1:10..1:16 anchor=null attributes={} literal=" B " children=0
@@ -547,7 +547,7 @@ Document scope=1:1..1:16 anchor=null attributes={} children=1
 [ref]: /url {#x}
 .
 Document scope=1:1..5:16 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 ├── Paragraph scope=3:1..3:13 anchor=null attributes={} children=1
 │   └── Link scope=3:1..3:13 anchor="own" attributes={} dest=reference("ref") title=null children=1
@@ -564,7 +564,7 @@ Document scope=1:1..5:16 anchor=null attributes={} children=3
 > body
 .
 Document scope=1:1..4:6 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:3 anchor="x-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:3 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
 └── Callout scope=3:1..4:6 anchor=null attributes={} variant="note" collapsed=null children=1
     ├── Title children=1
@@ -581,7 +581,7 @@ Document scope=1:1..4:6 anchor=null attributes={} children=2
 [owner]{#taken}
 .
 Document scope=1:1..3:15 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:7 anchor="taken-1" attributes={} level=1 children=1
+├── Heading scope=1:1..1:7 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:7 anchor=null attributes={} literal="Taken" children=0
 └── Paragraph scope=3:1..3:15 anchor=null attributes={} children=1
     └── Span scope=3:1..3:15 anchor="taken" attributes={} children=1
@@ -596,7 +596,7 @@ Document scope=1:1..3:15 anchor=null attributes={} children=2
 [2^10^](#210)
 .
 Document scope=1:1..5:13 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:30 anchor="big-title-a-b-x" attributes={} level=1 children=5
+├── Heading scope=1:1..1:30 anchor=null attributes={} level=1 children=5
 │   ├── Span scope=1:3..1:19 anchor=null attributes={.c} children=2
 │   │   ├── Text scope=1:4..1:7 anchor=null attributes={} literal="Big " children=0
 │   │   └── Emphasis scope=1:8..1:14 anchor=null attributes={} children=1
@@ -607,7 +607,7 @@ Document scope=1:1..5:13 anchor=null attributes={} children=3
 │   ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
 │   └── Subscript scope=1:28..1:30 anchor=null attributes={} children=1
 │       └── Text scope=1:29..1:29 anchor=null attributes={} literal="x" children=0
-├── Heading scope=3:1..3:7 anchor="210" attributes={} level=1 children=2
+├── Heading scope=3:1..3:7 anchor=null attributes={} level=1 children=2
 │   ├── Text scope=3:3..3:3 anchor=null attributes={} literal="2" children=0
 │   └── Superscript scope=3:4..3:7 anchor=null attributes={} children=1
 │       └── Text scope=3:5..3:6 anchor=null attributes={} literal="10" children=0
@@ -624,7 +624,7 @@ Document scope=1:1..5:13 anchor=null attributes={} children=3
 [Ref]{.span} [Ref][]{.link} [go][Ref]{.link}
 .
 Document scope=1:1..3:44 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:5 anchor="ref" attributes={} level=1 children=1
+├── Heading scope=1:1..1:5 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Ref" children=0
 └── Paragraph scope=3:1..3:44 anchor=null attributes={} children=5
     ├── Span scope=3:1..3:12 anchor=null attributes={.span} children=1
@@ -644,7 +644,7 @@ Document scope=1:1..3:44 anchor=null attributes={} children=2
 :d[[decl]{#shared-1}]
 .
 Document scope=1:1..5:21 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:8 anchor="shared-2" attributes={} level=1 children=1
+├── Heading scope=1:1..1:8 anchor=null attributes={} level=1 children=1
 │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="Shared" children=0
 ├── Paragraph scope=3:1..3:27 anchor=null attributes={} children=1
 │   └── Cite scope=3:1..3:27 anchor=null attributes={} children=1
@@ -670,7 +670,7 @@ Document scope=1:1..5:21 anchor=null attributes={} children=3
 # ^a b^
 .
 Document scope=1:1..5:7 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:29 anchor="beforeinsideafter-x" attributes={} level=1 children=3
+├── Heading scope=1:1..1:29 anchor=null attributes={} level=1 children=3
 │   ├── Superscript scope=1:3..1:25 anchor=null attributes={} children=3
 │   │   ├── Text scope=1:4..1:9 anchor=null attributes={} literal="before" children=0
 │   │   ├── Span scope=1:10..1:19 anchor=null attributes={} children=1
@@ -679,9 +679,9 @@ Document scope=1:1..5:7 anchor=null attributes={} children=3
 │   ├── Text scope=1:26..1:26 anchor=null attributes={} literal=" " children=0
 │   └── Subscript scope=1:27..1:29 anchor=null attributes={} children=1
 │       └── Text scope=1:28..1:28 anchor=null attributes={} literal="x" children=0
-├── Heading scope=3:1..3:8 anchor="a-b" attributes={} level=1 children=1
+├── Heading scope=3:1..3:8 anchor=null attributes={} level=1 children=1
 │   └── Subscript scope=3:3..3:8 anchor=null attributes={} children=1
 │       └── Text scope=3:4..3:7 anchor=null attributes={} literal="a b" children=0
-└── Heading scope=5:1..5:7 anchor="a-b-1" attributes={} level=1 children=1
+└── Heading scope=5:1..5:7 anchor=null attributes={} level=1 children=1
     └── Text scope=5:3..5:7 anchor=null attributes={} literal="^a b^" children=0
 ````````````````````````````````

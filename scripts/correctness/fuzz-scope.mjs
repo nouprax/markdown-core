@@ -55,14 +55,15 @@ function pandocTableSegments(input) {
 }
 
 /**
- * Custom task prefixes and definition markers in base-language paragraphs
- * belong to their Obsidian/Pandoc gates, not to these base oracles. Bound the
+ * Custom task prefixes, definition markers in base-language paragraphs and
+ * fenced-code attribute containers belong to their Obsidian/Pandoc gates, not
+ * to these base oracles. Bound the
  * recombination domain using an independent CommonMark parse, never the
  * product's output.
  */
 export function outsideSharedFuzzScope(input) {
     if (input.includes("-") && pandocTableSegments(input)) return "pandoc-tables";
-    if (!/[[:]/u.test(input)) return null;
+    if (!/[[:{]/u.test(input)) return null;
     const pending = [commonmark.parse(input)];
     while (pending.length) {
         const node = pending.pop();
@@ -75,9 +76,16 @@ export function outsideSharedFuzzScope(input) {
             // The dialect's statuses beyond GFM's open and done.
             if (/^\[[?-]\][ \t]/u.test(raw)) return "custom-task-markers";
         }
+        // A fence's attribute container is a dialect attachment site that
+        // mdast and cmark have no counterpart for: the info's braces.
+        if (node.type === "code" && /\{[^}]*\}[ \t]*$/u.test(`${node.lang ?? ""} ${node.meta ?? ""}`)) {
+            return "fenced-code-attributes";
+        }
         if (node.type === "paragraph") {
+            // A later line of the slice keeps its container prefix: the `>`
+            // of a quote the paragraph is in, and its indentation.
             const raw = input.slice(node.position.start.offset, node.position.end.offset);
-            if (/(?:^|\n)[^\r\n]+\r?\n(?:[ \t]*\r?\n)?[ \t]*:(?:[ \t]|\r?\n|$)/u.test(raw)) {
+            if (/(?:^|\n)[^\r\n]+\r?\n(?:[ \t>]*\r?\n)?[ \t>]*:(?:[ \t]|\r?\n|$)/u.test(raw)) {
                 return "definition-lists";
             }
         }

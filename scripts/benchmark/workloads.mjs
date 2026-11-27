@@ -875,7 +875,7 @@ function declarationsScript(document, letters) {
         script.buffer.subarray(Math.max(0, destination.start - 64), destination.start).toString("utf8")
     )?.[1];
     if (label) script.toggle(0, `[${label}]: /${w(2)}\n\n`);
-    /* A heading whose text, and so its anchor, repeats an existing one. */
+    /* A heading whose text repeats an existing one. */
     const heading = pick(sitesOf(document, "heading"), 0.5);
     if (heading) {
         const text = Buffer.from(document.text).subarray(heading.start, heading.end);
@@ -1597,10 +1597,6 @@ export function hardScripts() {
             .within(0, 48)
             .remove(24, 36)
             .within(0, 36)
-    );
-    /* The text of a heading with an automatic anchor that a link targets. */
-    add("automatic-anchor", "# Title\n\nsee [x](#title)\n\n# Title\n\nplain one\n\nplain two\n", (s) =>
-        s.insert(7, "s").within(0, 10).remove(7, 8).within(0, 9).edit(2, 7, "Other").within(0, 9)
     );
     /* Splitting and joining paragraphs and list items. */
     add("split-and-join", "alpha beta\n\n- one two\n- three\n", (s) =>

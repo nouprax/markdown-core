@@ -3,49 +3,49 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "4436f738644a2c2c2d4c3946325b4296c9cb34f197b8880964f152f7f5572bf4"
+        "sha256": "eed393a0758568a60da1a669b1c2a71cd039bc418a4ebd8eb18084f94ecb49bd"
     },
     "features": [
         {
             "feature": "anchors",
             "specification": "docs/specs/dialect/anchors.md",
-            "sha256": "5fe293dd66aac2e8404c75ce2da0fc2706fdfc057499472e9fedba4dd4ab930c",
+            "sha256": "f6ad7cbc8528fe6e46ef25fb45ae60a54eed6adb56213d55b8ff27e9790360cf",
             "sections": [
                 {
                     "title": "Anchors",
                     "line": 1,
                     "level": 1,
-                    "sha256": "d3a9a86e5e0b999f0298dbb818bcacd53b3670a1b46f6d21c957ed10cfa01e9e",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["heading-explicit-id", "anchor-last-empty", "common-anchor-generation"]
-                    }
-                },
-                {
-                    "title": "Explicit anchors",
-                    "line": 18,
-                    "level": 2,
-                    "sha256": "e913648d39df90b1985102f214c1ceb0e29e0778f5729906be56fd7840b4f46c",
+                    "sha256": "346d9148672a9d41c18d7942aeeaa19646a06a279961305a1a0bae58dcbf21d9",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["heading-explicit-id", "anchor-last-empty"]
                     }
                 },
                 {
-                    "title": "Automatic anchors",
-                    "line": 32,
+                    "title": "Explicit anchors",
+                    "line": 19,
                     "level": 2,
-                    "sha256": "900333bb9e7005ab41dd03a72750a5f7d30b4ac836c173341e4a2c3a7559fc31",
+                    "sha256": "a3d6ff1a4144e3807a80f7b9fade9e13ab80fcffe8cd5f167344fb9a6d2e12b7",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["heading-explicit-id", "anchor-last-empty"]
+                    }
+                },
+                {
+                    "title": "Headings without one",
+                    "line": 28,
+                    "level": 2,
+                    "sha256": "487e31eca10e2e8960b6572a3863eb82d92eb880d2f3153420c46ee3fb71c7f8",
                     "disposition": {
                         "kind": "context",
-                        "reason": "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
+                        "reason": "A heading that declares no anchor is plain heading grammar, which the headings certificates cover; the parser derives no anchor from it."
                     }
                 },
                 {
                     "title": "Linking to a heading",
-                    "line": 68,
+                    "line": 39,
                     "level": 2,
-                    "sha256": "2b79fe7705c74fd105ea784b3b8a9b09ab12a3ce4499e4ca9fab14dc83440c65",
+                    "sha256": "1ad93131043865e36f61b8956b7ca91e567b3d4566eddac2e7bf1f376305acb2",
                     "disposition": {
                         "kind": "context",
                         "reason": "A link to a heading is an ordinary inline link whose destination is the anchor; links-and-images certificates cover that form."
@@ -53,28 +53,22 @@
                 },
                 {
                     "title": "Anchor ownership",
-                    "line": 74,
+                    "line": 46,
                     "level": 2,
-                    "sha256": "ec1c2cbd1daffbd35360623fd3817a9c31adcba60fc983db7bf7369bdc64c7b9",
+                    "sha256": "f21022423a7dead62cbabe16eaebda08271df63392652570accf3356a832b823",
                     "disposition": {
                         "kind": "context",
                         "reason": "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by the explicit anchor sections and attribute-reference."
                     }
                 }
             ],
-            "elements": ["ANCHOR"],
+            "elements": [],
             "certificates": [
                 {
                     "id": "anchor-last-empty",
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["last-id", "empty-id-clears"]
-                },
-                {
-                    "id": "common-anchor-generation",
-                    "scope": "paired-document-grammar",
-                    "identity": true,
-                    "facets": ["unicode-lowercase", "collisions", "empty-base"]
                 },
                 {
                     "id": "heading-explicit-id",
@@ -912,7 +906,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "84daa6e3f568237dba34d6c832817af74723d4a3f5c9296392ebf42dd75db176",
+            "sha256": "aecd0151c53d17c2b8ae28708af5cf3354b13caa4be97709232ddbfcee301a37",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -928,7 +922,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "a75d08cc09aea1068e3526585fdf248b541acbdc078352d2fadd676a669b5389",
+                    "sha256": "7826ccdfadb751fd43f96b40fbaa86426d8fc65734026186545453f149385e5e",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1017,7 +1011,7 @@
         {
             "feature": "cross-links",
             "specification": "docs/specs/dialect/cross-links.md",
-            "sha256": "616f12025aec442faba42d5c99cab24878f24e214bd1cc8690d71380880addfe",
+            "sha256": "674ff5e3b9eabba61da6241c63529524e884e81681fefd6554b4a0cab7373721",
             "sections": [
                 {
                     "title": "Cross links and embeds",
@@ -1033,7 +1027,7 @@
                     "title": "Headings and blocks",
                     "line": 19,
                     "level": 2,
-                    "sha256": "aef112bbce9142726a62bea3af8f2ca63a79b6bfb03b014b5c51fef15e1f1b57",
+                    "sha256": "27e4ea3cf7c3cb5466e6e1d0356fe5947b8611b0c76a7eb639ed2bdef4278f3c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["cross-anchor", "cross-local", "cross-block-anchor"]
@@ -1633,13 +1627,13 @@
         {
             "feature": "headings",
             "specification": "docs/specs/dialect/headings.md",
-            "sha256": "7a2e3195418bee5222339b23cea04bab1d456dd4f53f45b443ca1e8e870caccc",
+            "sha256": "5a36cb16ed84431a1d9544b407ff5bee0c646426bfa64215d90c0c67a76ea066",
             "sections": [
                 {
                     "title": "Headings",
                     "line": 1,
                     "level": 1,
-                    "sha256": "5c1011ebec5c3a6cfc31f84377353f11e508eb4078e3f77622b656c68545832c",
+                    "sha256": "85959b196987a2caf364da07ac36003808d7f652463062e52a0e030db7f42cc0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1666,7 +1660,7 @@
                     "title": "Format a heading",
                     "line": 40,
                     "level": 2,
-                    "sha256": "95464d55987e9f36639f61691f38cb231de4b4f5a0bdfc72478c29ab24047b8c",
+                    "sha256": "8fa312a6bf610250abe08df4c6c415ac8e6fbad6a9c3119fb27c84f312fd60d7",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-atx-1", "attribute-heading"]

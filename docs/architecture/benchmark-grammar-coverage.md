@@ -33,15 +33,15 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **30 specification features, 126 sections, 35 registered elements,
-174 certificates and 744 generated documents**, 372 in each of two
+There are **30 specification features, 126 sections, 34 registered elements,
+173 certificates and 740 generated documents**, 370 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
 Of the 126 sections, **120 link to grammar certificates and six are explicitly
-context-only** (automatic-anchor output, links to headings, anchor ownership,
+context-only** (headings without an anchor, links to headings, anchor ownership,
 two navigation introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **168 certify whole declared languages and 6 certify local boundary
+Of these, **167 certify whole declared languages and 6 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -50,7 +50,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Feature | Generated grammar coverage |
 | --- | --- |
 | Basics | Paragraphs, blanks, tabs, Unicode, LF/CR/CRLF, literal punctuation, escapes and named/decimal/hex entities. |
-| Headings | All six ATX levels, closing hashes, both Setext levels, multiline and inline content. Same input; generated anchors are extra native output work. |
+| Headings | All six ATX levels, closing hashes, both Setext levels, multiline and inline content. |
 | Emphasis | Asterisk and underscore, strong, nested formatting and flanking in the declared domains. |
 | Line breaks | Soft breaks and both hard-break spellings. |
 | Thematic breaks | Three marker families and spaced markers. |
@@ -66,7 +66,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Bracketed spans | Empty, nested, record/class forms and rejected suffixes. |
 | Links/images | Direct links/images, all reference forms, duplicate and unresolved references, angle/bare autolinks; numeric dimensions have an explicit boundary. |
 | Cross links/embeds | Absent/empty/raw labels, path/local/heading/block targets, embed forms, escaped pipes within tables and fallback; numeric dimensions remain a boundary. |
-| Anchors | Explicit IDs, last/empty ID and Unicode/duplicate/empty automatic bases. |
+| Anchors | Explicit IDs and last/empty ID. |
 | Block IDs | Paragraph, list-item, list/quote/table container declarations and escaped markers. |
 | Footnotes | GFM references and multi-block definitions, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is documented for cost interpretation. |
 | Citations | Author/suppressed/normal modes, groups, independent prefix/key/suffix and rejected keys. |

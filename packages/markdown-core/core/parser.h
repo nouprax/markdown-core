@@ -1,13 +1,11 @@
 #ifndef MARKDOWN_CORE_PARSER_H
 #define MARKDOWN_CORE_PARSER_H
 
-#include "measure.h"
 #include <assert.h>
 #include <stdint.h>
 #include "array.h"
 #include "tree.h"
 #include "roster.h"
-#include "names.h"
 #include "stack.h"
 #include "node.h"
 #include "buffer.h"
@@ -141,9 +139,6 @@ typedef struct markdown_core_parser_input {
      * reading takes them back (THE SPLICE, blocks.c). The front is the
      * input's own, which the parse reads and grows. */
     markdown_core_tree lines;
-    /* Where the text ends that the back of the other trees is in the terms
-     * of (THE BACK). */
-    size_t back_end;
     struct markdown_core_normalized_line *normalized;
     /* THE FACTS of the lines, a line's `facts` naming its own as its index
      * plus one, or none. A line that goes to the back loses its facts, which
@@ -430,12 +425,11 @@ typedef struct {
 } markdown_core_settled_miss;
 
 /* Where the settled nodes stood once a read settled more of them: how many
- * there were, the point, and how many of the lookups and the anchored nodes
- * were theirs. */
+ * there were, the point, and how many of the lookups were theirs. */
 typedef struct {
     uint32_t count;
     bufsize_t point;
-    size_t misses, anchored;
+    size_t misses;
 } markdown_core_settled_step;
 
 /* THE SETTLED NODES OF AN OPEN PARAGRAPH (blocks.c, THE SETTLE POINT): the
@@ -443,8 +437,8 @@ typedef struct {
  * snapshot that completed it read it -- its content from `offset` in its
  * text, `size` bytes of it -- the top-level nodes before its settle point
  * `point`, the `nodes`, which the stream owns, the lookups
- * before the point that found nothing, the first `miss_count` of `misses`,
- * and the nodes below them that hold an explicit anchor. Its content's next read goes on
+ * before the point that found nothing, the first `miss_count` of `misses`.
+ * Its content's next read goes on
  * at the mark `mark` of its map, content offset `from`, with the places
  * read before it, which end at `at` in the source. While a snapshot reads
  * the paragraph, `root` is the paragraph, `settle` what its parse lists,
@@ -471,8 +465,6 @@ typedef struct {
     markdown_core_settled_miss *misses;
     size_t miss_count, miss_total, miss_capacity;
     markdown_core_strbuf labels;
-    struct markdown_core_node **anchored;
-    size_t anchored_count, anchored_capacity;
     markdown_core_inline_settle settle;
     bool taken;
 } markdown_core_settled;
@@ -702,8 +694,7 @@ typedef struct markdown_core_unclosed {
  * reading takes its first children to, all zero for none, and `taken`
  * where its uses start in the uses' front. The
  * reading's parse of the content lists what may be seams in `settle`,
- * from the child `held` on, while `active`, with the anchors the roster
- * held as it began, `anchors`. */
+ * from the child `held` on, while `active`. */
 typedef struct {
     /* Where it is in the content, the first child after it, how many of
      * the paragraph's uses lie before it, and the line of the paragraph
@@ -715,10 +706,6 @@ typedef struct {
     uint32_t index, uses, line, source, place, read;
     /* How far before it the child before it ends in the content. */
     uint32_t lead;
-    /* The measure the element of the paragraph's kind takes of the children
-     * before it (element.h, the finish's `measure`), zero for none; a seam
-     * the back holds measures those after it. */
-    markdown_core_measure measure;
     /* Whether it lies inside the content's last line, `base` bytes past
      * where that line starts: a seam only an edit at the content's end
      * keeps (blocks.c, THE SEAMS). */
@@ -729,11 +716,10 @@ typedef struct {
 /* THE SEAMS a paragraph's parse may meet (blocks.c): the old seams past
  * the edit, `count` of them, the nearest last, each measured back from the
  * content's `end`; `met` once the parse stopped at the nearest, which no
- * anchor or note the parse made since the roster held `anchors` came
- * before. */
+ * note the parse made came before. */
 typedef struct markdown_core_seam_stops {
     const markdown_core_seam *items;
-    size_t count, anchors;
+    size_t count;
     bufsize_t end;
     bool met;
 } markdown_core_seam_stops;
@@ -761,7 +747,7 @@ typedef struct markdown_core_leap {
     size_t seam_count, seam_room;
     markdown_core_seam seam;
     uint32_t held;
-    size_t taken, anchors;
+    size_t taken;
     markdown_core_inline_settle settle;
     /* THE OLD TAIL OF A PARAGRAPH (blocks.c): the seams past the edit, as
      * stops measured back from where the paragraph's content, children,
@@ -814,15 +800,6 @@ typedef struct markdown_core_leap {
      * source from the run `pane_run`, which starts at `pane_start`, on;
      * `pane_end` once it holds the content's end and the runs after it. */
     bool owed, paned, pane_end;
-    /* THE MEASURE of the paragraph's children (blocks.c): its `ends`'
-     * measure, once its last parse from a seam measured them, `measured`;
-     * the seams from `fresh` on the parse listed are to be measured while
-     * `owing`, the seam of the back it met measuring `stop`; the seams'
-     * measures stand from the first child on, `metered`, and did as the
-     * parse began, `based`. */
-    bool measured, owing, metered, based;
-    size_t fresh;
-    markdown_core_measure stop;
     markdown_core_content_map map;
     markdown_core_places *pane;
     size_t pane_room, pane_mark, pane_start;
@@ -1021,15 +998,11 @@ struct markdown_core_parser {
      * open (sink.h), or NULL: a parse with a sink is never published but
      * to the context query. */
     struct markdown_core_context_sink *sink;
-    /* Every definition and explicit anchor the parse declared (roster.h):
-     * the block phase declares definitions as it reads them, and completion
-     * reserves explicit anchors where it meets them. */
+    /* Every definition the parse declared (roster.h): the block phase
+     * declares definitions as it reads them. */
     markdown_core_roster roster;
-    /* The nodes that ask for names and the names they take (names.h). */
-    markdown_core_names names;
     /* The root being completed: the queued block or field root the
-     * completion walk is in (blocks.c, COMPLETION), or the heading whose
-     * inline content the document's preparation parses. */
+     * completion walk is in (blocks.c, COMPLETION). */
     struct markdown_core_node *completing;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
@@ -1390,24 +1363,6 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
  * SEAMS). */
 void markdown_core_parser_unseam(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node_type kind);
 
-/* The inline content of the root `node`, of a kind the preparation parses
- * that parses as a paragraph does (element.h, `seams`), parsed as
- * completion's walk parses a paragraph's: from its seams when an edit's
- * reading leapt in it (blocks.c, THE SEAMS), whole otherwise. */
-void markdown_core_parser_parse_root(markdown_core_parser *parser, markdown_core_node *node);
-
-/* THE LEAP A ROOT TOOK: whether the root `node` an edit's reading parsed
- * from its seams has the measures its element takes of its children
- * (element.h, the finish's `measure`) as its parse made them. Its children
- * before `*from` and from `*to` on are those it kept, which measure `*front`
- * and `*back`, and those between are those the parse made. */
-typedef struct {
-    markdown_core_measure front, back;
-    uint32_t from, to;
-} markdown_core_leapt;
-bool markdown_core_parser_leapt(const markdown_core_parser *parser, const markdown_core_node *node,
-                                markdown_core_leapt *leapt);
-
 /* THE BUILDER STACK'S QUESTIONS (the builders, above), each answered from
  * one builder's scaffold. The current block. */
 static inline markdown_core_node *markdown_core_parser_current(const markdown_core_parser *parser) {
@@ -1416,11 +1371,6 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
 
 /* Whether a block that closed has settled: every one has but the pending
  * block, which a later line can still write. */
-/* How many entries of the names (names.h) were read by their owners, as
- * the earliest mark the reading can go back to found them, and the roster's
- * records then in `*records`. */
-size_t markdown_core_parser_kept_names(const markdown_core_parser *parser, size_t *records);
-
 static inline bool markdown_core_parser_settled(const markdown_core_parser *parser, const markdown_core_node *node) {
     return node != parser->at.pending;
 }
@@ -2122,7 +2072,7 @@ bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_r
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,
                                   const markdown_core_chunk *label, uint32_t start, markdown_core_chunk *normal);
 /* Whether `kind`'s labels are in the reference-label normal form (element.h,
- * markdown_core_space `folds`); the engine's ANCHOR's are not. */
+ * markdown_core_space `folds`). */
 static inline bool markdown_core_parser_folds(const markdown_core_parser *parser, markdown_core_roster_kind kind) {
     const markdown_core_space *space = parser->dialect->spaces[kind];
     return space && space->folds;
@@ -2302,10 +2252,6 @@ bool markdown_core_parser_altered_labels(markdown_core_parser *parser, size_t st
  * `*places`, which the caller frees. False when storage could not be had. */
 bool markdown_core_parser_uses_of(markdown_core_parser *parser, const markdown_core_strbuf *altered,
                                   const size_t *spans, size_t count, size_t **places, size_t *place_count);
-/* Where the text an edit's back is measured from ends (THE BACK). */
-static inline uint32_t markdown_core_parser_back_end(const markdown_core_parser *parser) {
-    return (uint32_t)parser->input.back_end;
-}
 /* THE LINES OF A FLUSHED TRANSACTION'S TEXT, counted from 0: the line that
  * holds `offset`, and line `line`'s start and the start of the line after
  * it, or the text's end -- false when the text has no such line. A text

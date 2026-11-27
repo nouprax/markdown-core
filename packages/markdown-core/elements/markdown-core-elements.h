@@ -40,12 +40,6 @@ static inline const struct markdown_core_facet *markdown_core_core_facet(markdow
     return (size_t)kind < MARKDOWN_CORE_FACET_ROOM ? markdown_core_facet_table[kind] : NULL;
 }
 
-/** The anchor a published node shows, in `*anchor`: the one its attributes
- *  write, else the name the names service computed for it (names.h,
- *  markdown_core_name_anchor), as its kind's facet keeps it; empty when it
- *  has neither. False, `*anchor` untouched, when storage could not be had. */
-bool markdown_core_core_anchor(const markdown_core_node *node, markdown_core_chunk *anchor);
-
 /** A parser instance (parser.h) over the complete core dialect, extended by
  *  `setup` when present (see markdown_core_parser_setup_func). The product's
  *  composition root: the one site that selects the core dialect for the

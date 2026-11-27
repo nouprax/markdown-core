@@ -159,8 +159,9 @@ function convert(node, definitions, parentType = "root") {
     // two agree on what the span means; they disagree on which layer states it,
     // and cmark is the authority for the CommonMark layer.
     if (node.type === "inlineCode") fields.literal = (node.value ?? "").replace(/\r\n|\r|\n/g, " ");
-    // mdast strips a code block's trailing line ending; the canonical dump keeps it.
-    if (node.type === "code") fields.literal = `${node.value ?? ""}\n`;
+    // mdast strips a code block's trailing line ending; the canonical dump keeps
+    // it, and the comparison projection drops it from both (`code-block-ends`).
+    if (node.type === "code") fields.literal = node.value ?? "";
     if (node.type === "code") fields.info = node.lang ? node.lang : "null";
     if (node.type === "html") fields.literal = node.value ?? "";
     // Registered shape delta `html-comment-node`: mdast keeps an HTML comment
@@ -303,8 +304,8 @@ export const MDAST_COMPARED = {
 };
 
 const contract = JSON.parse(fs.readFileSync(new URL("../../docs/specs/canonical-ast.json", import.meta.url), "utf8"));
-// mdast headings have no anchor fact. P3's identifier is checked by the
-// Pandoc oracle and canonical fixtures; every other shared field remains
+// mdast headings have no anchor fact. A heading's explicit anchor is checked
+// by the Pandoc oracle and canonical fixtures; every other shared field remains
 // observable, including explicit directive anchors and heading attributes.
 for (const { name } of contract.kinds) {
     MDAST_COMPARED[name] = [...(name === "Heading" ? [] : ["anchor"]), "attributes", ...(MDAST_COMPARED[name] ?? [])];
@@ -346,6 +347,14 @@ export function projectMdastComparison(node) {
             continue;
         }
         if (value === undefined || value === "") value = key === "literal" ? "" : "null";
+        // Registered comparison boundary `code-block-ends`: mdast states a code
+        // block's literal without its last line ending, so an empty block and
+        // one of a blank line are alike, and only the info string's first word,
+        // its `lang`; the rest is `meta`, which also holds what this
+        // repository reads as attributes. Both sides drop what mdast cannot
+        // state.
+        if (node.kind === "CodeBlock" && key === "literal") value = String(value).replace(/\r?\n$|\r$/u, "");
+        if (node.kind === "CodeBlock" && key === "info" && value !== "null") value = String(value).split(/[ \t]/u)[0];
         fields[key] = String(value);
     }
     return { kind: node.kind, fields, children };

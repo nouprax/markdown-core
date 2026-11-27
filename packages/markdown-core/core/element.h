@@ -9,7 +9,6 @@
 #include "delimiter.h"
 #include "node.h"
 #include "attributes.h"
-#include "measure.h"
 #include "follow.h"
 
 struct markdown_core_block_start_context;
@@ -265,46 +264,23 @@ typedef struct markdown_core_document_ops {
                    uint32_t);
 } markdown_core_document_ops;
 
-/* The measure (measure.h) `*measure` with the measure an element takes of
- * the children of the root `root` from `from` up to `to` after its own:
- * false when storage could not be had. */
-typedef bool (*markdown_core_measure_func)(const markdown_core_element_instance *, const markdown_core_node *root,
-                                           uint32_t from, uint32_t to, markdown_core_measure *measure);
-
 /* THE COMPLETION'S HOOKS: what completion's walk asks of an element --
- * `complete` of each node of its kinds, `reparse` of one completed again,
- * and its finish `step` at the events its kind lists name. Each may be NULL
+ * `complete` of each node of its kinds and its finish `step` at the events its kind lists name. Each may be NULL
  * (NULL lists: the step is asked nowhere). */
 typedef struct markdown_core_finish_ops {
     /* The element's completion of a node, which completion's walk asks at the
      * ENTER of every node of a kind the element is the structure of, after
-     * the node's inline content is parsed and before its explicit anchor is
-     * reserved; `depth` is the word depth of the node's ancestors. Text turns
+     * the node's inline content is parsed; `depth` is the word depth of the node's ancestors. Text turns
      * an escaped space inside a word into NBSP; a fenced code block whose
      * info string names a formula becomes a FormulaBlock. The hook may give
      * a node that holds no inline content and owns no fields another kind
      * that holds and owns none either. A failure fails the parse
      * (markdown_core_parser_fail), and the walk ends at its next check. */
     void (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int depth);
-    /* A kind whose inline content is parsed before completion's walk
-     * (`deferred`, by the document's preparation) parses one node's
-     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
-     * asks it once the node's inline content is released, and the walk then
-     * completes the node as it completed it the first time. */
-    void (*reparse)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    /* The element's kinds parse their inline content before completion's
-     * walk, by the document's preparation, and not as the walk enters them. */
-    bool deferred;
-    /* A node of the element's `deferred` kinds whose inline content parses
-     * as a paragraph's does, in place from its seams when an edit's reading
-     * leaps in it (blocks.c, THE SEAMS): one whose content declares nothing
-     * the preparation orders. NULL: none does. */
+    /* A node of the element's kinds whose inline content parses as a
+     * paragraph's does, in place from its seams when an edit's reading
+     * leaps in it (blocks.c, THE SEAMS). NULL: none does. */
     bool (*seams)(const markdown_core_element_instance *, const markdown_core_node *);
-    /* The measure of the children of a root of the element's kinds that
-     * parses from seams, which each seam keeps of the children before it,
-     * so an edit's reading measures only the children it made (blocks.c,
-     * THE SEAMS; markdown_core_parser_leapt). NULL: none. */
-    markdown_core_measure_func measure;
     /* The element's finish step (the API header states the contract), asked
      * from inside completion's walk at the EXIT of every node whose kind is
      * in `exits` and at the ENTER and EXIT of every node whose
@@ -873,8 +849,7 @@ typedef struct markdown_core_follow {
  * declares it -- how its text splits into fields and markers (`parts`,
  * parts.h), and, for a payload of the element's own, its literal and where
  * its published text starts in it, a formula's placement, a directive's
- * name and where its label is, and the name the names service computes
- * for it. Each may be NULL, for what the kind does
+ * name and where its label is. Each may be NULL, for what the kind does
  * not show or shows from the node itself. A list of them ends at
  * MARKDOWN_CORE_KIND_NONE. */
 struct markdown_core_parts;
@@ -885,9 +860,6 @@ typedef struct markdown_core_facet {
     markdown_core_placement (*placement)(const markdown_core_node *);
     const char *(*name)(const markdown_core_node *);
     markdown_core_node **(*label)(const markdown_core_node *);
-    /* Where a node of the kind keeps the name the names service computes
-     * for it (node.h, A NODE'S NAME; names.h), when the element names it. */
-    struct markdown_core_name *(*named)(const markdown_core_node *);
 } markdown_core_facet;
 
 /* A ROSTER SPACE (roster.h): a lookup space the labels an element declares
@@ -939,13 +911,6 @@ struct markdown_core_element {
     /* The parse's stages it takes part in (markdown_core_stage_ops), or
      * NULL. */
     const markdown_core_stage_ops *stages;
-    /* What the element tells the names service of the nodes it asks names
-     * for (names.h, markdown_core_name_ops), or NULL when it asks none. */
-    const struct markdown_core_name_ops *names;
-    /* How the names service spells every name (names.h,
-     * markdown_core_name_spelling), or NULL: the dialect's last element
-     * that declares one, its anchor element, spells them. */
-    const struct markdown_core_name_spelling *spelling;
 
     /* THE INTERFACES THE ELEMENT IMPLEMENTS, one table for each algorithm
      * that asks it, in the order a line meets them. A NULL table says the

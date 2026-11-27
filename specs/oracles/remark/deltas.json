@@ -100,10 +100,17 @@
             "evidence": "docs/specs/dialect/tables.md; canonical table fixtures and existing pipe-table oracle corpus."
         },
         {
+            "id": "code-block-ends",
+            "kind": "comparison-boundary",
+            "summary": "mdast states a code block's value without its last line ending, so an empty fenced block and one holding a blank line are alike, and splits the info string into `lang`, its first word, and `meta`, the rest, which also holds what this repository reads as an attribute container.",
+            "handling": "The shared comparison projection drops one final line ending from CodeBlock.literal and keeps only the first space- or tab-delimited word of CodeBlock.info, on both sides. The full literal and info string remain compared by the canonical fixtures and the cmark and cmark-gfm oracles.",
+            "evidence": "scripts/correctness/mdast-oracle.mjs, projectMdastComparison."
+        },
+        {
             "id": "heading-anchor-unavailable",
             "kind": "comparison-boundary",
-            "summary": "mdast headings carry no anchor fact. P3 produces heading identifiers under the Pandoc-owned anchors module.",
-            "handling": "The shared comparison field map omits only Heading.anchor on both sides. Heading level, content and attributes, and anchors on all other Markup kinds remain compared; the Pandoc oracle and canonical fixtures verify generated and explicit heading anchors."
+            "summary": "mdast headings carry no anchor fact. A heading's anchor is the explicit identifier its attributes declare, under the Pandoc-owned anchors module.",
+            "handling": "The shared comparison field map omits only Heading.anchor on both sides. Heading level, content and attributes, and anchors on all other Markup kinds remain compared; the Pandoc oracle and canonical fixtures verify explicit heading anchors and their absence."
         }
     ],
     "notDeltas": [
@@ -679,12 +686,6 @@
             "input": "```python {.numberLines startFrom=\"10\"}\nprint(\"hello\")\n```\n",
             "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
             "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:310: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
-        },
-        {
-            "id": "p2-attribute-sites-62",
-            "input": "``` python {.x} y\nz\n```\n",
-            "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
-            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:319: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
             "id": "p2-attribute-sites-63",

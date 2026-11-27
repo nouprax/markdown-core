@@ -123,24 +123,6 @@ static inline markdown_core_seam markdown_core_seam_flip(markdown_core_seam seam
     return seam;
 }
 
-/* The front's seam `seam` as the back holds it: its measure is of the
- * children after it. */
-static inline markdown_core_seam markdown_core_seam_back(markdown_core_seam seam, const markdown_core_seam *ends) {
-    const markdown_core_measure measure = markdown_core_measure_back(seam.measure, ends->measure);
-    seam = markdown_core_seam_flip(seam, ends);
-    seam.measure = measure;
-    return seam;
-}
-
-/* The back's seam `seam` as the front holds it: its measure is of the
- * children before it. */
-static inline markdown_core_seam markdown_core_seam_front(markdown_core_seam seam, const markdown_core_seam *ends) {
-    const markdown_core_measure measure = markdown_core_measure_front(seam.measure, ends->measure);
-    seam = markdown_core_seam_flip(seam, ends);
-    seam.measure = measure;
-    return seam;
-}
-
 /* The ends of a paragraph whose seam `seam` the back measures as `back`. */
 static inline markdown_core_seam markdown_core_seam_sum(markdown_core_seam seam, markdown_core_seam back) {
     return (markdown_core_seam){seam.offset + back.offset,
@@ -151,7 +133,6 @@ static inline markdown_core_seam markdown_core_seam_sum(markdown_core_seam seam,
                                 seam.place + back.place,
                                 seam.read + back.read,
                                 0,
-                                markdown_core_measure_join(seam.measure, back.measure),
                                 false,
                                 0};
 }

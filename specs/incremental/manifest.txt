@@ -166,8 +166,6 @@ document documents/hard-table-label.md
 script documents/hard-table-label.md scripts/hard-table-label.script
 document documents/hard-footnote-definition.md
 script documents/hard-footnote-definition.md scripts/hard-footnote-definition.script
-document documents/hard-automatic-anchor.md
-script documents/hard-automatic-anchor.md scripts/hard-automatic-anchor.script
 document documents/hard-split-and-join.md
 script documents/hard-split-and-join.md scripts/hard-split-and-join.script
 document documents/hard-setext-underline.md

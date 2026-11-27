@@ -41,7 +41,6 @@
 #include "definition_list.h"
 #include "embed.h"
 #include "footnote.h"
-#include "heading_state.h"
 #include "heading.h"
 #include "list.h"
 #include "properties.h"
@@ -1026,13 +1025,9 @@ static void attribute_eq(test_batch_runner *runner, markdown_core_node *node, si
        message);
 }
 
-/* The anchor `node` shows; none when it could not be read. */
+/* The anchor `node` shows. */
 static markdown_core_optional_string anchor_of(const markdown_core_node *node) {
-    markdown_core_optional_string anchor = {0};
-    if (markdown_core_node_anchor(node, &anchor) != MARKDOWN_CORE_OK) {
-        return (markdown_core_optional_string){0};
-    }
-    return anchor;
+    return markdown_core_node_anchor(node);
 }
 static void directive_element_accessors(test_batch_runner *runner) {
     /* `:-a[]` was the input here until Step 7, and it is not a directive: a
@@ -2482,7 +2477,7 @@ static void source_pos(test_batch_runner *runner) {
     test_facade_dump(
         runner, markdown,
         "Document scope=1:1..10:20 anchor=null attributes={} children=3\n"
-        "├── Heading scope=1:1..1:13 anchor=\"hi-there\" attributes={} level=1 children=3\n"
+        "├── Heading scope=1:1..1:13 anchor=null attributes={} level=1 children=3\n"
         "│   ├── Text scope=1:3..1:5 anchor=null attributes={} literal=\"Hi \" children=0\n"
         "│   ├── Emphasis scope=1:6..1:12 anchor=null attributes={} children=1\n"
         "│   │   └── Text scope=1:7..1:11 anchor=null attributes={} literal=\"there\" children=0\n"
@@ -3012,7 +3007,7 @@ static const char *footnote_label_of(const markdown_core_node *note) {
 }
 
 /* A BRACKET NAMING A HEADING'S TEXT is literal text: a heading declares no
- * reference label. The heading owns its computed anchor. */
+ * reference label. */
 static void heading_text_names_no_reference(test_batch_runner *runner) {
     const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
@@ -3024,13 +3019,7 @@ static void heading_text_names_no_reference(test_batch_runner *runner) {
     markdown_core_node *paragraph = child_at(document->root, 1);
     OK(runner, paragraph->child_count == 1 && child_at(paragraph, 0)->kind == MARKDOWN_CORE_NODE_TEXT,
        "the brackets stay text");
-    const markdown_core_optional_string slug = anchor_of(heading);
-    OK(runner,
-       slug.has_value && slug.value.length == strlen("straße-and-more") &&
-           !memcmp(slug.value.data, "straße-and-more", slug.value.length),
-       "the anchor is the slug");
-    OK(runner, !heading->attributes.anchor.len && heading->as.heading->name.base.ptr == slug.value.data,
-       "the heading's anchor is its base, which it owns");
+    OK(runner, !anchor_of(heading).has_value, "a heading without `{#id}` has no anchor");
     INT_EQ(runner, markdown_core_document_reference_label_count(document), 0, "no label resolves");
     markdown_core_document_free(document);
 }
@@ -3307,37 +3296,6 @@ static void unicode_classes_are_total(test_batch_runner *runner) {
        "an ASCII byte is alphanumeric exactly when it is a letter or digit, and an empty range is not");
 }
 
-/* AN ANCHOR IMAGES ONLY SCALARS. Bytes that are not a character, a lead cut
- * off by the end of the literal, every surrogate and every value past
- * U+10FFFF that four bytes can spell have no image, so an anchor is UTF-8
- * whatever its heading's bytes were. */
-static void anchor_images_only_scalars(test_batch_runner *runner) {
-    markdown_core_strbuf anchor = MARKDOWN_CORE_BUF_INIT();
-    int empty = 1;
-    for (int32_t scalar = 0xD800; scalar < 0xE000; scalar++) {
-        const uint8_t bytes[3] = {(uint8_t)(0xE0 | scalar >> 12), (uint8_t)(0x80 | ((scalar >> 6) & 0x3F)),
-                                  (uint8_t)(0x80 | (scalar & 0x3F))};
-        markdown_core_strbuf_clear(&anchor);
-        markdown_core_utf8proc_anchor(&anchor, bytes, 3);
-        empty &= anchor.size == 0;
-    }
-    OK(runner, empty, "no surrogate has an anchor image");
-    static const char *const others[] = {"\xF4\x90\x80\x80", "\xF7\xBF\xBF\xBF", "\xFF\xFF\xFF\xFF", "\x80",
-                                         "\xBF\xBF",         "\xE4\xB8",         "\xF0\x9F\x98"};
-    for (size_t i = 0; i < sizeof(others) / sizeof(*others); i++) {
-        markdown_core_strbuf_clear(&anchor);
-        markdown_core_utf8proc_anchor(&anchor, (const uint8_t *)others[i], (bufsize_t)strlen(others[i]));
-        INT_EQ(runner, (int)anchor.size, 0, "bytes %zu that are no scalar have no anchor image", i);
-    }
-    markdown_core_strbuf_clear(&anchor);
-    markdown_core_utf8proc_anchor(&anchor,
-                                  (const uint8_t *)"A\x80"
-                                                   "B\xE4",
-                                  4);
-    STR_EQ(runner, (const char *)anchor.ptr, "ab", "the characters around them keep theirs");
-    markdown_core_strbuf_free(&anchor);
-}
-
 /* WHITESPACE IS A SPACE, A TAB OR A LINE ENDING (docs/specs/dialect.md), and
  * no other byte: not vertical tab, form feed or another control, and no byte
  * of a multi-byte character, so no Unicode space. */
@@ -3385,9 +3343,9 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* Roster kinds for the roster's own tests: spaces past the engine's
- * ANCHOR, as a dialect numbers its elements' (dialect.h, `spaces`). */
-enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_ANCHOR + 1, ROSTER_TEST_KINDS = ROSTER_TEST_KIND + 3 };
+/* Roster kinds for the roster's own tests, numbered as a dialect numbers
+ * its elements' spaces (dialect.h, `spaces`). */
+enum { ROSTER_TEST_KIND = MARKDOWN_CORE_ROSTER_FIRST, ROSTER_TEST_KINDS = ROSTER_TEST_KIND + 4 };
 
 /* THE ROSTER'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
@@ -3654,8 +3612,7 @@ static size_t roster_model_withdrawn(const roster_model_key *key, uint32_t start
 }
 
 static void roster_rollback_matches_a_model(test_batch_runner *runner) {
-    /* The kinds: the engine's ANCHOR, filed under a measure, and three
-     * spaces after it. */
+    /* The kinds: four spaces. */
     enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
     markdown_core_roster roster;
@@ -3710,8 +3667,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
             record.withdraws = choice < 30 && key->count > 0;
             char text[16];
             roster_label_text(record.label, text, sizeof(text));
-            const markdown_core_roster_kind kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + record.kind);
+            const markdown_core_roster_kind kind = (markdown_core_roster_kind)(ROSTER_TEST_KIND + record.kind);
             agrees = record.withdraws ? markdown_core_roster_withdraw(&roster, kind, (const unsigned char *)text,
                                                                       (bufsize_t)strlen(text), record.start)
                                       : markdown_core_roster_declare(&roster, kind, (const unsigned char *)text,
@@ -3741,8 +3697,7 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
-            const markdown_core_roster_kind compared_kind =
-                (markdown_core_roster_kind)(MARKDOWN_CORE_ROSTER_ANCHOR + kind);
+            const markdown_core_roster_kind compared_kind = (markdown_core_roster_kind)(ROSTER_TEST_KIND + kind);
             for (unsigned label = 0; label < fresh && agrees; label++) {
                 const roster_model_key *key = &keys[kind * (SHARED + STEPS) + label];
                 /* Only a label some step declared can answer; the rest are
@@ -3760,16 +3715,8 @@ static void roster_rollback_matches_a_model(test_batch_runner *runner) {
                 bool failed = false;
                 const markdown_core_roster_record *found = markdown_core_roster_find(
                     &roster, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
-                /* An anchor's key is filed under its measure (roster.c,
-                 * S_hash), any other's under its bytes. */
                 const markdown_core_key_index_slot *slot =
-                    !found ? NULL
-                    : found->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
-                        ? markdown_core_key_index_find_hashed(&roster.index,
-                                                              markdown_core_key_index_hash(markdown_core_measure_of(
-                                                                  found->key, (size_t)found->key_len)),
-                                                              found->key, found->key_len)
-                        : markdown_core_key_index_find(&roster.index, found->key, found->key_len);
+                    found ? markdown_core_key_index_find(&roster.index, found->key, found->key_len) : NULL;
                 agrees =
                     !failed && (found != NULL) == (key->count > 0) &&
                     (!found || (found->start == earliest && !found->withdraws && slot && slot->extra == key->count));
@@ -5104,8 +5051,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, nonblank, block_identifier, callout, dimensions;
     size_t definition_lists, citation_brace_bytes;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
-    bool heading_collection_disposed;
-    size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers;
+    size_t attributes, definitions, whitespace, brackets, citations, list_markers;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes;
     size_t delimiter_pushes;
@@ -5165,13 +5111,11 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         ELEMENT_STATE(parser, markdown_core_embed_work, MARKDOWN_CORE_ELEMENT_EMBED)->dimensions +
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = ATTRIBUTE_WORK(parser);
-    work->anchors = parser->names.work;
     work->definitions = 0;
     for (size_t i = 0; i < parser->roster.count; i++) {
         work->definitions += parser->roster.records[i]->key[0] ==
                              markdown_core_dialect_space_kind(parser->dialect, &MARKDOWN_CORE_REFERENCE_SPACE);
     }
-    work->heading_collection_disposed = parser->names.entries.root == NULL && parser->names.count == 0;
     work->nonblank = parser->nonblank_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
@@ -6037,12 +5981,8 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
             markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "deep Span/script headings parse successfully");
         if (root) {
-            STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, "a-b-x-1",
-                   "heading projection includes script bodies and reserves the later Span anchor");
-            OK(runner,
-               work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
-                   work.delimiters <= 8 * (size_t)source.size,
-               "heading projection and mixed bracket/delimiter ownership stay linear");
+            OK(runner, work.brackets <= 8 * (size_t)source.size && work.delimiters <= 8 * (size_t)source.size,
+               "mixed bracket/delimiter ownership in a heading stays linear");
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
@@ -7084,107 +7024,6 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     }
 }
 
-static void heading_completion_invariants(test_batch_runner *runner) {
-    static const struct {
-        const char *source, *anchor;
-    } cases[] = {
-        {"# x\n\n# T {#x}\n", "x-1"},
-        {"# x\n\n[r]: /u {#x}\n", "x-1"},
-        {"# x\n\n[r][]{#y}\n\n[r]: /u {#x}\n", "x-1"},
-        {"# x\n\n[^`a`{#x}]\n\n[^`a`{#x}]: note\n", "x"},
-        {"# x\n\n:d[`a`{#x}]\n", "x-1"},
-        {"# x\n\n:d[^[`a`{#x}]]\n", "x-1"},
-        {"# x\n\n> [!note] `a`{#x}\n", "x-1"},
-        {"# x\n\n[^n]: `a`{#x}\n", "x-1"},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
-        markdown_core_node *root = parse(cases[i].source);
-        OK(runner, root != NULL, "completed inline ownership preserves anchor reservations");
-        if (root) {
-            STR_EQ(runner, (const char *)anchor_of(child_at(root, 0)).value.data, cases[i].anchor,
-                   "only final effective anchors on emitted nodes reserve names");
-        }
-        markdown_core_node_free(root);
-    }
-    size_t anchor_work = 0;
-    for (size_t count = 128; count <= 4096; count *= 2) {
-        for (int referenced = 0; referenced < 2; referenced++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, "# Same\n\n");
-            }
-            if (referenced) {
-                markdown_core_strbuf_puts(&source, "[Same] ![Same] [Same][]\n");
-            }
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "repeated headings parse");
-            INT_EQ(runner, work.definitions, 0, "a heading declares no reference definition");
-            markdown_core_node_free(root);
-            markdown_core_strbuf_free(&source);
-        }
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "# Only\n\n");
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "Plain **paragraph**.\n\n");
-        }
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "unrelated content does not add anchor work");
-        if (!anchor_work) {
-            anchor_work = work.anchors;
-        }
-        INT_EQ(runner, work.anchors, anchor_work, "anchor work is independent of unrelated AST size");
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
-    }
-}
-
-static void heading_roster_invariants(test_batch_runner *runner) {
-    for (size_t count = 128; count <= 8192; count *= 2) {
-        for (int reserve = 0; reserve < 2; reserve++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-            for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, "# Same\n\n");
-            }
-            if (reserve) {
-                markdown_core_strbuf_puts(&source, ":n{#same}\n\n");
-                for (size_t i = 1; i <= count; i++) {
-                    char declaration[80];
-                    snprintf(declaration, sizeof(declaration), ":n{#same-%zu}\n\n", i);
-                    markdown_core_strbuf_puts(&source, declaration);
-                }
-            }
-            markdown_core_strbuf_puts(&source, "[Same] [Same][] [go][Same]\n");
-            inline_work work = {0};
-            markdown_core_node *root =
-                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "heading roster handles dense future reservations");
-            if (root) {
-                markdown_core_node *node = child_at(root, 0);
-                OK(runner, work.heading_collection_disposed, "the finished document holds no live heading parse state");
-                for (size_t i = 0; i < count; i++, node = child_at(root, i)) {
-                    char expected[80];
-                    size_t ordinal = reserve ? count + i + 1 : i;
-                    if (ordinal) {
-                        snprintf(expected, sizeof(expected), "same-%zu", ordinal);
-                    } else {
-                        strcpy(expected, "same");
-                    }
-                    STR_EQ(runner, (const char *)anchor_of(node).value.data, expected,
-                           "every generated suffix is the smallest available");
-                }
-                OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
-                   "roster work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
-                markdown_core_node_free(root);
-            }
-            markdown_core_strbuf_free(&source);
-        }
-    }
-}
-
 /* AN OCCURRENCE NAMES ITS TARGET BY LABEL: however long a Reference's
  * attributes, each occurrence holds the label alone, and the attributes are
  * the target's, never copied into it. */
@@ -7239,8 +7078,6 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         OK(runner, root != NULL, "a heading of a label's length parses");
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), 0, "a bracket naming a heading's text is text");
-            INT_EQ(runner, anchor_of(child_at(root, 0)).value.length, length,
-                   "the label length never limits generated heading anchors");
         }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
@@ -7538,14 +7375,6 @@ static void image_cursor_stops_at_buffer_limit(test_batch_runner *runner) {
     OK(runner, buf.oom, "a fold one byte past the limit poisons the buffer");
     OK(runner, buf.size == limit - 5 && buf.ptr[buf.size] == 0, "and leaves its content as it was");
 
-    buf.oom = 0;
-    buf.size = limit - 1;
-    buf.ptr[buf.size] = '\0';
-    markdown_core_utf8proc_anchor(&buf, (const uint8_t *)"AB", 2);
-    OK(runner, buf.oom, "an anchor one byte past the limit poisons the buffer");
-    OK(runner, buf.size == limit && buf.ptr[limit - 1] == 'a' && buf.ptr[limit] == 0,
-       "at the byte where appending it would have been refused");
-
     /* The inline append reads the same room: an append that fits it fits the
      * limit, one that does not is refused, and a poisoned buffer takes none,
      * whatever room it has. */
@@ -7719,15 +7548,13 @@ static void bounded_scanners(test_batch_runner *runner) {
  *
  * Valid UTF-8 is the public precondition and what malformed input parses to is
  * not defined -- but the walk itself must still end and stay inside its own
- * buffer. `markdown_core_utf8proc_anchor` used to assert that precondition and
- * then add the decoder's width, which is NEGATIVE when no character starts
- * there; Release is the default build type, so the assertion was compiled out
- * and `# heading \xff\xfe tail` walked backwards below the literal forever.
- * Anchors are derived from every heading, so one stray byte in one heading hung
- * the parser. */
+ * buffer. A walk once asserted that precondition and then added the
+ * decoder's width, which is NEGATIVE when no character starts there; Release
+ * is the default build type, so the assertion was compiled out and
+ * `# heading \xff\xfe tail` walked backwards below the literal forever. */
 static void malformed_scalar_terminates(test_batch_runner *runner) {
-    /* Each reaches a different decode-and-advance walk: the heading anchor,
-     * the attribute value, and an ordinary text run. */
+    /* Each reaches a decode-and-advance walk: a heading's text, the
+     * attribute value, and an ordinary text run. */
     static const char *const sources[] = {
         "# heading \xff\xfe tail\n\nbody\n",
         "# title {.cls\xff\xfe}\n\nbody\n",
@@ -10706,10 +10533,8 @@ static void session_edits_nested_notes(test_batch_runner *runner) {
 }
 
 /* A heading whose text holds more before its last line than a label may
- * hold parses from its seams as a paragraph does, and an edit that leaps in
- * it projects only the children it made (names.c, THE NEW BASES): an edit
- * in one of two such headings that project to one base reads as a parse
- * does, and each shows its anchor whole, the second the first's with -1. */
+ * hold parses from its seams as a paragraph does: an edit in one of two
+ * such headings reads as a parse does. */
 static void session_edits_long_headings(test_batch_runner *runner) {
     char line[16];
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
@@ -10734,127 +10559,8 @@ static void session_edits_long_headings(test_batch_runner *runner) {
                  session_as_parsed(session);
     }
     OK(runner, edited, "edits in a long heading read as a parse does");
-    const markdown_core_node *root = edited ? markdown_core_document_root(document) : NULL;
-    const markdown_core_optional_string first =
-        root ? anchor_of(facade_child(root, 0)) : (markdown_core_optional_string){0};
-    const markdown_core_optional_string second =
-        root ? anchor_of(facade_child(root, 1)) : (markdown_core_optional_string){0};
-    OK(runner,
-       first.has_value && second.has_value && first.value.length > 1000 &&
-           second.value.length == first.value.length + 2 && memcmp(first.value.data, "word-0-word-1-", 14) == 0 &&
-           memcmp(first.value.data, second.value.data, first.value.length) == 0 &&
-           memcmp(second.value.data + first.value.length, "-1", 2) == 0,
-       "two long headings of one base show it, the second with -1");
     markdown_core_session_close(session);
     markdown_core_strbuf_free(&text);
-}
-
-/* A NAME IS ITS BYTES (names.c, THE NAMES): two bases that measure the
- * same but differ are two names, each its own anchor, while a heading of
- * the same bytes as one before takes the next suffix; and an authored
- * anchor of a long name reserves it as a short one does. */
-static int compare_sums(const void *a, const void *b) {
-    const uint64_t x = *(const uint64_t *)a, z = *(const uint64_t *)b;
-    return (x > z) - (x < z);
-}
-
-static void heading_names_exact(test_batch_runner *runner) {
-    /* Two runs of one measure (measure.h): sixteen bytes whose changes from
-     * the first cancel in G's weights, which lattice reduction finds. */
-    const char *same = "mmmmmmmmmmmmmmmm", *other = "ojlmppsrglnngihk";
-    const markdown_core_measure a = markdown_core_measure_of((const unsigned char *)same, 16),
-                                b = markdown_core_measure_of((const unsigned char *)other, 16);
-    OK(runner, a.size == b.size && a.sum == b.sum, "the pair shares its measure");
-    char text[512];
-    int size = snprintf(text, sizeof(text), "# %s\n\n# %s\n\n# %s\n", same, other, same);
-    markdown_core_document *document = NULL;
-    bool ok = markdown_core_document_parse((const uint8_t *)text, (size_t)size, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
-    markdown_core_optional_string anchors[3] = {{0}};
-    for (size_t i = 0; root && i < 3; i++) {
-        anchors[i] = anchor_of(facade_child(root, i));
-    }
-    OK(runner,
-       anchors[0].has_value && anchors[0].value.length == 16 && memcmp(anchors[0].value.data, same, 16) == 0 &&
-           anchors[1].has_value && anchors[1].value.length == 16 && memcmp(anchors[1].value.data, other, 16) == 0 &&
-           anchors[2].has_value && anchors[2].value.length == 18 && memcmp(anchors[2].value.data, same, 16) == 0 &&
-           memcmp(anchors[2].value.data + 16, "-1", 2) == 0,
-       "two bases of one measure are two names; the same bytes take -1");
-    markdown_core_document_free(document);
-
-    /* Changes that cancel take a lattice to find, not a pattern: 2^14 runs,
-     * with up to 14 bytes one up at the front and as many one down 61 bytes
-     * on, measure apart. */
-    enum { RUNS = 1 << 14 };
-    uint64_t *sums = (uint64_t *)malloc(RUNS * sizeof(*sums));
-    unsigned char run[140];
-    for (size_t v = 0; sums && v < RUNS; v++) {
-        memset(run, 'm', sizeof(run));
-        for (unsigned k = 0; k < 14; k++) {
-            if (v >> k & 1) {
-                run[k] = 'n';
-                run[61 + k] = 'l';
-            }
-        }
-        sums[v] = markdown_core_measure_of(run, sizeof(run)).sum;
-    }
-    if (sums) {
-        qsort(sums, RUNS, sizeof(*sums), compare_sums);
-    }
-    size_t shared = 0;
-    for (size_t v = 1; sums && v < RUNS; v++) {
-        shared += sums[v] == sums[v - 1];
-    }
-    OK(runner, sums && shared == 0, "a family of small changes measures apart");
-    free(sums);
-
-    markdown_core_strbuf huge = MARKDOWN_CORE_BUF_INIT();
-    char stem[2001];
-    memset(stem, 'a', 2000);
-    stem[2000] = '\0';
-    const char *parts[] = {"# ", stem, "\n\n# x {#", stem, "}\n\n# ", stem, "\n"};
-    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
-        markdown_core_strbuf_puts(&huge, parts[i]);
-    }
-    document = NULL;
-    ok = markdown_core_document_parse(huge.ptr, (size_t)huge.size, &document) == MARKDOWN_CORE_OK;
-    root = ok ? markdown_core_document_root(document) : NULL;
-    for (size_t i = 0; root && i < 3; i++) {
-        anchors[i] = anchor_of(facade_child(root, i));
-    }
-    OK(runner,
-       anchors[0].has_value && anchors[0].value.length == 2002 && memcmp(anchors[0].value.data + 2000, "-1", 2) == 0 &&
-           anchors[1].has_value && anchors[1].value.length == 2000 && anchors[2].has_value &&
-           anchors[2].value.length == 2002 && memcmp(anchors[2].value.data + 2000, "-2", 2) == 0,
-       "an authored long anchor reserves its name before and after it");
-    markdown_core_document_free(document);
-    markdown_core_strbuf_free(&huge);
-}
-
-/* A name with a suffix is joined at its first read, which reports a refused
- * allocation rather than showing no anchor, and reads again after. */
-static void heading_long_anchor_refused(test_batch_runner *runner) {
-    char text[2208] = "# ";
-    memset(text + 2, 'a', 1100);
-    memcpy(text + 1102, "\n# ", 3);
-    memset(text + 1105, 'a', 1100);
-    text[2205] = '\n';
-    markdown_core_document *document = NULL;
-    const bool ok = markdown_core_document_parse((const uint8_t *)text, 2206, &document) == MARKDOWN_CORE_OK;
-    const markdown_core_node *heading = ok ? facade_child(markdown_core_document_root(document), 1) : NULL;
-    markdown_core_optional_string anchor = {0};
-    markdown_core_status refused = MARKDOWN_CORE_OK;
-    if (heading) {
-        strbuf_refuse_next = 1;
-        refused = markdown_core_node_anchor(heading, &anchor);
-        strbuf_refuse_next = 0;
-    }
-    INT_EQ(runner, refused, MARKDOWN_CORE_ALLOCATION_FAILED, "a refused first read of a joined anchor reports it");
-    OK(runner,
-       heading && markdown_core_node_anchor(heading, &anchor) == MARKDOWN_CORE_OK && anchor.has_value &&
-           anchor.value.length == 1102 && memcmp(anchor.value.data + 1100, "-1", 2) == 0,
-       "the joined anchor reads once storage is had");
-    markdown_core_document_free(document);
 }
 
 /* A heading that parses from its seams and stops, as an edit shortens it,
@@ -10900,15 +10606,12 @@ static void heading_long_authored_anchor(test_batch_runner *runner) {
                   MARKDOWN_CORE_OK &&
               markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK;
     const markdown_core_node *root = ok ? markdown_core_document_root(document) : NULL;
-    bool shown = root != NULL;
-    static const char *const ends[] = {"-1", "", "-2"};
-    for (int i = 0; shown && i < 3; i++) {
-        const markdown_core_optional_string anchor = anchor_of(facade_child(root, i));
-        const size_t end = strlen(ends[i]);
-        shown = anchor.has_value && anchor.value.length == 1100 + end && memcmp(anchor.value.data, stem, 1100) == 0 &&
-                memcmp(anchor.value.data + 1100, ends[i], end) == 0;
-    }
-    OK(runner, shown, "a long authored anchor reserves its name before and after it");
+    const markdown_core_optional_string authored =
+        root ? anchor_of(facade_child(root, 1)) : (markdown_core_optional_string){0};
+    OK(runner,
+       root && !anchor_of(facade_child(root, 0)).has_value && !anchor_of(facade_child(root, 2)).has_value &&
+           authored.has_value && authored.value.length == 1100 && memcmp(authored.value.data, stem, 1100) == 0,
+       "only the authored heading has an anchor, its long `{#id}` whole");
     /* Line 3 is the authored heading: its anchor goes, then comes back. */
     const markdown_core_position at = {3, 5}, past = {3, (uint32_t)(5 + 3 + 1100)};
     ok = ok && markdown_core_session_edit(session, at, past, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK &&
@@ -10974,13 +10677,10 @@ static void session_edits_compaction(test_batch_runner *runner) {
 /* An edit after the flush: refused while the session streams and at a cursor
  * that stands nowhere, and otherwise the parse of the new text, keeping the
  * ids of what it did not change (plan 12.3). */
-/* THE NAMES AN EDIT MOVES (names.c): an edit names again only the groups
- * of the stems it touched, and the anchors every heading then shows are a
- * fresh parse's. The text holds bases that are each other's parent
- * (`section`, `section-1`, `section-1-1`), a run of one base (`notes`),
- * explicit anchors that take a heading's name, and bases no other heading
- * bears on (`part-2`, `part-3`). Each edit types a byte, a line ending, a
- * whole heading or an anchor at every place, and takes it away again. */
+/* AN EDIT OF HEADINGS reads as a fresh parse does: the text holds headings
+ * of one text, headings with authored anchors and plain ones. Each edit
+ * types a byte, a line ending, a whole heading or an anchor at every place,
+ * and takes it away again. */
 static void session_edits_name_headings(test_batch_runner *runner) {
     static const char text[] = "# Section\n\n# Section 1\n\n# Notes\n\nx\n\n# Notes\n\n# Section\n\n"
                                "# Other {#notes-1}\n\n# Section 1 1\n\n# Part 2\n\n# Notes\n\n# Part 3\n\n"
@@ -11021,12 +10721,10 @@ static void session_edits_name_headings(test_batch_runner *runner) {
             }
         }
     }
-    OK(runner, same, "the headings an edit names again show the anchors a fresh parse gives them");
+    OK(runner, same, "an edit of headings reads as a fresh parse does");
     markdown_core_session_close(session);
     /* Edits that take many lines at once: each run of whole lines of each
-     * text goes, or gives way to a heading, in a session of its own. The
-     * second text holds two headings of one base that one edit takes (a
-     * stem that the edit empties once, however many of its headings go). */
+     * text goes, or gives way to a heading, in a session of its own. */
     static const char *const texts[] = {text, "# A\n\n# A\n\n# A 1\n\n# A 1\n\n# A 2\n"};
     static const char *const put[] = {"", "# A\n\n", "# Notes\n\n", "# Section 1\n\n"};
     bool kept = true;
@@ -11055,9 +10753,8 @@ static void session_edits_name_headings(test_batch_runner *runner) {
             }
         }
     }
-    OK(runner, kept, "the headings an edit of many lines names again show a fresh parse's anchors");
-    /* A base whose number is past any size: no earlier heading holds its
-     * name, as no suffix wraps to the first heading's base. */
+    OK(runner, kept, "an edit of many lines of headings reads as a fresh parse does");
+    /* A heading whose text ends in a number past any size. */
     static const char wide[] = "# a\n\n# a-18446744073709551616\n\nend\n";
     markdown_core_session *own = NULL;
     const markdown_core_document *read = NULL;
@@ -11068,7 +10765,7 @@ static void session_edits_name_headings(test_batch_runner *runner) {
            markdown_core_session_flush(own, &read) == MARKDOWN_CORE_OK &&
            markdown_core_session_edit(own, from, to, (const uint8_t *)"a", 1, &read) == MARKDOWN_CORE_OK &&
            session_as_parsed(own),
-       "a heading whose base ends in a number past any size keeps a fresh parse's anchor");
+       "an edit of a heading that ends in a number past any size reads as a parse does");
     markdown_core_session_close(own);
 }
 
@@ -11416,53 +11113,6 @@ static void session_edits(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
-/* The anchor `node` has, compared with `expected`. */
-static bool anchor_is(const markdown_core_node *node, const char *expected) {
-    markdown_core_optional_string anchor = node ? anchor_of(node) : (markdown_core_optional_string){0};
-    return anchor.has_value && anchor.value.length == strlen(expected) &&
-           memcmp(anchor.value.data, expected, anchor.value.length) == 0;
-}
-
-/* The first heading under the document's first block, or inside its first
- * item. */
-static const markdown_core_node *first_heading(const markdown_core_document *document) {
-    const markdown_core_node *heading = facade_child(facade_child(markdown_core_document_root(document), 0), 0);
-    if (heading && markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
-        heading = facade_child(heading, 0);
-    }
-    return heading;
-}
-
-/* A snapshot's headings take their anchors as a fresh parse's do: every
- * explicit anchor of the text is reserved first, a later one included, and
- * one of a block the text ends in too (docs/specs/dialect/anchors.md). */
-static void session_snapshot_anchors(test_batch_runner *runner) {
-    static const struct {
-        const char *source;
-        const char *message;
-    } cases[] = {
-        {":::note{#x}\n# x\n:::\n", "a heading inside a container avoids the container's anchor"},
-        {"- # x\n\n#x#\n", "a heading avoids an explicit anchor written after it"},
-        {"- # x\n\n:::note{#x}\nbody\n", "a heading avoids the anchor of a container the text ends in"},
-        {"- # x\n\n- a #x#\n", "a heading avoids the anchor an open item takes from its paragraph"},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        markdown_core_session *session = NULL;
-        if (markdown_core_session_new((const uint8_t *)cases[i].source, strlen(cases[i].source),
-                                      MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK) {
-            OK(runner, 0, "a session opens on %s", cases[i].source);
-            continue;
-        }
-        OK(runner, anchor_is(first_heading(markdown_core_session_document(session)), "x-1"), "snapshot: %s",
-           cases[i].message);
-        const markdown_core_document *final = NULL;
-        OK(runner,
-           markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK && anchor_is(first_heading(final), "x-1"),
-           "final: %s", cases[i].message);
-        markdown_core_session_close(session);
-    }
-}
-
 /* The canonical dump of `document` over `source`, or NULL. */
 static uint8_t *dump_of(const markdown_core_document *document, const char *source, size_t length,
                         size_t *dump_length) {
@@ -11603,17 +11253,12 @@ static void session_walks_through_definition_bodies(test_batch_runner *runner) {
     }
 }
 
-/* EVERY SNAPSHOT NAMES ITS HEADINGS AS A PARSE OF THE TEXT SO FAR DOES
- * (step 7, 4.5): the text arrives byte by byte, and after each append the
- * snapshot's dump is a fresh parse's of the same text. An explicit anchor
- * written after headings that took its name displaces the first of them,
- * which displaces the next along its own sequence: while the anchor is in a
- * snapshot's tail, a committed heading shows another name, and the commit
- * that reaches the anchor gives it that name for good. An anchor in an
- * unclosed code span is gone once the span closes, and the heading shows its
- * own name again. The headings sit at the top, in a footnote, as a setext
- * heading the last paragraph becomes, and with authored anchors. No text
- * here looks a definition up, so a snapshot's lookups change nothing. */
+/* EVERY SNAPSHOT OF HEADINGS IS A PARSE OF THE TEXT SO FAR (step 7, 4.5):
+ * the text arrives byte by byte, and after each append the snapshot's dump
+ * is a fresh parse's of the same text. The headings sit at the top, in a
+ * footnote, as a setext heading the last paragraph becomes, and with
+ * authored anchors, some in an unclosed code span. No text here looks a
+ * definition up, so a snapshot's lookups change nothing. */
 static void session_snapshot_names(test_batch_runner *runner) {
     static const char *const sources[] = {
         "# A\n\n# A\n\n# A\n\ntext :n{#a} more\n\n# A\n",
@@ -11651,7 +11296,7 @@ static void session_snapshot_names(test_batch_runner *runner) {
         }
         const markdown_core_document *final = NULL;
         OK(runner, same && markdown_core_session_flush(session, &final) == MARKDOWN_CORE_OK,
-           "every snapshot names its headings as a parse of its text, up to byte %zu of %zu: %s", at, length, source);
+           "every snapshot of headings is a parse of its text, up to byte %zu of %zu: %s", at, length, source);
         markdown_core_session_close(session);
     }
 }
@@ -12600,7 +12245,6 @@ int main(void) {
     utf8_decode_reads_every_scalar(runner);
     utf8_decode_is_total(runner);
     unicode_classes_are_total(runner);
-    anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
     roster_records_are_carved_from_its_blocks(runner);
     key_tree_matches_a_sorted_model(runner);
@@ -12634,8 +12278,6 @@ int main(void) {
     an_undeclared_first_byte_reaches_no_gated_scanner(runner);
     the_list_scanner_reads_a_numeral_by_its_first_bytes_class(runner);
     attribute_attachment_linear_work(runner);
-    heading_completion_invariants(runner);
-    heading_roster_invariants(runner);
     reference_occurrences_hold_the_label_alone(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);
@@ -12751,8 +12393,6 @@ int main(void) {
     session_edits_long_headings(runner);
     heading_long_authored_anchor(runner);
     heading_seams_end_keeps_ids(runner);
-    heading_long_anchor_refused(runner);
-    heading_names_exact(runner);
     session_edits_refresh_storage(runner);
     session_edits_uses(runner);
     session_edits_nested_identifier(runner);
@@ -12765,7 +12405,6 @@ int main(void) {
     session_edits_replaced_label(runner);
     session_edits_allocations(runner);
     session_edits_compaction(runner);
-    session_snapshot_anchors(runner);
     session_snapshot_names(runner);
     session_snapshot_tables(runner);
     session_snapshot_lists(runner);

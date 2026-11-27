@@ -166,8 +166,7 @@ table boundaries do not discard source information.
 The following rules describe authored editor positions, not independently
 sliceable string ranges. They refine the general coordinate contract. A syntax's
 punctuation can be inside its owner's scope without appearing in visible
-content. Unscoped semantic fields, including generated anchors, never gain a
-range of their own.
+content. Unscoped semantic fields never gain a range of their own.
 
 | Syntax | Range |
 | --- | --- |
@@ -240,11 +239,10 @@ grammar. Every node's anchor and attributes are the ones written on it: a
 `Reference` has the definition's, and a reference occurrence has its own. Each binding keeps its native collection types and owns all
 returned values after the native document is released.
 
-Parsed headings always have a nonempty anchor: an explicit identifier wins,
-otherwise the [anchors module](dialect/anchors.md) derives one from parsed
-content after reserving every emitted explicit anchor. Generated anchors add
-no source range. A heading declares no reference label: a `reference`
-destination resolves only to a `Reference`.
+A heading's anchor is the explicit identifier its attributes declare, and
+null without one: the parser derives none from its content (see the
+[anchors module](dialect/anchors.md)). A heading declares no reference label:
+a `reference` destination resolves only to a `Reference`.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and

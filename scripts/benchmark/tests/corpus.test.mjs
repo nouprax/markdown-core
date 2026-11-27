@@ -50,8 +50,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 174);
-    assert.equal(full.length, 168);
+    assert.equal(grammarCertificates.length, 173);
+    assert.equal(full.length, 167);
     assert.equal(split.length, 6);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 744);
+    assert.equal(corpus.cases.length, 740);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 372);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 370);
         assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 174);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 173);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
@@ -231,7 +231,7 @@ test("a UTF-8 document is its ASCII twin with every Word letter respelled, and A
         assert.equal(respell(document.text), twin.text, document.name);
         compared++;
     }
-    assert.ok(compared > 340, `${compared} documents compared`);
+    assert.ok(compared >= 340, `${compared} documents compared`);
     let asciiFields = 0;
     for (const proof of corpus.proofs.filter((p) => p.alphabet === "utf8"))
         for (const host of Object.values(proof.hosts))
@@ -548,7 +548,7 @@ test("the complete syntax and element inventories fail closed when a feature, ru
     const corpus = buildGrammarCorpus({ units: 1 });
     const coverage = validateFeatureCoverage(root, corpus);
     assert.equal(coverage.features, 30);
-    assert.equal(coverage.elements, 35);
+    assert.equal(coverage.elements, 34);
     assert.equal(coverage.sections, 126);
     assert.throws(
         () =>

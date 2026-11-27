@@ -549,12 +549,6 @@ pair(
     inline("[]{#", k, " id=", v, ' id=""}'),
     inline("[](/", k, ' "', v, '")')
 );
-shared(
-    "common-anchor-generation",
-    "anchors",
-    ["unicode-lowercase", "collisions", "empty-base"],
-    ["# É字", k, "\n\n# É字", k, "\n\n# !!!\n\n"]
-);
 pair(
     "block-id-list",
     "block-identifiers",

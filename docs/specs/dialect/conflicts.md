@@ -18,7 +18,7 @@ differences and explains overlapping syntax.
 | Block IDs | Declare with `#id#`; refer through a cross link with `#^id`. |
 | Topics | `#name` after a non-name character is a `Topic`; inherited CommonMark keeps it as text. |
 | Internal links | Target comes before the pipe, raw label after it. Labels are not parsed as Markdown. |
-| Heading links | Automatic anchors are generated, while cross-link targets stay raw; applications match them. |
+| Heading links | Headings have only the anchors they declare, and cross-link targets stay raw; applications match them. |
 | Properties | One initial `---` envelope with ten known fields. Unsupported members, including `...`, are ignored. |
 | Attributes | One grammar at every site; a bare name such as `{disabled}` records `disabled="true"`. Ordered duplicate classes/records survive. |
 | Colon containers | Every container is named, `:::name`; a container closes at a colon run at least as long as its opener. |

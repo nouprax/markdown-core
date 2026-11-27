@@ -2,12 +2,12 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 174 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 744 documents, each measured once:
-in each of [two alphabets](#alphabets), 168 whole declared-language pairs, 6
+contains all 173 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 740 documents, each measured once:
+in each of [two alphabets](#alphabets), 167 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-30 syntax-guide features, 127 sections and 35 registered elements. Its explicit
+30 syntax-guide features, 127 sections and 34 registered elements. Its explicit
 section mapping names certificates for 126 source-language sections and gives
 reviewed context-only dispositions for five sections. Certificates are registered
 directly from their source grammars and specification obligations.
@@ -269,7 +269,7 @@ The catalog marks these certificates `identity: true`, the generator emits equal
 bytes, and the checker compares the productions and independently decodes both.
 
 Native output differences affect performance interpretation without changing
-source grammar identity. A quote's node name, automatic heading anchors, source
+source grammar identity. A quote's node name, source
 positions and emitted definition retention are output-model questions. For
 example `footnote-retention` uses the identical reference-definition grammar,
 while Core retains authored definitions and GFM emits used definitions. The

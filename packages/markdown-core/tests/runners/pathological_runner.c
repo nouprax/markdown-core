@@ -1085,8 +1085,7 @@ typedef struct pc_reference_payload {
 } pc_reference_payload;
 
 static size_t pc_attribute_bytes(const markdown_core_attribute_value *attributes) {
-    markdown_core_optional_string anchor = {0};
-    TS_OK(markdown_core_attribute_value_anchor(attributes, &anchor));
+    const markdown_core_optional_string anchor = markdown_core_attribute_value_anchor(attributes);
     size_t bytes = anchor.value.length;
     for (size_t i = 0; i < markdown_core_attribute_value_class_count(attributes); i++) {
         markdown_core_string value;

@@ -362,16 +362,15 @@ definition's. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
 
-Parsed headings receive automatic anchors: `# Hello World` declares
-`hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
-anchors anywhere in the document are reserved first, and `[go](#hello-world)`
-links to the heading. Heading attributes stay on the heading, and generated
-targets add no scope.
+A heading's anchor is the one its attributes write, `# Hello World {#hello}`
+declaring `hello`, which `[go](#hello)` links to; a heading without one has no
+anchor, and the parser derives none from its text. Heading attributes stay on
+the heading.
 
 ### Pandoc-derived syntax
 
 The always-on dialect includes inline code, heading, fenced code and link
-attributes; automatic anchors; bracketed spans; superscript and subscript;
+attributes; bracketed spans; superscript and subscript;
 bibliography citations; and definition
 lists. These feature groups use one immutable AST and the same behavior on
 every binding. The [dialect contract](../../docs/specs/dialect.md) specifies

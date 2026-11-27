@@ -217,8 +217,8 @@ public class MarkdownSession
          * run of each, in source order: the bytes of each value as written,
          * escapes included, without the quotes, the angle brackets or the
          * sigil around it. Null asks for the fields no slot kind names, such
-         * as a title or a literal. A field the parser makes rather than reads,
-         * such as a heading's computed anchor, has none.
+         * as a title or a literal. A field the parser makes rather than reads
+         * has none.
          *
          * A node's fields and its [markers] divide its own source: its runs
          * less the runs of the nodes it holds. Each query reads the node's own

@@ -5,26 +5,15 @@
 #include "roster.h"
 #include "parser.h"
 #include "utf8.h"
-#include "pieces.h"
-
-/* THE INDEX'S HASH of a record's key, its kind then its label: an ANCHOR's
- * is its measure's, as a name is filed (map.h, KEYS UNDER A HASH THEIR USER
- * GIVES), so that a heading's name, kept in pieces, is looked up whole
- * (markdown_core_roster_find_name); any other kind's is its bytes'. */
-static inline uint64_t S_hash(const unsigned char *key, bufsize_t length) {
-    return key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR
-               ? markdown_core_key_index_hash(markdown_core_measure_of(key, (size_t)length))
-               : markdown_core_key_hash(key, length);
-}
 
 static inline markdown_core_key_index_slot *S_index_find(markdown_core_roster *roster, const unsigned char *key,
                                                          bufsize_t length) {
-    return markdown_core_key_index_find_hashed(&roster->index, S_hash(key, length), key, length);
+    return markdown_core_key_index_find(&roster->index, key, length);
 }
 
 static inline markdown_core_key_index_slot *S_slot(markdown_core_roster *roster, const unsigned char *key,
                                                    bufsize_t length) {
-    return markdown_core_key_index_entry_hashed(&roster->index, S_hash(key, length), key, length);
+    return markdown_core_key_index_entry(&roster->index, key, length);
 }
 
 /* THE LOG'S RECORD STORAGE. A record lives until the roster is freed, a
@@ -389,28 +378,6 @@ static markdown_core_roster_record *S_first(markdown_core_roster *roster, markdo
     return S_seen(roster, S_index_find(roster, roster->key.ptr, roster->key.size));
 }
 
-/* Whether the ANCHOR record `slot` holds is of the name `probe`. */
-static bool S_same_name(const void *probe, const markdown_core_key_index_slot *slot) {
-    return slot->key[0] == (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR &&
-           markdown_core_pieces_are(probe, slot->key + 1, slot->key_len - 1);
-}
-
-const markdown_core_roster_record *markdown_core_roster_find_name(markdown_core_roster *roster,
-                                                                  const markdown_core_pieces *name,
-                                                                  markdown_core_measure measure, bool *failed) {
-    if (!name->size || !roster->spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records) {
-        return NULL;
-    }
-    if (!S_index_space(roster, MARKDOWN_CORE_ROSTER_ANCHOR)) {
-        *failed = true;
-        return NULL;
-    }
-    const unsigned char kind = (unsigned char)MARKDOWN_CORE_ROSTER_ANCHOR;
-    const uint64_t hash =
-        markdown_core_key_index_hash(markdown_core_measure_join(markdown_core_measure_of(&kind, 1), measure));
-    return S_seen(roster, markdown_core_key_index_seek(&roster->index, hash, name->size + 1, S_same_name, name));
-}
-
 static inline void S_assemble(markdown_core_roster *roster, markdown_core_roster_kind kind, const unsigned char *label,
                               bufsize_t length) {
     markdown_core_strbuf_clear(&roster->key);
@@ -766,7 +733,7 @@ static bool S_put_keys(S_key *keys, size_t count, markdown_core_strbuf *labels) 
 
 bool markdown_core_roster_made(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels) {
     size_t count = 0;
-    for (size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1; kind < roster->kinds; kind++) {
+    for (size_t kind = MARKDOWN_CORE_ROSTER_FIRST; kind < roster->kinds; kind++) {
         const markdown_core_tree *places = &roster->spaces[kind].places;
         count += places->front - markdown_core_tree_from(places, start, 0, places->front);
     }
@@ -775,7 +742,7 @@ bool markdown_core_roster_made(const markdown_core_roster *roster, uint32_t star
         return false;
     }
     count = 0;
-    for (size_t kind = MARKDOWN_CORE_ROSTER_ANCHOR + 1; kind < roster->kinds; kind++) {
+    for (size_t kind = MARKDOWN_CORE_ROSTER_FIRST; kind < roster->kinds; kind++) {
         markdown_core_tree *places = (markdown_core_tree *)&roster->spaces[kind].places;
         for (size_t i = markdown_core_tree_from(places, start, 0, places->front); i < places->front; i++) {
             const markdown_core_roster_record *record = S_places_at(places, i)->record;
@@ -805,32 +772,12 @@ bool markdown_core_roster_lost(const markdown_core_roster *roster, markdown_core
     count = 0;
     for (bufsize_t at = 0; at < roster->lost.size;) {
         const bufsize_t size = (bufsize_t)strlen((const char *)roster->lost.ptr + at);
-        if (roster->lost.ptr[at] != MARKDOWN_CORE_ROSTER_ANCHOR) {
-            keys[count++] = (S_key){roster->lost.ptr + at, size};
-        }
+        keys[count++] = (S_key){roster->lost.ptr + at, size};
         at += size + 1;
     }
     const bool ok = S_put_keys(keys, count, labels);
     markdown_core_free(keys);
     return ok;
-}
-
-bool markdown_core_roster_anchors(const markdown_core_roster *roster, uint32_t start, markdown_core_strbuf *labels) {
-    markdown_core_tree *places = (markdown_core_tree *)&roster->spaces[MARKDOWN_CORE_ROSTER_ANCHOR].places;
-    markdown_core_strbuf_clear(labels);
-    const size_t end = roster->hidden ? places->count : places->front;
-    for (size_t i = markdown_core_tree_from(places, start, 0, places->front); i < end; i++) {
-        const markdown_core_roster_record *record = S_places_at(places, i)->record;
-        markdown_core_strbuf_put(labels, record->key + 1, record->key_len);
-    }
-    for (bufsize_t at = 0; at < roster->lost.size;) {
-        const bufsize_t size = (bufsize_t)strlen((const char *)roster->lost.ptr + at);
-        if (roster->lost.ptr[at] == MARKDOWN_CORE_ROSTER_ANCHOR) {
-            markdown_core_strbuf_put(labels, roster->lost.ptr + at + 1, size);
-        }
-        at += size + 1;
-    }
-    return !labels->oom && !roster->lost.oom;
 }
 
 bool markdown_core_roster_declared_outside(markdown_core_roster *roster, markdown_core_roster_kind kind,

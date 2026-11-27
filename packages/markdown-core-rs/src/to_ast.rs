@@ -12,14 +12,13 @@ use crate::ast::{
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
     character_reference::{decode as decode_character_reference, decode_at},
-    classes::{anchor, normalize_label},
+    classes::normalize_label,
     infer::{list_loose, table_align},
     properties,
     slice::{Position, Slice},
 };
 use alloc::boxed::Box;
 use alloc::{
-    collections::BTreeSet,
     format,
     string::{String, ToString},
     vec,
@@ -32,12 +31,10 @@ pub fn compile(events: &[Event], bytes: &[u8]) -> Node {
     let mut compiler = Compiler::new(events, bytes);
     let content = compiler.block_range(0, events.len());
     let metadata = compiler.metadata().map(Box::new);
-    let mut document = Node::new(
+    Node::new(
         Kind::Document { metadata, content },
         vec![Span::new(0, line_start_before_end(bytes))],
-    );
-    anchor_headings(&mut document);
-    document
+    )
 }
 
 /// Where the document's span ends: before one final line ending.
@@ -2005,118 +2002,5 @@ fn line_end(bytes: &[u8], index: usize) -> usize {
     }
 }
 
-// Anchors.
-
-/// Give every heading without an explicit anchor its automatic one, in
-/// source order, after every explicit anchor of the document is reserved.
-fn anchor_headings(document: &mut Node) {
-    let mut taken = BTreeSet::new();
-    reserve_anchors(document, &mut taken);
-    assign_anchors(document, &mut taken);
-}
-
-fn reserve_anchors(node: &Node, taken: &mut BTreeSet<String>) {
-    if let Some(anchor) = &node.anchor {
-        taken.insert(anchor.clone());
-    }
-    for child in node.owned() {
-        reserve_anchors(child, taken);
-    }
-}
-
-fn assign_anchors(node: &mut Node, taken: &mut BTreeSet<String>) {
-    if node.anchor.is_none() {
-        if let Kind::Heading { content, .. } = &node.kind {
-            let mut base = String::new();
-            for child in content {
-                anchor_text(child, &mut base);
-            }
-            if base.is_empty() {
-                base.push_str("section");
-            }
-            let mut name = base.clone();
-            let mut suffix = 0;
-            while taken.contains(&name) {
-                suffix += 1;
-                name = format!("{}-{}", base, suffix);
-            }
-            taken.insert(name.clone());
-            node.anchor = Some(name);
-        }
-    }
-    for child in node.owned_mut() {
-        assign_anchors(child, taken);
-    }
-}
-
 /// Whitespace that a block literal is trimmed of.
 const WHITESPACE: &[char] = &[' ', '\t', '\n', '\r'];
-
-/// The anchor projection of an inline node, appended to `base`.
-fn anchor_text(node: &Node, base: &mut String) {
-    match &node.kind {
-        Kind::Text { literal } | Kind::Code { literal } | Kind::Formula { literal, .. } => {
-            base.push_str(&anchor(literal));
-        }
-        Kind::Topic { name } => {
-            base.push_str(&anchor("#"));
-            base.push_str(&anchor(name));
-        }
-        Kind::SoftBreak | Kind::LineBreak => base.push('-'),
-        Kind::CrossLink { dest, label } | Kind::CrossEmbed { dest, label, .. } => {
-            match (label, dest) {
-                (Some(label), _) => base.push_str(&anchor(label)),
-                (None, Destination::Cross { path, anchor: name }) => {
-                    base.push_str(&anchor(path));
-                    if let Some(name) = name {
-                        base.push_str(&anchor(name));
-                    }
-                }
-                (None, _) => {}
-            }
-        }
-        Kind::Cite { citations } => {
-            for citation in citations {
-                if let Kind::Citation {
-                    referent,
-                    prefix,
-                    suffix,
-                } = &citation.kind
-                {
-                    match referent {
-                        Referent::Bib { key, .. } => {
-                            for child in prefix {
-                                anchor_text(child, base);
-                            }
-                            base.push_str(&anchor("@"));
-                            base.push_str(&anchor(key));
-                            for child in suffix {
-                                anchor_text(child, base);
-                            }
-                        }
-                        Referent::Footnote(_) => {}
-                    }
-                }
-            }
-        }
-        Kind::Directive {
-            label: Some(label), ..
-        } => anchor_text(label, base),
-        Kind::Emphasis { content }
-        | Kind::Strong { content }
-        | Kind::Strikethrough { content }
-        | Kind::Mark { content }
-        | Kind::Insertion { content }
-        | Kind::Span { content }
-        | Kind::Superscript { content }
-        | Kind::Subscript { content }
-        | Kind::Link { content, .. }
-        | Kind::Embed { content, .. }
-        | Kind::DirectiveLabel { content } => {
-            for child in content {
-                anchor_text(child, base);
-            }
-        }
-        _ => {}
-    }
-}

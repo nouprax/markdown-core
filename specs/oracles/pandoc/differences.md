@@ -38,17 +38,17 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 9 | `p6-entity-space`: entity-decoded whitespace | In `~a&Tab;b~`, Core preserves the decoded TAB, while Pandoc normalizes it to a space. Entity-decoded whitespace is distinct from a raw source whitespace boundary. |
 | 10 | `p6-pairing-and-tilde-runs`: empty pairs and tilde runs | `^^` now agrees. Core preserves `^^^^` as two empty Superscript nodes with independent scopes; Pandoc merges adjacent nodes of the same kind. Core retains runs of three or more tildes and unmatched double tildes as text. Pandoc can produce empty subscripts and parse `~~~c~~~` as subscript `c`. |
 | 11 | `p6-opaque-tokens`: code spans within scripts | For an outer script candidate containing code `x y`, Core recognizes the complete code span first, so its internal space does not interrupt the outer script. Pandoc does not recognize that outer script. Both preserve `^` and `~` inside standalone code as code text. |
-| 12 | `anchor-global-reservation`: later explicit heading IDs | Core reserves all explicit IDs before generating automatic IDs: an earlier `# x` gets `x-1` if a later `{#x}` exists. Pandoc generates `x` for the earlier heading and also uses `x` for the later explicit ID. |
-| 13 | `anchor-permitted-scalars`: emoji in anchors | Core filters by character rules without converting emoji to names. Pandoc's GFM anchor algorithm converts 😀 to `grinning`. The anchors in this case are `a‿b--` and `a‿b--grinning`, respectively. |
-| 14 | `anchor-simple-lowercase`: Unicode lowercase conversion | Core uses Unicode 17 simple lowercase, converting `İ` to a single `i`. Pandoc's full lowercase produces `i` followed by U+0307 COMBINING DOT ABOVE, yielding a different anchor character sequence. |
-| 15 | `anchor-whitespace-scalars`: Unicode whitespace in anchors | Core converts Unicode White_Space such as U+0085 and U+2028 to hyphens. Pandoc deletes those two characters in this case, yielding `a-b-c` and `abc`, respectively. |
-| 16 | `anchor-inline-code-reservation`: reserving explicit code IDs | The same global reservation rule as item 12, with explicit `{#x}` attached to inline code. Core gives the earlier heading `x-1`; Pandoc keeps `x`. |
+| 12 | `anchor-global-reservation`: later explicit heading IDs | The same rule as item 59: the later `{#x}` is Core's only anchor, and the earlier `# x` has none. Pandoc generates `x` for the earlier heading and also uses `x` for the later explicit ID. |
+| 13 | `anchor-permitted-scalars`: emoji in anchors | The same rule as item 59: Core's heading has no anchor. Pandoc's GFM anchor algorithm generates `a‿b--grinning`, converting 😀 to `grinning`. |
+| 14 | `anchor-simple-lowercase`: Unicode lowercase conversion | The same rule as item 59: Core's heading has no anchor. Pandoc generates one with full lowercase, `İ` becoming `i` followed by U+0307 COMBINING DOT ABOVE. |
+| 15 | `anchor-whitespace-scalars`: Unicode whitespace in anchors | The same rule as item 59: Core's heading has no anchor. Pandoc deletes U+0085 and U+2028 as it generates one. |
+| 16 | `anchor-inline-code-reservation`: reserving explicit code IDs | The same rule as item 59, with explicit `{#x}` attached to inline code: the code keeps `x` on both sides, and Core's earlier heading has no anchor. |
 | 17 | `implicit-reference-adjacency`: adjacency of reference brackets | The same dropped syntax as item 44: `[Foo] [Foo][] [go][Foo]` names no definition, so Core keeps all three as bracket text. Pandoc resolves them to the heading and crosses the space to combine the first two bracket groups. |
-| 18 | `p5-heading-span-reservation`: reserving explicit Span IDs | The same rule as item 12, with the explicit ID from `[owner]{#taken}`. Core gives the earlier `# Taken` the anchor `taken-1`; Pandoc uses `taken`. |
+| 18 | `p5-heading-span-reservation`: reserving explicit Span IDs | The same rule as item 59, with the explicit ID from `[owner]{#taken}`: Core's `# Taken` has no anchor; Pandoc gives it `taken`. |
 | 19 | `p7-tail-and-nesting`: edge whitespace in citation affixes | Core trims source whitespace at both ends of citation prefixes/suffixes. Pandoc retains the suffix's leading space before nested brackets. Nested content is still compared individually. |
 | 20 | `p7-tail-later-author`: another citation in an author-style tail | For `@a [@b [p. 7]]`, both sides now retain `@b` as a normal item of the outer Cite. Only affix whitespace differs: Core's suffix is `[p. 7]`, while Pandoc retains a leading space. |
 | 21 | `p7-malformed-group`: malformed citation-group fallback | **Fixed and removed from the registry.** Ordinary inline parsing continues after the outer group fails; valid inner keys become authorInText citations and valid tails survive. The original case now agrees with Pandoc. |
-| 22 | `p7-heading-projection`: citations in heading anchors | For `## [pre @a suffix; @b]`, Core generates `preasuffixb` from stored citation content. Pandoc generates `pre-a-suffix-b` from the original display text, which retains separating spaces. |
+| 22 | `p7-heading-projection`: citations in heading anchors | The same rule as item 59: both sides read the same citations, and Core's heading has no anchor where Pandoc generates `pre-a-suffix-b`. |
 | 23 | `p7-unicode-boundary`: citation starts after underscores | `_@a` cannot start a Core citation because an underscore, Unicode letter, or digit cannot immediately precede the start. Pandoc accepts a citation after an underscore. |
 | 24 | `p9a-nested-start`: nested list candidates starting above 1 | Under CommonMark only a list starting at 1 may interrupt a paragraph, so indented `2. ordinary` remains a lazy continuation of the parent-list paragraph in Core. Pandoc puts the line in another Plain block. The following `1. nested` starts a nested list on both sides. |
 | 25 | `p9b-resolution`: forward, duplicate, anonymous examples and start numbers | The same dropped syntax as item 6, covering forward references, explicit start number 7, duplicate labels, and anonymous definitions. Core reads them as text and bibliography citations. Pandoc renders references as text such as `7` and puts definitions in an example List. |
@@ -85,6 +85,13 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 56 | `p8-class-and-empty`: class-word and empty-attribute openers | The same rule as item 55, for `::: warning` and `::: {}`. |
 | 57 | `p8-opaque-and-nested`: opaque lines inside a div | The same rule as item 55; code fences and HTML still own their lines on both sides. |
 | 58 | `p8-p10-closing-boundary`: a definition list inside a div | The same rule as item 55: `::: {.box}` is text and the definition list is not inside a container in Core. |
+| 59 | `gfm-auto-anchors`: automatic heading anchors | Core has no automatic anchors: a heading has only the anchor its attributes declare, so `## My Header` twice has two headings with no anchor. Pandoc's `auto_identifiers` generates `my-header` and `my-header-1`. Every other case read with `auto_identifiers` also differs in its headings' anchors. |
+| 60 | `anchor-empty-fallback`: a heading with no anchor characters | The same rule as item 59: `# !!!` has no anchor in Core; Pandoc generates `section`. |
+| 61 | `p3-connector-and-combining-mark`: connector punctuation and marks | The same rule as item 59: Core's heading has no anchor; Pandoc generates `a‿b-é`. |
+| 62 | `p5-p6-heading-content`: spans and scripts in a heading | The same rule as item 59: the heading's Span, scripts and class agree, and only Pandoc generates an anchor. |
+| 63 | `implicit-explicit-priority`: an explicit definition over a heading | The same rule as item 59: both sides link `[Foo]` to the explicit definition, and only Pandoc's heading has an anchor. |
+| 64 | `p7-heading-shortcut`: a citation shortcut after a citation heading | The same rule as item 59: both sides read `[@a]` as a citation, and only Pandoc's heading has an anchor. |
+| 65 | `p4-isolated-plain-heading-label`: a plain label for an authored heading | The same rule as item 59: `[Foo]` stays bracket text on both sides, and only Pandoc's heading has an anchor. |
 
 The clearest repeated relationships are:
 
@@ -93,8 +100,8 @@ The clearest repeated relationships are:
 - 17, 44–54: the dropped implicit heading references, across shortcut, full,
   collapsed and image forms.
 - 30, 31, 55–58: the dropped nameless fenced divs.
-- 12, 16, 18: one global explicit-ID reservation rule across three declaration
-  sites.
+- 12–16, 18, 22, 59–65: the dropped automatic heading anchors, across Unicode
+  scalars, explicit IDs elsewhere and heading content.
 - 32–34: one compactness-information difference across nested blocks, code
   blocks, and empty bodies.
 - 37, 38: the dropped `~` definition marker.

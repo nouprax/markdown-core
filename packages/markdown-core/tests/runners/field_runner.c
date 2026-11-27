@@ -472,29 +472,6 @@ static bool naming(markdown_core_slot_kind slot) {
     return slot == MARKDOWN_CORE_SLOT_LABEL || slot == MARKDOWN_CORE_SLOT_FOOTNOTE;
 }
 
-/* SUBSTITUTION of the fields `pick` names: the edited source parses to the
- * same tree but for the lines of their nodes, each of which holds the
- * sentinel. */
-/* Whether lines `a` and `b` are alike but for the anchors they show: an
- * identifier substituted in one node frees or takes the name another
- * node's computed anchor is made unique against. */
-static bool alike(const char *a, size_t a_size, const char *b, size_t b_size) {
-    size_t i = 0, j = 0;
-    while (i < a_size && j < b_size) {
-        if (a_size - i >= 8 && b_size - j >= 8 && !memcmp(a + i, "anchor=\"", 8) && !memcmp(b + j, "anchor=\"", 8)) {
-            for (i += 8; i < a_size && a[i] != '"'; i += a[i] == '\\' ? 2 : 1) {
-            }
-            for (j += 8; j < b_size && b[j] != '"'; j += b[j] == '\\' ? 2 : 1) {
-            }
-            continue;
-        }
-        if (a[i++] != b[j++]) {
-            return false;
-        }
-    }
-    return i == a_size && j == b_size;
-}
-
 /* SUBSTITUTION of the fields `pick` names, as the comment at the top says.
  * A field whose value a later member of its node overrides, `overridable`,
  * may leave its node's line as it was: whether every line of the picked
@@ -523,7 +500,7 @@ static const char *judged(const char *dump, const char *after, const bool *owned
         if (owned[i] && !holds && overridable && same) {
             continue;
         }
-        if (owned[i] ? !holds : !alike(a, a_size, b, b_size)) {
+        if (owned[i] ? !holds : !same) {
             snprintf(why, capacity, "%s line %zu: %.*s", owned[i] ? "no sentinel in" : "the edit changes", i + 1,
                      (int)(b_size > 300 ? 300 : b_size), b);
             return why;

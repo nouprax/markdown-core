@@ -38,6 +38,14 @@ promised to remain compatible between releases.
   Swift's `reference(for:)`, Kotlin's `reference(label)` and ES's
   `reference(label)` return a `Reference`.
 
+- Automatic heading anchors are removed: a heading's `anchor` is the
+  explicit one its attributes declare, `# Title {#title}`, and null without
+  one; the parser derives no anchor from a heading's text and reserves no
+  name for one. `markdown_core_node_anchor` and
+  `markdown_core_attribute_value_anchor` return the
+  `markdown_core_optional_string` itself and cannot fail. Swift, Kotlin and
+  ES `anchor`, the wire format and the dump carry only explicit anchors.
+
 - A definition starts only with `:`; Pandoc's `~` marker is text. A lone
   `-` in an attribute container is an ordinary bare name, `{-}` giving the
   record `-="true"`, no longer the class `unnumbered`.
@@ -61,12 +69,6 @@ promised to remain compatible between releases.
 - Android requires API 24 (Android 7.0) or later, up from API 21, matching
   the Google Play services and AndroidX floor; CI tests it on an API 24
   emulator. The build moves to AGP 9.5.2.
-
-- `markdown_core_node_anchor` and `markdown_core_attribute_value_anchor`
-  return a `markdown_core_status` and give the anchor through an
-  out-parameter. A heading's computed anchor longer than 1024 bytes is made
-  at its first read, which answers `MARKDOWN_CORE_ALLOCATION_FAILED` when
-  storage cannot be had, instead of showing no anchor.
 
 - Lend one line of a flushed session: `markdown_core_session_lines` counts
   the text's lines, the empty one after a last line ending included, and

@@ -57,13 +57,11 @@ struct DocumentBuilder {
         return unsafeDowncast(take(0), to: DocumentRecord.self)
     }
 
-    /// Reads the values the engine makes at their first read, a long
-    /// heading's anchor and a literal held in two parts, so that a refused
-    /// allocation is thrown here. The engine keeps what it made, and the
-    /// records built after read it again.
+    /// Reads the values the engine makes at their first read, a literal
+    /// held in two parts, so that a refused allocation is thrown here. The
+    /// engine keeps what it made, and the records built after read it
+    /// again.
     private static func make(_ node: OpaquePointer) throws {
-        var anchor = markdown_core_optional_string()
-        try made(markdown_core_node_anchor(node, &anchor))
         var literal = markdown_core_string()
         switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_TEXT, MARKDOWN_CORE_KIND_CODE, MARKDOWN_CORE_KIND_HTML,

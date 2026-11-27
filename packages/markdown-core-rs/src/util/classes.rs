@@ -1,10 +1,7 @@
-//! Unicode character classes, anchor images and the reference-label normal
-//! form, read from the Unicode 17 tables (`tables.rs`).
+//! Unicode character classes and the reference-label normal form, read from
+//! the Unicode 17 tables (`tables.rs`).
 
-use super::tables::{
-    ANCHOR_CLASSES, ANCHOR_DELTAS, ANCHOR_LEAVES, ANCHOR_PAGES, BLOCKS, FOLDS, FOLD_IMAGES,
-    FOLD_LEAVES, FOLD_PAGES, PAGES,
-};
+use super::tables::{BLOCKS, FOLDS, FOLD_IMAGES, FOLD_LEAVES, FOLD_PAGES, PAGES};
 use alloc::string::String;
 
 pub const WHITESPACE: u8 = 1 << 0;
@@ -22,25 +19,6 @@ pub const DECIMAL: u8 = 1 << 7;
 pub fn classes(char: char) -> u8 {
     let scalar = char as usize;
     BLOCKS[PAGES[scalar >> 8] as usize + (scalar & 255)]
-}
-
-/// The anchor image of `char`, or `None` when an anchor drops it.
-pub fn anchor_image(char: char) -> Option<char> {
-    let scalar = char as usize;
-    let sheet = ANCHOR_PAGES[scalar >> 10] as usize;
-    let leaf = ANCHOR_LEAVES[sheet * 64 + ((scalar >> 4) & 63)] as usize;
-    let class = ANCHOR_CLASSES[leaf * 16 + (scalar & 15)] as usize;
-    if class == 0 {
-        None
-    } else {
-        let image = i64::try_from(scalar).ok()? + i64::from(ANCHOR_DELTAS[class]);
-        char::from_u32(u32::try_from(image).ok()?)
-    }
-}
-
-/// The anchor image of `text`: every scalar mapped, dropped ones removed.
-pub fn anchor(text: &str) -> String {
-    text.chars().filter_map(anchor_image).collect()
 }
 
 /// The case fold of `char`, when it has one.

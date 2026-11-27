@@ -1295,7 +1295,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_report(markdown_core_p
 /* Whether the run, at a token start it lists, meets the nearest of its
  * stops (markdown_core_seam_stops): the start is the stop's, past a child
  * that is not a Text and ends where the old one before the stop did, and
- * the run made no anchor or note, which the stops' paragraph would keep
+ * the run made no note, which the stops' paragraph would keep
  * no seams for. The stops before the start go. */
 static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
     markdown_core_seam_stops *stops = inline_state->stops;
@@ -1306,8 +1306,7 @@ static bool S_seam_meets(markdown_core_parser *parser, markdown_core_inline_stat
     if (!stops->count || stops->end - stops->items[stops->count - 1].offset != pos) {
         return false;
     }
-    if (inline_state->settle->note_count ||
-        parser->roster.spaces[MARKDOWN_CORE_ROSTER_ANCHOR].records != stops->anchors) {
+    if (inline_state->settle->note_count) {
         stops->count = 0;
         return false;
     }

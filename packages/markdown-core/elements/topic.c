@@ -155,14 +155,15 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_st
     markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_TOPIC, at, at + 1, fields, count);
 }
 
-/* (topic.h) A line of `#` signs the input's end cuts short, from `first`
- * to `end`, is a heading only while nothing follows its last sign: the
- * name that may yet follow is a topic's, or a block identifier's. */
-void markdown_core_topic_report_line(markdown_core_parser *parser, bufsize_t first, bufsize_t end) {
+/* (topic.h) A run of `#` signs the input's end cuts short, from `first`
+ * to `end`, is a heading's opening or closing sequence only while nothing
+ * follows its last sign: the name that may yet follow is a topic's, or,
+ * after a line's lone `#`, a block identifier's. */
+void markdown_core_topic_report_line(markdown_core_parser *parser, bufsize_t first, bufsize_t end, bool alone) {
     markdown_core_field fields[1 + NAMED_COUNT] = {
         {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, end, name_end, {{0}}, 0, false, 0}};
     size_t count = 1;
-    if (end == first + 1) {
+    if (alone && end == first + 1) {
         for (size_t i = 0; i < NAMED_COUNT; i++) {
             fields[count++] =
                 (markdown_core_field){MARKDOWN_CORE_SLOT_ID, NAMED[i], end, identifier_end, {{0}}, 0, true, 0};

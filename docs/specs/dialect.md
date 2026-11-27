@@ -99,8 +99,7 @@ the host operating system's Unicode version.
 Letters, numbers, combining marks, and punctuation use the Unicode
 categories; CommonMark punctuation also includes symbols. Reference-label
 normalization uses full case folding, trims whitespace, and collapses each
-internal whitespace run to one space. Automatic anchors use their own
-[lowercase algorithm](dialect/anchors.md#automatic-anchors).
+internal whitespace run to one space.
 
 ## Whitespace
 
@@ -123,12 +122,9 @@ Neither are the non-breaking space and the other `Zs` characters beyond
 U+0020.
 
 *Unicode whitespace* decides only delimiter flanking: whether a run of `*`,
-`_`, `~~`, `==`, or `++` can open or close. Two rules use other sets, and
-their pages say so:
-- `class=` values split at HTML's ASCII whitespace: tab, LF, form feed, CR,
-  and space.
-- Automatic anchors replace each Unicode `White_Space` character with a
-  hyphen.
+`_`, `~~`, `==`, or `++` can open or close. One rule uses another set, and
+its page says so: `class=` values split at HTML's ASCII whitespace: tab, LF,
+form feed, CR, and space.
 
 A CommonMark rule that names spaces alone means U+0020 alone. Code spans and
 hard line breaks are the two such rules.

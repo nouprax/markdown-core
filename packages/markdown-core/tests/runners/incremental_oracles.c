@@ -997,34 +997,10 @@ static size_t *subtree_ends(const view *taken) {
     return ends;
 }
 
-/* Where `needle` first occurs in the `length` bytes at `text`, or NULL. */
-static const char *find_text(const char *text, size_t length, const char *needle) {
-    size_t size = strlen(needle), at;
-    for (at = 0; at + size <= length; at++) {
-        if (memcmp(text + at, needle, size) == 0) {
-            return text + at;
-        }
-    }
-    return NULL;
-}
-
-/* Whether two nodes' values are equal; a heading's anchor is compared by
- * check_anchors. */
+/* Whether two nodes' values are equal. */
 static bool same_value(const view *actual, size_t mine, const view *expected, size_t theirs) {
     const view_node *a = &actual->nodes[mine], *b = &expected->nodes[theirs];
     const char *left = actual->values + a->value, *right = expected->values + b->value;
-    if (kind_is(expected, theirs, "Heading")) {
-        const char *left_anchor = find_text(left, a->value_length, " anchor=");
-        const char *left_rest = find_text(left, a->value_length, " attributes=");
-        const char *right_anchor = find_text(right, b->value_length, " anchor=");
-        const char *right_rest = find_text(right, b->value_length, " attributes=");
-        if (left_anchor && left_rest && right_anchor && right_rest) {
-            return left_anchor - left == right_anchor - right &&
-                   memcmp(left, right, (size_t)(left_anchor - left)) == 0 &&
-                   (left + a->value_length) - left_rest == (right + b->value_length) - right_rest &&
-                   memcmp(left_rest, right_rest, (size_t)((left + a->value_length) - left_rest)) == 0;
-        }
-    }
     return a->value_length == b->value_length && memcmp(left, right, a->value_length) == 0;
 }
 
@@ -1042,8 +1018,8 @@ static void free_items(const view *taken, const size_t *ends, bool *flags, const
 
 /* Pairs the subject's snapshot with the expected document node for node,
  * from the roots down, everywhere but in the free relations; each pair has
- * the same kind and value, its heading anchors aside, and in a free root
- * the same kind and extent. False after a failure. */
+ * the same kind and value, and in a free root the same kind and extent.
+ * False after a failure. */
 static bool correspond(run *state, const char *where, size_t step, const view *actual, const view *expected,
                        const uint32_t *relations, correspondence *pairs) {
     size_t *actual_ends = subtree_ends(actual), *expected_ends = subtree_ends(expected);
@@ -1104,189 +1080,6 @@ done:
     free(expected_ends);
     free(stack);
     return ok;
-}
-
-/* A set of the names anchors can share a base under. */
-typedef struct name_set {
-    markdown_core_string *names;
-    size_t count, capacity;
-} name_set;
-
-static uint64_t name_hash(markdown_core_string name) {
-    uint64_t hash = 14695981039346656037ULL;
-    size_t at;
-    for (at = 0; at < name.length; at++) {
-        hash = (hash ^ name.data[at]) * 1099511628211ULL;
-    }
-    return hash;
-}
-
-static markdown_core_string *name_slot(const name_set *set, markdown_core_string name) {
-    size_t at = (size_t)name_hash(name) & (set->capacity - 1);
-    while (set->names[at].data &&
-           (set->names[at].length != name.length || memcmp(set->names[at].data, name.data, name.length) != 0)) {
-        at = (at + 1) & (set->capacity - 1);
-    }
-    return &set->names[at];
-}
-
-/* Adds `name`; false when memory ran out. */
-static bool name_add(name_set *set, markdown_core_string name) {
-    markdown_core_string *slot;
-    if (2 * (set->count + 1) > set->capacity) {
-        size_t capacity = set->capacity ? 2 * set->capacity : 64, at;
-        name_set grown = {(markdown_core_string *)calloc(capacity, sizeof(markdown_core_string)), 0, capacity};
-        if (!grown.names) {
-            return false;
-        }
-        for (at = 0; at < set->capacity; at++) {
-            if (set->names[at].data) {
-                *name_slot(&grown, set->names[at]) = set->names[at];
-                grown.count++;
-            }
-        }
-        free(set->names);
-        *set = grown;
-    }
-    slot = name_slot(set, name);
-    if (!slot->data) {
-        *slot = name;
-        set->count++;
-    }
-    return true;
-}
-
-static bool name_find(const name_set *set, markdown_core_string name) {
-    return set->capacity && name_slot(set, name)->data;
-}
-
-/* The names an automatic anchor `name` can stand for the base of: itself,
- * and, when it ends in `-` and digits after something, what comes before. */
-static size_t anchor_bases(markdown_core_string name, markdown_core_string bases[2]) {
-    size_t end = name.length;
-    bases[0] = name;
-    while (end > 0 && name.data[end - 1] >= '0' && name.data[end - 1] <= '9') {
-        end--;
-    }
-    if (end < name.length && end > 1 && name.data[end - 1] == '-') {
-        bases[1] = (markdown_core_string){name.data, end - 1};
-        return 2;
-    }
-    return 1;
-}
-
-/* Adds the bases of an anchor. */
-static bool add_bases(name_set *set, markdown_core_optional_string anchor) {
-    markdown_core_string bases[2];
-    size_t count, at;
-    if (!anchor.has_value || !anchor.value.data) {
-        return true;
-    }
-    count = anchor_bases(anchor.value, bases);
-    for (at = 0; at < count; at++) {
-        if (!name_add(set, bases[at])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/* Whether the anchor shares a base with a name of the set. */
-static bool shares_base(const name_set *set, markdown_core_optional_string anchor) {
-    markdown_core_string bases[2];
-    size_t count, at;
-    if (!anchor.has_value || !anchor.value.data) {
-        return false;
-    }
-    count = anchor_bases(anchor.value, bases);
-    for (at = 0; at < count; at++) {
-        if (name_find(set, bases[at])) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool same_anchor(markdown_core_optional_string a, markdown_core_optional_string b) {
-    return a.has_value == b.has_value && (!a.has_value || (a.value.length == b.value.length &&
-                                                           memcmp(a.value.data, b.value.data, a.value.length) == 0));
-}
-
-typedef struct placed {
-    int64_t start;
-    size_t index;
-} placed;
-
-static int placed_order(const void *left, const void *right) {
-    const placed *a = (const placed *)left, *b = (const placed *)right;
-    return a->start < b->start ? -1 : a->start > b->start ? 1 : a->index < b->index ? -1 : a->index > b->index;
-}
-
-/* Each heading's anchor equals the fresh parse's: a snapshot assigns anchors
- * by the rule a fresh parse does, over the anchors of its own nodes. The
- * harness cannot tell an automatic anchor from an authored one, nor read a
- * heading's base, so it lets a heading's anchor differ when its text is a
- * free root, or when the anchor could share its base with an anchor of a
- * free place or with the fresh or the snapshot's anchor of an earlier
- * heading whose anchor may differ. */
-
-/* The anchor `node` shows; none when it could not be read. */
-static markdown_core_optional_string shown_anchor(const markdown_core_node *node) {
-    markdown_core_optional_string anchor = {0};
-    if (markdown_core_node_anchor(node, &anchor) != MARKDOWN_CORE_OK) {
-        return (markdown_core_optional_string){0};
-    }
-    return anchor;
-}
-static void check_anchors(run *state, const char *where, size_t step, const view *actual, const view *expected,
-                          const uint32_t *relations, const correspondence *pairs) {
-    placed *headings = (placed *)malloc(expected->count * sizeof(*headings));
-    size_t count = 0, index;
-    /* Every anchor of a free place, and of an earlier heading whose anchor
-     * may differ. */
-    name_set loose = {0}, earlier = {0};
-    bool ok = headings != NULL;
-    for (index = 0; ok && index < expected->count; index++) {
-        if (kind_is(expected, index, "Heading")) {
-            headings[count++] = (placed){expected->nodes[index].range.start, index};
-        }
-        if (pairs->expected_free[index]) {
-            ok = add_bases(&loose, shown_anchor(expected->nodes[index].object));
-        }
-    }
-    for (index = 0; ok && index < actual->count; index++) {
-        if (pairs->actual_free[index]) {
-            ok = add_bases(&loose, shown_anchor(actual->nodes[index].object));
-        }
-    }
-    if (!ok) {
-        fail(state, "harness", "%s step %zu: out of memory", where, step);
-        goto done;
-    }
-    qsort(headings, count, sizeof(*headings), placed_order);
-    for (index = 0; index < count && !stopped(state); index++) {
-        size_t heading = headings[index].index, mine = pairs->to_actual[heading];
-        markdown_core_optional_string theirs = shown_anchor(expected->nodes[heading].object), own;
-        bool may_differ;
-        if (mine == SIZE_MAX) {
-            continue;
-        }
-        own = shown_anchor(actual->nodes[mine].object);
-        may_differ = relations[heading] || shares_base(&loose, theirs) || shares_base(&earlier, theirs);
-        if (!may_differ && !same_anchor(own, theirs)) {
-            fail(state, "4.1", "%s step %zu: heading %zu's anchor differs from the fresh parse's", where, step,
-                 heading + 1);
-            break;
-        }
-        if (may_differ && (!add_bases(&earlier, theirs) || !add_bases(&earlier, own))) {
-            fail(state, "harness", "%s step %zu: out of memory", where, step);
-            break;
-        }
-    }
-done:
-    free(headings);
-    free(loose.names);
-    free(earlier.names);
 }
 
 /* ------------------------------------------------------------------ steps */
@@ -1353,7 +1146,6 @@ static void check_meaning(run *state, const char *where, size_t step, ih_unit un
     if (!correspond(state, where, step, after, &expected, relations, &pairs)) {
         goto done;
     }
-    check_anchors(state, where, step, after, &expected, relations, &pairs);
     check_tables(state, "4.1", where, step, document, after, fresh, &expected, &pairs);
 done:
     correspondence_free(&pairs);

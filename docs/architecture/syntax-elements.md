@@ -36,7 +36,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | DefinitionList: terms, bodies, compactness, indentation and lookahead | `definition_list.c` | `5f5a516c` |
 | Table: pipe rows, head and body groups, columns | `table.c` | `798717b7`, `a540b69e` |
 | Attributes: one brace grammar and attachment operations | `attributes.c` | `1ad40aed`, `8d9177fa` |
-| Heading: ATX/setext openers, suffix ownership, generated anchors | `heading.c` | Inherited; `25282384`, `8d9177fa` |
+| Heading: ATX/setext openers, suffix ownership | `heading.c` | Inherited; `25282384`, `8d9177fa` |
 | Block identifier: `#anchor-id#` suffix and separate-line attachment | `block_identifier.c`, writing the shared anchor value | `d6abfbd0` |
 | Properties: document metadata envelope, fixed fields and literal prose | `properties.c` | `2640f0da` |
 | Mark: `==...==` | `mark.c` | `8a2b1462` |

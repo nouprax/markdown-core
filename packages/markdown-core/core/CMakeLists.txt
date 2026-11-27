@@ -35,7 +35,6 @@ set(HEADERS
     ahead.h
     array.h
     seam.h
-    measure.h
     claim.h
     sink.h)
 set(LIBRARY_SOURCES
@@ -49,7 +48,6 @@ set(LIBRARY_SOURCES
     bracket.c
     utf8.c
     buffer.c
-    names.c
     roster.c
     map.c
     tree.c

@@ -45,7 +45,7 @@ heading form is tried: `[[A#^id#x]]` stores anchor `^id#x`.
 The block reference addresses a [declaration](block-identifiers.md) written
 `#block-id#`. Target anchors do not populate the reference node's own `anchor`
 field. Heading matching is consumer policy: `[[#My Heading]]` retains
-`My Heading`, even though the automatic heading anchor is `my-heading`.
+`My Heading`, whatever anchor, if any, the heading declares.
 
 ## Embeds
 

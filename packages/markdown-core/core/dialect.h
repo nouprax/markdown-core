@@ -162,8 +162,7 @@ typedef struct markdown_core_finish_step_entry {
  *
  * - INLINES / INLINES_ASK: the content's `inlines` / `holds_inlines` -- the
  *   kind may hold inline content (PARSES, either one), which the walk parses
- *   at its ENTER; DEFERRED, the element's `deferred`, it was parsed before the walk
- *   (a heading's, by the document's preparation);
+ *   at its ENTER;
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
  *   `mode` / `holds_lines` (markdown_core_content_ops); PROSE, a PROSE
  *   `mode`, it takes a text line as prose; IS_PARAGRAPH, the content's
@@ -184,7 +183,6 @@ enum {
     MARKDOWN_CORE_KIND_INLINES = 1u << 0,
     MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
     MARKDOWN_CORE_KIND_PARSES = MARKDOWN_CORE_KIND_INLINES | MARKDOWN_CORE_KIND_INLINES_ASK,
-    MARKDOWN_CORE_KIND_DEFERRED = 1u << 2,
     MARKDOWN_CORE_KIND_FIELDS = 1u << 3,
     MARKDOWN_CORE_KIND_LINES = 1u << 4,
     MARKDOWN_CORE_KIND_LINES_ASK = 1u << 5,
@@ -366,15 +364,9 @@ typedef struct markdown_core_dialect {
     const struct markdown_core_closer *closers;
     size_t closer_count, shared;
     /* THE ROSTER SPACES the elements name (element.h, markdown_core_space),
-     * by roster kind: `space_count` of them, the first two NULL, no
-     * kind's and the engine's ANCHOR. */
+     * by roster kind: `space_count` of them, the first NULL, no kind's. */
     const markdown_core_space *const *spaces;
     size_t space_count;
-    /* How names are spelled (element.h, `spelling`), or NULL. */
-    const struct markdown_core_name_spelling *spelling;
-    /* The instances whose elements ask the names service for names
-     * (element.h, `names`), in element order, ending at NULL. */
-    const markdown_core_element_instance *const *namers;
     /* The instances whose elements take part in the parse's stages
      * (element.h, `stages`), in element order, ending at NULL. */
     const markdown_core_element_instance *const *staged;

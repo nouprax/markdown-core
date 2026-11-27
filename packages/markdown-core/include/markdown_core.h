@@ -561,10 +561,9 @@ MARKDOWN_CORE_API void markdown_core_path_free(const markdown_core_node **nodes)
  * the dest `doc.md` and the anchor `part`; `{#top .wide k="v"}` the id `top`,
  * the class `wide`, the record `k` and the value `v`. A field that no slot
  * kind names, such as a title, a literal or a cross link's label, is a field
- * of slot kind NONE. A field the parser makes rather than reads, such as a
- * heading's computed anchor, has no scope. A list item's block identifier,
- * written at its first paragraph's end, is the list item's field, not the
- * paragraph's, and a node the parser makes rather than reads, such as a
+ * of slot kind NONE. A field the parser makes rather than reads has no
+ * scope. A list item's block identifier, written at its first paragraph's
+ * end, is the list item's field, not the paragraph's, and a node the parser makes rather than reads, such as a
  * table row's autocompleted cell, owns no source. OUT_OF_BOUNDS for a value
  * that is not a slot kind, or when `length` ends before the node does.
  *
@@ -805,11 +804,9 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_body_at(con
                                                                              markdown_core_nodes *content);
 /** Universal fields. Classes and records retain source order and duplicates;
  * absent attributes have zero counts. An `_at` accessor answers OUT_OF_BOUNDS
- * for an index at or past its count. A heading's computed anchor may be made
- * at its first read, which answers ALLOCATION_FAILED when storage cannot be
- * had for it. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_anchor(const markdown_core_node *node,
-                                                                 markdown_core_optional_string *anchor);
+ * for an index at or past its count. A node's anchor is the one its
+ * attributes write (`{#id}`), absent when they write none. */
+MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_attribute_class_count(const markdown_core_node *node);
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_class_at(const markdown_core_node *node,
                                                                              size_t index, markdown_core_string *value);
@@ -823,8 +820,8 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_record_at(co
  * it names has the ones the definition states. */
 typedef struct markdown_core_attribute_value markdown_core_attribute_value;
 MARKDOWN_CORE_API const markdown_core_attribute_value *markdown_core_node_attributes(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_status markdown_core_attribute_value_anchor(
-    const markdown_core_attribute_value *attributes, markdown_core_optional_string *anchor);
+MARKDOWN_CORE_API markdown_core_optional_string
+markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes);
 MARKDOWN_CORE_API size_t markdown_core_attribute_value_class_count(const markdown_core_attribute_value *attributes);
 MARKDOWN_CORE_API markdown_core_status markdown_core_attribute_value_class_at(
     const markdown_core_attribute_value *attributes, size_t index, markdown_core_string *value);

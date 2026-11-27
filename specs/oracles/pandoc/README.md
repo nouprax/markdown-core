@@ -43,7 +43,7 @@ host executable explicitly with `scripts/tools/setup-environment.sh --install or
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 107 cases: 67 agreements, 40 documented differences and no
+The active corpus has 107 cases: 45 agreements, 62 documented differences and no
 missing-feature gaps. Three width differences retain the normative interior
 ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.
@@ -83,13 +83,13 @@ necessarily differ from Pandoc.
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
 exact deliberate difference, with an executable `combineAttr` canary.
 
-P3/P4 retire `gfm-auto-anchors`; an added agreement covers empty fallback. The
-dialect has no implicit heading references, so every case read with Pandoc's
-`implicit_header_references` (authored markup labels, forward and duplicate
-labels, occurrence attributes, adjacency, images) is an exact deliberate
-difference. Exact deliberate differences also retain global explicit-anchor
-reservation (including inline code), Unicode simple lowercase, `White_Space`
-and permitted scalars without emoji aliases. CLI canaries independently pin these Pandoc
+The dialect has no automatic heading anchors, so every case read with
+Pandoc's `auto_identifiers` (`gfm-auto-anchors`, empty fallback, Unicode
+scalars, explicit IDs elsewhere, heading content) is an exact deliberate
+difference in its headings' anchors. It has no implicit heading references
+either, so every case read with Pandoc's `implicit_header_references`
+(authored markup labels, forward and duplicate labels, occurrence attributes,
+adjacency, images) is one too. CLI canaries independently pin these Pandoc
 behaviors; the projections preserve both sides rather than erase differences.
 P11 implemented captions, simple, multiline and grid tables; they have since
 left the dialect, which keeps pipe tables only, and their cases left the

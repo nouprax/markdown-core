@@ -603,12 +603,7 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
         if (misses) {
             continue;
         }
-        markdown_core_chunk anchor;
-        if (!markdown_core_core_anchor(at_probe[i], &anchor)) {
-            markdown_core_free((void *)at_probe);
-            markdown_core_free((void *)at_first);
-            return false;
-        }
+        const markdown_core_chunk anchor = at_probe[i]->attributes.anchor;
         if ((slot == MARKDOWN_CORE_SLOT_ID && !names(query, &anchor, first, brace)) ||
             (owner == MARKDOWN_CORE_KIND_CITATION && !refers(at_probe[i], slot)) ||
             (past != SIZE_MAX && !carries(query, at_probe[i], slot, first, &anchor))) {

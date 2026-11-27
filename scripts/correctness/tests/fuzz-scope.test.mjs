@@ -29,8 +29,11 @@ test("custom task and definition envelopes belong to their extension oracles", (
     for (const input of ["- [?]   - [ ] b\n", "1. [-] task\n"]) {
         assert.equal(outsideSharedFuzzScope(input), "custom-task-markers");
     }
-    for (const input of ["Use [a]\n:\n:name[label]\n", "term\n: body\n"]) {
+    for (const input of ["Use [a]\n:\n:name[label]\n", "term\n: body\n", "> term\n> :\n"]) {
         assert.equal(outsideSharedFuzzScope(input), "definition-lists");
+    }
+    for (const input of ["```js {.a}\nx\n```\n", "- ```:::box{.a}\n"]) {
+        assert.equal(outsideSharedFuzzScope(input), "fenced-code-attributes");
     }
     for (const input of [
         "- [x] task\n",

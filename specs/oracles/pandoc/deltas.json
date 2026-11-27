@@ -77,64 +77,64 @@
             "id": "anchor-global-reservation",
             "item": "P3",
             "status": "projection",
-            "reason": "Markdown Core reserves every explicit declaration across the whole document before generating anchors; Pandoc allocates this heading before it sees the later explicit heading identifier.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. The later explicit {#x} is Core's only anchor; Pandoc also gives the earlier heading x.",
             "inputDigest": "2da3fd4396a89c8add8bcf1adf6f930e90a49a9bffa2a99a911e96182168b426",
             "oracleDigest": "2975067296f172872012b12b75a8472d1355141fe423f0023a87049bc6cff62c",
-            "coreDigest": "fe8d148c82a145777cc00d3baab9ae80164c302ef5b624812065b37c17b6a892"
+            "coreDigest": "ebcca17b63042a7e723ed00aea12b9fd7b13bf2873174415c8678ff92d864108"
         },
         {
             "id": "anchor-permitted-scalars",
             "item": "P3",
             "status": "projection",
-            "reason": "Markdown Core filters every scalar uniformly and has no emoji alias step; Pandoc converts the grinning-face scalar to its grinning alias during GFM anchor generation.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one.",
             "inputDigest": "2134c4215ad59c246f89001f2d8de2c732c4ee69342b06cfa0e8d29ade786234",
             "oracleDigest": "a1510715fcb10bc291ec586becf6cafe96f3eb853a37ab0b616e24dd3723b4c4",
-            "coreDigest": "ab2dfa9ef4425de20c518c1ef557deb5053c3d28f7a9ff2b817b9a957d0f2f0d"
+            "coreDigest": "e0cd9f2d396127219f18a1a1a870f55c023c7cd3a0a52efa1622a88cac42b591"
         },
         {
             "id": "anchor-simple-lowercase",
             "item": "P3",
             "status": "projection",
-            "reason": "Markdown Core applies Unicode 17 simple lowercase (U+0130 becomes U+0069); Pandoc expands U+0130 to U+0069 U+0307 with full lowercase.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one.",
             "inputDigest": "2e3200795f0c1ae0be24d473bf94a5ce7082d54a88e1491313073090db22f8ed",
             "oracleDigest": "262795d5e52194b65e2b85b06d9ee57166e146769daf1d9036a150bcad9a5277",
-            "coreDigest": "ab1d8853fb547ff9ff2f0b6ee170d9f16d79ce6e34a21cdb0987af9ff332df67"
+            "coreDigest": "7a1c5570f50d498746c2378aa18c73668d07bf8aeffa180366bc2cf75a11548c"
         },
         {
             "id": "anchor-whitespace-scalars",
             "item": "P3",
             "status": "projection",
-            "reason": "Markdown Core maps each Unicode White_Space scalar to a hyphen, including U+0085 and U+2028; Pandoc removes those two scalars from this heading anchor.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one.",
             "inputDigest": "aab3bc4adaf3fa86ffd463bd9910f215af5c067c12fa9c5b6acb23aa5f783e05",
             "oracleDigest": "639a6c891b18300c68a3682d9997511ea66177475bbdd8cddbe4afd0ad49aac3",
-            "coreDigest": "c8f9d26a459d5b30ce348c0b60e1b486b9596cbcfb996db0f6980ef11241630f"
+            "coreDigest": "f9ed171885fa03af2198fce5ea6c1937e2adc088850dd0488bedeb12ef37a8f8"
         },
         {
             "id": "anchor-inline-code-reservation",
             "item": "P3",
             "status": "projection",
-            "reason": "Markdown Core reserves identifiers on every emitted kind before heading synthesis; Pandoc does not reserve the code identifier against its heading registry.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. The code's explicit {#x} is Core's only anchor.",
             "inputDigest": "1df9e387a45836a08ef35ca48c27f11d74ac842159362ab82a566da91827a82c",
             "oracleDigest": "b7ae7d939d8ab22efec206f9de1497d85e206bbdd28e47cc762e5934541e12be",
-            "coreDigest": "eb4a3c9a5e8d28dca2b61451cb27191375a24c730f502ea35788d084718c6f0e"
+            "coreDigest": "675fd22f70a05a9b8482e5dc58d9b102e07be3dfa03455f803a990116235b03c"
         },
         {
             "id": "implicit-reference-adjacency",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "4388c8fe0daa8aede4797766f587f4fca2e4c978306832580d63ae0f73455b8a",
             "oracleDigest": "27cc798a636a7fee233c81a4765cf7cf8e67271e37f76cf91a3bcc067d6ebacd",
-            "coreDigest": "58ac4916ab5d8e69a095906a55d988fec3aea713e2928fc4ad88a255ffa80330"
+            "coreDigest": "a007d4bae2584105896ad86d6cc16cd876461e55645c3fb4877d9e6a140c2d8c"
         },
         {
             "id": "p5-heading-span-reservation",
             "item": "P5",
             "status": "projection",
-            "reason": "The shared anchor registry reserves explicit Span identifiers across the whole document before heading synthesis. Pandoc generates the earlier heading before reading the later Span identifier.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. The Span's explicit {#taken} is Core's only anchor.",
             "inputDigest": "2055b964d37c4db99a3e45993563c979dd034fd1ccc0dc194e9f2d8e5de0a634",
             "oracleDigest": "fd963a15f9df3d9678c1f4017a8424bb81559346e85974ef691e4ea8da4609a7",
-            "coreDigest": "7e09425bb31b3140f95ed9cda3bdc692005783c81b87f36e750ceb1a04e21545"
+            "coreDigest": "a2e65dbcf69a172a450236d19cc97c2bc51f9c106ec846ad1c5d1f462d33a717"
         },
         {
             "id": "p7-tail-and-nesting",
@@ -158,10 +158,10 @@
             "id": "p7-heading-projection",
             "item": "P7",
             "status": "projection",
-            "reason": "Generated anchors concatenate the stored, trimmed citation prefix, @key and suffix per item. Pandoc uses the authored fallback spelling with separator spaces; its suffix also retains a leading space.",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. Both sides read the same citations in the heading.",
             "inputDigest": "55f8c0363676f0b33330af4fe0556d2365f84c18d730dff723c8c340fd06eff2",
             "oracleDigest": "3d329b41afce6f733b5fa7ae4324de40cddb66565959e38d7f7fc4f96aecf19a",
-            "coreDigest": "25c231d85e73fbd26fee5e990c5579b6bcf17f0083ca1fe59a3d9b0378280c4c"
+            "coreDigest": "163537ece5d75215ad79421b535d4a7dadd9271181d67a1f7d2edb40eaeed1cb"
         },
         {
             "id": "p7-unicode-boundary",
@@ -194,10 +194,10 @@
             "id": "p9b-heading",
             "item": "P9b",
             "status": "projection",
-            "reason": "Markdown Core has no numbered examples: `(@label)` is ordinary text and a bare `@label` is a bibliography citation. Pandoc emits example List items and replaces references with derived numbering.",
+            "reason": "Markdown Core has no numbered examples: `(@label)` is ordinary text and a bare `@label` is a bibliography citation. Pandoc emits example List items and replaces references with derived numbering. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "07ef4c87398b919fd819f914c30618c4b6dc2ace3c23730a55fa217c316ba011",
             "oracleDigest": "90179688784cee64cf27cf258afbcfabdcc03a1f87b71ead8cb582580ce5842f",
-            "coreDigest": "5f5b55a88572117c83bbfd55eb266aba35396411c0bc622053a0ebaa0a685eec"
+            "coreDigest": "2efba476363fb2eaa2a21ab8c06f0a971897cce596b11fac0e232472636cd772"
         },
         {
             "id": "p7-unresolved-reference-tail",
@@ -248,10 +248,10 @@
             "id": "p8-explicit-anchor-reservation",
             "item": "P8",
             "status": "projection",
-            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs.",
+            "reason": "Markdown Core has no nameless fenced divs: every container is named, `:::name`, so `::: {.class}` and `::: class` lines are paragraph text. Pandoc's fenced_divs reads them as Divs. Core's heading has no anchor either (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "c56b024236a89fa87a33edf5f0ba4cf1835c92eed97346aeee13c54deda1af33",
             "oracleDigest": "73bcf79ef51bd83aee81dc5134b59ee093b7710cff0c6b9c9c29702f9ffd3c9b",
-            "coreDigest": "3cf08b8d0d1d2ab4f3919862dcd19cca5f20369e1a9d0ec21e6d6a648c6ff56f"
+            "coreDigest": "1a63c766a5d5b053add7ada0954bbc75064a9b780adc6f7bf416bfe9cb80e698"
         },
         {
             "id": "p10-nested-and-lazy",
@@ -365,28 +365,28 @@
             "id": "implicit-header-references",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "9e20ec6d94f729dee73d85e1318bfc75cc8e58f3988ce8be73b9f2f68d5b6056",
             "oracleDigest": "a54ddc4a71f00e857264edab863d17fc374d394ff25fb7231fb7ab0c43015723",
-            "coreDigest": "89e3b6c75ba20ec57afc7d863191aa4edbf0e540245e93b34baed80a88f35aa9"
+            "coreDigest": "1d9b3da7e89e34c4b4ace5dead96912a8cee1c3f8d2ca42b5832eaa9fa56d2d5"
         },
         {
             "id": "implicit-authored-label",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "ad845e6d7a89d976a8b3c5c6db8b7c1fe8af6623850415fa6b3bb9dc704bb478",
             "oracleDigest": "7617d1006a200cbbff7074f2af6fa86e9e0baa491edda684fc4aa2b170acc74e",
-            "coreDigest": "f023cd73eb63c484ff56da18ac118f39b234fe88d65a11c7af6e55ec1a4bf9b2"
+            "coreDigest": "693113608a74c58161e0d02c151ea0e8ac95b59194dd2d91d5b1a3474a22cf7e"
         },
         {
             "id": "implicit-forward-and-duplicates",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "a88047e5916b733e1d290fdbbffde34df3b3850b472190e2b5f145e9265907ba",
             "oracleDigest": "b651e138d05e8408640acfee75f8d8ed26295cc01ddf9eb4669f250e5539e080",
-            "coreDigest": "2a95e09bfcbcff73acfad2af6239caf3401d9a9085477b8982ca117b1a874425"
+            "coreDigest": "0cee7600c8eb8aabbe8b04c96e291005155a600b0f1cd19df7c630c59ab40049"
         },
         {
             "id": "implicit-occurrence-attributes",
@@ -401,64 +401,64 @@
             "id": "implicit-reference-in-paragraph-definition-text",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "d6158fd2a09048f38b734e1b79222343579a567a6690bca94b221e191601e6a1",
             "oracleDigest": "8b988fe63ea3a838adc240b25c57c91e0b6bf2aed5446a6b47cfd34803b6fb72",
-            "coreDigest": "2af481e10d144648a788e429777f478b73a49c2d48dd1bba00710923f98dc4d0"
+            "coreDigest": "b780108325347d261a95dcd343ca797de61108a6a7f6d90fd7b9df103bee6389"
         },
         {
             "id": "p5-implicit-heading-shortcut",
             "item": "P5",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "ab98cae39b674a3d94f4906b8a04da70b042e37887857a43a746bf1c27942312",
             "oracleDigest": "414cc0aa5c9257423193667103953ccd0cb518e38f501fa1a949f59ae0d45f7a",
-            "coreDigest": "1775a517d43f2d871e11c8effd2944063f79048245433bd444390a67c04db4dc"
+            "coreDigest": "9a2bb0ab89b92ceb974db6eef93877d31048ea509123bc8db3428eda45da60c1"
         },
         {
             "id": "p6-heading-reference",
             "item": "P6",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "0cb06c43d6c05e7507da4ea5b4b54895e1f890cde60c64c2ae6a7c2f979d4f1e",
             "oracleDigest": "2a056be3bb1a2d57bd870f71c386f62827c9300ebbf1d1f1d560c6e28c46281f",
-            "coreDigest": "0ab086a7f67611b65c1603af6361a0aca8eb6c1c9bec5774afa528c67588daca"
+            "coreDigest": "7b44c6da4f184a2463f406c3a7cf56beb7372d646b6d6ac3da300ad0eca09d2d"
         },
         {
             "id": "p4-image-shortcut-heading-reference",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "d280a05b921a665cbecbf9c2fa3116257878e9c5780935eaf3e17480c2f5e71b",
             "oracleDigest": "d99d262f0a9786eb960a2bd95e17b078ec013e41524caa2a405b5271f1447c89",
-            "coreDigest": "62c450d5fb1c9ec8d654fbc1423ea434fcd48a966a5ea4cb91e55aca8a6f2d92"
+            "coreDigest": "731d384e23756c6ca4b31f7e6ed1b9e0c6c34d20b442a45dec1e155d2ce308f3"
         },
         {
             "id": "p4-image-collapsed-heading-reference",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "6ae34a34075c0c27438817ef909686dd2a81c4e193c102de8e2a6141514acf4a",
             "oracleDigest": "d99d262f0a9786eb960a2bd95e17b078ec013e41524caa2a405b5271f1447c89",
-            "coreDigest": "4351f153560b6ac1f72aa62a35c517718980cb78084adf41a8d7fac61e301966"
+            "coreDigest": "586138299e00c1366711183739b53a397f57d165c8d0f42962f4c68363f9d7d4"
         },
         {
             "id": "p4-image-full-heading-reference",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "e946dcad97ef0980e46679a0d2a84d5b96f5894dcd43e0c6e127e772ddafcc35",
             "oracleDigest": "056139838e2f313b1a2c576527810e0e402c7284451bc0571e93298e1e68ad16",
-            "coreDigest": "bbe699092db54ca44b20ac6df7545a88c8448930035b0f543d6bfc98697625da"
+            "coreDigest": "63b1ae34d607d78d6d0a1f88704c2bb1bfecb224a2aef3018f7f49056e75e356"
         },
         {
             "id": "p4-isolated-authored-heading-label",
             "item": "P4",
             "status": "projection",
-            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading.",
+            "reason": "Markdown Core has no implicit heading references: a heading declares no reference label, so `[Heading]` stays bracket text unless a link reference definition declares the label. Pandoc's implicit_header_references resolves it to the heading. Core's heading also has no anchor (no automatic anchors), where Pandoc's auto_identifiers generates one.",
             "inputDigest": "b99dac49aba14398d13da53ff8cfd2049caba07cea00ea524354a8b97e718cc7",
             "oracleDigest": "bec1b399070128667dff8280002961850186419f27e5ade59320d4428d1b0dd6",
-            "coreDigest": "979d7534efe62cbd6ae73d9912db021695700ea66c21867a8fa6dd586dd94d96"
+            "coreDigest": "77d8200dd4468e1d51bc4d385d69e229038155b588973da36379edaaa97b0363"
         },
         {
             "id": "fenced-divs-nested",
@@ -495,6 +495,69 @@
             "inputDigest": "aec2a220489452ad41a890c75744c2227810071f27a531b1d5d65d74153e5723",
             "oracleDigest": "35eb5da55c923755320d9c022d04d5e141309bc9b577ecc1c455b93834bb4727",
             "coreDigest": "c7f6a1883bf0881910e87c747097b2e0883e3c00b10093e67b4ead317690c8e3"
+        },
+        {
+            "id": "anchor-empty-fallback",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one.",
+            "inputDigest": "0f1b06440b8409aa44fea857ab4e04137349b646ee22e9b00570a239683e4579",
+            "oracleDigest": "d23c1030ad3b55a0dc369b99f386d09fefa967dee882ef1e3a7d0d6be4af6de1",
+            "coreDigest": "82d07b26920eaffd7fe2a7927dba2e500050995a362b994afb852a6bb020a9c3"
+        },
+        {
+            "id": "implicit-explicit-priority",
+            "item": "P4",
+            "status": "projection",
+            "reason": "Both sides link [Foo] to the explicit definition. Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one.",
+            "inputDigest": "4a8d81613cdcdede50de3e225dc39534d815a69312a235a62921a28d7edb7fdb",
+            "oracleDigest": "5c3cd61c3f1673c2cb537b78c2fc4da7465c0e5aa9c0d4058dcbef187e1f6a39",
+            "coreDigest": "ef3e77cd1e13a77d3aaac9874c442383bd4ff891b18578a651752675a962f1e4"
+        },
+        {
+            "id": "p5-p6-heading-content",
+            "item": "P5",
+            "status": "projection",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. The heading's Span, scripts and class agree.",
+            "inputDigest": "df59db84bbab7d786d0a79fa756a98764515811c7c55b6150659349a1a7c7e43",
+            "oracleDigest": "f666f4f65a419ebd2682d334b0bada90c6c0e1500b91738def082f704d1f09ee",
+            "coreDigest": "2792a12fb5165359c95ab88e7d21f46e93363388ce4f6f754904e73634fa704c"
+        },
+        {
+            "id": "p7-heading-shortcut",
+            "item": "P7",
+            "status": "projection",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. Both sides read [@a] as a citation.",
+            "inputDigest": "7397d3cd98e34c535411ee5bad45f81b6d10dc5b92f60e3943934d7f18f34a46",
+            "oracleDigest": "1b28a8cdadf7a477c2172f0b8a8756c6f9b7b9adad4a267743c6a83b5d03057f",
+            "coreDigest": "576ec89a428a73e8b5b0fc843d8836ba6f56656b1bf2ee45b44bd31db36c2b9f"
+        },
+        {
+            "id": "p4-isolated-plain-heading-label",
+            "item": "P4",
+            "status": "projection",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one. [Foo] names no definition and stays bracket text on both sides.",
+            "inputDigest": "5fbfd364e6142a13aebd3d2ea958251e4bb560a1522ad89186c25a647b10764f",
+            "oracleDigest": "b24d82f8841674639a1021804ec3a082a788d87ff2e356c5c281fbe665e9e8ef",
+            "coreDigest": "3092ea264445ef74c55d43992c47c9bddf7a272c605706e67688ad7929b763f9"
+        },
+        {
+            "id": "p3-connector-and-combining-mark",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so this heading's anchor is null where Pandoc's auto_identifiers generates one.",
+            "inputDigest": "8e77f0bb68c84440739cb57d8ca283d4e23eb7502d3663478c44eaf9b9caeeb4",
+            "oracleDigest": "30cc01b0f487ff7bfa5b461569712c3f47b61909c47c284be49bade037e1dcea",
+            "coreDigest": "ee5bef63bba288e5a56d5d5cff2551eff98f9b87d2429b3df090e5749ec5a878"
+        },
+        {
+            "id": "gfm-auto-anchors",
+            "item": "P3",
+            "status": "projection",
+            "reason": "Markdown Core has no automatic anchors: a heading has only the anchor its attributes declare, so these headings' anchors are null where Pandoc's auto_identifiers generates my-header and my-header-1.",
+            "inputDigest": "6b50237ae17d0a79c5a24c2516774f84f57dbfb2e3c7d74449c09c0d044db6c8",
+            "oracleDigest": "1c4e2e4a16b89ceccdb15c2cbdca90b916d6285303a26548b717085087a29f4f",
+            "coreDigest": "3aea8de4d73e559998f607c4b61e2bb696d360e0179e2edf7bc1afd78b206ea4"
         }
     ]
 }

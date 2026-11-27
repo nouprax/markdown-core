@@ -47,24 +47,10 @@ typedef struct {
     int8_t fence_closed;
 } markdown_core_code;
 
-/* A NODE'S NAME, which the names service computes (names.c, THE NAMES)
- * for a node whose attributes write no anchor: the `base` its text projects
- * to, which an edit that reads it from a seam keeps in two parts (buffer.h,
- * markdown_core_split), and the `suffix` it shows: the name is the base, or
- * the base, a hyphen and the suffix. Empty when it holds none. `shown` is
- * the anchor the name shows, once read, when it is not the base whole
- * (markdown_core_name_anchor): a claim (claim.h), the node's storage. */
-typedef struct markdown_core_name {
-    markdown_core_strbuf base;
-    void *shown;
-    uint32_t suffix;
-} markdown_core_name;
-
 /* The record fits the node's slot (MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES). */
 typedef struct {
     int level;
     bool setext;
-    markdown_core_name name;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.
