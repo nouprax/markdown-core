@@ -24,7 +24,6 @@ typedef struct {
     int marker_offset;
     int padding;
     int start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     unsigned char bullet_char;
     bool tight;

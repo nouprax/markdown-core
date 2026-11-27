@@ -17,10 +17,9 @@ enum {
 };
 
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item);
-static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_reader *reader, bufsize_t pos,
-                                                       markdown_core_node *container, int first_column,
-                                                       bool interrupts_paragraph, markdown_core_list *data);
+static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_reader *reader,
+                                                       bufsize_t pos, bool interrupts_paragraph,
+                                                       markdown_core_list *data);
 /* What the open reads past the marker (block_start.reads): its padding,
  * the item's first non-space byte and a task prefix there. */
 static void S_list_reads(const markdown_core_element_instance *self, markdown_core_reader *reader,
@@ -33,178 +32,45 @@ static void S_list_reads(const markdown_core_element_instance *self, markdown_co
 
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start);
-/* The upper-case roman letters: the terms of ordered_numeral's roman variant. */
-static bool roman_letter(unsigned char c) { return c && strchr("MDCLXVI", c) != NULL; }
-static bool ordered_numeral(markdown_core_list_work *counts, const unsigned char *input, bufsize_t begin, bufsize_t end,
-                            markdown_core_ordered_list_variant variant, int *value) {
-    int number = 0;
-    // An automatic marker has value 1 in every variant, including the
-    // variant inherited from a preceding authored marker.
-    if (end == begin + 1 && input[begin] == '#') {
-        *value = 1;
-        return true;
-    }
-    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
-        return false;
-    }
-    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA) {
-        unsigned char first = variant.lowercased ? 'a' : 'A';
-        if (end != begin + 1 || input[begin] < first || input[begin] > first + 25) {
-            return false;
-        }
-        *value = input[begin] - first + 1;
-        return true;
-    }
-    if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL) {
-        if (end - begin > 9) {
-            return false;
-        }
-        for (bufsize_t at = begin; at < end; at++) {
-            counts->markers++;
-            if (!markdown_core_isdigit(input[at])) {
-                return false;
-            }
-            number = number * 10 + input[at] - '0';
-        }
-    } else {
-        static const struct {
-            const char *text;
-            int value;
-            bool repeat;
-        } terms[] = {{"M", 1000, true}, {"CM", 900, false}, {"D", 500, false}, {"CD", 400, false}, {"C", 100, true},
-                     {"XC", 90, false}, {"L", 50, false},   {"XL", 40, false}, {"X", 10, true},    {"IX", 9, false},
-                     {"V", 5, false},   {"IV", 4, false},   {"I", 1, true}};
-        bufsize_t at = begin;
-        for (size_t term = 0; term < sizeof(terms) / sizeof(terms[0]); term++) {
-            bufsize_t width = terms[term].text[1] ? 2 : 1;
-            unsigned char offset = variant.lowercased ? 'a' - 'A' : 0;
-            while (at + width <= end) {
-                counts->markers++;
-                if (input[at] != terms[term].text[0] + offset ||
-                    (width == 2 && input[at + 1] != terms[term].text[1] + offset)) {
-                    break;
-                }
-                if (number > 999999999 - terms[term].value) {
-                    return false;
-                }
-                number += terms[term].value;
-                at += width;
-                if (!terms[term].repeat) {
-                    break;
-                }
-            }
-        }
-        if (at != end) {
-            return false;
-        }
-    }
-    *value = number;
-    return end > begin;
-}
-
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item) {
-    return list->flavor == item->flavor && list->bullet_char == item->bullet_char &&
-           list->variant.kind == item->variant.kind && list->variant.lowercased == item->variant.lowercased &&
-           list->delimiter.kind == item->delimiter.kind && list->delimiter.closed == item->delimiter.closed;
+    return list->flavor == item->flavor && list->bullet_char == item->bullet_char && list->delimiter == item->delimiter;
 }
 
-static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
-                                                       markdown_core_reader *reader, bufsize_t pos,
-                                                       markdown_core_node *container, int first_column,
-                                                       bool interrupts_paragraph, markdown_core_list *data) {
+static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_reader *reader,
+                                                       bufsize_t pos, bool interrupts_paragraph,
+                                                       markdown_core_list *data) {
     bufsize_t startpos = pos;
     unsigned char c = markdown_core_reader_peek(reader, pos);
-    const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
     *data = (markdown_core_list){0};
     counts->markers++;
     if (c == '*' || c == '-' || c == '+') {
         data->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
         data->bullet_char = c;
         pos++;
-    } else {
-        bool closed = c == '(';
-        pos += closed;
+    } else if (markdown_core_isdigit(c)) {
+        /* One to nine decimal digits, then `.` or `)`. */
         bufsize_t begin = pos;
-        c = markdown_core_reader_peek(reader, pos);
-        /* The numeral is scanned by the class its first byte names, which is
-         * the set ordered_numeral accepts: one automatic marker, decimal
-         * digits (ten fail there as surely as here), or letters -- ONE, or
-         * roman letters of the first one's case. A run that leaves its class
-         * was refused by the numeral, so the scan that stops at the class
-         * boundary refuses it at the delimiter instead, and a prose word
-         * that reached this far ends the probe on its second byte rather
-         * than at its end. */
-        if (c == '#') {
-            pos++;
-        } else if (markdown_core_isdigit(c)) {
-            while (markdown_core_isdigit(markdown_core_reader_peek(reader, pos)) && pos - begin < 10) {
-                counts->markers++;
-                pos++;
+        int number = 0;
+        while (markdown_core_isdigit(markdown_core_reader_peek(reader, pos))) {
+            counts->markers++;
+            if (pos - begin == 9) {
+                return 0;
             }
-        } else if (markdown_core_isalpha(c)) {
-            unsigned char offset = c >= 'a' ? 'a' - 'A' : 0;
-            do {
-                counts->markers++;
-                pos++;
-            } while (roman_letter((unsigned char)(c - offset)) &&
-                     roman_letter((unsigned char)(markdown_core_reader_peek(reader, pos) - offset)));
+            number = number * 10 + markdown_core_reader_peek(reader, pos++) - '0';
         }
-        if (pos == begin) {
-            return 0;
-        }
-        bufsize_t end = pos;
         unsigned char delim = markdown_core_reader_peek(reader, pos++);
-        if (delim != ')' && (closed || delim != '.')) {
+        if (delim != '.' && delim != ')') {
             return 0;
         }
         data->flavor = MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
-        data->delimiter =
-            (markdown_core_ordered_list_delimiter){delim == '.' ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
-                                                                : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
-                                                   closed};
-        data->variant.lowercased = c >= 'a' && c <= 'z';
-        data->variant.kind = c == '#'                                   ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT
-                             : markdown_core_isdigit(c)                 ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
-                             : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
-                                                                        : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
-        if (committed && committed->flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED &&
-            ordered_numeral(counts, markdown_core_reader_bytes(reader, 0), begin, end, committed->variant,
-                            &data->start)) {
-            data->variant = committed->variant;
-        } else if (!ordered_numeral(counts, markdown_core_reader_bytes(reader, 0), begin, end, data->variant,
-                                    &data->start)) {
+        data->delimiter = delim == '.' ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
+                                       : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS;
+        data->start = number;
+        if (interrupts_paragraph && number != 1) {
             return 0;
         }
-        if (c == '#' && delim == '.' &&
-            (!committed || committed->delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT)) {
-            data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
-        }
-        if (interrupts_paragraph && data->start != 1) {
-            return 0;
-        }
-        if (!committed || !markdown_core_block_list_facts_match(committed, data)) {
-            if (data->start != 1 &&
-                markdown_core_parser_inside(parser, container,
-                                            markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_LIST_ITEM) |
-                                                markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_SPECIMEN))) {
-                return 0;
-            }
-        }
-        if (end == begin + 1 && c >= 'A' && c <= 'Z' && delim == '.') {
-            int column = first_column + (pos - startpos);
-            int initial_column = column;
-            bufsize_t at = pos;
-            while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, at))) {
-                counts->markers++;
-                column += markdown_core_reader_peek(reader, at++) == '\t' ? 4 - column % 4 : 1;
-                if (column - initial_column >= 2) {
-                    break;
-                }
-            }
-            if (column - initial_column < 2 && !markdown_core_is_line_end(markdown_core_reader_peek(reader, at))) {
-                return 0;
-            }
-        }
+    } else {
+        return 0;
     }
     if (!markdown_core_is_whitespace(markdown_core_reader_peek(reader, pos))) {
         return 0;
@@ -291,8 +157,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start) {
     if (!((start->matched = markdown_core_block_parse_list_marker(
-               self->state, parser, context->reader, context->reader->nonspace, context->container,
-               context->reader->nonspace_column, context->paragraph,
+               self->state, context->reader, context->reader->nonspace, context->paragraph,
                MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_list))))) {
         return false;
     }
@@ -419,12 +284,9 @@ int markdown_core_block_consume_item_marker(markdown_core_reader *reader, int ma
     return marker_width + padding;
 }
 
-/* A list's record (markdown_core_record_ops): a bullet list of decimal
- * numbers until its first item says otherwise. */
-static void init_list(markdown_core_node *node) {
-    node->as.list->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
-    node->as.list->variant.kind = MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL;
-}
+/* A list's record (markdown_core_record_ops): a bullet list until its first
+ * item says otherwise. */
+static void init_list(markdown_core_node *node) { node->as.list->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET; }
 
 const markdown_core_record_ops MARKDOWN_CORE_RECORD_LIST = {
     .size = sizeof(markdown_core_list),

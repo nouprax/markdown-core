@@ -50,8 +50,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 186);
-    assert.equal(full.length, 180);
+    assert.equal(grammarCertificates.length, 180);
+    assert.equal(full.length, 174);
     assert.equal(split.length, 6);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 792);
+    assert.equal(corpus.cases.length, 768);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 396);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 384);
         assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 186);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 180);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
@@ -231,7 +231,7 @@ test("a UTF-8 document is its ASCII twin with every Word letter respelled, and A
         assert.equal(respell(document.text), twin.text, document.name);
         compared++;
     }
-    assert.ok(compared > 350, `${compared} documents compared`);
+    assert.ok(compared > 340, `${compared} documents compared`);
     let asciiFields = 0;
     for (const proof of corpus.proofs.filter((p) => p.alphabet === "utf8"))
         for (const host of Object.values(proof.hosts))
@@ -549,7 +549,7 @@ test("the complete syntax and element inventories fail closed when a feature, ru
     const coverage = validateFeatureCoverage(root, corpus);
     assert.equal(coverage.features, 31);
     assert.equal(coverage.elements, 36);
-    assert.equal(coverage.sections, 133);
+    assert.equal(coverage.sections, 131);
     assert.throws(
         () =>
             validateFeatureCoverage(root, {
@@ -610,7 +610,7 @@ test("section coverage requires explicit proof links before a ledger can be rege
     assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
     const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1 }));
     const all = ledger.features.flatMap((feature) => feature.sections);
-    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 128);
+    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 126);
     assert.equal(all.filter((section) => section.disposition.kind === "context").length, 5);
     assert.deepEqual(
         new Set(all.flatMap((section) => section.disposition.certificates ?? [])),
@@ -684,16 +684,6 @@ test("every input exhausts finite grammar alternatives even with one requested u
 });
 
 test("finite substitutions and bindings retain every alternative, state, and equality constraint", () => {
-    for (const id of ["alpha-list", "upper-list", "roman-list", "upper-roman-list"])
-        for (let start = 1; start <= 26; start++) {
-            const row = instantiateGrammar(id, { ...fresh(), start });
-            assert.equal(row.derivation[0].find(([name]) => name === "ordinal")[1].value, start);
-            assert.equal(
-                encodePairedDocument(id, "dialect", recognizePairedDocument(id, "common", row.common.source)),
-                row.dialect.source
-            );
-        }
-    for (const tokens of Object.values(finiteLexicons.ordinal)) assert.equal(new Set(tokens).size, 26);
     const rows = [0, 1, 2].map((mode) => instantiateGrammar("callout", { ...fresh(), mode }));
     assert.equal(new Set(rows.map((row) => row.common.source)).size, 3);
     assert.equal(new Set(rows.map((row) => row.dialect.source)).size, 3);

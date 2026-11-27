@@ -1466,16 +1466,9 @@ test("api: Document lists every Reference and resolves a label to the first one,
     assert.equal(Document.parse("# Only\n\n[Only]\n").reference("only").kind, "heading");
 });
 
-test("ast: every ordered delimiter and associated numbering value survives decoding", () => {
-    // Branch indexes of OrderedListVariant and OrderedListDelimiter, in the
-    // contract's declaration order.
-    const delimiters = [
-        [0, null, "period"],
-        [1, false, { kind: "parenthesis", closed: false }],
-        [1, true, { kind: "parenthesis", closed: true }],
-        [2, null, "default"]
-    ];
-    const list = (variant, lowercased, delimiter, closed) => {
+test("ast: every ordered delimiter survives decoding", () => {
+    // Branch indexes of OrderedListDelimiter, in the contract's declaration order.
+    const list = (delimiter) => {
         const writer = new MessageWriter()
             .text("item")
             .record("paragraph")
@@ -1487,32 +1480,17 @@ test("ast: every ordered delimiter and associated numbering value survives decod
             .u8(1)
             .optional(1, MessageWriter.prototype.int)
             .bool(true)
-            .u8(variant);
-        if (lowercased !== null) writer.bool(lowercased);
-        writer.bool(true).u8(delimiter);
-        if (closed !== null) writer.bool(closed);
+            .u8(delimiter);
         return decoder(writer.bool(true).u32(1).root(1).document()).decode();
     };
-    for (const [variant, kind] of [
-        [1, "alpha"],
-        [2, "roman"]
+    for (const [delimiter, expected] of [
+        [0, "period"],
+        [1, "parenthesis"]
     ]) {
-        for (const lowercased of [false, true]) {
-            for (const [delimiter, closed, expected] of delimiters) {
-                const document = list(variant, lowercased, delimiter, closed);
-                assert.deepEqual(document.content[0].variant, { kind, lowercased });
-                assert.deepEqual(document.content[0].delimiter, expected);
-                assert.match(
-                    MarkupDumper.dump(document, ""),
-                    new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`)
-                );
-                const spelling = typeof expected === "string" ? expected : `parenthesis(closed=${closed})`;
-                assert.ok(MarkupDumper.dump(document, "").includes(`delimiter=${spelling}`));
-            }
-        }
+        const document = list(delimiter);
+        assert.equal(document.content[0].delimiter, expected);
+        assert.ok(MarkupDumper.dump(document, "").includes(`delimiter=${expected}`));
     }
-    assert.equal(list(0, null, 0, null).content[0].variant, "decimal");
-    assert.equal(list(3, null, 2, null).content[0].variant, "default");
 });
 
 test("ast: a task status is read from its wire index", () => {
@@ -1526,7 +1504,6 @@ test("ast: a task status is read from its wire index", () => {
         .u32(1)
         .record("list")
         .u8(0)
-        .bool(false)
         .bool(false)
         .bool(false)
         .bool(true)

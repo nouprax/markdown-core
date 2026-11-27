@@ -29,7 +29,7 @@ dialect-cross-links.txt:224 slot anchor CrossLink # the anchor's value is normal
 
 # A label that goes on to another line is normalized across the line
 # break, so a sentinel at its edge lands beside a collapsed space.
-spec.txt:9695 slot label Reference # a label on two lines
+spec.txt:9697 slot label Reference # a label on two lines
 
 # A directive's label that the text before the cursor leaves open is prose
 # there, so its opening `[` meets the bytes after it, `[[` a cross link's;

@@ -92,12 +92,12 @@ test("Pandoc projection distinguishes absent anchors from the authored string nu
     assert.equal(parse('"null"'), "null");
 });
 
-test("list variants and table columns compare as values rather than wire spellings", () => {
-    const list = fromPandoc({ blocks: [{ t: "OrderedList", c: [[9, { t: "LowerRoman" }, { t: "OneParen" }], []] }] });
+test("list delimiters and table columns compare as values rather than wire spellings", () => {
+    const list = fromPandoc({ blocks: [{ t: "OrderedList", c: [[9, { t: "Decimal" }, { t: "OneParen" }], []] }] });
     const canonical = fromCanonical(
         parseCanonicalDump(
             "Document scope=1:1..1:1 anchor=null attributes={} children=1\n" +
-                "└── List scope=1:1..1:1 anchor=null attributes={} flavor=ordered start=9 variant=roman(lowercased=true) delimiter=parenthesis(closed=false) tight=true children=0\n"
+                "└── List scope=1:1..1:1 anchor=null attributes={} flavor=ordered start=9 delimiter=parenthesis tight=true children=0\n"
         )
     );
     assert.deepEqual(canonical, list);

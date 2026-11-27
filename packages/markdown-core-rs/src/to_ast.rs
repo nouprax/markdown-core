@@ -7,9 +7,8 @@
 
 use crate::ast::{
     Delimiter, Destination, Dimensions, Flavor, Kind, Mode, Node, Note, Placement, Record,
-    Referent, Span, Status, Variant,
+    Referent, Span, Status,
 };
-use crate::construct::list_item;
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
     character_reference::{decode as decode_character_reference, decode_at},
@@ -821,44 +820,26 @@ impl<'a> Compiler<'a> {
             self.blank_tail(self.exits[index])
                 .unwrap_or_else(|| self.end(index)),
         );
-        let found = first.and_then(|child| list_item::facts(self.events, self.bytes, child));
-        let (flavor, start_value, variant, delimiter) = match found {
-            Some(list_item::Facts::Ordered { numeral, delimiter }) => {
-                let value = first
-                    .and_then(|child| self.child(child, Name::ListItemPrefix))
-                    .and_then(|prefix| {
-                        self.inside(prefix)
-                            .into_iter()
-                            .find(|&part| list_item::Numeral::from_name(self.name(part)).is_some())
-                    })
-                    .and_then(|part| list_item::number(numeral, self.text(part).as_bytes()));
-                (
-                    Flavor::Ordered,
-                    Some(value.map_or(1, u64::from)),
-                    Some(match numeral {
-                        list_item::Numeral::Decimal => Variant::Decimal,
-                        list_item::Numeral::Letter { lower } => {
-                            Variant::Alpha { lowercased: lower }
-                        }
-                        list_item::Numeral::Roman { lower } => Variant::Roman { lowercased: lower },
-                        list_item::Numeral::Auto => Variant::Default,
-                    }),
-                    Some(match delimiter {
-                        list_item::Delimiter::Period => Delimiter::Period,
-                        list_item::Delimiter::Parenthesis { closed } => {
-                            Delimiter::Parenthesis { closed }
-                        }
-                        list_item::Delimiter::Auto => Delimiter::Default,
-                    }),
-                )
-            }
-            _ => (Flavor::Bullet, None, None, None),
-        };
+        let prefix = first.and_then(|child| self.child(child, Name::ListItemPrefix));
+        let (flavor, start_value, delimiter) =
+            match prefix.and_then(|prefix| self.child(prefix, Name::ListItemValue)) {
+                Some(value) => {
+                    let marker = prefix.and_then(|prefix| self.child(prefix, Name::ListItemMarker));
+                    (
+                        Flavor::Ordered,
+                        Some(self.text(value).parse::<u64>().unwrap_or(1)),
+                        Some(match marker.map(|marker| self.bytes[self.start(marker)]) {
+                            Some(b')') => Delimiter::Parenthesis,
+                            _ => Delimiter::Period,
+                        }),
+                    )
+                }
+                None => (Flavor::Bullet, None, None),
+            };
         Node::new(
             Kind::List {
                 flavor,
                 start: start_value,
-                variant,
                 delimiter,
                 tight: !loose,
                 items,

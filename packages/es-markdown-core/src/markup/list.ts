@@ -1,11 +1,10 @@
-import type { ListFlavor, OrderedListDelimiter, OrderedListVariant, TaskStatus } from "./values.js";
+import type { ListFlavor, OrderedListDelimiter, TaskStatus } from "./values.js";
 import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
 
 export interface List extends MarkupBase<"list"> {
     readonly flavor: ListFlavor;
     readonly start: number | null;
-    readonly variant: OrderedListVariant | null;
     readonly delimiter: OrderedListDelimiter | null;
     readonly tight: boolean;
     readonly items: readonly ListItem[];

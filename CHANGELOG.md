@@ -6,6 +6,18 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Ordered list markers are decimal only, `1.` or `1)`: Pandoc's letters,
+  Roman numerals, `#.` and both-sided `(1)` markers are ordinary text, and a
+  list nested in an item may start at any number, as in CommonMark. The
+  list's `variant` is removed in C (`markdown_core_ordered_list_variant`),
+  Swift, Kotlin and ES (`OrderedListVariant`) and the dump; the delimiter is
+  a plain enum, `period` or `parenthesis`, and
+  `markdown_core_node_list_properties` no longer takes a variant.
+
+- A definition starts only with `:`; Pandoc's `~` marker is text. A lone
+  `-` in an attribute container is an ordinary bare name, `{-}` giving the
+  record `-="true"`, no longer the class `unnumbered`.
+
 - Task checks accept only `[ ]`, `[x]` and `[X]`, `[?]` and `[-]`; any
   other character between the brackets is ordinary text. A list item's
   authored `marker` string is replaced by a `status`: open, done, question

@@ -81,20 +81,10 @@ const inlineKinds = {
 };
 const alignment = (value) =>
     ({ AlignDefault: "none", AlignLeft: "left", AlignCenter: "center", AlignRight: "right" })[value.t];
-const variant = (value) =>
-    ({
-        Decimal: "decimal",
-        LowerAlpha: "alpha(lowercased=true)",
-        UpperAlpha: "alpha(lowercased=false)",
-        LowerRoman: "roman(lowercased=true)",
-        UpperRoman: "roman(lowercased=false)",
-        Example: "example",
-        DefaultStyle: "default"
-    })[value.t];
 const delimiter = (value) =>
     ({
         Period: "period",
-        OneParen: "parenthesis(closed=false)",
+        OneParen: "parenthesis",
         TwoParens: "parenthesis(closed=true)",
         DefaultDelim: "default"
     })[value.t];
@@ -158,7 +148,6 @@ function pandocNode({ t, c }) {
                 {
                     flavor: "bullet",
                     start: null,
-                    variant: null,
                     delimiter: null,
                     tight: c.every((item) => item.every((block) => block.t !== "Para"))
                 },
@@ -170,7 +159,6 @@ function pandocNode({ t, c }) {
                 {
                     flavor: "ordered",
                     start: c[0][0],
-                    variant: variant(c[0][1]),
                     delimiter: delimiter(c[0][2]),
                     tight: c[1].every((item) => item.every((block) => block.t !== "Para"))
                 },
@@ -307,7 +295,7 @@ export function fromCanonical(value) {
         result.collapsed = optional("collapsed");
     }
     if (value.kind === "List")
-        for (const key of ["flavor", "start", "variant", "delimiter", "tight"])
+        for (const key of ["flavor", "start", "delimiter", "tight"])
             result[key] =
                 f[key] === "null"
                     ? null

@@ -19,7 +19,6 @@ const asciiKey = f("key", "ascii-word"),
     asciiTarget = f("target", "ascii-word");
 const inline = (...parts) => ["probe ", ...parts, " end\n\n"];
 const entries = [];
-const ordinal = (encoding) => ({ name: "ordinal", grammar: "ordinal", encoding });
 const state = (encoding) => ({ name: "state", grammar: "state", encoding });
 // Pinned cmark/Core link labels admit at most 1000 source bytes. A GFM
 // footnote call includes its leading caret in that counter, leaving 999 for
@@ -464,32 +463,6 @@ pair(
 );
 pair("task-heading", "task-lists", ["heading-body", "first-block"], ["- [!] # ", b, "\n\n"], ["- # ", b, "\n\n"]);
 
-// Replacements for incorrect historical counterparts. The first marker fixes
-// the variant's context; later i/I cannot accidentally start another variant.
-for (const [id, encoding, first, left, right] of [
-    ["alpha-list", "alpha", "a)", "", ")"],
-    ["upper-list", "upper-alpha", "(A)", "(", ")"],
-    ["roman-list", "roman", "i.", "", "."],
-    ["upper-roman-list", "upper-roman", "I)", "", ")"]
-])
-    pair(
-        id,
-        "lists",
-        ["extended-ordered-markers", "variant-context", "canonical-numerals"],
-        [first, " ", b, "\n", left, ordinal(encoding), right, " ", t, "\n\n"],
-        ["1. ", b, "\n", ordinal("decimal"), ". ", t, "\n\n"]
-    );
-for (const [id, marker, common] of [
-    ["default-list", "#.", "1."],
-    ["enclosed-default-list", "(#)", "1)"]
-])
-    pair(
-        id,
-        "lists",
-        ["automatic-markers", "fixed-start"],
-        [marker, " ", b, "\n", marker, " ", t, "\n\n"],
-        [common, " ", b, "\n", common, " ", t, "\n\n"]
-    );
 pair(
     "callout",
     "callouts",
@@ -812,44 +785,6 @@ export function featureValues(parameters) {
     };
 }
 
-// Finite lexical substitutions are explicit bijections, not numeric-value
-// quotients of noncanonical Roman spellings. The domain is 1..26 in both
-// grammars. Outside it the historical numeral boundary remains unproved.
-const roman = [
-    "i",
-    "ii",
-    "iii",
-    "iv",
-    "v",
-    "vi",
-    "vii",
-    "viii",
-    "ix",
-    "x",
-    "xi",
-    "xii",
-    "xiii",
-    "xiv",
-    "xv",
-    "xvi",
-    "xvii",
-    "xviii",
-    "xix",
-    "xx",
-    "xxi",
-    "xxii",
-    "xxiii",
-    "xxiv",
-    "xxv",
-    "xxvi"
-];
 export const finiteLexicons = {
-    ordinal: {
-        decimal: roman.map((_, i) => String(i + 1)),
-        alpha: roman.map((_, i) => String.fromCharCode(97 + i)),
-        "upper-alpha": roman.map((_, i) => String.fromCharCode(65 + i)),
-        roman,
-        "upper-roman": roman.map((s) => s.toUpperCase())
-    },
     state: { callout: ["", "-", "+"], title: ["plain", "closed", "open"] }
 };

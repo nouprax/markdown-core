@@ -430,7 +430,6 @@ public final class com/nouprax/markdown/core/List : com/nouprax/markdown/core/Ma
 	public fun getRuns ()Ljava/util/List;
 	public final fun getStart ()Ljava/lang/Long;
 	public final fun getTight ()Z
-	public final fun getVariant ()Lcom/nouprax/markdown/core/OrderedListVariant;
 }
 
 public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
@@ -444,13 +443,11 @@ public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
 public final class com/nouprax/markdown/core/ListItem : com/nouprax/markdown/core/Markup {
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public final fun getCompleted ()Z
 	public final fun getContent ()Ljava/util/List;
 	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public fun getId-cjMMCNQ ()J
-	public final fun getMarker ()Ljava/lang/String;
 	public fun getRuns ()Ljava/util/List;
-	public final fun getTasked ()Z
+	public final fun getStatus ()Lcom/nouprax/markdown/core/TaskStatus;
 }
 
 public final class com/nouprax/markdown/core/Mark : com/nouprax/markdown/core/Markup {
@@ -751,62 +748,12 @@ public final class com/nouprax/markdown/core/Opener {
 	public fun toString ()Ljava/lang/String;
 }
 
-public abstract interface class com/nouprax/markdown/core/OrderedListDelimiter {
-}
-
-public final class com/nouprax/markdown/core/OrderedListDelimiter$Default : com/nouprax/markdown/core/OrderedListDelimiter {
-	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListDelimiter$Default;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/OrderedListDelimiter$Parenthesis : com/nouprax/markdown/core/OrderedListDelimiter {
-	public final fun component1 ()Z
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getClosed ()Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/OrderedListDelimiter$Period : com/nouprax/markdown/core/OrderedListDelimiter {
-	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListDelimiter$Period;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public abstract interface class com/nouprax/markdown/core/OrderedListVariant {
-}
-
-public final class com/nouprax/markdown/core/OrderedListVariant$Alpha : com/nouprax/markdown/core/OrderedListVariant {
-	public final fun component1 ()Z
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getLowercased ()Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/OrderedListVariant$Decimal : com/nouprax/markdown/core/OrderedListVariant {
-	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Decimal;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/OrderedListVariant$Default : com/nouprax/markdown/core/OrderedListVariant {
-	public static final field INSTANCE Lcom/nouprax/markdown/core/OrderedListVariant$Default;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/nouprax/markdown/core/OrderedListVariant$Roman : com/nouprax/markdown/core/OrderedListVariant {
-	public final fun component1 ()Z
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getLowercased ()Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
+public final class com/nouprax/markdown/core/OrderedListDelimiter : java/lang/Enum {
+	public static final field PARENTHESIS Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static final field PERIOD Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public static fun values ()[Lcom/nouprax/markdown/core/OrderedListDelimiter;
 }
 
 public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/core/Markup {
@@ -1033,6 +980,16 @@ public final class com/nouprax/markdown/core/TableRow : com/nouprax/markdown/cor
 	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public fun getId-cjMMCNQ ()J
 	public fun getRuns ()Ljava/util/List;
+}
+
+public final class com/nouprax/markdown/core/TaskStatus : java/lang/Enum {
+	public static final field CANCELLED Lcom/nouprax/markdown/core/TaskStatus;
+	public static final field DONE Lcom/nouprax/markdown/core/TaskStatus;
+	public static final field OPEN Lcom/nouprax/markdown/core/TaskStatus;
+	public static final field QUESTION Lcom/nouprax/markdown/core/TaskStatus;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/TaskStatus;
+	public static fun values ()[Lcom/nouprax/markdown/core/TaskStatus;
 }
 
 public final class com/nouprax/markdown/core/Text : com/nouprax/markdown/core/Markup {

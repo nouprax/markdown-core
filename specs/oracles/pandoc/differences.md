@@ -50,12 +50,12 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 21 | `p7-malformed-group`: malformed citation-group fallback | **Fixed and removed from the registry.** Ordinary inline parsing continues after the outer group fails; valid inner keys become authorInText citations and valid tails survive. The original case now agrees with Pandoc. |
 | 22 | `p7-heading-projection`: citations in heading anchors | For `## [pre @a suffix; @b]`, Core generates `preasuffixb` from stored citation content. Pandoc generates `pre-a-suffix-b` from the original display text, which retains separating spaces. |
 | 23 | `p7-unicode-boundary`: citation starts after underscores | `_@a` cannot start a Core citation because an underscore, Unicode letter, or digit cannot immediately precede the start. Pandoc accepts a citation after an underscore. |
-| 24 | `p9a-nested-start`: nested list candidates starting above 1 | After a parent-list paragraph, indented `2. ordinary` cannot start a nested Core list and remains a lazy continuation of the paragraph. Pandoc puts the line in another Plain block. The following `1. nested` starts a nested list on both sides. |
+| 24 | `p9a-nested-start`: nested list candidates starting above 1 | Under CommonMark only a list starting at 1 may interrupt a paragraph, so indented `2. ordinary` remains a lazy continuation of the parent-list paragraph in Core. Pandoc puts the line in another Plain block. The following `1. nested` starts a nested list on both sides. |
 | 25 | `p9b-resolution`: forward, duplicate, anonymous specimens and start numbers | The same model difference as item 6, covering forward references, explicit start number 7, duplicate labels, and anonymous definitions. Core preserves all definitions, authored start values, and reference labels. Pandoc renders references as text such as `7` and puts definitions in an example List. |
 | 26 | `p9b-heading`: specimen references in headings | Core keeps a specimen citation as the content of `## @label`; Pandoc replaces the heading content with text `1`. **Both anchors are `label`.** The difference is heading content and the definition model, not the anchor value. |
 | 27 | `p7-unresolved-reference-tail`: unresolved link-reference tails | For `[@a][missing]`, Core accepts the preceding complete citation group. Pandoc retains the first pair of brackets as text and parses its `@a` as authorInText, producing different citation modes and structure. |
 | 28 | `p7-explicit-citation-shortcut`: citation/reference-definition precedence | Core still registers `[@a]: /u` as a link-reference definition, but a complete `[@a]` citation in content takes precedence over a shortcut link. Pandoc also parses the definition-shaped line as a citation followed by text. |
-| 29 | `p9a-start-always-authored`: control reader without startnum | Core always preserves start=8 for `h. eight`. This control deliberately omits Pandoc's `startnum`, so Pandoc stores 1. The normal selected-feature mapping enables `fancy_lists` and `startnum` together; start-number support is not missing. |
+| 29 | `p9a-start-always-authored`: control reader without startnum | The dialect dropped letter markers, so `h. eight` and `i. nine` are one Core paragraph. This control omits Pandoc's `startnum`, and Pandoc makes a lower-alpha list starting at 1. |
 | 30 | `p8-closer-width`: container closing-fence width | Core requires the closing colon run to be at least as long as the opening fence. Pandoc accepts any run of at least three colons. A container opened with four colons therefore ends at a different position when it encounters three colons. |
 | 31 | `p8-explicit-anchor-reservation`: reserving explicit container IDs | The same rule as item 12, with the later explicit ID on a fenced div. Core gives the earlier `# Reserved` the anchor `reserved-1`; Pandoc keeps `reserved`. |
 | 32 | `p10-nested-and-lazy`: compactness of nested definition bodies | Core stores a separate compact boolean determined by source blank lines between term and body. Pandoc represents compactness through Plain/Para. When the first body is a nested DefinitionList, no corresponding flag is available and the comparison value is null; term and body content agree. |
@@ -66,6 +66,10 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 37 | `definition-list-compact`: the `~` definition marker | The dialect keeps only `:` as a definition marker. Core reads each `~ Definition` line as text of the term's paragraph; Pandoc's `definition_lists` reader also accepts `~` and makes a DefinitionList. |
 | 38 | `p10-marker-only`: a lone `~` before an indented body | The same rule as item 37: the lone `~` and the indented `body` are lines of one paragraph in Core, and a definition with a code-indented body in Pandoc. |
 | 39 | `pandoc-special-unnumbered`: the `{-}` shorthand | The dialect dropped Pandoc's `-` member: Core reads `{-}` as the bare record `-="true"`; Pandoc reads it as the class `unnumbered`. |
+| 40 | `fancy-list-and-startnum`: Pandoc's Roman sublist | The dialect keeps only decimal markers with `.` or `)`. The `9)` list agrees; the Roman `i.`, `ii.`, `iii.` lines are a paragraph in Core and an ordered list in Pandoc. |
+| 41 | `p9a-variants`: letter and Roman markers | The same rule as item 40: `a)`, `(A)`, `iv.` and `IV)` lists are paragraphs in Core. |
+| 42 | `p9a-default-and-disambiguation`: letters and `#` markers | The same rule as item 40, for letters, `#.` and `(#)`. |
+| 43 | `p9a-capital-period`: capital letter and `.` | The same rule as item 40; Pandoc's two-space rule for `A.` has no counterpart in Core. |
 
 The clearest repeated relationships are:
 
@@ -76,6 +80,7 @@ The clearest repeated relationships are:
 - 32–34: one compactness-information difference across nested blocks, code
   blocks, and empty bodies.
 - 37, 38: the dropped `~` definition marker.
+- 29, 40–43: the dropped fancy-list markers.
 
 These records are governed by the existing modules:
 [scripts](../../../docs/specs/dialect/superscript-and-subscript.md),

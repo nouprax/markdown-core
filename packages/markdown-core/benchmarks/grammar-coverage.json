@@ -3,7 +3,7 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "13d3f81463e1d33552f240d2da5d914a11dade6ae0a017eff3733bca296cab6e"
+        "sha256": "493950ef1a4e3397c27075044df595a85b41a67c72a5819b2f7d75808a85e196"
     },
     "features": [
         {
@@ -918,7 +918,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "8748711613a59885498630f44b4d979d8a7cabc62b03835065f20b28921f38f8",
+            "sha256": "60a54b289f472e282e9ffd2079984dee90f08f75990892224bca026d6dac0ea1",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -934,7 +934,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "5763fc814edae3d1bb26c21eafed9f5f26d3b653dab34b28137e28b302100820",
+                    "sha256": "5e1f3908018028da451791ad49ad26bc3779fb69819d0c10979c47414a9269ed",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -2125,13 +2125,13 @@
         {
             "feature": "lists",
             "specification": "docs/specs/dialect/lists.md",
-            "sha256": "78c68635f4c43b9e2cf2eb7d9c8483ab35e079e1f8a887025ab281ecbcbca9c6",
+            "sha256": "79a84f335f356e42038e1e1d3b2f8ba077f04970eff1331978993a19bf6ea224",
             "sections": [
                 {
                     "title": "Lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "8aa6360e095d90bdb3fc29e967b9cb45580e64990799b50bbe9a055b1d9d5c7a",
+                    "sha256": "9321952d4a01c82f76784c614e46021ec8abbe296b5126585ab3f7a04a834a44",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-bullet-dash", "common-bullet-plus", "common-bullet-star"]
@@ -2139,39 +2139,19 @@
                 },
                 {
                     "title": "Numbered lists",
-                    "line": 21,
+                    "line": 20,
                     "level": 2,
-                    "sha256": "9fab2c2e4b04505dcf9a5f439b8f0afa6d5fc2f483503da2cb7efc073f081268",
+                    "sha256": "4dc60da730378b6bd28fb71fb941692390aefb2d185d183135e98e7be5a688a0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["decimal-list", "common-list-parenthesis", "fallback-list-limit"]
                     }
                 },
                 {
-                    "title": "Alphabetic and Roman markers",
-                    "line": 38,
-                    "level": 2,
-                    "sha256": "4bbfd88e8295dcb1882c787f93d6bed69d4e686a2b2eb99e95c962a9a999c534",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["alpha-list", "upper-list", "roman-list", "upper-roman-list"]
-                    }
-                },
-                {
-                    "title": "Automatic markers",
-                    "line": 71,
-                    "level": 2,
-                    "sha256": "b90fb35bcb5eb3151f0b2975333cd8cfa05688dfc59f9c43cc221fdfda1c30b9",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["default-list", "enclosed-default-list"]
-                    }
-                },
-                {
                     "title": "Blank lines and starts",
-                    "line": 82,
+                    "line": 40,
                     "level": 2,
-                    "sha256": "4293ff2a9f81305e10b30cda4302f00876c1b3f335c5be75edd6132591cfd299",
+                    "sha256": "456684df9ef66ba14bb0039333aafd3f02fd391dcd6cbc5a46748a96d340fdd8",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-list-loose", "decimal-list"]
@@ -2180,12 +2160,6 @@
             ],
             "elements": ["LIST"],
             "certificates": [
-                {
-                    "id": "alpha-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
-                },
                 {
                     "id": "common-bullet-dash",
                     "scope": "paired-document-grammar",
@@ -2223,40 +2197,10 @@
                     "facets": []
                 },
                 {
-                    "id": "default-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["automatic-markers", "fixed-start"]
-                },
-                {
-                    "id": "enclosed-default-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["automatic-markers", "fixed-start"]
-                },
-                {
                     "id": "fallback-list-limit",
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["fallback", "rejected-prefix"]
-                },
-                {
-                    "id": "roman-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
-                },
-                {
-                    "id": "upper-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
-                },
-                {
-                    "id": "upper-roman-list",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"]
                 }
             ]
         },

@@ -2,7 +2,7 @@
 
 use crate::ast::{
     Attributes, Delimiter, Destination, Dimensions, Fields, Flavor, Flow, Item, Kind, Mode, Node,
-    Note, Placement, Referent, Scalar, Span, Status, Value, Variant,
+    Note, Placement, Referent, Scalar, Span, Status, Value,
 };
 use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write;
@@ -231,7 +231,6 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         Kind::List {
             flavor,
             start,
-            variant,
             delimiter,
             tight,
             items,
@@ -247,27 +246,11 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                 }
                 None => line.push_str("null"),
             }
-            line.push_str(" variant=");
-            match variant {
-                None => line.push_str("null"),
-                Some(Variant::Decimal) => line.push_str("decimal"),
-                Some(Variant::Default) => line.push_str("default"),
-                Some(Variant::Alpha { lowercased }) => {
-                    let _ = write!(line, "alpha(lowercased={})", lowercased);
-                }
-                Some(Variant::Roman { lowercased }) => {
-                    let _ = write!(line, "roman(lowercased={})", lowercased);
-                }
-            }
-            line.push_str(" delimiter=");
-            match delimiter {
-                None => line.push_str("null"),
-                Some(Delimiter::Period) => line.push_str("period"),
-                Some(Delimiter::Default) => line.push_str("default"),
-                Some(Delimiter::Parenthesis { closed }) => {
-                    let _ = write!(line, "parenthesis(closed={})", closed);
-                }
-            }
+            line.push_str(match delimiter {
+                None => " delimiter=null",
+                Some(Delimiter::Period) => " delimiter=period",
+                Some(Delimiter::Parenthesis) => " delimiter=parenthesis",
+            });
             let _ = write!(line, " tight={}", tight);
             (items.len(), nodes(items))
         }

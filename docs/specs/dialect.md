@@ -143,7 +143,6 @@ hard line breaks are the two such rules.
 | Directive label | 32 nested brackets | The directive has no label; the failed bracket source is parsed normally. |
 | Footnote definition nesting | Depth must be below 100 | The line is ordinary content. |
 | Decimal list marker or specimen reset | 9 digits | The marker is not recognized. |
-| Roman list marker value | 999,999,999 | The marker is not recognized. |
 | Image width or height | 2,147,483,647 | The suffix remains label content. |
 | Pipe-table row | 65,535 cells | An oversized header is not a table; an oversized body row ends the table. |
 | Filled-in pipe-table cells | 524,288 | Once the count exceeds this, no further rows are accepted. |

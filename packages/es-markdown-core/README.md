@@ -124,7 +124,7 @@ is stripped, and a consumer that does not want comments drops the nodes.
 readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not
 rendering or AST mutation.
-Ordered lists expose their `variant` and `delimiter`.
+Ordered lists expose their `delimiter`, `"period"` for `1.` and `"parenthesis"` for `1)`.
 
 A task prefix is `[ ]`, `[x]` or `[X]`, `[?]` or `[-]`, followed by a space or
 tab; the item's `status` is open, done, question or cancelled, and null for

@@ -3,7 +3,6 @@ package com.nouprax.markdown.core
 public class List internal constructor(
     public val flavor: ListFlavor,
     public val start: Long?,
-    public val variant: OrderedListVariant?,
     public val delimiter: OrderedListDelimiter?,
     public val tight: Boolean,
     public val items: kotlin.collections.List<ListItem>,

@@ -156,7 +156,7 @@ that the dump represents as nested descendants.
 | `Paragraph` | `anchor`, `attributes` |
 | `Heading` | `anchor`, `attributes`, `level` |
 | `ThematicBreak` | `anchor`, `attributes` |
-| `List` | `anchor`, `attributes`, `flavor`, `start`, `variant`, `delimiter`, `tight` |
+| `List` | `anchor`, `attributes`, `flavor`, `start`, `delimiter`, `tight` |
 | `ListItem` | `anchor`, `attributes`, `status` |
 | `CodeBlock` | `anchor`, `attributes`, `info`, `language`, `literal`, `fenced`, `closed` |
 | `HTMLBlock` | `anchor`, `attributes`, `literal` |

@@ -2,13 +2,13 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 186 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 792 documents, each measured once:
-in each of [two alphabets](#alphabets), 180 whole declared-language pairs, 6
+contains all 180 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 768 documents, each measured once:
+in each of [two alphabets](#alphabets), 174 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-31 syntax-guide features, 133 sections and 36 registered elements. Its explicit
-section mapping names certificates for 128 source-language sections and gives
+31 syntax-guide features, 131 sections and 36 registered elements. Its explicit
+section mapping names certificates for 126 source-language sections and gives
 reviewed context-only dispositions for five sections. Certificates are registered
 directly from their source grammars and specification obligations.
 
@@ -281,20 +281,11 @@ parity/regression, not by an AST assertion in the grammar corpus.
 
 A finite lexical grammar is an explicit injective table `e : D -> Tokens`. The
 catalog records **every** token, not just the generated examples. All encodings
-for one type have the same domain. For Ordinal, `D = {1,...,26}`; the five tables
-are decimal, lower/upper ASCII letters, and canonical lower/upper Roman spellings.
-For State, `D = {plain,closed,open}`; encodings are the callout suffixes
-`epsilon,-,+` and the link-title words `plain,closed,open`. Distinctness of all
+for one type have the same domain. For State, `D = {plain,closed,open}`;
+encodings are the callout suffixes `epsilon,-,+` and the link-title words
+`plain,closed,open`. Distinctness of all
 entries proves bijectivity onto each finite lexical language. Compose their
 inverses with T3's frame substitution. Token length need not be equal.
-
-In the four ordered-list productions, an initial `a)`, `(A)`, `i.` or `I)` fixes
-the source variant; the reference begins with `1.`. The second marker is the
-variable ordinal. Thus `i` inside an established alpha list does not accidentally
-select a fresh Roman list. The two default-marker families now map to fixed `1.`
-or `1)` markers: there is no unmatched variable start on only one side. The
-canonical Roman domain is explicitly 1..26. Noncanonical numerals and the entire
-999,999,999-valued language are **not** proved equivalent to decimal conversion.
 
 For repeated bindings, let the distinct fields be `x_1,...,x_n`, and let a frame
 mention a field several times. Its language includes the equality constraint

@@ -299,8 +299,7 @@ one class per branch, and ECMAScript as a discriminated union on `kind`.
 BibMode = normal | authorInText | suppressAuthor
 ListFlavor = bullet | ordered
 TaskStatus = open | done | question | cancelled
-OrderedListVariant = decimal | alpha(lowercased: Bool) | roman(lowercased: Bool) | default
-OrderedListDelimiter = period | parenthesis(closed: Bool) | default
+OrderedListDelimiter = period | parenthesis
 Flow = none | left | center | right
 ```
 
@@ -376,7 +375,7 @@ them without checking.
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
 | `ThematicBreak` | none | leaf |
-| `List` | `flavor: ListFlavor`, `start: Int?`, `variant: OrderedListVariant?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
+| `List` | `flavor: ListFlavor`, `start: Int?`, `delimiter: OrderedListDelimiter?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `status: TaskStatus?`, `content: [Markup]` | `status == null` means not a task item; `[ ]` is open, `[x]` and `[X]` done, `[?]` question and `[-]` cancelled; block content |
 | `CodeBlock` | `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is trimmed, escape/entity-decoded, and excludes attached attributes; `language` is its first space/tab-delimited token; indented blocks have `fenced=false, closed=true` |
 | `HTMLBlock` | `literal: String` | raw HTML is preserved; a block that opens with `<!--` and whose end line holds only whitespace after the first `-->` is a `Comment` |

@@ -243,8 +243,6 @@ export const sectionDispositions = {
     lists: {
         Lists: grammar("common-bullet-dash", "common-bullet-plus", "common-bullet-star"),
         "Numbered lists": grammar("decimal-list", "common-list-parenthesis", "fallback-list-limit"),
-        "Alphabetic and Roman markers": grammar("alpha-list", "upper-list", "roman-list", "upper-roman-list"),
-        "Automatic markers": grammar("default-list", "enclosed-default-list"),
         "Blank lines and starts": grammar("common-list-loose", "decimal-list")
     },
     marks: {

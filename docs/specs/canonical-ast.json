@@ -13,6 +13,7 @@
         "BibMode": ["normal", "authorInText", "suppressAuthor"],
         "ListFlavor": ["bullet", "ordered"],
         "TaskStatus": ["open", "done", "question", "cancelled"],
+        "OrderedListDelimiter": ["period", "parenthesis"],
         "Flow": ["none", "left", "center", "right"]
     },
     "slots": [
@@ -180,11 +181,6 @@
                 {
                     "name": "start",
                     "type": "Int",
-                    "optional": true
-                },
-                {
-                    "name": "variant",
-                    "type": "OrderedListVariant",
                     "optional": true
                 },
                 {
@@ -948,66 +944,6 @@
                 ]
             },
             "dump": "label=\"...\" or note within the footnote referent; the note's Footnote nests under its Citation before the affix groups"
-        },
-        "OrderedListDelimiter": {
-            "purpose": "The authored punctuation of an ordered marker: a period, parenthesis punctuation recording whether an opening parenthesis was authored, or the default marker form.",
-            "scoped": false,
-            "branches": [
-                {
-                    "name": "period",
-                    "fields": []
-                },
-                {
-                    "name": "parenthesis",
-                    "fields": [
-                        {
-                            "name": "closed",
-                            "type": "Bool",
-                            "optional": false
-                        }
-                    ]
-                },
-                {
-                    "name": "default",
-                    "fields": []
-                }
-            ],
-            "dump": "period, parenthesis(closed=true|false), or default"
-        },
-        "OrderedListVariant": {
-            "purpose": "The authored numbering system of an ordered marker, with authored case carried by alphabetic and Roman variants.",
-            "scoped": false,
-            "branches": [
-                {
-                    "name": "decimal",
-                    "fields": []
-                },
-                {
-                    "name": "alpha",
-                    "fields": [
-                        {
-                            "name": "lowercased",
-                            "type": "Bool",
-                            "optional": false
-                        }
-                    ]
-                },
-                {
-                    "name": "roman",
-                    "fields": [
-                        {
-                            "name": "lowercased",
-                            "type": "Bool",
-                            "optional": false
-                        }
-                    ]
-                },
-                {
-                    "name": "default",
-                    "fields": []
-                }
-            ],
-            "dump": "decimal, alpha(lowercased=true|false), roman(lowercased=true|false), or default"
         },
         "TableColumn": {
             "purpose": "One logical table column, located by its table: its alignment.",

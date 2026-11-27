@@ -228,7 +228,6 @@ fn container_new_before(tokenizer: &mut Tokenizer) -> State {
         blank_initial: false,
         size: 0,
         closed: false,
-        facts: None,
     });
     tokenizer
         .document
@@ -274,7 +273,6 @@ fn container_new(tokenizer: &mut Tokenizer, index: usize) -> State {
             blank_initial: false,
             size: 0,
             closed: false,
-            facts: None,
         };
         tokenizer.attempt(
             State::Next(StateName::Document(Step::ContainerNewAfter)),

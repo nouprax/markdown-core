@@ -591,8 +591,6 @@ markdown_core_add_test(
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/specimens.md"
     --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/fancy-lists.md"
-    --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/scopes.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/structure.md"

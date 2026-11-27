@@ -173,8 +173,7 @@ class WireDecoderTest {
 
     @Test
     fun everyBranchOfAnOrderedListSurvivesDecoding() {
-        // Variant and delimiter branches in the contract's declaration order,
-        // with the Bool payloads the Alpha, Roman and Parenthesis branches carry.
+        // Delimiter branches in the contract's declaration order.
         fun list(write: MessageWriter.() -> Unit): List =
             assertIs<List>(
                 decode(
@@ -188,39 +187,12 @@ class WireDecoderTest {
                         .root(1),
                 ).content.single(),
             )
-        for ((branch, expected) in listOf(0 to OrderedListVariant.Decimal, 3 to OrderedListVariant.Default)) {
-            val decoded = list { bool(true).u8(branch).bool(false) }
-            assertSame(expected, decoded.variant)
-            assertNull(decoded.delimiter)
-            assertEquals(ListFlavor.ORDERED, decoded.flavor)
-            assertEquals(7L, decoded.start)
-        }
-        for (lowercased in listOf(false, true)) {
-            assertEquals(
-                lowercased,
-                assertIs<OrderedListVariant.Alpha>(
-                    list {
-                        bool(true).u8(1).bool(lowercased).bool(false)
-                    }.variant,
-                ).lowercased,
-            )
-            assertEquals(
-                lowercased,
-                assertIs<OrderedListVariant.Roman>(
-                    list {
-                        bool(true).u8(2).bool(lowercased).bool(false)
-                    }.variant,
-                ).lowercased,
-            )
-            assertEquals(
-                lowercased,
-                assertIs<OrderedListDelimiter.Parenthesis>(
-                    list { bool(false).bool(true).u8(1).bool(lowercased) }.delimiter,
-                ).closed,
-            )
-        }
-        assertSame(OrderedListDelimiter.Period, list { bool(false).bool(true).u8(0) }.delimiter)
-        assertSame(OrderedListDelimiter.Default, list { bool(false).bool(true).u8(2) }.delimiter)
+        val decoded = list { bool(false) }
+        assertNull(decoded.delimiter)
+        assertEquals(ListFlavor.ORDERED, decoded.flavor)
+        assertEquals(7L, decoded.start)
+        assertSame(OrderedListDelimiter.PERIOD, list { bool(true).u8(0) }.delimiter)
+        assertSame(OrderedListDelimiter.PARENTHESIS, list { bool(true).u8(1) }.delimiter)
     }
 
     @Test

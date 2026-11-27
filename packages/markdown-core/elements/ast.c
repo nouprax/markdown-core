@@ -4469,12 +4469,11 @@ static markdown_core_string cstr_string(const char *value) {
 }
 
 static void list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                            markdown_core_optional_i64 *start, markdown_core_ordered_list_variant *variant,
-                            markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
+                            markdown_core_optional_i64 *start, markdown_core_ordered_list_delimiter *delimiter,
+                            bool *tight) {
     *flavor = node->as.list->flavor;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list->start;
-    *variant = node->as.list->variant;
     *delimiter = node->as.list->delimiter;
     *tight = node->as.list->tight;
 }
@@ -4672,10 +4671,9 @@ markdown_core_status markdown_core_node_heading_level(const markdown_core_node *
 markdown_core_status markdown_core_node_list_properties(const markdown_core_node *node,
                                                         markdown_core_list_flavor *flavor,
                                                         markdown_core_optional_i64 *start,
-                                                        markdown_core_ordered_list_variant *variant,
                                                         markdown_core_ordered_list_delimiter *delimiter, bool *tight) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_LIST));
-    list_properties(node, flavor, start, variant, delimiter, tight);
+    list_properties(node, flavor, start, delimiter, tight);
     return MARKDOWN_CORE_OK;
 }
 
@@ -5481,7 +5479,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_string oa, ob;
     markdown_core_optional_i64 start;
     markdown_core_optional_bool collapsed;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_list_flavor flavor;
     markdown_core_placement mode;
@@ -5545,7 +5542,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_i64(buffer, node->as.heading->level);
         break;
     case MARKDOWN_CORE_KIND_LIST:
-        list_properties(node, &flavor, &start, &variant, &delimiter, &x);
+        list_properties(node, &flavor, &start, &delimiter, &x);
         buffer_cstr(buffer, " flavor=");
         buffer_cstr(buffer, flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? "ordered" : "bullet");
         buffer_cstr(buffer, " start=");
@@ -5554,32 +5551,10 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         } else {
             buffer_cstr(buffer, "null");
         }
-        buffer_cstr(buffer, " variant=");
-        if (flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET) {
-            buffer_cstr(buffer, "null");
-        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
-                   variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
-            buffer_cstr(buffer, variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ? "alpha(lowercased"
-                                                                                         : "roman(lowercased");
-            buffer_cstr(buffer, variant.lowercased ? "=true)" : "=false)");
-        } else if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT) {
-            buffer_cstr(buffer, "default");
-        } else {
-            buffer_cstr(buffer, "decimal");
-        }
         buffer_cstr(buffer, " delimiter=");
-        if (flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET) {
-            buffer_cstr(buffer, "null");
-        } else {
-            if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
-                buffer_cstr(buffer, "parenthesis(closed");
-                buffer_cstr(buffer, delimiter.closed ? "=true)" : "=false)");
-            } else if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT) {
-                buffer_cstr(buffer, "default");
-            } else {
-                buffer_cstr(buffer, "period");
-            }
-        }
+        buffer_cstr(buffer, flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET                      ? "null"
+                            : delimiter == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS ? "parenthesis"
+                                                                                            : "period");
         buffer_cstr(buffer, " tight=");
         buffer_cstr(buffer, x ? "true" : "false");
         break;

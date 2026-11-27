@@ -81,12 +81,8 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
     );
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
-    assert.equal(document.content[0].variant, "decimal");
     assert.equal(document.content[0].delimiter, "period");
-    assert.deepEqual(Document.parse("1) item\n").content[0].delimiter, {
-        kind: "parenthesis",
-        closed: false
-    });
+    assert.equal(Document.parse("1) item\n").content[0].delimiter, "parenthesis");
     assert.equal(document.content[0].tight, true);
     assert.equal(document.content[1].items[0].status, "done");
     assert.deepEqual(

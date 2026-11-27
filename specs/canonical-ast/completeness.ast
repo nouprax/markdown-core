@@ -1,6 +1,6 @@
 Document scope=1:1..18:8 anchor=null attributes={} children=6
 ├── CodeBlock scope=1:5..2:0 anchor=null attributes={} info=null language=null literal="indented\n" fenced=false closed=true children=0
-├── List scope=3:1..8:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=false children=2
+├── List scope=3:1..8:0 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=false children=2
 │   ├── ListItem scope=3:1..4:0 anchor=null attributes={} status=open children=1
 │   │   └── Paragraph scope=3:7..3:15 anchor=null attributes={} children=1
 │   │       └── Text scope=3:7..3:15 anchor=null attributes={} literal="unchecked" children=0

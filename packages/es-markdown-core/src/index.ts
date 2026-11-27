@@ -50,7 +50,6 @@ export type {
     FootnoteTarget,
     ListFlavor,
     OrderedListDelimiter,
-    OrderedListVariant,
     Placement,
     Position,
     Run,

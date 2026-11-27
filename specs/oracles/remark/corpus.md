@@ -354,11 +354,11 @@ values, including the space that denotes an incomplete task.
    - [x] done
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=1
-└── List scope=1:1..3:13 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=true children=1
+└── List scope=1:1..3:13 anchor=null attributes={} flavor=ordered start=1 delimiter=parenthesis tight=true children=1
     └── ListItem scope=1:1..3:13 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=1:4..1:8 anchor=null attributes={} children=1
         │   └── Text scope=1:4..1:8 anchor=null attributes={} literal="outer" children=0
-        └── List scope=2:4..3:13 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=2
+        └── List scope=2:4..3:13 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=2
             ├── ListItem scope=2:4..2:13 anchor=null attributes={} status=open children=1
             │   └── Paragraph scope=2:10..2:13 anchor=null attributes={} children=1
             │       └── Text scope=2:10..2:13 anchor=null attributes={} literal="open" children=0
@@ -432,11 +432,11 @@ afte
 Document scope=1:1..5:8 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:4 anchor=null attributes={} literal="afte" children=0
-└── List scope=2:1..5:8 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=parenthesis(closed=false) tight=false children=1
+└── List scope=2:1..5:8 anchor=null attributes={} flavor=ordered start=1 delimiter=parenthesis tight=false children=1
     └── ListItem scope=2:1..5:8 anchor=null attributes={} status=null children=2
         ├── Paragraph scope=2:4..2:8 anchor=null attributes={} children=1
         │   └── Text scope=2:4..2:8 anchor=null attributes={} literal="outer" children=0
-        └── List scope=4:4..5:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+        └── List scope=4:4..5:8 anchor=null attributes={} flavor=bullet start=null delimiter=null tight=true children=1
             └── ListItem scope=4:4..5:8 anchor=null attributes={} status=open children=1
                 └── Paragraph scope=4:10..5:8 anchor=null attributes={} children=3
                     ├── Text scope=4:10..4:13 anchor=null attributes={} literal="open" children=0

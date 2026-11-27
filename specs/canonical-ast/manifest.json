@@ -87,10 +87,8 @@
             "listItem.status.done",
             "listItem.status.question",
             "listItem.status.cancelled",
-            "list.variant.decimal",
-            "list.variant.null",
             "list.delimiter.period",
-            "list.delimiter.parenthesis.unclosed",
+            "list.delimiter.parenthesis",
             "codeBlock.info.null",
             "codeBlock.info.value",
             "codeBlock.language.null",
@@ -157,13 +155,6 @@
             "footnote.content.block",
             "footnote.label.null",
             "footnote.label.value",
-            "list.variant.alpha.lower",
-            "list.variant.alpha.upper",
-            "list.variant.roman.lower",
-            "list.variant.roman.upper",
-            "list.variant.default",
-            "list.delimiter.default",
-            "list.delimiter.parenthesis.closed",
             "citation.bib.mode.normal",
             "citation.bib.mode.authorInText",
             "citation.bib.mode.suppressAuthor",
@@ -249,10 +240,8 @@
                     "list.start.null",
                     "list.start.value",
                     "list.tight.true",
-                    "list.variant.decimal",
-                    "list.variant.null",
                     "list.delimiter.period",
-                    "list.delimiter.parenthesis.unclosed",
+                    "list.delimiter.parenthesis",
                     "listItem.status.null",
                     "listItem.status.done",
                     "codeBlock.info.value",
@@ -982,25 +971,6 @@
                     "footnote.label.value",
                     "specimen.label.null",
                     "specimen.label.value"
-                ],
-                "orders": ["document.source-order"]
-            }
-        },
-        {
-            "name": "fancy-lists",
-            "input": "fancy-lists.md",
-            "expected": "fancy-lists.ast",
-            "coverage": {
-                "kinds": ["Document", "Paragraph", "List", "ListItem", "Text", "SoftBreak"],
-                "states": [
-                    "list.variant.alpha.lower",
-                    "list.variant.alpha.upper",
-                    "list.variant.roman.lower",
-                    "list.variant.roman.upper",
-                    "list.variant.default",
-                    "list.delimiter.default",
-                    "list.delimiter.parenthesis.closed",
-                    "scope.positive"
                 ],
                 "orders": ["document.source-order"]
             }

@@ -245,7 +245,6 @@ pub enum Kind {
     List {
         flavor: Flavor,
         start: Option<u64>,
-        variant: Option<Variant>,
         delimiter: Option<Delimiter>,
         tight: bool,
         items: Vec<Node>,
@@ -410,18 +409,9 @@ pub enum Flavor {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Variant {
-    Decimal,
-    Alpha { lowercased: bool },
-    Roman { lowercased: bool },
-    Default,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Delimiter {
     Period,
-    Parenthesis { closed: bool },
-    Default,
+    Parenthesis,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

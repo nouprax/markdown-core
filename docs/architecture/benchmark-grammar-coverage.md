@@ -33,10 +33,10 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **31 specification features, 133 sections, 36 registered elements,
-186 certificates and 792 generated documents**, 396 in each of two
+There are **31 specification features, 131 sections, 36 registered elements,
+180 certificates and 768 generated documents**, 384 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
-Of the 133 sections, **128 link to grammar certificates and five are explicitly
+Of the 131 sections, **126 link to grammar certificates and five are explicitly
 context-only** (automatic-anchor output, anchor ownership, two navigation
 introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
@@ -71,7 +71,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Footnotes | GFM references and multi-block definitions, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is documented for cost interpretation. |
 | Citations | Author/suppressed/normal modes, groups, independent prefix/key/suffix and rejected keys. |
 | Specimens | Definition/call equality, explicit nine-digit resets, anonymous/duplicate definitions and group reset suppression have constructive whole-language counterparts. |
-| Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items; alpha/Roman canonical finite domains and default markers have constructive proofs. |
+| Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items. |
 | Tasks | Standard states, custom/Unicode markers, nested ordered tasks, heading bodies and missing-separator fallback. |
 | Definition lists | Tight/loose, multiple/empty definitions and multiple blocks. |
 | Quotes/callouts | Same-input plain/nested/lazy quotes; variable type and all three collapse states have invertible counterparts. |
@@ -83,9 +83,8 @@ all imaginable reference grammars. The ledger exposes that distinction.
 
 The precise restricted productions, including all punctuation, are in
 `grammar-corpus.json`; a table cell above does not broaden a certificate's domain.
-For example the Roman substitution is explicitly 1..26, and generated Word fields
-do not claim the full unrestricted Unicode key language. Boundary hosts retain
-the additional work rather than hiding it in a CommonMark paragraph ratio.
+For example generated Word fields do not claim the full unrestricted Unicode
+key language. Boundary hosts retain the additional work rather than hiding it in a CommonMark paragraph ratio.
 
 The pipelines have separate acceptance rules. The grammar checker recognizes
 source bytes against the declared languages and verifies the inverse laws. The

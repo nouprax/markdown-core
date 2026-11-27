@@ -35,6 +35,7 @@ internal object WireDecoder {
 
     // The contract's enums, in the order of their wire indices.
     private val flavors = listOf(ListFlavor.BULLET, ListFlavor.ORDERED)
+    private val delimiters = listOf(OrderedListDelimiter.PERIOD, OrderedListDelimiter.PARENTHESIS)
     private val statuses = listOf(TaskStatus.OPEN, TaskStatus.DONE, TaskStatus.QUESTION, TaskStatus.CANCELLED)
     private val flows = listOf(Flow.NONE, Flow.LEFT, Flow.CENTER, Flow.RIGHT)
     private val placements = listOf(Placement.EMBEDDED, Placement.STANDALONE)
@@ -152,15 +153,13 @@ internal object WireDecoder {
                 NodeKind.LIST -> {
                     val flavor = index(flavors)
                     val start = optional { int() }
-                    val variant = optional { variant() }
-                    val delimiter = optional { delimiter() }
+                    val delimiter = optional { index(delimiters) }
                     val tight = bool()
                     val items = count()
                     take(items)
                     List(
                         flavor,
                         start,
-                        variant,
                         delimiter,
                         tight,
                         typed(items),
@@ -503,21 +502,6 @@ internal object WireDecoder {
                 0 -> CitationReferent.Bib(string(), index(bibModes))
                 1 -> if (u8() == 0) CitationReferent.Footnote(FootnoteTarget.Label(string())) else null
                 else -> CitationReferent.Specimen(string())
-            }
-
-        private fun variant(): OrderedListVariant =
-            when (u8()) {
-                0 -> OrderedListVariant.Decimal
-                1 -> OrderedListVariant.Alpha(bool())
-                2 -> OrderedListVariant.Roman(bool())
-                else -> OrderedListVariant.Default
-            }
-
-        private fun delimiter(): OrderedListDelimiter =
-            when (u8()) {
-                0 -> OrderedListDelimiter.Period
-                1 -> OrderedListDelimiter.Parenthesis(bool())
-                else -> OrderedListDelimiter.Default
             }
 
         private fun dimensions(): Dimensions = Dimensions(int().toInt(), optional { int().toInt() })

@@ -11,26 +11,12 @@ public enum ListFlavor: String, Sendable {
     case ordered
 }
 
-/// The numbering system authored for an ordered list.
-public enum OrderedListVariant: Hashable, Sendable {
-    /// ASCII decimal digits.
-    case decimal
-    /// ASCII letters, recording their authored case.
-    case alpha(lowercased: Bool)
-    /// Roman numerals, recording their authored case.
-    case roman(lowercased: Bool)
-    /// A source marker that requests the default numbering variant.
-    case `default`
-}
-
-/// The punctuation authored around an ordered-list marker.
-public enum OrderedListDelimiter: Hashable, Sendable {
-    /// A trailing period, as in `1.`.
+/// The punctuation after an ordered-list number.
+public enum OrderedListDelimiter: String, Sendable {
+    /// A period, as in `1.`.
     case period
-    /// Parenthesis punctuation. `closed` is false for `1)` and true for `(1)`.
-    case parenthesis(closed: Bool)
-    /// A source marker that requests the default delimiter.
-    case `default`
+    /// A parenthesis, as in `1)`.
+    case parenthesis
 }
 
 /// The status a list item's task check gives it.
@@ -66,8 +52,6 @@ public struct List: Markup {
     /// The first number an ordered list counts from, and `nil` for a bulleted
     /// one — which is the only reason it is optional.
     public var start: Int64? { record.start }
-    /// The authored numbering variant, or `nil` for a bullet list.
-    public var variant: OrderedListVariant? { record.variant }
     /// The authored delimiter, or `nil` for a bullet list.
     public var delimiter: OrderedListDelimiter? { record.delimiter }
     /// Whether the source separated the items by blank lines. A loose list
@@ -79,7 +63,6 @@ public struct List: Markup {
 final class ListRecord: MarkupRecord, @unchecked Sendable {
     let flavor: ListFlavor
     let start: Int64?
-    let variant: OrderedListVariant?
     let delimiter: OrderedListDelimiter?
     let tight: Bool
 
@@ -87,14 +70,12 @@ final class ListRecord: MarkupRecord, @unchecked Sendable {
         _ fields: InheritedFields,
         flavor: ListFlavor,
         start: Int64?,
-        variant: OrderedListVariant?,
         delimiter: OrderedListDelimiter?,
         tight: Bool,
         items: [MarkupRecord]
     ) {
         self.flavor = flavor
         self.start = start
-        self.variant = variant
         self.delimiter = delimiter
         self.tight = tight
         super.init(fields, children: items)
@@ -104,8 +85,8 @@ final class ListRecord: MarkupRecord, @unchecked Sendable {
 
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
         let other = unsafeDowncast(other, to: ListRecord.self)
-        return flavor == other.flavor && start == other.start && variant == other.variant
-            && delimiter == other.delimiter && tight == other.tight
+        return flavor == other.flavor && start == other.start && delimiter == other.delimiter
+            && tight == other.tight
     }
 }
 
@@ -113,15 +94,13 @@ extension ListRecord {
     convenience init(from node: OpaquePointer, items: [MarkupRecord]) {
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
-        var variant = markdown_core_ordered_list_variant()
-        var delimiter = markdown_core_ordered_list_delimiter()
+        var delimiter = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
         var tight = false
-        answered(markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight))
+        answered(markdown_core_node_list_properties(node, &flavor, &start, &delimiter, &tight))
         self.init(
             InheritedFields(from: node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
-            variant: start.has_value ? Self.variant(variant) : nil,
             delimiter: start.has_value ? Self.delimiter(delimiter) : nil,
             tight: tight,
             items: items
@@ -129,24 +108,8 @@ extension ListRecord {
     }
 
     static func delimiter(_ value: markdown_core_ordered_list_delimiter) -> OrderedListDelimiter {
-        switch value.kind {
-        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD: .period
-        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS: .parenthesis(closed: value.closed)
-        // A C enum switch is never exhaustive in Swift; the one kind
-        // left is MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT.
-        default: .default
-        }
-    }
-
-    private static func variant(_ value: markdown_core_ordered_list_variant) -> OrderedListVariant {
-        switch value.kind {
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA: .alpha(lowercased: value.lowercased)
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN: .roman(lowercased: value.lowercased)
-        case MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT: .default
-        // A C enum switch is never exhaustive in Swift; the one kind
-        // left is MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL.
-        default: .decimal
-        }
+        // Any other value is MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD.
+        value == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS ? .parenthesis : .period
     }
 }
 

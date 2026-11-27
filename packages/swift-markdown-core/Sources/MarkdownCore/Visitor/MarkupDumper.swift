@@ -104,7 +104,6 @@ private struct LineVisitor: MarkupVisitor {
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
-                "variant=\(dump(variant: node.variant))",
                 "delimiter=\(dump(delimiter: node.delimiter))",
                 "tight=\(dump(boolean: node.tight))",
             ],
@@ -363,22 +362,7 @@ private func dump(destination value: Destination) -> String {
 }
 
 private func dump(delimiter value: OrderedListDelimiter?) -> String {
-    switch value {
-    case .period: "period"
-    case .parenthesis(let closed): "parenthesis(closed=\(dump(boolean: closed)))"
-    case .default: "default"
-    case nil: "null"
-    }
-}
-
-private func dump(variant value: OrderedListVariant?) -> String {
-    switch value {
-    case .decimal: "decimal"
-    case .alpha(let lowercased): "alpha(lowercased=\(dump(boolean: lowercased)))"
-    case .roman(let lowercased): "roman(lowercased=\(dump(boolean: lowercased)))"
-    case .default: "default"
-    case nil: "null"
-    }
+    value?.rawValue ?? "null"
 }
 
 private func dump(optional value: String?) -> String {

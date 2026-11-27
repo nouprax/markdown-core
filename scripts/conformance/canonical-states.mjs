@@ -83,11 +83,8 @@ const stateValidators = {
     "listItem.status.done": (tree) => /^.*ListItem scope=.* status=done /m.test(tree),
     "listItem.status.question": (tree) => /^.*ListItem scope=.* status=question /m.test(tree),
     "listItem.status.cancelled": (tree) => /^.*ListItem scope=.* status=cancelled /m.test(tree),
-    "list.variant.decimal": (tree) => /^.*List scope=.* variant=decimal /m.test(tree),
-    "list.variant.null": (tree) => /^.*List scope=.* variant=null /m.test(tree),
     "list.delimiter.period": (tree) => /^.*List scope=.* delimiter=period /m.test(tree),
-    "list.delimiter.parenthesis.unclosed": (tree) =>
-        /^.*List scope=.* delimiter=parenthesis\(closed=false\) /m.test(tree),
+    "list.delimiter.parenthesis": (tree) => /^.*List scope=.* delimiter=parenthesis /m.test(tree),
     "codeBlock.info.null": (tree) => /^.*CodeBlock scope=.* info=null /m.test(tree),
     "codeBlock.info.value": (tree) => /^.*CodeBlock scope=.* info="/m.test(tree),
     "codeBlock.language.null": (tree) => /^.*CodeBlock scope=.* language=null /m.test(tree),
@@ -200,13 +197,6 @@ const stateValidators = {
     "footnote.label.value": (tree) =>
         parentEdges(tree).some((edge) => edge.kind === "Footnote" && BLOCK_CONTENT.has(edge.parent)) &&
         /Footnote scope=\S+ anchor=null attributes=\{\} label="[^"\n]*" children=/.test(tree),
-    "list.variant.alpha.lower": (tree) => /^.*List scope=.* variant=alpha\(lowercased=true\) /m.test(tree),
-    "list.variant.alpha.upper": (tree) => /^.*List scope=.* variant=alpha\(lowercased=false\) /m.test(tree),
-    "list.variant.roman.lower": (tree) => /^.*List scope=.* variant=roman\(lowercased=true\) /m.test(tree),
-    "list.variant.roman.upper": (tree) => /^.*List scope=.* variant=roman\(lowercased=false\) /m.test(tree),
-    "list.variant.default": (tree) => /^.*List scope=.* variant=default /m.test(tree),
-    "list.delimiter.default": (tree) => /^.*List scope=.* delimiter=default /m.test(tree),
-    "list.delimiter.parenthesis.closed": (tree) => /^.*List scope=.* delimiter=parenthesis\(closed=true\) /m.test(tree),
     "citation.bib.mode.normal": (tree) =>
         /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=normal\)/.test(tree),
     "citation.bib.mode.authorInText": (tree) =>

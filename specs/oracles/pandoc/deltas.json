@@ -34,7 +34,7 @@
             "status": "projection",
             "reason": "Markdown Core retains every specimen definition as a Specimen block where it was written, including anonymous and duplicate labels, and stores references by exact label. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
             "inputDigest": "c362a23129b82d354226ddb641bd135c9e77c2f1a291f16bb4942c95e5ed37cf",
-            "oracleDigest": "6cf71986484b5ea0b161dc2abfab3ed04f36d97c8971feabae12901c885d3de6",
+            "oracleDigest": "0d4d61456bb0325f7f20bb6ce107781bf25e1de04510fd69fb7628985561a388",
             "coreDigest": "67ad5f3b4a9f47173c488b15a3bf2f9c8e23e8b2d7f328602948f98b3568e35b"
         },
         {
@@ -176,10 +176,10 @@
             "id": "p9a-nested-start",
             "item": "P9a",
             "status": "projection",
-            "reason": "A nested ordered list must start at one; a rejected marker remains in the existing paragraph under the inherited lazy-continuation rules. Pandoc splits that line into another paragraph.",
+            "reason": "Under CommonMark only a list starting at 1 may interrupt a paragraph, so the indented `2. ordinary` stays a lazy continuation of the parent paragraph in Core. Pandoc puts the line in another Plain block. The following `1. nested` starts a nested list on both sides.",
             "inputDigest": "11d1326111651e1a794d50ff2c70dd8cce41d1dbbe9ffb00bd20c94d2a3c2799",
-            "oracleDigest": "3b93874978d474ee55e3060ade6d783537714f7fe73a49d2ee9e97b0b4589b5a",
-            "coreDigest": "bed428bdb1ae20ad27b10cd76a772d716c606ffb60d8c1a7856eaccedf0dcc99"
+            "oracleDigest": "4572518d3a4266fe17ffe31daa56d739577a7049e464621a8b26bced9a582e68",
+            "coreDigest": "9fe21bba416ed1028d4d6b88428dc61dd90151a68aec03a6e51d6623bf3ea012"
         },
         {
             "id": "p9b-resolution",
@@ -187,7 +187,7 @@
             "status": "projection",
             "reason": "Markdown Core retains every specimen definition as a Specimen block where it was written, including anonymous and duplicate labels, and stores references by exact label. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
             "inputDigest": "e41cef4799656300451d9c0610c47307ba3a0172624e7ad9498a4dbf844f5517",
-            "oracleDigest": "b809b23baf38eee4e3dd2e7d32da04d3787d5fac7f0bcaa5c7f6a1044b794d7f",
+            "oracleDigest": "e1c06c7fa680083b58884dd12841bc1d254fea39be84fa48c351567b58c3d8df",
             "coreDigest": "f1440593d09a8e10f55f41e8f6d2bc3cde54f726b966d71ddb7ad78967063b01"
         },
         {
@@ -196,7 +196,7 @@
             "status": "projection",
             "reason": "Markdown Core retains every specimen definition as a Specimen block where it was written, including anonymous and duplicate labels, and stores references by exact label. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away. Heading projection uses @id before anchor filtering.",
             "inputDigest": "07ef4c87398b919fd819f914c30618c4b6dc2ace3c23730a55fa217c316ba011",
-            "oracleDigest": "a78132383bd3b236f5e7e9771d82be635d178ad4b0d01cf165256c9730c917d4",
+            "oracleDigest": "90179688784cee64cf27cf258afbcfabdcc03a1f87b71ead8cb582580ce5842f",
             "coreDigest": "1dd17a891b4a8688b70f26a88d75f3f64e96d182e554bf41ae1d14e2b6b2a49b"
         },
         {
@@ -230,10 +230,10 @@
             "id": "p9a-start-always-authored",
             "item": "P9a",
             "status": "projection",
-            "reason": "List.start always stores the first authored numeral for every variant. Pandoc without startnum replaces that value with one.",
+            "reason": "The dialect keeps only decimal list markers, so `h. eight` and `i. nine` are one paragraph in Core. This control reader omits Pandoc's startnum and makes a lower-alpha list starting at 1.",
             "inputDigest": "cf72bc9feae4e064516f8cc69fa05457f99513729dadae0c6fcbfa9ba9ca367b",
-            "oracleDigest": "b2b25238a5aece656b99d1f4cae16ef62668a4cf5ec2c81f8d58eed69ad0b076",
-            "coreDigest": "d7a5482878676b3d1a0e5d23930503458704b1ff7db82894ded0bcb21041b080"
+            "oracleDigest": "31eb77af859ef4819f1b032f458d7ed701e469a9acc757b1c6d0563768c09a32",
+            "coreDigest": "669693e7de6e6b5fdd0e9c89af3312ad18d0c523e20235047c64bcec0c3f1a63"
         },
         {
             "id": "p8-closer-width",
@@ -324,6 +324,42 @@
             "inputDigest": "bc6f5bcc0f136d4527e8b1ddc020f3c774dbad666e7c12c308f15241aa4b4f43",
             "oracleDigest": "c30a9d1ba09db4f01e5d49d394882f926eaf51335130893675ac7ec701899bca",
             "coreDigest": "27429491a2ebcead923b80b5de1d47e566860702cb623fa1787bdb6f07272132"
+        },
+        {
+            "id": "fancy-list-and-startnum",
+            "item": "P9a",
+            "status": "projection",
+            "reason": "The dialect keeps only decimal list markers with `.` or `)`: Pandoc's fancy_lists letters, Roman numerals, `#` and both-sided parentheses are text in Core, while Pandoc makes ordered lists of them. Here the decimal `9)` list agrees and the Roman sublist is a paragraph in Core.",
+            "inputDigest": "97f2084101a800e56105304c8413653c745a0aa95a9620a10553ab0c91eae9ec",
+            "oracleDigest": "f6519b05865554c619d1910c12b8e332ab3e89022d0da69a5e5f373516a717ec",
+            "coreDigest": "405e1cbd77475da5073021f9e3933454d8225122292f08dde26dcd5947429609"
+        },
+        {
+            "id": "p9a-variants",
+            "item": "P9a",
+            "status": "projection",
+            "reason": "The dialect keeps only decimal list markers with `.` or `)`: Pandoc's fancy_lists letters, Roman numerals, `#` and both-sided parentheses are text in Core, while Pandoc makes ordered lists of them.",
+            "inputDigest": "01614cbd53a60481aa439e769e9c9ab887baade84e53a61f23b012ecaaa9ce76",
+            "oracleDigest": "892939669ed67dc678821716885c34d8e1435049cd2667fd832331cf41a0fb3e",
+            "coreDigest": "4f3dd681b2499090a83ece257613aabd507c7a78c1c962cfb14c36b29ef2edab"
+        },
+        {
+            "id": "p9a-default-and-disambiguation",
+            "item": "P9a",
+            "status": "projection",
+            "reason": "The dialect keeps only decimal list markers with `.` or `)`: Pandoc's fancy_lists letters, Roman numerals, `#` and both-sided parentheses are text in Core, while Pandoc makes ordered lists of them.",
+            "inputDigest": "193ec68b3b1a400c86ec059bd7afc9ad72a2005a9fd7c383aafab84cde871adf",
+            "oracleDigest": "093c7888d796c1b516b404711e1c75d804a96225915748470998707c2967aca6",
+            "coreDigest": "a6ad22e0b532f443fc8f4ee3911ddb499ac31c10f70171d74759e8c1372484a8"
+        },
+        {
+            "id": "p9a-capital-period",
+            "item": "P9a",
+            "status": "projection",
+            "reason": "The dialect keeps only decimal list markers with `.` or `)`: Pandoc's fancy_lists letters, Roman numerals, `#` and both-sided parentheses are text in Core, while Pandoc makes ordered lists of them. Pandoc's two-space rule for a capital letter and `.` has no counterpart.",
+            "inputDigest": "f7f3659db98366fc01f16e7146287c95a61aada8f71b9bb6e803c9e6e5fbcae3",
+            "oracleDigest": "87a812e2b57c5658af0746ef81c0e5b5a28d6156e5d22681fa4bc3b3f187428f",
+            "coreDigest": "f3c82891b133490c86738f1fe169b178565e005163ce38a030e10653c211b5ca"
         }
     ]
 }

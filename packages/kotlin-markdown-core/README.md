@@ -240,7 +240,7 @@ composeCompiler {
     stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
 }
 ```
-Ordered lists expose their `variant` and `delimiter`.
+Ordered lists expose their `delimiter`, `PERIOD` for `1.` and `PARENTHESIS` for `1)`.
 
 A task prefix is `[ ]`, `[x]` or `[X]`, `[?]` or `[-]`, followed by a space or
 tab; the item's `status` is open, done, question or cancelled, and null for

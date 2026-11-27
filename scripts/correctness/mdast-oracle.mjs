@@ -148,7 +148,6 @@ function convert(node, definitions, parentType = "root") {
         fields.flavor = node.ordered ? "ordered" : "bullet";
         fields.tight = String(!node.spread && !(node.children ?? []).some((item) => item.spread));
         fields.start = node.ordered ? String(node.start ?? 1) : "null";
-        fields.variant = node.ordered ? "decimal" : "null";
     }
     if (node.type === "listItem") {
         fields.completed = node.checked === null || node.checked === undefined ? "null" : String(node.checked);
@@ -279,7 +278,7 @@ export const MDAST_COMPARED = {
     Heading: ["level"],
     // mdast does not retain ordered-list punctuation. The cmark oracle and
     // canonical fixtures cover delimiter spelling without inventing it here.
-    List: ["flavor", "start", "variant", "tight"],
+    List: ["flavor", "start", "tight"],
     ListItem: ["completed"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],

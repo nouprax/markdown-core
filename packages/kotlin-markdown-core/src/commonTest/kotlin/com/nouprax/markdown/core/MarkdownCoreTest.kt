@@ -753,7 +753,7 @@ class BindingMappingTest {
         val unchecked = assertIs<com.nouprax.markdown.core.List>(withNothing.content[3])
         assertEquals(null, unchecked.items.single().status)
         val parenthesized = assertIs<com.nouprax.markdown.core.List>(Document.parse("1) item\n").content.single())
-        assertEquals(false, assertIs<OrderedListDelimiter.Parenthesis>(parenthesized.delimiter).closed)
+        assertEquals(OrderedListDelimiter.PARENTHESIS, parenthesized.delimiter)
     }
 
     @Test

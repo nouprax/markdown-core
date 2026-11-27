@@ -56,7 +56,7 @@ const XML_KIND = {
 const COMPARED = {
     Callout: ["variant", "collapsed"],
     Heading: ["level"],
-    List: ["flavor", "start", "variant", "delimiter", "tight"],
+    List: ["flavor", "start", "delimiter", "tight"],
     ListItem: ["completed"],
     CodeBlock: ["info", "literal"],
     Code: ["literal"],
@@ -392,12 +392,11 @@ export function normalize(node, side, fired) {
         }
         if (side === "upstream") {
             if (node.kind === "List" && key === "flavor") value = node.fields.type;
-            if (node.kind === "List" && key === "variant") value = node.fields.type === "ordered" ? "decimal" : "null";
             if (node.kind === "List" && key === "delimiter") {
                 value =
                     node.fields.type === "ordered"
                         ? node.fields.delim === "paren"
-                            ? "parenthesis(closed=false)"
+                            ? "parenthesis"
                             : "period"
                         : "null";
             }

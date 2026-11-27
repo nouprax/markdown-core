@@ -25,7 +25,6 @@ import type {
     ListFlavor,
     TaskStatus,
     OrderedListDelimiter,
-    OrderedListVariant,
     Placement,
     Position,
     Run,
@@ -50,6 +49,7 @@ const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
+const delimiters: readonly OrderedListDelimiter[] = ["period", "parenthesis"];
 const statuses: readonly TaskStatus[] = ["open", "done", "question", "cancelled"];
 /** `markdown_core_status` by value; 0, success, is never a failure message's. */
 export const errorCodes: { readonly [status: number]: ErrorCode } = {
@@ -191,15 +191,13 @@ export class Decoder {
             case "list": {
                 const flavor = this.index(flavors);
                 const start = this.optional(() => this.int());
-                const variant = this.optional(() => this.variant());
-                const delimiter = this.optional(() => this.delimiter());
+                const delimiter = this.optional(() => this.index(delimiters));
                 const tight = this.bool();
                 const items = this.count();
                 return {
                     ...(base as Base<"list">),
                     flavor,
                     start,
-                    variant,
                     delimiter,
                     tight,
                     items: this.nodes(items).take(items) as ListItem[]
@@ -477,30 +475,6 @@ export class Decoder {
                     : null;
             default:
                 return { kind: "specimen", label: this.string() };
-        }
-    }
-
-    private variant(): OrderedListVariant {
-        switch (this.branch()) {
-            case 0:
-                return "decimal";
-            case 1:
-                return { kind: "alpha", lowercased: this.bool() };
-            case 2:
-                return { kind: "roman", lowercased: this.bool() };
-            default:
-                return "default";
-        }
-    }
-
-    private delimiter(): OrderedListDelimiter {
-        switch (this.branch()) {
-            case 0:
-                return "period";
-            case 1:
-                return { kind: "parenthesis", closed: this.bool() };
-            default:
-                return "default";
         }
     }
 

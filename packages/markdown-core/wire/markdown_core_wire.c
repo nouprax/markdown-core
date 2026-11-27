@@ -428,27 +428,15 @@ static void put_bodies_counts(wire_buffer *buffer, const wire_edge *edge) {
 static void put_list_fields(wire_buffer *buffer, const markdown_core_node *node) {
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     bool tight;
-    markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight);
+    markdown_core_node_list_properties(node, &flavor, &start, &delimiter, &tight);
     put_index(buffer, flavor, MARKDOWN_CORE_LIST_FLAVOR_BULLET);
     put_optional_int(buffer, start);
-    /* The ordered-marker facts exist exactly when the list has a start. */
+    /* The delimiter exists exactly when the list has a start. */
     put_bool(buffer, start.has_value);
     if (start.has_value) {
-        put_index(buffer, variant.kind, MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL);
-        if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
-            variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
-            put_bool(buffer, variant.lowercased);
-        }
-    }
-    put_bool(buffer, start.has_value);
-    if (start.has_value) {
-        put_index(buffer, delimiter.kind, MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD);
-        if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
-            put_bool(buffer, delimiter.closed);
-        }
+        put_index(buffer, delimiter, MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD);
     }
     put_bool(buffer, tight);
 }

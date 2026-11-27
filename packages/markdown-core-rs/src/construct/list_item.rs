@@ -9,14 +9,7 @@
 //! ; Restriction: if there is no space after the marker, the start must be followed by an `eol`.
 //! ; Restriction: if the first line after the marker is not blank and starts with `5(space_or_tab)`,
 //! ; only the first `space_or_tab` is part of the start.
-//! ; Restriction: an ordered value is read in the variant of the list the
-//! ; item would go on, else in its own; a value other than one interrupts no
-//! ; paragraph and opens no list inside an item; a capital letter and `.`
-//! ; with same-line content need two columns of whitespace.
-//! list_item_start ::= ('*' | '+' | '-' | ordered) [1*4 space_or_tab]
-//! ordered ::= '(' value ')' | value ('.' | ')')
-//! value ::= '#' | 1*9(ascii_decimal) | ascii_alpha | roman
-//! roman ::= 1*(roman_letter) ; one case, `M* [CM] [D] [CD] C* [XC] [L] [XL] X* [IX] [V] [IV] I*`
+//! list_item_start ::= '*' | '+' | '-' | 1*9(ascii_decimal) ('.' | ')') [1*4 space_or_tab]
 //!
 //! ; Restriction: blank line allowed, except when this is the first continuation after a blank start.
 //! ; Restriction: if not blank, the line must be indented, exactly `n` times.
@@ -69,11 +62,10 @@ use crate::construct::partial_space_or_tab::{
     space_or_tab_min_max, space_or_tab_with_options, Options as SpaceOrTabOptions,
 };
 use crate::construct::{blank_line, task_list_item_check, thematic_break};
-use crate::event::{Event, Kind, Name};
+use crate::event::{Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
 use crate::subtokenize::Subresult;
-use crate::tokenizer::Container;
 use crate::tokenizer::Tokenizer;
 use crate::util::{
     constant::{LIST_ITEM_VALUE_SIZE_MAX, TAB_SIZE},
@@ -81,223 +73,6 @@ use crate::util::{
     slice::{Position, Slice},
 };
 use alloc::{vec, vec::Vec};
-
-/// How an item's marker reads: the facts its list is made of.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Facts {
-    /// A bullet, by its byte.
-    Bullet(u8),
-    /// An ordered marker.
-    Ordered {
-        /// The variant its value is read in.
-        numeral: Numeral,
-        /// The delimiter after it.
-        delimiter: Delimiter,
-    },
-}
-
-/// The variant an ordered value is read in.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Numeral {
-    /// Decimal digits.
-    Decimal,
-    /// One ASCII letter.
-    Letter {
-        /// Whether it is lowercase.
-        lower: bool,
-    },
-    /// A Roman numeral.
-    Roman {
-        /// Whether it is lowercase.
-        lower: bool,
-    },
-    /// The automatic marker `#`, which has no variant of its own.
-    Auto,
-}
-
-/// The delimiter after an ordered value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Delimiter {
-    /// `.`.
-    Period,
-    /// `)`, or `(` and `)`.
-    Parenthesis {
-        /// Whether a `(` opens the value.
-        closed: bool,
-    },
-    /// The `.` of an automatic marker that starts a list.
-    Auto,
-}
-
-impl Numeral {
-    /// The token of a value read in this variant.
-    #[must_use]
-    pub fn name(self) -> Name {
-        match self {
-            Numeral::Decimal => Name::ListItemValue,
-            Numeral::Letter { lower: true } => Name::ListItemLetterLower,
-            Numeral::Letter { lower: false } => Name::ListItemLetterUpper,
-            Numeral::Roman { lower: true } => Name::ListItemRomanLower,
-            Numeral::Roman { lower: false } => Name::ListItemRomanUpper,
-            Numeral::Auto => Name::ListItemAuto,
-        }
-    }
-
-    /// The variant a value token was read in.
-    #[must_use]
-    pub fn from_name(name: Name) -> Option<Numeral> {
-        match name {
-            Name::ListItemValue => Some(Numeral::Decimal),
-            Name::ListItemLetterLower => Some(Numeral::Letter { lower: true }),
-            Name::ListItemLetterUpper => Some(Numeral::Letter { lower: false }),
-            Name::ListItemRomanLower => Some(Numeral::Roman { lower: true }),
-            Name::ListItemRomanUpper => Some(Numeral::Roman { lower: false }),
-            Name::ListItemAuto => Some(Numeral::Auto),
-            _ => None,
-        }
-    }
-}
-
-/// Whether `byte` is a Roman letter, in either case.
-fn roman(byte: u8) -> bool {
-    matches!(
-        byte.to_ascii_uppercase(),
-        b'M' | b'D' | b'C' | b'L' | b'X' | b'V' | b'I'
-    )
-}
-
-/// The value of `text` read in `numeral`, if they are one: `#` is one in
-/// every variant.
-#[must_use]
-pub fn number(numeral: Numeral, text: &[u8]) -> Option<u32> {
-    if text == b"#" {
-        return Some(1);
-    }
-    match numeral {
-        Numeral::Auto => None,
-        Numeral::Decimal => {
-            if text.is_empty() || text.len() > 9 || !text.iter().all(u8::is_ascii_digit) {
-                return None;
-            }
-            Some(
-                text.iter()
-                    .fold(0, |value, byte| value * 10 + u32::from(byte - b'0')),
-            )
-        }
-        Numeral::Letter { lower } => match text {
-            [letter] if letter.is_ascii_alphabetic() && letter.is_ascii_lowercase() == lower => {
-                Some(u32::from(letter.to_ascii_lowercase() - b'a') + 1)
-            }
-            _ => None,
-        },
-        Numeral::Roman { lower } => roman_value(text, lower),
-    }
-}
-
-/// The value of a Roman numeral of one case, by the component order
-/// `M* [CM] [D] [CD] C* [XC] [L] [XL] X* [IX] [V] [IV] I*`, at most
-/// 999,999,999.
-fn roman_value(text: &[u8], lower: bool) -> Option<u32> {
-    const TERMS: [(&[u8], u32, bool); 13] = [
-        (b"M", 1000, true),
-        (b"CM", 900, false),
-        (b"D", 500, false),
-        (b"CD", 400, false),
-        (b"C", 100, true),
-        (b"XC", 90, false),
-        (b"L", 50, false),
-        (b"XL", 40, false),
-        (b"X", 10, true),
-        (b"IX", 9, false),
-        (b"V", 5, false),
-        (b"IV", 4, false),
-        (b"I", 1, true),
-    ];
-    if text.is_empty() {
-        return None;
-    }
-    let mut value = 0u32;
-    let mut at = 0;
-    for (term, worth, repeat) in TERMS {
-        while at + term.len() <= text.len()
-            && text[at..at + term.len()]
-                .iter()
-                .zip(term)
-                .all(|(byte, want)| {
-                    *byte
-                        == if lower {
-                            want.to_ascii_lowercase()
-                        } else {
-                            *want
-                        }
-                })
-        {
-            if value > 999_999_999 - worth {
-                return None;
-            }
-            value += worth;
-            at += term.len();
-            if !repeat {
-                break;
-            }
-        }
-    }
-    if at == text.len() {
-        Some(value)
-    } else {
-        None
-    }
-}
-
-/// The facts of the list item that `index`, a list item enter, opens.
-#[must_use]
-pub fn facts(events: &[Event], bytes: &[u8], index: usize) -> Option<Facts> {
-    let mut index = index + 1;
-    let mut closed = false;
-    let mut numeral = None;
-    while index < events.len() && events[index].name != Name::ListItemPrefix {
-        index += 1;
-    }
-    while index < events.len() {
-        let event = &events[index];
-        if event.kind == Kind::Enter {
-            match event.name {
-                Name::ListItemMarker => {
-                    let byte = bytes[event.point.index];
-                    match (byte, numeral) {
-                        (b'(', _) => closed = true,
-                        (b'.', Some(numeral)) => {
-                            return Some(Facts::Ordered {
-                                numeral,
-                                delimiter: Delimiter::Period,
-                            })
-                        }
-                        (b')', Some(numeral)) => {
-                            return Some(Facts::Ordered {
-                                numeral,
-                                delimiter: Delimiter::Parenthesis { closed },
-                            })
-                        }
-                        _ => return Some(Facts::Bullet(byte)),
-                    }
-                }
-                Name::ListItemAutoDelimiter => {
-                    return numeral.map(|numeral| Facts::Ordered {
-                        numeral,
-                        delimiter: Delimiter::Auto,
-                    })
-                }
-                name => {
-                    if let Some(found) = Numeral::from_name(name) {
-                        numeral = Some(found);
-                    }
-                }
-            }
-        }
-        index += 1;
-    }
-    None
-}
 
 /// Start of list item.
 ///
@@ -323,21 +98,23 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 ///     ^
 /// ```
 fn before(tokenizer: &mut Tokenizer) -> State {
-    match tokenizer.current {
-        // Unordered.
-        Some(b'*' | b'-') => {
-            tokenizer.check(
-                State::Nok,
-                State::Next(StateName::ListItem(Step::BeforeUnordered)),
-            );
-            State::Redo(StateName::ThematicBreak(thematic_break::Step::Start))
-        }
-        Some(b'+') => State::Redo(StateName::ListItem(Step::BeforeUnordered)),
-        // Ordered.
-        Some(b'(' | b'#' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z') => {
-            State::Redo(StateName::ListItem(Step::BeforeOrdered))
-        }
-        _ => State::Nok,
+    // Unordered.
+    if matches!(tokenizer.current, Some(b'*' | b'-')) {
+        tokenizer.check(
+            State::Nok,
+            State::Next(StateName::ListItem(Step::BeforeUnordered)),
+        );
+        State::Redo(StateName::ThematicBreak(thematic_break::Step::Start))
+    } else if tokenizer.current == Some(b'+') {
+        State::Redo(StateName::ListItem(Step::BeforeUnordered))
+    }
+    // Ordered.
+    else if tokenizer.current == Some(b'1')
+        || (matches!(tokenizer.current, Some(b'0'..=b'9')) && !tokenizer.interrupt)
+    {
+        State::Redo(StateName::ListItem(Step::BeforeOrdered))
+    } else {
+        State::Nok
     }
 }
 
@@ -351,181 +128,38 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 /// ```
 fn before_unordered(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemPrefix);
-    tokenizer.document.stack[tokenizer.document.continued].facts =
-        tokenizer.current.map(Facts::Bullet);
     State::Redo(StateName::ListItem(Step::Marker))
 }
 
-/// At ordered list item value, or the parenthesis that opens it.
+/// At ordered list item value.
 ///
 /// ```markdown
-/// > | 1. a
-///     ^
-/// > | (i) b
+/// > | * a
 ///     ^
 /// ```
 fn before_ordered(tokenizer: &mut Tokenizer) -> State {
     tokenizer.enter(Name::ListItemPrefix);
-    if tokenizer.current == Some(b'(') {
-        tokenizer.enter(Name::ListItemMarker);
-        tokenizer.consume();
-        tokenizer.exit(Name::ListItemMarker);
-        State::Next(StateName::ListItem(Step::Open { closed: true }))
-    } else {
-        State::Redo(StateName::ListItem(Step::Open { closed: false }))
-    }
+    tokenizer.enter(Name::ListItemValue);
+    State::Redo(StateName::ListItem(Step::Value { size: 0 }))
 }
 
-/// At the first byte of an ordered value: `#`, a byte, or a letter.
+/// In ordered list item value.
 ///
 /// ```markdown
 /// > | 1. a
 ///     ^
-/// > | (i) b
-///      ^
 /// ```
-fn open(tokenizer: &mut Tokenizer, closed: bool) -> State {
-    match tokenizer.current {
-        Some(first @ (b'#' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z')) => {
-            tokenizer.enter(Name::ListItemValue);
-            tokenizer.consume();
-            State::Next(StateName::ListItem(Step::Value { closed, first }))
-        }
-        _ => State::Nok,
-    }
-}
-
-/// In an ordered value, which goes on in the class its first byte names:
-/// one `#`, up to ten digits, or one letter, or Roman letters of its case.
-///
-/// A run that leaves its class is refused at the delimiter.
-///
-/// ```markdown
-/// > | 12. a
-///      ^
-/// > | iv. b
-///      ^
-/// ```
-fn value(tokenizer: &mut Tokenizer, closed: bool, first: u8) -> State {
-    let enter = tokenizer.events.len() - 1;
-    let size = tokenizer.point.index - tokenizer.events[enter].point.index;
-    let more = match (first, tokenizer.current) {
-        (b'0'..=b'9', Some(b'0'..=b'9')) => size < LIST_ITEM_VALUE_SIZE_MAX,
-        (b'A'..=b'Z' | b'a'..=b'z', Some(byte)) => {
-            roman(first) && roman(byte) && byte.is_ascii_lowercase() == first.is_ascii_lowercase()
-        }
-        _ => false,
-    };
-    if more {
+fn value(tokenizer: &mut Tokenizer, size: usize) -> State {
+    if matches!(tokenizer.current, Some(b'.' | b')')) && (!tokenizer.interrupt || size < 2) {
+        tokenizer.exit(Name::ListItemValue);
+        State::Redo(StateName::ListItem(Step::Marker))
+    } else if matches!(tokenizer.current, Some(b'0'..=b'9')) && size + 1 < LIST_ITEM_VALUE_SIZE_MAX
+    {
         tokenizer.consume();
-        State::Next(StateName::ListItem(Step::Value { closed, first }))
+        State::Next(StateName::ListItem(Step::Value { size: size + 1 }))
     } else {
-        State::Redo(StateName::ListItem(Step::Close { closed, first }))
+        State::Nok
     }
-}
-
-/// At the delimiter after an ordered value: the value is read here, in the
-/// variant of the list it would go on, or else its own.
-///
-/// ```markdown
-/// > | 1. a
-///      ^
-/// > | (i) b
-///       ^
-/// ```
-fn close(tokenizer: &mut Tokenizer, closed: bool, first: u8) -> State {
-    let delimiter = match tokenizer.current {
-        Some(b')') => Delimiter::Parenthesis { closed },
-        Some(b'.') if !closed => Delimiter::Period,
-        _ => return State::Nok,
-    };
-    let enter = tokenizer.events.len() - 1;
-    let from = tokenizer.events[enter].point.index;
-    let text = &tokenizer.parse_state.bytes[from..tokenizer.point.index];
-    let document = &tokenizer.document;
-    let committed = if document.stack.len() > document.continued + 1 {
-        document.stack.last().and_then(|container| container.facts)
-    } else {
-        None
-    };
-    let own = if first == b'#' {
-        Numeral::Auto
-    } else if first.is_ascii_digit() {
-        Numeral::Decimal
-    } else if text.len() == 1 && first != b'i' && first != b'I' {
-        Numeral::Letter {
-            lower: first.is_ascii_lowercase(),
-        }
-    } else {
-        Numeral::Roman {
-            lower: first.is_ascii_lowercase(),
-        }
-    };
-    let inherited = match committed {
-        Some(Facts::Ordered { numeral, .. }) => number(numeral, text).map(|value| (numeral, value)),
-        _ => None,
-    };
-    let (numeral, value) = match inherited.or_else(|| number(own, text).map(|value| (own, value))) {
-        Some(found) => found,
-        None => return State::Nok,
-    };
-    let auto = first == b'#'
-        && delimiter == Delimiter::Period
-        && matches!(
-            committed,
-            None | Some(Facts::Ordered {
-                delimiter: Delimiter::Auto,
-                ..
-            })
-        );
-    let facts = Facts::Ordered {
-        numeral,
-        delimiter: if auto { Delimiter::Auto } else { delimiter },
-    };
-    if value != 1 {
-        // Only a first item may interrupt a paragraph, and a new list in an
-        // item starts at one.
-        let inside = document.stack[..document.continued]
-            .iter()
-            .any(|container| matches!(container.kind, Container::ListItem | Container::Specimen));
-        if tokenizer.interrupt || (committed != Some(facts) && inside) {
-            return State::Nok;
-        }
-    }
-    // A capital letter and a period with same-line content need two
-    // columns of whitespace: `B. Russell` is text.
-    if text.len() == 1 && first.is_ascii_uppercase() && delimiter == Delimiter::Period {
-        let bytes = tokenizer.parse_state.bytes;
-        let start = tokenizer.point.column;
-        let mut column = start;
-        let mut at = tokenizer.point.index + 1;
-        while column - start < 2 && at < bytes.len() && matches!(bytes[at], b'\t' | b' ') {
-            column += if bytes[at] == b'\t' {
-                TAB_SIZE - column % TAB_SIZE
-            } else {
-                1
-            };
-            at += 1;
-        }
-        if column - start < 2 && at < bytes.len() && !matches!(bytes[at], b'\n' | b'\r') {
-            return State::Nok;
-        }
-    }
-    // The value is named by the variant it was read in.
-    tokenizer.exit(Name::ListItemValue);
-    let exit = tokenizer.events.len() - 1;
-    tokenizer.events[enter].name = numeral.name();
-    tokenizer.events[exit].name = numeral.name();
-    tokenizer.document.stack[tokenizer.document.continued].facts = Some(facts);
-    let name = if auto {
-        Name::ListItemAutoDelimiter
-    } else {
-        Name::ListItemMarker
-    };
-    tokenizer.enter(name);
-    tokenizer.consume();
-    tokenizer.exit(name);
-    State::Next(StateName::ListItem(Step::MarkerAfter))
 }
 
 /// At list item marker.
@@ -744,8 +378,8 @@ fn cont_filled(tokenizer: &mut Tokenizer) -> State {
 
 /// Find adjacent list items with the same marker.
 pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
-    let mut lists_wip: Vec<(Option<Facts>, usize, usize, usize)> = vec![];
-    let mut lists: Vec<(Option<Facts>, usize, usize, usize)> = vec![];
+    let mut lists_wip: Vec<(u8, usize, usize, usize)> = vec![];
+    let mut lists: Vec<(u8, usize, usize, usize)> = vec![];
     let mut index = 0;
     let mut balance = 0;
 
@@ -756,7 +390,9 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
         if event.name == Name::ListItem {
             if event.kind == Kind::Enter {
                 let end = skip::opt(&tokenizer.events, index, &[Name::ListItem]) - 1;
-                let marker = facts(&tokenizer.events, tokenizer.parse_state.bytes, index);
+                let marker = skip::to(&tokenizer.events, index, &[Name::ListItemMarker]);
+                // Guaranteed to be a valid ASCII byte.
+                let marker = tokenizer.parse_state.bytes[tokenizer.events[marker].point.index];
                 let current = (marker, balance, index, end);
 
                 let mut list_index = lists_wip.len();
@@ -828,7 +464,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
         let mut list_start = tokenizer.events[list_item.2].clone();
         let mut list_end = tokenizer.events[list_item.3].clone();
         let name = match list_item.0 {
-            Some(Facts::Ordered { .. }) => Name::ListOrdered,
+            b'.' | b')' => Name::ListOrdered,
             _ => Name::ListUnordered,
         };
         list_start.name = name;
@@ -862,9 +498,7 @@ pub enum Step {
     Before,
     BeforeOrdered,
     BeforeUnordered,
-    Open { closed: bool },
-    Value { closed: bool, first: u8 },
-    Close { closed: bool, first: u8 },
+    Value { size: usize },
     Marker,
     MarkerAfter,
     After { blank: bool },
@@ -891,9 +525,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Before => before(tokenizer),
         Step::BeforeOrdered => before_ordered(tokenizer),
         Step::BeforeUnordered => before_unordered(tokenizer),
-        Step::Open { closed } => open(tokenizer, closed),
-        Step::Value { closed, first } => value(tokenizer, closed, first),
-        Step::Close { closed, first } => close(tokenizer, closed, first),
+        Step::Value { size } => value(tokenizer, size),
         Step::Marker => marker(tokenizer),
         Step::MarkerAfter => marker_after(tokenizer),
         Step::After { blank } => after(tokenizer, blank),

@@ -335,27 +335,10 @@ typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
 
-typedef enum markdown_core_ordered_list_variant_kind {
-    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL = 1,
-    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA = 2,
-    MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN = 3,
-    MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT = 4
-} markdown_core_ordered_list_variant_kind;
-
-typedef struct markdown_core_ordered_list_variant {
-    markdown_core_ordered_list_variant_kind kind;
-    bool lowercased;
-} markdown_core_ordered_list_variant;
-
-typedef enum markdown_core_ordered_list_delimiter_kind {
+/** An ordered list marker's delimiter: `1.` or `1)`. */
+typedef enum markdown_core_ordered_list_delimiter {
     MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD = 1,
-    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS = 2,
-    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT = 3
-} markdown_core_ordered_list_delimiter_kind;
-
-typedef struct markdown_core_ordered_list_delimiter {
-    markdown_core_ordered_list_delimiter_kind kind;
-    bool closed;
+    MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS = 2
 } markdown_core_ordered_list_delimiter;
 
 typedef enum markdown_core_placement {
@@ -762,12 +745,12 @@ MARKDOWN_CORE_API markdown_core_nodes markdown_core_node_children(const markdown
  * KIND_MISMATCH for a node of any other kind. */
 /** A `Heading`. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
-/** A `List`. `variant` and `delimiter` have meaning only for an ordered list,
- * when `start.has_value` is true. Bullet lists have no ordered-marker
+/** A `List`. `delimiter` has meaning only for an ordered list, when
+ * `start.has_value` is true. Bullet lists have no ordered-marker
  * properties. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_properties(
     const markdown_core_node *node, markdown_core_list_flavor *flavor, markdown_core_optional_i64 *start,
-    markdown_core_ordered_list_variant *variant, markdown_core_ordered_list_delimiter *delimiter, bool *tight);
+    markdown_core_ordered_list_delimiter *delimiter, bool *tight);
 /** A `ListItem`: the status of its task check, NONE without one. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_item_status(const markdown_core_node *node,
                                                                            markdown_core_task_status *status);

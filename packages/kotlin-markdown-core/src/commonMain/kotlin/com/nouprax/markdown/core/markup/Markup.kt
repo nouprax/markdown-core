@@ -226,7 +226,7 @@ public sealed class Markup {
 
             is List -> {
                 other is List && flavor == other.flavor && start == other.start &&
-                    variant == other.variant && delimiter == other.delimiter && tight == other.tight
+                    delimiter == other.delimiter && tight == other.tight
             }
 
             is ListItem -> {

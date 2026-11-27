@@ -376,12 +376,6 @@ stream ../canonical-ast/specimens.md tokens
 stream ../canonical-ast/specimens.md scalars
 stream ../canonical-ast/specimens.md rows
 stream ../canonical-ast/specimens.md splits
-document ../canonical-ast/fancy-lists.md
-script ../canonical-ast/fancy-lists.md scripts/fancy-lists.script
-stream ../canonical-ast/fancy-lists.md tokens
-stream ../canonical-ast/fancy-lists.md scalars
-stream ../canonical-ast/fancy-lists.md rows
-stream ../canonical-ast/fancy-lists.md splits
 document ../canonical-ast/nameless-directives.md
 script ../canonical-ast/nameless-directives.md scripts/nameless-directives.script
 stream ../canonical-ast/nameless-directives.md tokens

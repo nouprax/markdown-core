@@ -62,12 +62,8 @@ export interface Run {
 export type ListFlavor = "bullet" | "ordered";
 /** The status a list item's task check gives it: `[ ]`, `[x]` or `[X]`, `[?]` and `[-]`. */
 export type TaskStatus = "open" | "done" | "question" | "cancelled";
-export type OrderedListVariant =
-    | "decimal"
-    | { readonly kind: "alpha"; readonly lowercased: boolean }
-    | { readonly kind: "roman"; readonly lowercased: boolean }
-    | "default";
-export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
+/** The punctuation after an ordered-list number: `1.` or `1)`. */
+export type OrderedListDelimiter = "period" | "parenthesis";
 /**
  * The target of a `Link`, `Embed` or `Reference`: a tagged value, not a
  * node, so it has no id, no extent and no children, and a branch's fields

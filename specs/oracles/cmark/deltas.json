@@ -60,12 +60,6 @@
             "handling": "Exact specification inputs only; dialect/topics.md and product fixtures own recognition, names and scopes."
         },
         {
-            "id": "nested-ordered-start",
-            "kind": "deliberate-difference",
-            "summary": "A newly opened ordered list inside a list item or specimen body must start at one under the lists module. CommonMark permits a nested list to start at two.",
-            "handling": "The inherited same-line nested-marker witness remains exact; rejected markers stay ordinary paragraph content."
-        },
-        {
             "id": "spec-text-whitespace",
             "kind": "deliberate-difference",
             "summary": "Where cmark 0.31.2 departs from the text of its own specification about whitespace and control characters, Markdown Core follows the text. cmark treats vertical tab and form feed as whitespace (055b9ea follows the 0.29 definition, which 0.30 removed), lets ASCII control characters into an unbracketed link destination and DEL into an absolute URI, trims a pointy destination, lets a backslash escape a line ending in one, and decodes an info string's references before trimming it.",
@@ -180,11 +174,6 @@
             "id": "image-dimensions",
             "input": "![![inner|10](/inner)|20x30](/outer) ![a [b](/link)|40](/i)\n",
             "note": "O9: image suffix syntax and its composed inline contexts are owned by dialect/links-and-images.md and the package fixtures; cmark keeps the suffix in alt content."
-        },
-        {
-            "id": "nested-ordered-start",
-            "input": "1. - 2. foo\n",
-            "note": "P9a, docs/specs/dialect/lists.md: new nested ordered lists start at one."
         },
         {
             "id": "spec-text-whitespace",

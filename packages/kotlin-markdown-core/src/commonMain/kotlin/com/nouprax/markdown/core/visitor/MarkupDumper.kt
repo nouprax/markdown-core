@@ -187,7 +187,6 @@ private fun describe(node: Markup): Line =
                 listOf(
                     "flavor=${node.flavor.token()}",
                     "start=${node.start ?: "null"}",
-                    "variant=${node.variant?.token() ?: "null"}",
                     "delimiter=${node.delimiter?.token() ?: "null"}",
                     "tight=${node.tight}",
                 ),
@@ -416,20 +415,7 @@ private fun Placement.token(): String = name.lowercase()
 
 private fun ListFlavor.token(): String = name.lowercase()
 
-private fun OrderedListVariant.token(): String =
-    when (this) {
-        OrderedListVariant.Decimal -> "decimal"
-        is OrderedListVariant.Alpha -> "alpha(lowercased=$lowercased)"
-        is OrderedListVariant.Roman -> "roman(lowercased=$lowercased)"
-        OrderedListVariant.Default -> "default"
-    }
-
-private fun OrderedListDelimiter.token(): String =
-    when (this) {
-        OrderedListDelimiter.Period -> "period"
-        is OrderedListDelimiter.Parenthesis -> "parenthesis(closed=$closed)"
-        OrderedListDelimiter.Default -> "default"
-    }
+private fun OrderedListDelimiter.token(): String = name.lowercase()
 
 private fun Flow.token(): String = name.lowercase()
 

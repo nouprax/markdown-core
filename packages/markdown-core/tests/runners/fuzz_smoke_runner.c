@@ -120,8 +120,7 @@ static const struct {
     const char *bytes;
     size_t length;
 } probes[] = {
-#define PROBE(literal)                                                                                                 \
-    { literal, sizeof(literal) - 1 }
+#define PROBE(literal) {literal, sizeof(literal) - 1}
     PROBE("\xe4**a** b\n"),                     /* flanking, before */
     PROBE("**a**\xe4 b\n"),                     /* flanking, after */
     PROBE("a **\xe4"),                          /* flanking, cut at the end */

@@ -5,13 +5,7 @@ import { SourceLines } from "../common/source-lines.js";
 import type { Document } from "../markup/document.js";
 import type { MetadataValue } from "../markup/metadata.js";
 import type { Markup } from "../markup/markup.js";
-import type {
-    CitationReferent,
-    Destination,
-    OrderedListDelimiter,
-    OrderedListVariant,
-    Scope
-} from "../markup/values.js";
+import type { CitationReferent, Destination, OrderedListDelimiter, Scope } from "../markup/values.js";
 import { walkTree } from "./markup-walker.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
@@ -114,7 +108,6 @@ class State {
                 [
                     `flavor=${node.flavor}`,
                     `start=${node.start ?? "null"}`,
-                    `variant=${variant(node.variant)}`,
                     `delimiter=${delimiter(node.delimiter)}`,
                     `tight=${node.tight}`
                 ],
@@ -598,13 +591,7 @@ function optional(value: string | null): string {
 }
 
 function delimiter(value: OrderedListDelimiter | null): string {
-    if (value === null || typeof value === "string") return value ?? "null";
-    return `parenthesis(closed=${value.closed})`;
-}
-
-function variant(value: OrderedListVariant | null): string {
-    if (value === null || typeof value === "string") return value ?? "null";
-    return `${value.kind}(lowercased=${value.lowercased})`;
+    return value ?? "null";
 }
 
 /** A tagged value prints its branch and its named fields with no spaces. */

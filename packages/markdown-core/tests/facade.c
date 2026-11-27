@@ -697,7 +697,6 @@ static void check_kind_boundary(void) {
     const markdown_core_metadata_value *value = NULL;
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start = {true, 7};
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     markdown_core_optional_string optional = {true, {NULL, 7}};
     markdown_core_task_status task = MARKDOWN_CORE_TASK_STATUS_DONE;
@@ -713,7 +712,7 @@ static void check_kind_boundary(void) {
     /* A paragraph has no field any kind accessor reads. */
     const markdown_core_status statuses[] = {
         markdown_core_node_heading_level(paragraph, &level),
-        markdown_core_node_list_properties(paragraph, &flavor, &start, &variant, &delimiter, &flag),
+        markdown_core_node_list_properties(paragraph, &flavor, &start, &delimiter, &flag),
         markdown_core_node_list_item_status(paragraph, &task),
         markdown_core_node_code_block_properties(paragraph, &optional, &optional, &string, &flag, &flag),
         markdown_core_node_literal(paragraph, &string),

@@ -26,7 +26,7 @@ differences and explains overlapping syntax.
 | Task markers | One of `[ ]`, `[x]`, `[X]`, `[?]`, `[-]` plus a following separator; the item records its status. |
 | Comments | HTML and percent comments remain `Comment` nodes. |
 | Raw HTML | Block content is opaque, but text between separate inline tags still parses as Markdown. |
-| Ordered lists | The first marker always sets the start; nested ordered lists must start at one. |
+| Ordered lists | The first marker always sets the start; only decimal markers with `.` or `)` are ordered. |
 | Footnote duplicates | All definitions survive; references select the first normalized ID. |
 | Presentation | No smart punctuation, emoji shortcode expansion, code execution, math rendering, resource loading, or citation formatting. |
 

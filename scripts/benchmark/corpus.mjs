@@ -403,7 +403,7 @@ function parameters(index, letters = alphabets.ascii) {
             word(index + 99, 1 + (index % 5), letters)
         ],
         mode: index % 3,
-        start: 1 + (index % finiteLexicons.ordinal.decimal.length),
+        start: 1 + (index % 26),
         reset: String(index % 3 === 2 ? 999999999 : index + 1)
     };
 }

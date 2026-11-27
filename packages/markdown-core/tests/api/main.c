@@ -888,7 +888,6 @@ static void accessors(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     bool tight = false;
     markdown_core_optional_string info, language;
@@ -899,14 +898,14 @@ static void accessors(test_batch_runner *runner) {
     OK(runner, facade_heading_level(heading) == 2, "heading level");
 
     markdown_core_node *bullet_list = child_at(doc, 1);
-    EXPECT_OK(markdown_core_node_list_properties(bullet_list, &flavor, &start, &variant, &delimiter, &tight));
+    EXPECT_OK(markdown_core_node_list_properties(bullet_list, &flavor, &start, &delimiter, &tight));
     OK(runner, flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET && !start.has_value && tight, "tight bullet list");
 
     markdown_core_node *ordered_list = child_at(doc, 2);
-    EXPECT_OK(markdown_core_node_list_properties(ordered_list, &flavor, &start, &variant, &delimiter, &tight));
+    EXPECT_OK(markdown_core_node_list_properties(ordered_list, &flavor, &start, &delimiter, &tight));
     OK(runner,
        flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED && start.has_value && start.value == 2 &&
-           delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD && !tight,
+           delimiter == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD && !tight,
        "loose ordered list from 2 with a period");
 
     markdown_core_node *fenced_code = child_at(doc, 3);
@@ -2510,7 +2509,7 @@ static void source_pos(test_batch_runner *runner) {
         "│   │   └── Text scope=4:16..4:19 anchor=null attributes={} literal=\"okay\" children=0\n"
         "│   └── Text scope=4:42..4:42 anchor=null attributes={} literal=\".\" children=0\n"
         "└── Callout scope=6:1..10:20 anchor=null attributes={} variant=null collapsed=null children=1\n"
-        "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal "
+        "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 "
         "delimiter=period tight=false children=2\n"
         "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} status=null children=1\n"
         "        │   └── Paragraph scope=6:6..7:0,7:6..7:10 anchor=null attributes={} children=3\n"
@@ -5353,37 +5352,6 @@ static void autolink_domain_linear_work(test_batch_runner *runner) {
     }
 }
 
-static void ordered_numeral_ceiling(test_batch_runner *runner) {
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-    for (size_t i = 0; i < 999999; i++) {
-        markdown_core_strbuf_putc(&source, 'M');
-    }
-    markdown_core_strbuf_puts(&source, "CMXCIX.  boundary\n");
-    inline_work work = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-    OK(runner,
-       root && child_at(root, 0)->kind == MARKDOWN_CORE_NODE_LIST && child_at(root, 0)->as.list->start == 999999999,
-       "Roman numeral accepts the exact nine-digit ceiling");
-    OK(runner, work.list_markers <= 4 * (size_t)source.size, "ceiling accumulation inspects bounded source");
-    if (root) {
-        markdown_core_node_free(root);
-    }
-    static const char *const overflow[] = {"M", "CCCCCCCCCC", "CCCCCCCCCXXXXXXXXXX", "CCCCCCCCCXXXXXXXXXIIIIIIIIII"};
-    for (size_t i = 0; i < sizeof(overflow) / sizeof(*overflow); i++) {
-        markdown_core_strbuf_truncate(&source, 999999);
-        markdown_core_strbuf_puts(&source, overflow[i]);
-        markdown_core_strbuf_puts(&source, ".  overflow\n");
-        root = markdown_core_parse_document((char *)source.ptr, source.size);
-        OK(runner, root && child_at(root, 0)->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
-           "Roman M/C/X/I accumulation rejects overflow without wrapping: case=%zu", i);
-        if (root) {
-            markdown_core_node_free(root);
-        }
-    }
-    markdown_core_strbuf_free(&source);
-}
-
 static void definition_list_linear_work(test_batch_runner *runner) {
     static const char *const units[] = {"Term\n: body\n\n", ": body\n", "literal\n\n", "Term\n\n\n: body\n\n",
                                         "[x]: /u\n: body\n\n"};
@@ -7112,15 +7080,11 @@ static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner 
     markdown_core_strbuf_free(&source);
 }
 
-/* THE LIST SCANNER READS A NUMERAL BY THE CLASS ITS FIRST BYTE NAMES. The
- * scan gate must admit letters and digits -- fancy lists start on them -- so
- * every prose line that begins with a word reaches the numeral scan, and a
- * scan that read the whole alphanumeric run paid the word's length on every
- * such line. The grammar accepts one letter, roman letters of one case, or
- * decimal digits (at most nine), so the scan reads that class and stops at
- * its boundary: a prose word ends the probe on its second byte, a long digit
- * string on its eleventh, and every marker the grammar accepted or refused is
- * accepted or refused as before. */
+/* THE LIST SCANNER READS A NUMERAL BY THE CLASS ITS FIRST BYTE NAMES. A
+ * marker is a bullet or one to nine decimal digits, so a prose line that
+ * begins with a word ends the probe on its first byte, and a long digit
+ * string on its tenth: every line pays a constant, never the word's length,
+ * and every marker the grammar accepts or refuses is accepted or refused. */
 static void the_list_scanner_reads_a_numeral_by_its_first_bytes_class(test_batch_runner *runner) {
     static const size_t lines = 256;
     static const struct {
@@ -7149,10 +7113,9 @@ static void the_list_scanner_reads_a_numeral_by_its_first_bytes_class(test_batch
     static const struct {
         const char *source;
         int lists;
-    } markers[] = {{"a. x\n", 1},          {"iv. x\n", 1},          {"MMXX. x\n", 1}, {"(c) x\n", 1},
-                   {"123456789. x\n", 1},  {"i. x\nii. x\n", 1},    {"mix. x\n", 1},  {"#. x\n", 1},
-                   {"x) y\n", 1},          {"3rd. x\n", 0},         {"ab. x\n", 0},   {"Iv. x\n", 0},
-                   {"1234567890. x\n", 0}, {"12345678901. x\n", 0}, {"H. x\n", 0},    {"cat. x\n", 0}};
+    } markers[] = {{"123456789. x\n", 1},  {"0) x\n", 1},           {"1. x\n2) y\n", 2}, {"a. x\n", 0},
+                   {"iv. x\n", 0},         {"(1) x\n", 0},          {"#. x\n", 0},       {"3rd. x\n", 0},
+                   {"1234567890. x\n", 0}, {"12345678901. x\n", 0}, {"H.  x\n", 0},      {"1.x\n", 0}};
     for (size_t m = 0; m < sizeof(markers) / sizeof(*markers); m++) {
         markdown_core_node *root = markdown_core_parse_document(markers[m].source, strlen(markers[m].source));
         OK(runner, root != NULL, "marker %zu parses", m);
@@ -12046,10 +12009,9 @@ static size_t document_lists(const markdown_core_document *document, const markd
 static bool list_tight(const markdown_core_node *list) {
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start;
-    markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     bool tight = false;
-    markdown_core_node_list_properties(list, &flavor, &start, &variant, &delimiter, &tight);
+    markdown_core_node_list_properties(list, &flavor, &start, &delimiter, &tight);
     return tight;
 }
 
@@ -12798,7 +12760,6 @@ int main(void) {
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);
     deep_inline_construction(runner);
-    ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
     definition_gate_reads_the_prefix_not_the_line(runner);
