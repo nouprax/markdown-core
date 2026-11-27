@@ -21,11 +21,6 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(footnote), phase)
 
     override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = record(name(specimen), phase)
-
-    override fun visit(
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ): Unit = record(name(metadata), phase)
@@ -241,11 +236,6 @@ internal class RecordingVisitor : MarkupVisitor {
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(footnote) else Unit
-
-    override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(specimen) else Unit
 
     override fun visit(
         metadata: Metadata,
@@ -703,11 +693,6 @@ internal class RecordingWalkingVisitor(
     ): Unit = record("Citation", phase)
 
     override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = record("Specimen", phase)
-
-    override fun visit(
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ): Unit = record("Footnote", phase)
@@ -928,11 +913,6 @@ internal class NodeVisitor : MarkupVisitor {
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ): Unit = record(footnote, phase)
-
-    override fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit = record(specimen, phase)
 
     override fun visit(
         metadata: Metadata,

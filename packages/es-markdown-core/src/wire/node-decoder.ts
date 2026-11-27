@@ -9,7 +9,6 @@ import type { Document } from "../markup/document.js";
 import type { Footnote } from "../markup/footnote.js";
 import type { Heading } from "../markup/heading.js";
 import type { Reference } from "../markup/reference.js";
-import type { Specimen } from "../markup/specimen.js";
 import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
 import type { TableCell, TableColumn, TableRow } from "../markup/table.js";
@@ -62,28 +61,18 @@ export const errorCodes: { readonly [status: number]: ErrorCode } = {
 
 /** The document's members that are not contract fields: the decoder adds them
  * once the definition tables are read. */
-type DocumentMembers =
-    | "unit"
-    | "footnotes"
-    | "specimens"
-    | "references"
-    | "footnote"
-    | "specimen"
-    | "reference"
-    | "scope"
-    | "nodeAt"
-    | "dump";
+type DocumentMembers = "unit" | "footnotes" | "references" | "footnote" | "reference" | "scope" | "nodeAt" | "dump";
 type MarkupValue = Markup extends infer Node ? (Node extends Document ? Omit<Document, DocumentMembers> : Node) : never;
 type Base<Kind extends Markup["kind"]> = MarkupBase<Kind>;
 /** A node a definition table or the reference label table names. */
-type Target = Footnote | Specimen | Reference | Heading;
+type Target = Footnote | Reference | Heading;
 
 export class Decoder {
     private readonly view: DataView;
     private readonly utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
     private offset = 0;
     private readonly stack: Markup[] = [];
-    /** Every Footnote, Specimen, Reference and Heading by id, for the
+    /** Every Footnote, Reference and Heading by id, for the
      * definition tables and the reference label table. */
     private readonly definitions = new Map<number, Target>();
 
@@ -104,10 +93,9 @@ export class Decoder {
             root = this.record();
         }
         const footnotes = this.table() as Footnote[];
-        const specimens = this.table() as Specimen[];
         const references = this.table() as Reference[];
         const labels = this.labels();
-        return this.document(root, footnotes, specimens, references, labels);
+        return this.document(root, footnotes, references, labels);
     }
 
     /** Status 1 is a failure, whose body is its u32 `markdown_core_status`
@@ -127,12 +115,7 @@ export class Decoder {
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
         const node = this.fields(kind, { kind, id, extent, runs, anchor, attributes }) as Markup;
-        if (
-            node.kind === "footnote" ||
-            node.kind === "specimen" ||
-            node.kind === "reference" ||
-            node.kind === "heading"
-        ) {
+        if (node.kind === "footnote" || node.kind === "reference" || node.kind === "heading") {
             this.definitions.set(id, node);
         }
         return node;
@@ -359,12 +342,6 @@ export class Decoder {
                 const content = this.count();
                 return { ...(base as Base<"footnote">), label, content: this.nodes(content).take(content) };
             }
-            case "specimen": {
-                const label = this.optional(() => this.string());
-                const start = this.optional(() => this.int());
-                const content = this.count();
-                return { ...(base as Base<"specimen">), label, start, content: this.nodes(content).take(content) };
-            }
             case "metadata": {
                 const value = (): MetadataValue | null => this.optional(() => this.metadataValue());
                 return {
@@ -405,20 +382,16 @@ export class Decoder {
     private document(
         root: Omit<Document, DocumentMembers>,
         footnotes: Footnote[],
-        specimens: Specimen[],
         references: Reference[],
         labels: ReadonlyMap<string, Reference | Heading>
     ): Document {
         const footnoteFor = firstByLabel(footnotes);
-        const specimenFor = firstByLabel(specimens);
         const member = (value: unknown): PropertyDescriptor => ({ value, enumerable: false });
         return Object.defineProperties(root, {
             unit: member(this.unit),
             footnotes: member(footnotes),
-            specimens: member(specimens),
             references: member(references),
             footnote: member((label: string): Footnote | null => footnoteFor.get(label) ?? null),
-            specimen: member((label: string): Specimen | null => specimenFor.get(label) ?? null),
             reference: member((label: string): Reference | Heading | null => labels.get(label) ?? null),
             scope: member(function (this: Document, node: Markup, source: string) {
                 return scopeOf(this, node, source);
@@ -469,12 +442,10 @@ export class Decoder {
         switch (this.branch()) {
             case 0:
                 return { kind: "bib", key: this.string(), mode: this.index(bibModes) };
-            case 1:
+            default:
                 return this.branch() === 0
                     ? { kind: "footnote", target: { kind: "label", value: this.string() } }
                     : null;
-            default:
-                return { kind: "specimen", label: this.string() };
         }
     }
 
@@ -595,7 +566,7 @@ class Nodes {
 
 /** The first node of each label, in the table's source order. A null label
  * is an inline note's or an anonymous definition's and names nothing. */
-function firstByLabel<Node extends Footnote | Specimen>(nodes: readonly Node[]): ReadonlyMap<string, Node> {
+function firstByLabel<Node extends Footnote>(nodes: readonly Node[]): ReadonlyMap<string, Node> {
     const map = new Map<string, Node>();
     for (const node of nodes) {
         if (node.label !== null && !map.has(node.label)) map.set(node.label, node);

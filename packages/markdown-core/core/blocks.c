@@ -4939,7 +4939,7 @@ static bool S_line_cut(const markdown_core_tree *lines, size_t low, size_t high,
  * start, read past `past`, where the line ends, or stopped inside the line
  * past its first byte (THE CUTS): what stopped there was the opener of the
  * line's first block, which decided from what came before (a list's
- * variant, a specimen's number), as a reading of whole lines, a lookahead
+ * marker), as a reading of whole lines, a lookahead
  * or a close, stops at a line's end. */
 static bool S_old_reads_into(const markdown_core_parser *parser, size_t old, size_t past) {
     const markdown_core_tree *lines = &parser->input.lines;
@@ -7779,8 +7779,8 @@ bool markdown_core_parser_takes_edits(const markdown_core_parser *parser) {
 /* THE CUTS: a look that began on a line before stopped inside the line
  * that holds its last byte, past the line's first byte and before its end
  * (markdown_core_input_line, `look`): the opener of the line's first block,
- * which decided from what came before (a list's variant, a specimen's
- * number), as a reading of whole lines, a lookahead or a close, stops at a
+ * which decided from what came before (a list's marker), as a reading of
+ * whole lines, a lookahead or a close, stops at a
  * line's end. */
 /* Sets the cut of `line`, which ends at `past`, for a look from `start`
  * to `end` when it stopped inside it. */
@@ -9528,8 +9528,8 @@ bool markdown_core_reader_indented(markdown_core_reader *reader, int continuatio
     } else if (reader->blank && blank) {
         // Blankness is relative to the cursor after ancestor prefixes. Lists
         // require a first block; definition-list bodies first check whether
-        // the blank run leads to a carried line. Footnotes and specimens
-        // accept blank continuation directly, including during lookahead.
+        // the blank run leads to a carried line. Footnotes accept
+        // blank continuation directly, including during lookahead.
         markdown_core_reader_skip(reader);
         res = true;
     }
@@ -9817,7 +9817,7 @@ static inline void S_reader_close(markdown_core_parser *parser) {
 
 /* ONE CONTAINER'S CLAIM ON THE LINE at the parser's cursor, for the kinds whose
  * prefix the core knows: the block quote's `>`, the list item's indentation,
- * a footnote or specimen's four columns, and the list's rule for consecutive
+ * a footnote's four columns, and the list's rule for consecutive
  * blank lines. `check_open_blocks` asks it walking down the open spine, and
  * the block-start lookahead asks the same question of the same containers on
  * later lines, so a candidate's decision and the parse that follows it cannot

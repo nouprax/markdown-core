@@ -277,8 +277,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool project_anchor_stack
                 ok = push_anchor_children(stack, item->suffix, ANCHOR_CONTENT) &&
                      push_anchor_projection(stack, node, ANCHOR_KEY) &&
                      push_anchor_children(stack, item->prefix, ANCHOR_CONTENT);
-            } else if (item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
-                ok = push_anchor_projection(stack, node, ANCHOR_KEY);
             }
             continue;
         }

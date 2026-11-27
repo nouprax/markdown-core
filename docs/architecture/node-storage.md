@@ -245,11 +245,11 @@ stays.
 Inline footnotes use the existing Footnote data record and one-item Cite.
 A successful close moves the parsed inline body into a Footnote that the
 Cite's Citation owns as its `note` field, as it owns its affixes. Authored
-definitions are Footnote and Specimen blocks in the tree where they were
-read. In both cases the tree owns the node, including on parse failure.
+definitions are Footnote blocks in the tree where they were read. In both
+cases the tree owns the node, including on parse failure.
 
 Calls resolve through the parse's roster (`core/roster.h`) while
-parsing: each footnote and specimen definition declares its label there as it
+parsing: each footnote definition declares its label there as it
 is read, and a call asks whether its label is declared. The
 finish stage visits definitions where they are, like any other node.
 
@@ -257,7 +257,7 @@ Publishing is one canonical walk. It numbers every node from 1, rewrites the
 parse-time source place as the node's extent, gives every node its runs from
 its places -- a block's own, written over them in their list, or its range
 when it has none, and an inline node's from its root's -- and collects
-every Footnote and Specimen into the document's two definition tables, which
+every Footnote into the document's footnote table, which
 it orders by first source byte with the stable linear source ordering below
 and indexes by label. Nothing reads a place after publishing.
 

@@ -470,8 +470,6 @@ markdown_core_add_test(spec_dialect_lists spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-lists.txt")
 markdown_core_add_test(spec_dialect_citations spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-citations.txt")
-markdown_core_add_test(spec_dialect_specimens spec 120 spec_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-specimens.txt")
 markdown_core_add_test(spec_dialect_task_lists spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-task-lists.txt")
 markdown_core_add_test(spec_dialect_block_identifiers spec 120 spec_runner --spec
@@ -588,8 +586,6 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/definition-lists.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/citations.md"
-    --corpus
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/specimens.md"
     --corpus
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/scopes.md"
     --corpus

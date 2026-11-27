@@ -124,11 +124,10 @@ typedef struct {
 /* THE REFERENT of one citation (M4): a tagged value. A `bib` referent, which
  * the citations module first produces with P7, carries a key and a mode; a
  * `footnote` referent carries the label of the `Footnote` it names, or owns
- * the inline note it stands for; a `specimen` referent carries a label. */
+ * the inline note it stands for. */
 typedef enum {
     MARKDOWN_CORE_NODE_REFERENT_BIB = 1,
-    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2,
-    MARKDOWN_CORE_NODE_REFERENT_SPECIMEN = 3
+    MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2
 } markdown_core_node_referent_kind;
 
 /* ONE ITEM of a cite (M4): the referent, and the item's owned fields: the
@@ -159,15 +158,6 @@ typedef struct {
 typedef struct {
     markdown_core_optional_chunk label;
 } markdown_core_footnote_value;
-
-/* A specimen owns its optional authored label and effective explicit counter
- * reset. Anonymous definitions and absent resets remain absent; numbering is
- * derived from the document's definition order by consumers. */
-typedef struct {
-    markdown_core_optional_chunk label;
-    int64_t start;
-    bool has_start;
-} markdown_core_specimen_value;
 
 /* A REFERENCE: a link reference definition where it was written. `label` is
  * its normalized label, the one a reference occurrence names, in storage the
@@ -206,12 +196,12 @@ typedef struct markdown_core_node_table {
     markdown_core_table_place *places;
 } markdown_core_node_table;
 
-/* A DEFINITION TABLE of a published document: every Footnote, every
- * Specimen, or every Reference, in source order. */
+/* A DEFINITION TABLE of a published document: every Footnote or every
+ * Reference, in source order. */
 typedef struct markdown_core_definitions {
     markdown_core_node_table all;
     /* The labeled ones by label, in source order among equal labels: the
-     * Footnotes and Specimens a lookup by label answers from, every one, or
+     * Footnotes a lookup by label answers from, every one, or
      * a snapshot's own that no committed definition comes before. A label a
      * reference occurrence names resolves through the reference targets. */
     const struct markdown_core_node **labeled;
@@ -219,7 +209,7 @@ typedef struct markdown_core_definitions {
 } markdown_core_definitions;
 
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
- * Footnote, specimen and Reference definitions stay in the tree where they
+ * Footnote and Reference definitions stay in the tree where they
  * were written; publishing the document records its definition tables here,
  * and the nodes reference occurrences resolve to, by label: for each label,
  * the first Reference declaring it, or, when none does, the first Heading
@@ -229,7 +219,6 @@ typedef struct markdown_core_definitions {
 typedef struct {
     struct markdown_core_node *metadata;
     markdown_core_definitions footnotes;
-    markdown_core_definitions specimens;
     markdown_core_definitions references;
     markdown_core_node_table reference_targets;
     const struct markdown_core_committed_tables *committed;
@@ -384,7 +373,6 @@ typedef union {
     markdown_core_cross_embed *cross_embed;
     markdown_core_citation_item *citation;
     markdown_core_footnote_value *footnote;
-    markdown_core_specimen_value *specimen;
     markdown_core_reference_value *reference;
     markdown_core_document_value *document;
     markdown_core_metadata_fields *metadata;

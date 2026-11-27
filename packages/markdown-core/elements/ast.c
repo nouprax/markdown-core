@@ -15,7 +15,6 @@
 #include "table.h"
 #include "link.h"
 #include "footnote.h"
-#include "specimen.h"
 
 #include <node_type.h>
 #include <node.h>
@@ -44,7 +43,7 @@ typedef struct dump_buffer {
     size_t line_count;
 } dump_buffer;
 
-/* Where a Footnote, Specimen, Reference or Heading was written, for the
+/* Where a Footnote, Reference or Heading was written, for the
  * definition tables. */
 typedef struct {
     uint64_t start;
@@ -78,7 +77,7 @@ static bool table_add(definition_table *table, const markdown_core_node *node, u
 /* THE DEFINITION TABLES a publish fills, one per kind of node the
  * document finds by label. Every Heading enters its table; the ones whose
  * text declares a reference label are the labeled ones. */
-typedef enum { TABLE_FOOTNOTES, TABLE_SPECIMENS, TABLE_REFERENCES, TABLE_HEADINGS, TABLE_COUNT } definition_kind;
+typedef enum { TABLE_FOOTNOTES, TABLE_REFERENCES, TABLE_HEADINGS, TABLE_COUNT } definition_kind;
 
 /* Whether a definition has a label, and the label in `label`. */
 static bool definition_label(const markdown_core_node *node, markdown_core_chunk *label) {
@@ -86,9 +85,6 @@ static bool definition_label(const markdown_core_node *node, markdown_core_chunk
     case MARKDOWN_CORE_NODE_FOOTNOTE:
         *label = node->as.footnote->label.value;
         return node->as.footnote->label.has_value;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        *label = node->as.specimen->label.value;
-        return node->as.specimen->label.has_value;
     case MARKDOWN_CORE_NODE_REFERENCE:
         *label = node->as.reference->label;
         return label->len > 0;
@@ -292,7 +288,6 @@ static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITATION)] = SHAPE_CITATION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DEFINITION)] = SHAPE_DEFINITION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_FOOTNOTES),
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_SPECIMEN)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_SPECIMENS),
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_REFERENCE)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_REFERENCES),
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_HEADING)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_HEADINGS),
 };
@@ -2261,16 +2256,15 @@ static bool reference_targets(markdown_core_parser *parser, markdown_core_docume
  * anywhere (blocks.c), so it reads no label table. */
 
 /* The label table of each definition table: the labeled Footnotes, the
- * labeled Specimens, and the reference targets, which References and
+ * reference targets, which References and
  * Headings declare. */
-enum { LABELS_FOOTNOTES, LABELS_SPECIMENS, LABELS_TARGETS };
+enum { LABELS_FOOTNOTES, LABELS_TARGETS };
 
-static const uint32_t table_labels[TABLE_COUNT] = {LABELS_FOOTNOTES, LABELS_SPECIMENS, LABELS_TARGETS, LABELS_TARGETS};
+static const uint32_t table_labels[TABLE_COUNT] = {LABELS_FOOTNOTES, LABELS_TARGETS, LABELS_TARGETS};
 /* The roster space of each definition table's labels, whose kind the
  * committed tables hold (`kinds`). */
 static const markdown_core_space *const table_spaces[TABLE_COUNT] = {
-    &MARKDOWN_CORE_FOOTNOTE_SPACE, &MARKDOWN_CORE_SPECIMEN_SPACE, &MARKDOWN_CORE_REFERENCE_SPACE,
-    &MARKDOWN_CORE_REFERENCE_SPACE};
+    &MARKDOWN_CORE_FOOTNOTE_SPACE, &MARKDOWN_CORE_REFERENCE_SPACE, &MARKDOWN_CORE_REFERENCE_SPACE};
 
 typedef char committed_tables_fit[(int)TABLE_COUNT == (int)MARKDOWN_CORE_DEFINITION_TABLES &&
                                           (int)LABELS_TARGETS + 1 == (int)MARKDOWN_CORE_LABEL_TABLES
@@ -3122,13 +3116,12 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
             return false;
         }
     }
-    const size_t footnotes = tables[TABLE_FOOTNOTES].count, specimens = tables[TABLE_SPECIMENS].count;
-    const size_t listed = footnotes + specimens + tables[TABLE_REFERENCES].count;
+    const size_t footnotes = tables[TABLE_FOOTNOTES].count;
+    const size_t listed = footnotes + tables[TABLE_REFERENCES].count;
     const size_t targets = tables[TABLE_REFERENCES].count + tables[TABLE_HEADINGS].count;
-    size_t labels = targets > footnotes ? targets : footnotes;
-    labels = labels > specimens ? labels : specimens;
+    const size_t labels = targets > footnotes ? targets : footnotes;
     const size_t entry_bytes = labels * (2 * sizeof(label_entry) + sizeof(size_t));
-    const size_t node_bytes = (listed + footnotes + specimens + targets) * sizeof(const markdown_core_node *);
+    const size_t node_bytes = (listed + footnotes + targets) * sizeof(const markdown_core_node *);
     const size_t place_bytes = (listed + targets) * sizeof(markdown_core_table_place);
     const size_t bytes = room_bytes(entry_bytes) + room_bytes(node_bytes) + room_bytes(place_bytes);
     /* A snapshot that lists nothing of its own takes its empty blocks from
@@ -3144,7 +3137,7 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
     label_entry *entries = room_take(&at, entry_bytes);
     const markdown_core_node **nodes = room_take(&at, node_bytes);
     markdown_core_table_place *places = room_take(&at, place_bytes);
-    markdown_core_definitions *const all[] = {&value->footnotes, &value->specimens, &value->references};
+    markdown_core_definitions *const all[] = {&value->footnotes, &value->references};
     for (size_t table = 0; table < TABLE_HEADINGS; table++) {
         const size_t count = tables[table].count;
         snapshot_starts(&tables[table], &committed->starts[table], nodes, places);
@@ -3156,9 +3149,6 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
     snapshot_labeled(committed, &tables[TABLE_FOOTNOTES], LABELS_FOOTNOTES, &committed->labels[LABELS_FOOTNOTES],
                      entries, nodes, &value->footnotes);
     nodes += footnotes;
-    snapshot_labeled(committed, &tables[TABLE_SPECIMENS], LABELS_SPECIMENS, &committed->labels[LABELS_SPECIMENS],
-                     entries, nodes, &value->specimens);
-    nodes += specimens;
     snapshot_targets(committed, &tables[TABLE_REFERENCES], &tables[TABLE_HEADINGS], &committed->labels[LABELS_TARGETS],
                      entries, nodes, places, &value->reference_targets);
     value->committed = committed;
@@ -3205,7 +3195,7 @@ static void publish_end(const publish_walk *walk, markdown_core_parser *parser) 
 
 /* A publish's document value as the publish starts: no lookup tables. */
 static void publish_clear(markdown_core_document_value *value) {
-    value->footnotes = value->specimens = value->references = (markdown_core_definitions){0};
+    value->footnotes = value->references = (markdown_core_definitions){0};
     value->reference_targets = (markdown_core_node_table){0};
     value->committed = NULL;
 }
@@ -3214,7 +3204,6 @@ static void publish_clear(markdown_core_document_value *value) {
 static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, markdown_core_document_value *value) {
     definition_table *references = &walk->tables[TABLE_REFERENCES];
     const bool ok = table_seal(parser, &walk->tables[TABLE_FOOTNOTES], &value->footnotes) &&
-                    table_seal(parser, &walk->tables[TABLE_SPECIMENS], &value->specimens) &&
                     table_nodes(parser, references, &value->references.all.nodes);
     value->references.all.count = value->references.all.own = ok ? references->count : 0;
     return ok && reference_targets(parser, value, &walk->tables[TABLE_HEADINGS]);
@@ -3246,7 +3235,7 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
             }
         }
     }
-    markdown_core_definitions *const all[] = {&value->footnotes, &value->specimens, &value->references};
+    markdown_core_definitions *const all[] = {&value->footnotes, &value->references};
     for (size_t table = 0; table < TABLE_HEADINGS; table++) {
         all[table]->all = (markdown_core_node_table){NULL, committed->starts[table].count, 0, NULL};
     }
@@ -3828,7 +3817,6 @@ static const markdown_core_node_kind S_block_kind[MARKDOWN_CORE_NODE_KIND_COUNT]
     [MARKDOWN_CORE_NODE_FORMULA_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_FORMULA_BLOCK,
     [MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
     [MARKDOWN_CORE_NODE_COMMENT_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_COMMENT,
-    [MARKDOWN_CORE_NODE_SPECIMEN & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SPECIMEN,
     [MARKDOWN_CORE_NODE_DEFINITION_LIST & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DEFINITION_LIST,
     [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DEFINITION,
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_METADATA,
@@ -3905,7 +3893,6 @@ static const char *const S_kind_name[] = {
     "Definition",
     "Citation",
     "Footnote",
-    "Specimen",
     "Metadata",
     "Reference",
     "Topic",
@@ -3942,7 +3929,6 @@ static const char *const S_slot_name[] = {
     "label",
     "footnote",
     "bib",
-    "specimen",
     "name",
     "id",
     "class",
@@ -4628,19 +4614,8 @@ static markdown_core_referent citation_referent(const markdown_core_node *citati
             referent.label = chunk_string(item->value);
         }
         break;
-    case MARKDOWN_CORE_NODE_REFERENT_SPECIMEN:
-        referent.kind = MARKDOWN_CORE_REFERENT_SPECIMEN;
-        referent.label = chunk_string(item->value);
-        break;
     }
     return referent;
-}
-
-static void specimen_properties(const markdown_core_node *specimen, markdown_core_optional_string *label,
-                                markdown_core_optional_i64 *start) {
-    *label = optional_chunk_string(specimen->as.specimen->label);
-    start->has_value = specimen->as.specimen->has_start;
-    start->value = specimen->as.specimen->start;
 }
 
 /* THE PUBLIC ACCESSORS: each checks its kind, and an `_at` its index, then
@@ -5095,7 +5070,7 @@ static const markdown_core_node *table_entry(const markdown_core_node_table *tab
 static markdown_core_status definition_at(const markdown_core_document *document, size_t table, size_t index,
                                           const markdown_core_node **node) {
     const markdown_core_document_value *value = document_value(document);
-    const markdown_core_definitions *const tables[] = {&value->footnotes, &value->specimens, &value->references};
+    const markdown_core_definitions *const tables[] = {&value->footnotes, &value->references};
     if (index >= tables[table]->all.count) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
@@ -5110,15 +5085,6 @@ size_t markdown_core_document_footnote_count(const markdown_core_document *docum
 markdown_core_status markdown_core_document_footnote_at(const markdown_core_document *document, size_t index,
                                                         const markdown_core_node **footnote) {
     return definition_at(document, TABLE_FOOTNOTES, index, footnote);
-}
-
-size_t markdown_core_document_specimen_count(const markdown_core_document *document) {
-    return document_value(document)->specimens.all.count;
-}
-
-markdown_core_status markdown_core_document_specimen_at(const markdown_core_document *document, size_t index,
-                                                        const markdown_core_node **specimen) {
-    return definition_at(document, TABLE_SPECIMENS, index, specimen);
 }
 
 /* The first definition in source order whose label is `label`, byte for
@@ -5159,13 +5125,6 @@ const markdown_core_node *markdown_core_document_footnote_for(const markdown_cor
     const markdown_core_document_value *value = document_value(document);
     return definition_for(value->footnotes.labeled, value->footnotes.labeled_count,
                           committed_labels(value, LABELS_FOOTNOTES), label);
-}
-
-const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
-                                                              markdown_core_string label) {
-    const markdown_core_document_value *value = document_value(document);
-    return definition_for(value->specimens.labeled, value->specimens.labeled_count,
-                          committed_labels(value, LABELS_SPECIMENS), label);
 }
 
 markdown_core_status markdown_core_footnote_label(const markdown_core_node *footnote,
@@ -5220,20 +5179,6 @@ markdown_core_status markdown_core_document_reference_label_at(const markdown_co
 markdown_core_status markdown_core_reference_label(const markdown_core_node *reference, markdown_core_string *label) {
     REQUIRE_KIND(reference, KIND_BIT(MARKDOWN_CORE_KIND_REFERENCE));
     *label = chunk_string(reference->as.reference->label);
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_specimen_properties(const markdown_core_node *specimen,
-                                                       markdown_core_optional_string *label,
-                                                       markdown_core_optional_i64 *start) {
-    REQUIRE_KIND(specimen, KIND_BIT(MARKDOWN_CORE_KIND_SPECIMEN));
-    specimen_properties(specimen, label, start);
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_specimen_content(const markdown_core_node *specimen, markdown_core_nodes *content) {
-    REQUIRE_KIND(specimen, KIND_BIT(MARKDOWN_CORE_KIND_SPECIMEN));
-    *content = nodes_of(specimen);
     return MARKDOWN_CORE_OK;
 }
 
@@ -5493,17 +5438,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " label=");
         buffer_optional_string(buffer, optional_chunk_string(node->as.footnote->label));
         break;
-    case MARKDOWN_CORE_KIND_SPECIMEN:
-        specimen_properties(node, &oa, &start);
-        buffer_cstr(buffer, " label=");
-        buffer_optional_string(buffer, oa);
-        buffer_cstr(buffer, " start=");
-        if (start.has_value) {
-            buffer_i64(buffer, start.value);
-        } else {
-            buffer_cstr(buffer, "null");
-        }
-        break;
     case MARKDOWN_CORE_KIND_METADATA:
         buffer_cstr(buffer, " name=");
         dump_metadata_value(buffer, metadata_field(&node->as.metadata->name));
@@ -5738,7 +5672,7 @@ static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent
     } else if (referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE && referent.note) {
         buffer_cstr(buffer, "footnote(note)");
     } else {
-        buffer_cstr(buffer, referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN ? "specimen(label=" : "footnote(label=");
+        buffer_cstr(buffer, "footnote(label=");
         buffer_json_string(buffer, referent.label);
         buffer_cstr(buffer, ")");
     }

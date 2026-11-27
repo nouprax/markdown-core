@@ -357,9 +357,6 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_FOOTNOTE:
         edges[0] = sequence_edge(node, markdown_core_footnote_content);
         return 1;
-    case MARKDOWN_CORE_KIND_SPECIMEN:
-        edges[0] = sequence_edge(node, markdown_core_specimen_content);
-        return 1;
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
@@ -459,8 +456,8 @@ static void put_table_fields(wire_buffer *buffer, const markdown_core_node *node
 enum { WIRE_FOOTNOTE_LABEL = 0, WIRE_FOOTNOTE_NOTE = 1 };
 
 static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *node, const wire_edge *edges) {
-    /* CitationReferent: bib { key, mode: BibMode } | footnote { target: FootnoteTarget } |
-     * specimen { label }, where FootnoteTarget is label { value } | note { footnote: Footnote }. */
+    /* CitationReferent: bib { key, mode: BibMode } | footnote { target: FootnoteTarget }, where
+     * FootnoteTarget is label { value } | note { footnote: Footnote }. */
     markdown_core_referent referent;
     markdown_core_citation_referent(node, &referent);
     put_index(buffer, referent.kind, MARKDOWN_CORE_REFERENT_BIB);
@@ -470,10 +467,8 @@ static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *n
     } else if (referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE && referent.note != NULL) {
         /* The note is a node-valued field: its record is on the stack. */
         put_u8(buffer, WIRE_FOOTNOTE_NOTE);
-    } else if (referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE) {
-        put_u8(buffer, WIRE_FOOTNOTE_LABEL);
-        put_string(buffer, referent.label);
     } else {
+        put_u8(buffer, WIRE_FOOTNOTE_LABEL);
         put_string(buffer, referent.label);
     }
     put_nodes_count(buffer, &edges[1]);
@@ -633,14 +628,6 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
         put_optional_string(buffer, first);
         put_nodes_count(buffer, &edges[0]);
         break;
-    case MARKDOWN_CORE_KIND_SPECIMEN: {
-        markdown_core_optional_i64 start;
-        markdown_core_specimen_properties(node, &first, &start);
-        put_optional_string(buffer, first);
-        put_optional_int(buffer, start);
-        put_nodes_count(buffer, &edges[0]);
-        break;
-    }
     case MARKDOWN_CORE_KIND_METADATA:
         put_metadata(buffer, node);
         break;
@@ -791,7 +778,7 @@ static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
     free(stack.actions);
 }
 
-/* The document's footnote, specimen and Reference tables: each a count,
+/* The document's footnote and Reference tables: each a count,
  * then the id of every definition in source order. */
 typedef markdown_core_status (*definition_at)(const markdown_core_document *, size_t, const markdown_core_node **);
 
@@ -824,8 +811,6 @@ static void put_reference_labels(wire_buffer *buffer, const markdown_core_docume
 static void put_definitions(wire_buffer *buffer, const markdown_core_document *document) {
     put_definition_table(buffer, document, markdown_core_document_footnote_count(document),
                          markdown_core_document_footnote_at);
-    put_definition_table(buffer, document, markdown_core_document_specimen_count(document),
-                         markdown_core_document_specimen_at);
     put_definition_table(buffer, document, markdown_core_document_reference_count(document),
                          markdown_core_document_reference_at);
     put_reference_labels(buffer, document);

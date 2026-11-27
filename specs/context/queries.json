@@ -348,761 +348,749 @@
         {
             "line": 469,
             "source": "See @do\n",
-            "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:7 after=1:8..1:7\nslot specimen Citation closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:6..1:7 markers=1:5..1:5\n"},
-            "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:7 after=1:8..1:7\nslot specimen Citation closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:6..1:7 markers=1:5..1:5\n"}
+            "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:6..1:7 markers=1:5..1:5\n"},
+            "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:6..1:7 markers=1:5..1:5\n"}
         },
         {
-            "line": 478,
+            "line": 477,
             "source": "See [@do]\n",
             "utf8": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline Cite 1:6..1:6\nslot bib Citation closed before=1:7..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 markers=1:5..1:5,1:9..1:9\nnode 5 bib=1:7..1:8 markers=1:6..1:6\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline Cite 1:6..1:6\nslot bib Citation closed before=1:7..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 markers=1:5..1:5,1:9..1:9\nnode 5 bib=1:7..1:8 markers=1:6..1:6\n"}
         },
         {
-            "line": 486,
-            "source": "(@sp) text\n",
-            "utf8": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\nslot specimen Specimen closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 specimen=1:3..1:4 markers=1:1..1:2,1:5..1:6\nnode 3\nnode 4 none=1:7..1:10\n"},
-            "utf16": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\nslot specimen Specimen closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 specimen=1:3..1:4 markers=1:1..1:2,1:5..1:6\nnode 3\nnode 4 none=1:7..1:10\n"}
+            "line": 485,
+            "source": "(@sp\n",
+            "utf8": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\ninline Cite 1:2..1:2\nslot bib Citation closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:1\nnode 4\nnode 5 bib=1:3..1:4 markers=1:2..1:2\n"},
+            "utf16": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\ninline Cite 1:2..1:2\nslot bib Citation closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:1\nnode 4\nnode 5 bib=1:3..1:4 markers=1:2..1:2\n"}
         },
         {
             "line": 493,
-            "source": "(@sp\n",
-            "utf8": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\ninline Cite 1:2..1:2\nslot bib Citation closed before=1:3..1:4 after=1:5..1:4\nslot specimen Citation closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:1\nnode 4\nnode 5 bib=1:3..1:4 markers=1:2..1:2\n"},
-            "utf16": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\ninline Cite 1:2..1:2\nslot bib Citation closed before=1:3..1:4 after=1:5..1:4\nslot specimen Citation closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:1\nnode 4\nnode 5 bib=1:3..1:4 markers=1:2..1:2\n"}
-        },
-        {
-            "line": 502,
             "source": "See @{a{b}c} after\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:7..1:9 after=1:10..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4 5\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:7..1:11 markers=1:5..1:6,1:12..1:12\nnode 6 none=1:13..1:18\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:7..1:9 after=1:10..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4 5\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:7..1:11 markers=1:5..1:6,1:12..1:12\nnode 6 none=1:13..1:18\n"}
         },
         {
-            "line": 510,
+            "line": 501,
             "source": "See @{foo} after\n",
-            "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:5 after=1:6..1:10\nslot specimen Citation closed before=1:6..1:5 after=1:6..1:10\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 8\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath 1 2 4 5\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:7..1:9 markers=1:5..1:6,1:10..1:10\nnode 6 none=1:11..1:16\n"},
-            "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:5 after=1:6..1:10\nslot specimen Citation closed before=1:6..1:5 after=1:6..1:10\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 5\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath 1 2 4 5\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:7..1:9 markers=1:5..1:6,1:10..1:10\nnode 6 none=1:11..1:16\n"}
+            "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:5 after=1:6..1:10\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 8\npath 1 2 4 5\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:7..1:9 markers=1:5..1:6,1:10..1:10\nnode 6 none=1:11..1:16\n"},
+            "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation closed before=1:6..1:5 after=1:6..1:10\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 5\npath 1 2 4 5\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4\nnode 5 bib=1:7..1:9 markers=1:5..1:6,1:10..1:10\nnode 6 none=1:11..1:16\n"}
         },
         {
-            "line": 519,
+            "line": 509,
             "source": "See @.foo after\n",
-            "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation open before=1:6..1:5 after=1:6..1:5\nslot specimen Citation open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"{x}\" 3\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 8\nspell 1 \"x\" none\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:15\n"},
-            "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation open before=1:6..1:5 after=1:6..1:5\nslot specimen Citation open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"{x}\" 3\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 5\nspell 1 \"x\" none\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:15\n"}
+            "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"{x}\" 3\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 8\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:15\n"},
+            "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Cite 1:5..1:5\nslot bib Citation open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"{x}\" 3\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" \"{a]b}\" 5\nspell 0 \"é🚀\" \"{é🚀}\" 5\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:15\n"}
         },
         {
-            "line": 528,
+            "line": 517,
             "source": "See @{a@{b\n",
             "utf8": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\ninline Cite 1:5..1:5\nslot bib Citation open before=1:7..1:10 after=1:11..1:10\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:10\n"},
             "utf16": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\ninline Cite 1:5..1:5\nslot bib Citation open before=1:7..1:10 after=1:11..1:10\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:10\n"}
         },
         {
-            "line": 536,
+            "line": 525,
             "source": "See @{a b\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"}
         },
         {
-            "line": 542,
+            "line": 531,
             "source": "See @{foo [x](bar)\n",
             "utf8": {"cursor": [1, 17], "expected": "block Paragraph 1:1..1:16\ninline Link 1:11..1:11\nslot dest Link closed before=1:15..1:16 after=1:17..1:17\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:10\nnode 4 dest=1:15..1:17 markers=1:11..1:11,1:13..1:14,1:18..1:18\nnode 5 none=1:12..1:12\n"},
             "utf16": {"cursor": [1, 17], "expected": "block Paragraph 1:1..1:16\ninline Link 1:11..1:11\nslot dest Link closed before=1:15..1:16 after=1:17..1:17\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:10\nnode 4 dest=1:15..1:17 markers=1:11..1:11,1:13..1:14,1:18..1:18\nnode 5 none=1:12..1:12\n"}
         },
         {
-            "line": 550,
+            "line": 539,
             "source": "See @{foo bar}\n",
             "utf8": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline Cite 1:5..1:5\nslot bib Citation open before=1:7..1:8 after=1:9..1:9\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:14\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline Cite 1:5..1:5\nslot bib Citation open before=1:7..1:8 after=1:9..1:9\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:14\n"}
         },
         {
-            "line": 560,
+            "line": 549,
             "source": "see #to\n",
             "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:7 markers=1:5..1:5\n"},
             "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:7 markers=1:5..1:5\n"}
         },
         {
-            "line": 568,
+            "line": 557,
             "source": "see #topic/sub here\n",
             "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:14\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:14 markers=1:5..1:5\nnode 5 none=1:15..1:19\n"},
             "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:14\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:14 markers=1:5..1:5\nnode 5 none=1:15..1:19\n"}
         },
         {
-            "line": 576,
+            "line": 565,
             "source": "see #topic/sub here\n",
             "utf8": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:10 after=1:11..1:14\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:14 markers=1:5..1:5\nnode 5 none=1:15..1:19\n"},
             "utf16": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:10 after=1:11..1:14\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:14 markers=1:5..1:5\nnode 5 none=1:15..1:19\n"}
         },
         {
-            "line": 584,
+            "line": 573,
             "source": "see #/sub\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Topic 1:5..1:5\nslot name Topic open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" none\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Topic 1:5..1:5\nslot name Topic open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" none\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"}
         },
         {
-            "line": 592,
+            "line": 581,
             "source": "see #\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Topic 1:5..1:5\nslot name Topic open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:5\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Topic 1:5..1:5\nslot name Topic open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:5\n"}
         },
         {
-            "line": 600,
+            "line": 589,
             "source": "para #id#\n",
             "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\nslot id Paragraph closed before=1:7..1:7 after=1:8..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 id=1:7..1:8 markers=1:5..1:6,1:9..1:9\nnode 3 none=1:1..1:4\n"},
             "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\nslot id Paragraph closed before=1:7..1:7 after=1:8..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 id=1:7..1:8 markers=1:5..1:6,1:9..1:9\nnode 3 none=1:1..1:4\n"}
         },
         {
-            "line": 607,
+            "line": 596,
             "source": "para\n#id#\n",
             "utf8": {"cursor": [2, 3], "expected": "block Paragraph 1:1..1:4\nslot id Paragraph closed before=2:2..2:2 after=2:3..2:3\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 id=2:2..2:3 markers=1:5..2:1,2:4..2:4\nnode 3 none=1:1..1:4\n"},
             "utf16": {"cursor": [2, 3], "expected": "block Paragraph 1:1..1:4\nslot id Paragraph closed before=2:2..2:2 after=2:3..2:3\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 id=2:2..2:3 markers=1:5..2:1,2:4..2:4\nnode 3 none=1:1..1:4\n"}
         },
         {
-            "line": 615,
+            "line": 604,
             "source": "see #foo text #realid#\n",
             "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2 id=1:16..1:21 markers=1:14..1:15,1:22..1:22\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:8 markers=1:5..1:5\nnode 5 none=1:9..1:13\n"},
             "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2 id=1:16..1:21 markers=1:14..1:15,1:22..1:22\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:8 markers=1:5..1:5\nnode 5 none=1:9..1:13\n"}
         },
         {
-            "line": 625,
+            "line": 614,
             "source": "a :ba\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Directive 1:3..1:3\nslot name Directive open before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x[]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b[]\" 3\nspell 0 \"a]b\" \"a]b[]\" 3\nspell 0 \"é🚀\" \"é🚀[]\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:5\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Directive 1:3..1:3\nslot name Directive open before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x[]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b[]\" 3\nspell 0 \"a]b\" \"a]b[]\" 3\nspell 0 \"é🚀\" \"é🚀[]\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:5\n"}
         },
         {
-            "line": 633,
+            "line": 622,
             "source": "a :badge[x]\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Directive 1:3..1:3\nslot name Directive closed before=1:4..1:5 after=1:6..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 name=1:4..1:8 markers=1:3..1:3\nnode 5 markers=1:9..1:9,1:11..1:11\nnode 6 none=1:10..1:10\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Directive 1:3..1:3\nslot name Directive closed before=1:4..1:5 after=1:6..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 name=1:4..1:8 markers=1:3..1:3\nnode 5 markers=1:9..1:9,1:11..1:11\nnode 6 none=1:10..1:10\n"}
         },
         {
-            "line": 641,
+            "line": 630,
             "source": "a :\n",
             "utf8": {"cursor": [1, 4], "expected": "block Paragraph 1:1..1:3\ninline Directive 1:3..1:3\nslot name Directive open before=1:4..1:3 after=1:4..1:3\nspell 0 \"x\" \"x[]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b[]\" 3\nspell 0 \"a]b\" \"a]b[]\" 3\nspell 0 \"é🚀\" \"é🚀[]\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:3\n"},
             "utf16": {"cursor": [1, 4], "expected": "block Paragraph 1:1..1:3\ninline Directive 1:3..1:3\nslot name Directive open before=1:4..1:3 after=1:4..1:3\nspell 0 \"x\" \"x[]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b[]\" 3\nspell 0 \"a]b\" \"a]b[]\" 3\nspell 0 \"é🚀\" \"é🚀[]\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:3\n"}
         },
         {
-            "line": 649,
+            "line": 638,
             "source": ":::no\n",
             "utf8": {"cursor": [1, 6], "expected": "block DirectiveBlock 1:1..1:5\nslot name DirectiveBlock closed before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2 name=1:4..1:5 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 6], "expected": "block DirectiveBlock 1:1..1:5\nslot name DirectiveBlock closed before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2 name=1:4..1:5 markers=1:1..1:3\n"}
         },
         {
-            "line": 656,
+            "line": 645,
             "source": ":::note\nx\n:::\n",
             "utf8": {"cursor": [1, 6], "expected": "block DirectiveBlock 1:1..1:5\nslot name DirectiveBlock closed before=1:4..1:5 after=1:6..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 name=1:4..1:7 markers=1:1..1:3,1:8..2:0,2:2..3:3\nnode 3\nnode 4 none=2:1..2:1\n"},
             "utf16": {"cursor": [1, 6], "expected": "block DirectiveBlock 1:1..1:5\nslot name DirectiveBlock closed before=1:4..1:5 after=1:6..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 name=1:4..1:7 markers=1:1..1:3,1:8..2:0,2:2..3:3\nnode 3\nnode 4 none=2:1..2:1\n"}
         },
         {
-            "line": 665,
+            "line": 654,
             "source": "::vi\n",
             "utf8": {"cursor": [1, 5], "expected": "block DirectiveBlock 1:1..1:4\nslot name DirectiveBlock closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2 name=1:3..1:4 markers=1:1..1:2\n"},
             "utf16": {"cursor": [1, 5], "expected": "block DirectiveBlock 1:1..1:4\nslot name DirectiveBlock closed before=1:3..1:4 after=1:5..1:4\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2 name=1:3..1:4 markers=1:1..1:2\n"}
         },
         {
-            "line": 672,
+            "line": 661,
             "source": ":::note {.c\n",
             "utf8": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:11\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:11\n"}
         },
         {
-            "line": 678,
+            "line": 667,
             "source": ":::note {.c\n",
             "utf8": {"cursor": [1, 4], "expected": "block Paragraph 1:1..1:3\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:11\n"},
             "utf16": {"cursor": [1, 4], "expected": "block Paragraph 1:1..1:3\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:11\n"}
         },
         {
-            "line": 684,
+            "line": 673,
             "source": "- :::\n",
             "utf8": {"cursor": [1, 6], "expected": "block List 1:1..1:5\nblock ListItem 1:1..1:5\nblock Paragraph 1:3..1:5\nslot name DirectiveBlock open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2\nnode 3 markers=1:1..1:2\nnode 4\nnode 5 none=1:3..1:5\n"},
             "utf16": {"cursor": [1, 6], "expected": "block List 1:1..1:5\nblock ListItem 1:1..1:5\nblock Paragraph 1:3..1:5\nslot name DirectiveBlock open before=1:6..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2\nnode 3 markers=1:1..1:2\nnode 4\nnode 5 none=1:3..1:5\n"}
         },
         {
-            "line": 695,
+            "line": 684,
             "source": "[x](u){#i}\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\nslot id Link closed before=1:9..1:9 after=1:10..1:9\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 id=1:9..1:9 markers=1:1..1:1,1:3..1:4,1:6..1:8,1:10..1:10\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\nslot id Link closed before=1:9..1:9 after=1:10..1:9\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 id=1:9..1:9 markers=1:1..1:1,1:3..1:4,1:6..1:8,1:10..1:10\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 702,
+            "line": 691,
             "source": "[x](u){#i\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline None 1:7..1:7\ninline Topic 1:8..1:8\nslot id Link open before=1:9..1:9 after=1:10..1:9\nslot name Topic closed before=1:9..1:9 after=1:10..1:9\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 markers=1:1..1:1,1:3..1:4,1:6..1:6\nnode 4 none=1:2..1:2\nnode 5 none=1:7..1:7\nnode 6 name=1:9..1:9 markers=1:8..1:8\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline None 1:7..1:7\ninline Topic 1:8..1:8\nslot id Link open before=1:9..1:9 after=1:10..1:9\nslot name Topic closed before=1:9..1:9 after=1:10..1:9\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 markers=1:1..1:1,1:3..1:4,1:6..1:6\nnode 4 none=1:2..1:2\nnode 5 none=1:7..1:7\nnode 6 name=1:9..1:9 markers=1:8..1:8\n"}
         },
         {
-            "line": 712,
+            "line": 701,
             "source": "[x]{.c\n",
             "utf8": {"cursor": [1, 7], "expected": "block Paragraph 1:1..1:6\ninline None 1:4..1:4\nslot class Span open before=1:6..1:6 after=1:7..1:6\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:6\n"},
             "utf16": {"cursor": [1, 7], "expected": "block Paragraph 1:1..1:6\ninline None 1:4..1:4\nslot class Span open before=1:6..1:6 after=1:7..1:6\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:6\n"}
         },
         {
-            "line": 720,
+            "line": 709,
             "source": "`c`{.c}\n",
             "utf8": {"cursor": [1, 7], "expected": "block Paragraph 1:1..1:6\nslot class Code closed before=1:6..1:6 after=1:7..1:6\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 class=1:6..1:6 none=1:2..1:2 markers=1:1..1:1,1:3..1:5,1:7..1:7\n"},
             "utf16": {"cursor": [1, 7], "expected": "block Paragraph 1:1..1:6\nslot class Code closed before=1:6..1:6 after=1:7..1:6\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 class=1:6..1:6 none=1:2..1:2 markers=1:1..1:1,1:3..1:5,1:7..1:7\n"}
         },
         {
-            "line": 727,
+            "line": 716,
             "source": "[x]{\n",
             "utf8": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\ninline None 1:4..1:4\nslot record Span open before=1:5..1:4 after=1:5..1:4\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\n"},
             "utf16": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\ninline None 1:4..1:4\nslot record Span open before=1:5..1:4 after=1:5..1:4\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\n"}
         },
         {
-            "line": 735,
+            "line": 724,
             "source": "[x]{rec=va}\n",
             "utf8": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\nslot value Span closed before=1:9..1:10 after=1:11..1:10 prefix=\"rec\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:10 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:11..1:11\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\nslot value Span closed before=1:9..1:10 after=1:11..1:10 prefix=\"rec\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:10 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:11..1:11\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 742,
+            "line": 731,
             "source": "[x]{key=foo\\bar} after\n",
             "utf8": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\nslot value Span closed before=1:9..1:10 after=1:11..1:15 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:15 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:16..1:16\nnode 4 none=1:2..1:2\nnode 5 none=1:17..1:22\n"},
             "utf16": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\nslot value Span closed before=1:9..1:10 after=1:11..1:15 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:15 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:16..1:16\nnode 4 none=1:2..1:2\nnode 5 none=1:17..1:22\n"}
         },
         {
-            "line": 749,
+            "line": 738,
             "source": "[x]{key=foo\\bar} after\n",
             "utf8": {"cursor": [1, 14], "expected": "block Paragraph 1:1..1:13\nslot value Span closed before=1:9..1:13 after=1:14..1:15 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:15 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:16..1:16\nnode 4 none=1:2..1:2\nnode 5 none=1:17..1:22\n"},
             "utf16": {"cursor": [1, 14], "expected": "block Paragraph 1:1..1:13\nslot value Span closed before=1:9..1:13 after=1:14..1:15 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:15 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:16..1:16\nnode 4 none=1:2..1:2\nnode 5 none=1:17..1:22\n"}
         },
         {
-            "line": 756,
+            "line": 745,
             "source": "[x]{key=\"foo} after\n",
             "utf8": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot value Span closed before=1:9..1:11 after=1:12..1:12 prefix=\"key\"\nspell 0 \"x\" \"\"x\"\" 3\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"\"a|b\"\" 5\nspell 0 \"a]b\" \"\"a\\]b\"\" 6\nspell 0 \"é🚀\" \"\"é🚀\"\" 8\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:12 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:13..1:13\nnode 4 none=1:2..1:2\nnode 5 none=1:14..1:19\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot value Span closed before=1:9..1:11 after=1:12..1:12 prefix=\"key\"\nspell 0 \"x\" \"\"x\"\" 3\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"\"a|b\"\" 5\nspell 0 \"a]b\" \"\"a\\]b\"\" 6\nspell 0 \"é🚀\" \"\"é🚀\"\" 5\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:9..1:12 markers=1:1..1:1,1:3..1:4,1:8..1:8,1:13..1:13\nnode 4 none=1:2..1:2\nnode 5 none=1:14..1:19\n"}
         },
         {
-            "line": 763,
+            "line": 752,
             "source": "[x]{key=\"foo bar\"} after\n",
             "utf8": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot value Span closed before=1:9..1:11 after=1:12..1:17 prefix=\"key\"\nspell 0 \"x\" \"\"x\"\" 3\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"\"a|b\"\" 5\nspell 0 \"a]b\" \"\"a\\]b\"\" 6\nspell 0 \"é🚀\" \"\"é🚀\"\" 8\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:10..1:16 markers=1:1..1:1,1:3..1:4,1:8..1:9,1:17..1:18\nnode 4 none=1:2..1:2\nnode 5 none=1:19..1:24\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot value Span closed before=1:9..1:11 after=1:12..1:17 prefix=\"key\"\nspell 0 \"x\" \"\"x\"\" 3\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"\"a|b\"\" 5\nspell 0 \"a]b\" \"\"a\\]b\"\" 6\nspell 0 \"é🚀\" \"\"é🚀\"\" 5\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:10..1:16 markers=1:1..1:1,1:3..1:4,1:8..1:9,1:17..1:18\nnode 4 none=1:2..1:2\nnode 5 none=1:19..1:24\n"}
         },
         {
-            "line": 770,
+            "line": 759,
             "source": "[x]{key='foo' .c} after\n",
             "utf8": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot value Span closed before=1:9..1:11 after=1:12..1:13 prefix=\"key\"\nspell 0 \"x\" \"'x'\" 3\nspell 0 \"a b\" \"'a b'\" 5\nspell 0 \"a|b\" \"'a|b'\" 5\nspell 0 \"a]b\" \"'a\\]b'\" 6\nspell 0 \"é🚀\" \"'é🚀'\" 8\npath 1 2 3\nnode 1\nnode 2\nnode 3 class=1:16..1:16 record=1:5..1:7 value=1:10..1:12 markers=1:1..1:1,1:3..1:4,1:8..1:9,1:13..1:15,1:17..1:17\nnode 4 none=1:2..1:2\nnode 5 none=1:18..1:23\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot value Span closed before=1:9..1:11 after=1:12..1:13 prefix=\"key\"\nspell 0 \"x\" \"'x'\" 3\nspell 0 \"a b\" \"'a b'\" 5\nspell 0 \"a|b\" \"'a|b'\" 5\nspell 0 \"a]b\" \"'a\\]b'\" 6\nspell 0 \"é🚀\" \"'é🚀'\" 5\npath 1 2 3\nnode 1\nnode 2\nnode 3 class=1:16..1:16 record=1:5..1:7 value=1:10..1:12 markers=1:1..1:1,1:3..1:4,1:8..1:9,1:13..1:15,1:17..1:17\nnode 4 none=1:2..1:2\nnode 5 none=1:18..1:23\n"}
         },
         {
-            "line": 777,
+            "line": 766,
             "source": "[x]{key=\"foo bar\"} after\n",
             "utf8": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\nslot value Span closed before=1:9..1:8 after=1:9..1:17 prefix=\"key\"\nspell 0 \"x\" \"\"x\"\" 3\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"\"a|b\"\" 5\nspell 0 \"a]b\" \"\"a\\]b\"\" 6\nspell 0 \"é🚀\" \"\"é🚀\"\" 8\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:10..1:16 markers=1:1..1:1,1:3..1:4,1:8..1:9,1:17..1:18\nnode 4 none=1:2..1:2\nnode 5 none=1:19..1:24\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\nslot value Span closed before=1:9..1:8 after=1:9..1:17 prefix=\"key\"\nspell 0 \"x\" \"\"x\"\" 3\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"\"a|b\"\" 5\nspell 0 \"a]b\" \"\"a\\]b\"\" 6\nspell 0 \"é🚀\" \"\"é🚀\"\" 5\npath 1 2 3\nnode 1\nnode 2\nnode 3 record=1:5..1:7 value=1:10..1:16 markers=1:1..1:1,1:3..1:4,1:8..1:9,1:17..1:18\nnode 4 none=1:2..1:2\nnode 5 none=1:19..1:24\n"}
         },
         {
-            "line": 784,
+            "line": 773,
             "source": "[x]{.foo bar}\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\nslot record Span closed before=1:10..1:9 after=1:10..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 class=1:6..1:8 record=1:10..1:12 markers=1:1..1:1,1:3..1:5,1:9..1:9,1:13..1:13\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\nslot record Span closed before=1:10..1:9 after=1:10..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 class=1:6..1:8 record=1:10..1:12 markers=1:1..1:1,1:3..1:5,1:9..1:9,1:13..1:13\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 791,
+            "line": 780,
             "source": "[x]{rec=\"a b\n",
             "utf8": {"cursor": [1, 13], "expected": "block Paragraph 1:1..1:12\ninline None 1:4..1:4\nslot value Span open before=1:9..1:12 after=1:13..1:12 prefix=\"rec\"\nspell 0 \"x\" \"\"x\"}\" 3\nspell 0 \"a b\" \"\"a b\"}\" 5\nspell 0 \"a|b\" \"\"a|b\"}\" 5\nspell 0 \"a]b\" \"\"a\\]b\"}\" 6\nspell 0 \"é🚀\" \"\"é🚀\"}\" 8\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:12\n"},
             "utf16": {"cursor": [1, 13], "expected": "block Paragraph 1:1..1:12\ninline None 1:4..1:4\nslot value Span open before=1:9..1:12 after=1:13..1:12 prefix=\"rec\"\nspell 0 \"x\" \"\"x\"}\" 3\nspell 0 \"a b\" \"\"a b\"}\" 5\nspell 0 \"a|b\" \"\"a|b\"}\" 5\nspell 0 \"a]b\" \"\"a\\]b\"}\" 6\nspell 0 \"é🚀\" \"\"é🚀\"}\" 5\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:12\n"}
         },
         {
-            "line": 799,
+            "line": 788,
             "source": "[x]{#a .b r}\n",
             "utf8": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot record Span closed before=1:11..1:11 after=1:12..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 id=1:6..1:6 class=1:9..1:9 record=1:11..1:11 markers=1:1..1:1,1:3..1:5,1:7..1:8,1:10..1:10,1:12..1:12\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Paragraph 1:1..1:11\nslot record Span closed before=1:11..1:11 after=1:12..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 id=1:6..1:6 class=1:9..1:9 record=1:11..1:11 markers=1:1..1:1,1:3..1:5,1:7..1:8,1:10..1:10,1:12..1:12\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 806,
+            "line": 795,
             "source": ":d[x]{.c}\n",
             "utf8": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\nslot class Directive closed before=1:8..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 name=1:2..1:2 class=1:8..1:8 markers=1:1..1:1,1:6..1:7,1:9..1:9\nnode 4 markers=1:3..1:3,1:5..1:5\nnode 5 none=1:4..1:4\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\nslot class Directive closed before=1:8..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 name=1:2..1:2 class=1:8..1:8 markers=1:1..1:1,1:6..1:7,1:9..1:9\nnode 4 markers=1:3..1:3,1:5..1:5\nnode 5 none=1:4..1:4\n"}
         },
         {
-            "line": 813,
+            "line": 802,
             "source": "<http://a>{.c}\n",
             "utf8": {"cursor": [1, 14], "expected": "block Paragraph 1:1..1:13\nslot class Link closed before=1:13..1:13 after=1:14..1:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:2..1:9 class=1:13..1:13 markers=1:1..1:1,1:10..1:12,1:14..1:14\nnode 4 none=1:2..1:9\n"},
             "utf16": {"cursor": [1, 14], "expected": "block Paragraph 1:1..1:13\nslot class Link closed before=1:13..1:13 after=1:14..1:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:2..1:9 class=1:13..1:13 markers=1:1..1:1,1:10..1:12,1:14..1:14\nnode 4 none=1:2..1:9\n"}
         },
         {
-            "line": 820,
+            "line": 809,
             "source": "# Head {#i}\n",
             "utf8": {"cursor": [1, 11], "expected": "block Heading 1:1..1:10\nslot id Heading closed before=1:10..1:10 after=1:11..1:10\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 id=1:10..1:10 markers=1:1..1:2,1:7..1:9,1:11..1:11\nnode 3 none=1:3..1:6\n"},
             "utf16": {"cursor": [1, 11], "expected": "block Heading 1:1..1:10\nslot id Heading closed before=1:10..1:10 after=1:11..1:10\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 id=1:10..1:10 markers=1:1..1:2,1:7..1:9,1:11..1:11\nnode 3 none=1:3..1:6\n"}
         },
         {
-            "line": 827,
+            "line": 816,
             "source": "## A {.b} ##\n",
             "utf8": {"cursor": [1, 9], "expected": "block Heading 1:1..1:8\ninline None 1:6..1:6\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:3,1:10..1:12\nnode 3 none=1:4..1:9\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Heading 1:1..1:8\ninline None 1:6..1:6\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:3,1:10..1:12\nnode 3 none=1:4..1:9\n"}
         },
         {
-            "line": 834,
+            "line": 823,
             "source": "# text {.foo} trailing\n",
             "utf8": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 none=1:3..1:22\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 none=1:3..1:22\n"}
         },
         {
-            "line": 841,
+            "line": 830,
             "source": "# text {.foo trailing\n",
             "utf8": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 none=1:3..1:21\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 none=1:3..1:21\n"}
         },
         {
-            "line": 848,
+            "line": 837,
             "source": "# [x](url{.foo})\n",
             "utf8": {"cursor": [1, 14], "expected": "block Heading 1:1..1:13\ninline Link 1:3..1:3\nslot dest Link closed before=1:7..1:13 after=1:14..1:15\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 dest=1:7..1:15 markers=1:3..1:3,1:5..1:6,1:16..1:16\nnode 4 none=1:4..1:4\n"},
             "utf16": {"cursor": [1, 14], "expected": "block Heading 1:1..1:13\ninline Link 1:3..1:3\nslot dest Link closed before=1:7..1:13 after=1:14..1:15\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 dest=1:7..1:15 markers=1:3..1:3,1:5..1:6,1:16..1:16\nnode 4 none=1:4..1:4\n"}
         },
         {
-            "line": 856,
+            "line": 845,
             "source": "# text {.foo} ##\n",
             "utf8": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2,1:14..1:16\nnode 3 none=1:3..1:13\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2,1:14..1:16\nnode 3 none=1:3..1:13\n"}
         },
         {
-            "line": 863,
+            "line": 852,
             "source": "## A ## {.b}\n",
             "utf8": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\nslot class Heading closed before=1:11..1:11 after=1:12..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 class=1:11..1:11 markers=1:1..1:3,1:5..1:10,1:12..1:12\nnode 3 none=1:4..1:4\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\nslot class Heading closed before=1:11..1:11 after=1:12..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 class=1:11..1:11 markers=1:1..1:3,1:5..1:10,1:12..1:12\nnode 3 none=1:4..1:4\n"}
         },
         {
-            "line": 870,
+            "line": 859,
             "source": "# text {.foo}##\n",
             "utf8": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 none=1:3..1:15\n"},
             "utf16": {"cursor": [1, 12], "expected": "block Heading 1:1..1:11\ninline None 1:8..1:8\npath 1 2 3\nnode 1\nnode 2 markers=1:1..1:2\nnode 3 none=1:3..1:15\n"}
         },
         {
-            "line": 877,
+            "line": 866,
             "source": "# text {k=\"x {.bar}\n",
             "utf8": {"cursor": [1, 18], "expected": "block Heading 1:1..1:17\ninline None 1:8..1:8\nslot class Heading closed before=1:16..1:17 after=1:18..1:18\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 class=1:16..1:18 markers=1:1..1:2,1:13..1:15,1:19..1:19\nnode 3 none=1:3..1:12\n"},
             "utf16": {"cursor": [1, 18], "expected": "block Heading 1:1..1:17\ninline None 1:8..1:8\nslot class Heading closed before=1:16..1:17 after=1:18..1:18\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 class=1:16..1:18 markers=1:1..1:2,1:13..1:15,1:19..1:19\nnode 3 none=1:3..1:12\n"}
         },
         {
-            "line": 885,
+            "line": 874,
             "source": "# text {k={.foo}\n",
             "utf8": {"cursor": [1, 15], "expected": "block Heading 1:1..1:14\nslot value Heading closed before=1:11..1:14 after=1:15..1:15 prefix=\"k\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 record=1:9..1:9 value=1:11..1:15 markers=1:1..1:2,1:7..1:8,1:10..1:10,1:16..1:16\nnode 3 none=1:3..1:6\n"},
             "utf16": {"cursor": [1, 15], "expected": "block Heading 1:1..1:14\nslot value Heading closed before=1:11..1:14 after=1:15..1:15 prefix=\"k\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 record=1:9..1:9 value=1:11..1:15 markers=1:1..1:2,1:7..1:8,1:10..1:10,1:16..1:16\nnode 3 none=1:3..1:6\n"}
         },
         {
-            "line": 894,
+            "line": 883,
             "source": "> [!no\n",
             "utf8": {"cursor": [1, 7], "expected": "block Callout 1:1..1:6\nblock Paragraph 1:3..1:6\ninline None 1:3..1:3\nslot variant Callout open before=1:5..1:6 after=1:7..1:6\nspell 0 \"x\" \"x]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2 markers=1:1..1:2\nnode 3\nnode 4 none=1:3..1:6\n"},
             "utf16": {"cursor": [1, 7], "expected": "block Callout 1:1..1:6\nblock Paragraph 1:3..1:6\ninline None 1:3..1:3\nslot variant Callout open before=1:5..1:6 after=1:7..1:6\nspell 0 \"x\" \"x]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2 markers=1:1..1:2\nnode 3\nnode 4 none=1:3..1:6\n"}
         },
         {
-            "line": 903,
+            "line": 892,
             "source": "> [!note] Title\n",
             "utf8": {"cursor": [1, 7], "expected": "block Callout 1:1..1:6\nblock Paragraph 1:3..1:6\nslot variant Callout closed before=1:5..1:6 after=1:7..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 variant=1:5..1:8 markers=1:1..1:4,1:9..1:10\nnode 3 none=1:11..1:15\n"},
             "utf16": {"cursor": [1, 7], "expected": "block Callout 1:1..1:6\nblock Paragraph 1:3..1:6\nslot variant Callout closed before=1:5..1:6 after=1:7..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 variant=1:5..1:8 markers=1:1..1:4,1:9..1:10\nnode 3 none=1:11..1:15\n"}
         },
         {
-            "line": 911,
+            "line": 900,
             "source": "> [!\n",
             "utf8": {"cursor": [1, 5], "expected": "block Callout 1:1..1:4\nblock Paragraph 1:3..1:4\ninline None 1:3..1:3\nslot variant Callout open before=1:5..1:4 after=1:5..1:4\nspell 0 \"x\" \"x]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2 markers=1:1..1:2\nnode 3\nnode 4 none=1:3..1:4\n"},
             "utf16": {"cursor": [1, 5], "expected": "block Callout 1:1..1:4\nblock Paragraph 1:3..1:4\ninline None 1:3..1:3\nslot variant Callout open before=1:5..1:4 after=1:5..1:4\nspell 0 \"x\" \"x]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath\nnode 1\nnode 2 markers=1:1..1:2\nnode 3\nnode 4 none=1:3..1:4\n"}
         },
         {
-            "line": 920,
+            "line": 909,
             "source": "> x\n> [!no\n",
             "utf8": {"cursor": [2, 7], "expected": "block Callout 1:1..1:3\nblock Paragraph 1:3..1:3\ninline None 2:3..2:3\npath\nnode 1\nnode 2 markers=1:1..1:2,2:1..2:2\nnode 3\nnode 4 none=1:3..1:3\nnode 5 markers=1:4..2:0\nnode 6 none=2:3..2:6\n"},
             "utf16": {"cursor": [2, 7], "expected": "block Callout 1:1..1:3\nblock Paragraph 1:3..1:3\ninline None 2:3..2:3\npath\nnode 1\nnode 2 markers=1:1..1:2,2:1..2:2\nnode 3\nnode 4 none=1:3..1:3\nnode 5 markers=1:4..2:0\nnode 6 none=2:3..2:6\n"}
         },
         {
-            "line": 929,
+            "line": 918,
             "source": "- > [!wa]\n",
             "utf8": {"cursor": [1, 9], "expected": "block List 1:1..1:8\nblock ListItem 1:1..1:8\nblock Callout 1:3..1:8\nblock Paragraph 1:5..1:8\nslot variant Callout closed before=1:7..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 3 4\nnode 1\nnode 2\nnode 3 markers=1:1..1:2\nnode 4 variant=1:7..1:8 markers=1:3..1:6,1:9..1:9\n"},
             "utf16": {"cursor": [1, 9], "expected": "block List 1:1..1:8\nblock ListItem 1:1..1:8\nblock Callout 1:3..1:8\nblock Paragraph 1:5..1:8\nslot variant Callout closed before=1:7..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 3 4\nnode 1\nnode 2\nnode 3 markers=1:1..1:2\nnode 4 variant=1:7..1:8 markers=1:3..1:6,1:9..1:9\n"}
         },
         {
-            "line": 941,
+            "line": 930,
             "source": "```py\n",
             "utf8": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2 info=1:4..1:5 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2 info=1:4..1:5 markers=1:1..1:3\n"}
         },
         {
-            "line": 948,
+            "line": 937,
             "source": "```python\nx\n```\n",
             "utf8": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:9\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:9 none=2:1..3:0 markers=1:1..1:3,1:10..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:9\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:9 none=2:1..3:0 markers=1:1..1:3,1:10..2:0,3:1..3:3\n"}
         },
         {
-            "line": 957,
+            "line": 946,
             "source": "```\n",
             "utf8": {"cursor": [1, 4], "expected": "block CodeBlock 1:1..1:3\npath\nnode 1\nnode 2 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 4], "expected": "block CodeBlock 1:1..1:3\npath\nnode 1\nnode 2 markers=1:1..1:3\n"}
         },
         {
-            "line": 963,
+            "line": 952,
             "source": "```foo&#32;bar\nx\n```\n",
             "utf8": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:6\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:14 none=2:1..3:0 markers=1:1..1:3,1:15..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:6\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:14 none=2:1..3:0 markers=1:1..1:3,1:15..2:0,3:1..3:3\n"}
         },
         {
-            "line": 972,
+            "line": 961,
             "source": "```foo&#32;bar\nx\n```\n",
             "utf8": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\npath 1 2\nnode 1\nnode 2 info=1:4..1:14 none=2:1..3:0 markers=1:1..1:3,1:15..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\npath 1 2\nnode 1\nnode 2 info=1:4..1:14 none=2:1..3:0 markers=1:1..1:3,1:15..2:0,3:1..3:3\n"}
         },
         {
-            "line": 980,
+            "line": 969,
             "source": "```foo&Tab;bar\n",
             "utf8": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\npath 1 2\nnode 1\nnode 2 info=1:4..1:14 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\npath 1 2\nnode 1\nnode 2 info=1:4..1:14 markers=1:1..1:3\n"}
         },
         {
-            "line": 986,
+            "line": 975,
             "source": "```&#x20;foo\n",
             "utf8": {"cursor": [1, 12], "expected": "block CodeBlock 1:1..1:11\nslot info CodeBlock closed before=1:10..1:11 after=1:12..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:12 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 12], "expected": "block CodeBlock 1:1..1:11\nslot info CodeBlock closed before=1:10..1:11 after=1:12..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:12 markers=1:1..1:3\n"}
         },
         {
-            "line": 993,
+            "line": 982,
             "source": "```foo\\&#32;bar\n",
             "utf8": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:15 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:15 markers=1:1..1:3\n"}
         },
         {
-            "line": 1000,
+            "line": 989,
             "source": "```foo\\&#32;bar\n```\n",
             "utf8": {"cursor": [1, 15], "expected": "block CodeBlock 1:1..1:14\npath 1 2\nnode 1\nnode 2 info=1:4..1:15 markers=1:1..1:3,1:16..2:3\n"},
             "utf16": {"cursor": [1, 15], "expected": "block CodeBlock 1:1..1:14\npath 1 2\nnode 1\nnode 2 info=1:4..1:15 markers=1:1..1:3,1:16..2:3\n"}
         },
         {
-            "line": 1007,
+            "line": 996,
             "source": "```foo\\&#33;bar\n```\n",
             "utf8": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:15\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:15 markers=1:1..1:3,1:16..2:3\n"},
             "utf16": {"cursor": [1, 6], "expected": "block CodeBlock 1:1..1:5\nslot info CodeBlock closed before=1:4..1:5 after=1:6..1:15\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:15 markers=1:1..1:3,1:16..2:3\n"}
         },
         {
-            "line": 1015,
+            "line": 1004,
             "source": "```lang{junk\nx\n```\n",
             "utf8": {"cursor": [1, 7], "expected": "block CodeBlock 1:1..1:6\nslot info CodeBlock closed before=1:4..1:6 after=1:7..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:12 none=2:1..3:0 markers=1:1..1:3,1:13..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 7], "expected": "block CodeBlock 1:1..1:6\nslot info CodeBlock closed before=1:4..1:6 after=1:7..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:12 none=2:1..3:0 markers=1:1..1:3,1:13..2:0,3:1..3:3\n"}
         },
         {
-            "line": 1024,
+            "line": 1013,
             "source": "```lang{.c}\nx\n```\n",
             "utf8": {"cursor": [1, 7], "expected": "block CodeBlock 1:1..1:6\nslot info CodeBlock closed before=1:4..1:6 after=1:7..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 class=1:10..1:10 info=1:4..1:7 none=2:1..3:0 markers=1:1..1:3,1:8..1:9,1:11..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 7], "expected": "block CodeBlock 1:1..1:6\nslot info CodeBlock closed before=1:4..1:6 after=1:7..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 class=1:10..1:10 info=1:4..1:7 none=2:1..3:0 markers=1:1..1:3,1:8..1:9,1:11..2:0,3:1..3:3\n"}
         },
         {
-            "line": 1033,
+            "line": 1022,
             "source": "```lang{k=foo junk\nx\n```\n",
             "utf8": {"cursor": [1, 13], "expected": "block CodeBlock 1:1..1:12\nslot info CodeBlock closed before=1:4..1:12 after=1:13..1:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 info=1:4..1:18 none=2:1..3:0 markers=1:1..1:3,1:19..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 13], "expected": "block CodeBlock 1:1..1:12\nslot info CodeBlock closed before=1:4..1:12 after=1:13..1:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 info=1:4..1:18 none=2:1..3:0 markers=1:1..1:3,1:19..2:0,3:1..3:3\n"}
         },
         {
-            "line": 1042,
+            "line": 1031,
             "source": "```lang{.foo}\nx\n```\n",
             "utf8": {"cursor": [1, 12], "expected": "block CodeBlock 1:1..1:11\nslot class CodeBlock closed before=1:10..1:11 after=1:12..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 class=1:10..1:12 info=1:4..1:7 none=2:1..3:0 markers=1:1..1:3,1:8..1:9,1:13..2:0,3:1..3:3\n"},
             "utf16": {"cursor": [1, 12], "expected": "block CodeBlock 1:1..1:11\nslot class CodeBlock closed before=1:10..1:11 after=1:12..1:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 class=1:10..1:12 info=1:4..1:7 none=2:1..3:0 markers=1:1..1:3,1:8..1:9,1:13..2:0,3:1..3:3\n"}
         },
         {
-            "line": 1051,
+            "line": 1040,
             "source": "```lang{.fo\n",
             "utf8": {"cursor": [1, 12], "expected": "block CodeBlock 1:1..1:11\nslot class CodeBlock open before=1:10..1:11 after=1:12..1:11\nslot info CodeBlock closed before=1:4..1:11 after=1:12..1:11\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" \"a|b\" 3\nspell 1 \"a]b\" \"a]b\" 3\nspell 1 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2 info=1:4..1:11 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 12], "expected": "block CodeBlock 1:1..1:11\nslot class CodeBlock open before=1:10..1:11 after=1:12..1:11\nslot info CodeBlock closed before=1:4..1:11 after=1:12..1:11\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" \"a|b\" 3\nspell 1 \"a]b\" \"a]b\" 3\nspell 1 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2 info=1:4..1:11 markers=1:1..1:3\n"}
         },
         {
-            "line": 1059,
+            "line": 1048,
             "source": "```c {k={.foo}\n```\n",
             "utf8": {"cursor": [1, 13], "expected": "block CodeBlock 1:1..1:12\nslot value CodeBlock closed before=1:9..1:12 after=1:13..1:13 prefix=\"k\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 record=1:7..1:7 info=1:4..1:4 value=1:9..1:13 markers=1:1..1:3,1:5..1:6,1:8..1:8,1:14..2:3\n"},
             "utf16": {"cursor": [1, 13], "expected": "block CodeBlock 1:1..1:12\nslot value CodeBlock closed before=1:9..1:12 after=1:13..1:13 prefix=\"k\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 record=1:7..1:7 info=1:4..1:4 value=1:9..1:13 markers=1:1..1:3,1:5..1:6,1:8..1:8,1:14..2:3\n"}
         },
         {
-            "line": 1067,
+            "line": 1056,
             "source": "``` py {.c\n",
             "utf8": {"cursor": [1, 11], "expected": "block CodeBlock 1:1..1:10\nslot class CodeBlock open before=1:10..1:10 after=1:11..1:10\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 6\npath\nnode 1\nnode 2 info=1:5..1:10 markers=1:1..1:4\n"},
             "utf16": {"cursor": [1, 11], "expected": "block CodeBlock 1:1..1:10\nslot class CodeBlock open before=1:10..1:10 after=1:11..1:10\nspell 0 \"x\" \"x}\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b}\" 3\nspell 0 \"a]b\" \"a]b}\" 3\nspell 0 \"é🚀\" \"é🚀}\" 3\npath\nnode 1\nnode 2 info=1:5..1:10 markers=1:1..1:4\n"}
         },
         {
-            "line": 1074,
+            "line": 1063,
             "source": "```py {#a r=v}\n",
             "utf8": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\nslot value CodeBlock closed before=1:13..1:13 after=1:14..1:13 prefix=\"r\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 id=1:9..1:9 record=1:11..1:11 info=1:4..1:5 value=1:13..1:13 markers=1:1..1:3,1:6..1:8,1:10..1:10,1:12..1:12,1:14..1:14\n"},
             "utf16": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\nslot value CodeBlock closed before=1:13..1:13 after=1:14..1:13 prefix=\"r\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 id=1:9..1:9 record=1:11..1:11 info=1:4..1:5 value=1:13..1:13 markers=1:1..1:3,1:6..1:8,1:10..1:10,1:12..1:12,1:14..1:14\n"}
         },
         {
-            "line": 1081,
+            "line": 1070,
             "source": "```py {k=\"x {.bar}\n",
             "utf8": {"cursor": [1, 17], "expected": "block CodeBlock 1:1..1:16\nslot class CodeBlock closed before=1:15..1:16 after=1:17..1:17\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 class=1:15..1:17 info=1:4..1:11 markers=1:1..1:3,1:12..1:14,1:18..1:18\n"},
             "utf16": {"cursor": [1, 17], "expected": "block CodeBlock 1:1..1:16\nslot class CodeBlock closed before=1:15..1:16 after=1:17..1:17\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 class=1:15..1:17 info=1:4..1:11 markers=1:1..1:3,1:12..1:14,1:18..1:18\n"}
         },
         {
-            "line": 1088,
+            "line": 1077,
             "source": "```py {#a r=v} more\n",
             "utf8": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\npath 1 2\nnode 1\nnode 2 info=1:4..1:19 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 14], "expected": "block CodeBlock 1:1..1:13\npath 1 2\nnode 1\nnode 2 info=1:4..1:19 markers=1:1..1:3\n"}
         },
         {
-            "line": 1094,
+            "line": 1083,
             "source": "- ~~~ru\n",
             "utf8": {"cursor": [1, 8], "expected": "block List 1:1..1:7\nblock ListItem 1:1..1:7\nblock CodeBlock 1:3..1:7\nslot info CodeBlock closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath\nnode 1\nnode 2\nnode 3 markers=1:1..1:2\nnode 4 info=1:6..1:7 markers=1:3..1:5\n"},
             "utf16": {"cursor": [1, 8], "expected": "block List 1:1..1:7\nblock ListItem 1:1..1:7\nblock CodeBlock 1:3..1:7\nslot info CodeBlock closed before=1:6..1:7 after=1:8..1:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath\nnode 1\nnode 2\nnode 3 markers=1:1..1:2\nnode 4 info=1:6..1:7 markers=1:3..1:5\n"}
         },
         {
-            "line": 1103,
+            "line": 1092,
             "source": "```py x\n",
             "utf8": {"cursor": [1, 8], "expected": "block CodeBlock 1:1..1:7\npath\nnode 1\nnode 2 info=1:4..1:7 markers=1:1..1:3\n"},
             "utf16": {"cursor": [1, 8], "expected": "block CodeBlock 1:1..1:7\npath\nnode 1\nnode 2 info=1:4..1:7 markers=1:1..1:3\n"}
         },
         {
-            "line": 1118,
+            "line": 1107,
             "source": "---\nti\n---\n",
             "utf8": {"cursor": [2, 3], "expected": "block Metadata 1:1..1:3\nslot field Metadata open before=2:1..2:2 after=2:3..2:2\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 none=2:1..2:2 markers=1:1..2:0,2:3..3:3\n"},
             "utf16": {"cursor": [2, 3], "expected": "block Metadata 1:1..1:3\nslot field Metadata open before=2:1..2:2 after=2:3..2:2\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 none=2:1..2:2 markers=1:1..2:0,2:3..3:3\n"}
         },
         {
-            "line": 1127,
+            "line": 1116,
             "source": "---\ntitle: Notes\n---\n",
             "utf8": {"cursor": [2, 3], "expected": "block Metadata 1:1..1:3\nslot field Metadata closed before=2:1..2:2 after=2:3..2:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"},
             "utf16": {"cursor": [2, 3], "expected": "block Metadata 1:1..1:3\nslot field Metadata closed before=2:1..2:2 after=2:3..2:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"}
         },
         {
-            "line": 1136,
+            "line": 1125,
             "source": "---\n\"title\": Notes\n---\n",
             "utf8": {"cursor": [2, 4], "expected": "block Metadata 1:1..1:3\nslot field Metadata closed before=2:2..2:3 after=2:4..2:6\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 field=2:2..2:6 value=2:10..2:14 markers=1:1..2:1,2:7..2:9,2:15..3:3\n"},
             "utf16": {"cursor": [2, 4], "expected": "block Metadata 1:1..1:3\nslot field Metadata closed before=2:2..2:3 after=2:4..2:6\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 field=2:2..2:6 value=2:10..2:14 markers=1:1..2:1,2:7..2:9,2:15..3:3\n"}
         },
         {
-            "line": 1145,
+            "line": 1134,
             "source": "---\ntitle: Notes\n---\n",
             "utf8": {"cursor": [2, 10], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:8..2:9 after=2:10..2:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"},
             "utf16": {"cursor": [2, 10], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:8..2:9 after=2:10..2:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"}
         },
         {
-            "line": 1154,
+            "line": 1143,
             "source": "---\ntitle: \"Notes\"\n---\n",
             "utf8": {"cursor": [2, 11], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:9..2:10 after=2:11..2:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:9..2:13 markers=1:1..2:0,2:6..2:8,2:14..3:3\n"},
             "utf16": {"cursor": [2, 11], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:9..2:10 after=2:11..2:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:9..2:13 markers=1:1..2:0,2:6..2:8,2:14..3:3\n"}
         },
         {
-            "line": 1163,
+            "line": 1152,
             "source": "---\nstate: 'it''s'\n---\n",
             "utf8": {"cursor": [2, 14], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:9..2:13 after=2:14..2:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:9..2:13 markers=1:1..2:0,2:6..2:8,2:14..3:3\n"},
             "utf16": {"cursor": [2, 14], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:9..2:13 after=2:14..2:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:9..2:13 markers=1:1..2:0,2:6..2:8,2:14..3:3\n"}
         },
         {
-            "line": 1172,
+            "line": 1161,
             "source": "---\nstate: \n---\n",
             "utf8": {"cursor": [2, 8], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:8..2:7 after=2:8..2:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 markers=1:1..2:0,2:6..3:3\n"},
             "utf16": {"cursor": [2, 8], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:8..2:7 after=2:8..2:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 markers=1:1..2:0,2:6..3:3\n"}
         },
         {
-            "line": 1181,
+            "line": 1170,
             "source": "---\nstate:  # pick one\n---\n",
             "utf8": {"cursor": [2, 8], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:8..2:7 after=2:8..2:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 none=2:9..2:18 markers=1:1..2:0,2:6..2:8,2:19..3:3\n"},
             "utf16": {"cursor": [2, 8], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:8..2:7 after=2:8..2:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 none=2:9..2:18 markers=1:1..2:0,2:6..2:8,2:19..3:3\n"}
         },
         {
-            "line": 1190,
+            "line": 1179,
             "source": "---\nauthors: [Ada, Grace]\n---\n",
             "utf8": {"cursor": [2, 18], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:16..2:17 after=2:18..2:20\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:7 value=2:11..2:13,2:16..2:20 markers=1:1..2:0,2:8..2:10,2:14..2:15,2:21..3:3\n"},
             "utf16": {"cursor": [2, 18], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=2:16..2:17 after=2:18..2:20\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:7 value=2:11..2:13,2:16..2:20 markers=1:1..2:0,2:8..2:10,2:14..2:15,2:21..3:3\n"}
         },
         {
-            "line": 1199,
+            "line": 1188,
             "source": "---\nkeywords:\n  - math\n---\n",
             "utf8": {"cursor": [3, 7], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=3:5..3:6 after=3:7..3:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:8 value=3:5..3:8 markers=1:1..2:0,2:9..3:4,3:9..4:3\n"},
             "utf16": {"cursor": [3, 7], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=3:5..3:6 after=3:7..3:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"\"a]b\"\" 5\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:8 value=3:5..3:8 markers=1:1..2:0,2:9..3:4,3:9..4:3\n"}
         },
         {
-            "line": 1209,
+            "line": 1198,
             "source": "---\nabstract: |\n  First line\n  second line\n---\n",
             "utf8": {"cursor": [3, 11], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=3:3..3:10 after=3:11..3:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:8 value=3:3..4:13 markers=1:1..2:0,2:9..3:2,4:14..5:3\n"},
             "utf16": {"cursor": [3, 11], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=3:3..3:10 after=3:11..3:12\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:8 value=3:3..4:13 markers=1:1..2:0,2:9..3:2,4:14..5:3\n"}
         },
         {
-            "line": 1220,
+            "line": 1209,
             "source": "---\nabstract: |\n  First line\n  second line\n---\n",
             "utf8": {"cursor": [4, 9], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=4:3..4:8 after=4:9..4:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2\nnode 1\nnode 2 field=2:1..2:8 value=3:3..4:13 markers=1:1..2:0,2:9..3:2,4:14..5:3\n"},
             "utf16": {"cursor": [4, 9], "expected": "block Metadata 1:1..1:3\nslot value Metadata closed before=4:3..4:8 after=4:9..4:13\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2\nnode 1\nnode 2 field=2:1..2:8 value=3:3..4:13 markers=1:1..2:0,2:9..3:2,4:14..5:3\n"}
         },
         {
-            "line": 1231,
+            "line": 1220,
             "source": "---\ntitle: Notes\n\n---\n",
             "utf8": {"cursor": [3, 1], "expected": "block Metadata 1:1..1:3\nslot field Metadata open before=3:1..3:0 after=3:1..3:0\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..4:3\n"},
             "utf16": {"cursor": [3, 1], "expected": "block Metadata 1:1..1:3\nslot field Metadata open before=3:1..3:0 after=3:1..3:0\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..4:3\n"}
         },
         {
-            "line": 1241,
+            "line": 1230,
             "source": "---\ntitle: Notes # a comment\n---\n",
             "utf8": {"cursor": [2, 21], "expected": "block Metadata 1:1..1:3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 none=2:14..2:24 markers=1:1..2:0,2:6..2:7,2:13..2:13,2:25..3:3\n"},
             "utf16": {"cursor": [2, 21], "expected": "block Metadata 1:1..1:3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 none=2:14..2:24 markers=1:1..2:0,2:6..2:7,2:13..2:13,2:25..3:3\n"}
         },
         {
-            "line": 1249,
+            "line": 1238,
             "source": "---\ntitle: Notes\n---\n",
             "utf8": {"cursor": [1, 4], "expected": "block Metadata 1:1..1:3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"},
             "utf16": {"cursor": [1, 4], "expected": "block Metadata 1:1..1:3\npath 1 2\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"}
         },
         {
-            "line": 1257,
+            "line": 1246,
             "source": "---\ntitle: Notes\n---\n",
             "utf8": {"cursor": [3, 4], "expected": "block Metadata 1:1..1:3\npath\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"},
             "utf16": {"cursor": [3, 4], "expected": "block Metadata 1:1..1:3\npath\nnode 1\nnode 2 field=2:1..2:5 value=2:8..2:12 markers=1:1..2:0,2:6..2:7,2:13..3:3\n"}
         },
         {
-            "line": 1265,
+            "line": 1254,
             "source": "---\nti\n",
             "utf8": {"cursor": [2, 3], "expected": "block Paragraph 2:1..2:2\npath\nnode 1 markers=1:4..2:0\nnode 2 markers=1:1..1:3\nnode 3\nnode 4 none=2:1..2:2\n"},
             "utf16": {"cursor": [2, 3], "expected": "block Paragraph 2:1..2:2\npath\nnode 1 markers=1:4..2:0\nnode 2 markers=1:1..1:3\nnode 3\nnode 4 none=2:1..2:2\n"}
         },
         {
-            "line": 1274,
+            "line": 1263,
             "source": "a `x [[No\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Code 1:3..1:3\ninline CrossLink 1:6..1:7\ninline None 1:6..1:6\ninline None 1:7..1:7\nslot dest CrossLink open before=1:8..1:9 after=1:10..1:9\nspell 0 \"x\" \"x]]\" 1\nspell 0 \"a b\" \"a b]]\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀]]\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Code 1:3..1:3\ninline CrossLink 1:6..1:7\ninline None 1:6..1:6\ninline None 1:7..1:7\nslot dest CrossLink open before=1:8..1:9 after=1:10..1:9\nspell 0 \"x\" \"x]]\" 1\nspell 0 \"a b\" \"a b]]\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀]]\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"}
         },
         {
-            "line": 1285,
+            "line": 1274,
             "source": "a `x [[No]]`\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Code 1:3..1:3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 none=1:4..1:11 markers=1:3..1:3,1:12..1:12\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Code 1:3..1:3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 none=1:4..1:11 markers=1:3..1:3,1:12..1:12\n"}
         },
         {
-            "line": 1292,
+            "line": 1281,
             "source": "`[[No]]`\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Code 1:1..1:1\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:2..1:7 markers=1:1..1:1,1:8..1:8\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Code 1:1..1:1\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:2..1:7 markers=1:1..1:1,1:8..1:8\n"}
         },
         {
-            "line": 1299,
+            "line": 1288,
             "source": "`[[No]]\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Code 1:1..1:1\ninline CrossLink 1:2..1:3\nslot dest CrossLink closed before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:1\nnode 4 dest=1:4..1:5 markers=1:2..1:3,1:6..1:7\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\ninline Code 1:1..1:1\ninline CrossLink 1:2..1:3\nslot dest CrossLink closed before=1:4..1:5 after=1:6..1:5\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:1\nnode 4 dest=1:4..1:5 markers=1:2..1:3,1:6..1:7\n"}
         },
         {
-            "line": 1308,
+            "line": 1297,
             "source": "a $x [[No\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Formula 1:3..1:3\ninline CrossLink 1:6..1:7\ninline None 1:6..1:6\ninline None 1:7..1:7\nslot dest CrossLink open before=1:8..1:9 after=1:10..1:9\nspell 0 \"x\" \"x]]\" 1\nspell 0 \"a b\" \"a b]]\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀]]\" 6\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Formula 1:3..1:3\ninline CrossLink 1:6..1:7\ninline None 1:6..1:6\ninline None 1:7..1:7\nslot dest CrossLink open before=1:8..1:9 after=1:10..1:9\nspell 0 \"x\" \"x]]\" 1\nspell 0 \"a b\" \"a b]]\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀]]\" 3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:9\n"}
         },
         {
-            "line": 1319,
+            "line": 1308,
             "source": "a $x [[No$\n",
             "utf8": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Formula 1:3..1:3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 none=1:4..1:9 markers=1:3..1:3,1:10..1:10\n"},
             "utf16": {"cursor": [1, 10], "expected": "block Paragraph 1:1..1:9\ninline Formula 1:3..1:3\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 none=1:4..1:9 markers=1:3..1:3,1:10..1:10\n"}
         },
         {
-            "line": 1326,
+            "line": 1315,
             "source": "a <htt\n",
             "utf8": {"cursor": [1, 7], "expected": "block Paragraph 1:1..1:6\ninline None 1:3..1:3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:6\n"},
             "utf16": {"cursor": [1, 7], "expected": "block Paragraph 1:1..1:6\ninline None 1:3..1:3\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:6\n"}
         },
         {
-            "line": 1333,
+            "line": 1322,
             "source": "a <div>\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 none=1:3..1:7\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\npath 1 2 4\nnode 1\nnode 2\nnode 3 none=1:1..1:2\nnode 4 none=1:3..1:7\n"}
         },
         {
-            "line": 1341,
+            "line": 1330,
             "source": "\n",
             "utf8": {"cursor": [1, 1], "expected": "path\nnode 1\n"},
             "utf16": {"cursor": [1, 1], "expected": "path\nnode 1\n"}
         },
         {
-            "line": 1347,
+            "line": 1336,
             "source": "plain text\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:10\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\npath 1 2 3\nnode 1\nnode 2\nnode 3 none=1:1..1:10\n"}
         },
         {
-            "line": 1353,
+            "line": 1342,
             "source": "x#to\n",
             "utf8": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\n"},
             "utf16": {"cursor": [1, 5], "expected": "block Paragraph 1:1..1:4\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:4\n"}
         },
         {
-            "line": 1359,
+            "line": 1348,
             "source": "a ::b\n",
             "utf8": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:5\n"},
             "utf16": {"cursor": [1, 6], "expected": "block Paragraph 1:1..1:5\npath\nnode 1\nnode 2\nnode 3 none=1:1..1:5\n"}
         },
         {
-            "line": 1365,
+            "line": 1354,
             "source": "[x](u){key=[y](v){.foo}\n",
             "utf8": {"cursor": [1, 22], "expected": "block Paragraph 1:1..1:21\nslot value Link closed before=1:12..1:21 after=1:22..1:22 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 record=1:8..1:10 value=1:12..1:22 markers=1:1..1:1,1:3..1:4,1:6..1:7,1:11..1:11,1:23..1:23\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 22], "expected": "block Paragraph 1:1..1:21\nslot value Link closed before=1:12..1:21 after=1:22..1:22 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 record=1:8..1:10 value=1:12..1:22 markers=1:1..1:1,1:3..1:4,1:6..1:7,1:11..1:11,1:23..1:23\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 1372,
+            "line": 1361,
             "source": "[x](u){key=[y](v){.foo}\n",
             "utf8": {"cursor": [1, 19], "expected": "block Paragraph 1:1..1:18\nslot value Link closed before=1:12..1:18 after=1:19..1:22 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 record=1:8..1:10 value=1:12..1:22 markers=1:1..1:1,1:3..1:4,1:6..1:7,1:11..1:11,1:23..1:23\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 19], "expected": "block Paragraph 1:1..1:18\nslot value Link closed before=1:12..1:18 after=1:19..1:22 prefix=\"key\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:5 record=1:8..1:10 value=1:12..1:22 markers=1:1..1:1,1:3..1:4,1:6..1:7,1:11..1:11,1:23..1:23\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 1379,
+            "line": 1368,
             "source": "see #foo text #foo#\n",
             "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 4\nnode 1\nnode 2 id=1:16..1:18 markers=1:14..1:15,1:19..1:19\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:8 markers=1:5..1:5\nnode 5 none=1:9..1:13\n"},
             "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\nslot name Topic closed before=1:6..1:7 after=1:8..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 4\nnode 1\nnode 2 id=1:16..1:18 markers=1:14..1:15,1:19..1:19\nnode 3 none=1:1..1:4\nnode 4 name=1:6..1:8 markers=1:5..1:5\nnode 5 none=1:9..1:13\n"}
         },
         {
-            "line": 1387,
+            "line": 1376,
             "source": ":d{k=:d[a]{.a}}\n",
             "utf8": {"cursor": [1, 13], "expected": "block Paragraph 1:1..1:12\nslot value Directive closed before=1:6..1:12 after=1:13..1:13 prefix=\"k\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 name=1:2..1:2 record=1:4..1:4 value=1:6..1:13 markers=1:1..1:1,1:3..1:3,1:5..1:5,1:14..1:14\nnode 4 none=1:15..1:15\n"},
             "utf16": {"cursor": [1, 13], "expected": "block Paragraph 1:1..1:12\nslot value Directive closed before=1:6..1:12 after=1:13..1:13 prefix=\"k\"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"\"a b\"\" 5\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 name=1:2..1:2 record=1:4..1:4 value=1:6..1:13 markers=1:1..1:1,1:3..1:3,1:5..1:5,1:14..1:14\nnode 4 none=1:15..1:15\n"}
         },
         {
-            "line": 1394,
-            "source": "(@a) outer\n    (@b) inner\n",
-            "utf8": {"cursor": [2, 8], "expected": "block Specimen 1:1..1:10\nblock Paragraph 1:6..1:10\ninline Cite 2:6..2:6\nslot bib Citation closed before=2:7..2:7 after=2:8..2:7\nslot specimen Citation closed before=2:7..2:7 after=2:8..2:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath 1 2 3 9\nnode 1\nnode 2 specimen=1:3..1:3 markers=1:1..1:2,1:4..1:5,2:1..2:4\nnode 3\nnode 4 none=1:6..1:10\nnode 5 markers=1:11..2:0\nnode 6 none=2:5..2:5\nnode 7\nnode 8 bib=2:7..2:7 markers=2:6..2:6\nnode 9 none=2:8..2:14\n"},
-            "utf16": {"cursor": [2, 8], "expected": "block Specimen 1:1..1:10\nblock Paragraph 1:6..1:10\ninline Cite 2:6..2:6\nslot bib Citation closed before=2:7..2:7 after=2:8..2:7\nslot specimen Citation closed before=2:7..2:7 after=2:8..2:7\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\nspell 1 \"x\" \"x\" 1\nspell 1 \"a b\" none\nspell 1 \"a|b\" none\nspell 1 \"a]b\" none\nspell 1 \"é🚀\" none\npath 1 2 3 9\nnode 1\nnode 2 specimen=1:3..1:3 markers=1:1..1:2,1:4..1:5,2:1..2:4\nnode 3\nnode 4 none=1:6..1:10\nnode 5 markers=1:11..2:0\nnode 6 none=2:5..2:5\nnode 7\nnode 8 bib=2:7..2:7 markers=2:6..2:6\nnode 9 none=2:8..2:14\n"}
-        },
-        {
-            "line": 1405,
+            "line": 1383,
             "source": "^[[x](@k)]\n",
             "utf8": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline Footnote 1:1..1:2\ninline Link 1:3..1:3\ninline Cite 1:7..1:7\nslot dest Link closed before=1:7..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3 4 5 6\nnode 1\nnode 2\nnode 3 markers=1:1..1:2,1:10..1:10\nnode 4\nnode 5 markers=1:1..1:2,1:10..1:10\nnode 6 dest=1:7..1:8 markers=1:3..1:3,1:5..1:6,1:9..1:9\nnode 7 none=1:4..1:4\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline Footnote 1:1..1:2\ninline Link 1:3..1:3\ninline Cite 1:7..1:7\nslot dest Link closed before=1:7..1:8 after=1:9..1:8\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3 4 5 6\nnode 1\nnode 2\nnode 3 markers=1:1..1:2,1:10..1:10\nnode 4\nnode 5 markers=1:1..1:2,1:10..1:10\nnode 6 dest=1:7..1:8 markers=1:3..1:3,1:5..1:6,1:9..1:9\nnode 7 none=1:4..1:4\n"}
         },
         {
-            "line": 1415,
+            "line": 1393,
             "source": "[^@k]{@}\n",
             "utf8": {"cursor": [1, 3], "expected": "block Paragraph 1:1..1:2\npath 1 2 3 5 6\nnode 1\nnode 2\nnode 3 record=1:7..1:7 markers=1:1..1:1,1:5..1:6,1:8..1:8\nnode 4 none=1:2..1:2\nnode 5\nnode 6 bib=1:4..1:4 markers=1:3..1:3\n"},
             "utf16": {"cursor": [1, 3], "expected": "block Paragraph 1:1..1:2\npath 1 2 3 5 6\nnode 1\nnode 2\nnode 3 record=1:7..1:7 markers=1:1..1:1,1:5..1:6,1:8..1:8\nnode 4 none=1:2..1:2\nnode 5\nnode 6 bib=1:4..1:4 markers=1:3..1:3\n"}
         },
         {
-            "line": 1421,
+            "line": 1399,
             "source": ":n{k=\"x\nyz\"}\n",
             "utf8": {"cursor": [2, 2], "expected": "block Paragraph 1:1..1:7\nslot value Directive closed before=2:1..2:1 after=2:2..2:3 prefix=\"k\"\nspell 0 \"x\" none\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 3\nnode 1\nnode 2\nnode 3 name=1:2..1:2 record=1:4..1:4 value=1:7..2:2 markers=1:1..1:1,1:3..1:3,1:5..1:6,2:3..2:4\n"},
             "utf16": {"cursor": [2, 2], "expected": "block Paragraph 1:1..1:7\nslot value Directive closed before=2:1..2:1 after=2:2..2:3 prefix=\"k\"\nspell 0 \"x\" none\nspell 0 \"a b\" none\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" none\npath 1 2 3\nnode 1\nnode 2\nnode 3 name=1:2..1:2 record=1:4..1:4 value=1:7..2:2 markers=1:1..1:1,1:3..1:3,1:5..1:6,2:3..2:4\n"}
         },
         {
-            "line": 1429,
+            "line": 1407,
             "source": "see #foo# text #foo#\n",
             "utf8": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\npath 1 2 3\nnode 1\nnode 2 id=1:17..1:19 markers=1:15..1:16,1:20..1:20\nnode 3 none=1:1..1:14\n"},
             "utf16": {"cursor": [1, 8], "expected": "block Paragraph 1:1..1:7\ninline Topic 1:5..1:5\npath 1 2 3\nnode 1\nnode 2 id=1:17..1:19 markers=1:15..1:16,1:20..1:20\nnode 3 none=1:1..1:14\n"}
         },
         {
-            "line": 1436,
+            "line": 1414,
             "source": "[x](foo\\&#38;bar)\n",
             "utf8": {"cursor": [1, 16], "expected": "block Paragraph 1:1..1:15\ninline Link 1:1..1:1\nslot dest Link closed before=1:5..1:15 after=1:16..1:16\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:16 markers=1:1..1:1,1:3..1:4,1:17..1:17\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 16], "expected": "block Paragraph 1:1..1:15\ninline Link 1:1..1:1\nslot dest Link closed before=1:5..1:15 after=1:16..1:16\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a\\]b\" 4\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:5..1:16 markers=1:1..1:1,1:3..1:4,1:17..1:17\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 1444,
+            "line": 1422,
             "source": "[[x #t# y]]\n",
             "utf8": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline CrossLink 1:1..1:2\nslot anchor CrossLink closed before=1:6..1:8 after=1:9..1:9 prefix=\"x \"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:3..1:4 anchor=1:6..1:9 markers=1:1..1:2,1:5..1:5,1:10..1:11\n"},
             "utf16": {"cursor": [1, 9], "expected": "block Paragraph 1:1..1:8\ninline CrossLink 1:1..1:2\nslot anchor CrossLink closed before=1:6..1:8 after=1:9..1:9 prefix=\"x \"\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" \"a b\" 3\nspell 0 \"a|b\" none\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 dest=1:3..1:4 anchor=1:6..1:9 markers=1:1..1:2,1:5..1:5,1:10..1:11\n"}
         },
         {
-            "line": 1452,
+            "line": 1430,
             "source": "[x]{.x #t y #i#}\n",
             "utf8": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\nslot record Span closed before=1:11..1:10 after=1:11..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1\nnode 2\nnode 3 id=1:9..1:9,1:14..1:15 class=1:6..1:6 record=1:11..1:11 markers=1:1..1:1,1:3..1:5,1:7..1:8,1:10..1:10,1:12..1:13,1:16..1:16\nnode 4 none=1:2..1:2\n"},
             "utf16": {"cursor": [1, 11], "expected": "block Paragraph 1:1..1:10\nslot record Span closed before=1:11..1:10 after=1:11..1:11\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1\nnode 2\nnode 3 id=1:9..1:9,1:14..1:15 class=1:6..1:6 record=1:11..1:11 markers=1:1..1:1,1:3..1:5,1:7..1:8,1:10..1:10,1:12..1:13,1:16..1:16\nnode 4 none=1:2..1:2\n"}
         },
         {
-            "line": 1459,
+            "line": 1437,
             "source": "[x]{k=\"```\nab}\n```\"}\n",
             "utf8": {"cursor": [2, 2], "expected": "block Paragraph 1:1..1:10\nslot record Span closed before=2:1..2:1 after=2:2..2:2\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 6\npath 1 2 3\nnode 1 markers=2:4..3:0\nnode 2\nnode 3 record=1:5..1:5,2:1..2:2 value=1:7..1:10 markers=1:1..1:1,1:3..1:4,1:6..1:6,1:11..2:0,2:3..2:3\nnode 4 none=1:2..1:2\nnode 5 info=3:4..3:5 markers=3:1..3:3\n"},
             "utf16": {"cursor": [2, 2], "expected": "block Paragraph 1:1..1:10\nslot record Span closed before=2:1..2:1 after=2:2..2:2\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b\" 3\nspell 0 \"a]b\" \"a]b\" 3\nspell 0 \"é🚀\" \"é🚀\" 3\npath 1 2 3\nnode 1 markers=2:4..3:0\nnode 2\nnode 3 record=1:5..1:5,2:1..2:2 value=1:7..1:10 markers=1:1..1:1,1:3..1:4,1:6..1:6,1:11..2:0,2:3..2:3\nnode 4 none=1:2..1:2\nnode 5 info=3:4..3:5 markers=3:1..3:3\n"}
         },
         {
-            "line": 1468,
+            "line": 1446,
             "source": ":d[```\n@k\n```]{.a}\n",
             "utf8": {"cursor": [2, 2], "expected": "block Paragraph 1:1..1:6\ninline None 1:3..1:3\ninline Code 1:4..1:6\ninline Cite 2:1..2:1\nslot bib Citation closed before=2:2..2:1 after=2:2..2:2\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"{é🚀}\" 8\npath 1 2 5 6\nnode 1 markers=2:3..3:0\nnode 2\nnode 3 none=1:1..1:6\nnode 4 markers=1:7..2:0\nnode 5\nnode 6 bib=2:2..2:2 markers=2:1..2:1\nnode 7 class=3:7..3:7 info=3:4..3:4 markers=3:1..3:3,3:5..3:6,3:8..3:8\n"},
             "utf16": {"cursor": [2, 2], "expected": "block Paragraph 1:1..1:6\ninline None 1:3..1:3\ninline Code 1:4..1:6\ninline Cite 2:1..2:1\nslot bib Citation closed before=2:2..2:1 after=2:2..2:2\nspell 0 \"x\" \"x\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"{a|b}\" 5\nspell 0 \"a]b\" none\nspell 0 \"é🚀\" \"{é🚀}\" 5\npath 1 2 5 6\nnode 1 markers=2:3..3:0\nnode 2\nnode 3 none=1:1..1:6\nnode 4 markers=1:7..2:0\nnode 5\nnode 6 bib=2:2..2:2 markers=2:1..2:1\nnode 7 class=3:7..3:7 info=3:4..3:4 markers=3:1..3:3,3:5..3:6,3:8..3:8\n"}
         },
         {
-            "line": 1486,
+            "line": 1464,
             "source": "[foo][]\n\n[foo]: /url \"title\"\n\n",
             "utf8": {"cursor": [4, 1], "expected": "block Paragraph 3:1..3:19\npath\nnode 1 markers=1:8..3:0,3:20..4:0\nnode 2\nnode 5 markers=1:1..1:1,1:5..1:7\nnode 6 none=1:2..1:4\nnode 4 dest=3:8..3:11 label=3:2..3:4 none=3:14..3:18 markers=3:1..3:1,3:5..3:7,3:12..3:13,3:19..3:19\n"},
             "utf16": {"cursor": [4, 1], "expected": "block Paragraph 3:1..3:19\npath\nnode 1 markers=1:8..3:0,3:20..4:0\nnode 2\nnode 5 markers=1:1..1:1,1:5..1:7\nnode 6 none=1:2..1:4\nnode 4 dest=3:8..3:11 label=3:2..3:4 none=3:14..3:18 markers=3:1..3:1,3:5..3:7,3:12..3:13,3:19..3:19\n"}
         },
         {
-            "line": 1495,
+            "line": 1473,
             "source": "# :d[:n]\n\n# x:d\n",
             "utf8": {"cursor": [3, 5], "expected": "block Heading 3:1..3:4\ninline Directive 3:4..3:4\nslot name Directive open before=3:5..3:4 after=3:5..3:5\nspell 0 \"x\" \"x[]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b[]\" 3\nspell 0 \"a]b\" \"a]b[]\" 3\nspell 0 \"é🚀\" \"é🚀[]\" 6\npath 1 6 7\nnode 1 markers=1:9..3:0\nnode 2 markers=1:1..1:2\nnode 3 name=1:4..1:4 markers=1:3..1:3\nnode 4 markers=1:5..1:5,1:8..1:8\nnode 5 none=1:6..1:7\nnode 6 markers=3:1..3:2\nnode 7 none=3:3..3:5\n"},
             "utf16": {"cursor": [3, 5], "expected": "block Heading 3:1..3:4\ninline Directive 3:4..3:4\nslot name Directive open before=3:5..3:4 after=3:5..3:5\nspell 0 \"x\" \"x[]\" 1\nspell 0 \"a b\" none\nspell 0 \"a|b\" \"a|b[]\" 3\nspell 0 \"a]b\" \"a]b[]\" 3\nspell 0 \"é🚀\" \"é🚀[]\" 3\npath 1 6 7\nnode 1 markers=1:9..3:0\nnode 2 markers=1:1..1:2\nnode 3 name=1:4..1:4 markers=1:3..1:3\nnode 4 markers=1:5..1:5,1:8..1:8\nnode 5 none=1:6..1:7\nnode 6 markers=3:1..3:2\nnode 7 none=3:3..3:5\n"}

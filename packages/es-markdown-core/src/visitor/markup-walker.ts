@@ -163,7 +163,6 @@ const relations: {
             ? [[node.referent.target.footnote], node.prefix, node.suffix]
             : [node.prefix, node.suffix],
     footnote: (node) => [node.content],
-    specimen: (node) => [node.content],
     thematicBreak: () => none,
     codeBlock: () => none,
     htmlBlock: () => none,

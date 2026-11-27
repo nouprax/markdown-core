@@ -34,7 +34,7 @@ use crate::construct::{
     attention, autolink, autolink_literal, character_escape, character_reference, citation,
     comment, cross_link, directive_text, formula, hard_break_escape, html_text, label_end,
     label_start_footnote, label_start_image, label_start_link, label_start_note, partial_data,
-    raw_text, specimen_reference, topic,
+    raw_text, topic,
 };
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -73,10 +73,6 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: directive_text::STARTS,
             step: StateName::DirectiveText(directive_text::Step::Start),
-        },
-        Entry {
-            starts: specimen_reference::STARTS,
-            step: StateName::SpecimenReference(specimen_reference::Step::Start),
         },
         Entry {
             starts: citation::STARTS,

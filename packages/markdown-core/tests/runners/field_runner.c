@@ -469,8 +469,7 @@ static bool same_label(const uint8_t *a, size_t a_size, const uint8_t *b, size_t
 
 /* A slot kind whose value a definition declares and a use names. */
 static bool naming(markdown_core_slot_kind slot) {
-    return slot == MARKDOWN_CORE_SLOT_LABEL || slot == MARKDOWN_CORE_SLOT_FOOTNOTE ||
-           slot == MARKDOWN_CORE_SLOT_SPECIMEN;
+    return slot == MARKDOWN_CORE_SLOT_LABEL || slot == MARKDOWN_CORE_SLOT_FOOTNOTE;
 }
 
 /* SUBSTITUTION of the fields `pick` names: the edited source parses to the
@@ -684,8 +683,7 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
                     pick[k] = true;
                     first = first && k >= i;
                     const char *owner = kind_of(g->node);
-                    declared = declared || !strcmp(owner, "Reference") || !strcmp(owner, "Footnote") ||
-                               !strcmp(owner, "Specimen");
+                    declared = declared || !strcmp(owner, "Reference") || !strcmp(owner, "Footnote");
                 }
             }
             /* A collapsed or shortcut reference names its label with its

@@ -49,10 +49,9 @@ public enum class NodeKind(
     DEFINITION(38, "Definition"),
     CITATION(39, "Citation"),
     FOOTNOTE(40, "Footnote"),
-    SPECIMEN(41, "Specimen"),
-    METADATA(42, "Metadata"),
-    REFERENCE(43, "Reference"),
-    TOPIC(44, "Topic"),
+    METADATA(41, "Metadata"),
+    REFERENCE(42, "Reference"),
+    TOPIC(43, "Topic"),
     ;
 
     /** The kind's name in the canonical AST, as C's `markdown_core_node_kind_name` answers it. */
@@ -88,32 +87,29 @@ public enum class SlotKind(
     /** A bibliography key. */
     BIB(5, "bib"),
 
-    /** A specimen label, at a specimen reference or at the definition that states it. */
-    SPECIMEN(6, "specimen"),
-
     /** The name of a directive or a topic. */
-    NAME(7, "name"),
+    NAME(6, "name"),
 
     /** An anchor a node declares: an attribute identifier or a block identifier. */
-    ID(8, "id"),
+    ID(7, "id"),
 
     /** An attribute class. */
-    CLASS(9, "class"),
+    CLASS(8, "class"),
 
     /** The name of an attribute record. */
-    RECORD(10, "record"),
+    RECORD(9, "record"),
 
     /** The authored type of a callout. */
-    VARIANT(11, "variant"),
+    VARIANT(10, "variant"),
 
     /** The info string of a fenced code block. */
-    INFO(12, "info"),
+    INFO(11, "info"),
 
     /** The name of a properties member. */
-    FIELD(13, "field"),
+    FIELD(12, "field"),
 
     /** The value of an attribute record or of a properties member. */
-    VALUE(14, "value"),
+    VALUE(13, "value"),
     ;
 
     /** The slot kind's name in the contract, as C's `markdown_core_slot_kind_name` answers it. */

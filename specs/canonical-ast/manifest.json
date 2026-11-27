@@ -51,7 +51,6 @@
             "Definition",
             "Citation",
             "Footnote",
-            "Specimen",
             "Metadata",
             "Reference"
         ],
@@ -158,13 +157,8 @@
             "citation.bib.mode.normal",
             "citation.bib.mode.authorInText",
             "citation.bib.mode.suppressAuthor",
-            "citation.referent.specimen",
             "citation.prefix.populated",
             "citation.suffix.populated",
-            "specimen.label.null",
-            "specimen.label.value",
-            "specimen.start.null",
-            "specimen.start.value",
             "span.content.empty",
             "span.content.populated"
         ],
@@ -943,36 +937,6 @@
                     "footnote.label.null"
                 ],
                 "orders": ["document.source-order", "cite.items-in-order"]
-            }
-        },
-        {
-            "name": "specimens",
-            "input": "specimens.md",
-            "expected": "specimens.ast",
-            "coverage": {
-                "kinds": [
-                    "Document",
-                    "Callout",
-                    "Paragraph",
-                    "Heading",
-                    "Text",
-                    "Emphasis",
-                    "Cite",
-                    "Citation",
-                    "Footnote",
-                    "Specimen"
-                ],
-                "states": [
-                    "citation.referent.specimen",
-                    "specimen.start.null",
-                    "specimen.start.value",
-                    "scope.positive",
-                    "citation.referent.footnote.label",
-                    "footnote.label.value",
-                    "specimen.label.null",
-                    "specimen.label.value"
-                ],
-                "orders": ["document.source-order"]
             }
         },
         {

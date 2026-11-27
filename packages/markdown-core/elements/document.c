@@ -135,7 +135,7 @@ MARKDOWN_CORE_ATTRIBUTE((noinline)) void markdown_core_node_free_tables(markdown
     if (document->committed) {
         return;
     }
-    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
+    markdown_core_definitions *const tables[] = {&document->footnotes, &document->references};
     for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
         markdown_core_free((void *)tables[i]->all.nodes);
         markdown_core_free(tables[i]->all.places);

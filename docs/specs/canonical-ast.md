@@ -46,7 +46,7 @@ maintaining the contract and comparison policies.
 - Adjacent `Text` nodes in one content array are merged into one node spanning
   from the first's start to the last's end, and a `Text` node is never empty.
 - Every independently scoped semantic element is `Markup`, including `Citation`,
-  `Footnote`, `Specimen`, and `Metadata`. Other values use their owner’s scope.
+  `Footnote`, and `Metadata`. Other values use their owner’s scope.
 
 ## Identity and equality
 
@@ -183,7 +183,6 @@ range of their own.
 | Block identifier | Remains inside the receiving block's scope after removal from visible content. |
 | Metadata | Runs from the first hyphen of the opening fence through the third hyphen of the closing fence. Fields have no scopes of their own; the field query gives each decoded member's name and values field scopes (`field` and `value`). |
 | Definition list and definition | Ends at the last nonblank line of the final body. A definition includes its term, markers, padding, and every body. |
-| Specimen definition | Covers its marker and complete block body. |
 
 For a referenced footnote call, `Cite` covers `[^label]` and its `Citation`
 covers `^label`. The `Footnote` covers its definition through the final
@@ -198,8 +197,7 @@ mode marker or `@` and ends at the key or its claimed tail's closer. Its first
 item ends at the key when there is no tail or the tail's first section is
 keyed; otherwise it ends at the last non-whitespace byte of its suffix. Later
 keyed sections follow the bracketed item rule. An item includes neither a
-separator semicolon nor a closing bracket. A parenthesized specimen `Cite`
-includes parentheses, while its item covers `@label`.
+separator semicolon nor a closing bracket.
 
 A table and its head row begin at the head row's first non-space byte, after
 the block indentation and its container's prefix. A pipe row covers its
@@ -307,14 +305,13 @@ Flow = none | left | center | right
 means no explicit alignment was authored. `TableColumn.flow` uses this
 value; its producing syntax determines which value is stored.
 
-### CitationReferent, Citation, Footnote, and Specimen
+### CitationReferent, Citation, and Footnote
 
 ```text
-CitationReferent = bib(key: String, mode: BibMode) | footnote(target: FootnoteTarget) | specimen(label: String)
+CitationReferent = bib(key: String, mode: BibMode) | footnote(target: FootnoteTarget)
 FootnoteTarget = label(value: String) | note(footnote: Footnote)
 Citation(referent: CitationReferent, prefix: [Markup], suffix: [Markup])
 Footnote(label: String?, content: [Markup])
-Specimen(label: String?, start: Int?, content: [Markup])
 ```
 
 `CitationReferent` and `FootnoteTarget` are tagged values like
@@ -335,25 +332,15 @@ written, with its normalized label without the caret as `label` and its
 parsed block content. An inline note keeps its parsed inline body directly,
 without a `Paragraph`.
 
-`Specimen` follows the same definition ownership: a specimen definition is a
-`Specimen` block in the content where it was written. Every definition
-remains present, including anonymous and duplicate ones. Its nullable `label`
-retains the authored label; its nullable `start` retains an effective
-explicit counter reset. A consumer derives displayed numbers in definition
-order; neither definitions nor references store that derived state. See
-[specimens](dialect/specimens.md) for definition and reference syntax.
-Ordinary lists have no specimen variant or label field.
-
-`Document` carries the parser's footnote, specimen and reference tables.
-`document.footnotes`, `document.specimens` and `document.references` list
-every definition in source order, inline notes included, and
-`document.footnote(for: label)` and `document.specimen(for: label)` return the
-first one whose stored label equals the referent's.
+`Document` carries the parser's footnote and reference tables.
+`document.footnotes` and `document.references` list every definition in
+source order, inline notes included, and `document.footnote(for: label)`
+returns the first footnote whose stored label equals the referent's.
 `document.reference(for: label)` returns the node a `reference` destination
 with that label resolves to: the first `Reference` whose label equals it, or,
 when none does, the first `Heading` whose text declares it. The C facade
 answers them through `markdown_core_document_footnote_count`, `_footnote_at`,
-`_footnote_for`, the specimen and reference equivalents, and
+`_footnote_for`, the reference equivalents, and
 `_reference_label_count` and `_reference_label_at`, which list each label that
 resolves with its node, and exposes the nodes through `markdown_core_node`
 and typed field accessors. Swift, Kotlin, and ECMAScript include them in
@@ -411,7 +398,6 @@ them without checking.
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 | `Citation` | `referent: CitationReferent`, `prefix: [Markup]`, `suffix: [Markup]` | One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content. |
 | `Footnote` | `label: String?`, `content: [Markup]` | A definition where it was written, or an inline note owned by its `Citation`'s referent. A referenced definition keeps its normalized label and block content; an inline note has a null label and direct inline content. Duplicate and unused definitions remain. |
-| `Specimen` | `label: String?`, `start: Int?`, `content: [Markup]` | A definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
 | `Metadata` | `name: MetadataValue?`, `title: MetadataValue?`, `subtitle: MetadataValue?`, `time: MetadataValue?`, `date: MetadataValue?`, `authors: MetadataValue?`, `keywords: MetadataValue?`, `abstract: MetadataValue?`, `state: MetadataValue?`, `comment: MetadataValue?` | A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes. |
 | `Reference` | `label: String`, `dest: Destination`, `title: String?` | A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain. |
 
@@ -472,7 +458,6 @@ identifier. A slot kind that several owners share means one role in each.
 | `label` | `Reference.label`, `Destination.reference.label` |
 | `footnote` | `Footnote.label`, `FootnoteTarget.label.value` |
 | `bib` | `CitationReferent.bib.key` |
-| `specimen` | `Specimen.label`, `CitationReferent.specimen.label` |
 | `name` | `DirectiveBlock.name`, `Directive.name`, `Topic.name` |
 | `id` | `Markup.anchor` |
 | `class` | `Attributes.classes` |

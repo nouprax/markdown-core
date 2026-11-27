@@ -61,7 +61,6 @@ export const featureOwners = {
     lists: { elements: ["LIST"], certificates: ["decimal-list"] },
     marks: { elements: ["MARK"], certificates: ["run-mark"] },
     properties: { elements: [], certificates: ["metadataempty", "metadata"] },
-    specimens: { elements: ["SPECIMEN"], certificates: ["specimen-reset"] },
     strikethrough: { elements: ["STRIKETHROUGH"], certificates: ["run-strike"] },
     "superscript-and-subscript": { elements: ["SUPERSCRIPT", "SUBSCRIPT"], certificates: ["run-super", "run-sub"] },
     tables: { elements: ["TABLE"], certificates: [] },

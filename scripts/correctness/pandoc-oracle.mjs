@@ -240,7 +240,7 @@ export function fromCanonical(value) {
             citations: value.children.map((item) => {
                 const referent = item.fields.referent;
                 const bib = /^bib\(key=("(?:\\.|[^"\\])*"),mode=(normal|authorInText|suppressAuthor)\)$/.exec(referent);
-                const labeled = /^(footnote|specimen)\(label=("(?:\\.|[^"\\])*")\)$/.exec(referent);
+                const labeled = /^(footnote)\(label=("(?:\\.|[^"\\])*")\)$/.exec(referent);
                 const note = referent === "footnote(note)";
                 assert.ok(bib || labeled || note, `unknown citation referent: ${referent}`);
                 // The dump prints an inline note as the citation's first child
@@ -279,10 +279,6 @@ export function fromCanonical(value) {
     if (value.kind === "CodeBlock") {
         result.literal = f.literal.replace(/\n$/, "");
         if (optional("language") !== null) attrs.classes = [optional("language"), ...attrs.classes];
-    }
-    if (value.kind === "Specimen") {
-        result.label = optional("label");
-        result.start = optional("start");
     }
     if (value.kind === "Heading") result.level = Number(f.level);
     if (["Link", "Embed", "CrossLink", "CrossEmbed"].includes(value.kind)) {

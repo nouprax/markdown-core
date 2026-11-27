@@ -50,8 +50,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 180);
-    assert.equal(full.length, 174);
+    assert.equal(grammarCertificates.length, 177);
+    assert.equal(full.length, 171);
     assert.equal(split.length, 6);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 768);
+    assert.equal(corpus.cases.length, 756);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 384);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 378);
         assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 180);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 177);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
@@ -547,9 +547,9 @@ test("a control keeps every field and frame byte and replaces only trigger punct
 test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {
     const corpus = buildGrammarCorpus({ units: 1 });
     const coverage = validateFeatureCoverage(root, corpus);
-    assert.equal(coverage.features, 31);
-    assert.equal(coverage.elements, 36);
-    assert.equal(coverage.sections, 131);
+    assert.equal(coverage.features, 30);
+    assert.equal(coverage.elements, 35);
+    assert.equal(coverage.sections, 127);
     assert.throws(
         () =>
             validateFeatureCoverage(root, {
@@ -610,7 +610,7 @@ test("section coverage requires explicit proof links before a ledger can be rege
     assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
     const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1 }));
     const all = ledger.features.flatMap((feature) => feature.sections);
-    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 126);
+    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 122);
     assert.equal(all.filter((section) => section.disposition.kind === "context").length, 5);
     assert.deepEqual(
         new Set(all.flatMap((section) => section.disposition.certificates ?? [])),
@@ -687,29 +687,4 @@ test("finite substitutions and bindings retain every alternative, state, and equ
     const rows = [0, 1, 2].map((mode) => instantiateGrammar("callout", { ...fresh(), mode }));
     assert.equal(new Set(rows.map((row) => row.common.source)).size, 3);
     assert.equal(new Set(rows.map((row) => row.dialect.source)).size, 3);
-    const source = instantiateGrammar("specimen-graph", fresh()).dialect.source;
-    assert.throws(
-        () =>
-            recognizePairedDocument(
-                "specimen-graph",
-                "dialect",
-                source.replace("(@firstkey) start", "(@wrongkey) start")
-            ),
-        /inconsistent binding/u
-    );
-    assert.throws(() => recognizePairedDocument("roman-list", "dialect", "i. a\niiii. b\n\n"));
-    for (const reset of ["1", "999999999"]) {
-        const row = instantiateGrammar("specimen-reset", { ...fresh(), reset });
-        assert.ok(row.common.source.includes(`${reset}. `));
-        assert.equal(
-            encodePairedDocument(
-                "specimen-reset",
-                "dialect",
-                recognizePairedDocument("specimen-reset", "common", row.common.source)
-            ),
-            row.dialect.source
-        );
-    }
-    for (const reset of ["0", "0001", "1000000000"])
-        assert.throws(() => instantiateGrammar("specimen-reset", { ...fresh(), reset }));
 });

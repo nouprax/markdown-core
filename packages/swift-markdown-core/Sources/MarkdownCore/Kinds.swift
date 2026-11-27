@@ -83,14 +83,12 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
     case citation = 39
     /// `Footnote`.
     case footnote = 40
-    /// `Specimen`.
-    case specimen = 41
     /// `Metadata`.
-    case metadata = 42
+    case metadata = 41
     /// `Reference`.
-    case reference = 43
+    case reference = 42
     /// `Topic`.
-    case topic = 44
+    case topic = 43
 
     /// Indexed by ordinal from 1.
     private static let names = [
@@ -134,7 +132,6 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
         "Definition",
         "Citation",
         "Footnote",
-        "Specimen",
         "Metadata",
         "Reference",
         "Topic",
@@ -161,24 +158,22 @@ extension Slot {
         case footnote = 4
         /// A bibliography key.
         case bib = 5
-        /// A specimen label, at a specimen reference or at the definition that states it.
-        case specimen = 6
         /// The name of a directive or a topic.
-        case name = 7
+        case name = 6
         /// An anchor a node declares: an attribute identifier or a block identifier.
-        case id = 8
+        case id = 7
         /// An attribute class.
-        case `class` = 9
+        case `class` = 8
         /// The name of an attribute record.
-        case record = 10
+        case record = 9
         /// The authored type of a callout.
-        case variant = 11
+        case variant = 10
         /// The info string of a fenced code block.
-        case info = 12
+        case info = 11
         /// The name of a properties member.
-        case field = 13
+        case field = 12
         /// The value of an attribute record or of a properties member.
-        case value = 14
+        case value = 13
 
         /// Indexed by ordinal from 1.
         private static let names = [
@@ -187,7 +182,6 @@ extension Slot {
             "label",
             "footnote",
             "bib",
-            "specimen",
             "name",
             "id",
             "class",

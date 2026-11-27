@@ -27,9 +27,6 @@ public enum CitationReferent: Sendable, Hashable {
     case bib(key: String, mode: BibMode)
     /// A footnote, named by label or owned as an inline note.
     case footnote(target: FootnoteTarget)
-    /// A specimen named by its normalized label. ``Document/specimen(for:)``
-    /// finds the first definition of it.
-    case specimen(label: String)
 }
 
 /// A Markup node owned by a cite's citations field.
@@ -54,7 +51,6 @@ public struct Citation: Markup {
         case .label(let label): .footnote(target: .label(value: label))
         case .note:
             .footnote(target: .note(footnote: Footnote(record: record.note)))
-        case .specimen(let label): .specimen(label: label)
         }
     }
     /// The inline content before the referent, owned by the citation; empty
@@ -76,7 +72,6 @@ final class CitationRecord: MarkupRecord, @unchecked Sendable {
         case bib(key: String, mode: BibMode)
         case label(String)
         case note
-        case specimen(label: String)
     }
 
     let referent: Referent
@@ -160,15 +155,11 @@ extension CitationRecord {
     ) {
         let native = answer(markdown_core_referent()) { markdown_core_citation_referent(citation, $0) }
         let referent: Referent
-        switch native.kind {
-        case MARKDOWN_CORE_REFERENT_BIB:
+        if native.kind == MARKDOWN_CORE_REFERENT_BIB {
             referent = .bib(key: native.key.required, mode: BibMode(from: native.mode))
-        case MARKDOWN_CORE_REFERENT_FOOTNOTE:
+        } else {
+            // The one kind left is MARKDOWN_CORE_REFERENT_FOOTNOTE.
             referent = native.note == nil ? .label(native.label.required) : .note
-        // A C enum switch is never exhaustive in Swift; the one kind
-        // left is MARKDOWN_CORE_REFERENT_SPECIMEN.
-        default:
-            referent = .specimen(label: native.label.required)
         }
         self.init(InheritedFields(from: citation), referent: referent, note: note, prefix: prefix, suffix: suffix)
     }

@@ -3,13 +3,13 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "493950ef1a4e3397c27075044df595a85b41a67c72a5819b2f7d75808a85e196"
+        "sha256": "b1ad15db53f028b8cad4b031ef84d5fa73689b5362b096632dd9ed1b3312b823"
     },
     "features": [
         {
             "feature": "anchors",
             "specification": "docs/specs/dialect/anchors.md",
-            "sha256": "dc374ac81abcdb865195322a61bf56c8d873ecedcbe2debad441e8d26419cda9",
+            "sha256": "420d555b1a41c6b62b5b057126fdd5c6989d116ee4519c180de8a091d8a08086",
             "sections": [
                 {
                     "title": "Anchors",
@@ -35,7 +35,7 @@
                     "title": "Automatic anchors",
                     "line": 32,
                     "level": 2,
-                    "sha256": "617249f1db0bcb3fa82894d8e5c5dc191e02da6677ac65b8e3f3750a637d7284",
+                    "sha256": "900333bb9e7005ab41dd03a72750a5f7d30b4ac836c173341e4a2c3a7559fc31",
                     "disposition": {
                         "kind": "context",
                         "reason": "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
@@ -656,7 +656,7 @@
         {
             "feature": "citations",
             "specification": "docs/specs/dialect/citations.md",
-            "sha256": "ccd2e72c3d7257581fd5a19de09acb2573ecb326d6b41d3bf8a3b185bcbd1aa6",
+            "sha256": "a0dddd4f44b81dabf9aae7cac741ee7b124a7125dc3d86119bcb549eb4340164",
             "sections": [
                 {
                     "title": "Citations",
@@ -702,7 +702,7 @@
                     "title": "Boundaries and fallback",
                     "line": 84,
                     "level": 2,
-                    "sha256": "6bd0131937fc7429ab8472bf150a538d74da86526c05df2e15c64529b2d2a51f",
+                    "sha256": "00e3d319438deffc85f89a314de4d7415b66020e02e366c2b7cab85ee905895f",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-citation"]
@@ -918,7 +918,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "60a54b289f472e282e9ffd2079984dee90f08f75990892224bca026d6dac0ea1",
+            "sha256": "fdbbe9cbbeba7bc86d950eb53275e5d24f1f18ea9e018b04c04793a8638af144",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -961,7 +961,7 @@
                     "title": "Block recognition",
                     "line": 37,
                     "level": 2,
-                    "sha256": "df1a417d25cb4c309c9b0bc3b9e4e66f97db0a4152b40e6b78f71436bc783bd4",
+                    "sha256": "819f66512e103eb3647f9abb2624ccad373978a9399d0ac14beff656abdda04c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -976,7 +976,7 @@
                     "title": "Inline recognition",
                     "line": 68,
                     "level": 2,
-                    "sha256": "8e9bd4560a73b2d7510302064e0ca1635d4c8e9b9f1b299bcd5dc8f67ad03ac0",
+                    "sha256": "bffb678d364e5c356263f29284f04dc1d865cfa0962a9b608914e6dbc296f5bb",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -2349,74 +2349,6 @@
                     "scope": "boundary-grammar",
                     "identity": false,
                     "facets": []
-                }
-            ]
-        },
-        {
-            "feature": "specimens",
-            "specification": "docs/specs/dialect/specimens.md",
-            "sha256": "46399c137b458110d3730dee041ad3fa2aae4a6243227550decc7c9377308fef",
-            "sections": [
-                {
-                    "title": "Specimens (numbered examples)",
-                    "line": 1,
-                    "level": 1,
-                    "sha256": "29ff09f38cbd5767934c9a4c5faf60e6c035c1a40ae6244c141050a6ec65c987",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-graph"]
-                    }
-                },
-                {
-                    "title": "Anonymous definitions and resets",
-                    "line": 21,
-                    "level": 2,
-                    "sha256": "54181096e68c84ffab27c8ab54ed9319b9467dde28ffe8b3d0998d557985afab",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-reset", "specimen-groups"]
-                    }
-                },
-                {
-                    "title": "Bodies and labels",
-                    "line": 43,
-                    "level": 2,
-                    "sha256": "ea13280615ea0f974588dee7e21e03a9530ac9db89e0a97c74eebcad66640ddc",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-graph", "specimen-groups"]
-                    }
-                },
-                {
-                    "title": "Reference forms",
-                    "line": 61,
-                    "level": 2,
-                    "sha256": "8af0d7a94b08419ce1934379774beb92edda362916a22a90aeff328b48738a55",
-                    "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["specimen-graph"]
-                    }
-                }
-            ],
-            "elements": ["SPECIMEN"],
-            "certificates": [
-                {
-                    "id": "specimen-graph",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["labelled-definitions", "references", "binding"]
-                },
-                {
-                    "id": "specimen-groups",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"]
-                },
-                {
-                    "id": "specimen-reset",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["explicit-reset", "positive-nine-digit-start", "binding"]
                 }
             ]
         },

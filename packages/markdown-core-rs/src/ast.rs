@@ -80,8 +80,7 @@ impl Node {
             | Kind::Subscript { content }
             | Kind::Link { content, .. }
             | Kind::Embed { content, .. }
-            | Kind::Footnote { content, .. }
-            | Kind::Specimen { content, .. } => list.extend(content),
+            | Kind::Footnote { content, .. } => list.extend(content),
             Kind::List { items, .. } => list.extend(items),
             Kind::Table { head, content, .. } => {
                 list.extend(head);
@@ -157,8 +156,7 @@ impl Node {
             | Kind::Subscript { content }
             | Kind::Link { content, .. }
             | Kind::Embed { content, .. }
-            | Kind::Footnote { content, .. }
-            | Kind::Specimen { content, .. } => list.extend(content),
+            | Kind::Footnote { content, .. } => list.extend(content),
             Kind::List { items, .. } => list.extend(items),
             Kind::Table { head, content, .. } => {
                 list.extend(head);
@@ -374,11 +372,6 @@ pub enum Kind {
         label: Option<String>,
         content: Vec<Node>,
     },
-    Specimen {
-        label: Option<String>,
-        start: Option<u64>,
-        content: Vec<Node>,
-    },
     Metadata {
         fields: Box<Fields>,
     },
@@ -455,7 +448,6 @@ pub struct Dimensions {
 pub enum Referent {
     Bib { key: String, mode: Mode },
     Footnote(Note),
-    Specimen { label: String },
 }
 
 /// The footnote a footnote referent names.

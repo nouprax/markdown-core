@@ -36,7 +36,7 @@ function parentEdges(tree) {
 }
 // A direct Footnote child can be inline or block content, so that parent
 // alone cannot witness a comment placement. Use unambiguous content owners.
-const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "Specimen", "DirectiveBlock"]);
+const BLOCK_CONTENT = new Set(["Document", "Callout", "ListItem", "DirectiveBlock"]);
 const INLINE_CONTENT = new Set([
     "Paragraph",
     "Heading",
@@ -207,15 +207,8 @@ const stateValidators = {
         /Citation scope=\S+ anchor=null attributes=\{\} referent=bib\(key="(?:\\.|[^"\\])*",mode=suppressAuthor\)/.test(
             tree
         ),
-    "citation.referent.specimen": (tree) =>
-        /Citation scope=\S+ anchor=null attributes=\{\} referent=specimen\(label="[^"\n]+"\)/.test(tree),
     "citation.prefix.populated": (tree) => /CitationPrefix children=[1-9]\d*/.test(tree),
     "citation.suffix.populated": (tree) => /CitationSuffix children=[1-9]\d*/.test(tree),
-    "specimen.label.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label=null /.test(tree),
-    "specimen.label.value": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label="[^"\n]+" /.test(tree),
-    "specimen.start.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label=\S+ start=null /.test(tree),
-    "specimen.start.value": (tree) =>
-        /Specimen scope=\S+ anchor=null attributes=\{\} label=\S+ start=[1-9]\d* /.test(tree),
     "span.content.empty": (tree) => /Span scope=.* children=0(?:\n|$)/.test(tree),
     "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };

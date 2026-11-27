@@ -128,9 +128,9 @@ pass, and the encoder never needs to know a subtree's size before writing it.
 ## Definition tables
 
 After the `Document` record, the message writes the document's footnote
-table, its specimen table and its Reference table. Each is a `u32` count and
-that many `u64` ids: every `Footnote`, inline notes included, every
-`Specimen` and every `Reference` of the document, in source order. A reader
+table and its Reference table. Each is a `u32` count and that many `u64`
+ids: every `Footnote`, inline notes included, and every `Reference` of the
+document, in source order. A reader
 resolves each id to the node it built with that id; an id that names no node
 of that kind is invalid.
 

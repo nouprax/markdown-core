@@ -100,7 +100,6 @@ void markdown_core_directive_parts(markdown_core_parts *parts);
 void markdown_core_topic_parts(markdown_core_parts *parts);
 void markdown_core_citation_parts(markdown_core_parts *parts);
 void markdown_core_footnote_parts(markdown_core_parts *parts);
-void markdown_core_specimen_parts(markdown_core_parts *parts);
 void markdown_core_span_parts(markdown_core_parts *parts);
 void markdown_core_block_identifier_parts(markdown_core_parts *parts);
 void markdown_core_formula_parts(markdown_core_parts *parts);

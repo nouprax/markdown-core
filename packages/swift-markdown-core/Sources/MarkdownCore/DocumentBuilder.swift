@@ -24,8 +24,8 @@ struct DocumentBuilder {
     private var queue: [OpaquePointer] = []
     private var relations: [Relations] = []
     private var records: [MarkupRecord?] = []
-    /// The records the document's tables may name: every footnote, specimen
-    /// and reference, and every heading a label may resolve to.
+    /// The records the document's tables may name: every footnote and
+    /// reference, and every heading a label may resolve to.
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
 
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
@@ -48,8 +48,7 @@ struct DocumentBuilder {
         for index in queue.indices.reversed() {
             let built = record(from: queue[index], relations: relations[index])
             switch markdown_core_node_get_kind(queue[index]) {
-            case MARKDOWN_CORE_KIND_FOOTNOTE, MARKDOWN_CORE_KIND_SPECIMEN, MARKDOWN_CORE_KIND_REFERENCE,
-                MARKDOWN_CORE_KIND_HEADING:
+            case MARKDOWN_CORE_KIND_FOOTNOTE, MARKDOWN_CORE_KIND_REFERENCE, MARKDOWN_CORE_KIND_HEADING:
                 definitions[queue[index]] = built
             default: break
             }
@@ -209,11 +208,6 @@ extension DocumentBuilder {
                     at: { index in answer { markdown_core_document_footnote_at(document, index, $0) } },
                     as: FootnoteRecord.self
                 ),
-                specimens: table(
-                    count: markdown_core_document_specimen_count(document),
-                    at: { index in answer { markdown_core_document_specimen_at(document, index, $0) } },
-                    as: SpecimenRecord.self
-                ),
                 references: table(
                     count: markdown_core_document_reference_count(document),
                     at: { index in answer { markdown_core_document_reference_at(document, index, $0) } },
@@ -229,7 +223,6 @@ extension DocumentBuilder {
                 suffix: take(relations.suffix)
             )
         case MARKDOWN_CORE_KIND_FOOTNOTE: return FootnoteRecord(from: node, content: children)
-        case MARKDOWN_CORE_KIND_SPECIMEN: return SpecimenRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_METADATA: return MetadataRecord(from: node)
         case MARKDOWN_CORE_KIND_REFERENCE: return ReferenceRecord(from: node)
         case MARKDOWN_CORE_KIND_CALLOUT:

@@ -29,9 +29,8 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Embed: image prefix, destinations and authored label dimensions | `embed.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
 | CrossLink and CrossEmbed: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `embed.c` dimension parser | `4853f2ad`, `9ab6dfee` |
 | Callout: quote container, variant/fold metadata and inline title | `callout.c` | `b6a11e50`, `d53b6f53` |
-| Citation: bibliography groups, author forms, affixes and specimen references | `citation.c` | `078cf4cf`, `012cb4e1`, `5f5a516c` |
+| Citation: bibliography groups, author forms and affixes | `citation.c` | `078cf4cf`, `012cb4e1`, `5f5a516c` |
 | Footnote: named definitions, named calls and `^[...]` bodies | `footnote.c`, using Citation's shared referent construction | `078cf4cf`, `fbe1d5e5` |
-| Specimen: authored examples, labels, numbering and definition registry | `specimen.c` | `012cb4e1`, `5f5a516c` |
 | List: authored marker facts and decimal numbering | `list.c` | `012cb4e1`, `5f5a516c` |
 | Task marker: one of ` `, `x`, `X`, `?`, `-` at list-item creation, as a status | `tasklist.c`, called by `list.c` | `9f5e630c` |
 | DefinitionList: terms, bodies, compactness, indentation and lookahead | `definition_list.c` | `5f5a516c` |

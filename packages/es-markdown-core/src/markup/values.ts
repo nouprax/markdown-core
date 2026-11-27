@@ -90,14 +90,11 @@ export type BibMode = "normal" | "authorInText" | "suppressAuthor";
  * What a `Citation` names: a tagged value, not a node, so it has no id or
  * extent, and a branch's fields exist only in that branch. The `bib` branch is
  * produced by bibliography citations; every referenced or inline footnote call
- * produces the `footnote` branch. The `specimen` branch names the first
- * `Specimen` in document source order whose label is equal
- * (`Document.specimen`).
+ * produces the `footnote` branch.
  */
 export type CitationReferent =
     | { readonly kind: "bib"; readonly key: string; readonly mode: BibMode }
-    | { readonly kind: "footnote"; readonly target: FootnoteTarget }
-    | { readonly kind: "specimen"; readonly label: string };
+    | { readonly kind: "footnote"; readonly target: FootnoteTarget };
 
 /**
  * The footnote a footnote referent names: a label, which names the first

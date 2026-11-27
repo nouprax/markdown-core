@@ -75,15 +75,14 @@ class ApiTest {
     fun ownedScopedElementsAreMarkupWithFiniteWalks() {
         val document =
             Document.parse(
-                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n",
+                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n",
             )
         val citation = assertIs<Cite>(assertIs<Paragraph>(document.content.first()).content.first()).citations.single()
         val nodes: kotlin.collections.List<Markup> =
-            listOf(document.metadata!!, citation, document.footnotes.single(), document.specimens.single())
+            listOf(document.metadata!!, citation, document.footnotes.single())
         // Definitions stay where they were written: the document lists them, it does not own them.
         assertSame(document.content[1], document.footnotes.single())
-        assertSame(document.content[2], document.specimens.single())
-        val names = listOf("Metadata", "Citation", "Footnote", "Specimen")
+        val names = listOf("Metadata", "Citation", "Footnote")
         for ((index, node) in nodes.withIndex()) {
             assertEquals(null, node.anchor)
             assertTrue(node.attributes.classes.isEmpty() && node.attributes.records.isEmpty())
@@ -98,8 +97,6 @@ class ApiTest {
         assertEquals("label", assertIs<FootnoteTarget.Label>(target).value)
         assertEquals("label", document.footnotes.single().label)
         assertSame(document.footnotes.single(), document.footnote("label"))
-        assertEquals("sample", document.specimens.single().label)
-        assertSame(document.specimens.single(), document.specimen("sample"))
     }
 
     @Test
@@ -670,16 +667,6 @@ class BindingMappingTest {
             ),
         )
         assertTrue(document.dump(source).startsWith("Document scope=1:1..5:11 anchor=null attributes={} children=3\n"))
-    }
-
-    @Test
-    fun specimenCallsNameTheFirstDefinitionOfTheirLabel() {
-        val source = "(@a) one\n\n(@) anonymous\n\n(@a) two\n\nSee [@a].\n"
-        val document = Document.parse(source)
-        assertEquals(listOf("a", null, "a"), document.specimens.map { it.label })
-        assertEquals(document.content.take(3), document.specimens)
-        assertSame(document.specimens.first(), document.specimen("a"))
-        assertNull(document.specimen("b"))
     }
 
     @Test

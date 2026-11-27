@@ -35,9 +35,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_reference_label_count;
     markdown_core_document_root;
     markdown_core_document_scope;
-    markdown_core_document_specimen_at;
-    markdown_core_document_specimen_count;
-    markdown_core_document_specimen_for;
     markdown_core_document_unit;
     markdown_core_dump_free;
     markdown_core_footnote_content;
@@ -114,8 +111,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_slot_cues;
     markdown_core_slot_kind_name;
     markdown_core_slot_spell;
-    markdown_core_specimen_content;
-    markdown_core_specimen_properties;
     markdown_core_topic_name;
   local:
     *;

@@ -42,7 +42,6 @@ private fun tables(
 ): kotlin.collections.List<kotlin.collections.List<String>> =
     listOf(
         document.footnotes.map { document.dump(it, text) },
-        document.specimens.map { document.dump(it, text) },
         document.references.map { document.dump(it, text) },
     )
 

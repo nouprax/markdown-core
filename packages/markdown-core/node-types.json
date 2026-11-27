@@ -148,16 +148,6 @@
             "note": "A block comment: an HTML block that opened with <!-- and whose end line held only whitespace after the first -->. One public kind, Comment, stands for this and for the inline COMMENT; the two internal types record which content the node sits in, which is what containment checks and the inline parser ask."
         },
         {
-            "name": "SPECIMEN",
-            "kind": "Specimen",
-            "ops": "SPECIMEN",
-            "structure": "SPECIMEN",
-            "contain": {
-                "blocks": true
-            },
-            "note": "A specimen definition: a block that stays in the tree where it was written."
-        },
-        {
             "name": "DEFINITION_LIST",
             "kind": "DefinitionList",
             "ops": null,

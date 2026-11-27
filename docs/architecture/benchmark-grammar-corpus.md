@@ -2,12 +2,12 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 180 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 768 documents, each measured once:
-in each of [two alphabets](#alphabets), 174 whole declared-language pairs, 6
+contains all 177 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 756 documents, each measured once:
+in each of [two alphabets](#alphabets), 171 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-31 syntax-guide features, 131 sections and 36 registered elements. Its explicit
+30 syntax-guide features, 127 sections and 35 registered elements. Its explicit
 section mapping names certificates for 126 source-language sections and gives
 reviewed context-only dispositions for five sections. Certificates are registered
 directly from their source grammars and specification obligations.
@@ -115,7 +115,7 @@ Atom   = Word | OPEN Body CLOSE ;
 A field annotated `source-bytes <= n` restricts that lexical language on **both**
 sides. Link reference labels are bounded by 1,000 source bytes. GFM footnote
 calls count the authored caret in that limit, so their ASCII key domain is at
-most 999 bytes. A specimen or heading key paired with one of these labels takes
+most 999 bytes. A heading key paired with one of these labels takes
 the same bound; an unbounded Word would not prove a valid native counterpart.
 Repeated occurrences retain the same bound. The decoder rejects the first byte
 beyond it, and the generated schedule reaches each bound.
@@ -295,28 +295,15 @@ Encoding substitutes that value at every declared occurrence. Therefore each
 encoded occurrence is recovered, and the tuple is recovered in the other
 direction. The occurrence count may differ between encodings; it is a recorded
 fixed part of the grammar transformation, not a deleted variable or a claim of
-zero copying cost. This covers reference-label reuse, specimen definition/call
-bindings and inherited attributes. Equality constraints are checked from bytes;
+zero copying cost. This covers reference-label reuse and inherited attributes. Equality constraints are checked from bytes;
 an inconsistent second label is rejected instead of overwritten in a map.
 
-T3 and T7 now provide whole declared-language counterparts for eleven formerly
-split families: four numeral lists, two default lists, all three callout states,
-citation affixes, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix fields all survive independently.
+T3 and T7 now provide whole declared-language counterparts for formerly split
+families, among them the default lists, all three callout states, citation
+affixes and mixed definitions. Prefix/key/suffix fields all survive
+independently.
 Named containers use the `:::name` production; `::: name` belongs to the
 nameless grammar. The source encoding preserves that normative distinction.
-
-Specimen resets add a shared lexical nonterminal
-`Positive9 = [1-9][0-9]{0,8}`. The reset marker `(n@key)` is translated to an
-ordered-list start `n.` plus a reference definition/call carrying the same key.
-Both spellings recognize the same bounded decimal field. The group certificate
-uses the common first-marker rule: the first reset/ordered marker establishes
-the start, later authored numbers do not restart the group, blank lines preserve
-the group, and an outside paragraph separates it from the next group. Anonymous
-and duplicate labels are retained as declared repeated fields, rather than
-requiring the reference to use footnotes. The declared group productions retain
-the first start (`5`) and subsequent authored reset markers. The variable-reset
-family exercises `999999999` as well as small starts. This proves the declared
-single-line-body reset grammar, not every unrestricted continuation shape.
 
 ## Boundary corpus and its limits (T5)
 
@@ -342,9 +329,9 @@ proofs. The feature ledger must not label these hosts whole-grammar certified.
 Each host is partitioned as an ordered sequence of residual literal byte ranges
 and named typed slots. Extents are contiguous, disjoint and exhaustive; joining
 them must recover the exact host. Both sides must yield the same labelled slot
-set and values. Repeated occurrences of a specimen key must agree; the equality
-check and binding work remain in the residual. That key is decoded once in the
-local product, not deceptively charged once for each original occurrence.
+set and values. Repeated occurrences of a key must agree; the equality check and binding work
+remain in the residual. That key is decoded once in the local product, not
+deceptively charged once for each original occurrence.
 
 Each field is re-embedded with the **same explicit parser entry grammar** on
 both sides: Body as a paragraph, Word/Phrase inside a one-backtick code span,

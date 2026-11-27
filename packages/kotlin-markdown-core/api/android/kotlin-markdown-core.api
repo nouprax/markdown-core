@@ -64,14 +64,6 @@ public final class com/nouprax/markdown/core/CitationReferent$Footnote : com/nou
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class com/nouprax/markdown/core/CitationReferent$Specimen : com/nouprax/markdown/core/CitationReferent {
-	public final fun component1 ()Ljava/lang/String;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getLabel ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public final class com/nouprax/markdown/core/Cite : com/nouprax/markdown/core/Markup {
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
@@ -246,12 +238,10 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public final fun getMetadata ()Lcom/nouprax/markdown/core/Metadata;
 	public final fun getReferences ()Ljava/util/List;
 	public fun getRuns ()Ljava/util/List;
-	public final fun getSpecimens ()Ljava/util/List;
 	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
 	public final fun node (Lcom/nouprax/markdown/core/Position;Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
 	public final fun reference (Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
 	public final fun scope (Lcom/nouprax/markdown/core/Markup;Ljava/lang/String;)Ljava/util/List;
-	public final fun specimen (Ljava/lang/String;)Lcom/nouprax/markdown/core/Specimen;
 }
 
 public final class com/nouprax/markdown/core/Document$Companion {
@@ -558,7 +548,6 @@ public abstract interface class com/nouprax/markdown/core/MarkupVisitor {
 	public abstract fun visit (Lcom/nouprax/markdown/core/Reference;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Span;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
-	public abstract fun visit (Lcom/nouprax/markdown/core/Specimen;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Strikethrough;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Strong;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Subscript;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
@@ -721,7 +710,6 @@ public final class com/nouprax/markdown/core/NodeKind : java/lang/Enum {
 	public static final field REFERENCE Lcom/nouprax/markdown/core/NodeKind;
 	public static final field SOFT_BREAK Lcom/nouprax/markdown/core/NodeKind;
 	public static final field SPAN Lcom/nouprax/markdown/core/NodeKind;
-	public static final field SPECIMEN Lcom/nouprax/markdown/core/NodeKind;
 	public static final field STRIKETHROUGH Lcom/nouprax/markdown/core/NodeKind;
 	public static final field STRONG Lcom/nouprax/markdown/core/NodeKind;
 	public static final field SUBSCRIPT Lcom/nouprax/markdown/core/NodeKind;
@@ -872,7 +860,6 @@ public final class com/nouprax/markdown/core/SlotKind : java/lang/Enum {
 	public static final field LABEL Lcom/nouprax/markdown/core/SlotKind;
 	public static final field NAME Lcom/nouprax/markdown/core/SlotKind;
 	public static final field RECORD Lcom/nouprax/markdown/core/SlotKind;
-	public static final field SPECIMEN Lcom/nouprax/markdown/core/SlotKind;
 	public static final field VALUE Lcom/nouprax/markdown/core/SlotKind;
 	public static final field VARIANT Lcom/nouprax/markdown/core/SlotKind;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
@@ -896,17 +883,6 @@ public final class com/nouprax/markdown/core/Span : com/nouprax/markdown/core/Ma
 	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public fun getId-cjMMCNQ ()J
 	public fun getRuns ()Ljava/util/List;
-}
-
-public final class com/nouprax/markdown/core/Specimen : com/nouprax/markdown/core/Markup {
-	public fun getAnchor ()Ljava/lang/String;
-	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public final fun getContent ()Ljava/util/List;
-	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
-	public fun getId-cjMMCNQ ()J
-	public final fun getLabel ()Ljava/lang/String;
-	public fun getRuns ()Ljava/util/List;
-	public final fun getStart ()Ljava/lang/Long;
 }
 
 public final class com/nouprax/markdown/core/Strikethrough : com/nouprax/markdown/core/Markup {

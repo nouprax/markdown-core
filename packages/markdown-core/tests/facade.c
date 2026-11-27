@@ -738,8 +738,6 @@ static void check_kind_boundary(void) {
         markdown_core_citation_suffix(paragraph, &nodes),
         markdown_core_footnote_label(paragraph, &optional),
         markdown_core_footnote_content(paragraph, &nodes),
-        markdown_core_specimen_properties(paragraph, &optional, &start),
-        markdown_core_specimen_content(paragraph, &nodes),
         markdown_core_node_document_metadata(paragraph, &node),
         markdown_core_metadata_name(paragraph, &value),
         markdown_core_metadata_title(paragraph, &value),
@@ -794,9 +792,7 @@ static void check_index_boundary(void) {
           "a column at the count is out of bounds");
 
     check(markdown_core_document_footnote_count(document) == 0 &&
-              markdown_core_document_footnote_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_document_specimen_count(document) == 0 &&
-              markdown_core_document_specimen_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS && node == root,
+              markdown_core_document_footnote_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS && node == root,
           "a definition at the count is out of bounds");
 
     check(markdown_core_node_get_kind(directive) == MARKDOWN_CORE_KIND_DIRECTIVE &&

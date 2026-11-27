@@ -152,14 +152,6 @@ private fun describe(node: Markup): Line =
             Line("Footnote", node.content.size, listOf("label=${optional(node.label)}"))
         }
 
-        is Specimen -> {
-            Line(
-                "Specimen",
-                node.content.size,
-                listOf("label=${optional(node.label)}", "start=${node.start ?: "null"}"),
-            )
-        }
-
         is Callout -> {
             Line(
                 "Callout",
@@ -397,10 +389,6 @@ private fun referent(value: CitationReferent): String =
                 is FootnoteTarget.Label -> "footnote(label=${escaped(target.value)})"
                 is FootnoteTarget.Note -> "footnote(note)"
             }
-        }
-
-        is CitationReferent.Specimen -> {
-            "specimen(label=${escaped(value.label)})"
         }
     }
 

@@ -3,25 +3,9 @@
 # One per line: FIXTURE:EXAMPLE-LINE WHAT # reason. An entry that no
 # failure meets any more fails the run, so the list only shrinks.
 
-# A specimen's label decides what citations elsewhere resolve to: a sentinel
-# in the label unresolves them, so other nodes change with the slot.
-dialect-specimens.txt:25 slot specimen Specimen # citations elsewhere name the label
-dialect-specimens.txt:25 slot bib Citation # the key is also a specimen's label
-dialect-specimens.txt:25 slot specimen Citation # the key is also a specimen's label
-dialect-specimens.txt:52 slot specimen Specimen # citations elsewhere name the label
-dialect-specimens.txt:52 slot bib Citation # the key is also a specimen's label
-dialect-specimens.txt:52 slot specimen Citation # the key is also a specimen's label
-dialect-specimens.txt:142 slot specimen Specimen # citations elsewhere name the label
-dialect-specimens.txt:142 slot bib Citation # the key is also a specimen's label
-dialect-specimens.txt:142 slot specimen Citation # the key is also a specimen's label
-dialect-specimens.txt:291 slot specimen Specimen # citations elsewhere name the label
-dialect-specimens.txt:291 slot bib Citation # the key is also a specimen's label
-dialect-specimens.txt:291 slot specimen Citation # the key is also a specimen's label
-
 # `# @a` declares the label `@a` from the heading's text, so a sentinel in
 # the citation's key changes which references resolve.
 dialect-citations.txt:638 slot bib Citation # a heading's text declares a reference label
-dialect-citations.txt:638 slot specimen Citation # a heading's text declares a reference label
 
 # `[[a#^]]` keeps `^` as its anchor; a sentinel after it makes the anchor a
 # block identifier, whose value drops the `^`.

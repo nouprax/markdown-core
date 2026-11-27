@@ -257,12 +257,6 @@ export const sectionDispositions = {
         "Literal prose": grammar("metadata-literal"),
         "Envelope and recovery": grammar("metadataempty", "metadata-types", "fallback-noninitial-metadata")
     },
-    specimens: {
-        "Specimens (numbered examples)": grammar("specimen-graph"),
-        "Anonymous definitions and resets": grammar("specimen-reset", "specimen-groups"),
-        "Bodies and labels": grammar("specimen-graph", "specimen-groups"),
-        "Reference forms": grammar("specimen-graph")
-    },
     strikethrough: {
         Strikethrough: grammar("gfm-strike", "run-strike"),
         "Combine formatting": grammar("gfm-strike"),

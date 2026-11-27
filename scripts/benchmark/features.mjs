@@ -39,10 +39,7 @@ const labelBounds = {
     "gfm-footnote": { key: 999 },
     "gfm-footnote-cycle": { key: 999 },
     "gfm-footnote-blocks": { key: 999 },
-    "footnote-retention": { key: 999, target: 999 },
-    "specimen-graph": { key: 999 },
-    "specimen-reset": { key: 1000 },
-    "specimen-groups": { key: 1000 }
+    "footnote-retention": { key: 999, target: 999 }
 };
 // The constructs rejection certificates are built around, each with the pinned
 // references that implement it. A reference ratio compares two implementations
@@ -501,15 +498,6 @@ pair(
     ]
 );
 pair(
-    "specimen-graph",
-    "specimens",
-    ["labelled-definitions", "references", "binding"],
-    ["As (@", k, ") shows.\n\n(@", k, ") ", b, "\n\n"],
-    ["As [^", k, "] shows.\n\n[^", k, "]: ", b, "\n\n"],
-    { gfm: true }
-);
-
-pair(
     "attribute-code",
     "attributes",
     ["code-site"],
@@ -702,21 +690,6 @@ pair(
     ["bare-names", "boolean-record"],
     inline("[]{", k, " -}"),
     inline("[](/", k, ' "true unnumbered")')
-);
-
-pair(
-    "specimen-reset",
-    "specimens",
-    ["explicit-reset", "positive-nine-digit-start", "binding"],
-    ["As (@", k, ") shows.\n\n(", f("reset", "positive9"), "@", k, ") ", b, "\n\n"],
-    ["As [", k, "] shows.\n\n[", k, "]: /", k, "\n\n", f("reset", "positive9"), ". ", b, "\n\n"]
-);
-pair(
-    "specimen-groups",
-    "specimens",
-    ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"],
-    ["(5@) ", b, "\n\n(7@", k, ") ", t, "\n\n(@", k, ") ", b, "\n\nAs (@", k, ") shows.\n\n"],
-    ["5. ", b, "\n\n7. ", t, "\n\n1. ", b, "\n\nAs [", k, "] shows.\n\n[", k, "]: /", k, "\n\n"]
 );
 
 // Source forms identified by the section-level coverage review. These reuse

@@ -1556,8 +1556,8 @@ export function hardScripts() {
             .remove(12, 14)
             .insert(12, "  ")
     );
-    /* Definitions: a reference, a footnote, a heading label and a specimen
-     * added, renamed and removed, with their uses before and after them.
+    /* Definitions: a reference, a footnote and a heading label added,
+     * renamed and removed, with their uses before and after them.
      * An edit that changes which labels are declared reads again the blocks
      * that may name one (E-D2), not the plain paragraphs after them. */
     add("reference-definition", "see [a][r] and [r]\n\n[r]: /one\n\nafter [r]\n\nplain one\n\nplain two\n", (s) =>
@@ -1609,19 +1609,6 @@ export function hardScripts() {
             .within(0, 37)
             .remove(28, 37)
             .within(0, 28)
-    );
-    add("specimen-definition", "see @spec and (@spec)\n\nbody\n\nplain one\n\nplain two\n", (s) =>
-        s
-            .insert(0, "(@spec) Defined.\n\n")
-            .within(0, 41)
-            .edit(2, 6, "spek")
-            .within(0, 41)
-            .edit(2, 6, "spec")
-            .within(0, 41)
-            .insert(bytes("(@spec) Defined.\n\nsee @spec and (@spec)\n\nbody\n"), "\n(@spec) Again.\n")
-            .within(0, 74)
-            .remove(0, 18)
-            .within(0, 56)
     );
     /* The text of a heading with an automatic anchor that a link targets. */
     add("automatic-anchor", "# Title\n\nsee [x](#title)\n\n# Title\n\nplain one\n\nplain two\n", (s) =>

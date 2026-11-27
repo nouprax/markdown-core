@@ -123,10 +123,9 @@ Cite comparison keeps every key, mode and ordered prefix/suffix tree. Pandoc's
 second Cite tuple member is fallback rendering for consumers without citation
 processing, not another semantic child list; it has no canonical counterpart.
 The key and affix trees are compared directly, with unit tests ensuring a
-changed key, mode, prefix or suffix cannot pass. Specimen definitions retain
-label/start/content where they were written, and references their exact
-labels, on the product side. Pandoc's example lists
-and rendered numbers remain exact model differences. Affix trimming, nested
+changed key, mode, prefix or suffix cannot pass. Numbered examples are no
+longer part of the dialect, so Pandoc's example lists and rendered numbers
+remain exact differences. Affix trimming, nested
 author tails, malformed candidates, underscore boundaries and unresolved
 reference tails retain isolated witnesses. Direct/resolving tails and Spans,
 complete citation versus virtual heading shortcut, ordinary author tails,

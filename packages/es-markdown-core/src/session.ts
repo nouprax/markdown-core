@@ -56,9 +56,8 @@ function valid({ line, column }: Position): boolean {
  * continues an old node keeps its `id`. Every document a session returns is an
  * immutable value that borrows nothing.
  *
- * Until `flush()`, a document's lookups of a reference, footnote or
- * specimen see only the definitions that start before the inline root
- * asking.
+ * Until `flush()`, a document's lookups of a reference or footnote see
+ * only the definitions that start before the inline root asking.
  *
  * The caller ends the text with `flush()`, which returns the final
  * document; nothing ends a session implicitly. Afterwards `document` and

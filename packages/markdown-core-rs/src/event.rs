@@ -2201,137 +2201,6 @@ pub enum Name {
     /// > | [^a]: b
     ///      ^
     FootnoteDefinitionMarker,
-    /// Specimen.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [document content][crate::construct::document]
-    /// * **Content model**:
-    ///   [`SpecimenPrefix`][Name::SpecimenPrefix],
-    ///   [document content][crate::construct::document]
-    /// * **Construct**:
-    ///   [`specimen`][crate::construct::specimen]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | (@a) b
-    ///     ^^^^^^
-    /// ```
-    Specimen,
-    /// Specimen (prefix).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`Specimen`][Name::Specimen]
-    /// * **Content model**:
-    ///   [`SpaceOrTab`][Name::SpaceOrTab],
-    ///   [`SpecimenLabel`][Name::SpecimenLabel],
-    ///   [`SpecimenMarker`][Name::SpecimenMarker],
-    ///   [`SpecimenStart`][Name::SpecimenStart]
-    /// * **Construct**:
-    ///   [`specimen`][crate::construct::specimen]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | (@a) b
-    ///     ^^^^^
-    /// ```
-    SpecimenPrefix,
-    /// Specimen (marker).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`SpecimenPrefix`][Name::SpecimenPrefix]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`specimen`][crate::construct::specimen]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | (@a) b
-    ///     ^^ ^
-    /// ```
-    SpecimenMarker,
-    /// Specimen (start).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`SpecimenPrefix`][Name::SpecimenPrefix]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`specimen`][crate::construct::specimen]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | (5@) b
-    ///      ^
-    /// ```
-    SpecimenStart,
-    /// Specimen (label).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`SpecimenPrefix`][Name::SpecimenPrefix]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`specimen`][crate::construct::specimen]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | (@a) b
-    ///       ^
-    /// ```
-    SpecimenLabel,
-    /// Specimen reference.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [text content][crate::construct::text]
-    /// * **Content model**:
-    ///   [`CitationKey`][Name::CitationKey],
-    ///   [`SpecimenReferenceMarker`][Name::SpecimenReferenceMarker]
-    /// * **Construct**:
-    ///   [`specimen reference`][crate::construct::specimen_reference]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | a (@b) c
-    ///       ^^^^
-    /// ```
-    SpecimenReference,
-    /// Specimen reference (marker).
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   [`SpecimenReference`][Name::SpecimenReference]
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`specimen reference`][crate::construct::specimen_reference]
-    ///
-    /// ## Example
-    ///
-    /// ```markdown
-    /// > | a (@b) c
-    ///       ^   ^
-    /// ```
-    SpecimenReferenceMarker,
     /// GFM extension: Strikethrough.
     ///
     /// ## Info
@@ -4126,7 +3995,6 @@ pub enum Block {
     Definition,
     Table,
     Footnote,
-    Specimen,
     Formula,
     Frontmatter,
     Comment,
@@ -4160,7 +4028,6 @@ pub enum Inline {
     Span,
     Cite,
     CitationKey,
-    SpecimenReference,
     Topic,
     Autolink,
     Literal,
@@ -4194,7 +4061,6 @@ impl Name {
             Name::Definition => Role::Block(Block::Definition),
             Name::Table => Role::Block(Block::Table),
             Name::FootnoteDefinition => Role::Block(Block::Footnote),
-            Name::Specimen => Role::Block(Block::Specimen),
             Name::FormulaFlow => Role::Block(Block::Formula),
             Name::BlockIdentifierLine => Role::Block(Block::Identifier),
             Name::Frontmatter => Role::Block(Block::Frontmatter),
@@ -4222,7 +4088,6 @@ impl Name {
             Name::Span => Role::Inline(Inline::Span),
             Name::Cite => Role::Inline(Inline::Cite),
             Name::CitationKey => Role::Inline(Inline::CitationKey),
-            Name::SpecimenReference => Role::Inline(Inline::SpecimenReference),
             Name::Topic => Role::Inline(Inline::Topic),
             Name::CommentFlow => Role::Block(Block::Comment),
             Name::Autolink => Role::Inline(Inline::Autolink),
@@ -4317,11 +4182,6 @@ impl Name {
             | Name::FootnoteDefinitionLabelMarker
             | Name::FootnoteDefinitionLabelText
             | Name::FootnoteDefinitionMarker
-            | Name::SpecimenPrefix
-            | Name::SpecimenMarker
-            | Name::SpecimenStart
-            | Name::SpecimenLabel
-            | Name::SpecimenReferenceMarker
             | Name::StrikethroughSequence
             | Name::StrikethroughText
             | Name::InsertionSequence
@@ -4404,7 +4264,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 99] = [
+pub const VOID_EVENTS: [Name; 95] = [
     Name::DefinitionBodyMarker,
     Name::AttributesMarker,
     Name::AttributeId,
@@ -4443,10 +4303,6 @@ pub const VOID_EVENTS: [Name; 99] = [
     Name::FootnoteCallMarker,
     Name::FootnoteDefinitionLabelMarker,
     Name::FootnoteDefinitionMarker,
-    Name::SpecimenMarker,
-    Name::SpecimenStart,
-    Name::SpecimenLabel,
-    Name::SpecimenReferenceMarker,
     Name::StrikethroughSequence,
     Name::InsertionSequence,
     Name::MarkSequence,

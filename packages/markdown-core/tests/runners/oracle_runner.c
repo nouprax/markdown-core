@@ -48,13 +48,13 @@ enum { SENTINEL_LENGTH = sizeof(SENTINEL) - 1 };
  * (the slot model of scripts/tools/generate-node-kinds.mjs): any node's
  * anchor and attributes, and the fields of the owners the model names. */
 static const char *const FIELDS[][2] = {
-    {"", "anchor"},        {"", "attributes"},      {"Link", "dest"},         {"Embed", "dest"},
-    {"Reference", "dest"}, {"CrossLink", "dest"},   {"CrossEmbed", "dest"},   {"Reference", "label"},
-    {"Footnote", "label"}, {"Specimen", "label"},   {"Citation", "referent"}, {"DirectiveBlock", "name"},
-    {"Directive", "name"}, {"Topic", "name"},       {"Callout", "variant"},   {"CodeBlock", "language"},
-    {"Metadata", "name"},  {"Metadata", "title"},   {"Metadata", "subtitle"}, {"Metadata", "time"},
-    {"Metadata", "date"},  {"Metadata", "authors"}, {"Metadata", "keywords"}, {"Metadata", "abstract"},
-    {"Metadata", "state"}, {"Metadata", "comment"},
+    {"", "anchor"},          {"", "attributes"},       {"Link", "dest"},           {"Embed", "dest"},
+    {"Reference", "dest"},   {"CrossLink", "dest"},    {"CrossEmbed", "dest"},     {"Reference", "label"},
+    {"Footnote", "label"},   {"Citation", "referent"}, {"DirectiveBlock", "name"}, {"Directive", "name"},
+    {"Topic", "name"},       {"Callout", "variant"},   {"CodeBlock", "language"},  {"Metadata", "name"},
+    {"Metadata", "title"},   {"Metadata", "subtitle"}, {"Metadata", "time"},       {"Metadata", "date"},
+    {"Metadata", "authors"}, {"Metadata", "keywords"}, {"Metadata", "abstract"},   {"Metadata", "state"},
+    {"Metadata", "comment"},
 };
 
 /* The properties grammar's field names, a Metadata's fields. */
@@ -534,7 +534,7 @@ static void fail(report *r, const uint8_t *source, size_t length, size_t cursor,
 
 /* Whether `w` is a property through which one node names another: an
  * anchor, which may be deduplicated or made from a heading's text, or a
- * citation's referent, which a specimen's label decides. */
+ * citation's referent, which a footnote's label decides. */
 static bool naming(const word *w) {
     return (w->key == 6 && !memcmp(w->start, "anchor", 6)) || (w->key == 8 && !memcmp(w->start, "referent", 8));
 }
@@ -1083,7 +1083,7 @@ static void check_slot(report *r, const uint8_t *source, size_t length, size_t c
     if (to - from >= 2 && strcmp(owner, "Metadata")) {
         const uint8_t first = source[from], last = source[to - 1];
         if ((!strcmp(kind, "dest") && first == '<' && last == '>') ||
-            ((!strcmp(kind, "bib") || !strcmp(kind, "specimen")) && first == '{' && last == '}') ||
+            (!strcmp(kind, "bib") && first == '{' && last == '}') ||
             (!strcmp(kind, "value") && (first == '"' || first == '\'') && last == first)) {
             starts[0] = starts[1] = from + 1;
             ends[0] = ends[1] = to - 1;
@@ -1535,7 +1535,7 @@ static bool refusable(const char *kind, const char *owner, const char *value, bo
         return blank || bracket || odd || literal(value) || (row && strchr(value, '|')) ||
                (!strcmp(kind, "label") && value[0] == '^') || (!strcmp(kind, "footnote") && holds(value, " \t[]"));
     }
-    if (!strcmp(kind, "bib") || !strcmp(kind, "specimen")) {
+    if (!strcmp(kind, "bib")) {
         int depth = 0;
         bool unbalanced = false;
         for (const char *c = value; *c; c++) {
@@ -1544,9 +1544,6 @@ static bool refusable(const char *kind, const char *owner, const char *value, bo
         }
         if (!size || literal(value) || holds(value, " \t") || unbalanced || depth || (row && strchr(value, '|'))) {
             return true;
-        }
-        if (!strcmp(kind, "specimen")) {
-            return !ascii_word(value, "-_") || value[0] == '-' || value[size - 1] == '-' || strstr(value, "--");
         }
         (void)brace;
         return false;
@@ -1752,8 +1749,6 @@ static uint8_t *spelled_source(const uint8_t *source, size_t length, size_t from
         snprintf(tail, sizeof(tail), "\n\n[%.*s]: /o\n", (int)label_size, label);
     } else if (!strcmp(kind, "footnote") && !strcmp(owner, "Citation")) {
         snprintf(tail, sizeof(tail), "\n\n[^%.*s]: o\n", (int)label_size, label);
-    } else if (!strcmp(kind, "specimen") && !strcmp(owner, "Citation")) {
-        snprintf(tail, sizeof(tail), "\n\n(@%.*s) o\n", (int)label_size, label);
     }
     size_t end = to;
     while (end < length && source[end] != '\n' && source[end] != '\r') {
@@ -1901,10 +1896,6 @@ static bool unheld(const char *kind, const char *owner, const uint8_t *source, s
         if (source[i] == '"' || source[i] == '\'') {
             return true;
         }
-    }
-    if (!strcmp(kind, "specimen")) {
-        return (from >= 2 && source[from - 1] == '{' && source[from - 2] == '@') ||
-               (next && (strchr(".:-_/", next) || isalnum(next)));
     }
     if (!strcmp(kind, "name") && !strcmp(owner, "Topic")) {
         return next == '/';

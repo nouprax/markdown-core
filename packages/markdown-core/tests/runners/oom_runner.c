@@ -262,7 +262,7 @@ static const oom_case OOM_CASES[] = {
     {"pipe tables beside the bytes of other table syntax", OOM_TABLE_CORPUS, sizeof(OOM_TABLE_CORPUS) - 1},
     {"definition term/body ownership and nameless containers", OOM_DEFINITION_LIST_CORPUS,
      sizeof(OOM_DEFINITION_LIST_CORPUS) - 1},
-    {"citation ownership and specimen definitions", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
+    {"citation ownership", OOM_CITATION_CORPUS, sizeof(OOM_CITATION_CORPUS) - 1},
     {"heading declarations and anchors", OOM_HEADING_CORPUS, sizeof(OOM_HEADING_CORPUS) - 1},
     {"inline ownership composition", OOM_INLINE_OWNERSHIP_CORPUS, sizeof(OOM_INLINE_OWNERSHIP_CORPUS) - 1},
     {"image dimensions", OOM_IMAGE_DIMENSIONS_CORPUS, sizeof(OOM_IMAGE_DIMENSIONS_CORPUS) - 1},

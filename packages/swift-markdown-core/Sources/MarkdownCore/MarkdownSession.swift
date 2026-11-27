@@ -9,7 +9,7 @@ import MarkdownCoreC
 /// and send across isolation boundaries.
 ///
 /// Until ``flush()``, each document is a snapshot of the text so far: a
-/// lookup of a reference, footnote or specimen sees only the definitions that
+/// lookup of a reference or a footnote sees only the definitions that
 /// start before the inline root asking.
 ///
 /// The caller ends the text with ``flush()``, which returns the final

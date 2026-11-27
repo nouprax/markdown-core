@@ -59,7 +59,6 @@ internal class MarkupWalker(
             is Topic -> visitor.visit(node, phase)
             is Citation -> visitor.visit(node, phase)
             is Footnote -> visitor.visit(node, phase)
-            is Specimen -> visitor.visit(node, phase)
             is Metadata -> visitor.visit(node, phase)
             is Reference -> visitor.visit(node, phase)
         }

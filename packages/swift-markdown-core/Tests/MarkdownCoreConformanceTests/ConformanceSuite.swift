@@ -22,7 +22,7 @@ private typealias Comment = Testing.Comment
             "[[Note]] ![[#^block|]]\n",
             "Term\n: body\n",
             "Revisit #pricing\n",
-            "---\ntitle: Example\n---\n(@sample) Body\n",
+            "---\ntitle: Example\n---\nBody\n",
             ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
@@ -36,7 +36,7 @@ private typealias Comment = Testing.Comment
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbed", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
             "Link", "Embed", "Directive",
-            "Cite", "Topic", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
+            "Cite", "Topic", "Citation", "Footnote", "Metadata", "Reference",
             "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
@@ -199,7 +199,6 @@ struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(node, phase) }
 }

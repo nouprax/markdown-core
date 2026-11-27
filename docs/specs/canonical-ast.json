@@ -43,48 +43,43 @@
             "purpose": "A bibliography key."
         },
         {
-            "name": "specimen",
-            "ordinal": 6,
-            "purpose": "A specimen label, at a specimen reference or at the definition that states it."
-        },
-        {
             "name": "name",
-            "ordinal": 7,
+            "ordinal": 6,
             "purpose": "The name of a directive or a topic."
         },
         {
             "name": "id",
-            "ordinal": 8,
+            "ordinal": 7,
             "purpose": "An anchor a node declares: an attribute identifier or a block identifier."
         },
         {
             "name": "class",
-            "ordinal": 9,
+            "ordinal": 8,
             "purpose": "An attribute class."
         },
         {
             "name": "record",
-            "ordinal": 10,
+            "ordinal": 9,
             "purpose": "The name of an attribute record."
         },
         {
             "name": "variant",
-            "ordinal": 11,
+            "ordinal": 10,
             "purpose": "The authored type of a callout."
         },
         {
             "name": "info",
-            "ordinal": 12,
+            "ordinal": 11,
             "purpose": "The info string of a fenced code block."
         },
         {
             "name": "field",
-            "ordinal": 13,
+            "ordinal": 12,
             "purpose": "The name of a properties member."
         },
         {
             "name": "value",
-            "ordinal": 14,
+            "ordinal": 13,
             "purpose": "The value of an attribute record or of a properties member."
         }
     ],
@@ -649,7 +644,7 @@
         },
         {
             "name": "Topic",
-            "ordinal": 44,
+            "ordinal": 43,
             "fields": [
                 {
                     "name": "name",
@@ -735,31 +730,8 @@
             "invariants": "A Markup definition where it was written. A referenced definition `[^x]: body` is a block in the content that holds it, with its normalized label and block content; an inline note `^[body]` is owned by its Citation's footnote(note) referent, with a null label and direct inline content. Duplicates and unused definitions remain."
         },
         {
-            "name": "Specimen",
-            "ordinal": 41,
-            "fields": [
-                {
-                    "name": "label",
-                    "type": "String",
-                    "optional": true,
-                    "slots": ["specimen"]
-                },
-                {
-                    "name": "start",
-                    "type": "Int",
-                    "optional": true
-                },
-                {
-                    "name": "content",
-                    "type": "[Markup]",
-                    "optional": false
-                }
-            ],
-            "invariants": "A Markup definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived."
-        },
-        {
             "name": "Metadata",
-            "ordinal": 42,
+            "ordinal": 41,
             "fields": [
                 {
                     "name": "name",
@@ -826,7 +798,7 @@
         },
         {
             "name": "Reference",
-            "ordinal": 43,
+            "ordinal": 42,
             "fields": [
                 {
                     "name": "label",
@@ -891,7 +863,7 @@
             "dump": "url(\"...\"), cross(path=\"...\",anchor=null) or reference(\"...\")"
         },
         "CitationReferent": {
-            "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote. The specimen branch names the first Specimen in document source order whose label is equal.",
+            "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote.",
             "branches": {
                 "bib": [
                     {
@@ -912,17 +884,9 @@
                         "type": "FootnoteTarget",
                         "optional": false
                     }
-                ],
-                "specimen": [
-                    {
-                        "name": "label",
-                        "type": "String",
-                        "optional": false,
-                        "slots": ["specimen"]
-                    }
                 ]
             },
-            "dump": "bib(key=\"...\",mode=normal) or footnote(label=\"...\") or footnote(note) or specimen(label=\"...\")"
+            "dump": "bib(key=\"...\",mode=normal) or footnote(label=\"...\") or footnote(note)"
         },
         "FootnoteTarget": {
             "purpose": "The footnote a footnote referent names: a label looked up in the document, or the inline note's Footnote, which the referent owns.",

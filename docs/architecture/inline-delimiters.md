@@ -144,7 +144,7 @@ absorbs is completed by consolidation before it is read, since its ENTER is
 stepped over. Both paths use the parser's projected finish-kind completion
 plan, with kind completion before document observation at the inherited word
 depth; consolidation does not reinterpret the absorbed Text's element.
-The document's finalization -- footnote and specimen ownership,
+The document's finalization -- footnote ownership,
 heading anchors -- follows completion and reads the finished tree. Field order and inherited script depth are retained,
 and a phase rewrites each root in place: a field root is the node its owner put
 there and no phase substitutes another for it. Definition families start

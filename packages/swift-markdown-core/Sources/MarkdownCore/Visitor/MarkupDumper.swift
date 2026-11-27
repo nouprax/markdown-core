@@ -283,18 +283,6 @@ private struct LineVisitor: MarkupVisitor {
         line("Footnote", node, fields: ["label=\(dump(optional: node.label))"], children: node.content.count)
     }
 
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
-        line(
-            "Specimen",
-            node,
-            fields: [
-                "label=\(dump(optional: node.label))",
-                "start=\(node.start.map(String.init) ?? "null")",
-            ],
-            children: node.content.count
-        )
-    }
-
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) {
         line(
             "Metadata",
@@ -348,7 +336,6 @@ private func dump(referent value: CitationReferent) -> String {
     case .bib(let key, let mode): "bib(key=\(dump(escaped: key)),mode=\(mode.rawValue))"
     case .footnote(.label(let label)): "footnote(label=\(dump(escaped: label)))"
     case .footnote(.note): "footnote(note)"
-    case .specimen(let label): "specimen(label=\(dump(escaped: label)))"
     }
 }
 

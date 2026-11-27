@@ -268,17 +268,16 @@ bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_c
 
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
- * of the document's tables -- Footnotes, Specimens, References, Headings --
- * in order of where they start, a tree (tree.h) whose focus is where an
- * edit reads from, each entry the object the document holds, where it
- * starts and its number, which says where in the tree it stands (`where`);
- * and the labeled Footnotes, the labeled Specimens and the reference
- * targets by label, an entry's pointer the label's definition and its
- * number that definition's. When a label's definition goes, its next is the
+ * of the document's tables -- Footnotes, References, Headings -- in order
+ * of where they start, a tree (tree.h) whose focus is where an edit reads
+ * from, each entry the object the document holds, where it starts and its
+ * number, which says where in the tree it stands (`where`); and the labeled
+ * Footnotes and the reference targets by label, an entry's pointer the
+ * label's definition and its number that definition's. When a label's definition goes, its next is the
  * first of the label's declarations in the roster, which keeps them in
  * order of where they start, that the tables hold (ast.c, THE LABEL'S NEXT
  * DEFINITION). */
-enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
+enum { MARKDOWN_CORE_DEFINITION_TABLES = 3, MARKDOWN_CORE_LABEL_TABLES = 2 };
 
 typedef struct markdown_core_listed {
     const struct markdown_core_node *node;
@@ -2095,8 +2094,8 @@ bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t dept
 
 /* THE DEFINITION LOOKUP of inline content: the record of `kind` that
  * declares `label`, as written, for the block being completed, or NULL.
- * Reference and footnote labels are looked up in their normal form, and a
- * specimen label as its bytes (roster.h). At a finalize every declaration
+ * Reference and footnote labels are looked up in their normal form
+ * (roster.h). At a finalize every declaration
  * answers; at a snapshot only one whose key some definition declares before
  * the block starts, which is before its inline roots start, and a lookup that
  * finds none is recorded for the finalize. `at` is where the lookup is in
@@ -2118,7 +2117,7 @@ bool markdown_core_parser_note_use(markdown_core_parser *parser, markdown_core_r
 /* THE DECLARATION (roster.h): the document defines `label` in `kind`'s
  * space from `start` on, in the space's form, as the lookup above reads it:
  * a reference or footnote label normalized into `*normal`, in storage the
- * node that holds it owns, a specimen label or an anchor as written, when
+ * node that holds it owns, an anchor as written, when
  * `normal` may be NULL. False, with the parse failed, when storage could
  * not be had. */
 bool markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_roster_kind kind,

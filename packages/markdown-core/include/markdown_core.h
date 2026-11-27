@@ -288,10 +288,9 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_DEFINITION = 38,
     MARKDOWN_CORE_KIND_CITATION = 39,
     MARKDOWN_CORE_KIND_FOOTNOTE = 40,
-    MARKDOWN_CORE_KIND_SPECIMEN = 41,
-    MARKDOWN_CORE_KIND_METADATA = 42,
-    MARKDOWN_CORE_KIND_REFERENCE = 43,
-    MARKDOWN_CORE_KIND_TOPIC = 44,
+    MARKDOWN_CORE_KIND_METADATA = 41,
+    MARKDOWN_CORE_KIND_REFERENCE = 42,
+    MARKDOWN_CORE_KIND_TOPIC = 43,
     /* END GENERATED */
 } markdown_core_node_kind;
 
@@ -307,15 +306,14 @@ typedef enum markdown_core_slot_kind {
     MARKDOWN_CORE_SLOT_LABEL = 3,
     MARKDOWN_CORE_SLOT_FOOTNOTE = 4,
     MARKDOWN_CORE_SLOT_BIB = 5,
-    MARKDOWN_CORE_SLOT_SPECIMEN = 6,
-    MARKDOWN_CORE_SLOT_NAME = 7,
-    MARKDOWN_CORE_SLOT_ID = 8,
-    MARKDOWN_CORE_SLOT_CLASS = 9,
-    MARKDOWN_CORE_SLOT_RECORD = 10,
-    MARKDOWN_CORE_SLOT_VARIANT = 11,
-    MARKDOWN_CORE_SLOT_INFO = 12,
-    MARKDOWN_CORE_SLOT_FIELD = 13,
-    MARKDOWN_CORE_SLOT_VALUE = 14,
+    MARKDOWN_CORE_SLOT_NAME = 6,
+    MARKDOWN_CORE_SLOT_ID = 7,
+    MARKDOWN_CORE_SLOT_CLASS = 8,
+    MARKDOWN_CORE_SLOT_RECORD = 9,
+    MARKDOWN_CORE_SLOT_VARIANT = 10,
+    MARKDOWN_CORE_SLOT_INFO = 11,
+    MARKDOWN_CORE_SLOT_FIELD = 12,
+    MARKDOWN_CORE_SLOT_VALUE = 13,
     /* END GENERATED */
 } markdown_core_slot_kind;
 
@@ -418,7 +416,7 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const mark
  * its close.
  *
  * Until flush, each document is a snapshot of the text so far: a lookup
- * of a reference, footnote or specimen sees only the definitions that start
+ * of a reference or a footnote sees only the definitions that start
  * before the inline root asking.
  *
  * `markdown_core_session_new` parses `size` bytes of `source` into a session
@@ -916,14 +914,13 @@ typedef enum markdown_core_bib_mode {
 
 typedef enum markdown_core_referent_kind {
     MARKDOWN_CORE_REFERENT_BIB = 1,
-    MARKDOWN_CORE_REFERENT_FOOTNOTE = 2,
-    MARKDOWN_CORE_REFERENT_SPECIMEN = 3
+    MARKDOWN_CORE_REFERENT_FOOTNOTE = 2
 } markdown_core_referent_kind;
 
 /** The tagged `CitationReferent` value (M4): a value, not a node, and a
  * branch's fields exist only in that branch. `BIB` fills `key` and `mode`.
  * `FOOTNOTE` names a definition by `label`, or owns an inline note: then
- * `note` is its `Footnote` and `label` is empty. `SPECIMEN` fills `label`.
+ * `note` is its `Footnote` and `label` is empty.
  * The fields a branch does not use are zero. */
 typedef struct markdown_core_referent {
     markdown_core_referent_kind kind;
@@ -946,9 +943,9 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_citation_prefix(const markd
 MARKDOWN_CORE_API markdown_core_status markdown_core_citation_suffix(const markdown_core_node *citation,
                                                                      markdown_core_nodes *suffix);
 
-/** THE DOCUMENT'S DEFINITION TABLES. Every `Footnote` -- a definition or an
- * inline note -- and every `Specimen` stays in the tree where it was written;
- * the document lists them in source order. `_at` answers OUT_OF_BOUNDS for an
+/** THE DOCUMENT'S FOOTNOTES. Every `Footnote` -- a definition or an inline
+ * note -- stays in the tree where it was written; the document lists them in
+ * source order. `_at` answers OUT_OF_BOUNDS for an
  * index at or past the count. `_for` returns the first one whose label equals
  * `label` byte for byte, or NULL. */
 MARKDOWN_CORE_API size_t markdown_core_document_footnote_count(const markdown_core_document *document);
@@ -956,12 +953,6 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_document_footnote_at(const 
                                                                           size_t index,
                                                                           const markdown_core_node **footnote);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
-                                                                                markdown_core_string label);
-MARKDOWN_CORE_API size_t markdown_core_document_specimen_count(const markdown_core_document *document);
-MARKDOWN_CORE_API markdown_core_status markdown_core_document_specimen_at(const markdown_core_document *document,
-                                                                          size_t index,
-                                                                          const markdown_core_node **specimen);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
                                                                                 markdown_core_string label);
 /** A `Footnote`'s label: a definition's label under the reference-label
  * normalization -- full Unicode case fold, trimmed, internal whitespace
@@ -1004,15 +995,6 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_document_reference_label_at
  * `Footnote` label is. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_reference_label(const markdown_core_node *reference,
                                                                      markdown_core_string *label);
-
-/** A `Specimen` is a block where it was written. An anonymous definition has
- * no label, and an absent start means no explicit counter reset. Display
- * numbers are not stored in the AST. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_properties(const markdown_core_node *specimen,
-                                                                         markdown_core_optional_string *label,
-                                                                         markdown_core_optional_i64 *start);
-MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_content(const markdown_core_node *specimen,
-                                                                      markdown_core_nodes *content);
 
 /** Allocates the canonical file-tree dump of `node`, a node of `document`,
  * with scopes computed from `source`, the source the document was parsed

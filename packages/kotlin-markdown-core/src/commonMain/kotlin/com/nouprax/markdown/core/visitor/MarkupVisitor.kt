@@ -208,11 +208,6 @@ public interface MarkupVisitor {
     ): Unit
 
     public fun visit(
-        specimen: Specimen,
-        phase: MarkupVisitPhase,
-    ): Unit
-
-    public fun visit(
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ): Unit

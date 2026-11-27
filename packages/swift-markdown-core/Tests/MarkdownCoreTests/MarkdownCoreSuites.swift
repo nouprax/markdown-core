@@ -6,50 +6,6 @@ import Testing
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
-    @Test("specimen definitions are content the document lists, and absent facts stay absent")
-    func specimenValues() throws {
-        // These reserved scalar combinations are deliberately constructed as
-        // records; they need not depend on currently authored syntax.
-        let citation = CitationRecord(
-            fields(4),
-            referent: .specimen(label: "étude"),
-            note: nil,
-            prefix: [],
-            suffix: []
-        )
-        let paragraph = ParagraphRecord(fields(2), children: [CiteRecord(fields(3), children: [citation])])
-        let footnote = FootnoteRecord(fields(5), label: "n", content: [])
-        let named = SpecimenRecord(fields(6), label: "étude", start: 5, content: [])
-        let anonymous = SpecimenRecord(fields(7), label: nil, start: nil, content: [])
-        let document = Document(
-            record: DocumentRecord(
-                fields(1),
-                unit: .utf16,
-                metadata: nil,
-                content: [paragraph, footnote, named, anonymous],
-                footnotes: [footnote],
-                specimens: [named, anonymous],
-                references: [],
-                referenceLabels: [:]
-            )
-        )
-        #expect(document.specimens[0].start == 5)
-        #expect(document.specimens[1].label == nil)
-        #expect(document.specimen(for: "étude")?.id == MarkupID(6))
-        // A label matches byte for byte: the decomposed spelling is another label.
-        #expect(document.specimen(for: "e\u{301}tude") == nil)
-        #expect(document.footnote(for: "n")?.id == MarkupID(5))
-        let dump = try document.dump(in: "")
-        #expect(dump.contains("referent=specimen(label=\"étude\")"))
-        #expect(dump.contains("Specimen scope=1:1..1:0 anchor=null attributes={} label=null start=null children=0"))
-        var visitor = RecordingWalkingVisitor()
-        document.walk(with: &visitor)
-        #expect(visitor.events.filter { $0 == "enter:Specimen" }.count == 2)
-        let footnoteExit = try #require(visitor.events.firstIndex(of: "exit:Footnote"))
-        let specimenEnter = try #require(visitor.events.firstIndex(of: "enter:Specimen"))
-        #expect(footnoteExit < specimenEnter)
-    }
-
     @Test("all native delimiter branches retain their authored value")
     func listDelimiters() {
         let cases: [(markdown_core_ordered_list_delimiter, OrderedListDelimiter)] = [

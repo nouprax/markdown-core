@@ -14,6 +14,13 @@ promised to remain compatible between releases.
   a plain enum, `period` or `parenthesis`, and
   `markdown_core_node_list_properties` no longer takes a variant.
 
+- Pandoc's numbered examples are removed: `(@label)` and `(@)` are ordinary
+  list text and a bare `@label` is always a bibliography citation. The
+  `Specimen` kind, the `specimen` slot, the specimen citation referent and
+  the document's specimen table are gone from C
+  (`markdown_core_document_specimen_*`, `markdown_core_specimen_*`),
+  Swift, Kotlin, ES, the wire format and the dump.
+
 - A definition starts only with `:`; Pandoc's `~` marker is text. A lone
   `-` in an attribute container is an ordinary bare name, `{-}` giving the
   record `-="true"`, no longer the class `unnumbered`.

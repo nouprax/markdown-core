@@ -66,7 +66,6 @@ extension APISuite {
                 metadata: metadata,
                 content: [],
                 footnotes: [],
-                specimens: [],
                 references: [],
                 referenceLabels: [:]
             )

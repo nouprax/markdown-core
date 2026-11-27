@@ -462,22 +462,20 @@ static void check_queries(run *state, const char *oracle, const char *where, siz
     free(starts);
 }
 
-/* The definition tables 4.1 compares: footnotes, specimens and references. */
-enum { TABLE_FOOTNOTE, TABLE_SPECIMEN, TABLE_REFERENCE, TABLE_COUNT };
+/* The definition tables 4.1 compares: footnotes and references. */
+enum { TABLE_FOOTNOTE, TABLE_REFERENCE, TABLE_COUNT };
 
-static const char *const table_names[TABLE_COUNT] = {"footnote", "specimen", "reference"};
+static const char *const table_names[TABLE_COUNT] = {"footnote", "reference"};
 
 static size_t table_count(const markdown_core_document *document, int table) {
-    return table == TABLE_FOOTNOTE   ? markdown_core_document_footnote_count(document)
-           : table == TABLE_SPECIMEN ? markdown_core_document_specimen_count(document)
-                                     : markdown_core_document_reference_count(document);
+    return table == TABLE_FOOTNOTE ? markdown_core_document_footnote_count(document)
+                                   : markdown_core_document_reference_count(document);
 }
 
 static const markdown_core_node *table_entry(const markdown_core_document *document, int table, size_t index) {
     const markdown_core_node *entry = NULL;
-    TS_OK(table == TABLE_FOOTNOTE   ? markdown_core_document_footnote_at(document, index, &entry)
-          : table == TABLE_SPECIMEN ? markdown_core_document_specimen_at(document, index, &entry)
-                                    : markdown_core_document_reference_at(document, index, &entry));
+    TS_OK(table == TABLE_FOOTNOTE ? markdown_core_document_footnote_at(document, index, &entry)
+                                  : markdown_core_document_reference_at(document, index, &entry));
     return entry;
 }
 
@@ -487,21 +485,18 @@ static const markdown_core_node *table_entry(const markdown_core_document *docum
 static const markdown_core_node *table_lookup(const markdown_core_document *document, int table,
                                               const markdown_core_node *entry, bool *labeled) {
     markdown_core_optional_string label = {0};
-    markdown_core_optional_i64 start;
     if (table == TABLE_REFERENCE) {
         TS_OK(markdown_core_reference_label(entry, &label.value));
         label.has_value = true;
     } else {
-        TS_OK(table == TABLE_SPECIMEN ? markdown_core_specimen_properties(entry, &label, &start)
-                                      : markdown_core_footnote_label(entry, &label));
+        TS_OK(markdown_core_footnote_label(entry, &label));
     }
     *labeled = label.has_value;
     if (!label.has_value) {
         return NULL;
     }
-    return table == TABLE_FOOTNOTE   ? markdown_core_document_footnote_for(document, label.value)
-           : table == TABLE_SPECIMEN ? markdown_core_document_specimen_for(document, label.value)
-                                     : markdown_core_document_reference_for(document, label.value);
+    return table == TABLE_FOOTNOTE ? markdown_core_document_footnote_for(document, label.value)
+                                   : markdown_core_document_reference_for(document, label.value);
 }
 
 /* The next entry of `table` at or after `*index` that lies where the two
@@ -922,7 +917,7 @@ typedef struct asking {
 } asking;
 
 /* The lookup node `index` answered, if it is one: a reference link or image,
- * or a citation of a footnote or specimen definition. */
+ * or a citation of a footnote definition. */
 static bool lookup_of(const view *taken, size_t index, asking *lookup) {
     const markdown_core_node *node = taken->nodes[index].object;
     size_t below = index, root;
@@ -940,7 +935,7 @@ static bool lookup_of(const view *taken, size_t index, asking *lookup) {
         if (referent.kind == MARKDOWN_CORE_REFERENT_BIB || referent.note) {
             return false;
         }
-        lookup->table = referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE ? TABLE_FOOTNOTE : TABLE_SPECIMEN;
+        lookup->table = TABLE_FOOTNOTE;
         lookup->label = referent.label;
     } else {
         return false;
@@ -962,9 +957,8 @@ static bool lookup_of(const view *taken, size_t index, asking *lookup) {
  * that is its winner: the first Reference, or the first heading when no
  * Reference declares it. */
 static int64_t definition_start(const markdown_core_document *document, const view *taken, const asking *lookup) {
-    const markdown_core_node *first =
-        lookup->table == TABLE_FOOTNOTE   ? markdown_core_document_footnote_for(document, lookup->label)
-        : lookup->table == TABLE_SPECIMEN ? markdown_core_document_specimen_for(document, lookup->label)
+    const markdown_core_node *first = lookup->table == TABLE_FOOTNOTE
+                                          ? markdown_core_document_footnote_for(document, lookup->label)
                                           : markdown_core_document_reference_for(document, lookup->label);
     size_t at = view_find(taken, first);
     return at == SIZE_MAX ? INT64_MAX : taken->nodes[at].range.start;

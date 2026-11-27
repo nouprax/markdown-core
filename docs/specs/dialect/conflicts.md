@@ -42,7 +42,7 @@ block start, the effective precedence is:
 
 1. Code and HTML forms, including HTML comments.
 2. Formula blocks, then percent-comment blocks.
-3. Quotes/callouts, list and specimen markers with optional task prefixes.
+3. Quotes/callouts and list markers with optional task prefixes.
 4. Leaf, named-container, and nameless-container directives.
 5. ATX headings, then Setext headings.
 6. Table candidates.
@@ -69,8 +69,8 @@ line's other possible meanings.
 
 At a given position, recognized literal tokens own their entire extent. Escapes,
 code spans, HTML/autolink tokens, formulas, percent comments, cross links,
-inline footnotes, citation keys, specimen references, directives, topics, and
-character references participate in that order. At a backslash, the
+inline footnotes, citation keys, directives, topics, and character references
+participate in that order. At a backslash, the
 doubled-backslash formula openers are checked before ordinary escaping.
 
 Brackets use the [ordered bracket alternatives](links-and-images.md#bracket-precedence).

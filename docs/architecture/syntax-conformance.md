@@ -100,7 +100,7 @@ classification and projection boundaries.
 
 Important compositions include bracket precedence, literal-body ownership,
 task prefixes before the first block, attributes on references and their definitions,
-heading/specimen resolution independent of source order, and table row
+heading resolution independent of source order, and table row
 geometry. Maintain semantic coverage rather than a percentage
 of executed branches or a duplicate documentation-only fixture registry.
 

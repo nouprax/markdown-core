@@ -42,7 +42,6 @@ export type NativeKind =
     | "definition"
     | "citation"
     | "footnote"
-    | "specimen"
     | "metadata"
     | "reference"
     | "topic";
@@ -90,7 +89,6 @@ export const kinds: readonly (NativeKind | "none")[] = [
     "definition",
     "citation",
     "footnote",
-    "specimen",
     "metadata",
     "reference",
     "topic"
@@ -111,7 +109,6 @@ export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]
  * - `"label"`: a reference label, at a reference link or embed or at the reference definition that states it.
  * - `"footnote"`: a footnote label, at a footnote call or at the definition that states it.
  * - `"bib"`: a bibliography key.
- * - `"specimen"`: a specimen label, at a specimen reference or at the definition that states it.
  * - `"name"`: the name of a directive or a topic.
  * - `"id"`: an anchor a node declares: an attribute identifier or a block identifier.
  * - `"class"`: an attribute class.
@@ -127,7 +124,6 @@ export type SlotKind =
     | "label"
     | "footnote"
     | "bib"
-    | "specimen"
     | "name"
     | "id"
     | "class"
@@ -145,7 +141,6 @@ export const slotKinds: readonly (SlotKind | null)[] = [
     "label",
     "footnote",
     "bib",
-    "specimen",
     "name",
     "id",
     "class",

@@ -89,14 +89,12 @@ private class MessageWriter {
     fun root(
         content: Int,
         footnotes: kotlin.collections.List<Long> = emptyList(),
-        specimens: kotlin.collections.List<Long> = emptyList(),
         references: kotlin.collections.List<Long> = emptyList(),
         labels: kotlin.collections.List<Pair<String, Long>> = emptyList(),
     ) = record(NodeKind.DOCUMENT)
         .u32(content)
         .bool(false)
         .table(footnotes)
-        .table(specimens)
         .table(references)
         .apply {
             u32(labels.size)
@@ -341,25 +339,25 @@ class WireDecoderTest {
     fun definitionTablesNameDefinitionsOfTheirKind() {
         fun document(
             footnotes: kotlin.collections.List<Long>,
-            specimens: kotlin.collections.List<Long>,
+            references: kotlin.collections.List<Long>,
         ) = decode(
             MessageWriter()
                 .record(NodeKind.FOOTNOTE)
                 .optional("a") { string(it) }
                 .u32(0)
-                .record(NodeKind.SPECIMEN)
-                .optional("s") { string(it) }
-                .optional(3L) { int(it) }
-                .u32(0)
+                .record(NodeKind.REFERENCE)
+                .string("r")
+                .u8(0)
+                .string("/r")
+                .bool(false)
                 .record(NodeKind.FOOTNOTE)
                 .optional("a") { string(it) }
                 .u32(0)
-                .root(3, footnotes, specimens),
+                .root(3, footnotes, references),
         )
         val valid = document(listOf(1, 3), listOf(2))
         assertEquals(valid.content.filterIsInstance<Footnote>(), valid.footnotes)
         assertSame<Markup?>(valid.content[0], valid.footnote("a"))
-        assertSame<Markup?>(valid.content[1], valid.specimen("s"))
-        assertEquals(3L, valid.specimens.single().start)
+        assertSame<Markup?>(valid.content[1], valid.references.single())
     }
 }

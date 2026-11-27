@@ -45,7 +45,6 @@
 #include "heading.h"
 #include "list.h"
 #include "properties.h"
-#include "specimen.h"
 #include "text.h"
 #include "escape.h"
 
@@ -285,12 +284,6 @@ static markdown_core_string facade_class_at(const markdown_core_node *node, size
 static const markdown_core_node *facade_footnote_at(const markdown_core_document *document, size_t index) {
     const markdown_core_node *node;
     EXPECT_OK(markdown_core_document_footnote_at(document, index, &node));
-    return node;
-}
-
-static const markdown_core_node *facade_specimen_at(const markdown_core_document *document, size_t index) {
-    const markdown_core_node *node;
-    EXPECT_OK(markdown_core_document_specimen_at(document, index, &node));
     return node;
 }
 
@@ -2214,7 +2207,7 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
     const char *first_bad_element = sweep.first_bad_element;
     markdown_core_node_free(probe_doc);
 
-    OK(runner, gated >= 12, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
+    OK(runner, gated >= 11, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
     OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
     if (violations) {
         fprintf(stderr, "element %s opened a block on byte 0x%02x, which its gate excludes\n",
@@ -3603,7 +3596,7 @@ static void roster_kinds_and_starts(test_batch_runner *runner) {
     OK(runner, markdown_core_roster_declare(&roster, ROSTER_TEST_KIND, x, 1, 40), "a reference is declared");
     OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 1, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor a specimen");
+    OK(runner, !markdown_core_roster_find(&roster, ROSTER_TEST_KIND + 2, x, 1, &failed), "nor one of a third kind");
     const markdown_core_roster_record *record = markdown_core_roster_find(&roster, ROSTER_TEST_KIND, x, 1, &failed);
     OK(runner,
        record && !markdown_core_roster_starts_before(&roster, record, 40) &&
@@ -3911,12 +3904,15 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
-        MARKDOWN_CORE_NODE_METADATA,      MARKDOWN_CORE_NODE_INSERTION,       MARKDOWN_CORE_NODE_CROSS_EMBED,
-        MARKDOWN_CORE_NODE_MARK,          MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
-        MARKDOWN_CORE_NODE_CITATION,      MARKDOWN_CORE_NODE_FOOTNOTE,        MARKDOWN_CORE_NODE_SPECIMEN,
-        MARKDOWN_CORE_NODE_TABLE,         MARKDOWN_CORE_NODE_TABLE_ROW,       MARKDOWN_CORE_NODE_TABLE_CELL,
-        MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-        MARKDOWN_CORE_NODE_DIRECTIVE,     MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+        MARKDOWN_CORE_NODE_METADATA,        MARKDOWN_CORE_NODE_INSERTION,
+        MARKDOWN_CORE_NODE_CROSS_EMBED,     MARKDOWN_CORE_NODE_MARK,
+        MARKDOWN_CORE_NODE_CROSS_LINK,      MARKDOWN_CORE_NODE_CITE,
+        MARKDOWN_CORE_NODE_CITATION,        MARKDOWN_CORE_NODE_FOOTNOTE,
+        MARKDOWN_CORE_NODE_TABLE,           MARKDOWN_CORE_NODE_TABLE_ROW,
+        MARKDOWN_CORE_NODE_TABLE_CELL,      MARKDOWN_CORE_NODE_STRIKETHROUGH,
+        MARKDOWN_CORE_NODE_FORMULA,         MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE,       MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+        MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
     };
     size_t extra_count = sizeof(extra_types) / sizeof(*extra_types);
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
@@ -4375,61 +4371,6 @@ static void task_status_values(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
-/* SPECIMEN VALUES. A definition is a block where it was written: it owns its
- * authored label and explicit reset and its block content, the document lists
- * every definition in source order, and a reference names one by label. */
-static void specimen_values(test_batch_runner *runner) {
-    static const char source[] = "(5@étude) Body.\n(@) Anonymous.\n\n@étude\n";
-    const size_t length = sizeof(source) - 1;
-    markdown_core_document *document = facade_parse((const uint8_t *)source, length);
-    markdown_core_optional_string label;
-    markdown_core_optional_i64 start;
-    OK(runner, document != NULL, "specimen document parses");
-    if (!document) {
-        return;
-    }
-    const markdown_core_node *root = markdown_core_document_root(document);
-    const markdown_core_node *value = facade_child(root, 0);
-    INT_EQ(runner, markdown_core_node_get_kind(value), MARKDOWN_CORE_KIND_SPECIMEN, "a definition is content");
-    EXPECT_OK(markdown_core_specimen_properties(value, &label, &start));
-    OK(runner, label.has_value && label.value.length == 6 && memcmp(label.value.data, "étude", 6) == 0,
-       "specimen label retains owned UTF-8 bytes");
-    OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
-    OK(runner,
-       markdown_core_node_get_kind(facade_nodes(value, markdown_core_specimen_content).items[0]) ==
-           MARKDOWN_CORE_KIND_PARAGRAPH,
-       "specimen retains its content relation");
-    const markdown_core_node *anonymous = facade_child(root, 1);
-    OK(runner, anonymous != NULL, "anonymous definition remains present");
-    EXPECT_OK(markdown_core_specimen_properties(anonymous, &label, &start));
-    OK(runner, !label.has_value && !start.has_value, "anonymous label and absent reset remain absent");
-    INT_EQ(runner, (int)markdown_core_document_specimen_count(document), 2, "the document lists both definitions");
-    OK(runner, facade_specimen_at(document, 0) == value && facade_specimen_at(document, 1) == anonymous,
-       "the list is in source order");
-    const markdown_core_node *citation =
-        facade_nodes(facade_child(facade_child(root, 2), 0), markdown_core_node_cite_citations).items[0];
-    markdown_core_referent referent = facade_referent(citation);
-    OK(runner,
-       referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.label.length == 6 && referent.key.data == NULL &&
-           referent.mode == 0 && referent.note == NULL,
-       "specimen reference uses only its own branch fields");
-    OK(runner, markdown_core_document_specimen_for(document, referent.label) == value,
-       "a reference's label finds its definition");
-    uint8_t *dump = NULL;
-    size_t dump_length = 0;
-    OK(runner,
-       (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source, length,
-                                    &dump, &dump_length) == MARKDOWN_CORE_OK),
-       "specimen document dumps");
-    OK(runner,
-       dump && strstr((const char *)dump, "label=\"étude\" start=5 children=1") &&
-           strstr((const char *)dump, "label=null start=null children=1") &&
-           strstr((const char *)dump, "referent=specimen(label=\"étude\")"),
-       "dump carries only authored definition facts");
-    markdown_core_dump_free(dump);
-    markdown_core_document_free(document);
-}
-
 /* Blank continuation belongs to the definition after ancestor prefixes have
  * been consumed. The same rule must hold during block-start lookahead. */
 static void definition_blank_continuation(test_batch_runner *runner) {
@@ -4437,10 +4378,10 @@ static void definition_blank_continuation(test_batch_runner *runner) {
         const char *opening, *continuation, *blank;
     } containers[] = {
         {"", "", ""}, {"> ", "> ", ">"}, {"- ", "  ", "  "}, {"> - ", ">   ", ">"}, {"- > ", "  > ", "  >"}};
-    static const char *markers[] = {"(@a) ", "[^a]: "};
+    static const char *markers[] = {"[^a]: "};
     static const char *endings[] = {"\n", "\r\n", "\r"};
     static const char *whitespace[] = {"", " ", "   ", "\t"};
-    for (size_t family = 0; family < 2; family++) {
+    for (size_t family = 0; family < sizeof(markers) / sizeof(*markers); family++) {
         for (size_t shape = 0; shape < sizeof(containers) / sizeof(*containers); shape++) {
             for (size_t ending = 0; ending < 3; ending++) {
                 for (size_t blank = 0; blank < 4; blank++) {
@@ -4464,8 +4405,7 @@ static void definition_blank_continuation(test_batch_runner *runner) {
                         if (!root) {
                             continue;
                         }
-                        markdown_core_node *value =
-                            first_of_kind(root, family ? MARKDOWN_CORE_NODE_FOOTNOTE : MARKDOWN_CORE_NODE_SPECIMEN);
+                        markdown_core_node *value = first_of_kind(root, MARKDOWN_CORE_NODE_FOOTNOTE);
                         markdown_core_node *first = child_at(value, 0);
                         markdown_core_node *second = child_at(value, 1);
                         OK(runner, value && first && second && !child_at(value, 2),
@@ -5175,7 +5115,7 @@ typedef struct {
     size_t definition_lists, citation_brace_bytes;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool heading_collection_disposed;
-    size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
+    size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes;
     size_t delimiter_pushes;
@@ -5225,7 +5165,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->citations = ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->work;
     work->citation_brace_bytes =
         ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->brace_bytes;
-    work->specimens = ELEMENT_STATE(parser, markdown_core_specimen_state, MARKDOWN_CORE_ELEMENT_SPECIMEN)->work;
     work->list_markers = ELEMENT_STATE(parser, markdown_core_list_work, MARKDOWN_CORE_ELEMENT_LIST)->markers;
     work->comment = ELEMENT_STATE(parser, markdown_core_comment_work, MARKDOWN_CORE_ELEMENT_COMMENT)->scan;
     work->lookahead = parser->block_lookahead_work;
@@ -5424,9 +5363,8 @@ static void citation_linear_work(test_batch_runner *runner) {
         {"", "@a [", "]", ""},    {"# [", "@a [", "]", "]\n"},
         {"", "[@a ", "]", ""},    {"[", "*pre* @a [@b [x]]; ", "", "@z]"},
         {"", "@{", "", " key}"},  {"", "@{a", "}", ""},
-        {"", "@a [x] ", "", ""},  {"", "(@label) body\n\n", "", "@label"},
-        {"", "M", "", ".  body"}, {"[", "@a [", "]", ";]"},
-        {"", "[@a;] ", "", ""},
+        {"", "@a [x] ", "", ""},  {"", "M", "", ".  body"},
+        {"[", "@a [", "]", ";]"}, {"", "[@a;] ", "", ""},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
@@ -5447,7 +5385,7 @@ static void citation_linear_work(test_batch_runner *runner) {
                "citation scans and resolutions are linear: case=%zu size=%d work=%zu", c, source.size, work.citations);
             OK(runner, work.brackets <= 4 * (size_t)source.size && work.delimiters <= 20 * (size_t)source.size,
                "citation ranges share bounded delimiter reduction: case=%zu count=%zu", c, count);
-            OK(runner, work.list_markers <= 20 * (size_t)source.size && work.specimens <= 20 * (size_t)source.size,
+            OK(runner, work.list_markers <= 20 * (size_t)source.size,
                "list marker scans are bounded: case=%zu count=%zu", c, count);
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
@@ -7062,9 +7000,9 @@ static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *ru
 
 /* A LINE WHOSE FIRST BYTE NO SCAN OWNER DECLARED REACHES NONE OF THEM. The
  * projection reads the line's key and asks only the owners listed under it;
- * `!` leads nothing, so the list and specimen scanners, whose work counters
- * count every byte they look at and which nothing else drives on this
- * document, never see the line. */
+ * `!` leads nothing, so the list scanner, whose work counter counts every
+ * byte it looks at and which nothing else drives on this document, never
+ * sees the line. */
 static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner *runner) {
     markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     for (int i = 0; i < 512; i++) {
@@ -7075,7 +7013,6 @@ static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner 
         markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "the document parses");
     INT_EQ(runner, (int)work.list_markers, 0, "the list scanner is not asked about a line it cannot start");
-    INT_EQ(runner, (int)work.specimens, 0, "nor the specimen scanner");
     markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
@@ -9490,7 +9427,6 @@ static void lazy_after_marker_as_after_paragraph(test_batch_runner *runner) {
         "*\n",
         "2. x\n",
         "1. x\n",
-        "(@) ex\n",
         "# h\n",
         "---\n",
         "```\nx\n```\n",
@@ -10411,11 +10347,11 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
         OK(runner, edited && session_as_parsed(session), "an identifier line after a comment writes nothing of it");
         markdown_core_session_close(session);
     }
-    /* A specimen reads how the block before it closes, from the line end
-     * before it: a comment that stops being one rereads with the paragraph
-     * before it, which it joins. */
+    /* An ordered list that starts past 1 reads how the block before it
+     * closes, from the line end before it: a comment that stops being one
+     * rereads with the paragraph before it, which it joins. */
     {
-        static const char numbered[] = "x\n%%\n%%\n(@a) b\n";
+        static const char numbered[] = "x\n%%\n%%\n2. b\n";
         markdown_core_session *session = NULL;
         const markdown_core_document *document = NULL;
         const markdown_core_position from = {3, 2}, to = {3, 3};
@@ -10424,7 +10360,7 @@ static void session_edits_nested_identifier(test_batch_runner *runner) {
                                       &session) == MARKDOWN_CORE_OK &&
             markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK &&
             markdown_core_session_edit(session, from, to, (const uint8_t *)"", 0, &document) == MARKDOWN_CORE_OK;
-        OK(runner, edited && session_as_parsed(session), "a specimen after a comment that stops being one");
+        OK(runner, edited && session_as_parsed(session), "a numbered item after a comment that stops being one");
         markdown_core_session_close(session);
     }
     /* A candidate's lookahead notes its reach where its lines put it,
@@ -11642,11 +11578,11 @@ static bool flushes_as_a_parse(const char *source, size_t chunk) { return splits
 static void session_flush_matches_a_parse(test_batch_runner *runner) {
 #define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
     static const char *const sources[] = {
-        "See [x], [^n] and @s." FILLER "[x]: /u\n\n[^n]: note\n\n(@s) sample\n",
+        "See [x] and [^n]." FILLER "[x]: /u\n\n[^n]: note\n",
         "# Head [x]\n\ntext" FILLER "[x]: /u\n",
         "# Title [x][]{#a}\n\n# a" FILLER "[x]: /u\n",
         "# Head [foo][x]" FILLER "# Head foo\n\n[x]: /u\n",
-        "# Head @s here" FILLER "(@s) sample\n",
+        "# Head [^s] here" FILLER "[^s]: sample\n",
         "> [!NOTE] Title [x]\n> body" FILLER "[x]: /u\n",
         "Term [x]\n: def" FILLER "[x]: /u\n",
         "Table: Caption [x]\n\n| a | b |\n|---|---|\n| c | d |" FILLER "[x]: /u\n",
@@ -11797,15 +11733,12 @@ static bool node_where_of(const markdown_core_document *document, const markdown
     return true;
 }
 
-/* The label of a definition of table `table` (0 Footnotes, 1 Specimens, 2
- * References), and whether it has one. */
+/* The label of a definition of table `table` (0 Footnotes, 1 References),
+ * and whether it has one. */
 static bool definition_label_of(int table, const markdown_core_node *node, markdown_core_string *label) {
     markdown_core_optional_string optional = {0};
-    markdown_core_optional_i64 start;
-    if (table == 2) {
+    if (table == 1) {
         optional.has_value = markdown_core_reference_label(node, &optional.value) == MARKDOWN_CORE_OK;
-    } else if (table == 1) {
-        markdown_core_specimen_properties(node, &optional, &start);
     } else {
         markdown_core_footnote_label(node, &optional);
     }
@@ -11814,24 +11747,21 @@ static bool definition_label_of(int table, const markdown_core_node *node, markd
 }
 
 static size_t definition_count(int table, const markdown_core_document *document) {
-    return table == 0   ? markdown_core_document_footnote_count(document)
-           : table == 1 ? markdown_core_document_specimen_count(document)
-                        : markdown_core_document_reference_count(document);
+    return table == 0 ? markdown_core_document_footnote_count(document)
+                      : markdown_core_document_reference_count(document);
 }
 
 static const markdown_core_node *definition_entry(int table, const markdown_core_document *document, size_t index) {
     const markdown_core_node *node = NULL;
-    const markdown_core_status status = table == 0   ? markdown_core_document_footnote_at(document, index, &node)
-                                        : table == 1 ? markdown_core_document_specimen_at(document, index, &node)
-                                                     : markdown_core_document_reference_at(document, index, &node);
+    const markdown_core_status status = table == 0 ? markdown_core_document_footnote_at(document, index, &node)
+                                                   : markdown_core_document_reference_at(document, index, &node);
     return status == MARKDOWN_CORE_OK ? node : NULL;
 }
 
 static const markdown_core_node *definition_lookup(int table, const markdown_core_document *document,
                                                    markdown_core_string label) {
-    return table == 0   ? markdown_core_document_footnote_for(document, label)
-           : table == 1 ? markdown_core_document_specimen_for(document, label)
-                        : markdown_core_document_reference_for(document, label);
+    return table == 0 ? markdown_core_document_footnote_for(document, label)
+                      : markdown_core_document_reference_for(document, label);
 }
 
 /* Whether two documents parsed from `length` bytes of `source` have tables
@@ -11851,7 +11781,7 @@ static bool tables_agree(const markdown_core_document *actual, const markdown_co
                          const char *source, size_t length) {
     bool same = true;
 #define SAME_NODE(a, b) same_node(actual, (a), expected, (b), source, length)
-    for (int table = 0; same && table < 3; table++) {
+    for (int table = 0; same && table < 2; table++) {
         const size_t count = definition_count(table, expected);
         same = definition_count(table, actual) == count;
         for (size_t i = 0; same && i < count; i++) {
@@ -11881,7 +11811,7 @@ static bool tables_agree(const markdown_core_document *actual, const markdown_co
 }
 
 /* THE LABELS OF ANOTHER TABLE: a reference definition and a heading of one
- * label, a footnote and a specimen beside them. An edit of many lines that
+ * label, and a footnote beside them. An edit of many lines that
  * takes a definition hands its label to the next holder, which may be in
  * another table and past the edit: every table is in the new text's terms
  * when it does (ast.c, markdown_core_publish_splice). Each run of whole
@@ -11890,7 +11820,7 @@ static void session_edits_cross_tables(test_batch_runner *runner) {
     static const char *const texts[] = {
         "[a]: /foo\n\npara\n\n# a\n\nend\n",
         "# b\n\n[b]: /b\n\n[^b]: n\n\n# B\n\n[b] [^b] [B]\n\n[b]: /again\n",
-        "[x]: /x\n[y]: /y\n\n(@x) X.\n\n# y\n\n# x\n\n[x] [y] @x\n",
+        "[x]: /x\n[y]: /y\n\n[^x]: X.\n\n# y\n\n# x\n\n[x] [y] [^x]\n",
     };
     static const char *const put[] = {"", "z\n", "[a]: /new\n\n", "# b\n\n"};
     bool kept = true;
@@ -11946,7 +11876,7 @@ static void session_edits_cross_tables(test_batch_runner *runner) {
  * and the tail's are the snapshot's own: footnotes nested in an open
  * footnote, inline notes, labels written twice, a Reference and Headings
  * declaring one label in either order, the tail's labels between committed
- * ones and over a committed Heading's, specimens, and a heading in a
+ * ones and over a committed Heading's, and a heading in a
  * footnote that a later anchor renames, which moves the footnote and the
  * heading to objects of their own while their entries stay committed. */
 static void session_snapshot_tables(test_batch_runner *runner) {
@@ -11954,7 +11884,6 @@ static void session_snapshot_tables(test_batch_runner *runner) {
         "[^a]: one\n\n    [^b]: inner\n\n    more\n\n[^a]: again\n\ntext [^a] ^[inline] [^b]\n\n[^c]: last\n",
         "# Foo\n\n[foo]: /u\n\n# Foo\n\n[Foo] and [bar]\n\n[bar]: /b\n\n# Bar\n\n[foo]: /again\n",
         "[^n]: # A\n\n    # A\n\n# A\n\n[A] and [a-1]\n\n:n{#a}\n\n[x]: /x\n",
-        "(5@etude) Body.\n(@) Anonymous.\n\n(@etude) Again.\n\n@etude and (@next) Next.\n",
         "- [r]: /r\n- # R\n\n> [^q]: quote\n>\n> # Q\n\n[R] [Q] [^q]\n",
         "[a]: /a\n\n# D\n\n[c]: /c\n\n# G\n\n[b]: /b\n[d]: /d\n[f]: /f\n\n[B] [D] [G]\n",
     };
@@ -12230,7 +12159,6 @@ static void session_snapshot_openers(test_batch_runner *runner) {
         "| a | b |\n|---|---|\n| c | d |\n| e | f |\n\n#t#\n\nafter\n",
         "- [ ] task one #one#\n- [x] task two\n\n  more\n\nafter\n",
         "> ```js {#c}\n> code\n> ```\n>\n> after\n\n:::note{#d}\n> q\n:::\n",
-        "(@s) sample one\n\n(@t) sample two\n",
         "Term\n: def one\n: def two\n\nafter\n",
         "<div>\nhtml\n</div>\n\n~~~ {.x}\ncode\n~~~\n",
     };
@@ -12320,7 +12248,7 @@ static void session_snapshot_candidates(test_batch_runner *runner) {
  * LINE A SESSION HOLDS): the text arrives byte by byte, and after each append
  * the snapshot's dump is a fresh parse's of the same text. A column-counted
  * advance over a container's prefix -- a quote's `>` and the space after it,
- * a list item's, a footnote's and a specimen's indentation -- takes the
+ * a list item's and a footnote's indentation -- takes the
  * continuation bytes after the last byte it takes as that byte's scalar, so
  * its step on a line the text has not finished is decided once a byte that is
  * not one follows them. The bytes are malformed UTF-8, which the engine reads
@@ -12336,8 +12264,6 @@ static void session_held_scalars(test_batch_runner *runner) {
         "- a\n  \x80\x80"
         "b\n",
         "[^a]: x\n    \x80\x80"
-        "b\n",
-        "(@a) x\n    \x80\x80"
         "b\n",
     };
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
@@ -12817,7 +12743,6 @@ int main(void) {
     reference_attribute_lifecycle(runner);
     block_cursor_coordinates(runner);
     task_status_values(runner);
-    specimen_values(runner);
     definition_blank_continuation(runner);
     set_kind_keeps_element_data_beside_the_arm(runner);
     citation_and_footnote_values(runner);

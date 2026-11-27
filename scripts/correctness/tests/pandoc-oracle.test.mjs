@@ -158,7 +158,7 @@ test("citation projection compares keys, modes and ordered affixes without fallb
     }
 });
 
-test("footnote and specimen referents keep their label or the note their citation owns", () => {
+test("footnote referents keep their label or the note their citation owns", () => {
     const cite = (referent, note = "") =>
         fromCanonical(
             parseCanonicalDump(
@@ -175,9 +175,8 @@ test("footnote and specimen referents keep their label or the note their citatio
         "            ├── Footnote scope=1:1..1:9 anchor=null attributes={} label=null children=1\n" +
         `            │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="${literal}" children=0\n`;
     assert.deepEqual(cite('footnote(label="x")'), { referent: "footnote", label: "x", prefix: [], suffix: [] });
-    assert.deepEqual(cite('specimen(label="x")'), { referent: "specimen", label: "x", prefix: [], suffix: [] });
     assert.notDeepEqual(cite('footnote(label="x")'), cite('footnote(label="y")'));
-    assert.notDeepEqual(cite('footnote(label="x")'), cite('specimen(label="x")'));
+    assert.throws(() => cite('specimen(label="x")'), /unknown citation referent/u);
     const inline = cite("footnote(note)", note("body"));
     assert.equal(inline.referent, "footnote");
     assert.equal(inline.note.kind, "Footnote");

@@ -1,6 +1,5 @@
 import type { Metadata } from "./metadata.js";
 import type { Footnote } from "./footnote.js";
-import type { Specimen } from "./specimen.js";
 import type { Reference } from "./reference.js";
 import type { Callout } from "./callout.js";
 import type { Cite, Citation } from "./cite.js";
@@ -80,6 +79,5 @@ export type Markup =
     | Topic
     | Citation
     | Footnote
-    | Specimen
     | Metadata
     | Reference;

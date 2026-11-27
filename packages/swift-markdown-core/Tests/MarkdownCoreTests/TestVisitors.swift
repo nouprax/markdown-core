@@ -11,7 +11,6 @@ struct KindVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
 
@@ -134,7 +133,6 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
 }
 
 /// The canonical dump of `source`, as the conformance runner reads it.

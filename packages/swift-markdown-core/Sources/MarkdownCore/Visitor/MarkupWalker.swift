@@ -48,7 +48,6 @@ func dispatch<V: MarkupVisitor>(_ node: any Markup, to visitor: inout V, phase: 
     case let node as Definition: visitor.visit(node, phase: phase)
     case let node as Citation: visitor.visit(node, phase: phase)
     case let node as Footnote: visitor.visit(node, phase: phase)
-    case let node as Specimen: visitor.visit(node, phase: phase)
     case let node as ThematicBreak: visitor.visit(node, phase: phase)
     case let node as CodeBlock: visitor.visit(node, phase: phase)
     case let node as HTMLBlock: visitor.visit(node, phase: phase)

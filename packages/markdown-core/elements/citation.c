@@ -4,23 +4,16 @@
 #include "html.h"
 #include "citation.h"
 #include "link.h"
-#include "specimen.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { CITATION_CODE, CITATION_HTML, CITATION_LINK, CITATION_SPECIMEN };
+enum { CITATION_CODE, CITATION_HTML, CITATION_LINK };
 static const markdown_core_element *const CITATION_PEERS[] = {[CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE,
                                                               [CITATION_HTML] = &MARKDOWN_CORE_ELEMENT_HTML,
                                                               [CITATION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
-                                                              [CITATION_SPECIMEN] = &MARKDOWN_CORE_ELEMENT_SPECIMEN,
                                                               NULL};
-/* The spaces this element looks labels up in, as `self->spaces` numbers
- * them. */
-enum { CITATION_SPECIMENS };
-static const markdown_core_space *const CITATION_SPACES[] = {[CITATION_SPECIMENS] = &MARKDOWN_CORE_SPECIMEN_SPACE,
-                                                             NULL};
 
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos);
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at);
@@ -302,53 +295,16 @@ static bufsize_t unbegun_key_end(const unsigned char *data, bufsize_t length) {
 }
 
 /* The key the content's end cuts short, from `field`, of the citation whose
- * `@` or `-@` starts at `start`, to the run's context sink. Outside brackets
- * the key names a bibliography entry or a specimen, which only the
- * definitions decide; a `(@`, or a `(` and a number before the `@`, at the
- * start of a line of its content may open a specimen definition, which the
- * document must finish. */
-static void S_report_key(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
-                         bufsize_t start, bufsize_t at, bufsize_t field, bool braced) {
-    markdown_core_field fields[3];
-    size_t count = 0;
+ * `@` or `-@` starts at `start`, to the run's context sink: a bibliography
+ * key. */
+static void S_report_key(markdown_core_inline_state *inline_state, bufsize_t start, bufsize_t at, bufsize_t field,
+                         bool braced) {
     const markdown_core_field_end end = braced                             ? braced_key_end
                                         : field == inline_state->input.len ? unbegun_key_end
                                                                            : key_end;
-    fields[count++] =
-        (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
-    if (!braced && !markdown_core_open_bracket(inline_state)) {
-        fields[count++] = (markdown_core_field){
-            MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
-        const unsigned char *data = inline_state->input.data;
-        bufsize_t open = start;
-        while (open > 0 && data[open - 1] >= '0' && data[open - 1] <= '9') {
-            open--;
-        }
-        if (open > 0 && data[open - 1] == '(' && (open == 1 || markdown_core_is_line_end(data[open - 2]))) {
-            fields[count++] = (markdown_core_field){
-                MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_SPECIMEN, field, end, {{0}}, 0, true, 0};
-        }
-    }
-    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, start, at, fields, count);
-}
-
-/* The label of a numbered specimen definition, `(9@a`, the content's end
- * cuts short, from the `@` at `at` that opens no citation, to the run's
- * context sink. */
-static void S_report_numbered(markdown_core_inline_state *inline_state, bufsize_t at) {
-    const unsigned char *data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
-    bufsize_t open = at;
-    while (open > 0 && data[open - 1] >= '0' && data[open - 1] <= '9') {
-        open--;
-    }
-    if (open == at || open == 0 || data[open - 1] != '(' || (open > 1 && !markdown_core_is_line_end(data[open - 2])) ||
-        at + 1 + key_end(data + at + 1, len - at - 1) != len) {
-        return;
-    }
-    const markdown_core_field field = {
-        MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_SPECIMEN, at + 1, key_end, {{0}}, 0, true, 0};
-    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, at, at + 1, &field, 1);
+    const markdown_core_field bib = {
+        MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
+    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, start, at, &bib, 1);
 }
 
 static bool scan_citation_key(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
@@ -387,12 +343,12 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
             const bool open = index->cursor < index->count && index->entries[index->cursor].start == pos &&
                               index->entries[index->cursor].valid;
             if (inline_state->context && open) {
-                S_report_key(self, inline_state, start, pos, pos + 1, true);
+                S_report_key(inline_state, start, pos, pos + 1, true);
             }
             return false;
         }
         if (inline_state->context && index->entries[index->cursor].cut) {
-            S_report_key(self, inline_state, start, pos, pos + 1, true);
+            S_report_key(inline_state, start, pos, pos + 1, true);
         }
         token->key_start = pos + 1;
         token->end = index->entries[index->cursor].end;
@@ -421,7 +377,7 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
     token->key_end = token->end = pos;
     if (inline_state->context &&
         (pos == len || (pos + 1 == len && pos > token->key_start && strchr(":.#$%&-+?<>~/", data[pos])))) {
-        S_report_key(self, inline_state, start, token->key_start, token->key_start, false);
+        S_report_key(inline_state, start, token->key_start, token->key_start, false);
     }
     return pos > token->key_start;
 }
@@ -599,34 +555,6 @@ static void take_citation_affix(const markdown_core_element_instance *self, mark
     }
 }
 
-static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state, markdown_core_node *text,
-                                        bool first) {
-    assert(text && text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal->len);
-    markdown_core_chunk *literal = text->as.literal;
-    if (literal->len == 1) {
-        markdown_core_parser_release_node(inline_state->owner_parser, text);
-        return;
-    }
-    if (first) {
-        markdown_core_place span = text->place;
-        markdown_core_text_place(inline_state->owner_parser, &text->content_map, 1, 1, &span);
-        text->place.start = span.start;
-        markdown_core_text_share(inline_state->owner_parser, &text->content_map, &text->content_map, 1,
-                                 literal->len - 1);
-        if (literal->alloc) {
-            memmove(literal->data, literal->data + 1, (size_t)literal->len - 1);
-        } else {
-            literal->data++;
-        }
-    } else {
-        markdown_core_place span = text->place;
-        markdown_core_text_place(inline_state->owner_parser, &text->content_map, literal->len - 2, literal->len - 1,
-                                 &span);
-        text->place.end = span.end;
-    }
-    literal->len--;
-}
-
 static void materialize_citation_key(const markdown_core_element_instance *self,
                                      markdown_core_inline_state *inline_state, citation_token *token) {
     if (!token->key || token->node->kind == MARKDOWN_CORE_NODE_CITE || inline_state->error) {
@@ -643,37 +571,7 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
         }
         return;
     }
-    /* A bare key names a specimen when a specimen definition the lookup sees
-     * declares it. */
-    bool failed = false, specimen = false;
-    if (!token->suppress && token->key_start == token->start + 1) {
-        specimen = markdown_core_parser_find_definition(
-                       inline_state->owner_parser, self->spaces[CITATION_SPECIMENS], &item->as.citation->value,
-                       markdown_core_inline_state_root_offset(inline_state, token->start), &failed) != NULL;
-    }
-    if (failed) {
-        markdown_core_parser_release_node(inline_state->owner_parser, cite);
-        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        return;
-    }
-    if (specimen) {
-        item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
-        item->as.citation->mode = 0;
-    }
-    bufsize_t start = token->start, end = token->end;
-    if (specimen && start && markdown_core_inline_peek_at(inline_state, start - 1) == '(' &&
-        markdown_core_inline_peek_at(inline_state, end) == ')') {
-        markdown_core_node *before = markdown_core_scaffold_prev(token->node);
-        markdown_core_node *after = markdown_core_scaffold_next(token->node);
-        if (!source_escaped(self, inline_state, start - 1, 0) && before && after &&
-            before->kind == MARKDOWN_CORE_NODE_TEXT && after->kind == MARKDOWN_CORE_NODE_TEXT) {
-            remove_specimen_parenthesis(inline_state, before, false);
-            remove_specimen_parenthesis(inline_state, after, true);
-            start--;
-            end++;
-        }
-    }
-    markdown_core_inline_state_place(inline_state, cite, start, end - 1);
+    markdown_core_inline_state_place(inline_state, cite, token->start, token->end - 1);
     markdown_core_scaffold_insert_before(token->node, cite);
     markdown_core_parser_release_node(inline_state->owner_parser, token->node);
     token->node = cite;
@@ -925,13 +823,10 @@ static bool is_inline_start(const markdown_core_element_instance *self, markdown
         return markdown_core_open_bracket(inline_state) != NULL;
     }
     if (!markdown_core_inline_citation_opener(inline_state, at)) {
-        if (inline_state->context && c == '@') {
-            S_report_numbered(inline_state, at);
-        }
         return false;
     }
     if (inline_state->context && at + 1 == inline_state->input.len) {
-        S_report_key(self, inline_state, at, at + 1, at + 1, false);
+        S_report_key(inline_state, at, at + 1, at + 1, false);
     }
     return markdown_core_inline_citation_key_follows(inline_state, at + 1);
 }
@@ -1029,7 +924,6 @@ const markdown_core_facet MARKDOWN_CORE_CITATION_FACETS[] = {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .facets = MARKDOWN_CORE_CITATION_FACETS,
     .peers = CITATION_PEERS,
-    .spaces = CITATION_SPACES,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),
     .bracket_size = sizeof(markdown_core_citation_bracket),
@@ -1057,9 +951,7 @@ void markdown_core_citation_parts(markdown_core_parts *parts) {
         return;
     }
     const markdown_core_slot_kind slot =
-        item->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE   ? MARKDOWN_CORE_SLOT_FOOTNOTE
-        : item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN ? MARKDOWN_CORE_SLOT_SPECIMEN
-                                                                 : MARKDOWN_CORE_SLOT_BIB;
+        item->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE ? MARKDOWN_CORE_SLOT_FOOTNOTE : MARKDOWN_CORE_SLOT_BIB;
     /* The referent's sigil is the first after the prefix. */
     bufsize_t at = markdown_core_parts_skip(parts, 0);
     while (at < n && s[at] != '@' && s[at] != '^') {

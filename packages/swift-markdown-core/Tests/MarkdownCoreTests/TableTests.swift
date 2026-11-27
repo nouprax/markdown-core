@@ -44,7 +44,6 @@ func document(holding content: [MarkupRecord]) -> Document {
             metadata: nil,
             content: content,
             footnotes: [],
-            specimens: [],
             references: [],
             referenceLabels: [:]
         )

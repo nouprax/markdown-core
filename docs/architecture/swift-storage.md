@@ -46,7 +46,7 @@ Each node's fields, attributes included, are the ones written on it, read
 from that node alone.
 
 A document stores its text unit and its definition tables: every footnote
-(definitions and inline notes), every specimen and every reference in source
+(definitions and inline notes) and every reference in source
 order, as records of the tree, and a map from each label's UTF-8 bytes to its
 first definition, built with the document. The reference map is copied from
 the engine's label table, so each resolving label names the `Reference` or

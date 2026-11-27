@@ -54,20 +54,17 @@ typedef enum {
      * which content the node sits in, which is what containment checks and the
      * inline parser ask. */
     MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
-    /* A specimen definition: a block that stays in the tree where it was
-     * written. */
-    MARKDOWN_CORE_NODE_SPECIMEN = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
-    MARKDOWN_CORE_NODE_DEFINITION_LIST = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0012,
-    MARKDOWN_CORE_NODE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0013,
+    MARKDOWN_CORE_NODE_DEFINITION_LIST = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
+    MARKDOWN_CORE_NODE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0012,
     /* A private collection root, not a public Markup kind. */
-    MARKDOWN_CORE_NODE_DEFINITION_BODY = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0014,
+    MARKDOWN_CORE_NODE_DEFINITION_BODY = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0013,
     /* Read by the document element's prefix reader (properties.c) and never
      * parsed as a block, so no element defines its structure. */
-    MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0015,
+    MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0014,
     /* A link reference definition: a leaf block the close of the paragraph that
      * held it makes whole, so it is never open on the spine and no element
      * defines its structure. */
-    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0016,
+    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0015,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,

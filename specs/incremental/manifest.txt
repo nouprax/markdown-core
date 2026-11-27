@@ -168,8 +168,6 @@ document documents/hard-footnote-definition.md
 script documents/hard-footnote-definition.md scripts/hard-footnote-definition.script
 document documents/hard-heading-label.md
 script documents/hard-heading-label.md scripts/hard-heading-label.script
-document documents/hard-specimen-definition.md
-script documents/hard-specimen-definition.md scripts/hard-specimen-definition.script
 document documents/hard-automatic-anchor.md
 script documents/hard-automatic-anchor.md scripts/hard-automatic-anchor.script
 document documents/hard-split-and-join.md
@@ -370,12 +368,6 @@ stream ../canonical-ast/citations.md tokens
 stream ../canonical-ast/citations.md scalars
 stream ../canonical-ast/citations.md rows
 stream ../canonical-ast/citations.md splits
-document ../canonical-ast/specimens.md
-script ../canonical-ast/specimens.md scripts/specimens.script
-stream ../canonical-ast/specimens.md tokens
-stream ../canonical-ast/specimens.md scalars
-stream ../canonical-ast/specimens.md rows
-stream ../canonical-ast/specimens.md splits
 document ../canonical-ast/nameless-directives.md
 script ../canonical-ast/nameless-directives.md scripts/nameless-directives.script
 stream ../canonical-ast/nameless-directives.md tokens

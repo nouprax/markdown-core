@@ -133,7 +133,6 @@ static const struct {
     PROBE("[\xe4]\n\n[\xe4]: /u\n"),            /* label normal form */
     PROBE("x @\xe4 y\n"),                       /* citation key */
     PROBE("\xe4@key y\n"),                      /* citation opener */
-    PROBE("(@\xe4) item\n"),                    /* specimen label */
     PROBE("| a |\n| - |\n| b |\n:\xe4\n"),      /* table row without a pipe */
     PROBE("| \xe4\xb8 |\n| - |\n"),             /* pipe table cell */
     PROBE("- [\xe4] task\n"),                   /* task marker */

@@ -41,10 +41,10 @@ extension APISuite {
     func ownedMarkupNodes() throws {
         let nodes: [any Markup] = try {
             let document = try Document.parse(
-                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n"
+                "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n"
             )
             let citation = try #require((document.content.first as? Paragraph)?.content.first as? Cite).citations[0]
-            return [try #require(document.metadata), citation, document.footnotes[0], document.specimens[0]]
+            return [try #require(document.metadata), citation, document.footnotes[0]]
         }()
         for node in nodes {
             #expect(node.anchor == nil && node.attributes.classes.isEmpty && node.attributes.records.isEmpty)
@@ -79,27 +79,19 @@ extension APISuite {
 }
 
 extension APISuite {
-    @Test("the definition tables list every footnote and specimen in source order and find a label's first")
+    @Test("the footnote table lists every footnote in source order and finds a label's first")
     func definitionTables() throws {
-        let source = "(@a) one\n\n(@) two\n\n(@a) three\n\nSee (@a) and [^n] and ^[inline].\n\n[^n]: note\n"
+        let source = "See [^n] and ^[inline].\n\n[^n]: note\n"
         let document = try Document.parse(source)
-        #expect(document.specimens.map(\.label) == ["a", nil, "a"])
-        #expect(document.specimens.map(\.id) == document.content.prefix(3).map(\.id))
-        let first = try #require(document.specimen(for: "a"))
-        #expect(first == document.specimens[0])
-        #expect(((first.content.first as? Paragraph)?.content.first as? Text)?.literal == "one")
-        #expect(document.specimen(for: "b") == nil)
-
-        let paragraph = try #require(document.content[3] as? Paragraph)
+        let paragraph = try #require(document.content[0] as? Paragraph)
         let referents = paragraph.content.compactMap { ($0 as? Cite)?.citations.first?.referent }
-        #expect(referents.count == 3)
-        #expect(referents[0] == .specimen(label: "a"))
-        #expect(referents[1] == .footnote(target: .label(value: "n")))
+        #expect(referents.count == 2)
+        #expect(referents[0] == .footnote(target: .label(value: "n")))
         // An inline note is listed where its call is, and has no label to find.
-        #expect(referents[2] == .footnote(target: .note(footnote: document.footnotes[0])))
+        #expect(referents[1] == .footnote(target: .note(footnote: document.footnotes[0])))
         #expect(document.footnotes.map(\.label) == [nil, "n"])
         #expect(document.footnote(for: "n") == document.footnotes[1])
-        #expect(document.footnote(for: "n")?.id == document.content[4].id)
+        #expect(document.footnote(for: "n")?.id == document.content[1].id)
         #expect(document.footnote(for: "") == nil)
     }
 }

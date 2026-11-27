@@ -103,8 +103,7 @@ with a null `label` and the parsed inline body as its content. A referenced
 definition `[^x]: body` is a `Footnote` block where it was written, and a
 `[^x]` call names it by label. `Document.footnotes` lists every footnote,
 inline notes included, in source order, and `document.footnote(label)`
-returns the first one with that label; `Document.specimens` and
-`document.specimen(label)` do the same for specimens.
+returns the first one with that label.
 
 A link reference definition `[r]: /u "t"` is a `Reference` block where it was
 written, with its normalized `label`, its `url` destination and its `title`.
@@ -197,7 +196,7 @@ A session's documents count scope columns in its `unit`, `"utf16"` by default,
 the unit of JavaScript strings, or `"utf8"`, chosen with
 `new MarkdownSession(source, { unit })`. Every document the session returns is
 an immutable value. Until `flush()`, each document is a snapshot of the text
-so far: a lookup of a reference, footnote or specimen sees only the definitions
+so far: a lookup of a reference or footnote sees only the definitions
 that start before the inline root asking. The caller ends the text with `flush()`, which returns
 the final document; afterwards `append` and `flush` throw
 `sessionFlushed`, and `document` and `text` stay readable. The session
@@ -327,7 +326,7 @@ Object methods such as `heading(node, phase) { ... }` infer `Heading` and
 `node.kind`; its mapped union preserves the correlation without `any` or casts.
 
 Every callback is required; missing callbacks are compile errors. Metadata,
-citations, footnotes and specimens are Markup and use the same callbacks.
+citations and footnotes are Markup and use the same callbacks.
 Visitors process callbacks without recursively visiting descendants; the dumper
 uses the same traversal. The walker schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content.

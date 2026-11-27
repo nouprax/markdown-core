@@ -34,7 +34,6 @@ import {
     type Citation,
     type CitationReferent,
     type Footnote,
-    type Specimen,
     type Reference,
     type Heading,
     type Markup,
@@ -112,23 +111,18 @@ new MarkdownCoreError("outOfBounds").code = "kindMismatch";
 void [codes, unknownCode];
 const equal: boolean = markupEquals(document, Document.parse("# typed"));
 const footnotes: readonly Footnote[] = document.footnotes;
-const specimens: readonly Specimen[] = document.specimens;
 const footnote: Footnote | null = document.footnote("label");
-const specimen: Specimen | null = document.specimen("label");
 const references: readonly Reference[] = document.references;
 const target: Reference | Heading | null = document.reference("label");
 // @ts-expect-error a label names a Reference or a Heading, nothing else
 const footnoteTarget: Footnote | null = document.reference("label");
-void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen, references, target, footnoteTarget];
+void [id, extent, scope, hit, equal, footnotes, footnote, references, target, footnoteTarget];
 void [runs];
 const visitor: MarkupVisitor = {
     citation: (node) => {
         void node.kind;
     },
     footnote: (node) => {
-        void node.kind;
-    },
-    specimen: (node) => {
         void node.kind;
     },
     metadata: (node) => {
@@ -349,11 +343,6 @@ const walkingVisitor: MarkupVisitor = {
         const kind: "citation" = node.kind;
         void kind;
         void [referent, inferredPhase];
-    },
-    specimen(specimen, phase) {
-        const inferred: Specimen = specimen;
-        const inferredPhase: MarkupVisitPhase = phase;
-        void [inferred, inferredPhase];
     },
     reference(reference, phase) {
         const inferred: Reference = reference;

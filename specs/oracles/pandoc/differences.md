@@ -32,7 +32,7 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 3 | `multiline-table`: multiline table column widths | **Removed from the registry.** Multiline tables are no longer part of the dialect, so the case left the corpus. |
 | 4 | `grid-table-block-cells`: widths of grid tables containing blocks | **Removed from the registry.** Grid tables and captions are no longer part of the dialect. |
 | 5 | `grid-table-row-and-column-spans`: widths of tables with spans | **Removed from the registry.** Grid tables are no longer part of the dialect. |
-| 6 | `example-lists-and-reference`: specimen definitions and references | Core keeps each Specimen definition as a block where it was written and preserves exact reference labels. Pandoc emits numbered example Lists and replaces references with number text. Core delegates numbering to consumers. |
+| 6 | `example-lists-and-reference`: numbered examples and references | Core has no numbered examples: `(@label)` is ordinary paragraph text and a bare `@label` is a bibliography citation. Pandoc emits numbered example Lists and replaces references with number text. |
 | 7 | `p6-escaped-space`: escaped spaces in scripts | For `^a\ b^` and `~*c\ d*~`, Core produces scripts and decodes their escaped spaces to NBSP; this Pandoc reader does not produce scripts. Core preserves the original backslash and whitespace outside scripts or when a candidate fails, without global replacement. |
 | 8 | `p6-whitespace-recovery`: Unicode whitespace in scripts | **Fixed and removed from the registry.** Only a raw space, tab or line ending ends a script candidate, as in Pandoc's reader, so `^a b^` containing U+2003 EM SPACE is a superscript on both sides. Both sides also agree on recovery after the earlier ASCII-space failure in this case. |
 | 9 | `p6-entity-space`: entity-decoded whitespace | In `~a&Tab;b~`, Core preserves the decoded TAB, while Pandoc normalizes it to a space. Entity-decoded whitespace is distinct from a raw source whitespace boundary. |
@@ -51,8 +51,8 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 22 | `p7-heading-projection`: citations in heading anchors | For `## [pre @a suffix; @b]`, Core generates `preasuffixb` from stored citation content. Pandoc generates `pre-a-suffix-b` from the original display text, which retains separating spaces. |
 | 23 | `p7-unicode-boundary`: citation starts after underscores | `_@a` cannot start a Core citation because an underscore, Unicode letter, or digit cannot immediately precede the start. Pandoc accepts a citation after an underscore. |
 | 24 | `p9a-nested-start`: nested list candidates starting above 1 | Under CommonMark only a list starting at 1 may interrupt a paragraph, so indented `2. ordinary` remains a lazy continuation of the parent-list paragraph in Core. Pandoc puts the line in another Plain block. The following `1. nested` starts a nested list on both sides. |
-| 25 | `p9b-resolution`: forward, duplicate, anonymous specimens and start numbers | The same model difference as item 6, covering forward references, explicit start number 7, duplicate labels, and anonymous definitions. Core preserves all definitions, authored start values, and reference labels. Pandoc renders references as text such as `7` and puts definitions in an example List. |
-| 26 | `p9b-heading`: specimen references in headings | Core keeps a specimen citation as the content of `## @label`; Pandoc replaces the heading content with text `1`. **Both anchors are `label`.** The difference is heading content and the definition model, not the anchor value. |
+| 25 | `p9b-resolution`: forward, duplicate, anonymous examples and start numbers | The same dropped syntax as item 6, covering forward references, explicit start number 7, duplicate labels, and anonymous definitions. Core reads them as text and bibliography citations. Pandoc renders references as text such as `7` and puts definitions in an example List. |
+| 26 | `p9b-heading`: example references in headings | Core keeps `## @label` as a heading holding a bibliography citation; Pandoc replaces the heading content with text `1`. |
 | 27 | `p7-unresolved-reference-tail`: unresolved link-reference tails | For `[@a][missing]`, Core accepts the preceding complete citation group. Pandoc retains the first pair of brackets as text and parses its `@a` as authorInText, producing different citation modes and structure. |
 | 28 | `p7-explicit-citation-shortcut`: citation/reference-definition precedence | Core still registers `[@a]: /u` as a link-reference definition, but a complete `[@a]` citation in content takes precedence over a shortcut link. Pandoc also parses the definition-shaped line as a citation followed by text. |
 | 29 | `p9a-start-always-authored`: control reader without startnum | The dialect dropped letter markers, so `h. eight` and `i. nine` are one Core paragraph. This control omits Pandoc's `startnum`, and Pandoc makes a lower-alpha list starting at 1. |
@@ -73,8 +73,8 @@ requires distinguishing reader configuration from failed-candidate fallback.
 
 The clearest repeated relationships are:
 
-- 6, 25, 26: one specimen definition/reference model across ordinary content,
-  forward references, and headings.
+- 6, 25, 26: the dropped numbered examples, across ordinary content, forward
+  references, and headings.
 - 12, 16, 18, 31: one global explicit-ID reservation rule across four declaration
   sites.
 - 32–34: one compactness-information difference across nested blocks, code
@@ -86,7 +86,6 @@ These records are governed by the existing modules:
 [scripts](../../../docs/specs/dialect/superscript-and-subscript.md),
 [attributes](../../../docs/specs/dialect/attributes.md),
 [tables](../../../docs/specs/dialect/tables.md),
-[specimens](../../../docs/specs/dialect/specimens.md),
 [anchors](../../../docs/specs/dialect/anchors.md),
 [links](../../../docs/specs/dialect/links-and-images.md),
 [citations](../../../docs/specs/dialect/citations.md),

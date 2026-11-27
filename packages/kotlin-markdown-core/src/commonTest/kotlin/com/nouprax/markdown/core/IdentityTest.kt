@@ -126,8 +126,7 @@ class DefinitionTableTest {
         assertSame<Markup?>(document.content[1], document.footnote("a"))
         assertSame<Markup?>(document.content[2], document.footnote("b"))
         assertNull(document.footnote("c"))
-        assertTrue(document.specimens.isEmpty())
-        assertNull(document.specimen("a"))
+        assertTrue(document.references.isEmpty())
         // The tables list nodes of the tree, never copies of them.
         val walked = nodes(document)
         assertTrue(document.footnotes.all { footnote -> walked.any { it === footnote } })

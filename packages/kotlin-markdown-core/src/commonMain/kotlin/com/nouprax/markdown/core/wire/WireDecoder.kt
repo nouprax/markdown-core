@@ -48,9 +48,8 @@ internal object WireDecoder {
         private var offset = 0
         private val nodes = ArrayList<Markup>()
 
-        /** Every footnote, specimen and reference built so far, by id, for the definition tables. */
+        /** Every footnote and reference built so far, by id, for the definition tables. */
         private val footnotes = HashMap<Long, Footnote>()
-        private val specimens = HashMap<Long, Specimen>()
         private val references = HashMap<Long, Reference>()
 
         /** Every reference and heading built so far, by id, for the reference label table. */
@@ -80,7 +79,6 @@ internal object WireDecoder {
             val children = Children(nodes.size)
             val node = children.fields(kind, id, extent, runs, anchor, attributes)
             if (node is Footnote) footnotes[id.value] = node
-            if (node is Specimen) specimens[id.value] = node
             if (node is Reference) references[id.value] = node
             if (node is Reference || node is Heading) resolvable[id.value] = node
             nodes.subList(children.start, nodes.size).clear()
@@ -107,7 +105,6 @@ internal object WireDecoder {
                         optional(metadata),
                         unit,
                         table(footnotes),
-                        table(specimens),
                         table(references),
                         labels(),
                         id,
@@ -398,12 +395,6 @@ internal object WireDecoder {
                     Footnote(label, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.SPECIMEN -> {
-                    val label = optional { string() }
-                    val start = optional { int() }
-                    Specimen(label, start, content(), id, extent, runs, anchor, attributes)
-                }
-
                 NodeKind.METADATA -> {
                     Metadata(
                         name = optional { metadataValue() },
@@ -500,8 +491,7 @@ internal object WireDecoder {
         private fun referent(): CitationReferent? =
             when (u8()) {
                 0 -> CitationReferent.Bib(string(), index(bibModes))
-                1 -> if (u8() == 0) CitationReferent.Footnote(FootnoteTarget.Label(string())) else null
-                else -> CitationReferent.Specimen(string())
+                else -> if (u8() == 0) CitationReferent.Footnote(FootnoteTarget.Label(string())) else null
             }
 
         private fun dimensions(): Dimensions = Dimensions(int().toInt(), optional { int().toInt() })

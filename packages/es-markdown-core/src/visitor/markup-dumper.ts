@@ -458,19 +458,6 @@ class State {
             this.start();
             this.line("Footnote", node, [`label=${optional(node.label)}`], node.content.length);
         },
-        specimen: (node, phase) => {
-            if (phase === "exit") {
-                this.end();
-                return;
-            }
-            this.start();
-            this.line(
-                "Specimen",
-                node,
-                [`label=${optional(node.label)}`, `start=${node.start ?? "null"}`],
-                node.content.length
-            );
-        },
         reference: (node, phase) => {
             if (phase === "exit") {
                 this.end();
@@ -601,8 +588,6 @@ function referent(value: CitationReferent): string {
             return `bib(key=${escaped(value.key)},mode=${value.mode})`;
         case "footnote":
             return value.target.kind === "label" ? `footnote(label=${escaped(value.target.value)})` : "footnote(note)";
-        case "specimen":
-            return `specimen(label=${escaped(value.label)})`;
     }
 }
 

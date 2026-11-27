@@ -473,7 +473,6 @@ static bool refers(const markdown_core_node *citation, markdown_core_slot_kind s
     case MARKDOWN_CORE_SLOT_FOOTNOTE:
         return item->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
     case MARKDOWN_CORE_SLOT_BIB:
-    case MARKDOWN_CORE_SLOT_SPECIMEN:
         return item->referent != MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
     default:
         return true;
@@ -486,8 +485,7 @@ static bool refers(const markdown_core_node *citation, markdown_core_slot_kind s
  * its construct (a callout whose `[!` no `]` closes holds no variant). The
  * written bytes start past the spaces and line endings after `first`, a
  * quoted value's quote and a block anchor's caret, and end at the spaces
- * before the cursor. A citation's key is a bibliography entry's or a
- * specimen's, which only the definitions decide. A quote-led value
+ * before the cursor. A quote-led value
  * written from an earlier line also misses unless a value reaches the
  * cursor's line. A slot no field of the node's kind reads, an opener's or a
  * member's of the metadata, is never missed. */
@@ -512,29 +510,23 @@ static bool field_misses(const context_query *query, const markdown_core_node *n
     if (from >= end) {
         return true;
     }
-    const bool key =
-        kind == MARKDOWN_CORE_KIND_CITATION && (slot == MARKDOWN_CORE_SLOT_BIB || slot == MARKDOWN_CORE_SLOT_SPECIMEN);
-    const markdown_core_slot_kind kinds[2] = {slot, slot == MARKDOWN_CORE_SLOT_BIB ? MARKDOWN_CORE_SLOT_SPECIMEN
-                                                                                   : MARKDOWN_CORE_SLOT_BIB};
     /* Written from an earlier line, a quote-led value must reach the
      * cursor's: one that no quote closes ends with its own line. */
     size_t start, other;
     const size_t line = query_line(query, query->cursor, &start);
     const size_t reach = quoted && query_line(query, from, &other) < line ? start : 0;
     bool held = false, reached = !reach;
-    for (size_t k = 0; k < (key ? 2u : 1u) && !(held && reached); k++) {
-        markdown_core_place *places;
-        size_t count;
-        if (markdown_core_parts_fields(query->document->root, query->window, node, kinds[k], query->source,
-                                       query->length, &places, &count) == MARKDOWN_CORE_ALLOCATION_FAILED) {
-            return false;
-        }
-        for (size_t i = 0; i < count; i++) {
-            held = held || (places[i].start <= from && from < places[i].end);
-            reached = reached || (places[i].start < query->cursor && places[i].end >= reach);
-        }
-        markdown_core_free(places);
+    markdown_core_place *places;
+    size_t count;
+    if (markdown_core_parts_fields(query->document->root, query->window, node, slot, query->source, query->length,
+                                   &places, &count) == MARKDOWN_CORE_ALLOCATION_FAILED) {
+        return false;
     }
+    for (size_t i = 0; i < count; i++) {
+        held = held || (places[i].start <= from && from < places[i].end);
+        reached = reached || (places[i].start < query->cursor && places[i].end >= reach);
+    }
+    markdown_core_free(places);
     *misses = !held || !reached;
     return true;
 }
@@ -1113,20 +1105,11 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
      * may instead begin inside. */
     const bool defines = field->declares &&
                          (field->owner == MARKDOWN_CORE_KIND_FOOTNOTE || field->owner == MARKDOWN_CORE_KIND_REFERENCE);
-    size_t begins =
+    const size_t begins =
         (opener->kind == field->owner && (!opener->block || field->owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK)) ||
                 defines
             ? opener->place.start
             : SIZE_MAX;
-    if (field->declares && field->owner == MARKDOWN_CORE_KIND_SPECIMEN && field->start) {
-        /* A specimen definition begins at the `(` before its number and
-         * its `@`, which the content of another may hold as text. */
-        begins = field->start - 1;
-        while (begins > 0 && query->source[begins - 1] >= '0' && query->source[begins - 1] <= '9') {
-            begins--;
-        }
-        begins -= begins > 0 && query->source[begins - 1] == '(';
-    }
     const markdown_core_node_kind owner = field->owner;
     const bool tail = owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
                       owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
@@ -1476,8 +1459,8 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
             query->source[origin - 1] == '<' && field->owner != MARKDOWN_CORE_KIND_CROSS_LINK &&
             field->owner != MARKDOWN_CORE_KIND_CROSS_EMBED) {
             slot->wrap = '<';
-        } else if ((kind == MARKDOWN_CORE_SLOT_BIB || kind == MARKDOWN_CORE_SLOT_SPECIMEN) && start > line + 1 &&
-                   query->source[start - 1] == '{' && query->source[start - 2] == '@') {
+        } else if (kind == MARKDOWN_CORE_SLOT_BIB && start > line + 1 && query->source[start - 1] == '{' &&
+                   query->source[start - 2] == '@') {
             slot->wrap = '{';
         } else if (kind == MARKDOWN_CORE_SLOT_VALUE && verdicts[i].start < line &&
                    (query->source[verdicts[i].start] == '"' || query->source[verdicts[i].start] == '\'')) {
@@ -2422,18 +2405,9 @@ markdown_core_status markdown_core_slot_spell(const markdown_core_context *conte
                plain(&out, value, size, " \t[]", row);
         closer = closed ? "" : "]";
         break;
-    case MARKDOWN_CORE_SLOT_BIB:
-    case MARKDOWN_CORE_SLOT_SPECIMEN: {
+    case MARKDOWN_CORE_SLOT_BIB: {
         held = !opaque(value, size) && spell_cite(&out, row, value, size);
-        if (kind == MARKDOWN_CORE_SLOT_SPECIMEN) {
-            /* A label is key characters with single hyphens between, and
-             * no braces write one. */
-            held = held && slot->wrap != '{' && value[0] != '-' && value[size - 1] != '-';
-            for (size_t i = 0; held && i < size; i++) {
-                const uint8_t c = value[i];
-                held = c >= 0x80 || word(&c, 1, "_") || (c == '-' && value[i + 1] != '-');
-            }
-        } else if (held && slot->wrap != '{') {
+        if (held && slot->wrap != '{') {
             /* A key the bare scanner does not read whole is written in
              * braces. */
             bool whole = true;

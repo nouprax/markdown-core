@@ -10,7 +10,7 @@ import kotlin.jvm.JvmOverloads
  * or returns counts in [unit].
  *
  * Until [flush], each document is a snapshot of the text so far: a lookup
- * of a reference, footnote or specimen sees only the definitions that start
+ * of a reference or footnote sees only the definitions that start
  * before the inline root asking.
  *
  * The caller ends the text with [flush], which returns the final

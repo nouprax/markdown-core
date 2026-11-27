@@ -29,7 +29,7 @@ public struct MarkdownCoreError: Error, Sendable, Hashable {
 
 /// The immutable semantic root returned by a parse.
 ///
-/// Every footnote, specimen and reference definition stays in the tree where
+/// Every footnote and reference definition stays in the tree where
 /// it was written. The document lists them in source order and looks a label
 /// up in those lists; it owns no definition of its own.
 public struct Document: Markup {
@@ -59,8 +59,6 @@ public struct Document: Markup {
     /// Every footnote in source order: each definition where it was written,
     /// and each inline note at its call site.
     public var footnotes: MarkupCollection<Footnote> { MarkupCollection(records: record.footnotes[...]) }
-    /// Every specimen definition in source order.
-    public var specimens: MarkupCollection<Specimen> { MarkupCollection(records: record.specimens[...]) }
     /// Every link reference definition in source order, duplicates and unused
     /// ones included.
     public var references: MarkupCollection<Reference> { MarkupCollection(records: record.references[...]) }
@@ -69,12 +67,6 @@ public struct Document: Markup {
     /// byte, or `nil`. An inline note has no label and is never found.
     public func footnote(for label: String) -> Footnote? {
         record.footnoteLabels[Array(label.utf8)].map { Footnote(record: $0) }
-    }
-
-    /// The first specimen in source order whose label equals `label` byte for
-    /// byte, or `nil`. An anonymous definition is never found.
-    public func specimen(for label: String) -> Specimen? {
-        record.specimenLabels[Array(label.utf8)].map { Specimen(record: $0) }
     }
 
     /// The node a ``Destination/reference(label:)`` naming `label`, a
@@ -131,10 +123,8 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     let unit: TextUnit
     let metadataCount: Int
     let footnotes: [MarkupRecord]
-    let specimens: [MarkupRecord]
     let references: [MarkupRecord]
     let footnoteLabels: [[UInt8]: FootnoteRecord]
-    let specimenLabels: [[UInt8]: SpecimenRecord]
     let referenceLabels: [[UInt8]: MarkupRecord]
 
     init(
@@ -143,7 +133,6 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
         metadata: MetadataRecord?,
         content: [MarkupRecord],
         footnotes: [FootnoteRecord],
-        specimens: [SpecimenRecord],
         references: [ReferenceRecord],
         referenceLabels: [[UInt8]: MarkupRecord]
     ) {
@@ -151,11 +140,9 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
         self.unit = unit
         metadataCount = metadatas.count
         self.footnotes = footnotes
-        self.specimens = specimens
         self.references = references
         self.referenceLabels = referenceLabels
         footnoteLabels = DocumentRecord.labels(of: footnotes, \.label)
-        specimenLabels = DocumentRecord.labels(of: specimens, \.label)
         super.init(fields, children: metadatas + content)
     }
 

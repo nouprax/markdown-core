@@ -741,7 +741,7 @@ function cursorAfter(written, cursor) {
 
 /** Each definition table of `document` as dumps of its entries, in order. */
 function tables(document, text) {
-    return [document.footnotes, document.specimens, document.references].map((table) =>
+    return [document.footnotes, document.references].map((table) =>
         table.map((item) => MarkupDumper.dump(document, item, text))
     );
 }
@@ -1079,7 +1079,6 @@ test("ast: inline notes are owned by their referents and definitions stay where 
     // A lookup names the first definition of a label; an inline note has none.
     assert.equal(document.footnote("inline-1"), authored);
     assert.equal(document.footnote("inline-2"), null);
-    assert.deepEqual(document.specimens, []);
     const events = [];
     walk(
         document,
@@ -1516,80 +1515,6 @@ test("ast: a task status is read from its wire index", () => {
     assert.ok(MarkupDumper.dump(document, "").includes("status=question"));
 });
 
-test("ast: specimen definitions and references retain ownership, nulls and reset facts", () => {
-    // CitationReferent: bib(0) | footnote(1) | specimen(2); FootnoteTarget:
-    // label(0) | note(1).
-    const message = (start) => {
-        const writer = new MessageWriter();
-        writer.record("citation").u8(1).u8(0).string("note").u32(0).u32(0).record("cite").u32(1);
-        writer.text(" ");
-        writer.record("citation").u8(2).string("étude").u32(0).u32(0).record("cite").u32(1);
-        return writer
-            .record("paragraph")
-            .u32(3)
-            .text("note")
-            .record("paragraph")
-            .u32(1)
-            .record("footnote", { id: 20 })
-            .optional("note", MessageWriter.prototype.string)
-            .u32(1)
-            .text("body")
-            .record("paragraph")
-            .u32(1)
-            .record("specimen", { id: 30 })
-            .optional("étude", MessageWriter.prototype.string)
-            .optional(start, MessageWriter.prototype.int)
-            .u32(1)
-            .text("tail")
-            .record("paragraph")
-            .u32(1)
-            .record("specimen", { id: 31 })
-            .bool(false)
-            .bool(false)
-            .u32(1)
-            .root(4, { footnotes: [20], specimens: [30, 31] })
-            .document();
-    };
-    const bytes = message(5);
-    const document = decoder(bytes).decode();
-    bytes.fill(0);
-    assert.deepEqual(
-        document.content.map((node) => node.kind),
-        ["paragraph", "footnote", "specimen", "specimen"]
-    );
-    assert.deepEqual(document.footnotes, [document.content[1]]);
-    assert.deepEqual(document.specimens, [document.content[2], document.content[3]]);
-    assert.deepEqual(
-        document.specimens.map(({ label, start }) => [label, start]),
-        [
-            ["étude", 5],
-            [null, null]
-        ]
-    );
-    assert.equal(document.specimen("étude"), document.content[2]);
-    assert.equal(document.specimen("etude"), null);
-    assert.equal(document.footnote("note"), document.content[1]);
-    assert.equal(document.specimens[0].content[0].content[0].literal, "body");
-    assert.deepEqual(document.content[0].content[0].citations[0].referent, {
-        kind: "footnote",
-        target: { kind: "label", value: "note" }
-    });
-    assert.deepEqual(document.content[0].content[2].citations[0].referent, { kind: "specimen", label: "étude" });
-    const dumped = document.dump("");
-    assert.match(dumped, /Specimen scope=\S+ anchor=null attributes=\{\} label="étude" start=5 children=1/u);
-    assert.match(dumped, /Specimen scope=\S+ anchor=null attributes=\{\} label=null start=null children=1/u);
-    assert.match(dumped, /referent=footnote\(label="note"\)[^]*referent=specimen\(label="étude"\)/u);
-    const events = [];
-    walk(
-        document,
-        walkingVisitor((value, phase) => {
-            if (phase === "enter") events.push(value.kind);
-        })
-    );
-    assert.equal(events.filter((kind) => kind === "specimen").length, 2);
-    assert.ok(events.indexOf("footnote") < events.indexOf("specimen"));
-});
-
 test("ast: table groups and columns survive the wire as owned facts", () => {
     const writer = new MessageWriter();
     const row = (...literals) => {
@@ -1907,13 +1832,13 @@ test("ast: a definition's term and bodies decode in field order", () => {
 });
 
 test("api: owned elements are Markup with finite walks and preserved labels", () => {
-    const source = "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n\n(@sample) Body\n";
+    const source = "---\ntitle: Example\n---\n[^Label]\n\n[^label]: self [^LABEL]\n";
     const document = Document.parse(source);
     const citation = document.content[0].content[0].citations[0];
-    const nodes = [document.metadata, citation, document.footnotes[0], document.specimens[0]];
+    const nodes = [document.metadata, citation, document.footnotes[0]];
     assert.deepEqual(
         nodes.map((node) => node.kind),
-        ["metadata", "citation", "footnote", "specimen"]
+        ["metadata", "citation", "footnote"]
     );
     for (const node of nodes) {
         assert.equal(node.anchor, null);
@@ -1931,7 +1856,6 @@ test("api: owned elements are Markup with finite walks and preserved labels", ()
     assert.deepEqual(citation.referent, { kind: "footnote", target: { kind: "label", value: "label" } });
     assert.equal(document.footnotes[0].label, "label");
     assert.equal(document.footnote("label"), document.footnotes[0]);
-    assert.equal(document.specimen("sample"), document.specimens[0]);
     // An inline note's Footnote is the first node its citation takes.
     const inline = decoder(
         new MessageWriter()

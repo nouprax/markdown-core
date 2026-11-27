@@ -174,7 +174,6 @@ fn name(kind: &Kind) -> &'static str {
         Kind::Definition { .. } => "Definition",
         Kind::Citation { .. } => "Citation",
         Kind::Footnote { .. } => "Footnote",
-        Kind::Specimen { .. } => "Specimen",
         Kind::Metadata { .. } => "Metadata",
         Kind::Reference { .. } => "Reference",
     }
@@ -437,11 +436,6 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                     line.push_str("footnote(note)");
                     entries.push(Row::Note(note));
                 }
-                Referent::Specimen { label } => {
-                    line.push_str("specimen(label=");
-                    string(line, label);
-                    line.push(')');
-                }
             }
             entries.push(Row::Group("CitationPrefix", prefix));
             entries.push(Row::Group("CitationSuffix", suffix));
@@ -450,22 +444,6 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         Kind::Footnote { label, content } => {
             line.push_str(" label=");
             opt_text(line, label.as_deref());
-            (content.len(), nodes(content))
-        }
-        Kind::Specimen {
-            label,
-            start,
-            content,
-        } => {
-            line.push_str(" label=");
-            opt_text(line, label.as_deref());
-            line.push_str(" start=");
-            match start {
-                Some(start) => {
-                    let _ = write!(line, "{}", start);
-                }
-                None => line.push_str("null"),
-            }
             (content.len(), nodes(content))
         }
         Kind::Metadata { fields } => {

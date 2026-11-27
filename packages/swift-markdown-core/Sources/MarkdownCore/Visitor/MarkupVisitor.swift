@@ -54,7 +54,6 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase)
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase)
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase)
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase)
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase)
     mutating func visit(_ node: Reference, phase: MarkupVisitPhase)
 }

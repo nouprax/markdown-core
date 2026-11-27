@@ -98,7 +98,6 @@ private func parses(_ document: Document, _ text: String, _ unit: TextUnit) thro
 private func tables(_ document: Document, _ text: String) throws -> [[String]] {
     [
         try document.footnotes.map { try document.dump($0, in: text) },
-        try document.specimens.map { try document.dump($0, in: text) },
         try document.references.map { try document.dump($0, in: text) },
     ]
 }

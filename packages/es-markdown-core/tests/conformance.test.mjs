@@ -233,7 +233,6 @@ const slotKinds = [
     "label",
     "footnote",
     "bib",
-    "specimen",
     "name",
     "id",
     "class",

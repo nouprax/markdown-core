@@ -96,8 +96,8 @@ MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by defaul
 ```
 
 Until `flush`, each document is a snapshot of the text so far: a lookup of
-a reference, footnote or specimen sees only the definitions that start before
-the inline root asking. A session's `unit` is how its documents count scope
+a reference or footnote sees only the definitions that start before the
+inline root asking. A session's `unit` is how its documents count scope
 columns. The caller ends the text with `flush`, which returns the final
 document; afterwards `append` and `flush` throw
 `ErrorCode.SESSION_FLUSHED`, and `document` and `text` stay readable.
@@ -273,16 +273,15 @@ nest (`++++text++++`), and an odd leftover plus stays outside the matching
 pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
-Footnote and specimen definitions stay in the tree where they were written. A
+Footnote definitions stay in the tree where they were written. A
 referenced definition `[^x]: body` is a `Footnote` block with its normalized
 `label`. `^[inline note]` produces a one-item `Cite` whose citation owns its
 note: `CitationReferent.Footnote(FootnoteTarget.Note(footnote))`, a `Footnote`
 with a null label whose content holds the parsed inline body directly, visited
-before the citation's prefix and suffix. `Document.footnotes` and
-`Document.specimens` list every definition, inline notes included, in source
-order, and `document.footnote(label)` and `document.specimen(label)` return the
-first one whose label equals the referent's; an inline note is never found by
-label.
+before the citation's prefix and suffix. `Document.footnotes` lists every
+footnote, inline notes included, in source order, and
+`document.footnote(label)` returns the first one whose label equals the
+referent's; an inline note is never found by label.
 
 A link reference definition `[label]: /url "title"` is a `Reference` block where
 it was written, with its normalized `label`, a `Destination.Url` `dest`, its
@@ -332,7 +331,7 @@ recursively visiting descendants; the dumper uses this same traversal.
 
 Traversal schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content. Metadata,
-citations, footnotes and specimens are Markup and use the same callbacks.
+citations and footnotes are Markup and use the same callbacks.
 
 A dump prints scopes, so it takes the source like a scope query:
 `document.dump(source)` and `document.dump(node, source)` delegate to the

@@ -187,10 +187,6 @@ public sealed class Markup {
                 listOf(Relation(null, content))
             }
 
-            is Specimen -> {
-                listOf(Relation(null, content))
-            }
-
             is ThematicBreak, is CodeBlock, is HTMLBlock, is FormulaBlock, is Text, is SoftBreak, is LineBreak, is Code,
             is HTML, is Comment, is CrossLink, is CrossEmbed, is Formula, is Metadata, is Reference, is Topic,
             -> {
@@ -370,10 +366,6 @@ public sealed class Markup {
 
             is Footnote -> {
                 other is Footnote && label == other.label
-            }
-
-            is Specimen -> {
-                other is Specimen && label == other.label && start == other.start
             }
 
             is Reference -> {
