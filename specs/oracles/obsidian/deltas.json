@@ -177,66 +177,66 @@
     ],
     "expectedDivergences": [
         {
-            "id": "task-prefix-supplementary-scalar",
-            "input": "- [🚀] supplementary scalar\n",
-            "oracleDigest": "b20cbe257d1304c554917d786226b020be35f6255058ac448da2718f10944664",
-            "markdownCoreDigest": "0cbbd1622f058bd594944d9fce72d1e2ea9693de619ed1de2a23aa7b4bfb8c7b",
+            "id": "task-prefix-five-markers",
+            "input": "- [ ] open\n- [x] done\n- [X] uppercase\n- [-] dash\n- [é] two\n- [✓] three\n",
+            "oracleDigest": "63ef09ef6bade3d83c5334d2cb8881e975f373d678e981a15e7fac59dda9ff51",
+            "markdownCoreDigest": "8ae16c93dd063433e76e2be5d5719099e92670141c5d4cf00c5fef51b34909bb",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
-            "requirement": "The marker is a Unicode scalar; the oracle matches one UTF-16 code unit without the Unicode regex flag."
+            "requirement": "Only `[ ]`, `[x]`, `[X]`, `[?]` and `[-]` are task checks, and any other character between the brackets is text; the oracle accepts any one character."
         },
         {
-            "id": "task-prefix-closing-bracket",
-            "input": "- []] closing bracket\n",
-            "oracleDigest": "da5de062ad8feb691c81ad07ecb96e43864d7e96bfdec76a34ab4996c9bf67c9",
-            "markdownCoreDigest": "ff17222cf95cae17a86a25ac00baac2c5c3147ec5044ff20a5ffaa979cc94c38",
+            "id": "task-prefix-five-markers-nested",
+            "input": "> 1. [?] outer\n>    - [✓] inner\n",
+            "oracleDigest": "b3b3a5a3770aa209add97164058b80f5392b199cf11260f020c5143e5d6fdd57",
+            "markdownCoreDigest": "32bf77f8d2c94d3729a5ef16ceed349ffbf44ee758ab7a5e692bb2aca07f240d",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
-            "requirement": "The scalar may itself be a closing bracket; the oracle excludes it."
+            "requirement": "Only `[ ]`, `[x]`, `[X]`, `[?]` and `[-]` are task checks, and any other character between the brackets is text; the oracle accepts any one character. A nested item reads its own check."
         },
         {
             "id": "task-prefix-separator-alphabet",
             "input": "- [?] nonstructural separator\n",
-            "oracleDigest": "b518b89f8066f1fde3768cd98e4840b1bc14f8bbe8f4be059df8621ab5d8d034",
-            "markdownCoreDigest": "5193bd733a4a86f7c3a42dc9e87887620ce7d43f4927d6c49a04a3f0a798a52d",
+            "oracleDigest": "d59e4549b4c4a45b8202549c9ac25e01244e122431ccfe054ed97de61bbd0e57",
+            "markdownCoreDigest": "bbe336ac4fdc9e8a42b839687ebf5777e5d55b508e319afc666c834756e6f210",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "Only a space or a tab separates a prefix; the oracle accepts Unicode whitespace including NBSP."
         },
         {
             "id": "task-prefix-separator-run",
             "input": "- [?] \t \t  body\n",
-            "oracleDigest": "0ef7a422853c4352674ed5b87ae835091a775618646ad9c85af01df10760c480",
-            "markdownCoreDigest": "3fd19bbbe29f15210415141397949e38d5c9b4890cd2787a8db428aef603335a",
+            "oracleDigest": "33c45688b4c191d9a061e9471d0a0be17a9445bc771b9f2870ef2d2d8a0a0be5",
+            "markdownCoreDigest": "103834b7e77d2a9a09c40106ecde103346508c53cecef4dcd0cdc36e8761536e",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "The entire structural separator run is removed; the oracle removes only one whitespace character."
         },
         {
             "id": "task-prefix-before-first-block",
             "input": "- [?] # heading\n",
-            "oracleDigest": "7de967776f7824a414bc783f9866f57b86cf6cd4229b3cfb8eb65d79b4121693",
-            "markdownCoreDigest": "64c18f8d0a695959e5a216ba576c367edc25c1dfb86b9c3366d3ff4a92d1057a",
+            "oracleDigest": "ab34abd74ad4c421a91bd258092d42c0668840b8339c2170284295f86aa90dd1",
+            "markdownCoreDigest": "1cdc18967f6e389b8c05b3c31eee50834bdc18744e63fddc0e26d4d26d4e0ce5",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "The prefix is removed before deciding the first block; the oracle removes it after forming a paragraph."
         },
         {
             "id": "task-prefix-authored-scalar",
             "input": "- [\\?] escaped candidate\n",
-            "oracleDigest": "d3bb70b4ee542f5dc673e7131c0378d681d1ca9693a06bb63e7f9ad7dce8e008",
-            "markdownCoreDigest": "2315f12b739b0755d3f6e326afb78f7b15264e0db113278889820e38d968b6cf",
+            "oracleDigest": "b10b6610a491c9b83333cec767b14bfb23a51d9dec7b1e88880a76517df5bb64",
+            "markdownCoreDigest": "ad5dac67c3bcda8688ae5c93bb3cba19a8b2e285223761b2cb0df00d9289a0b2",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "The authored candidate contains one scalar, before escape decoding; the oracle inspects already-decoded text."
         },
         {
             "id": "task-prefix-opening-line",
             "input": "-\n  [?] later first block\n",
-            "oracleDigest": "1f48d5b39f537c94c6a0a64d0b71f60b017ce507fe8be0ebed21ac9032d7b7ba",
-            "markdownCoreDigest": "4605c68588210fab359e6592103ea46381287805a5981534e24f2a8ce3edabb1",
+            "oracleDigest": "f6b2524f036011e7f0935f2a113732be12275b665e4a782abe7b7bced871f387",
+            "markdownCoreDigest": "314485d6c2f08d9153dd76a3d77918d383d82323416182da8af6b06adb05ac5a",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "Only the opening line is inspected; the oracle inspects the first paragraph even when it begins later."
         },
         {
             "id": "embed-dimensions",
             "input": "![[Image.png|100x145]]\n",
-            "oracleDigest": "927980018c1de98ef8b8936d0476cf3a26d60058206836a3b5ff24545885f124",
-            "markdownCoreDigest": "dd70a255d26439c2f4564ca4e7e127ec1ae6a7a1a94458dabd6f32cec7795282",
+            "oracleDigest": "cee2fec664564c2cebb47702ad7db6b41164f1e850269c0801fa7ccc1f217cc4",
+            "markdownCoreDigest": "de7d66419f53bc9b3b7f44814df968a6c23dc162cf75f833707fcb34659afdbe",
             "authority": "docs/specs/dialect/cross-links.md#dimensions (O9)",
             "requirement": "CrossEmbed consumes a complete dimension suffix into Dimensions and removes it from the raw label. The oracle retains the suffix in the alias; product fixtures assert the value, malformed fallback, raw prefixes and scopes."
         }

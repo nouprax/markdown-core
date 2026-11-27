@@ -292,7 +292,7 @@ function normalizeChildren(children) {
 }
 
 function fromMdast(node, unknown, source) {
-    const kind = node.type === "wikilink" && node.embed ? "CrossEmbed" : mdastKinds[node.type];
+    const kind = node.type === "wikilink" && node.embedded ? "CrossEmbed" : mdastKinds[node.type];
     if (!kind) {
         unknown.add(node.type);
         return { kind: `?${node.type}`, fields: {}, children: [] };
