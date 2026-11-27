@@ -1053,17 +1053,28 @@ impl<'a> Compiler<'a> {
                 None => vec![],
             };
             self.cell = false;
-            // A cell lies between its dividers.
+            // A cell lies between its dividers; one alone closes it unless
+            // its content follows it. An empty cell takes the divider that
+            // closes it.
+            let parts = self.inside(child);
+            let dividers: Vec<usize> = parts
+                .iter()
+                .copied()
+                .filter(|part| self.name(*part) == Name::TableCellDivider)
+                .collect();
             let mut start = self.start(child);
             let mut end = self.end(child);
-            for part in self.inside(child) {
-                if self.name(part) == Name::TableCellDivider {
-                    if self.start(part) == start {
-                        start = self.end(part);
-                    } else {
-                        end = self.start(part);
-                    }
+            match dividers[..] {
+                [open, close, ..] => {
+                    start = self.end(open);
+                    end = self.start(close);
                 }
+                [one] if parts.last() != Some(&one) => start = self.end(one),
+                [one] => end = self.start(one),
+                [] => {}
+            }
+            if start == end && end < self.end(child) {
+                end += 1;
             }
             cells.push(Node::new(
                 Kind::TableCell { content },
