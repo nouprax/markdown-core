@@ -73,6 +73,8 @@ struct Compiler<'a> {
     /// How many superscripts and subscripts are around the content being
     /// compiled, where `\ ` is a non-breaking space.
     script: usize,
+    /// The labels of the document's specimens, as written.
+    specimens: Vec<&'a [u8]>,
 }
 
 /// Text read in an inline content list and not yet a node.
@@ -102,12 +104,16 @@ impl<'a> Compiler<'a> {
         let mut exits = vec![0; events.len()];
         let mut stack = vec![];
         let mut holes = vec![];
+        let mut specimens = vec![];
         for (index, event) in events.iter().enumerate() {
             match event.kind {
                 EventKind::Enter => stack.push(index),
                 EventKind::Exit => {
                     let enter = stack.pop().expect("expected an enter for each exit");
                     exits[enter] = index;
+                    if event.name == Name::SpecimenLabel {
+                        specimens.push(&bytes[events[enter].point.index..event.point.index]);
+                    }
                     if prefix(event.name) {
                         holes.push(Span::new(events[enter].point.index, event.point.index));
                     }
@@ -129,6 +135,7 @@ impl<'a> Compiler<'a> {
             item_paragraph: None,
             item_anchor: None,
             script: 0,
+            specimens,
         }
     }
 
@@ -295,7 +302,18 @@ impl<'a> Compiler<'a> {
                 }
                 continue;
             }
-            if let Some(node) = self.block(index) {
+            if let Some(mut node) = self.block(index) {
+                // A start counts only on the first specimen of a group.
+                if let (
+                    Kind::Specimen { start, .. },
+                    Some(Node {
+                        kind: Kind::Specimen { .. },
+                        ..
+                    }),
+                ) = (&mut node.kind, nodes.last())
+                {
+                    *start = None;
+                }
                 nodes.push(node);
             }
         }
@@ -462,6 +480,27 @@ impl<'a> Compiler<'a> {
                 let runs = Self::whole(self.lead(index), end);
                 let content = self.block_content(index);
                 Node::new(Kind::Footnote { label, content }, runs)
+            }
+            Block::Specimen => {
+                let prefix = self.child(index, Name::SpecimenPrefix);
+                let label = prefix
+                    .and_then(|prefix| self.child(prefix, Name::SpecimenLabel))
+                    .map(|label| self.text(label).to_string());
+                let start = prefix
+                    .and_then(|prefix| self.child(prefix, Name::SpecimenStart))
+                    .and_then(|start| self.text(start).parse::<u64>().ok());
+                let (last, content_end) = self.last(index);
+                let end = self.blank_tail(last).unwrap_or(content_end);
+                let runs = Self::whole(self.lead(index), end);
+                let content = self.block_content(index);
+                Node::new(
+                    Kind::Specimen {
+                        label,
+                        start,
+                        content,
+                    },
+                    runs,
+                )
             }
             Block::Formula => {
                 let literal = self.fenced_literal(index, Name::FormulaFence, Name::FormulaChunk);
@@ -1337,9 +1376,50 @@ impl<'a> Compiler<'a> {
                     None => vec![],
                 },
             },
-            Inline::CitationKey => Kind::Cite {
-                citations: vec![self.citation(index, Mode::AuthorInText)],
-            },
+            Inline::CitationKey => {
+                let mut citation = self.citation(index, Mode::AuthorInText);
+                // A bare key alone names the specimen it is the label of.
+                if let Kind::Citation {
+                    referent: referent @ Referent::Bib { .. },
+                    ..
+                } = &mut citation.kind
+                {
+                    if let Referent::Bib {
+                        key,
+                        mode: Mode::AuthorInText,
+                    } = referent
+                    {
+                        let braced = self.child(index, Name::CitationBrace).is_some();
+                        if !braced && self.specimens.contains(&key.as_bytes()) {
+                            *referent = Referent::Specimen {
+                                label: core::mem::take(key),
+                            };
+                        }
+                    }
+                }
+                Kind::Cite {
+                    citations: vec![citation],
+                }
+            }
+            Inline::SpecimenReference => {
+                let key = self.child(index, Name::CitationKey);
+                let label = key
+                    .and_then(|key| self.child(key, Name::CitationKeyText))
+                    .map(|text| self.text(text).to_string())
+                    .unwrap_or_default();
+                let runs =
+                    key.map_or_else(Vec::new, |key| self.runs(self.start(key), self.end(key)));
+                Kind::Cite {
+                    citations: vec![Node::new(
+                        Kind::Citation {
+                            referent: Referent::Specimen { label },
+                            prefix: vec![],
+                            suffix: vec![],
+                        },
+                        runs,
+                    )],
+                }
+            }
             Inline::Cite => {
                 // A key with a tail: its citation starts the cite, at the key.
                 let mut mode = Mode::AuthorInText;

@@ -37,6 +37,8 @@ pub enum Container {
     Directive,
     /// [Definition body][crate::construct::definition_body].
     DefinitionBody,
+    /// [Specimen][crate::construct::specimen].
+    Specimen,
 }
 
 /// Info used to tokenize a container.
@@ -295,12 +297,15 @@ pub struct Definitions {
     pub links: Vec<String>,
     /// GFM footnote definitions.
     pub notes: Vec<String>,
+    /// Specimen labels, as written.
+    pub specimens: Vec<String>,
 }
 
 impl Definitions {
     /// Move all identifiers of `other` into `self`.
     pub fn append(&mut self, other: &mut Definitions) {
         self.notes.append(&mut other.notes);
+        self.specimens.append(&mut other.specimens);
         self.links.append(&mut other.links);
     }
 }

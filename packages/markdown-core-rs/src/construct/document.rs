@@ -11,7 +11,7 @@
 
 use crate::construct::{
     block_quote, definition_body, directive_container, flow, footnote_definition, frontmatter,
-    list_item,
+    list_item, specimen,
 };
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -21,12 +21,13 @@ use crate::util::skip;
 use alloc::{boxed::Box, vec::Vec};
 
 /// Containers, in the order a new one is tried.
-const CONTAINERS: [Container; 5] = [
+const CONTAINERS: [Container; 6] = [
     Container::BlockQuote,
     Container::ListItem,
     Container::FootnoteDefinition,
     Container::Directive,
     Container::DefinitionBody,
+    Container::Specimen,
 ];
 
 impl Container {
@@ -37,6 +38,7 @@ impl Container {
             Container::Directive => StateName::DirectiveContainer(directive_container::Step::Start),
             Container::ListItem => StateName::ListItem(list_item::Step::Start),
             Container::DefinitionBody => StateName::DefinitionBody(definition_body::Step::Start),
+            Container::Specimen => StateName::Specimen(specimen::Step::Start),
             Container::FootnoteDefinition => {
                 StateName::FootnoteDefinition(footnote_definition::Step::Start)
             }
@@ -54,6 +56,7 @@ impl Container {
             Container::DefinitionBody => {
                 StateName::DefinitionBody(definition_body::Step::ContStart)
             }
+            Container::Specimen => StateName::Specimen(specimen::Step::ContStart),
             Container::FootnoteDefinition => {
                 StateName::FootnoteDefinition(footnote_definition::Step::ContStart)
             }
@@ -67,6 +70,7 @@ impl Container {
             Container::Directive => Name::DirectiveContainer,
             Container::ListItem => Name::ListItem,
             Container::DefinitionBody => Name::DefinitionBody,
+            Container::Specimen => Name::Specimen,
             Container::FootnoteDefinition => Name::FootnoteDefinition,
         }
     }

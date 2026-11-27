@@ -487,7 +487,7 @@ fn close(tokenizer: &mut Tokenizer, closed: bool, first: u8) -> State {
         // item starts at one.
         let inside = document.stack[..document.continued]
             .iter()
-            .any(|container| container.kind == Container::ListItem);
+            .any(|container| matches!(container.kind, Container::ListItem | Container::Specimen));
         if tokenizer.interrupt || (committed != Some(facts) && inside) {
             return State::Nok;
         }

@@ -69,6 +69,8 @@
 //! * [frontmatter][]
 //! * [gfm autolink literal][autolink_literal]
 //! * [gfm footnote definition][footnote_definition]
+//! * [specimen][]
+//! * [specimen reference][specimen_reference]
 //! * [gfm label start footnote][label_start_footnote]
 //! * [gfm table][table]
 //! * [gfm task list item check][task_list_item_check]
@@ -198,6 +200,8 @@ pub mod partial_title;
 pub mod partial_whitespace;
 pub mod raw_flow;
 pub mod raw_text;
+pub mod specimen;
+pub mod specimen_reference;
 pub mod string;
 pub mod table;
 pub mod task_list_item_check;
