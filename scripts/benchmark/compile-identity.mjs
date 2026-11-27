@@ -22,11 +22,9 @@ import path from "node:path";
  *
  * EVERY unit of the linked target, not the one holding the stage boundaries. A
  * stage's cost is inclusive, so it contains whatever the scanners and the
- * inline code did too, and CMake lets a single source carry its own options:
- * `elements/CMakeLists.txt` gives ten scanner sources `-Wno-unused-variable`
- * through `set_source_files_properties`, which is how Markdown Core's 59
- * objects come to have two distinct compile lines. Reading one file would see
- * one of them.
+ * inline code did too, and CMake lets a single source carry its own options
+ * through `set_source_files_properties`, which gives a target more than one
+ * distinct compile line. Reading one file would see one of them.
  *
  * The target has to be named because one source can be compiled several ways in
  * one tree. Markdown Core compiles `core/blocks.c` twice -- into the shared
@@ -92,6 +90,10 @@ export function compiledFlags(root, buildDir, target, fail) {
         units: units.length,
         distinct,
         bySource: Object.fromEntries(units.map((unit) => [unit.file, unit.flags])),
+        /* The same lines without their diagnostic options, which is what the
+         * comparison reads (sameCompileOptions). */
+        generated: [...new Set(units.map((unit) => generation(unit.flags)))].sort(),
+        generatedBySource: Object.fromEntries(units.map((unit) => [unit.file, generation(unit.flags)])),
         /* Union across the units: every option any measured object received. */
         flags: [...new Set(distinct.flatMap((line) => line.split(" ")))].join(" "),
         digest: crypto
@@ -101,15 +103,29 @@ export function compiledFlags(root, buildDir, target, fail) {
     };
 }
 
+/* A compile line without the options that only decide which diagnostics are
+ * reported: `-W<name>`, `-Wno-<name>`, `-Werror` and its `=<name>` forms,
+ * and `-w`. They cannot change the object a unit compiles to, so a unit
+ * whose only difference is a warning -- the generated scanners'
+ * `-Wno-unused-variable`, gone with the scanners -- is not a different
+ * build. `-Wl,`, `-Wa,` and `-Wp,` hand options to the linker, assembler and
+ * preprocessor and are kept. */
+function generation(line) {
+    return line
+        .split(" ")
+        .filter((token) => !(token === "-w" || (/^-W[a-z]/u.test(token) && !/^-W[lap],/u.test(token))))
+        .join(" ");
+}
+
 /* Inventory is provenance, not a compiler option. Refactors may add, remove
  * or rename units while preserving the option sets. For surviving paths also
  * check each unit, so swapping existing option sets cannot hide a flag change.
  * Preserve option order: -O0 -O3 and -O3 -O0 do not mean the same thing. */
 export function sameCompileOptions(left, right) {
     return (
-        JSON.stringify(left.distinct) === JSON.stringify(right.distinct) &&
-        Object.entries(left.bySource).every(([file, flags]) =>
-            Object.hasOwn(right.bySource, file) ? right.bySource[file] === flags : true
+        JSON.stringify(left.generated) === JSON.stringify(right.generated) &&
+        Object.entries(left.generatedBySource).every(([file, flags]) =>
+            Object.hasOwn(right.generatedBySource, file) ? right.generatedBySource[file] === flags : true
         )
     );
 }

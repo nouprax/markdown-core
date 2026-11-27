@@ -61,3 +61,14 @@ test("new option sets, option arguments and option order remain comparison bound
         assert.equal(sameCompileOptions(read(before), read(after)), false);
     }
 });
+
+test("diagnostic options are not compile options", (t) => {
+    const read = compilerDatabase(t);
+    const base = read({ "a.c": "-O3 -Wall -Werror", "scan.c": "-O3 -Wall -Werror -Wno-unused-variable" });
+    const changed = read({ "a.c": "-O3 -Wall -Werror" });
+    assert.equal(sameCompileOptions(base, changed), true);
+    assert.equal(sameCompileOptions(changed, base), true);
+    assert.notDeepEqual(base.distinct, changed.distinct);
+    const linked = read({ "a.c": "-O3 -Wall -Werror -Wp,-DFAST" });
+    assert.equal(sameCompileOptions(changed, linked), false);
+});
