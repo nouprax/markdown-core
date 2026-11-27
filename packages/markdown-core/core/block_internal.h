@@ -153,10 +153,12 @@ markdown_core_state markdown_core_block_span(markdown_core_tokenizer *tokenizer,
 
 /* A READING OF ITS OWN (micromark's subtokenize, one chunk): `construct`,
  * its context the asker's, read over the `size` bytes at `data` from their
- * first. `found` says whether it was, and `events` holds its tokens until
+ * first, through `turn`, which the asker sets. `found` says whether it was, and `events` holds its tokens until
  * markdown_core_alone_end. False, with the parse failed, when storage could
  * not be had. */
 typedef struct {
+    /* What the construct reads the line through, the asker's to set. */
+    markdown_core_block_turn turn;
     const markdown_core_construct *construct;
     struct markdown_core_pass *pass;
     const markdown_core_events *events;

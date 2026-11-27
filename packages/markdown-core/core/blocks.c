@@ -7997,7 +7997,7 @@ static markdown_core_state S_cut_past(markdown_core_tokenizer *tokenizer, int co
     }
     cut->rest.data += length;
     cut->rest.len -= length;
-    markdown_core_move_to(tokenizer, tokenizer->position + (uint32_t)length);
+    markdown_core_move_to(tokenizer, (uint32_t)(cut->rest.data - cut->text.data));
     if (parser->error || (cut->measure && !cutting->whole)) {
         return S_cut_end(tokenizer, code);
     }
@@ -8129,7 +8129,9 @@ static markdown_core_state S_alone_start(markdown_core_tokenizer *tokenizer, int
 
 bool markdown_core_alone_read(markdown_core_parser *parser, markdown_core_alone *alone,
                               const markdown_core_construct *construct, const unsigned char *data, uint32_t size) {
-    *alone = (markdown_core_alone){.construct = construct};
+    alone->construct = construct;
+    alone->found = false;
+    alone->events = NULL;
     alone->pass = markdown_core_pass_take(parser);
     if (!alone->pass) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -8151,7 +8153,9 @@ void markdown_core_alone_end(markdown_core_parser *parser, markdown_core_alone *
     if (alone->pass) {
         markdown_core_pass_back(parser, alone->pass);
     }
-    *alone = (markdown_core_alone){0};
+    alone->pass = NULL;
+    alone->events = NULL;
+    alone->found = false;
 }
 
 /* WHAT AN ITEM READ (blocks.c, THE REACH): an item cut in a block of the

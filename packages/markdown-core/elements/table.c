@@ -328,6 +328,7 @@ static bool S_row_alone(const markdown_core_element_instance *self, markdown_cor
                         markdown_core_alone *alone, const unsigned char *data, bufsize_t size) {
     markdown_core_construct row = TABLE_ROW_READ;
     row.context = self;
+    *alone = (markdown_core_alone){.turn = {.parser = parser}};
     if (!markdown_core_alone_read(parser, alone, &row, data, (uint32_t)size) || !alone->found) {
         markdown_core_alone_end(parser, alone);
         return false;
