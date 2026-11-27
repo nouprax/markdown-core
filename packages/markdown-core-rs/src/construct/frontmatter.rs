@@ -7,36 +7,23 @@
 //!
 //! ```bnf
 //! frontmatter ::= fence_open *( eol *byte ) eol fence_close
-//! fence_open ::= sequence *space_or_tab
-//! ; Restriction: markers in `sequence` must match markers in opening sequence.
-//! fence_close ::= sequence *space_or_tab
-//! sequence ::= 3'+' | 3'-'
+//! fence_open ::= sequence
+//! fence_close ::= sequence
+//! sequence ::= 3'-'
 //! ```
 //!
-//! Frontmatter can only occur once.
+//! Frontmatter can only occur once, at the document’s first byte.
 //! It cannot occur in a container.
-//! It must have a closing fence.
-//! Like flow constructs, it must be followed by an eol (line ending) or
-//! eof (end of file).
+//! It must have a closing fence: the first later line that is exactly
+//! `---`, which can end the file.
+//! The fences hold no spaces or tabs.
 //!
 //! ## Extension
 //!
 //! > 👉 **Note**: frontmatter is not part of `CommonMark`.
 //!
-//! As there is no spec for frontmatter in markdown, this extension follows how
-//! YAML frontmatter works on `github.com`.
-//! It also parses TOML frontmatter, just like YAML except that it uses a `+`.
-//!
-//! ## Recommendation
-//!
-//! When authoring markdown with frontmatter, it’s recommended to use YAML
-//! frontmatter if possible.
-//! While YAML has some warts, it works in the most places, so using it
-//! guarantees the highest chance of portability.
-//!
-//! In certain ecosystems, other flavors are widely used.
-//! For example, in the Rust ecosystem, TOML is often used.
-//! In such cases, using TOML is an okay choice.
+//! The dialect reads its payload as properties
+//! ([`properties`][crate::util::properties]).
 //!
 //! ## Tokens
 //!
@@ -45,14 +32,12 @@
 //! * [`FrontmatterSequence`][Name::FrontmatterSequence]
 //! * [`FrontmatterChunk`][Name::FrontmatterChunk]
 //! * [`LineEnding`][Name::LineEnding]
-//! * [`SpaceOrTab`][Name::SpaceOrTab]
 //!
 //! ## References
 //!
 //! * [`micromark-extension-frontmatter`](https://github.com/micromark/micromark-extension-frontmatter)
 //!
 
-use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -68,7 +53,7 @@ use crate::util::constant::FRONTMATTER_SEQUENCE_SIZE;
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     // Indent not allowed.
-    if matches!(tokenizer.current, Some(b'+' | b'-')) {
+    if tokenizer.current == Some(b'-') {
         let marker = tokenizer.current.unwrap();
         tokenizer.enter(Name::Frontmatter);
         tokenizer.enter(Name::FrontmatterFence);
@@ -99,16 +84,7 @@ fn open_sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         }))
     } else if size == FRONTMATTER_SEQUENCE_SIZE {
         tokenizer.exit(Name::FrontmatterSequence);
-
-        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(
-                State::Next(StateName::Frontmatter(Step::OpenAfter { marker })),
-                State::Nok,
-            );
-            State::Redo(space_or_tab())
-        } else {
-            State::Redo(StateName::Frontmatter(Step::OpenAfter { marker }))
-        }
+        State::Redo(StateName::Frontmatter(Step::OpenAfter { marker }))
     } else {
         State::Nok
     }
@@ -176,16 +152,7 @@ fn close_sequence(tokenizer: &mut Tokenizer, marker: u8, size: usize) -> State {
         }))
     } else if size == FRONTMATTER_SEQUENCE_SIZE {
         tokenizer.exit(Name::FrontmatterSequence);
-
-        if matches!(tokenizer.current, Some(b'\t' | b' ')) {
-            tokenizer.attempt(
-                State::Next(StateName::Frontmatter(Step::CloseAfter)),
-                State::Nok,
-            );
-            State::Redo(space_or_tab())
-        } else {
-            State::Redo(StateName::Frontmatter(Step::CloseAfter))
-        }
+        State::Redo(StateName::Frontmatter(Step::CloseAfter))
     } else {
         State::Nok
     }

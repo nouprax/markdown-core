@@ -14,6 +14,7 @@ use crate::util::{
     character_reference::{decode as decode_character_reference, decode_at},
     classes::{anchor, normalize_label},
     infer::{list_loose, table_align},
+    properties,
     slice::{Position, Slice},
 };
 use alloc::boxed::Box;
@@ -30,11 +31,9 @@ use core::str;
 pub fn compile(events: &[Event], bytes: &[u8]) -> Node {
     let mut compiler = Compiler::new(events, bytes);
     let content = compiler.block_range(0, events.len());
+    let metadata = compiler.metadata().map(Box::new);
     let mut document = Node::new(
-        Kind::Document {
-            metadata: None,
-            content,
-        },
+        Kind::Document { metadata, content },
         vec![Span::new(0, line_start_before_end(bytes))],
     );
     anchor_headings(&mut document);
@@ -93,7 +92,7 @@ fn prefix(name: Name) -> bool {
 fn between(name: Name) -> bool {
     matches!(
         name,
-        Name::LineEnding | Name::BlankLineEnding | Name::SpaceOrTab | Name::ByteOrderMark
+        Name::LineEnding | Name::BlankLineEnding | Name::SpaceOrTab
     ) || prefix(name)
 }
 
@@ -298,6 +297,33 @@ impl<'a> Compiler<'a> {
             }
         }
         nodes
+    }
+
+    /// The metadata of the properties envelope that starts the document:
+    /// its payload, from after its opening fence’s line to its closing
+    /// fence’s line, decoded; its scope ends after the closing fence.
+    fn metadata(&self) -> Option<Node> {
+        let index = (0..self.events.len()).find(|index| {
+            self.events[*index].kind == EventKind::Enter && self.name(*index) == Name::Frontmatter
+        })?;
+        let fences: Vec<usize> = self
+            .inside(index)
+            .into_iter()
+            .filter(|child| self.name(*child) == Name::FrontmatterFence)
+            .collect();
+        let start = self
+            .inside(index)
+            .into_iter()
+            .find(|child| self.name(*child) == Name::LineEnding)
+            .map(|ending| self.end(ending))?;
+        let close = self.start(*fences.last()?);
+        let fields = properties::decode(self.bytes, start, close);
+        Some(Node::new(
+            Kind::Metadata {
+                fields: Box::new(fields),
+            },
+            vec![Span::new(self.start(index), self.end(index))],
+        ))
     }
 
     /// The blocks inside the container at `index`.

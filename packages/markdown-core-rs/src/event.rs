@@ -161,17 +161,6 @@ pub enum Name {
     ///   | b
     /// ```
     BlockQuotePrefix,
-    /// Byte order mark.
-    ///
-    /// ## Info
-    ///
-    /// * **Context**:
-    ///   optional first event
-    /// * **Content model**:
-    ///   void
-    /// * **Construct**:
-    ///   [`document`][crate::construct::document]
-    ByteOrderMark,
     /// Callout header.
     ///
     /// ## Info
@@ -3838,7 +3827,6 @@ impl Name {
             | Name::AutolinkProtocol
             | Name::BlockQuoteMarker
             | Name::BlockQuotePrefix
-            | Name::ByteOrderMark
             | Name::CharacterEscapeMarker
             | Name::CharacterEscapeValue
             | Name::CharacterReferenceMarker
@@ -3986,7 +3974,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 94] = [
+pub const VOID_EVENTS: [Name; 93] = [
     Name::AttributesMarker,
     Name::AttributeId,
     Name::AttributeClass,
@@ -4000,7 +3988,6 @@ pub const VOID_EVENTS: [Name; 94] = [
     Name::AutolinkProtocol,
     Name::BlankLineEnding,
     Name::BlockQuoteMarker,
-    Name::ByteOrderMark,
     Name::CharacterEscapeMarker,
     Name::CharacterEscapeValue,
     Name::CharacterReferenceMarker,

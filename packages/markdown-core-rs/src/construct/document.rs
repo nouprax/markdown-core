@@ -11,7 +11,6 @@
 
 use crate::construct::{
     block_quote, directive_container, flow, footnote_definition, frontmatter, list_item,
-    partial_bom,
 };
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -97,7 +96,9 @@ enum Phase {
     Eof,
 }
 
-/// Start of document, at an optional BOM.
+/// Start of document.
+///
+/// A byte order mark is text, as the dialect parses text as written.
 ///
 /// ```markdown
 /// > | a
@@ -109,12 +110,7 @@ fn start(tokenizer: &mut Tokenizer) -> State {
         tokenizer.parse_state,
     )));
 
-    tokenizer.attempt(
-        State::Next(StateName::Document(Step::BeforeFrontmatter)),
-        State::Next(StateName::Document(Step::BeforeFrontmatter)),
-    );
-
-    State::Redo(StateName::Bom(partial_bom::Step::Start))
+    State::Redo(StateName::Document(Step::BeforeFrontmatter))
 }
 
 /// At optional frontmatter.
