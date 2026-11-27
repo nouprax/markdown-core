@@ -359,6 +359,199 @@ pub enum Name {
     ///         ^^^
     /// ```
     CrossLinkDest,
+    /// Attributes: the braced anchor, classes, and records of the node before.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`CodeText`][Name::CodeText],
+    ///   [`Link`][Name::Link],
+    ///   [`Image`][Name::Image],
+    ///   [`Autolink`][Name::Autolink],
+    ///   [`Definition`][Name::Definition]
+    /// * **Content model**:
+    ///   [`AttributesMarker`][Name::AttributesMarker],
+    ///   [`AttributeId`][Name::AttributeId],
+    ///   [`AttributeClass`][Name::AttributeClass],
+    ///   [`AttributeRecord`][Name::AttributeRecord],
+    ///   [`LineEnding`][Name::LineEnding],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{#b .c d=e}
+    ///        ^^^^^^^^^^^
+    /// ```
+    Attributes,
+    /// Attributes marker: the opening or closing brace.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Attributes`][Name::Attributes]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{#b}
+    ///        ^  ^
+    /// ```
+    AttributesMarker,
+    /// Attribute identifier: `#` and the anchor.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Attributes`][Name::Attributes]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{#b}
+    ///         ^^
+    /// ```
+    AttributeId,
+    /// Attribute class: `.` and the class, or a lone `-`.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Attributes`][Name::Attributes]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{.b}
+    ///         ^^
+    /// ```
+    AttributeClass,
+    /// Attribute record: a name and its value.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`Attributes`][Name::Attributes]
+    /// * **Content model**:
+    ///   [`AttributeNameText`][Name::AttributeNameText],
+    ///   [`AttributeEquals`][Name::AttributeEquals],
+    ///   [`AttributeValue`][Name::AttributeValue]
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{b=c}
+    ///         ^^^
+    /// ```
+    AttributeRecord,
+    /// Attribute name.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`AttributeRecord`][Name::AttributeRecord]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{b=c}
+    ///         ^
+    /// ```
+    AttributeNameText,
+    /// Attribute equals sign.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`AttributeRecord`][Name::AttributeRecord]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{b=c}
+    ///          ^
+    /// ```
+    AttributeEquals,
+    /// Attribute value, with its quotes.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`AttributeRecord`][Name::AttributeRecord]
+    /// * **Content model**:
+    ///   [`AttributeValueMarker`][Name::AttributeValueMarker],
+    ///   [`AttributeValueText`][Name::AttributeValueText],
+    ///   [`LineEnding`][Name::LineEnding]
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{b="c"}
+    ///           ^^^
+    /// ```
+    AttributeValue,
+    /// Attribute value marker: a quote.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`AttributeValue`][Name::AttributeValue]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{b="c"}
+    ///           ^ ^
+    /// ```
+    AttributeValueMarker,
+    /// Attribute value text: a line of it.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`AttributeValue`][Name::AttributeValue]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`partial_attributes`][crate::construct::partial_attributes]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | `a`{b="c"}
+    ///            ^
+    /// ```
+    AttributeValueText,
     /// Topic.
     ///
     /// ## Info
@@ -3504,13 +3697,30 @@ impl Name {
             | Name::FootnoteDefinitionIndent
             | Name::StrongSequence
             | Name::StrongText
-            | Name::ThematicBreakSequence => Role::Part,
+            | Name::ThematicBreakSequence
+            | Name::Attributes
+            | Name::AttributesMarker
+            | Name::AttributeId
+            | Name::AttributeClass
+            | Name::AttributeRecord
+            | Name::AttributeNameText
+            | Name::AttributeEquals
+            | Name::AttributeValue
+            | Name::AttributeValueMarker
+            | Name::AttributeValueText => Role::Part,
         }
     }
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 80] = [
+pub const VOID_EVENTS: [Name; 87] = [
+    Name::AttributesMarker,
+    Name::AttributeId,
+    Name::AttributeClass,
+    Name::AttributeNameText,
+    Name::AttributeEquals,
+    Name::AttributeValueMarker,
+    Name::AttributeValueText,
     Name::AttentionSequence,
     Name::AutolinkEmail,
     Name::AutolinkMarker,

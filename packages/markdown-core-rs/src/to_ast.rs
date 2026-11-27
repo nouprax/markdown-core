@@ -6,12 +6,12 @@
 //! less the prefixes of the containers around it.
 
 use crate::ast::{
-    Delimiter, Destination, Dimensions, Flavor, Kind, Node, Note, Placement, Referent, Span,
-    Variant,
+    Delimiter, Destination, Dimensions, Flavor, Kind, Node, Note, Placement, Record, Referent,
+    Span, Variant,
 };
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
-    character_reference::decode as decode_character_reference,
+    character_reference::{decode as decode_character_reference, decode_at},
     classes::{anchor, normalize_label},
     infer::{list_loose, table_align},
     slice::{Position, Slice},
@@ -412,6 +412,10 @@ impl<'a> Compiler<'a> {
             // by `block_range`.
             Block::Frontmatter | Block::Identifier => return None,
         };
+        let mut node = node;
+        if let Some(attributes) = self.child(index, Name::Attributes) {
+            self.attributes(attributes, &mut node);
+        }
         Some(node)
     }
 
@@ -1258,7 +1262,78 @@ impl<'a> Compiler<'a> {
             | Inline::HardBreakTail
             | Inline::HardBreakEscape => return None,
         };
-        Some(Node::new(kind, runs))
+        let mut node = Node::new(kind, runs);
+        if let Some(attributes) = self.child(index, Name::Attributes) {
+            self.attributes(attributes, &mut node);
+        }
+        Some(node)
+    }
+
+    /// Give `node` the anchor, classes, and records of the attributes at
+    /// `index`, in source order; a later anchor replaces an earlier one, and
+    /// an empty one is none.
+    fn attributes(&self, index: usize, node: &mut Node) {
+        for member in self.inside(index) {
+            match self.name(member) {
+                Name::AttributeId => node.anchor = Some(self.text(member)[1..].to_string()),
+                Name::AttributeClass => {
+                    let text = self.text(member);
+                    node.attributes.classes.push(if text == "-" {
+                        "unnumbered".to_string()
+                    } else {
+                        text[1..].to_string()
+                    });
+                }
+                Name::AttributeRecord => {
+                    let name = self
+                        .child(member, Name::AttributeNameText)
+                        .map_or("", |name| self.text(name));
+                    // A bare name is `true`; an empty value has no token.
+                    let value = match self.child(member, Name::AttributeValue) {
+                        Some(value) => self.attribute_value(value),
+                        None if self.child(member, Name::AttributeEquals).is_some() => {
+                            String::new()
+                        }
+                        None => "true".to_string(),
+                    };
+                    match name {
+                        "id" => node.anchor = Some(value),
+                        "class" => node.attributes.classes.extend(
+                            value
+                                .split([' ', '\t', '\n', '\u{c}', '\r'])
+                                .filter(|class| !class.is_empty())
+                                .map(ToString::to_string),
+                        ),
+                        _ => node.attributes.records.push(Record {
+                            name: name.to_string(),
+                            value,
+                        }),
+                    }
+                }
+                _ => {}
+            }
+        }
+        if node.anchor.as_deref() == Some("") {
+            node.anchor = None;
+        }
+    }
+
+    /// The decoded attribute value at `index`: a quoted one decodes escapes
+    /// and character references, and reads a line ending as a space; an
+    /// unquoted one decodes escapes.
+    fn attribute_value(&self, index: usize) -> String {
+        let quoted = self.child(index, Name::AttributeValueMarker).is_some();
+        let mut value = String::new();
+        for part in self.inside(index) {
+            match self.name(part) {
+                Name::LineEnding => value.push(' '),
+                Name::AttributeValueText => {
+                    value.push_str(&unescape(self.text(part), quoted));
+                }
+                _ => {}
+            }
+        }
+        value
     }
 
     /// The `data` and line endings inside the token at `index`, in order.
@@ -1394,7 +1469,7 @@ impl<'a> Compiler<'a> {
         }
         let mut dimensions = None;
         if let Some(text) = &label {
-            if let Some((rest, found)) = label_dimensions(text) {
+            if let Some((rest, found)) = label_dimensions(text, true) {
                 dimensions = Some(found);
                 label = Some(rest.to_string());
             }
@@ -1410,9 +1485,15 @@ impl<'a> Compiler<'a> {
     fn link(&mut self, index: usize) -> Kind {
         let label = self.child(index, Name::Label);
         let text = label.and_then(|label| self.child(label, Name::LabelText));
-        let content = match text {
+        let mut content = match text {
             Some(text) => self.label_content(text),
             None => vec![],
+        };
+        let dimensions = match text {
+            Some(text) if self.name(index) == Name::Image => {
+                self.label_dimensions(text, &mut content)
+            }
+            _ => None,
         };
         let mut dest = Destination::Url(String::new());
         let mut title = None;
@@ -1448,16 +1529,76 @@ impl<'a> Compiler<'a> {
             Kind::Embedded {
                 dest,
                 title,
-                dimensions: None,
+                dimensions,
                 content,
             }
         }
     }
+
+    /// The dimensions at the end of the image label text at `index`, which
+    /// `content` is compiled from, taken out of its last text: after its
+    /// last separator, or as all of the label.
+    fn label_dimensions(&self, index: usize, content: &mut Vec<Node>) -> Option<Dimensions> {
+        let (start, end) = (self.start(index), self.end(index));
+        let (rest, dimensions) = label_dimensions(self.text(index), false)?;
+        let cut = start + rest.len();
+        if rest.is_empty() && content.len() > 1 {
+            return None;
+        }
+        let last = content.last_mut()?;
+        let (from, to) = (last.start(), last.end());
+        let literal = match &mut last.kind {
+            Kind::Text { literal } if from <= cut && to == end => literal,
+            _ => return None,
+        };
+        // The separator, if any, and the digits: one byte each.
+        let size = end - cut;
+        if size >= literal.len() {
+            content.pop();
+        } else {
+            literal.truncate(literal.len() - size);
+            if let Some(run) = last.runs.last_mut() {
+                run.end = cut;
+            }
+        }
+        Some(dimensions)
+    }
+}
+
+/// `text` with each backslash before ASCII punctuation dropped, and, when
+/// `references`, each character reference decoded.
+fn unescape(text: &str, references: bool) -> String {
+    let bytes = text.as_bytes();
+    let mut result = String::new();
+    let mut from = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\\' && bytes.get(index + 1).map_or(false, u8::is_ascii_punctuation) {
+            result.push_str(&text[from..index]);
+            from = index + 1;
+            index += 2;
+        } else if bytes[index] == b'&' && references {
+            if let Some((value, end)) = decode_at(text, index) {
+                result.push_str(&text[from..index]);
+                result.push_str(&value);
+                from = end;
+                index = end;
+            } else {
+                index += 1;
+            }
+        } else {
+            index += 1;
+        }
+    }
+    result.push_str(&text[from..]);
+    result
 }
 
 /// The dimensions at the end of the embed label `label`, after its last
-/// separator (`|` or `\|`) or as all of it, and the label before them.
-fn label_dimensions(label: &str) -> Option<(&str, Dimensions)> {
+/// separator or as all of it, and the label before them: the separator is
+/// `|` or, when `escaped`, `\|`; otherwise a backslash escapes the byte
+/// after it.
+fn label_dimensions(label: &str, escaped: bool) -> Option<(&str, Dimensions)> {
     let source = label.as_bytes();
     let mut cut = None;
     let mut index = 0;
@@ -1465,7 +1606,12 @@ fn label_dimensions(label: &str) -> Option<(&str, Dimensions)> {
         if source[index] == b'|' {
             cut = Some((index, index + 1));
         } else if source[index] == b'\\' && source.get(index + 1) == Some(&b'|') {
-            cut = Some((index, index + 2));
+            if escaped {
+                cut = Some((index, index + 2));
+            }
+            index += 1;
+        } else if source[index] == b'\\' && !escaped {
+            // In an image label, an escaped byte is no separator.
             index += 1;
         }
         index += 1;

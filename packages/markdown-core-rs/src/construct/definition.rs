@@ -6,10 +6,10 @@
 //! (<small>see [construct][crate::construct] for character groups</small>):
 //!
 //! ```bnf
-//! definition ::= label ':' [ space_or_tab_eol ] destination [ space_or_tab_eol title ] [ space_or_tab ]
+//! definition ::= label ':' [ space_or_tab_eol ] destination [ space_or_tab_eol title ] [ space_or_tab_eol attributes ] [ space_or_tab ]
 //!
-//! ; See the `destination`, `title`, and `label` constructs for the BNF of
-//! ; those parts.
+//! ; See the `destination`, `title`, `label`, and `attributes` constructs for
+//! ; the BNF of those parts.
 //! ```
 //!
 //! This construct must be followed by an eol (line ending) or eof (end of
@@ -102,7 +102,7 @@
 
 use crate::construct::partial_space_or_tab::space_or_tab;
 use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
-use crate::construct::{partial_destination, partial_label, partial_title};
+use crate::construct::{partial_attributes, partial_destination, partial_label, partial_title};
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -241,9 +241,23 @@ fn destination_before(tokenizer: &mut Tokenizer, end: usize) -> State {
 fn destination_after(tokenizer: &mut Tokenizer, end: usize) -> State {
     tokenizer.attempt(
         State::Next(StateName::Definition(Step::After { end })),
-        State::Next(StateName::Definition(Step::After { end })),
+        State::Next(StateName::Definition(Step::Untitled { end })),
     );
     State::Redo(StateName::Definition(Step::TitleBefore))
+}
+
+/// After destination, with no title.
+///
+/// ```markdown
+/// > | [a]: b {.c}
+///           ^
+/// ```
+fn untitled(tokenizer: &mut Tokenizer, end: usize) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::Definition(Step::After { end })),
+        State::Next(StateName::Definition(Step::After { end })),
+    );
+    State::Redo(StateName::Definition(Step::AttributesBefore))
 }
 
 /// After definition.
@@ -349,6 +363,22 @@ fn title_before_marker(tokenizer: &mut Tokenizer) -> State {
 ///               ^
 /// ```
 fn title_after(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(
+        State::Ok,
+        State::Next(StateName::Definition(Step::TitleAfterSpace)),
+    );
+    State::Redo(StateName::Definition(Step::AttributesBefore))
+}
+
+/// After title or attributes, at optional whitespace.
+///
+/// ```markdown
+/// > | [a]: b "c"
+///               ^
+/// > | [a]: b {.c}
+///               ^
+/// ```
+fn title_after_space(tokenizer: &mut Tokenizer) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.attempt(
             State::Next(StateName::Definition(Step::TitleAfterOptionalWhitespace)),
@@ -373,6 +403,39 @@ fn title_after_optional_whitespace(tokenizer: &mut Tokenizer) -> State {
     }
 }
 
+/// After destination or title, at whitespace before attributes.
+///
+/// ```markdown
+/// > | [a]: b {.c}
+///           ^
+/// ```
+fn attributes_before(tokenizer: &mut Tokenizer) -> State {
+    if matches!(tokenizer.current, Some(b'\t' | b'\n' | b' ')) {
+        tokenizer.attempt(
+            State::Next(StateName::Definition(Step::AttributesOpen)),
+            State::Nok,
+        );
+        State::Redo(space_or_tab_eol())
+    } else {
+        State::Nok
+    }
+}
+
+/// At attributes.
+///
+/// ```markdown
+///   | [a]: b
+/// > | {.c}
+///     ^
+/// ```
+fn attributes_open(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::Definition(Step::TitleAfterSpace)),
+        State::Nok,
+    );
+    State::Redo(StateName::Attributes(partial_attributes::Step::Start))
+}
+
 /// Steps of this construct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
@@ -387,7 +450,11 @@ pub enum Step {
     AfterWhitespace { end: usize },
     TitleBeforeMarker,
     TitleAfter,
+    TitleAfterSpace,
     TitleAfterOptionalWhitespace,
+    Untitled { end: usize },
+    AttributesBefore,
+    AttributesOpen,
 }
 
 impl From<Step> for StateName {
@@ -410,6 +477,10 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::AfterWhitespace { end } => after_whitespace(tokenizer, end),
         Step::TitleBeforeMarker => title_before_marker(tokenizer),
         Step::TitleAfter => title_after(tokenizer),
+        Step::TitleAfterSpace => title_after_space(tokenizer),
+        Step::Untitled { end } => untitled(tokenizer, end),
+        Step::AttributesBefore => attributes_before(tokenizer),
+        Step::AttributesOpen => attributes_open(tokenizer),
         Step::TitleAfterOptionalWhitespace => title_after_optional_whitespace(tokenizer),
     }
 }

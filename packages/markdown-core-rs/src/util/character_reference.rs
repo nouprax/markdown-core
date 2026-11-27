@@ -142,3 +142,29 @@ pub fn value_test(marker: u8) -> fn(&u8) -> bool {
         _ => unreachable!("Unexpected marker `{}`", marker),
     }
 }
+
+/// The decoded value of the character reference whose `&` is at `start` in
+/// `text`, and the place one past its `;`.
+pub fn decode_at(text: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let mut index = start + 1;
+    let mut marker = b'&';
+    if bytes.get(index) == Some(&b'#') {
+        index += 1;
+        marker = b'#';
+        if matches!(bytes.get(index), Some(b'x' | b'X')) {
+            index += 1;
+            marker = b'x';
+        }
+    }
+    let value_start = index;
+    let allowed = value_test(marker);
+    while index < bytes.len() && index - value_start < value_max(marker) && allowed(&bytes[index]) {
+        index += 1;
+    }
+    if index == value_start || bytes.get(index) != Some(&b';') {
+        return None;
+    }
+    let value = decode(&text[value_start..index], marker)?;
+    Some((value, index + 1))
+}

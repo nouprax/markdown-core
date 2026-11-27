@@ -72,6 +72,7 @@
 //!
 //! There are also several small subroutines typically used in different places:
 //!
+//! * [attributes][partial_attributes]
 //! * [bom][partial_bom]
 //! * [data][partial_data]
 //! * [destination][partial_destination]
@@ -173,6 +174,7 @@ pub mod label_start_link;
 pub mod label_start_note;
 pub mod list_item;
 pub mod paragraph;
+pub mod partial_attributes;
 pub mod partial_bom;
 pub mod partial_data;
 pub mod partial_destination;

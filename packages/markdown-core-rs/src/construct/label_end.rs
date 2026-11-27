@@ -180,7 +180,7 @@
 
 use crate::choice::Starts;
 use crate::construct::partial_space_or_tab_eol::space_or_tab_eol;
-use crate::construct::{partial_destination, partial_label, partial_title};
+use crate::construct::{partial_attributes, partial_destination, partial_label, partial_title};
 use crate::event::{Event, Kind, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -379,6 +379,29 @@ fn reference_not_full(tokenizer: &mut Tokenizer, end: usize) -> State {
 ///        ^
 /// ```
 fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
+    let kind = &tokenizer.labels.starts[tokenizer.labels.starts.len() - 1].kind;
+    let media = matches!(
+        kind,
+        LabelKind::Link | LabelKind::Image | LabelKind::UndefinedFootnote
+    );
+    if tokenizer.current == Some(b'{') && media {
+        tokenizer.attempt(
+            State::Next(StateName::LabelEnd(Step::Done { end })),
+            State::Next(StateName::LabelEnd(Step::Done { end })),
+        );
+        State::Redo(StateName::Attributes(partial_attributes::Step::Start))
+    } else {
+        State::Redo(StateName::LabelEnd(Step::Done { end }))
+    }
+}
+
+/// Done, with the attributes of a link or an image.
+///
+/// ```markdown
+/// > | [a](b){.c} d
+///               ^
+/// ```
+fn done(tokenizer: &mut Tokenizer, end: usize) -> State {
     // Remove the start.
     let label_start = tokenizer.labels.starts.pop().unwrap();
 
@@ -856,6 +879,7 @@ pub enum Step {
     ResourceTitleAfter,
     ResourceEnd,
     Ok { end: usize },
+    Done { end: usize },
     Nok,
     ReferenceFull,
     ReferenceFullAfter,
@@ -884,6 +908,7 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::ResourceTitleAfter => resource_title_after(tokenizer),
         Step::ResourceEnd => resource_end(tokenizer),
         Step::Ok { end } => ok(tokenizer, end),
+        Step::Done { end } => done(tokenizer, end),
         Step::Nok => nok(tokenizer),
         Step::ReferenceFull => reference_full(tokenizer),
         Step::ReferenceFullAfter => reference_full_after(tokenizer),
