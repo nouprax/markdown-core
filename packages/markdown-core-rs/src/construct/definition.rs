@@ -433,7 +433,9 @@ fn attributes_open(tokenizer: &mut Tokenizer) -> State {
         State::Next(StateName::Definition(Step::TitleAfterSpace)),
         State::Nok,
     );
-    State::Redo(StateName::Attributes(partial_attributes::Step::Start))
+    State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+        line: false,
+    }))
 }
 
 /// Steps of this construct.

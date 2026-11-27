@@ -36,7 +36,7 @@ use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max}
 use crate::event::{Content, Event, Kind, Link, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
-use crate::util::constant::TAB_SIZE;
+use crate::util::{constant::TAB_SIZE, slice::advance};
 use alloc::{vec, vec::Vec};
 
 /// Bytes an identifier line can start at.
@@ -99,26 +99,6 @@ fn scan(text: &[u8]) -> Option<Found> {
         content: cut,
         alone,
     })
-}
-
-/// The point `index` is at, from `point` before it on its line.
-fn advance(bytes: &[u8], point: &Point, index: usize) -> Point {
-    let mut column = point.column;
-    let mut at = point.index;
-    while at < index {
-        column = if bytes[at] == b'\t' {
-            ((column - 1) / TAB_SIZE + 1) * TAB_SIZE + 1
-        } else {
-            column + 1
-        };
-        at += 1;
-    }
-    Point {
-        line: point.line,
-        column,
-        index,
-        vs: 0,
-    }
 }
 
 /// At the end of a paragraph: cut the identifier its text ends with from

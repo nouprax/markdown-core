@@ -626,7 +626,12 @@ impl<'a> Compiler<'a> {
                 })
                 .collect();
             if let (Some(first), Some(last)) = (parts.first(), parts.last()) {
-                info = Some(self.string(*first, self.exits[*last] + 1));
+                // Attributes after the info take the spaces before them.
+                info = Some(
+                    self.string(*first, self.exits[*last] + 1)
+                        .trim_end_matches([' ', '\t'])
+                        .to_string(),
+                );
             }
         }
         let language = info.as_ref().map(|info| {
@@ -653,7 +658,7 @@ impl<'a> Compiler<'a> {
                 runs,
             );
         }
-        Node::new(
+        let mut node = Node::new(
             Kind::CodeBlock {
                 info,
                 language,
@@ -662,7 +667,15 @@ impl<'a> Compiler<'a> {
                 closed,
             },
             runs,
-        )
+        );
+        // Attributes end the opening fence’s line.
+        if let Some(attributes) = self
+            .child(index, Name::CodeFencedFence)
+            .and_then(|open| self.child(open, Name::Attributes))
+        {
+            self.attributes(attributes, &mut node);
+        }
+        node
     }
 
     /// The literal of a fenced block: each line between its fences, with a

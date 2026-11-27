@@ -389,7 +389,9 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
             State::Next(StateName::LabelEnd(Step::Done { end })),
             State::Next(StateName::LabelEnd(Step::Done { end })),
         );
-        State::Redo(StateName::Attributes(partial_attributes::Step::Start))
+        State::Redo(StateName::Attributes(partial_attributes::Step::Start {
+            line: false,
+        }))
     } else {
         State::Redo(StateName::LabelEnd(Step::Done { end }))
     }

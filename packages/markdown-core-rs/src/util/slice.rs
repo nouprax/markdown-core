@@ -5,6 +5,26 @@ use crate::util::constant::TAB_SIZE;
 use alloc::{format, string::String, vec};
 use core::str;
 
+/// The point `index` is at, from `point` before it on its line.
+pub fn advance(bytes: &[u8], point: &Point, index: usize) -> Point {
+    let mut column = point.column;
+    let mut at = point.index;
+    while at < index {
+        column = if bytes[at] == b'\t' {
+            ((column - 1) / TAB_SIZE + 1) * TAB_SIZE + 1
+        } else {
+            column + 1
+        };
+        at += 1;
+    }
+    Point {
+        line: point.line,
+        column,
+        index,
+        vs: 0,
+    }
+}
+
 /// A span between two points.
 #[derive(Debug)]
 pub struct Position<'a> {

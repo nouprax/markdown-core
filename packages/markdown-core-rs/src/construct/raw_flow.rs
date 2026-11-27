@@ -112,8 +112,8 @@
 //! [html_pre]: https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element
 
 use crate::choice::Starts;
-use crate::construct::partial_non_lazy_continuation;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::{partial_attributes, partial_non_lazy_continuation};
 use crate::event::{Content, Link, Name};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
@@ -245,6 +245,14 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 partial_non_lazy_continuation::Step::Start,
             ))
         }
+        // Attributes that end the line, or info.
+        Some(b'{') => {
+            tokenizer.attempt(
+                State::Next(StateName::RawFlow(Step::InfoBefore { fence })),
+                State::Next(StateName::RawFlow(Step::FieldOpen { fence, meta: false })),
+            );
+            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+        }
         _ => {
             tokenizer.enter(Name::CodeFencedFenceInfo);
             tokenizer.enter_link(
@@ -284,6 +292,18 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             );
             State::Redo(space_or_tab())
         }
+        // Attributes that end the line, or text.
+        Some(b'{') => {
+            tokenizer.check(
+                State::Next(StateName::RawFlow(Step::FieldClose { fence, meta: false })),
+                State::Next(StateName::RawFlow(Step::FieldByte { fence, meta: false })),
+            );
+            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+        }
+        Some(b'\\') => {
+            tokenizer.consume();
+            State::Next(StateName::RawFlow(Step::FieldEscape { fence, meta: false }))
+        }
         Some(byte) => {
             // This looks like code (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
@@ -310,6 +330,13 @@ fn info(tokenizer: &mut Tokenizer, fence: Fence) -> State {
 fn meta_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
     match tokenizer.current {
         None | Some(b'\n') => State::Redo(StateName::RawFlow(Step::InfoBefore { fence })),
+        Some(b'{') => {
+            tokenizer.attempt(
+                State::Next(StateName::RawFlow(Step::InfoBefore { fence })),
+                State::Next(StateName::RawFlow(Step::FieldOpen { fence, meta: true })),
+            );
+            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+        }
         _ => {
             tokenizer.enter(Name::CodeFencedFenceMeta);
             tokenizer.enter_link(
@@ -340,6 +367,18 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             tokenizer.exit(Name::CodeFencedFenceMeta);
             State::Redo(StateName::RawFlow(Step::InfoBefore { fence }))
         }
+        // Attributes that end the line, or text.
+        Some(b'{') => {
+            tokenizer.check(
+                State::Next(StateName::RawFlow(Step::FieldClose { fence, meta: true })),
+                State::Next(StateName::RawFlow(Step::FieldByte { fence, meta: true })),
+            );
+            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+        }
+        Some(b'\\') => {
+            tokenizer.consume();
+            State::Next(StateName::RawFlow(Step::FieldEscape { fence, meta: true }))
+        }
         Some(byte) => {
             // This looks like code (text).
             // Note: no reason to check for `~`, because 3 of them can‘t be
@@ -353,6 +392,87 @@ fn meta(tokenizer: &mut Tokenizer, fence: Fence) -> State {
             }
         }
     }
+}
+
+/// At info or meta that starts with a brace which does not start attributes
+/// that end the line.
+///
+/// ```markdown
+/// > | ~~~{a
+///        ^
+/// ```
+fn field_open(tokenizer: &mut Tokenizer, fence: Fence, meta: bool) -> State {
+    tokenizer.enter(field_name(meta));
+    tokenizer.enter_link(
+        Name::Data,
+        Link {
+            previous: None,
+            next: None,
+            content: Content::String,
+        },
+    );
+    State::Redo(StateName::RawFlow(Step::FieldByte { fence, meta }))
+}
+
+/// In info or meta, at attributes that end the line.
+///
+/// ```markdown
+/// > | ~~~js{.a}
+///          ^
+/// ```
+fn field_close(tokenizer: &mut Tokenizer, fence: Fence, meta: bool) -> State {
+    tokenizer.exit(Name::Data);
+    tokenizer.exit(field_name(meta));
+    tokenizer.attempt(
+        State::Next(StateName::RawFlow(Step::InfoBefore { fence })),
+        State::Nok,
+    );
+    State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
+}
+
+/// In info or meta, at a byte that is text.
+///
+/// ```markdown
+/// > | ~~~js{a
+///          ^
+/// ```
+fn field_byte(tokenizer: &mut Tokenizer, fence: Fence, meta: bool) -> State {
+    tokenizer.consume();
+    State::Next(field_step(fence, meta))
+}
+
+/// In info or meta, after a backslash: an escaped byte is text.
+///
+/// ```markdown
+/// > | ~~~js \{a}
+///            ^
+/// ```
+fn field_escape(tokenizer: &mut Tokenizer, fence: Fence, meta: bool) -> State {
+    match tokenizer.current {
+        Some(byte) if byte.is_ascii_punctuation() && !(byte == b'`' && fence.marker == b'`') => {
+            tokenizer.consume();
+            State::Next(field_step(fence, meta))
+        }
+        _ => State::Redo(field_step(fence, meta)),
+    }
+}
+
+/// The token of info or meta.
+fn field_name(meta: bool) -> Name {
+    if meta {
+        Name::CodeFencedFenceMeta
+    } else {
+        Name::CodeFencedFenceInfo
+    }
+}
+
+/// The step in info or meta.
+fn field_step(fence: Fence, meta: bool) -> StateName {
+    StateName::RawFlow(if meta {
+        Step::Meta { fence }
+    } else {
+        Step::Info { fence }
+    })
 }
 
 /// At eol/eof in raw, before a non-lazy closing fence or content.
@@ -574,6 +694,10 @@ pub enum Step {
     Info { fence: Fence },
     MetaBefore { fence: Fence },
     Meta { fence: Fence },
+    FieldOpen { fence: Fence, meta: bool },
+    FieldClose { fence: Fence, meta: bool },
+    FieldByte { fence: Fence, meta: bool },
+    FieldEscape { fence: Fence, meta: bool },
     AtNonLazyBreak { fence: Fence },
     CloseStart { fence: Fence },
     BeforeSequenceClose { fence: Fence },
@@ -602,6 +726,10 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Info { fence } => info(tokenizer, fence),
         Step::MetaBefore { fence } => meta_before(tokenizer, fence),
         Step::Meta { fence } => meta(tokenizer, fence),
+        Step::FieldOpen { fence, meta } => field_open(tokenizer, fence, meta),
+        Step::FieldClose { fence, meta } => field_close(tokenizer, fence, meta),
+        Step::FieldByte { fence, meta } => field_byte(tokenizer, fence, meta),
+        Step::FieldEscape { fence, meta } => field_escape(tokenizer, fence, meta),
         Step::AtNonLazyBreak { fence } => at_non_lazy_break(tokenizer, fence),
         Step::CloseStart { fence } => close_start(tokenizer, fence),
         Step::BeforeSequenceClose { fence } => before_sequence_close(tokenizer, fence),

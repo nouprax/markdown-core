@@ -71,8 +71,8 @@
 //! [atx]: http://www.aaronsw.com/2002/atx/
 
 use crate::choice::Starts;
-use crate::construct::block_identifier;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
+use crate::construct::{block_identifier, partial_attributes};
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -229,6 +229,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
             let mut heading_exit = tokenizer.events[exit].clone();
             heading_exit.name = Name::HeadingSetext;
             tokenizer.map.add(exit + 1, 0, vec![heading_exit]);
+            tail(tokenizer, paragraph_exit_before);
         } else {
             // There’s a following paragraph, move this underline inside it.
             if exit + 3 < tokenizer.events.len()
@@ -312,5 +313,25 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Before => before(tokenizer),
         Step::Inside { marker } => inside(tokenizer, marker),
         Step::After => after(tokenizer),
+    }
+}
+
+/// Take the attributes that end the last line of the heading text, whose
+/// exit is at `exit`, from its data.
+fn tail(tokenizer: &mut Tokenizer, exit: usize) {
+    let data = exit - 1;
+    if tokenizer.events[data].name != Name::Data || tokenizer.events[data - 1].name != Name::Data {
+        return;
+    }
+    let start = &tokenizer.events[data - 1].point;
+    let end = tokenizer.events[data].point.index;
+    // Only a chunk of the last line alone.
+    if tokenizer.parse_state.bytes[start.index..end].contains(&b'\n') {
+        return;
+    }
+    if let Some((cut, events)) = partial_attributes::line_tail(tokenizer, start, end) {
+        tokenizer.events[data].point = cut.clone();
+        tokenizer.events[exit].point = cut;
+        tokenizer.map.add(exit + 1, 0, events);
     }
 }

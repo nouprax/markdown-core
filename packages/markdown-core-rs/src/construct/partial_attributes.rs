@@ -1,5 +1,6 @@
 //! Attributes occur after [code (text)][raw_text], [label end][label_end],
-//! [autolink][], and in [definition][].
+//! and [autolink][], in [definition][], and at the end of the line of a
+//! [heading (atx)][heading_atx].
 //!
 //! ## Grammar
 //!
@@ -50,10 +51,14 @@
 //! [label_end]: crate::construct::label_end
 //! [autolink]: crate::construct::autolink
 //! [definition]: crate::construct::definition
+//! [heading_atx]: crate::construct::heading_atx
 
-use crate::event::Name;
+use crate::construct::partial_space_or_tab::space_or_tab;
+use crate::event::{Event, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
+use crate::util::slice::advance;
+use alloc::vec::Vec;
 
 /// Whether `byte` continues a name.
 fn name_byte(byte: Option<u8>) -> bool {
@@ -81,7 +86,7 @@ fn after(tokenizer: &mut Tokenizer, name: Name) -> State {
             State::Next(StateName::Attributes(Step::Close(name))),
             State::Next(StateName::Attributes(Step::Close(name))),
         );
-        State::Redo(StateName::Attributes(Step::Start))
+        State::Redo(StateName::Attributes(Step::Start { line: false }))
     } else {
         State::Redo(StateName::Attributes(Step::Close(name)))
     }
@@ -98,19 +103,107 @@ fn close(tokenizer: &mut Tokenizer, name: Name) -> State {
     State::Ok
 }
 
+/// The attributes that end the line from `start` to `end`, after the
+/// spaces and tabs before them, for a block whose text has already been
+/// tokenized as a whole (the last line of a setext heading): where its text
+/// ends, and the attributes’ events.
+///
+/// The first brace, not escaped, that starts attributes which end the line
+/// is theirs.
+/// Text must come before them.
+pub fn line_tail(tokenizer: &Tokenizer, start: &Point, end: usize) -> Option<(Point, Vec<Event>)> {
+    let bytes = tokenizer.parse_state.bytes;
+    let mut at = start.index;
+    while at < end {
+        match bytes[at] {
+            b'\\' if at + 1 < end && bytes[at + 1].is_ascii_punctuation() => {
+                at += 2;
+                continue;
+            }
+            b'{' => {
+                let mut cut = at;
+                while cut > start.index && matches!(bytes[cut - 1], b'\t' | b' ') {
+                    cut -= 1;
+                }
+                if cut > start.index {
+                    let mut scratch =
+                        Tokenizer::new(advance(bytes, start, at), tokenizer.parse_state);
+                    let state = scratch.run(
+                        (at, 0),
+                        (end, 0),
+                        State::Next(StateName::Attributes(Step::Tail)),
+                    );
+                    if state == State::Ok {
+                        return Some((advance(bytes, start, cut), scratch.events));
+                    }
+                }
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    None
+}
+
+/// At attributes that end a block's line, but for spaces and tabs.
+///
+/// ```markdown
+/// > | # a {.b}
+///         ^
+/// ```
+fn tail(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::Attributes(Step::TailAfter)),
+        State::Nok,
+    );
+    State::Redo(StateName::Attributes(Step::Start { line: true }))
+}
+
+/// After attributes that may end a block's line.
+///
+/// ```markdown
+/// > | # a {.b}
+///             ^
+/// ```
+fn tail_after(tokenizer: &mut Tokenizer) -> State {
+    if matches!(tokenizer.current, Some(b'\t' | b' ')) {
+        tokenizer.attempt(
+            State::Next(StateName::Attributes(Step::TailEnd)),
+            State::Nok,
+        );
+        State::Redo(space_or_tab())
+    } else {
+        State::Redo(StateName::Attributes(Step::TailEnd))
+    }
+}
+
+/// At the end of a block's line, after its attributes.
+///
+/// ```markdown
+/// > | # a {.b}
+///             ^
+/// ```
+fn tail_end(tokenizer: &mut Tokenizer) -> State {
+    if matches!(tokenizer.current, None | Some(b'\n')) {
+        State::Ok
+    } else {
+        State::Nok
+    }
+}
+
 /// Start of attributes.
 ///
 /// ```markdown
 /// > | `a`{.b}
 ///        ^
 /// ```
-fn start(tokenizer: &mut Tokenizer) -> State {
+fn start(tokenizer: &mut Tokenizer, line: bool) -> State {
     if tokenizer.current == Some(b'{') {
         tokenizer.enter(Name::Attributes);
         tokenizer.enter(Name::AttributesMarker);
         tokenizer.consume();
         tokenizer.exit(Name::AttributesMarker);
-        State::Next(StateName::Attributes(Step::Between { eol: false }))
+        State::Next(StateName::Attributes(Step::Between { eol: line, line }))
     } else {
         State::Nok
     }
@@ -122,18 +215,18 @@ fn start(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{.b .c}
 ///         ^ ^  ^
 /// ```
-fn between(tokenizer: &mut Tokenizer, eol: bool) -> State {
+fn between(tokenizer: &mut Tokenizer, eol: bool, line: bool) -> State {
     match tokenizer.current {
         Some(b'\t' | b' ') => {
             tokenizer.enter(Name::SpaceOrTab);
             tokenizer.consume();
-            State::Next(StateName::Attributes(Step::Space { eol }))
+            State::Next(StateName::Attributes(Step::Space { eol, line }))
         }
         Some(b'\n') if !eol => {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
             tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::Attributes(Step::Between { eol: true }))
+            State::Next(StateName::Attributes(Step::Between { eol: true, line }))
         }
         Some(b'}') => {
             tokenizer.enter(Name::AttributesMarker);
@@ -144,8 +237,8 @@ fn between(tokenizer: &mut Tokenizer, eol: bool) -> State {
         }
         Some(b'-') => {
             tokenizer.attempt(
-                State::Next(StateName::Attributes(Step::Between { eol: false })),
-                State::Next(StateName::Attributes(Step::NameStart)),
+                State::Next(StateName::Attributes(Step::Between { eol: line, line })),
+                State::Next(StateName::Attributes(Step::NameStart { line })),
             );
             State::Redo(StateName::Attributes(Step::Dash))
         }
@@ -157,9 +250,9 @@ fn between(tokenizer: &mut Tokenizer, eol: bool) -> State {
             };
             tokenizer.enter(name);
             tokenizer.consume();
-            State::Next(StateName::Attributes(Step::Marked { first: true }))
+            State::Next(StateName::Attributes(Step::Marked { first: true, line }))
         }
-        byte if name_byte(byte) => State::Redo(StateName::Attributes(Step::NameStart)),
+        byte if name_byte(byte) => State::Redo(StateName::Attributes(Step::NameStart { line })),
         _ => State::Nok,
     }
 }
@@ -170,13 +263,13 @@ fn between(tokenizer: &mut Tokenizer, eol: bool) -> State {
 /// > | `a`{.b  .c}
 ///            ^
 /// ```
-fn space(tokenizer: &mut Tokenizer, eol: bool) -> State {
+fn space(tokenizer: &mut Tokenizer, eol: bool, line: bool) -> State {
     if matches!(tokenizer.current, Some(b'\t' | b' ')) {
         tokenizer.consume();
-        State::Next(StateName::Attributes(Step::Space { eol }))
+        State::Next(StateName::Attributes(Step::Space { eol, line }))
     } else {
         tokenizer.exit(Name::SpaceOrTab);
-        State::Redo(StateName::Attributes(Step::Between { eol }))
+        State::Redo(StateName::Attributes(Step::Between { eol, line }))
     }
 }
 
@@ -214,16 +307,16 @@ fn dash_after(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{#b}
 ///          ^
 /// ```
-fn marked(tokenizer: &mut Tokenizer, first: bool) -> State {
+fn marked(tokenizer: &mut Tokenizer, first: bool, line: bool) -> State {
     if name_byte(tokenizer.current) {
         tokenizer.consume();
-        State::Next(StateName::Attributes(Step::Marked { first: false }))
+        State::Next(StateName::Attributes(Step::Marked { first: false, line }))
     } else if first {
         State::Nok
     } else {
         let name = tokenizer.events[tokenizer.events.len() - 1].name;
         tokenizer.exit(name);
-        State::Redo(StateName::Attributes(Step::Between { eol: false }))
+        State::Redo(StateName::Attributes(Step::Between { eol: line, line }))
     }
 }
 
@@ -233,11 +326,11 @@ fn marked(tokenizer: &mut Tokenizer, first: bool) -> State {
 /// > | `a`{b=c}
 ///         ^
 /// ```
-fn name_start(tokenizer: &mut Tokenizer) -> State {
+fn name_start(tokenizer: &mut Tokenizer, line: bool) -> State {
     tokenizer.enter(Name::AttributeRecord);
     tokenizer.enter(Name::AttributeNameText);
     tokenizer.consume();
-    State::Next(StateName::Attributes(Step::NameInside))
+    State::Next(StateName::Attributes(Step::NameInside { line }))
 }
 
 /// In the name of a record.
@@ -246,20 +339,20 @@ fn name_start(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{bc=d}
 ///          ^
 /// ```
-fn name_inside(tokenizer: &mut Tokenizer) -> State {
+fn name_inside(tokenizer: &mut Tokenizer, line: bool) -> State {
     if name_byte(tokenizer.current) {
         tokenizer.consume();
-        return State::Next(StateName::Attributes(Step::NameInside));
+        return State::Next(StateName::Attributes(Step::NameInside { line }));
     }
     tokenizer.exit(Name::AttributeNameText);
     if tokenizer.current == Some(b'=') {
         tokenizer.enter(Name::AttributeEquals);
         tokenizer.consume();
         tokenizer.exit(Name::AttributeEquals);
-        State::Next(StateName::Attributes(Step::ValueStart))
+        State::Next(StateName::Attributes(Step::ValueStart { line }))
     } else if member_end(tokenizer.current) {
         tokenizer.exit(Name::AttributeRecord);
-        State::Redo(StateName::Attributes(Step::Between { eol: false }))
+        State::Redo(StateName::Attributes(Step::Between { eol: line, line }))
     } else {
         State::Nok
     }
@@ -271,20 +364,20 @@ fn name_inside(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{b=c}
 ///           ^
 /// ```
-fn value_start(tokenizer: &mut Tokenizer) -> State {
+fn value_start(tokenizer: &mut Tokenizer, line: bool) -> State {
     match tokenizer.current {
         Some(quote @ (b'"' | b'\'')) => {
             tokenizer.attempt(
-                State::Next(StateName::Attributes(Step::ValueEnd)),
-                State::Next(StateName::Attributes(Step::Unquoted)),
+                State::Next(StateName::Attributes(Step::ValueEnd { line })),
+                State::Next(StateName::Attributes(Step::Unquoted { line })),
             );
             tokenizer.enter(Name::AttributeValue);
             tokenizer.enter(Name::AttributeValueMarker);
             tokenizer.consume();
             tokenizer.exit(Name::AttributeValueMarker);
-            State::Next(StateName::Attributes(Step::Quoted { quote }))
+            State::Next(StateName::Attributes(Step::Quoted { quote, line }))
         }
-        _ => State::Redo(StateName::Attributes(Step::Unquoted)),
+        _ => State::Redo(StateName::Attributes(Step::Unquoted { line })),
     }
 }
 
@@ -294,14 +387,15 @@ fn value_start(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{b="c"}
 ///            ^ ^
 /// ```
-fn quoted(tokenizer: &mut Tokenizer, quote: u8) -> State {
+fn quoted(tokenizer: &mut Tokenizer, quote: u8, line: bool) -> State {
     match tokenizer.current {
         None => State::Nok,
+        Some(b'\n') if line => State::Nok,
         Some(b'\n') => {
             tokenizer.enter(Name::LineEnding);
             tokenizer.consume();
             tokenizer.exit(Name::LineEnding);
-            State::Next(StateName::Attributes(Step::Quoted { quote }))
+            State::Next(StateName::Attributes(Step::Quoted { quote, line }))
         }
         Some(byte) if byte == quote => {
             tokenizer.enter(Name::AttributeValueMarker);
@@ -311,7 +405,7 @@ fn quoted(tokenizer: &mut Tokenizer, quote: u8) -> State {
         }
         _ => {
             tokenizer.enter(Name::AttributeValueText);
-            State::Redo(StateName::Attributes(Step::QuotedText { quote }))
+            State::Redo(StateName::Attributes(Step::QuotedText { quote, line }))
         }
     }
 }
@@ -322,22 +416,22 @@ fn quoted(tokenizer: &mut Tokenizer, quote: u8) -> State {
 /// > | `a`{b="c"}
 ///             ^
 /// ```
-fn quoted_text(tokenizer: &mut Tokenizer, quote: u8) -> State {
+fn quoted_text(tokenizer: &mut Tokenizer, quote: u8, line: bool) -> State {
     match tokenizer.current {
         None | Some(b'\n') => {
             tokenizer.exit(Name::AttributeValueText);
-            State::Redo(StateName::Attributes(Step::Quoted { quote }))
+            State::Redo(StateName::Attributes(Step::Quoted { quote, line }))
         }
         Some(byte) if byte == quote => {
             tokenizer.exit(Name::AttributeValueText);
-            State::Redo(StateName::Attributes(Step::Quoted { quote }))
+            State::Redo(StateName::Attributes(Step::Quoted { quote, line }))
         }
         Some(byte) => {
             tokenizer.consume();
             if byte == b'\\' {
-                State::Next(StateName::Attributes(Step::QuotedEscape { quote }))
+                State::Next(StateName::Attributes(Step::QuotedEscape { quote, line }))
             } else {
-                State::Next(StateName::Attributes(Step::QuotedText { quote }))
+                State::Next(StateName::Attributes(Step::QuotedText { quote, line }))
             }
         }
     }
@@ -349,13 +443,13 @@ fn quoted_text(tokenizer: &mut Tokenizer, quote: u8) -> State {
 /// > | `a`{b="\""}
 ///              ^
 /// ```
-fn quoted_escape(tokenizer: &mut Tokenizer, quote: u8) -> State {
+fn quoted_escape(tokenizer: &mut Tokenizer, quote: u8, line: bool) -> State {
     match tokenizer.current {
         Some(byte) if byte.is_ascii_punctuation() => {
             tokenizer.consume();
-            State::Next(StateName::Attributes(Step::QuotedText { quote }))
+            State::Next(StateName::Attributes(Step::QuotedText { quote, line }))
         }
-        _ => State::Redo(StateName::Attributes(Step::QuotedText { quote })),
+        _ => State::Redo(StateName::Attributes(Step::QuotedText { quote, line })),
     }
 }
 
@@ -365,17 +459,17 @@ fn quoted_escape(tokenizer: &mut Tokenizer, quote: u8) -> State {
 /// > | `a`{b=c}
 ///           ^
 /// ```
-fn unquoted(tokenizer: &mut Tokenizer) -> State {
+fn unquoted(tokenizer: &mut Tokenizer, line: bool) -> State {
     match tokenizer.current {
         // An empty value.
         None | Some(b'\t' | b'\n' | b' ' | b'}') => {
             tokenizer.exit(Name::AttributeRecord);
-            State::Redo(StateName::Attributes(Step::Between { eol: false }))
+            State::Redo(StateName::Attributes(Step::Between { eol: line, line }))
         }
         _ => {
             tokenizer.enter(Name::AttributeValue);
             tokenizer.enter(Name::AttributeValueText);
-            State::Redo(StateName::Attributes(Step::UnquotedText))
+            State::Redo(StateName::Attributes(Step::UnquotedText { line }))
         }
     }
 }
@@ -386,18 +480,18 @@ fn unquoted(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{b=cd}
 ///            ^
 /// ```
-fn unquoted_text(tokenizer: &mut Tokenizer) -> State {
+fn unquoted_text(tokenizer: &mut Tokenizer, line: bool) -> State {
     match tokenizer.current {
         None | Some(b'\t' | b'\n' | b' ' | b'}') => {
             tokenizer.exit(Name::AttributeValueText);
-            State::Redo(StateName::Attributes(Step::ValueEnd))
+            State::Redo(StateName::Attributes(Step::ValueEnd { line }))
         }
         Some(byte) => {
             tokenizer.consume();
             if byte == b'\\' {
-                State::Next(StateName::Attributes(Step::UnquotedEscape))
+                State::Next(StateName::Attributes(Step::UnquotedEscape { line }))
             } else {
-                State::Next(StateName::Attributes(Step::UnquotedText))
+                State::Next(StateName::Attributes(Step::UnquotedText { line }))
             }
         }
     }
@@ -409,13 +503,13 @@ fn unquoted_text(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{b=\}}
 ///            ^
 /// ```
-fn unquoted_escape(tokenizer: &mut Tokenizer) -> State {
+fn unquoted_escape(tokenizer: &mut Tokenizer, line: bool) -> State {
     match tokenizer.current {
         Some(byte) if byte.is_ascii_punctuation() => {
             tokenizer.consume();
-            State::Next(StateName::Attributes(Step::UnquotedText))
+            State::Next(StateName::Attributes(Step::UnquotedText { line }))
         }
-        _ => State::Redo(StateName::Attributes(Step::UnquotedText)),
+        _ => State::Redo(StateName::Attributes(Step::UnquotedText { line })),
     }
 }
 
@@ -425,10 +519,10 @@ fn unquoted_escape(tokenizer: &mut Tokenizer) -> State {
 /// > | `a`{b=c d}
 ///            ^
 /// ```
-fn value_end(tokenizer: &mut Tokenizer) -> State {
+fn value_end(tokenizer: &mut Tokenizer, line: bool) -> State {
     tokenizer.exit(Name::AttributeValue);
     tokenizer.exit(Name::AttributeRecord);
-    State::Redo(StateName::Attributes(Step::Between { eol: false }))
+    State::Redo(StateName::Attributes(Step::Between { eol: line, line }))
 }
 
 /// After the closing brace, or the closing quote of a value.
@@ -441,22 +535,61 @@ fn end(_tokenizer: &mut Tokenizer) -> State {
 pub enum Step {
     After(Name),
     Close(Name),
-    Start,
-    Between { eol: bool },
-    Space { eol: bool },
+    Tail,
+    TailAfter,
+    TailEnd,
+    /// `line` is whether the attributes are on one line: whether no line
+    /// ending may come in them, as in a block's line.
+    Start {
+        line: bool,
+    },
+    Between {
+        eol: bool,
+        line: bool,
+    },
+    Space {
+        eol: bool,
+        line: bool,
+    },
     Dash,
     DashAfter,
-    Marked { first: bool },
-    NameStart,
-    NameInside,
-    ValueStart,
-    Quoted { quote: u8 },
-    QuotedText { quote: u8 },
-    QuotedEscape { quote: u8 },
-    Unquoted,
-    UnquotedText,
-    UnquotedEscape,
-    ValueEnd,
+    Marked {
+        first: bool,
+        line: bool,
+    },
+    NameStart {
+        line: bool,
+    },
+    NameInside {
+        line: bool,
+    },
+    ValueStart {
+        line: bool,
+    },
+    Quoted {
+        quote: u8,
+        line: bool,
+    },
+    QuotedText {
+        quote: u8,
+        line: bool,
+    },
+    QuotedEscape {
+        quote: u8,
+        line: bool,
+    },
+    Unquoted {
+        line: bool,
+    },
+    UnquotedText {
+        line: bool,
+    },
+    UnquotedEscape {
+        line: bool,
+    },
+    ValueEnd {
+        line: bool,
+    },
     End,
 }
 
@@ -471,22 +604,25 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
     match step {
         Step::After(name) => after(tokenizer, name),
         Step::Close(name) => close(tokenizer, name),
-        Step::Start => start(tokenizer),
-        Step::Between { eol } => between(tokenizer, eol),
-        Step::Space { eol } => space(tokenizer, eol),
+        Step::Tail => tail(tokenizer),
+        Step::TailAfter => tail_after(tokenizer),
+        Step::TailEnd => tail_end(tokenizer),
+        Step::Start { line } => start(tokenizer, line),
+        Step::Between { eol, line } => between(tokenizer, eol, line),
+        Step::Space { eol, line } => space(tokenizer, eol, line),
         Step::Dash => dash(tokenizer),
         Step::DashAfter => dash_after(tokenizer),
-        Step::Marked { first } => marked(tokenizer, first),
-        Step::NameStart => name_start(tokenizer),
-        Step::NameInside => name_inside(tokenizer),
-        Step::ValueStart => value_start(tokenizer),
-        Step::Quoted { quote } => quoted(tokenizer, quote),
-        Step::QuotedText { quote } => quoted_text(tokenizer, quote),
-        Step::QuotedEscape { quote } => quoted_escape(tokenizer, quote),
-        Step::Unquoted => unquoted(tokenizer),
-        Step::UnquotedText => unquoted_text(tokenizer),
-        Step::UnquotedEscape => unquoted_escape(tokenizer),
-        Step::ValueEnd => value_end(tokenizer),
+        Step::Marked { first, line } => marked(tokenizer, first, line),
+        Step::NameStart { line } => name_start(tokenizer, line),
+        Step::NameInside { line } => name_inside(tokenizer, line),
+        Step::ValueStart { line } => value_start(tokenizer, line),
+        Step::Quoted { quote, line } => quoted(tokenizer, quote, line),
+        Step::QuotedText { quote, line } => quoted_text(tokenizer, quote, line),
+        Step::QuotedEscape { quote, line } => quoted_escape(tokenizer, quote, line),
+        Step::Unquoted { line } => unquoted(tokenizer, line),
+        Step::UnquotedText { line } => unquoted_text(tokenizer, line),
+        Step::UnquotedEscape { line } => unquoted_escape(tokenizer, line),
+        Step::ValueEnd { line } => value_end(tokenizer, line),
         Step::End => end(tokenizer),
     }
 }

@@ -63,6 +63,7 @@
 //! [atx]: http://www.aaronsw.com/2002/atx/
 
 use crate::choice::Starts;
+use crate::construct::partial_attributes;
 use crate::construct::partial_space_or_tab::{space_or_tab, space_or_tab_min_max};
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
@@ -152,18 +153,45 @@ fn at_break(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::HeadingAtxSequence);
             State::Redo(StateName::HeadingAtx(Step::SequenceFurther))
         }
-        Some(_) => {
-            tokenizer.enter_link(
-                Name::Data,
-                Link {
-                    previous: None,
-                    next: None,
-                    content: Content::Text,
-                },
+        // Attributes that end the line, or text.
+        Some(b'{') => {
+            tokenizer.attempt(
+                State::Next(StateName::HeadingAtx(Step::AtBreak)),
+                State::Next(StateName::HeadingAtx(Step::DataStart)),
             );
-            State::Redo(StateName::HeadingAtx(Step::Data))
+            State::Redo(StateName::Attributes(partial_attributes::Step::Tail))
         }
+        Some(_) => State::Redo(StateName::HeadingAtx(Step::DataStart)),
     }
+}
+
+/// At text, which is not attributes that end the line.
+///
+/// ```markdown
+/// > | ## a {b
+///          ^
+/// ```
+fn data_start(tokenizer: &mut Tokenizer) -> State {
+    tokenizer.enter_link(
+        Name::Data,
+        Link {
+            previous: None,
+            next: None,
+            content: Content::Text,
+        },
+    );
+    State::Redo(StateName::HeadingAtx(Step::DataFirst))
+}
+
+/// At the first byte of text, which may be a backslash.
+fn data_first(tokenizer: &mut Tokenizer) -> State {
+    let escape = tokenizer.current == Some(b'\\');
+    tokenizer.consume();
+    State::Next(StateName::HeadingAtx(if escape {
+        Step::DataEscape
+    } else {
+        Step::Data
+    }))
 }
 
 /// In further sequence (after whitespace).
@@ -193,14 +221,36 @@ fn sequence_further(tokenizer: &mut Tokenizer) -> State {
 fn data(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         // Note: `#` for closing sequence must be preceded by whitespace, otherwise it’s just text.
-        None | Some(b'\t' | b'\n' | b' ') => {
+        // Attributes may follow text right away.
+        None | Some(b'\t' | b'\n' | b' ' | b'{') => {
             tokenizer.exit(Name::Data);
             State::Redo(StateName::HeadingAtx(Step::AtBreak))
+        }
+        // An escaped byte is text.
+        Some(b'\\') => {
+            tokenizer.consume();
+            State::Next(StateName::HeadingAtx(Step::DataEscape))
         }
         _ => {
             tokenizer.consume();
             State::Next(StateName::HeadingAtx(Step::Data))
         }
+    }
+}
+
+/// In text, after a backslash.
+///
+/// ```markdown
+/// > | ## a \{b}
+///           ^
+/// ```
+fn data_escape(tokenizer: &mut Tokenizer) -> State {
+    match tokenizer.current {
+        Some(byte) if byte.is_ascii_punctuation() => {
+            tokenizer.consume();
+            State::Next(StateName::HeadingAtx(Step::Data))
+        }
+        _ => State::Redo(StateName::HeadingAtx(Step::Data)),
     }
 }
 
@@ -277,7 +327,10 @@ pub enum Step {
     SequenceOpen { size: usize },
     AtBreak,
     SequenceFurther,
+    DataStart,
+    DataFirst,
     Data,
+    DataEscape,
 }
 
 impl From<Step> for StateName {
@@ -294,6 +347,9 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::SequenceOpen { size } => sequence_open(tokenizer, size),
         Step::AtBreak => at_break(tokenizer),
         Step::SequenceFurther => sequence_further(tokenizer),
+        Step::DataStart => data_start(tokenizer),
+        Step::DataFirst => data_first(tokenizer),
         Step::Data => data(tokenizer),
+        Step::DataEscape => data_escape(tokenizer),
     }
 }
