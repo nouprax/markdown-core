@@ -8,97 +8,16 @@
 typedef struct {
     bufsize_t variant, variant_end, title, report, stop;
     bool metadata, fold, collapsed;
-    /* Where the marker's motion leaves the reader. */
-    markdown_core_reader_mark after;
+    /* Where the marker is. */
+    bufsize_t marker;
 } markdown_core_callout_header;
 MARKDOWN_CORE_BLOCK_FOUND_FITS(markdown_core_callout_header, callout_header_fits);
-
-bool markdown_core_block_parse_callout_prefix(markdown_core_reader *reader) {
-    bool res = false;
-    bufsize_t matched = 0;
-
-    matched = reader->indent <= 3 && markdown_core_reader_peek(reader, reader->nonspace) == '>';
-    if (matched) {
-
-        markdown_core_reader_advance(reader, reader->indent + 1, true);
-
-        if (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
-            markdown_core_reader_advance(reader, 1, true);
-        }
-
-        res = true;
-    }
-    return res;
-}
 
 static bool variant_byte(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
-/* The marker's motion: past the `>` and the space or tab column after it. */
-static void S_callout_marker(markdown_core_reader *reader) {
-    markdown_core_reader_advance(reader, reader->nonspace + 1 - reader->offset, false);
-    if (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, reader->offset))) {
-        markdown_core_reader_advance(reader, 1, true);
-    }
-}
-
-/* The header after the marker, from the reader's offset: up to three
- * spaces, then `[!variant]`, an optional fold, and where a title would
- * start, which the line gives the callout as its text (THE TEXT OF ITS
- * LINE). */
-static void S_callout_header(markdown_core_callout_work *counts, markdown_core_parser *parser,
-                             markdown_core_reader *reader, markdown_core_callout_header *header) {
-    *header = (markdown_core_callout_header){.report = -1};
-    bufsize_t pos = reader->offset;
-    bufsize_t begin = pos;
-    while (markdown_core_reader_peek(reader, pos) == ' ' && pos - begin < 3) {
-        pos++;
-        counts->scan++;
-    }
-    counts->scan++;
-    if (reader->split || markdown_core_reader_peek(reader, pos) != '[' ||
-        markdown_core_reader_peek(reader, pos + 1) != '!') {
-        return;
-    }
-    /* A header begun and given up keeps its variant as far as it is read
-     * (markdown_core_callout_open). */
-    header->report = pos;
-    pos += 2;
-    begin = pos;
-    while (!markdown_core_reader_ends(reader, pos)) {
-        unsigned char c = markdown_core_reader_peek(reader, pos);
-        counts->scan++;
-        if (!variant_byte(c)) {
-            break;
-        }
-        pos++;
-    }
-    header->stop = pos;
-    if (pos == begin || markdown_core_reader_ends(reader, pos) || markdown_core_reader_peek(reader, pos) != ']') {
-        return;
-    }
-    header->variant = begin;
-    header->variant_end = pos;
-    pos++;
-    header->fold = markdown_core_reader_peek(reader, pos) == '+' || markdown_core_reader_peek(reader, pos) == '-';
-    header->collapsed = header->fold && markdown_core_reader_peek(reader, pos) == '-';
-    pos += header->fold;
-    if (!markdown_core_reader_ends(reader, pos) &&
-        !markdown_core_is_whitespace(markdown_core_reader_peek(reader, pos))) {
-        return;
-    }
-    while (markdown_core_is_space_or_tab(markdown_core_reader_peek(reader, pos))) {
-        pos++;
-        counts->scan++;
-    }
-    header->title = pos;
-    header->metadata = true;
-    header->report = -1;
-}
-
-/* Builds the header the scan found on the callout `node`, up to where its
- * title would start, where the reader goes. */
+/* Builds the header the start read on the callout `node`. */
 static void S_callout_build(markdown_core_parser *parser, markdown_core_node *node, markdown_core_reader *reader,
                             const markdown_core_callout_header *header) {
     markdown_core_chunk variant = {(unsigned char *)markdown_core_reader_bytes(reader, header->variant),
@@ -112,23 +31,20 @@ static void S_callout_build(markdown_core_parser *parser, markdown_core_node *no
     const markdown_core_field_to fields = {parser, node, NULL, reader, 0, NULL};
     markdown_core_field_put(&fields, MARKDOWN_CORE_SLOT_VARIANT, MARKDOWN_CORE_FIELD, header->variant,
                             header->variant_end, true);
-    markdown_core_reader_advance(reader, header->title - reader->offset, false);
 }
 
 /* Where a callout holds the title its text made (element.h,
  * markdown_core_edit_ops). */
 static markdown_core_node **callout_title(markdown_core_node *node) { return &node->as.callout->title; }
 
-/* A callout's open builds what its scan read: the marker's motion, the
- * report of a variant cut short, and the header, after which the line is
- * the header's. */
+/* A callout's open builds what its start read: the report of a variant
+ * cut short, and the header, after which the line is the header's. */
 static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        markdown_core_node **container, markdown_core_reader *reader,
                                        block_start *start) {
     (void)self;
     const markdown_core_callout_header *header = MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header);
-    bufsize_t blockquote_startpos = reader->nonspace;
-    markdown_core_reader_back(reader, header->after);
+    bufsize_t blockquote_startpos = header->marker;
     *container =
         markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CALLOUT, blockquote_startpos + 1);
     if (!*container) {
@@ -206,27 +122,146 @@ static void S_callout_open(markdown_core_compiler *compiler, const markdown_core
                                               turn->context->reader, turn->start);
 }
 
-static markdown_core_state markdown_core_callout_scan(markdown_core_tokenizer *tokenizer, int code) {
-    (void)code;
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
-    block_start_context *context = markdown_core_block_turn_of(tokenizer)->context;
-    block_start *start = markdown_core_block_turn_of(tokenizer)->start;
-    markdown_core_reader *reader = context->reader;
-    int first = reader->nonspace;
-    if (!(markdown_core_reader_peek(reader, first) == '>')) {
+/* THE MARKER (micromark's blockQuote, code by code): up to three spaces,
+ * `>`, and one space or tab column after it, the start's and, as a
+ * prefix, every later line's. */
+enum { MARK_AT };
+static markdown_core_state S_start_space(markdown_core_tokenizer *tokenizer, int code);
+
+/* THE HEADER after the marker: up to three spaces, `[!variant]`, a fold,
+ * and the spaces before the title, read into the start's record as far as
+ * it goes, which a variant cut short reports. A tab the marker split
+ * starts none. */
+static inline bufsize_t S_offset(const markdown_core_tokenizer *tokenizer) {
+    return (bufsize_t)(tokenizer->position - tokenizer->base);
+}
+
+static inline markdown_core_callout_header *S_header(const markdown_core_tokenizer *tokenizer) {
+    return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, markdown_core_callout_header);
+}
+
+static inline void S_scan(markdown_core_tokenizer *tokenizer) {
+    ((markdown_core_callout_work *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state)
+        ->scan++;
+}
+
+static markdown_core_state S_title_spaces(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_callout_header *header = S_header(tokenizer);
+    if (code == ' ' || code == '\t' || code == MARKDOWN_CORE_HT || code == MARKDOWN_CORE_VS) {
+        S_scan(tokenizer);
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_title_spaces);
+    }
+    header->title = S_offset(tokenizer);
+    header->metadata = true;
+    header->report = -1;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_fold_after(markdown_core_tokenizer *tokenizer, int code) {
+    if (!markdown_core_code_ending(code) && !markdown_core_code_space(code)) {
         return markdown_core_nok(tokenizer);
     }
-    /* What the open reads, read here: the marker's motion and the header
-     * after it, from where the reader comes back to the marker. */
-    const markdown_core_reader_mark mark = markdown_core_reader_tell(reader);
-    S_callout_marker(reader);
-    const markdown_core_reader_mark after = markdown_core_reader_tell(reader);
-    S_callout_header(self->state, parser, reader, MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header));
-    MARKDOWN_CORE_BLOCK_FOUND(start, markdown_core_callout_header)->after = after;
-    markdown_core_reader_back(reader, mark);
-    start->kind = MARKDOWN_CORE_NODE_CALLOUT;
-    return markdown_core_block_found(tokenizer, CALLOUT_OPEN);
+    return S_title_spaces(tokenizer, code);
+}
+
+static markdown_core_state S_variant_after(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_callout_header *header = S_header(tokenizer);
+    if (code == '+' || code == '-') {
+        header->fold = true;
+        header->collapsed = code == '-';
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_fold_after);
+    }
+    return S_fold_after(tokenizer, code);
+}
+
+static markdown_core_state S_variant(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_callout_header *header = S_header(tokenizer);
+    S_scan(tokenizer);
+    if (code >= 0 && code < 0x80 && variant_byte((unsigned char)code)) {
+        markdown_core_consume(tokenizer);
+        header->stop = S_offset(tokenizer);
+        return markdown_core_state_of(S_variant);
+    }
+    if (code != ']' || header->stop == header->report + 2) {
+        return markdown_core_nok(tokenizer);
+    }
+    header->variant = header->report + 2;
+    header->variant_end = header->stop;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_variant_after);
+}
+
+static markdown_core_state S_bang(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '!') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_callout_header *header = S_header(tokenizer);
+    header->report = S_offset(tokenizer) - 1;
+    header->stop = header->report + 2;
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_variant);
+}
+
+static markdown_core_state S_header_open(markdown_core_tokenizer *tokenizer, int code) {
+    S_scan(tokenizer);
+    if (code != '[') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_bang);
+}
+
+static markdown_core_state S_header_start(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == ' ' && words[MARK_AT] < 3) {
+        S_scan(tokenizer);
+        words[MARK_AT]++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_header_start);
+    }
+    return S_header_open(tokenizer, code);
+}
+
+static const markdown_core_construct CALLOUT_HEADER = {.start = S_header_start};
+
+static markdown_core_state S_opened(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_exit(tokenizer, markdown_core_block_token(tokenizer, CALLOUT_OPEN));
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_start_marked(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == MARKDOWN_CORE_VS) {
+        return S_opened(tokenizer, code);
+    }
+    return markdown_core_attempt(tokenizer, &CALLOUT_HEADER, markdown_core_state_of(S_opened),
+                                 markdown_core_state_of(S_opened), code);
+}
+
+static markdown_core_state S_start_marker(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '>') {
+        return markdown_core_nok(tokenizer);
+    }
+    markdown_core_callout_header *header = S_header(tokenizer);
+    *header = (markdown_core_callout_header){.report = -1, .marker = S_offset(tokenizer)};
+    markdown_core_enter(tokenizer, markdown_core_block_token(tokenizer, CALLOUT_OPEN));
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_start_space);
+}
+
+static markdown_core_state S_start_space(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_start_marked);
+    }
+    return S_start_marked(tokenizer, code);
+}
+
+static markdown_core_state markdown_core_callout_scan(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_block_turn_of(tokenizer)->start->kind = MARKDOWN_CORE_NODE_CALLOUT;
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_start_marker), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
 }
 
 /* The marker line's text is the callout's title, so a lazy line after it
@@ -240,12 +275,6 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
            markdown_core_reader_starts(reader, parser, node, reader->number - 1);
 }
 
-static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_reader *reader,
-                               const markdown_core_node *joining, bool *taken) {
-    (void)self;
-    return markdown_core_block_parse_callout_prefix(reader);
-}
 static const markdown_core_edit_ops CALLOUT_EDIT = {
     .reopens = true,
     .text = callout_title,
@@ -256,7 +285,7 @@ static const markdown_core_block_construct CALLOUT_STARTS[] = {
 };
 
 static const markdown_core_compile_ops CALLOUT_BLOCK_TOKENS[CALLOUT_BLOCKS] = {
-    [CALLOUT_OPEN] = {.enter = S_callout_open},
+    [CALLOUT_OPEN] = {.exit = S_callout_open},
     [CALLOUT_TITLE] = {.enter = S_callout_title},
 };
 
@@ -267,16 +296,33 @@ static const markdown_core_open_ops CALLOUT_OPENS = {
     .token_count = CALLOUT_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): the
+ * marker, as a prefix. */
+static markdown_core_state S_prefix_end(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    bool taken = false;
-    if (!continue_container(markdown_core_self(tokenizer), turn->parser, turn->node, turn->reader, turn->joining,
-                            &taken)) {
+    markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_prefix_space(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_prefix_end);
+    }
+    return S_prefix_end(tokenizer, code);
+}
+
+static markdown_core_state S_prefix_marker(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != '>') {
         return markdown_core_nok(tokenizer);
     }
-    return taken ? markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_TAKE) : markdown_core_ok(tokenizer);
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_prefix_space);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_PREFIX);
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_prefix_marker), 0, 3, code);
 }
 
 static const markdown_core_line_ops CALLOUT_LINES = {

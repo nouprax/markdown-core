@@ -2,7 +2,6 @@
 #define MARKDOWN_CORE_ELEMENT_CALLOUT_H
 #include "inlines.h"
 #include "block_internal.h"
-bool markdown_core_block_parse_callout_prefix(markdown_core_reader *reader);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT;
 
 /* THE CALLOUT MARKER SCANNER'S WORK (the callout element's parse

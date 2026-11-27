@@ -8549,6 +8549,8 @@ static markdown_core_state S_look_verdict(markdown_core_tokenizer *tokenizer, in
 
 static markdown_core_state S_look_carried(markdown_core_tokenizer *tokenizer, int code) {
     const markdown_core_block_lookahead *lookahead = markdown_core_block_turn_of(tokenizer)->parser->look;
+    /* The look's cursor stands where the continuation read to. */
+    markdown_core_cursor_follow(tokenizer);
     return S_look_verdict(tokenizer, code, S_prefix_verdict(tokenizer, lookahead->tokens));
 }
 
