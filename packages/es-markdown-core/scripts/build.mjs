@@ -42,7 +42,6 @@ const elements = [
     "autolink_scanners.c",
     "comment_scanners.c",
     "html_scanners.c",
-    "link_scanners.c",
     "text_scanners.c",
     "anchor.c",
     "entities.c",

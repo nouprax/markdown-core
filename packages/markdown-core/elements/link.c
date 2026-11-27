@@ -2,7 +2,6 @@
 
 #include "alloc.h"
 #include "services.h"
-#include "link_scanners.h"
 #define advance(inline_state) markdown_core_inline_seek((inline_state), markdown_core_inline_offset(inline_state) + 1)
 #include "link.h"
 #include "attention.h"
@@ -27,12 +26,35 @@ const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE = {.name = "reference", 
 enum { LINK_REFERENCE };
 static const markdown_core_space *const LINK_SPACES[] = {[LINK_REFERENCE] = &MARKDOWN_CORE_REFERENCE_SPACE, NULL};
 
+/* WHAT THE DESTINATION AND TITLE STATES READ (a definition's and a
+ * resource's alike, micromark's destination and title factories), as
+ * offsets of the reading's data: the destination's bytes, inside its angle
+ * brackets when it has them, and the title with its quotes, `titled` when
+ * one closed; the title's opener seen, 0 when none was. What follows a
+ * label's closer (S_after) reads besides: the label's token, where the
+ * resource's destination starts (`from`), and a full reference's label
+ * inside its brackets; whether a resource was read, through `past`, a
+ * label was, through `past`, or a destination was begun and given up. */
+typedef struct S_read {
+    uint32_t dest, dest_end, title, title_end;
+    uint32_t label, from, label_start, label_end, past;
+    int opener;
+    bool titled, resource, labeled, given;
+} S_read;
+
 /* WHAT A PARSE HOLDS OF THE LINK ELEMENT: the recognizer of the attribute
  * blocks of the text a front cut reads (element.h, markdown_core_cut), kept
- * across its items, so that the many blocks of one text are read linearly. */
+ * across its items, so that the many blocks of one text are read linearly;
+ * and what the element's states read, as the element's readings run one
+ * at a time, each to its end. */
 typedef struct {
     markdown_core_attribute_parser held;
+    S_read read;
 } S_state;
+
+static inline S_read *S_read_of(const markdown_core_tokenizer *tokenizer) {
+    return &((S_state *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state)->read;
+}
 
 /* The held recognizer let go, which only the grammar that began it held. */
 static void S_release(const markdown_core_element_instance *self) {
@@ -49,8 +71,6 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
     S_release(self);
 }
 
-static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
-                                                           markdown_core_chunk *output);
 /* Reads the link reference definition at the front of `input`, its bytes
  * `before` past the front of `b`'s content, into a Reference node settled
  * into `parent`, the block that holds `b`, which starts on input line
@@ -128,116 +148,9 @@ bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data,
     return at;
 }
 
-int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label) {
-    bufsize_t startpos = markdown_core_inline_offset(inline_state);
-    int length = 0;
-    unsigned char c;
-
-    // advance past [
-    if (markdown_core_inline_peek_char(inline_state) == '[') {
-        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1);
-    } else {
-        return 0;
-    }
-
-    length = markdown_core_inline_reference_label_length(
-        markdown_core_inline_window(inline_state, 0).data + markdown_core_inline_offset(inline_state),
-        markdown_core_inline_size(inline_state) - markdown_core_inline_offset(inline_state));
-    markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + (length));
-    if (length > MAX_LINK_LABEL_LENGTH) {
-        goto noMatch;
-    }
-    c = markdown_core_inline_peek_char(inline_state);
-
-    if (c == ']') { // match found
-        *raw_label = markdown_core_inline_take(inline_state, startpos + 1,
-                                               markdown_core_inline_offset(inline_state) - (startpos + 1));
-        markdown_core_chunk_trim(raw_label);
-        markdown_core_inline_seek(inline_state, markdown_core_inline_offset(inline_state) + 1); // advance past ]
-        return 1;
-    }
-
-noMatch:
-    markdown_core_inline_seek(inline_state, startpos); // rewind
-    return 0;
-}
-
 /* An unbracketed destination includes no ASCII control character (U+0000 to
  * U+001F, U+007F) and no space; tab and the line endings are controls. */
 static bool destination_excludes(unsigned char c) { return c <= 0x20 || c == 0x7F; }
-
-static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t offset, markdown_core_chunk *output) {
-    bufsize_t i = offset;
-    size_t nb_p = 0;
-
-    while (i < input->len) {
-        if (input->data[i] == '\\' && i + 1 < input->len && markdown_core_ispunct(input->data[i + 1])) {
-            i += 2;
-        } else if (input->data[i] == '(') {
-            ++nb_p;
-            ++i;
-            if (nb_p > 32) {
-                return -1;
-            }
-        } else if (input->data[i] == ')') {
-            if (nb_p == 0) {
-                break;
-            }
-            --nb_p;
-            ++i;
-        } else if (destination_excludes(input->data[i])) {
-            if (i == offset) {
-                return -1;
-            }
-            break;
-        } else {
-            ++i;
-        }
-    }
-
-    if (i >= input->len) {
-        return -1;
-    }
-
-    {
-        markdown_core_chunk result = {input->data + offset, i - offset, 0};
-        *output = result;
-    }
-    return i - offset;
-}
-
-static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
-                                                           markdown_core_chunk *output) {
-    bufsize_t i = offset;
-
-    if (i < input->len && input->data[i] == '<') {
-        ++i;
-        while (i < input->len) {
-            if (input->data[i] == '>') {
-                ++i;
-                break;
-            } else if (input->data[i] == '\\' && i + 1 < input->len && markdown_core_ispunct(input->data[i + 1])) {
-                i += 2;
-            } else if (markdown_core_is_line_end(input->data[i]) || input->data[i] == '<') {
-                return -1;
-            } else {
-                ++i;
-            }
-        }
-    } else {
-        return manual_scan_link_url_2(input, offset, output);
-    }
-
-    if (i >= input->len) {
-        return -1;
-    }
-
-    {
-        markdown_core_chunk result = {input->data + offset + 1, i - 2 - offset, 0};
-        *output = result;
-    }
-    return i - offset;
-}
 
 /* What a definition's attribute tail is read with: the attribute grammar
  * (services.h, markdown_core_attribute_ops), its provider and the
@@ -484,7 +397,8 @@ static markdown_core_state S_tail(markdown_core_tokenizer *tokenizer, int code) 
 }
 
 /* THE TITLE: after whitespace, `"`, `'` or `(` to its closing byte, a
- * backslash escaping the punctuation after it. */
+ * backslash escaping the punctuation after it; no `(` in one that `(`
+ * opens. A NUL is a byte like any other. */
 static markdown_core_state S_title_body(markdown_core_tokenizer *tokenizer, int code);
 
 static markdown_core_state S_title_escape(markdown_core_tokenizer *tokenizer, int code) {
@@ -502,11 +416,11 @@ static markdown_core_state S_title_body(markdown_core_tokenizer *tokenizer, int 
     }
     markdown_core_consume(tokenizer);
     if ((uint32_t)code == close) {
-        reference_definition *definition = &S_found_of(tokenizer)->definition;
-        const markdown_core_chunk *text = &markdown_core_block_turn_of(tokenizer)->cut->text;
-        const bufsize_t start = (bufsize_t)markdown_core_frame_local(tokenizer)[WORD_FROM];
-        definition->title = (markdown_core_chunk){text->data + start, (bufsize_t)tokenizer->position - start, 0};
-        return markdown_core_state_of(S_tail);
+        S_read *read = S_read_of(tokenizer);
+        read->title = markdown_core_frame_local(tokenizer)[WORD_FROM];
+        read->title_end = tokenizer->position;
+        read->titled = true;
+        return markdown_core_ok(tokenizer);
     }
     return code == '\\' ? markdown_core_state_of(S_title_escape) : markdown_core_state_of(S_title_body);
 }
@@ -516,7 +430,7 @@ static markdown_core_state S_title_open(markdown_core_tokenizer *tokenizer, int 
     if (tokenizer->position == words[WORD_FROM] || (code != '"' && code != '\'' && code != '(')) {
         return markdown_core_nok(tokenizer);
     }
-    S_found_of(tokenizer)->definition.opener = code;
+    S_read_of(tokenizer)->opener = code;
     words[WORD_CLOSE] = code == '(' ? ')' : (uint32_t)code;
     words[WORD_FROM] = tokenizer->position;
     markdown_core_consume(tokenizer);
@@ -530,11 +444,40 @@ static markdown_core_state S_title_start(markdown_core_tokenizer *tokenizer, int
 
 static const markdown_core_construct LINK_TITLE = {.start = S_title_start};
 
+/* A DEFINITION'S TITLE: one the line's end follows. */
+static markdown_core_state S_titled(markdown_core_tokenizer *tokenizer, int code) {
+    const S_read *read = S_read_of(tokenizer);
+    reference_definition *definition = &S_found_of(tokenizer)->definition;
+    const markdown_core_chunk *text = &markdown_core_block_turn_of(tokenizer)->cut->text;
+    definition->title = (markdown_core_chunk){text->data + read->title, (bufsize_t)(read->title_end - read->title), 0};
+    return S_tail(tokenizer, code);
+}
+
+static markdown_core_state S_titled_start(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, &LINK_TITLE, markdown_core_state_of(S_titled), markdown_core_state_of(S_no),
+                                 code);
+}
+
+static const markdown_core_construct LINK_TITLED = {.start = S_titled_start};
+
 /* No title: the line ends after the destination, the title the bytes
  * after it read stays none. */
 static markdown_core_state S_untitled(markdown_core_tokenizer *tokenizer, int code) {
     S_found_of(tokenizer)->definition.title = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     return S_tail(tokenizer, code);
+}
+
+/* The definition's title read or not: the opener seen says whether a
+ * title was looked for. */
+static markdown_core_state S_title_yes(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    S_found_of(tokenizer)->definition.opener = S_read_of(tokenizer)->opener;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_title_no(markdown_core_tokenizer *tokenizer, int code) {
+    S_found_of(tokenizer)->definition.opener = S_read_of(tokenizer)->opener;
+    return S_untitled(tokenizer, code);
 }
 
 /* THE DESTINATION: `<` to `>`, no line ending and no `<` between, or a
@@ -545,12 +488,10 @@ static markdown_core_state S_destined(markdown_core_tokenizer *tokenizer, uint32
     if (code == MARKDOWN_CORE_EOF) {
         return markdown_core_nok(tokenizer);
     }
-    reference_definition *definition = &S_found_of(tokenizer)->definition;
-    const markdown_core_chunk *text = &markdown_core_block_turn_of(tokenizer)->cut->text;
-    definition->url = (markdown_core_chunk){text->data + start, (bufsize_t)(end - start), 0};
-    definition->reached = 2;
-    return markdown_core_attempt(tokenizer, &LINK_TITLE, markdown_core_state_of(S_yes),
-                                 markdown_core_state_of(S_untitled), code);
+    S_read *read = S_read_of(tokenizer);
+    read->dest = start;
+    read->dest_end = end;
+    return markdown_core_ok(tokenizer);
 }
 
 static markdown_core_state S_angle(markdown_core_tokenizer *tokenizer, int code);
@@ -622,6 +563,25 @@ static markdown_core_state S_dest_start(markdown_core_tokenizer *tokenizer, int 
     return S_raw(tokenizer, code);
 }
 
+static const markdown_core_construct LINK_DESTINATION = {.start = S_dest_start};
+
+/* A DEFINITION'S DESTINATION, then its title or none. */
+static markdown_core_state S_dested(markdown_core_tokenizer *tokenizer, int code) {
+    S_read *read = S_read_of(tokenizer);
+    reference_definition *definition = &S_found_of(tokenizer)->definition;
+    const markdown_core_chunk *text = &markdown_core_block_turn_of(tokenizer)->cut->text;
+    definition->url = (markdown_core_chunk){text->data + read->dest, (bufsize_t)(read->dest_end - read->dest), 0};
+    definition->reached = 2;
+    read->opener = 0;
+    return markdown_core_attempt(tokenizer, &LINK_TITLED, markdown_core_state_of(S_title_yes),
+                                 markdown_core_state_of(S_title_no), code);
+}
+
+static markdown_core_state S_dest_begin(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, &LINK_DESTINATION, markdown_core_state_of(S_dested),
+                                 markdown_core_state_of(S_no), code);
+}
+
 /* THE LABEL: `[`, bytes to the first `]` or `[` no backslash escapes, at
  * most 999 of them, then `:`. Its text trimmed is not empty. */
 static markdown_core_state S_label(markdown_core_tokenizer *tokenizer, int code);
@@ -634,10 +594,8 @@ static markdown_core_state S_label_escape(markdown_core_tokenizer *tokenizer, in
     return S_label(tokenizer, code);
 }
 
-static markdown_core_state S_dest_start(markdown_core_tokenizer *tokenizer, int code);
-
 static markdown_core_state S_colon_after(markdown_core_tokenizer *tokenizer, int code) {
-    return S_whitespace(tokenizer, markdown_core_state_of(S_dest_start), code);
+    return S_whitespace(tokenizer, markdown_core_state_of(S_dest_begin), code);
 }
 
 static markdown_core_state S_colon(markdown_core_tokenizer *tokenizer, int code) {
@@ -968,8 +926,9 @@ static markdown_core_bracket_match S_end_explicit(const markdown_core_element_in
 static markdown_core_bracket_match S_end_shortcut(const markdown_core_element_instance *self,
                                                   markdown_core_tokenizer *tokenizer, markdown_core_opener *label,
                                                   markdown_core_label_made *made);
+static const markdown_core_construct LINK_AFTER;
 static const markdown_core_close_rule LINK_CLOSES[] = {
-    {.precedence = -20, .end = S_end_explicit},
+    {.precedence = -20, .tail = &LINK_AFTER, .end = S_end_explicit},
     {.precedence = 10, .end = S_end_shortcut},
 };
 
@@ -1034,100 +993,156 @@ static void S_give_label(markdown_core_tokenizer *tokenizer, const markdown_core
     markdown_core_text_give_up(tokenizer, kind, (bufsize_t)label->start, (bufsize_t)label->position, &field, 1);
 }
 
-/* A link label at `at`: the raw label in `*raw`, trimmed, and where the
- * label's `]` is past in `*end`; false, reading nothing, when there is
- * none (markdown_core_inline_link_label). */
-static bool S_link_label(markdown_core_tokenizer *tokenizer, uint32_t at, markdown_core_chunk *raw, uint32_t *end) {
-    const unsigned char *data = tokenizer->data;
-    const uint32_t size = tokenizer->size;
-    if (at >= size) {
+/* WHAT FOLLOWS A LABEL'S `]`, code by code (micromark's resource and
+ * full reference after a label end), checked before the link's explicit
+ * rule is asked, its reading kept in the element's record: a resource,
+ * `(`, whitespace, a destination, a title after whitespace or none,
+ * whitespace, `)`; else a full reference's label, `[`, bytes to the first
+ * `]` or `[` no backslash escapes, at most 999 of them, `]`. Only an image,
+ * or a link where links may open, reads a resource. */
+static markdown_core_state S_after_close(markdown_core_tokenizer *tokenizer, int code) {
+    S_read *read = S_read_of(tokenizer);
+    if (code == MARKDOWN_CORE_EOF || (!read->titled && (code == '"' || code == '\'' || code == '('))) {
         markdown_core_met_end(tokenizer);
-        return false;
     }
-    if (data[at] != '[') {
-        return false;
+    if (code != ')') {
+        read->given = true;
+        return markdown_core_nok(tokenizer);
     }
-    const bufsize_t length = markdown_core_inline_reference_label_length(data + at + 1, (bufsize_t)(size - at - 1));
-    const uint32_t stop = at + 1 + (uint32_t)length;
-    if (length > MAX_LINK_LABEL_LENGTH) {
-        return false;
-    }
-    if (stop >= size) {
-        markdown_core_met_end(tokenizer);
-        return false;
-    }
-    if (data[stop] != ']') {
-        return false;
-    }
-    *raw = (markdown_core_chunk){(unsigned char *)data + at + 1, (bufsize_t)length, 0};
-    markdown_core_chunk_trim(raw);
-    *end = stop + 1;
-    return true;
+    markdown_core_consume(tokenizer);
+    read->resource = true;
+    read->past = tokenizer->position;
+    return markdown_core_ok(tokenizer);
 }
 
-/* What follows the `]` of `label` at `after`, as markdown_core_link_recognize reads it:
- * an inline tail, a reference by a label, or the label's own body as a
- * reference, into `found`, with where the tail ends in `*past`. */
+static markdown_core_state S_after_titled(markdown_core_tokenizer *tokenizer, int code) {
+    return S_whitespace(tokenizer, markdown_core_state_of(S_after_close), code);
+}
+
+static markdown_core_state S_after_untitled(markdown_core_tokenizer *tokenizer, int code) {
+    S_read_of(tokenizer)->titled = false;
+    return S_whitespace(tokenizer, markdown_core_state_of(S_after_close), code);
+}
+
+static markdown_core_state S_after_dested(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_attempt(tokenizer, &LINK_TITLE, markdown_core_state_of(S_after_titled),
+                                 markdown_core_state_of(S_after_untitled), code);
+}
+
+static markdown_core_state S_after_lost(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    markdown_core_met_end(tokenizer);
+    S_read_of(tokenizer)->given = true;
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_after_dest(markdown_core_tokenizer *tokenizer, int code) {
+    S_read_of(tokenizer)->from = tokenizer->position;
+    return markdown_core_attempt(tokenizer, &LINK_DESTINATION, markdown_core_state_of(S_after_dested),
+                                 markdown_core_state_of(S_after_lost), code);
+}
+
+static markdown_core_state S_after_open(markdown_core_tokenizer *tokenizer, int code) {
+    return S_whitespace(tokenizer, markdown_core_state_of(S_after_dest), code);
+}
+
+static markdown_core_state S_after_label(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_after_escape(markdown_core_tokenizer *tokenizer, int code) {
+    if (S_punct(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_after_label);
+    }
+    return S_after_label(tokenizer, code);
+}
+
+static markdown_core_state S_after_label(markdown_core_tokenizer *tokenizer, int code) {
+    S_read *read = S_read_of(tokenizer);
+    if (tokenizer->position - read->label_start > MAX_LINK_LABEL_LENGTH) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+        return markdown_core_nok(tokenizer);
+    }
+    if (code == '[') {
+        return markdown_core_nok(tokenizer);
+    }
+    if (code == ']') {
+        read->label_end = tokenizer->position;
+        markdown_core_consume(tokenizer);
+        read->labeled = true;
+        read->past = tokenizer->position;
+        return markdown_core_ok(tokenizer);
+    }
+    markdown_core_consume(tokenizer);
+    return code == '\\' ? markdown_core_state_of(S_after_escape) : markdown_core_state_of(S_after_label);
+}
+
+static markdown_core_state S_after(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    const markdown_core_opener *label = markdown_core_opener_last(tokenizer);
+    S_read *read = S_read_of(tokenizer);
+    *read = (S_read){.label = label->token};
+    if (code == MARKDOWN_CORE_EOF) {
+        markdown_core_met_end(tokenizer);
+        return markdown_core_nok(tokenizer);
+    }
+    if (code == '(' && (label->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED || !inline_state->no_link_openers)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_after_open);
+    }
+    if (code == '[') {
+        markdown_core_consume(tokenizer);
+        read->label_start = tokenizer->position;
+        return markdown_core_state_of(S_after_label);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static const markdown_core_construct LINK_AFTER = {.start = S_after};
+
+/* What follows the `]` of `label` at `after`, as its tail read it
+ * (S_after): an inline tail, a reference by a label, or the label's own
+ * body as a reference, into `found`, with where the tail ends in `*past`.
+ * A label asked again (markdown_core_label_again) whose tail is not the
+ * one last read is one a citation's tail waited on, which only a byte
+ * that opens no resource and no label follows: its tail read nothing. */
 static markdown_core_link_match S_recognize(const markdown_core_element_instance *self,
                                             markdown_core_tokenizer *tokenizer, const markdown_core_opener *label,
                                             uint32_t after, S_found *found, uint32_t *past) {
     markdown_core_inline_state *inline_state = tokenizer->reader;
     const unsigned char *data = tokenizer->data;
-    const bufsize_t len = (bufsize_t)tokenizer->size;
     const bool image = label->shape->kind == MARKDOWN_CORE_KIND_EMBEDDED;
     const bool allowed = image || !inline_state->no_link_openers;
+    const S_read *kept = &((const S_state *)self->state)->read;
+    const S_read read = kept->label == label->token ? *kept : (S_read){0};
     *found = (S_found){.start = label->start, .image = image};
     *past = after;
-    bufsize_t starturl = 0, n = -1;
-    if (allowed) {
-        if ((bufsize_t)after >= len) {
-            markdown_core_met_end(tokenizer);
-        } else if (data[after] == '(') {
-            starturl = markdown_core_skip_spaces_and_line_end(data, (bufsize_t)after + 1, len);
-            markdown_core_chunk window = {(unsigned char *)data, len, 0}, url = MARKDOWN_CORE_CHUNK_EMPTY;
-            n = markdown_core_inline_manual_scan_link_url(&window, starturl, &url);
-            if (n < 0) {
-                markdown_core_met_end(tokenizer);
-                S_give_destination(tokenizer, label, (uint32_t)starturl);
-            } else {
-                found->dest = (uint32_t)(url.data - data);
-                found->dest_end = found->dest + (uint32_t)url.len;
-            }
-        }
+    if (read.given) {
+        S_give_destination(tokenizer, label, read.from);
     }
-    if (n > -1) {
-        const bufsize_t endurl = starturl + n;
-        const bufsize_t starttitle = markdown_core_skip_spaces_and_line_end(data, endurl, len);
-        /* A title must be separated from the destination; without one, the
-         * separator already read is the one before the parenthesis. */
-        const bufsize_t endtitle =
-            starttitle == endurl ? starttitle : starttitle + scan_link_title(data, len, starttitle);
-        const bufsize_t endall =
-            endtitle == starttitle ? starttitle : markdown_core_skip_spaces_and_line_end(data, endtitle, len);
-        if (endall >= len ||
-            (endtitle == starttitle && starttitle < len && data[starttitle] && strchr("\"'(", data[starttitle]))) {
-            markdown_core_met_end(tokenizer);
+    if (read.resource) {
+        found->dest = read.dest;
+        found->dest_end = read.dest_end;
+        found->resource = true;
+        found->angled = data[read.from] == '<';
+        if (read.titled) {
+            found->titled = true;
+            found->title_start = read.title + 1;
+            found->title_end = read.title_end - 1;
         }
-        if (endall < len && data[endall] == ')') {
-            found->resource = true;
-            found->angled = starturl < len && data[starturl] == '<';
-            if (endtitle > starttitle) {
-                found->titled = true;
-                found->title_start = (uint32_t)starttitle + 1;
-                found->title_end = (uint32_t)endtitle - 1;
-            }
-            *past = (uint32_t)endall + 1;
-            return LINK_EXPLICIT;
-        }
-        /* It could still be a reference. */
-        S_give_destination(tokenizer, label, (uint32_t)starturl);
+        *past = read.past;
+        return LINK_EXPLICIT;
     }
     markdown_core_chunk raw = markdown_core_chunk_literal("");
-    uint32_t end = after;
-    bool labeled = S_link_label(tokenizer, after, &raw, &end);
+    bool labeled = read.labeled;
     if (labeled) {
-        found->label_start = after + 1;
-        found->label_end = end - 1;
+        found->label_start = read.label_start;
+        found->label_end = read.label_end;
+        raw = (markdown_core_chunk){(unsigned char *)data + read.label_start,
+                                    (bufsize_t)(read.label_end - read.label_start), 0};
+        markdown_core_chunk_trim(&raw);
     } else {
         S_give_label(tokenizer, label, after);
     }
@@ -1156,7 +1171,7 @@ static markdown_core_link_match S_recognize(const markdown_core_element_instance
     found->name_size = (uint32_t)name.len;
     found->name = name.len ? markdown_core_events_keep(&tokenizer->events, name.data, (size_t)name.len) : 0;
     if (tail) {
-        *past = end;
+        *past = read.past;
     }
     return tail ? LINK_EXPLICIT : LINK_SHORTCUT;
 }

@@ -334,6 +334,9 @@ typedef struct markdown_core_dialect {
 typedef struct markdown_core_closer {
     const markdown_core_element_instance *owner;
     const struct markdown_core_close_rule *rule;
+    /* The rule's `tail` with the owner as its context, its `start` NULL
+     * when the rule has none. */
+    markdown_core_construct tail;
     unsigned char byte;
 } markdown_core_closer;
 

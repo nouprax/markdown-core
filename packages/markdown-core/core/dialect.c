@@ -904,7 +904,11 @@ static size_t S_place_closers(markdown_core_dialect *dialect, markdown_core_clos
             closers[to] = closers[to - 1];
             to--;
         }
-        closers[to] = (markdown_core_closer){&dialect->instances[i], rule, inlines->closer};
+        closers[to] = (markdown_core_closer){.owner = &dialect->instances[i], .rule = rule, .byte = inlines->closer};
+        if (rule->tail) {
+            closers[to].tail = *rule->tail;
+            closers[to].tail.context = &dialect->instances[i];
+        }
     }
     return at;
 }

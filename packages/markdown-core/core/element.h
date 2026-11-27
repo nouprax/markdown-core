@@ -362,9 +362,15 @@ struct markdown_core_label_made;
 typedef struct markdown_core_close_rule {
     int precedence;
     bool mine;
-    /* With the reading standing after the closer: MATCHED with what it
-     * makes in `*made`, which it fills. It consumes nothing; what it read
-     * past the closer is the end's (`past`). */
+    /* What follows the closer, read code by code before `end` is asked
+     * (micromark's resource and reference constructs after a label end):
+     * checked from the byte after the closer, its context the element's
+     * instance, it keeps what it read in the element's records, ok or
+     * not, and consumes nothing the reading keeps. NULL reads nothing. */
+    const struct markdown_core_construct *tail;
+    /* MATCHED with what it makes in `*made`, which it fills, from what the
+     * label holds and what `tail` kept; it reads no byte past the closer.
+     * What the construct spans past the closer is the end's (`past`). */
     markdown_core_bracket_match (*end)(const markdown_core_element_instance *, markdown_core_tokenizer *,
                                        struct markdown_core_opener *, struct markdown_core_label_made *made);
 } markdown_core_close_rule;

@@ -61,7 +61,6 @@ let package = Package(
                 "elements/autolink_scanners.c",
                 "elements/comment_scanners.c",
                 "elements/html_scanners.c",
-                "elements/link_scanners.c",
                 "elements/text_scanners.c",
                 "elements/anchor.c",
                 "elements/entities.c",

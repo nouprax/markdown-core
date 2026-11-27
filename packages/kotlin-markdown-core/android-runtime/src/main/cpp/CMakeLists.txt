@@ -43,7 +43,6 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/autolink_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/comment_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/html_scanners.c"
-    "${MARKDOWN_CORE_ELEMENTS_DIR}/link_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/text_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/anchor.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/entities.c"

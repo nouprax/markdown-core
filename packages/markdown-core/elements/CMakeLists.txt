@@ -34,7 +34,6 @@ set(LIBRARY_SOURCES
     insertion.c
     line_break.c
     link.c
-    link_scanners.c
     list.c
     mark.c
     embedded.c
@@ -65,7 +64,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         autolink_scanners.c
         comment_scanners.c
         html_scanners.c
-        link_scanners.c
         text_scanners.c
         PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
 endif()

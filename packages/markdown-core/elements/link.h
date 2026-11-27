@@ -4,7 +4,6 @@
 #include "label.h"
 #include "citation_state.h"
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length);
-int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
 /* The space of reference labels (labels.h): a link reference definition's,

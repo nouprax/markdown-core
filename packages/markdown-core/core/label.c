@@ -127,43 +127,55 @@ void markdown_core_label_decide(markdown_core_tokenizer *tokenizer, markdown_cor
     }
 }
 
-/* THE RULES FOR `label`, kept at `offset`, whose end, its closer at
- * `tokenizer->position`, is token `end`: what the first that makes a
- * construct made, in `*made`, or false. A body no rule decides itself is
- * decided. */
+/* The range of rules `label` meets: a label whose element closes its own
+ * by `mine` rules meets those alone (element.h, markdown_core_close_rule);
+ * any other, the shared rules (dialect.h, `closers`). */
+static size_t S_first(const markdown_core_dialect *dialect, const markdown_core_opener *label, size_t *last) {
+    const markdown_core_element_instance *owner = label->owner;
+    const size_t first = owner->mine_count ? owner->mine_first : 0;
+    *last = first + (owner->mine_count ? owner->mine_count : dialect->shared);
+    return first;
+}
+
+/* RULE `at` of the dialect asked of `label`, kept at `offset`, whose
+ * closer stands before `after`: what it answers, what it made in `*made`. */
+static markdown_core_bracket_match S_ask(markdown_core_tokenizer *tokenizer, const markdown_core_closer *closer,
+                                         uint32_t offset, uint32_t after, markdown_core_label_made *made) {
+    markdown_core_opener *label = markdown_core_opener_at(tokenizer, offset);
+    *made = (markdown_core_label_made){.from = label->start, .past = after, .before = UINT32_MAX};
+    return closer->rule->end(closer->owner, tokenizer, label, made);
+}
+
+/* A label's rules decided, MATCHED or not: a body no rule decides itself
+ * is decided. */
+static void S_decided(markdown_core_tokenizer *tokenizer, uint32_t offset, bool matched,
+                      const markdown_core_label_made *made) {
+    if (!matched || !made->keeps) {
+        markdown_core_label_decide(tokenizer, markdown_core_opener_at(tokenizer, offset));
+    }
+}
+
+/* THE RULES FOR `label`, kept at `offset`, as they are asked again, with
+ * what their tails kept as they last read (label.h, markdown_core_label_again). */
 static bool S_rules(markdown_core_tokenizer *tokenizer, uint32_t offset, markdown_core_label_made *made) {
     const markdown_core_inline_state *inline_state = tokenizer->reader;
     const markdown_core_dialect *dialect = inline_state->dialect;
     const int code = tokenizer->data[tokenizer->position];
     const uint32_t after = tokenizer->position + 1;
-    markdown_core_opener *label = markdown_core_opener_at(tokenizer, offset);
-    /* A label whose element closes its own by `mine` rules meets those
-     * alone (element.h, markdown_core_close_rule); any other, the shared
-     * rules (dialect.h, `closers`). */
-    const markdown_core_element_instance *owner = label->owner;
-    const markdown_core_closer *closer = dialect->closers + (owner->mine_count ? owner->mine_first : 0);
-    const markdown_core_closer *const last = closer + (owner->mine_count ? owner->mine_count : dialect->shared);
+    size_t last = 0;
     bool matched = false;
-    for (; closer < last; closer++) {
+    for (size_t at = S_first(dialect, markdown_core_opener_at(tokenizer, offset), &last); at < last; at++) {
+        const markdown_core_closer *closer = &dialect->closers[at];
         if (closer->byte != code || !closer->rule->end) {
             continue;
         }
-        *made = (markdown_core_label_made){.from = label->start, .past = after, .before = UINT32_MAX};
-        const markdown_core_bracket_match match = closer->rule->end(closer->owner, tokenizer, label, made);
-        /* A rule may have kept what it read: the label is where it is
-         * kept, wherever that now is. */
-        label = markdown_core_opener_at(tokenizer, offset);
-        if (match == BRACKET_MATCHED) {
-            matched = true;
-            break;
-        }
-        if (match == BRACKET_REJECTED) {
+        const markdown_core_bracket_match match = S_ask(tokenizer, closer, offset, after, made);
+        if (match != BRACKET_UNMATCHED) {
+            matched = match == BRACKET_MATCHED;
             break;
         }
     }
-    if (!matched || !made->keeps) {
-        markdown_core_label_decide(tokenizer, label);
-    }
+    S_decided(tokenizer, offset, matched, made);
     return matched;
 }
 
@@ -191,40 +203,100 @@ void markdown_core_label_again(markdown_core_tokenizer *tokenizer, uint32_t offs
     }
 }
 
-/* THE END of the innermost label at a closer byte. */
-static markdown_core_state S_end(markdown_core_tokenizer *tokenizer, int code) {
+/* THE END of the innermost label at a closer byte, code by code
+ * (micromark's labelEnd): the closer read, each rule the label meets in
+ * turn, its tail checked first when it has one, is asked until one makes
+ * its construct or none is left; the end then spans what the rule read
+ * past the closer. The frame's words: the label's mark and where it is
+ * kept, the end's token, the closer, where it ends, and the rule asked. */
+enum { END_MARK, END_OFFSET, END_TOKEN, END_CODE, END_AFTER, END_RULE };
+
+static markdown_core_state S_rule_next(markdown_core_tokenizer *tokenizer, int code);
+
+/* The end, MATCHED by what `made` says or not, spanning what was read. */
+static markdown_core_state S_end_done(markdown_core_tokenizer *tokenizer, bool matched,
+                                      const markdown_core_label_made *made) {
     markdown_core_inline_state *inline_state = tokenizer->reader;
-    const uint32_t after = tokenizer->position + 1;
-    const size_t mark = markdown_core_mark_find(tokenizer, S_TAG);
-    const uint32_t enter = (uint32_t)tokenizer->events.count;
-    const uint32_t end = markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_LABEL_END);
-    markdown_core_label_made made = {0};
-    bool matched = false;
-    uint32_t offset = UINT32_MAX;
-    if (mark != SIZE_MAX) {
-        offset = tokenizer->events.tokens[tokenizer->marks[mark].token].data;
-    }
-    markdown_core_opener *label = offset == UINT32_MAX ? NULL : markdown_core_opener_at(tokenizer, offset);
-    if (label && label->shape->closer == code) {
-        /* The body ends where the end begins. */
-        label->close = enter;
-        label->ended = inline_state->no_link_openers;
-        matched = S_rules(tokenizer, offset, &made);
-        label = markdown_core_opener_at(tokenizer, offset);
-        markdown_core_mark_cut(tokenizer, mark);
-        if (matched && made.links) {
-            inline_state->no_link_openers = made.links > 0 || label->outer;
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    const uint32_t offset = words[END_OFFSET], end = words[END_TOKEN], after = words[END_AFTER];
+    if (offset != UINT32_MAX) {
+        S_decided(tokenizer, offset, matched, made);
+        markdown_core_mark_cut(tokenizer, words[END_MARK]);
+        if (matched && made->links) {
+            inline_state->no_link_openers = made->links > 0 || markdown_core_opener_at(tokenizer, offset)->outer;
         }
     }
-    markdown_core_consume_to(tokenizer, matched && made.past > after ? made.past : after);
+    if (matched && made->past > after) {
+        markdown_core_consume_to(tokenizer, made->past);
+    }
     markdown_core_exit(tokenizer, MARKDOWN_CORE_TOKEN_LABEL_END);
     if (matched && end != UINT32_MAX) {
-        S_make(tokenizer, markdown_core_opener_at(tokenizer, offset), end, &made);
-        if (made.follows != MARKDOWN_CORE_NODE_NONE) {
-            markdown_core_text_made(tokenizer, made.follows);
+        S_make(tokenizer, markdown_core_opener_at(tokenizer, offset), end, made);
+        if (made->follows != MARKDOWN_CORE_NODE_NONE) {
+            markdown_core_text_made(tokenizer, made->follows);
         }
     }
     return markdown_core_ok(tokenizer);
+}
+
+/* The rule at END_RULE asked, its tail read. */
+static markdown_core_state S_rule_ask(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_inline_state *inline_state = tokenizer->reader;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    const markdown_core_closer *closer = &inline_state->dialect->closers[words[END_RULE]];
+    markdown_core_label_made made;
+    const markdown_core_bracket_match match = S_ask(tokenizer, closer, words[END_OFFSET], words[END_AFTER], &made);
+    if (match != BRACKET_UNMATCHED) {
+        return S_end_done(tokenizer, match == BRACKET_MATCHED, &made);
+    }
+    words[END_RULE]++;
+    return S_rule_next(tokenizer, code);
+}
+
+static markdown_core_state S_rule_next(markdown_core_tokenizer *tokenizer, int code) {
+    const markdown_core_dialect *dialect = ((const markdown_core_inline_state *)tokenizer->reader)->dialect;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    size_t last = 0;
+    (void)S_first(dialect, markdown_core_opener_at(tokenizer, words[END_OFFSET]), &last);
+    for (size_t at = words[END_RULE]; at < last; at++) {
+        const markdown_core_closer *closer = &dialect->closers[at];
+        if (closer->byte != words[END_CODE] || !closer->rule->end) {
+            continue;
+        }
+        words[END_RULE] = (uint32_t)at;
+        if (closer->tail.start) {
+            return markdown_core_check(tokenizer, &closer->tail, markdown_core_state_of(S_rule_ask),
+                                       markdown_core_state_of(S_rule_ask), code);
+        }
+        return S_rule_ask(tokenizer, code);
+    }
+    return S_end_done(tokenizer, false, &(markdown_core_label_made){0});
+}
+
+static markdown_core_state S_end(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_inline_state *inline_state = tokenizer->reader;
+    const size_t mark = markdown_core_mark_find(tokenizer, S_TAG);
+    const uint32_t enter = (uint32_t)tokenizer->events.count;
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    words[END_TOKEN] = markdown_core_enter(tokenizer, MARKDOWN_CORE_TOKEN_LABEL_END);
+    words[END_OFFSET] = UINT32_MAX;
+    words[END_CODE] = (uint32_t)code;
+    words[END_AFTER] = tokenizer->position + 1;
+    markdown_core_opener *label =
+        mark == SIZE_MAX
+            ? NULL
+            : markdown_core_opener_at(tokenizer, tokenizer->events.tokens[tokenizer->marks[mark].token].data);
+    markdown_core_consume(tokenizer);
+    if (!label || label->shape->closer != code) {
+        return S_end_done(tokenizer, false, NULL);
+    }
+    /* The body ends where the end begins. */
+    label->close = enter;
+    label->ended = inline_state->no_link_openers;
+    words[END_MARK] = (uint32_t)mark;
+    words[END_OFFSET] = tokenizer->events.tokens[tokenizer->marks[mark].token].data;
+    words[END_RULE] = (uint32_t)S_first(inline_state->dialect, label, &(size_t){0});
+    return markdown_core_state_of(S_rule_next);
 }
 
 const markdown_core_construct MARKDOWN_CORE_LABEL_END = {.start = S_end};
