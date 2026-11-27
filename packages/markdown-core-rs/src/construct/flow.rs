@@ -22,8 +22,9 @@
 
 use crate::choice::{self, Choice, Entry, List};
 use crate::construct::{
-    blank_line, block_identifier, callout, code_indented, comment, content, directive_leaf,
-    formula, heading_atx, heading_setext, html_flow, raw_flow, table, thematic_break,
+    blank_line, block_identifier, callout, code_indented, comment, content, definition_term,
+    directive_leaf, formula, heading_atx, heading_setext, html_flow, raw_flow, table,
+    thematic_break,
 };
 use crate::event::Name;
 use crate::state::{Name as StateName, State};
@@ -78,6 +79,10 @@ pub const CHOICE: Choice = Choice::new(
         Entry {
             starts: block_identifier::FLOW,
             step: StateName::BlockIdentifier(block_identifier::Step::Start),
+        },
+        Entry {
+            starts: definition_term::STARTS,
+            step: StateName::DefinitionTerm(definition_term::Step::Start),
         },
         Entry {
             starts: table::STARTS,

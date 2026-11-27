@@ -183,9 +183,11 @@ fn trim_data(
 
         if index > 0 || slice.before > 0 {
             let enter_point = tokenizer.events[exit_index - 1].point.clone();
+            // Past the virtual spaces of a tab the data starts in, the slice
+            // starts after that tab.
             let mut exit_point = enter_point.clone();
-            exit_point.index += index;
-            exit_point.column += index;
+            exit_point.index += index + usize::from(enter_point.vs > 0);
+            exit_point.column += index + slice.before;
             exit_point.vs = 0;
 
             tokenizer.map.add(

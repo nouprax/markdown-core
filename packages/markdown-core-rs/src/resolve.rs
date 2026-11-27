@@ -42,6 +42,12 @@ pub enum Name {
     /// They are wrapped into ordered or unordered lists based on whether items
     /// with the same marker occur next to each other.
     ListItem,
+    /// Resolve definition lists.
+    ///
+    /// Definition terms and bodies are parsed on their own.
+    /// A term and its bodies are wrapped into a definition, and definitions
+    /// next to each other into a list.
+    DefinitionList,
     /// Resolve content.
     ///
     /// Content is parsed as single lines, as what remains if other flow
@@ -70,6 +76,7 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> Option<Subresult> {
         Name::HeadingAtx => construct::heading_atx::resolve(tokenizer),
         Name::HeadingSetext => construct::heading_setext::resolve(tokenizer),
         Name::ListItem => construct::list_item::resolve(tokenizer),
+        Name::DefinitionList => construct::definition_body::resolve(tokenizer),
         Name::Content => Some(construct::content::resolve(tokenizer)),
         Name::Data => construct::partial_data::resolve(tokenizer),
         Name::String => construct::string::resolve(tokenizer),

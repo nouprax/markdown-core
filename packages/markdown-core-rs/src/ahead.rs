@@ -9,7 +9,8 @@
 //! own continuation states, and the rest of the line is tried with the
 //! construct's `test` state.
 //! The lookahead stops at the first line that passes (found), at a line that
-//! does not continue those containers, or at the end (not found).
+//! does not continue those containers, after the number of lines it may try,
+//! or at the end (not found).
 //!
 //! The lookahead runs in its own tokenizer, so its events are dropped.
 
@@ -17,9 +18,9 @@ use crate::event::Point;
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
-/// Whether a line after the one `tokenizer` is at the end of passes `test`
-/// under the containers of the current line.
-pub fn ahead(tokenizer: &Tokenizer, test: StateName) -> bool {
+/// Whether one of the next `lines` lines after the one `tokenizer` is at the
+/// end of passes `test` under the containers of the current line.
+pub fn ahead(tokenizer: &Tokenizer, test: StateName, lines: usize) -> bool {
     let source = tokenizer.parse_state.bytes;
     let index = tokenizer.point.index + 1;
     if tokenizer.current != Some(b'\n') || index >= source.len() {
@@ -37,6 +38,7 @@ pub fn ahead(tokenizer: &Tokenizer, test: StateName) -> bool {
         .stack
         .extend_from_slice(&tokenizer.ahead.stack);
     scratch.ahead.test = Some(test);
+    scratch.ahead.lines = lines;
     // Whether found or not, the lookahead ends well.
     scratch.attempt(State::Ok, State::Ok);
     scratch.run(
@@ -49,6 +51,10 @@ pub fn ahead(tokenizer: &Tokenizer, test: StateName) -> bool {
 
 /// At the start of a line.
 fn line(tokenizer: &mut Tokenizer) -> State {
+    if tokenizer.ahead.lines == 0 {
+        return State::Nok;
+    }
+    tokenizer.ahead.lines -= 1;
     tokenizer.document.continued = 0;
     State::Redo(StateName::Ahead(Step::Cont))
 }

@@ -238,6 +238,22 @@ use alloc::vec;
 /// Bytes this construct can start at.
 pub const STARTS: Starts = Starts::Any;
 
+/// Whether a table goes on at this line: a row follows its head or rows,
+/// and no new container pierces it.
+pub fn open(tokenizer: &Tokenizer) -> bool {
+    !tokenizer.pierce
+        && !tokenizer.events.is_empty()
+        && matches!(
+            tokenizer.events[skip_opt_back(
+                &tokenizer.events,
+                tokenizer.events.len() - 1,
+                &[Name::LineEnding, Name::SpaceOrTab],
+            )]
+            .name,
+            Name::TableHead | Name::TableRow
+        )
+}
+
 /// Start of a GFM table.
 ///
 /// If there is a valid table row or table head before, then we try to parse
@@ -252,18 +268,7 @@ pub const STARTS: Starts = Starts::Any;
 ///     ^
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
-    if !tokenizer.pierce
-        && !tokenizer.events.is_empty()
-        && matches!(
-            tokenizer.events[skip_opt_back(
-                &tokenizer.events,
-                tokenizer.events.len() - 1,
-                &[Name::LineEnding, Name::SpaceOrTab],
-            )]
-            .name,
-            Name::TableHead | Name::TableRow
-        )
-    {
+    if open(tokenizer) {
         State::Redo(StateName::Table(Step::BodyRowStart))
     } else {
         State::Redo(StateName::Table(Step::HeadRowBefore {

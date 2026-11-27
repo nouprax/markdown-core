@@ -34,6 +34,8 @@ pub enum Container {
     FootnoteDefinition,
     /// [Directive (container)][crate::construct::directive_container].
     Directive,
+    /// [Definition body][crate::construct::definition_body].
+    DefinitionBody,
 }
 
 /// Info used to tokenize a container.
@@ -271,6 +273,8 @@ pub struct Ahead {
     pub test: Option<StateName>,
     /// Whether a later line passed the test, in a lookahead tokenizer.
     pub found: bool,
+    /// How many more lines a lookahead tokenizer may try.
+    pub lines: usize,
 }
 
 /// Label starts and matched labels of text.
@@ -359,6 +363,12 @@ pub struct Tokenizer<'a> {
     pub pierce: bool,
     /// Whether this line is lazy: there are less containers than before.
     pub lazy: bool,
+    /// The line a definition marker is due on, after a
+    /// [definition term][crate::construct::definition_term]: a definition
+    /// body opens there.
+    ///
+    /// Used when tokenizing [document content][crate::construct::document].
+    pub term: Option<usize>,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -386,6 +396,7 @@ impl<'a> Tokenizer<'a> {
             pierce: false,
             concrete: false,
             lazy: false,
+            term: None,
             resolvers: vec![],
         }
     }

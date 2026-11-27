@@ -10,7 +10,8 @@
 //! * [GFM: Footnote definition][crate::construct::footnote_definition]
 
 use crate::construct::{
-    block_quote, directive_container, flow, footnote_definition, frontmatter, list_item,
+    block_quote, definition_body, directive_container, flow, footnote_definition, frontmatter,
+    list_item,
 };
 use crate::event::{Content, Event, Kind, Link, Name};
 use crate::state::{Name as StateName, State};
@@ -20,11 +21,12 @@ use crate::util::skip;
 use alloc::{boxed::Box, vec::Vec};
 
 /// Containers, in the order a new one is tried.
-const CONTAINERS: [Container; 4] = [
+const CONTAINERS: [Container; 5] = [
     Container::BlockQuote,
     Container::ListItem,
     Container::FootnoteDefinition,
     Container::Directive,
+    Container::DefinitionBody,
 ];
 
 impl Container {
@@ -34,6 +36,7 @@ impl Container {
             Container::BlockQuote => StateName::BlockQuote(block_quote::Step::Start),
             Container::Directive => StateName::DirectiveContainer(directive_container::Step::Start),
             Container::ListItem => StateName::ListItem(list_item::Step::Start),
+            Container::DefinitionBody => StateName::DefinitionBody(definition_body::Step::Start),
             Container::FootnoteDefinition => {
                 StateName::FootnoteDefinition(footnote_definition::Step::Start)
             }
@@ -48,6 +51,9 @@ impl Container {
                 StateName::DirectiveContainer(directive_container::Step::ContStart)
             }
             Container::ListItem => StateName::ListItem(list_item::Step::ContStart),
+            Container::DefinitionBody => {
+                StateName::DefinitionBody(definition_body::Step::ContStart)
+            }
             Container::FootnoteDefinition => {
                 StateName::FootnoteDefinition(footnote_definition::Step::ContStart)
             }
@@ -60,6 +66,7 @@ impl Container {
             Container::BlockQuote => Name::BlockQuote,
             Container::Directive => Name::DirectiveContainer,
             Container::ListItem => Name::ListItem,
+            Container::DefinitionBody => Name::DefinitionBody,
             Container::FootnoteDefinition => Name::FootnoteDefinition,
         }
     }

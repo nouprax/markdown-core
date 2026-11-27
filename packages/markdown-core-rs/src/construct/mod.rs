@@ -64,6 +64,8 @@
 //! The following constructs are extensions found in markdown:
 //!
 //! * [citation][]
+//! * [definition body][definition_body]
+//! * [definition term][definition_term]
 //! * [frontmatter][]
 //! * [gfm autolink literal][autolink_literal]
 //! * [gfm footnote definition][footnote_definition]
@@ -161,6 +163,8 @@ pub mod comment;
 pub mod content;
 pub mod cross_link;
 pub mod definition;
+pub mod definition_body;
+pub mod definition_term;
 pub mod directive_container;
 pub mod directive_leaf;
 pub mod directive_text;

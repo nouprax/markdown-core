@@ -263,8 +263,9 @@ impl<'a> Compiler<'a> {
         while index < self.events.len() {
             let event = &self.events[index];
             if event.kind == EventKind::Exit {
-                // A blank line ends a block quote: it is not inside it.
-                if event.name == Name::BlockQuote {
+                // A blank line ends a block quote or a definition body: it
+                // is not inside it.
+                if matches!(event.name, Name::BlockQuote | Name::DefinitionBody) {
                     break;
                 }
                 index += 1;
@@ -411,6 +412,7 @@ impl<'a> Compiler<'a> {
                 )
             }
             Block::List => self.list(index),
+            Block::DefinitionList => self.definition_list(index),
             Block::Definition => self.reference(index),
             Block::Table => self.table(index),
             Block::DirectiveLeaf => {
@@ -822,6 +824,55 @@ impl<'a> Compiler<'a> {
                 delimiter,
                 tight: !loose,
                 items,
+            },
+            Self::whole(start, end),
+        )
+    }
+
+    fn definition_list(&mut self, index: usize) -> Node {
+        let mut definitions = vec![];
+        for child in self.inside(index) {
+            if self.name(child) == Name::DefinitionItem {
+                definitions.push(self.definition(child));
+            }
+        }
+        let start = definitions.first().map_or(self.start(index), Node::start);
+        let end = definitions.last().map_or(self.end(index), Node::end);
+        Node::new(
+            Kind::DefinitionList { definitions },
+            Self::whole(start, end),
+        )
+    }
+
+    /// A term with its bodies: compact when no blank line comes between the
+    /// term and its first body.
+    fn definition(&mut self, index: usize) -> Node {
+        let mut term = vec![];
+        let mut bodies = vec![];
+        let mut compact = true;
+        let mut start = self.start(index);
+        let mut end = start;
+        for child in self.inside(index) {
+            match self.name(child) {
+                Name::DefinitionTerm => {
+                    start = self.lead(child);
+                    end = self.end(child);
+                    term = self.content(child);
+                }
+                Name::BlankLineEnding if bodies.is_empty() => compact = false,
+                Name::DefinitionBody => {
+                    let (_, last) = self.last(child);
+                    end = end.max(last);
+                    bodies.push(self.block_content(child));
+                }
+                _ => {}
+            }
+        }
+        Node::new(
+            Kind::Definition {
+                term,
+                bodies,
+                compact,
             },
             Self::whole(start, end),
         )

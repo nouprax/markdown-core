@@ -211,7 +211,7 @@ fn flow_start(tokenizer: &mut Tokenizer) -> State {
 ///   | %%
 /// ```
 fn flow_open(tokenizer: &mut Tokenizer) -> State {
-    if ahead(tokenizer, StateName::Comment(Step::FenceStart)) {
+    if ahead(tokenizer, StateName::Comment(Step::FenceStart), usize::MAX) {
         // Do not form containers.
         tokenizer.concrete = true;
         State::Redo(StateName::Comment(Step::FlowBreak))

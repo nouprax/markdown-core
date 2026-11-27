@@ -3743,6 +3743,126 @@ pub enum Name {
     ///     ^ ^ ^ ^
     /// ```
     SpaceOrTab,
+    /// Definition list: definitions next to each other.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [flow content][crate::construct::flow]
+    /// * **Content model**:
+    ///   [`DefinitionItem`][Name::DefinitionItem],
+    ///   blank lines between them
+    /// * **Construct**:
+    ///   [`definition body`][crate::construct::definition_body]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a
+    ///     ^
+    /// > | : b
+    ///     ^^^
+    /// ```
+    DefinitionList,
+    /// Definition: a term and its bodies.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DefinitionList`][Name::DefinitionList]
+    /// * **Content model**:
+    ///   [`DefinitionTerm`][Name::DefinitionTerm],
+    ///   [`DefinitionBody`][Name::DefinitionBody]
+    /// * **Construct**:
+    ///   [`definition body`][crate::construct::definition_body]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a
+    ///     ^
+    /// > | : b
+    ///     ^^^
+    /// ```
+    DefinitionItem,
+    /// Definition term.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DefinitionItem`][Name::DefinitionItem]
+    /// * **Content model**:
+    ///   [text content][crate::construct::text]
+    /// * **Construct**:
+    ///   [`definition term`][crate::construct::definition_term]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a
+    ///     ^
+    ///   | : b
+    /// ```
+    DefinitionTerm,
+    /// Definition body.
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DefinitionItem`][Name::DefinitionItem]
+    /// * **Content model**:
+    ///   [`DefinitionBodyPrefix`][Name::DefinitionBodyPrefix],
+    ///   [flow content][crate::construct::flow]
+    /// * **Construct**:
+    ///   [`definition body`][crate::construct::definition_body]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | a
+    /// > | : b
+    ///     ^^^
+    /// ```
+    DefinitionBody,
+    /// Definition body (prefix).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DefinitionBody`][Name::DefinitionBody]
+    /// * **Content model**:
+    ///   [`DefinitionBodyMarker`][Name::DefinitionBodyMarker],
+    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    /// * **Construct**:
+    ///   [`definition body`][crate::construct::definition_body]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | a
+    /// > | : b
+    ///     ^^
+    /// ```
+    DefinitionBodyPrefix,
+    /// Definition body (marker).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`DefinitionBodyPrefix`][Name::DefinitionBodyPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`definition body`][crate::construct::definition_body]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | a
+    /// > | : b
+    ///     ^
+    /// ```
+    DefinitionBodyMarker,
     /// The indentation a continuation line of a container consumes: a list
     /// item, a footnote definition, or a definition body (micromark
     /// `listItemIndent`).
@@ -3896,6 +4016,7 @@ pub enum Block {
     Identifier,
     DirectiveLeaf,
     DirectiveContainer,
+    DefinitionList,
 }
 
 /// Inlines.
@@ -3960,6 +4081,7 @@ impl Name {
             Name::Frontmatter => Role::Block(Block::Frontmatter),
             Name::DirectiveLeaf => Role::Block(Block::DirectiveLeaf),
             Name::DirectiveContainer => Role::Block(Block::DirectiveContainer),
+            Name::DefinitionList => Role::Block(Block::DefinitionList),
             Name::Data => Role::Inline(Inline::Data),
             Name::CharacterEscape => Role::Inline(Inline::CharacterEscape),
             Name::CharacterReference => Role::Inline(Inline::CharacterReference),
@@ -4046,6 +4168,11 @@ impl Name {
             | Name::CommentSequence
             | Name::CommentText
             | Name::Content
+            | Name::DefinitionItem
+            | Name::DefinitionTerm
+            | Name::DefinitionBody
+            | Name::DefinitionBodyPrefix
+            | Name::DefinitionBodyMarker
             | Name::DefinitionDestination
             | Name::DefinitionDestinationLiteral
             | Name::DefinitionDestinationLiteralMarker
@@ -4153,7 +4280,8 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 95] = [
+pub const VOID_EVENTS: [Name; 96] = [
+    Name::DefinitionBodyMarker,
     Name::AttributesMarker,
     Name::AttributeId,
     Name::AttributeClass,
