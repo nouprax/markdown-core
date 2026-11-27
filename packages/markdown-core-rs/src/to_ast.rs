@@ -1804,9 +1804,14 @@ impl<'a> Compiler<'a> {
                 Name::CrossLinkDest => written.push_str(self.text(child)),
                 Name::CrossLinkSeparator => label = Some(String::new()),
                 Name::CrossLinkLabel => {
-                    label
-                        .get_or_insert_with(String::new)
-                        .push_str(self.text(child));
+                    let text = self.text(child);
+                    let found = label.get_or_insert_with(String::new);
+                    // In a cell, an escaped pipe is a pipe of the label.
+                    if self.cell && !embed {
+                        found.push_str(&text.replace("\\|", "|"));
+                    } else {
+                        found.push_str(text);
+                    }
                 }
                 _ => {}
             }

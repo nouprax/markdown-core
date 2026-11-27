@@ -56,6 +56,7 @@ fn line(tokenizer: &mut Tokenizer) -> State {
     }
     tokenizer.ahead.lines -= 1;
     tokenizer.document.continued = 0;
+    tokenizer.document.closer = None;
     State::Redo(StateName::Ahead(Step::Cont))
 }
 
@@ -66,6 +67,9 @@ fn cont(tokenizer: &mut Tokenizer) -> State {
         let name = tokenizer.document.stack[continued].kind.cont();
         tokenizer.attempt(State::Next(StateName::Ahead(Step::Kept)), State::Nok);
         State::Redo(name)
+    } else if tokenizer.document.closer.map(|index| index + 1) == Some(continued) {
+        // The closing fence of the innermost directive ends the containers.
+        State::Nok
     } else {
         let test = tokenizer.ahead.test.expect("expected a test");
         tokenizer.attempt(
