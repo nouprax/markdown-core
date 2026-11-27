@@ -19,10 +19,10 @@
 //! ## HTML
 //!
 //! When asterisk/underscore sequences match, and two markers can be “taken”
-//! from them, they together relate to the `<bold>` element in HTML.
+//! from them, they together relate to the `<strong>` element in HTML.
 //! When one marker can be taken, they relate to the `<em>` element.
 //! See [*§ 4.5.2 The `em` element*][html-em] and
-//! [*§ 4.5.3 The `bold` element*][html-bold] in the HTML spec for more
+//! [*§ 4.5.3 The `strong` element*][html-strong] in the HTML spec for more
 //! info.
 //!
 //! When tilde sequences match, they together relate to the `<del>` element in
@@ -57,9 +57,9 @@
 //! * [`Strike`][Name::Strike]
 //! * [`StrikeSequence`][Name::StrikeSequence]
 //! * [`StrikeText`][Name::StrikeText]
-//! * [`Bold`][Name::Bold]
-//! * [`BoldSequence`][Name::BoldSequence]
-//! * [`BoldText`][Name::BoldText]
+//! * [`Strong`][Name::Strong]
+//! * [`StrongSequence`][Name::StrongSequence]
+//! * [`StrongText`][Name::StrongText]
 //!
 //! > 👉 **Note**: while parsing, [`AttentionSequence`][Name::AttentionSequence]
 //! > is used, which is later compiled away.
@@ -166,10 +166,10 @@ const EMPHASIS: Names = Names {
     text: Name::EmphasisText,
 };
 
-const BOLD: Names = Names {
-    whole: Name::Bold,
-    sequence: Name::BoldSequence,
-    text: Name::BoldText,
+const STRONG: Names = Names {
+    whole: Name::Strong,
+    sequence: Name::StrongSequence,
+    text: Name::StrongText,
 };
 
 impl Rule {
@@ -222,7 +222,7 @@ impl Rule {
                 },
                 inner: Inner::Inline,
                 lone: Some(EMPHASIS),
-                double: Some(BOLD),
+                double: Some(STRONG),
             },
             Rule::Strike => Spec {
                 exact: true,

@@ -38,7 +38,7 @@
 //! It can be indented up to a separate 3 spaces or tabs.
 //! A bigger indent makes it part of the content instead of a fence.
 //!
-//! The `info` and `meta` parts are interpreted as the [string][plain] content type.
+//! The `info` and `meta` parts are interpreted as the [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //! Math (flow) does not support `info`.
@@ -329,7 +329,7 @@ fn info_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::Plain,
+                    content: Content::String,
                 },
             );
             State::Redo(StateName::RawFlow(Step::Info { fence }))
@@ -394,7 +394,7 @@ fn meta_before(tokenizer: &mut Tokenizer, fence: Fence) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::Plain,
+                    content: Content::String,
                 },
             );
             State::Redo(StateName::RawFlow(Step::Meta { fence }))

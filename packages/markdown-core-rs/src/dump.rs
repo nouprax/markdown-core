@@ -135,8 +135,8 @@ fn name(kind: &Kind) -> &'static str {
     match kind {
         Kind::Document { .. } => "Document",
         Kind::Callout { .. } => "Callout",
-        Kind::Prose { .. } => "Paragraph",
-        Kind::Header { .. } => "Heading",
+        Kind::Paragraph { .. } => "Paragraph",
+        Kind::Heading { .. } => "Heading",
         Kind::ThematicBreak => "ThematicBreak",
         Kind::List { .. } => "List",
         Kind::ListItem { .. } => "ListItem",
@@ -158,7 +158,7 @@ fn name(kind: &Kind) -> &'static str {
         Kind::Comment { .. } => "Comment",
         Kind::Formula { .. } => "Formula",
         Kind::Emphasis { .. } => "Emphasis",
-        Kind::Bold { .. } => "Strong",
+        Kind::Strong { .. } => "Strong",
         Kind::Strike { .. } => "Strikethrough",
         Kind::Mark { .. } => "Mark",
         Kind::Insertion { .. } => "Insertion",
@@ -212,18 +212,18 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             entries.extend(content.iter().map(Row::Node));
             (content.len(), entries)
         }
-        Kind::Prose { content }
+        Kind::Paragraph { content }
         | Kind::TableCell { content }
         | Kind::DirectiveLabel { content }
         | Kind::Emphasis { content }
-        | Kind::Bold { content }
+        | Kind::Strong { content }
         | Kind::Strike { content }
         | Kind::Mark { content }
         | Kind::Insertion { content }
         | Kind::Span { content }
         | Kind::Superscript { content }
         | Kind::Subscript { content } => (content.len(), nodes(content)),
-        Kind::Header { level, content } => {
+        Kind::Heading { level, content } => {
             let _ = write!(line, " level={}", level);
             (content.len(), nodes(content))
         }
@@ -288,7 +288,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             line.push_str(" language=");
             opt_text(line, script.as_deref());
             line.push_str(" literal=");
-            plain(line, literal);
+            string(line, literal);
             let _ = write!(line, " fenced={} closed={}", fenced, closed);
             (0, Vec::new())
         }
@@ -299,7 +299,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         | Kind::Html { literal }
         | Kind::Comment { literal } => {
             line.push_str(" literal=");
-            plain(line, literal);
+            string(line, literal);
             (0, Vec::new())
         }
         Kind::Table {
@@ -369,7 +369,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                 Placement::Standalone => " mode=standalone",
             });
             line.push_str(" literal=");
-            plain(line, literal);
+            string(line, literal);
             (0, Vec::new())
         }
         Kind::Link {
@@ -399,7 +399,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         }
         Kind::Directive { name, label } => {
             line.push_str(" name=");
-            plain(line, name);
+            string(line, name);
             let mut entries = Vec::new();
             if let Some(label) = label {
                 entries.push(Row::Node(label));
@@ -409,7 +409,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         Kind::Cite { citations } => (citations.len(), nodes(citations)),
         Kind::Topic { name } => {
             line.push_str(" name=");
-            plain(line, name);
+            string(line, name);
             (0, Vec::new())
         }
         Kind::DefinitionList { definitions } => (definitions.len(), nodes(definitions)),
@@ -433,7 +433,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
             match referent {
                 Referent::Bib { id, mode } => {
                     line.push_str("bib(key=");
-                    plain(line, id);
+                    string(line, id);
                     line.push_str(match mode {
                         Mode::Normal => ",mode=normal)",
                         Mode::AuthorInText => ",mode=authorInText)",
@@ -442,7 +442,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                 }
                 Referent::Footnote(Note::Label(label)) => {
                     line.push_str("footnote(label=");
-                    plain(line, label);
+                    string(line, label);
                     line.push(')');
                 }
                 Referent::Footnote(Note::Inline(note)) => {
@@ -451,7 +451,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
                 }
                 Referent::Specimen { label } => {
                     line.push_str("specimen(label=");
-                    plain(line, label);
+                    string(line, label);
                     line.push(')');
                 }
             }
@@ -486,7 +486,7 @@ fn fields<'a>(line: &mut String, kind: &'a Kind) -> (usize, Vec<Row<'a>>) {
         }
         Kind::Reference { label, dest, title } => {
             line.push_str(" label=");
-            plain(line, label);
+            string(line, label);
             line.push_str(" dest=");
             destination(line, dest);
             line.push_str(" title=");
@@ -534,12 +534,12 @@ fn metadata(line: &mut String, fields: &Fields) {
                     }
                     Scalar::Number(value) => {
                         line.push_str("number(");
-                        plain(line, value);
+                        string(line, value);
                         line.push(')');
                     }
                     Scalar::Text(value) => {
                         line.push_str("text(");
-                        plain(line, value);
+                        string(line, value);
                         line.push(')');
                     }
                 }
@@ -554,11 +554,11 @@ fn metadata(line: &mut String, fields: &Fields) {
                     match item {
                         Item::Number(value) => {
                             line.push_str("number(");
-                            plain(line, value);
+                            string(line, value);
                         }
                         Item::Text(value) => {
                             line.push_str("text(");
-                            plain(line, value);
+                            string(line, value);
                         }
                     }
                     line.push(')');
@@ -573,19 +573,19 @@ fn destination(line: &mut String, dest: &Destination) {
     match dest {
         Destination::Url(url) => {
             line.push_str("url(");
-            plain(line, url);
+            string(line, url);
             line.push(')');
         }
         Destination::Cross { path, anchor } => {
             line.push_str("cross(path=");
-            plain(line, path);
+            string(line, path);
             line.push_str(",anchor=");
             opt_text(line, anchor.as_deref());
             line.push(')');
         }
         Destination::Reference(label) => {
             line.push_str("reference(");
-            plain(line, label);
+            string(line, label);
             line.push(')');
         }
     }
@@ -619,12 +619,12 @@ fn option_bool(line: &mut String, value: Option<bool>) {
 fn opt_text(line: &mut String, value: Option<&str>) {
     match value {
         None => line.push_str("null"),
-        Some(value) => plain(line, value),
+        Some(value) => string(line, value),
     }
 }
 
 /// A string in the dump's canonical JSON form.
-fn plain(line: &mut String, value: &str) {
+fn string(line: &mut String, value: &str) {
     line.push('"');
     for char in value.chars() {
         match char {
@@ -664,7 +664,7 @@ fn attributes(line: &mut String, attributes: &Attributes) {
         if bare {
             line.push_str(class);
         } else {
-            plain(line, class);
+            string(line, class);
         }
     }
     for record in &attributes.records {
@@ -674,7 +674,7 @@ fn attributes(line: &mut String, attributes: &Attributes) {
         first = false;
         line.push_str(&record.name);
         line.push('=');
-        plain(line, &record.value);
+        string(line, &record.value);
     }
     line.push('}');
 }

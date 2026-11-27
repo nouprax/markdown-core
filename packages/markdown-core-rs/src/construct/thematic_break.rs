@@ -32,7 +32,7 @@
 //! For these reasons, it is recommend to not use spaces or tabs between the
 //! markers.
 //! Thematic breaks formed with dashes (without whitespace) can also form
-//! [heading (setext)][header_setext].
+//! [heading (setext)][heading_setext].
 //! As dashes and underscores frequently occur in natural language and URLs, it
 //! is recommended to use asterisks for thematic breaks to distinguish from
 //! such use.

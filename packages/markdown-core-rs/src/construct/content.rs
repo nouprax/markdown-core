@@ -1,12 +1,12 @@
 //! Content occurs in the [flow][] content type.
 //!
 //! Content contains zero or more [definition]s, followed by zero
-//! or one [paragraph][prose].
+//! or one [paragraph][paragraph].
 //!
 //! The constructs found in flow are:
 //!
 //! * [Definition][crate::construct::definition]
-//! * [Paragraph][crate::construct::prose]
+//! * [Paragraph][crate::construct::paragraph]
 //!
 //! ## Tokens
 //!
@@ -23,7 +23,7 @@
 //! [definition]: crate::construct::definition
 //! [prose]: crate::construct::prose
 
-use crate::construct::{definition, prose};
+use crate::construct::{definition, paragraph};
 use crate::event::{Content, Kind, Link, Name};
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -85,7 +85,7 @@ fn chunk_inside(tokenizer: &mut Tokenizer) -> State {
 fn definition_before(tokenizer: &mut Tokenizer) -> State {
     tokenizer.attempt(
         State::Next(StateName::Content(Step::DefinitionAfter)),
-        State::Next(StateName::Prose(prose::Step::Start)),
+        State::Next(StateName::Paragraph(paragraph::Step::Start)),
     );
     State::Redo(StateName::Definition(definition::Step::Start))
 }

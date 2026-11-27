@@ -1,4 +1,4 @@
-//! Trailing whitespace occurs in [string][plain] and [text][].
+//! Trailing whitespace occurs in [string][string] and [text][].
 //!
 //! ## Grammar
 //!

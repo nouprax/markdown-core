@@ -31,7 +31,7 @@
 //! of the definition after normalizing with
 //! [`normalize_identifier`][].
 //!
-//! Importantly, while the label of a full reference *can* include [string][plain]
+//! Importantly, while the label of a full reference *can* include [string][string]
 //! content, and in case of collapsed and shortcut references even [text][]
 //! content, that content is not considered when matching.
 //! To illustrate, neither label matches the definition:
@@ -44,7 +44,7 @@
 //!
 //! When the resource or reference matches, the destination forms the `href`
 //! attribute in case of a [label start (link)][label_start_link], and an
-//! `src` attribute in case of a [label start (image)][label_start_picture].
+//! `src` attribute in case of a [label start (image)][label_start_image].
 //! The title is formed, optionally, on either `<a>` or `<img>`.
 //! When matched with a [gfm label start (footnote)][label_start_footnote],
 //! no reference or resource can follow the label end.
@@ -60,7 +60,7 @@
 //! In case of a matched [label start (link)][label_start_link], the interpreted
 //! content between it and the label end, is placed between the opening and
 //! closing tags.
-//! In case of a matched [label start (image)][label_start_picture], the text is
+//! In case of a matched [label start (image)][label_start_image], the text is
 //! also interpreted, but used *without* the resulting tags:
 //!
 //! ```markdown
@@ -106,7 +106,7 @@
 //! When matched with a [label start (link)][label_start_link], they together
 //! relate to the `<a>` element in HTML.
 //! See [*§ 4.5.1 The `a` element*][html_a] in the HTML spec for more info.
-//! It can also match with [label start (image)][label_start_picture], in which
+//! It can also match with [label start (image)][label_start_image], in which
 //! case they form an `<img>` element.
 //! See [*§ 4.8.3 The `img` element*][html_img] in the HTML spec for more info.
 //! It can also match with [gfm label start (footnote)][label_start_footnote],
@@ -129,7 +129,7 @@
 //!
 //! * [`Data`][Name::Data]
 //! * [`FootnoteCall`][Name::FootnoteCall]
-//! * [`Picture`][Name::Picture]
+//! * [`Image`][Name::Image]
 //! * [`Label`][Name::Label]
 //! * [`LabelEnd`][Name::LabelEnd]
 //! * [`LabelMarker`][Name::LabelMarker]
@@ -354,11 +354,11 @@ fn ok(tokenizer: &mut Tokenizer, end: usize) -> State {
     // longer viable for use (as they would otherwise contain a link).
     // These link starts are still looking for balanced closing brackets, so
     // we can’t remove them, but we can mark them.
-    if label_start.kind != LabelKind::Picture {
+    if label_start.kind != LabelKind::Image {
         let mut index = 0;
         while index < tokenizer.labels.starts.len() {
             let label_start = &mut tokenizer.labels.starts[index];
-            if label_start.kind != LabelKind::Picture {
+            if label_start.kind != LabelKind::Image {
                 label_start.inactive = true;
             }
             index += 1;
@@ -661,8 +661,8 @@ fn insert_labels(tokenizer: &mut Tokenizer, labels: &[Label]) {
         let label = &labels[index];
         let whole_name = if label.kind == LabelKind::Footnote {
             Name::FootnoteCall
-        } else if label.kind == LabelKind::Picture {
-            Name::Picture
+        } else if label.kind == LabelKind::Image {
+            Name::Image
         } else {
             Name::Link
         };

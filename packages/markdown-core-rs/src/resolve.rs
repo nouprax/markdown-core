@@ -30,12 +30,12 @@ pub enum Name {
     /// Heading (atx) contains further sequences and data.
     /// At the end, a final sequence is kept that way, while the rest is merged
     /// with the data.
-    HeaderAtx,
+    HeadingAtx,
     /// Resolve heading (setext).
     ///
     /// Heading (setext) is parsed as an underline that is preceded by content,
     /// both will form the whole construct.
-    HeaderSetext,
+    HeadingSetext,
     /// Resolve list item.
     ///
     /// List items are parsed on their own.
@@ -55,8 +55,8 @@ pub enum Name {
     /// It helps performance to merge them together if those markers did not
     /// match anything and hence they occur next to each other.
     Data,
-    /// Resolve whitespace in `plain`.
-    Plain,
+    /// Resolve whitespace in `string`.
+    String,
     /// Resolve whitespace in `text`.
     Text,
 }
@@ -67,12 +67,12 @@ pub fn call(tokenizer: &mut Tokenizer, name: Name) -> Option<Subresult> {
         Name::Label => construct::label_end::resolve(tokenizer),
         Name::Attention => construct::attention::resolve(tokenizer),
         Name::Table => construct::table::resolve(tokenizer),
-        Name::HeaderAtx => construct::header_atx::resolve(tokenizer),
-        Name::HeaderSetext => construct::header_setext::resolve(tokenizer),
+        Name::HeadingAtx => construct::heading_atx::resolve(tokenizer),
+        Name::HeadingSetext => construct::heading_setext::resolve(tokenizer),
         Name::ListItem => construct::list_item::resolve(tokenizer),
         Name::Content => Some(construct::content::resolve(tokenizer)),
         Name::Data => construct::partial_data::resolve(tokenizer),
-        Name::Plain => construct::plain::resolve(tokenizer),
+        Name::String => construct::string::resolve(tokenizer),
         Name::Text => construct::text::resolve(tokenizer),
     }
 }

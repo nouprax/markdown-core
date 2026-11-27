@@ -63,7 +63,7 @@
 //!
 //! The **complete** production of HTML (flow) is not allowed to interrupt
 //! content.
-//! That means that a blank line is needed between a [paragraph][prose] and it.
+//! That means that a blank line is needed between a [paragraph][paragraph] and it.
 //! However, [HTML (text)][html_text] has a similar production, which will
 //! typically kick-in instead.
 //!

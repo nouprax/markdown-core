@@ -1,8 +1,10 @@
 //! Identifiers and file names of this crate contain none of the letters
-//! `g`, `j` and `y`, in either case.
+//! `g`, `j` and `y`, in either case, outside the standard words of markdown.
 //!
 //! Names that come from outside the crate (the standard library, lints,
-//! other crates) are listed in `OUTSIDE`. Comments and literals are prose
+//! other crates) are listed in `OUTSIDE`. The standard words of markdown
+//! (`heading`, `paragraph`, `string`, `strong`, `image`) are listed in
+//! `STANDARD` and may be parts of a name. Comments and literals are prose
 //! and are not checked.
 
 use std::fs;
@@ -50,9 +52,44 @@ const OUTSIDE: &[&str] = &[
     "with_capacity",
 ];
 
+/// Words of markdown itself, which may be parts of a name.
+const STANDARD: &[&str] = &[
+    "heading",
+    "headings",
+    "image",
+    "images",
+    "paragraph",
+    "paragraphs",
+    "string",
+    "strong",
+];
+
+/// The words of `name`: its `_` parts, each split before its capitals.
+fn words(name: &str) -> Vec<String> {
+    let mut list = vec![];
+    for part in name.split('_') {
+        let mut word = String::new();
+        let mut last = ' ';
+        for c in part.chars() {
+            if c.is_ascii_uppercase() && last.is_ascii_lowercase() && !word.is_empty() {
+                list.push(word.to_ascii_lowercase());
+                word.clear();
+            }
+            word.push(c);
+            last = c;
+        }
+        if !word.is_empty() {
+            list.push(word.to_ascii_lowercase());
+        }
+    }
+    list
+}
+
 fn banned(name: &str) -> bool {
-    name.chars()
-        .any(|c| matches!(c.to_ascii_lowercase(), 'g' | 'j' | 'y'))
+    words(name).iter().any(|word| {
+        !STANDARD.contains(&word.as_str())
+            && word.chars().any(|c| matches!(c, 'g' | 'j' | 'y'))
+    })
 }
 
 fn files(folder: &Path, found: &mut Vec<PathBuf>) {

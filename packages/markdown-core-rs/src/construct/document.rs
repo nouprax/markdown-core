@@ -398,7 +398,7 @@ fn flow_end(tokenizer: &mut Tokenizer) -> State {
     if !document_lax_continuation_current && !child.events.is_empty() {
         let before = skip::opt_back(&child.events, child.events.len() - 1, &[Name::LineEnd]);
         let name = &child.events[before].name;
-        if name == &Name::Content || name == &Name::HeaderSetextUnderline {
+        if name == &Name::Content || name == &Name::HeadingSetextUnderline {
             document_lax_continuation_current = true;
         }
     }

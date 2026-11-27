@@ -1,4 +1,4 @@
-//! Character escapes occur in the [string][plain] and [text][] content types.
+//! Character escapes occur in the [string][string] and [text][] content types.
 //!
 //! ## Grammar
 //!

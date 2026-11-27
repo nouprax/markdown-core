@@ -10,7 +10,7 @@
 //!
 //! * [document][]
 //! * [flow][]
-//! * [string][plain]
+//! * [string][string]
 //! * [text][]
 //!
 //! Content types also have a *rest* thing: after all things are parsed,
@@ -44,15 +44,15 @@
 //! * [content][]
 //! * [definition][]
 //! * [hard break (escape)][hard_break_escape]
-//! * [heading (atx)][header_atx]
-//! * [heading (setext)][header_setext]
+//! * [heading (atx)][heading_atx]
+//! * [heading (setext)][heading_setext]
 //! * [html (flow)][html_flow]
 //! * [html (text)][html_text]
 //! * [label end][label_end]
-//! * [label start (image)][label_start_picture]
+//! * [label start (image)][label_start_image]
 //! * [label start (link)][label_start_link]
 //! * [list item][list_item]
-//! * [paragraph][prose]
+//! * [paragraph][paragraph]
 //! * [raw (flow)][raw_flow] (code (fenced), extensions: math (flow))
 //! * [raw (text)][raw_text] (code (text), extensions: math (text))
 //! * [thematic break][thematic_break]
@@ -157,14 +157,14 @@ pub mod flow;
 pub mod footnote_definition;
 pub mod frontmatter;
 pub mod hard_break_escape;
-pub mod header_atx;
-pub mod header_setext;
+pub mod heading_atx;
+pub mod heading_setext;
 pub mod html_flow;
 pub mod html_text;
 pub mod label_end;
 pub mod label_start_footnote;
 pub mod label_start_link;
-pub mod label_start_picture;
+pub mod label_start_image;
 pub mod list_item;
 pub mod partial_bom;
 pub mod partial_data;
@@ -175,8 +175,8 @@ pub mod partial_space_or_tab;
 pub mod partial_space_or_tab_eol;
 pub mod partial_title;
 pub mod partial_whitespace;
-pub mod plain;
-pub mod prose;
+pub mod string;
+pub mod paragraph;
 pub mod raw_flow;
 pub mod raw_text;
 pub mod table;

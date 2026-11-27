@@ -3,8 +3,8 @@
 //! Most of these constants are magic numbers, such as the number of markers
 //! needed to parse [code (fenced)][raw_flow]
 //! ([`CODE_FENCED_SEQUENCE_SIZE_MIN`][]) or the max number of allowed markers
-//! in a [heading (atx)][header_atx]
-//! ([`HEADER_ATX_OPEN_FENCE_SIZE_MAX`][]).
+//! in a [heading (atx)][heading_atx]
+//! ([`HEADING_ATX_OPEN_FENCE_SIZE_MAX`][]).
 //!
 //! Some constants are instead lists of things, such as the list of tag names
 //! considered in the **raw** production of [HTML (flow)][html_flow]
@@ -80,13 +80,13 @@ pub const FRONTMATTER_SEQUENCE_SIZE: usize = 3;
 /// [whitespace]: crate::construct::partial_whitespace
 pub const HARD_BREAK_PREFIX_SIZE_MIN: usize = 2;
 
-/// The max number of markers allowed to form a [heading (atx)][header_atx].
+/// The max number of markers allowed to form a [heading (atx)][heading_atx].
 ///
 /// This limitation is imposed by HTML, which imposes a max heading rank of
 /// `6`.
 ///
 /// [header_atx]: crate::construct::header_atx
-pub const HEADER_ATX_OPEN_FENCE_SIZE_MAX: usize = 6;
+pub const HEADING_ATX_OPEN_FENCE_SIZE_MAX: usize = 6;
 
 /// List of HTML tag names that form the **basic** production of
 /// [HTML (flow)][html_flow].

@@ -65,13 +65,13 @@ impl Node {
                 list.extend(title.iter().flatten());
                 list.extend(content);
             }
-            Kind::Prose { content }
-            | Kind::Header { content, .. }
+            Kind::Paragraph { content }
+            | Kind::Heading { content, .. }
             | Kind::ListItem { content, .. }
             | Kind::TableCell { content }
             | Kind::DirectiveLabel { content }
             | Kind::Emphasis { content }
-            | Kind::Bold { content }
+            | Kind::Strong { content }
             | Kind::Strike { content }
             | Kind::Mark { content }
             | Kind::Insertion { content }
@@ -142,13 +142,13 @@ impl Node {
                 list.extend(title.iter_mut().flatten());
                 list.extend(content);
             }
-            Kind::Prose { content }
-            | Kind::Header { content, .. }
+            Kind::Paragraph { content }
+            | Kind::Heading { content, .. }
             | Kind::ListItem { content, .. }
             | Kind::TableCell { content }
             | Kind::DirectiveLabel { content }
             | Kind::Emphasis { content }
-            | Kind::Bold { content }
+            | Kind::Strong { content }
             | Kind::Strike { content }
             | Kind::Mark { content }
             | Kind::Insertion { content }
@@ -234,10 +234,10 @@ pub enum Kind {
         title: Option<Vec<Node>>,
         content: Vec<Node>,
     },
-    Prose {
+    Paragraph {
         content: Vec<Node>,
     },
-    Header {
+    Heading {
         level: u8,
         content: Vec<Node>,
     },
@@ -316,7 +316,7 @@ pub enum Kind {
     Emphasis {
         content: Vec<Node>,
     },
-    Bold {
+    Strong {
         content: Vec<Node>,
     },
     Strike {

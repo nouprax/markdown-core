@@ -70,8 +70,8 @@ pub enum LabelKind {
     ///       ^^
     /// ```
     ///
-    /// Construct: [Label start (image)][crate::construct::label_start_picture].
-    Picture,
+    /// Construct: [Label start (image)][crate::construct::label_start_image].
+    Image,
     /// Label (image) link.
     ///
     /// ```markdown

@@ -28,7 +28,7 @@
 //!
 //! ## Tokens
 //!
-//! * [`Prose`][Name::Prose]
+//! * [`Paragraph`][Name::Paragraph]
 //!
 //! ## References
 //!
@@ -55,8 +55,8 @@ use crate::tokenizer::Tokenizer;
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     debug_assert!(tokenizer.current.is_some());
-    tokenizer.enter(Name::Prose);
-    State::Redo(StateName::Prose(Step::LineStart { connect: false }))
+    tokenizer.enter(Name::Paragraph);
+    State::Redo(StateName::Paragraph(Step::LineStart { connect: false }))
 }
 
 /// Start of a line in a paragraph.
@@ -83,7 +83,7 @@ fn line_start(tokenizer: &mut Tokenizer, connect: bool) -> State {
         link(&mut tokenizer.events, index);
     }
 
-    State::Redo(StateName::Prose(Step::Inside))
+    State::Redo(StateName::Paragraph(Step::Inside))
 }
 
 /// In paragraph.
@@ -96,17 +96,17 @@ fn inside(tokenizer: &mut Tokenizer) -> State {
     match tokenizer.current {
         None => {
             tokenizer.exit(Name::Data);
-            tokenizer.exit(Name::Prose);
+            tokenizer.exit(Name::Paragraph);
             State::Ok
         }
         Some(b'\n') => {
             tokenizer.consume();
             tokenizer.exit(Name::Data);
-            State::Next(StateName::Prose(Step::LineStart { connect: true }))
+            State::Next(StateName::Paragraph(Step::LineStart { connect: true }))
         }
         _ => {
             tokenizer.consume();
-            State::Next(StateName::Prose(Step::Inside))
+            State::Next(StateName::Paragraph(Step::Inside))
         }
     }
 }
@@ -121,7 +121,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::Prose(step)
+        StateName::Paragraph(step)
     }
 }
 

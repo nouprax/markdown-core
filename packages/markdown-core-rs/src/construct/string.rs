@@ -34,8 +34,8 @@ pub const CHOICE: Choice = Choice::new(
             step: StateName::CharacterEscape(character_escape::Step::Start),
         },
     ],
-    StateName::Plain(Step::Before),
-    StateName::Plain(Step::BeforeData),
+    StateName::String(Step::Before),
+    StateName::String(Step::BeforeData),
 );
 
 /// Start of string.
@@ -45,7 +45,7 @@ pub const CHOICE: Choice = Choice::new(
 ///        ^
 /// ````
 fn start(_tokenizer: &mut Tokenizer) -> State {
-    State::Redo(StateName::Plain(Step::Before))
+    State::Redo(StateName::String(Step::Before))
 }
 
 /// Before string.
@@ -57,10 +57,10 @@ fn start(_tokenizer: &mut Tokenizer) -> State {
 fn before(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current.is_none() {
         tokenizer.add_resolver(ResolveName::Data);
-        tokenizer.add_resolver(ResolveName::Plain);
+        tokenizer.add_resolver(ResolveName::String);
         State::Ok
     } else {
-        State::Redo(choice::start(List::Plain))
+        State::Redo(choice::start(List::String))
     }
 }
 
@@ -71,9 +71,9 @@ fn before(tokenizer: &mut Tokenizer) -> State {
 ///        ^
 /// ````
 fn before_data(tokenizer: &mut Tokenizer) -> State {
-    tokenizer.attempt(State::Next(StateName::Plain(Step::Before)), State::Nok);
+    tokenizer.attempt(State::Next(StateName::String(Step::Before)), State::Nok);
     State::Redo(StateName::Data(partial_data::Step::Start {
-        list: List::Plain,
+        list: List::String,
     }))
 }
 
@@ -93,7 +93,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::Plain(step)
+        StateName::String(step)
     }
 }
 

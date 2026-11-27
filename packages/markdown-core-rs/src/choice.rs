@@ -15,7 +15,7 @@
 //! * [`create-tokenizer.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark/dev/lib/create-tokenizer.js)
 //! * [`constructs.js` in `micromark`](https://github.com/micromark/micromark/blob/main/packages/micromark/dev/lib/constructs.js)
 
-use crate::construct::{flow, plain, text};
+use crate::construct::{flow, string, text};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::Tokenizer;
 
@@ -104,7 +104,7 @@ impl Choice {
 pub enum List {
     Flow,
     Text,
-    Plain,
+    String,
 }
 
 impl List {
@@ -113,7 +113,7 @@ impl List {
         match self {
             List::Flow => &flow::CHOICE,
             List::Text => &text::CHOICE,
-            List::Plain => &plain::CHOICE,
+            List::String => &string::CHOICE,
         }
     }
 }

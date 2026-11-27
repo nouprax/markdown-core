@@ -177,7 +177,7 @@ pub enum Name {
     /// ## Info
     ///
     /// * **Context**:
-    ///   [string content][crate::construct::plain] or
+    ///   [string content][crate::construct::string] or
     ///   [text content][crate::construct::text]
     /// * **Content model**:
     ///   [`CharacterEscapeMarker`][Name::CharacterEscapeMarker],
@@ -233,7 +233,7 @@ pub enum Name {
     /// ## Info
     ///
     /// * **Context**:
-    ///   [string content][crate::construct::plain] or
+    ///   [string content][crate::construct::string] or
     ///   [text content][crate::construct::text]
     /// * **Content model**:
     ///   [`CharacterReferenceMarker`][Name::CharacterReferenceMarker],
@@ -397,7 +397,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`CodeFencedFence`][Name::CodeFencedFence]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`raw_flow`][crate::construct::raw_flow]
     ///
@@ -417,7 +417,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`CodeFencedFence`][Name::CodeFencedFence]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`raw_flow`][crate::construct::raw_flow]
     ///
@@ -636,7 +636,7 @@ pub enum Name {
     /// ## Info
     ///
     /// * **Context**:
-    ///   [string content][crate::construct::plain],
+    ///   [string content][crate::construct::string],
     ///   [text content][crate::construct::text]
     /// * **Content model**:
     ///   void
@@ -757,7 +757,7 @@ pub enum Name {
     ///   [`DefinitionDestinationLiteral`][Name::DefinitionDestinationLiteral],
     ///   [`DefinitionDestinationRaw`][Name::DefinitionDestinationRaw]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`destination`][crate::construct::partial_destination]
     ///
@@ -816,7 +816,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`DefinitionLabel`][Name::DefinitionLabel]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`label`][crate::construct::partial_label]
     ///
@@ -892,7 +892,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`DefinitionTitle`][Name::DefinitionTitle]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`title`][crate::construct::partial_title]
     ///
@@ -1273,7 +1273,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`FootnoteDefinitionLabel`][Name::FootnoteDefinitionLabel]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`footnote_definition`][crate::construct::footnote_definition]
     ///
@@ -1769,11 +1769,11 @@ pub enum Name {
     /// * **Context**:
     ///   [flow content][crate::construct::flow]
     /// * **Content model**:
-    ///   [`HeaderAtxSequence`][Name::HeaderAtxSequence],
-    ///   [`HeaderAtxText`][Name::HeaderAtxText],
+    ///   [`HeadingAtxSequence`][Name::HeadingAtxSequence],
+    ///   [`HeadingAtxText`][Name::HeadingAtxText],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`header_atx`][crate::construct::header_atx]
+    ///   [`heading_atx`][crate::construct::heading_atx]
     ///
     /// ## Example
     ///
@@ -1781,17 +1781,17 @@ pub enum Name {
     /// > | # alpha
     ///     ^^^^^^^
     /// ```
-    HeaderAtx,
+    HeadingAtx,
     /// Heading (atx) sequence.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`HeaderAtx`][Name::HeaderAtx]
+    ///   [`HeadingAtx`][Name::HeadingAtx]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`header_atx`][crate::construct::header_atx]
+    ///   [`heading_atx`][crate::construct::heading_atx]
     ///
     /// ## Example
     ///
@@ -1799,17 +1799,17 @@ pub enum Name {
     /// > | # alpha
     ///     ^
     /// ```
-    HeaderAtxSequence,
+    HeadingAtxSequence,
     /// Heading (atx) data.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`HeaderAtx`][Name::HeaderAtx]
+    ///   [`HeadingAtx`][Name::HeadingAtx]
     /// * **Content model**:
     ///   [text content][crate::construct::text]
     /// * **Construct**:
-    ///   [`header_atx`][crate::construct::header_atx]
+    ///   [`heading_atx`][crate::construct::heading_atx]
     ///
     /// ## Example
     ///
@@ -1817,7 +1817,7 @@ pub enum Name {
     /// > | # alpha
     ///       ^^^^^
     /// ```
-    HeaderAtxText,
+    HeadingAtxText,
     /// Whole heading (setext).
     ///
     /// ## Info
@@ -1825,12 +1825,12 @@ pub enum Name {
     /// * **Context**:
     ///   [flow content][crate::construct::flow]
     /// * **Content model**:
-    ///   [`HeaderSetextText`][Name::HeaderSetextText],
-    ///   [`HeaderSetextUnderline`][Name::HeaderSetextUnderline],
+    ///   [`HeadingSetextText`][Name::HeadingSetextText],
+    ///   [`HeadingSetextUnderline`][Name::HeadingSetextUnderline],
     ///   [`LineEnd`][Name::LineEnd],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`header_setext`][crate::construct::header_setext]
+    ///   [`heading_setext`][crate::construct::heading_setext]
     ///
     /// ## Example
     ///
@@ -1840,17 +1840,17 @@ pub enum Name {
     /// > | =====
     ///     ^^^^^
     /// ```
-    HeaderSetext,
+    HeadingSetext,
     /// Heading (setext) data.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`HeaderSetext`][Name::HeaderSetext]
+    ///   [`HeadingSetext`][Name::HeadingSetext]
     /// * **Content model**:
     ///   [text content][crate::construct::text]
     /// * **Construct**:
-    ///   [`header_setext`][crate::construct::header_setext]
+    ///   [`heading_setext`][crate::construct::heading_setext]
     ///
     /// ## Example
     ///
@@ -1859,18 +1859,18 @@ pub enum Name {
     ///     ^^^^^
     ///   | =====
     /// ```
-    HeaderSetextText,
+    HeadingSetextText,
     /// Heading (setext) underline.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`HeaderSetext`][Name::HeaderSetext]
+    ///   [`HeadingSetext`][Name::HeadingSetext]
     /// * **Content model**:
-    ///   [`HeaderSetextUnderlineSequence`][Name::HeaderSetextUnderlineSequence],
+    ///   [`HeadingSetextUnderlineSequence`][Name::HeadingSetextUnderlineSequence],
     ///   [`SpaceOrTab`][Name::SpaceOrTab]
     /// * **Construct**:
-    ///   [`header_setext`][crate::construct::header_setext]
+    ///   [`heading_setext`][crate::construct::heading_setext]
     ///
     /// ## Example
     ///
@@ -1879,17 +1879,17 @@ pub enum Name {
     /// > | =====
     ///     ^^^^^
     /// ```
-    HeaderSetextUnderline,
+    HeadingSetextUnderline,
     /// Heading (setext) underline sequence.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`HeaderSetext`][Name::HeaderSetext]
+    ///   [`HeadingSetext`][Name::HeadingSetext]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`header_setext`][crate::construct::header_setext]
+    ///   [`heading_setext`][crate::construct::heading_setext]
     ///
     /// ## Example
     ///
@@ -1898,7 +1898,7 @@ pub enum Name {
     /// > | =====
     ///     ^^^^^
     /// ```
-    HeaderSetextUnderlineSequence,
+    HeadingSetextUnderlineSequence,
     /// Whole html (flow).
     ///
     /// ## Info
@@ -1998,16 +1998,16 @@ pub enum Name {
     /// > | a ![b](c) d
     ///       ^^^^^^^
     /// ```
-    Picture,
+    Image,
     /// Label.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Picture`][Name::Picture],
+    ///   [`Image`][Name::Image],
     ///   [`Link`][Name::Link]
     /// * **Content model**:
-    ///   [`LabelPicture`][Name::LabelPicture],
+    ///   [`LabelImage`][Name::LabelImage],
     ///   [`LabelLink`][Name::LabelLink],
     ///   [`LabelEnd`][Name::LabelEnd],
     ///   [`LabelText`][Name::LabelText]
@@ -2052,10 +2052,10 @@ pub enum Name {
     /// * **Context**:
     ///   [`Label`][Name::Label]
     /// * **Content model**:
-    ///   [`LabelPictureMarker`][Name::LabelPictureMarker],
+    ///   [`LabelImageMarker`][Name::LabelImageMarker],
     ///   [`LabelMarker`][Name::LabelMarker]
     /// * **Construct**:
-    ///   [`label_start_picture`][crate::construct::label_start_picture]
+    ///   [`label_start_image`][crate::construct::label_start_image]
     ///
     /// ## Example
     ///
@@ -2063,17 +2063,17 @@ pub enum Name {
     /// > | a ![b](c) d
     ///       ^^
     /// ```
-    LabelPicture,
+    LabelImage,
     /// Label start (image) marker.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`LabelPicture`][Name::LabelPicture]
+    ///   [`LabelImage`][Name::LabelImage]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`label_start_picture`][crate::construct::label_start_picture]
+    ///   [`label_start_image`][crate::construct::label_start_image]
     ///
     /// ## Example
     ///
@@ -2081,7 +2081,7 @@ pub enum Name {
     /// > | a ![b](c) d
     ///       ^
     /// ```
-    LabelPictureMarker,
+    LabelImageMarker,
     /// Label start (link).
     ///
     /// ## Info
@@ -2105,13 +2105,13 @@ pub enum Name {
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`LabelPicture`][Name::LabelPicture],
+    ///   [`LabelImage`][Name::LabelImage],
     ///   [`LabelLink`][Name::LabelLink],
     ///   [`LabelEnd`][Name::LabelEnd]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
-    ///   [`label_start_picture`][crate::construct::label_start_picture],
+    ///   [`label_start_image`][crate::construct::label_start_image],
     ///   [`label_start_link`][crate::construct::label_start_link],
     ///   [`label_end`][crate::construct::label_end]
     ///
@@ -2374,7 +2374,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`MathFlowFence`][Name::MathFlowFence]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`raw_flow`][crate::construct::raw_flow]
     ///
@@ -2493,7 +2493,7 @@ pub enum Name {
     /// * **Content model**:
     ///   [text content][crate::construct::text]
     /// * **Construct**:
-    ///   [`prose`][crate::construct::prose]
+    ///   [`paragraph`][crate::construct::paragraph]
     ///
     /// ## Example
     ///
@@ -2503,13 +2503,13 @@ pub enum Name {
     /// > | c.
     ///     ^^
     /// ```
-    Prose,
+    Paragraph,
     /// Reference.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Picture`][Name::Picture],
+    ///   [`Image`][Name::Image],
     ///   [`Link`][Name::Link]
     /// * **Content model**:
     ///   [`ReferenceMarker`][Name::ReferenceMarker],
@@ -2549,7 +2549,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`Reference`][Name::Reference]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`label`][crate::construct::partial_label]
     ///
@@ -2565,7 +2565,7 @@ pub enum Name {
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Picture`][Name::Picture],
+    ///   [`Image`][Name::Image],
     ///   [`Link`][Name::Link]
     /// * **Content model**:
     ///   [`ResourceMarker`][Name::ResourceMarker],
@@ -2667,7 +2667,7 @@ pub enum Name {
     ///   [`ResourceDestinationLiteral`][Name::ResourceDestinationLiteral],
     ///   [`ResourceDestinationRaw`][Name::ResourceDestinationRaw]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`destination`][crate::construct::partial_destination]
     ///
@@ -2742,7 +2742,7 @@ pub enum Name {
     /// * **Context**:
     ///   [`ResourceTitle`][Name::ResourceTitle]
     /// * **Content model**:
-    ///   [string content][crate::construct::plain]
+    ///   [string content][crate::construct::string]
     /// * **Construct**:
     ///   [`title`][crate::construct::partial_title]
     ///
@@ -2784,8 +2784,8 @@ pub enum Name {
     /// * **Context**:
     ///   [text content][crate::construct::text]
     /// * **Content model**:
-    ///   [`BoldSequence`][Name::BoldSequence],
-    ///   [`BoldText`][Name::BoldText]
+    ///   [`StrongSequence`][Name::StrongSequence],
+    ///   [`StrongText`][Name::StrongText]
     /// * **Construct**:
     ///   [`attention`][crate::construct::attention]
     ///
@@ -2795,13 +2795,13 @@ pub enum Name {
     /// > | **a**
     ///     ^^^^^
     /// ```
-    Bold,
+    Strong,
     /// Strong sequence.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Bold`][Name::Bold]
+    ///   [`Strong`][Name::Strong]
     /// * **Content model**:
     ///   void
     /// * **Construct**:
@@ -2813,13 +2813,13 @@ pub enum Name {
     /// > | **a**
     ///     ^^ ^^
     /// ```
-    BoldSequence,
+    StrongSequence,
     /// Strong text.
     ///
     /// ## Info
     ///
     /// * **Context**:
-    ///   [`Bold`][Name::Bold]
+    ///   [`Strong`][Name::Strong]
     /// * **Content model**:
     ///   [text content][crate::construct::text]
     /// * **Construct**:
@@ -2831,7 +2831,7 @@ pub enum Name {
     /// > | **a**
     ///       ^
     /// ```
-    BoldText,
+    StrongText,
     /// Whole thematic break.
     ///
     /// ## Info
@@ -2890,9 +2890,9 @@ pub enum Role {
 /// Blocks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Block {
-    Prose,
-    HeaderAtx,
-    HeaderSetext,
+    Paragraph,
+    HeadingAtx,
+    HeadingSetext,
     ThematicBreak,
     CodeIndented,
     CodeFenced,
@@ -2915,7 +2915,7 @@ pub enum Inline {
     HardBreakTail,
     HardBreakEscape,
     Emphasis,
-    Bold,
+    Strong,
     Strike,
     Insertion,
     Mark,
@@ -2944,9 +2944,9 @@ impl Name {
     #[allow(clippy::too_many_lines)]
     pub fn role(self) -> Role {
         match self {
-            Name::Prose => Role::Block(Block::Prose),
-            Name::HeaderAtx => Role::Block(Block::HeaderAtx),
-            Name::HeaderSetext => Role::Block(Block::HeaderSetext),
+            Name::Paragraph => Role::Block(Block::Paragraph),
+            Name::HeadingAtx => Role::Block(Block::HeadingAtx),
+            Name::HeadingSetext => Role::Block(Block::HeadingSetext),
             Name::ThematicBreak => Role::Block(Block::ThematicBreak),
             Name::CodeIndented => Role::Block(Block::CodeIndented),
             Name::CodeFenced => Role::Block(Block::CodeFenced),
@@ -2964,7 +2964,7 @@ impl Name {
             Name::HardBreakTail => Role::Inline(Inline::HardBreakTail),
             Name::HardBreakEscape => Role::Inline(Inline::HardBreakEscape),
             Name::Emphasis => Role::Inline(Inline::Emphasis),
-            Name::Bold => Role::Inline(Inline::Bold),
+            Name::Strong => Role::Inline(Inline::Strong),
             Name::Strike => Role::Inline(Inline::Strike),
             Name::Insertion => Role::Inline(Inline::Insertion),
             Name::Mark => Role::Inline(Inline::Mark),
@@ -2980,7 +2980,7 @@ impl Name {
             | Name::AutolinkLiteralEmail
             | Name::AutolinkLiteralMailto
             | Name::AutolinkLiteralXmpp => Role::Inline(Inline::Literal),
-            Name::Link | Name::Picture => Role::Inline(Inline::Media),
+            Name::Link | Name::Image => Role::Inline(Inline::Media),
             Name::FootnoteCall => Role::Inline(Inline::FootnoteCall),
             Name::SpaceOrTab => Role::Space(Space::Whitespace),
             Name::LineEnd => Role::Space(Space::LineEnd),
@@ -3058,17 +3058,17 @@ impl Name {
             | Name::TaskListItemMarker
             | Name::TaskListItemValueChecked
             | Name::TaskListItemValueUnchecked
-            | Name::HeaderAtxSequence
-            | Name::HeaderAtxText
-            | Name::HeaderSetextText
-            | Name::HeaderSetextUnderline
-            | Name::HeaderSetextUnderlineSequence
+            | Name::HeadingAtxSequence
+            | Name::HeadingAtxText
+            | Name::HeadingSetextText
+            | Name::HeadingSetextUnderline
+            | Name::HeadingSetextUnderlineSequence
             | Name::HtmlFlowData
             | Name::HtmlTextData
             | Name::Label
             | Name::LabelEnd
-            | Name::LabelPicture
-            | Name::LabelPictureMarker
+            | Name::LabelImage
+            | Name::LabelImageMarker
             | Name::LabelLink
             | Name::LabelMarker
             | Name::LabelText
@@ -3097,8 +3097,8 @@ impl Name {
             | Name::ResourceTitleText
             | Name::ListItemIndent
             | Name::FootnoteDefinitionIndent
-            | Name::BoldSequence
-            | Name::BoldText
+            | Name::StrongSequence
+            | Name::StrongText
             | Name::ThematicBreakSequence => Role::Part,
         }
     }
@@ -3151,11 +3151,11 @@ pub const VOID_EVENTS: [Name; 68] = [
     Name::FrontmatterSequence,
     Name::HardBreakEscape,
     Name::HardBreakTail,
-    Name::HeaderAtxSequence,
-    Name::HeaderSetextUnderlineSequence,
+    Name::HeadingAtxSequence,
+    Name::HeadingSetextUnderlineSequence,
     Name::HtmlFlowData,
     Name::HtmlTextData,
-    Name::LabelPictureMarker,
+    Name::LabelImageMarker,
     Name::LabelMarker,
     Name::LineEnd,
     Name::ListItemMarker,
@@ -3172,7 +3172,7 @@ pub const VOID_EVENTS: [Name; 68] = [
     Name::SpaceOrTab,
     Name::ListItemIndent,
     Name::FootnoteDefinitionIndent,
-    Name::BoldSequence,
+    Name::StrongSequence,
     Name::ThematicBreakSequence,
 ];
 
@@ -3184,8 +3184,8 @@ pub enum Content {
     /// Represents [content][crate::construct::content].
     #[allow(clippy::enum_variant_names)]
     Content,
-    /// Represents [string content][crate::construct::plain].
-    Plain,
+    /// Represents [string content][crate::construct::string].
+    String,
     /// Represents [text content][crate::construct::text].
     Text,
 }

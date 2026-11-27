@@ -57,9 +57,9 @@ out += emit("ANCHOR_CLASSES", anchors.anchor_classes, "u8");
 out += "/// Case folds below `1 << 17`: entry `FOLD_LEAVES[FOLD_SHEETS[c >> 6] * 64 + (c & 63)]`, 0 for none, else 1 + index in `FOLDS`.\n";
 out += emit("FOLD_SHEETS", index.cf_pages, "u8");
 out += emit("FOLD_LEAVES", index.cf_leaves, "u16");
-out += "/// A fold entry: image offset `((e >> 17) & 0xFFF) * 2` in `FOLD_PICTURES`, length `e >> 29`.\n";
+out += "/// A fold entry: image offset `((e >> 17) & 0xFFF) * 2` in `FOLD_IMAGES`, length `e >> 29`.\n";
 out += emit("FOLDS", fold.cf_table, "u32");
-out += emit("FOLD_PICTURES", fold.cf_repl, "u8");
+out += emit("FOLD_IMAGES", fold.cf_repl, "u8");
 
 if (process.argv.includes("--check")) {
     if (fs.readFileSync(dest, "utf8") !== out) {

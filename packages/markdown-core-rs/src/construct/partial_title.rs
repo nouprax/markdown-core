@@ -21,7 +21,7 @@
 //! contain blank lines.
 //! They are allowed to be blank themselves.
 //!
-//! The title is interpreted as the [string][plain] content type.
+//! The title is interpreted as the [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -123,7 +123,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
                 State::Nok,
             );
             State::Redo(space_or_tab_eol_with_options(Options {
-                content: Some(Content::Plain),
+                content: Some(Content::String),
                 connect: title.connect,
             }))
         } else {
@@ -132,7 +132,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut title: Title) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::Plain,
+                    content: Content::String,
                 },
             );
 

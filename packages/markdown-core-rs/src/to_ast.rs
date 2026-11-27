@@ -35,7 +35,7 @@ pub fn compile(events: &[Event], source: &[u8]) -> Node {
         },
         vec![Span::new(0, line_start_before_end(source))],
     );
-    name_headers(&mut document);
+    name_headings(&mut document);
     document
 }
 
@@ -295,34 +295,34 @@ impl<'a> Compiler<'a> {
             Role::Inline(_) | Role::Space(_) | Role::Part => return None,
         };
         let node = match block {
-            Block::Prose => self.prose(index),
-            Block::HeaderAtx => {
+            Block::Paragraph => self.paragraph(index),
+            Block::HeadingAtx => {
                 let level = self
-                    .child(index, Name::HeaderAtxSequence)
+                    .child(index, Name::HeadingAtxSequence)
                     .map_or(1, |sequence| self.text(sequence).len());
-                let content = match self.child(index, Name::HeaderAtxText) {
+                let content = match self.child(index, Name::HeadingAtxText) {
                     Some(text) => self.inlines(text),
                     None => vec![],
                 };
                 Node::new(
-                    Kind::Header {
+                    Kind::Heading {
                         level: u8::try_from(level).unwrap_or(6),
                         content,
                     },
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
-            Block::HeaderSetext => {
-                let level = match self.child(index, Name::HeaderSetextUnderline) {
+            Block::HeadingSetext => {
+                let level = match self.child(index, Name::HeadingSetextUnderline) {
                     Some(underline) if self.text(underline).contains('-') => 2,
                     _ => 1,
                 };
-                let content = match self.child(index, Name::HeaderSetextText) {
+                let content = match self.child(index, Name::HeadingSetextText) {
                     Some(text) => self.inlines(text),
                     None => vec![],
                 };
                 Node::new(
-                    Kind::Header { level, content },
+                    Kind::Heading { level, content },
                     self.runs(self.lead(index), self.end(index)),
                 )
             }
@@ -362,7 +362,7 @@ impl<'a> Compiler<'a> {
                     .child(index, Name::FootnoteDefinitionPrefix)
                     .and_then(|prefix| self.child(prefix, Name::FootnoteDefinitionLabel))
                     .and_then(|label| self.child(label, Name::FootnoteDefinitionLabelText))
-                    .map(|plain| normalize_label(self.text(plain)));
+                    .map(|string| normalize_label(self.text(string)));
                 let (last, content_end) = self.last(index);
                 let end = self.blank_tail(last).unwrap_or(content_end);
                 let runs = Self::whole(self.lead(index), end);
@@ -382,7 +382,7 @@ impl<'a> Compiler<'a> {
         Some(node)
     }
 
-    fn prose(&mut self, index: usize) -> Node {
+    fn paragraph(&mut self, index: usize) -> Node {
         // A task check is the list item's marker, not paragraph content.
         let mut start = self.start(index);
         let mut from = index + 1;
@@ -399,7 +399,7 @@ impl<'a> Compiler<'a> {
         }
         let content = self.inline_span(from, self.exits[index]);
         Node::new(
-            Kind::Prose { content },
+            Kind::Paragraph { content },
             self.runs(self.skip(start, self.end(index)), self.end(index)),
         )
     }
@@ -482,7 +482,7 @@ impl<'a> Compiler<'a> {
                 })
                 .collect();
             if let (Some(first), Some(last)) = (parts.first(), parts.last()) {
-                info = Some(self.plain(*first, self.exits[*last] + 1));
+                info = Some(self.string(*first, self.exits[*last] + 1));
             }
         }
         let script = info.as_ref().map(|info| {
@@ -615,13 +615,13 @@ impl<'a> Compiler<'a> {
     /// The task marker of the list item at `index`: the check its first
     /// paragraph starts with.
     fn task(&self, index: usize) -> Option<String> {
-        let prose = self.inside(index).into_iter().find(|child| {
+        let paragraph = self.inside(index).into_iter().find(|child| {
             !between(self.name(*child)) && self.name(*child) != Name::ListItemPrefix
         })?;
-        if self.name(prose) != Name::Prose {
+        if self.name(paragraph) != Name::Paragraph {
             return None;
         }
-        let check = *self.inside(prose).first()?;
+        let check = *self.inside(paragraph).first()?;
         if self.name(check) != Name::TaskListItemCheck {
             return None;
         }
@@ -640,7 +640,7 @@ impl<'a> Compiler<'a> {
         let label = self
             .child(index, Name::DefinitionLabel)
             .and_then(|label| self.child(label, Name::DefinitionLabelText))
-            .map(|plain| normalize_label(self.text(plain)))
+            .map(|string| normalize_label(self.text(string)))
             .unwrap_or_default();
         let dest = self
             .child(index, Name::DefinitionDestination)
@@ -648,7 +648,7 @@ impl<'a> Compiler<'a> {
             .unwrap_or_default();
         let title = self.child(index, Name::DefinitionTitle).map(|title| {
             self.child(title, Name::DefinitionTitleText)
-                .map(|plain| self.plain(plain, self.exits[plain] + 1))
+                .map(|string| self.string(string, self.exits[string] + 1))
                 .unwrap_or_default()
         });
         Node::new(
@@ -667,7 +667,7 @@ impl<'a> Compiler<'a> {
             self.name(index),
             Name::DefinitionDestinationText | Name::ResourceDestinationText
         ) {
-            return self.plain(index, self.exits[index] + 1);
+            return self.string(index, self.exits[index] + 1);
         }
         for child in self.inside(index) {
             if matches!(
@@ -756,7 +756,7 @@ impl<'a> Compiler<'a> {
     // Strings.
 
     /// The decoded value of the string content in events `from..to`.
-    fn plain(&self, from: usize, to: usize) -> String {
+    fn string(&self, from: usize, to: usize) -> String {
         let mut value = String::new();
         let mut index = from;
         while index < to {
@@ -921,8 +921,8 @@ impl<'a> Compiler<'a> {
             Inline::Emphasis => Kind::Emphasis {
                 content: self.part(index, Name::EmphasisText),
             },
-            Inline::Bold => Kind::Bold {
-                content: self.part(index, Name::BoldText),
+            Inline::Strong => Kind::Strong {
+                content: self.part(index, Name::StrongText),
             },
             Inline::Strike => Kind::Strike {
                 content: self.part(index, Name::StrikeText),
@@ -1094,7 +1094,7 @@ impl<'a> Compiler<'a> {
             if let Some(found) = self.child(resource, Name::ResourceTitle) {
                 title = Some(
                     self.child(found, Name::ResourceTitleText)
-                        .map(|plain| self.plain(plain, self.exits[plain] + 1))
+                        .map(|string| self.string(string, self.exits[string] + 1))
                         .unwrap_or_default(),
                 );
             }
@@ -1103,7 +1103,7 @@ impl<'a> Compiler<'a> {
                 .child(index, Name::Reference)
                 .and_then(|reference| self.child(reference, Name::ReferenceText));
             let written = match (reference, text) {
-                (Some(plain), _) => self.text(plain),
+                (Some(string), _) => self.text(string),
                 (None, Some(text)) => self.text(text),
                 (None, None) => "",
             };
@@ -1175,7 +1175,7 @@ fn line_end(source: &[u8], index: usize) -> usize {
 
 /// Give every heading without an explicit anchor its automatic one, in
 /// source order, after every explicit anchor of the document is reserved.
-fn name_headers(document: &mut Node) {
+fn name_headings(document: &mut Node) {
     let mut taken = BTreeSet::new();
     reserve(document, &mut taken);
     allot(document, &mut taken);
@@ -1192,7 +1192,7 @@ fn reserve(node: &Node, taken: &mut BTreeSet<String>) {
 
 fn allot(node: &mut Node, taken: &mut BTreeSet<String>) {
     if node.anchor.is_none() {
-        if let Kind::Header { content, .. } = &node.kind {
+        if let Kind::Heading { content, .. } = &node.kind {
             let mut base = String::new();
             for child in content {
                 flatten(child, &mut base);
@@ -1270,7 +1270,7 @@ fn flatten(node: &Node, base: &mut String) {
             label: Some(label), ..
         } => flatten(label, base),
         Kind::Emphasis { content }
-        | Kind::Bold { content }
+        | Kind::Strong { content }
         | Kind::Strike { content }
         | Kind::Mark { content }
         | Kind::Insertion { content }

@@ -3,7 +3,7 @@
 
 use super::tables::{
     ANCHOR_CLASSES, ANCHOR_DELTAS, ANCHOR_LEAVES, ANCHOR_SHEETS, BLOCKS, FOLDS, FOLD_LEAVES,
-    FOLD_PICTURES, FOLD_SHEETS, SHEETS,
+    FOLD_IMAGES, FOLD_SHEETS, SHEETS,
 };
 use alloc::string::String;
 
@@ -18,7 +18,7 @@ pub fn classes(char: char) -> u8 {
 }
 
 /// The anchor image of `char`, or `None` when an anchor drops it.
-pub fn anchor_picture(char: char) -> Option<char> {
+pub fn anchor_image(char: char) -> Option<char> {
     let scalar = char as usize;
     let sheet = ANCHOR_SHEETS[scalar >> 10] as usize;
     let leaf = ANCHOR_LEAVES[sheet * 64 + ((scalar >> 4) & 63)] as usize;
@@ -26,14 +26,14 @@ pub fn anchor_picture(char: char) -> Option<char> {
     if class == 0 {
         None
     } else {
-        let picture = i64::try_from(scalar).ok()? + i64::from(ANCHOR_DELTAS[class]);
-        char::from_u32(u32::try_from(picture).ok()?)
+        let image = i64::try_from(scalar).ok()? + i64::from(ANCHOR_DELTAS[class]);
+        char::from_u32(u32::try_from(image).ok()?)
     }
 }
 
 /// The anchor image of `text`: every scalar mapped, dropped ones removed.
 pub fn anchor(text: &str) -> String {
-    text.chars().filter_map(anchor_picture).collect()
+    text.chars().filter_map(anchor_image).collect()
 }
 
 /// The case fold of `char`, when it has one.
@@ -49,7 +49,7 @@ fn fold(char: char) -> Option<&'static str> {
     let item = FOLDS[number - 1];
     let offset = (((item >> 17) & 0xFFF) * 2) as usize;
     let size = (item >> 29) as usize;
-    core::str::from_utf8(&FOLD_PICTURES[offset..offset + size]).ok()
+    core::str::from_utf8(&FOLD_IMAGES[offset..offset + size]).ok()
 }
 
 /// Whether `code` is whitespace for label normalization.
@@ -73,8 +73,8 @@ pub fn normalize_label(value: &str) -> String {
         }
         if char.is_ascii() {
             result.push(char.to_ascii_lowercase());
-        } else if let Some(picture) = fold(char) {
-            result.push_str(picture);
+        } else if let Some(image) = fold(char) {
+            result.push_str(image);
         } else {
             result.push(char);
         }

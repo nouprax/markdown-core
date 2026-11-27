@@ -21,7 +21,7 @@
 //! Labels can contain line endings and whitespace, but they are not allowed to
 //! contain blank lines, and they must not be blank themselves.
 //!
-//! The label is interpreted as the [string][plain] content type.
+//! The label is interpreted as the [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -41,7 +41,7 @@
 //! >
 //! > The thing that contains `x` is not a single thing when parsing markdown,
 //! > but instead constists of an opening
-//! > ([label start (image)][label_start_picture] or
+//! > ([label start (image)][label_start_image] or
 //! > [label start (link)][label_start_link]) and a closing
 //! > ([label end][label_end]), so as to allow further phrasing such as
 //! > [code (text)][raw_text] or [attention][].
@@ -132,7 +132,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
                     State::Nok,
                 );
                 State::Redo(space_or_tab_eol_with_options(Options {
-                    content: Some(Content::Plain),
+                    content: Some(Content::String),
                     connect: label.connect,
                 }))
             }
@@ -150,7 +150,7 @@ fn at_break(tokenizer: &mut Tokenizer, mut label: Label) -> State {
                     Link {
                         previous: None,
                         next: None,
-                        content: Content::Plain,
+                        content: Content::String,
                     },
                 );
 

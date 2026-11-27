@@ -19,8 +19,8 @@
 //!
 //! ## Tokens
 //!
-//! * [`LabelPicture`][Name::LabelPicture]
-//! * [`LabelPictureMarker`][Name::LabelPictureMarker]
+//! * [`LabelImage`][Name::LabelImage]
+//! * [`LabelImageMarker`][Name::LabelImageMarker]
 //! * [`LabelMarker`][Name::LabelMarker]
 //!
 //! ## References
@@ -49,11 +49,11 @@ pub const STARTS: Starts = Starts::Codes(b"!");
 /// ```
 fn start(tokenizer: &mut Tokenizer) -> State {
     if tokenizer.current == Some(b'!') {
-        tokenizer.enter(Name::LabelPicture);
-        tokenizer.enter(Name::LabelPictureMarker);
+        tokenizer.enter(Name::LabelImage);
+        tokenizer.enter(Name::LabelImageMarker);
         tokenizer.consume();
-        tokenizer.exit(Name::LabelPictureMarker);
-        State::Next(StateName::LabelStartPicture(Step::Open))
+        tokenizer.exit(Name::LabelImageMarker);
+        State::Next(StateName::LabelStartImage(Step::Open))
     } else {
         State::Nok
     }
@@ -71,8 +71,8 @@ fn open(tokenizer: &mut Tokenizer) -> State {
             tokenizer.enter(Name::LabelMarker);
             tokenizer.consume();
             tokenizer.exit(Name::LabelMarker);
-            tokenizer.exit(Name::LabelPicture);
-            State::Next(StateName::LabelStartPicture(Step::After))
+            tokenizer.exit(Name::LabelImage);
+            State::Next(StateName::LabelStartImage(Step::After))
         }
         _ => State::Nok,
     }
@@ -106,7 +106,7 @@ fn after(tokenizer: &mut Tokenizer) -> State {
         State::Nok
     } else {
         tokenizer.labels.starts.push(LabelStart {
-            kind: LabelKind::Picture,
+            kind: LabelKind::Image,
             start: (tokenizer.events.len() - 6, tokenizer.events.len() - 1),
             inactive: false,
         });
@@ -125,7 +125,7 @@ pub enum Step {
 
 impl From<Step> for StateName {
     fn from(step: Step) -> StateName {
-        StateName::LabelStartPicture(step)
+        StateName::LabelStartImage(step)
     }
 }
 

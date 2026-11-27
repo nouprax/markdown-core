@@ -23,7 +23,7 @@
 //!
 //! See [`label`][label] for grammar, notes, and recommendations on that part.
 //!
-//! The `label` part is interpreted as the [string][plain] content type.
+//! The `label` part is interpreted as the [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -42,7 +42,7 @@
 //! [^a]
 //! ```
 //!
-//! Importantly, while labels *can* include [string][plain] content (character
+//! Importantly, while labels *can* include [string][string] content (character
 //! escapes and character references), these are not considered when matching.
 //! To illustrate, neither definition matches the call:
 //!
@@ -236,7 +236,7 @@ fn label_at_marker(tokenizer: &mut Tokenizer) -> State {
             Link {
                 previous: None,
                 next: None,
-                content: Content::Plain,
+                content: Content::String,
             },
         );
         State::Next(StateName::FootnoteDefinition(Step::LabelInside { size: 0 }))

@@ -19,7 +19,7 @@
 //! for grammar, notes, and recommendations on each part.
 //!
 //! The `destination`, `label`, and `title` parts are interpreted as the
-//! [string][plain] content type.
+//! [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -38,7 +38,7 @@
 //! [a]
 //! ```
 //!
-//! Importantly, while labels *can* include [string][plain] content (character
+//! Importantly, while labels *can* include [string][string] content (character
 //! escapes and character references), these are not considered when matching.
 //! To illustrate, neither definition matches the reference:
 //!

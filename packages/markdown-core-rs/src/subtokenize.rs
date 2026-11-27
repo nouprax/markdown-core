@@ -17,7 +17,7 @@
 //! whole document needs to be parsed up to the level of definitions, before
 //! any level that can include references can be parsed.
 
-use crate::construct::{content, plain, text};
+use crate::construct::{content, string, text};
 use crate::event::{Content, Event, Kind, Name, VOID_EVENTS};
 use crate::parser::ParseState;
 use crate::state::{Name as StateName, State};
@@ -109,7 +109,7 @@ pub fn subtokenize(
                 // Substate.
                 let mut state = State::Next(match link.content {
                     Content::Content => StateName::Content(content::Step::DefinitionBefore),
-                    Content::Plain => StateName::Plain(plain::Step::Start),
+                    Content::String => StateName::String(string::Step::Start),
                     _ => StateName::Text(text::Step::Start),
                 });
 
@@ -118,7 +118,7 @@ pub fn subtokenize(
                 // Used for GFM task list items.
                 if index > 2
                     && events[index - 1].kind == Kind::Enter
-                    && events[index - 1].name == Name::Prose
+                    && events[index - 1].name == Name::Paragraph
                 {
                     let before = skip::opt_back(
                         events,

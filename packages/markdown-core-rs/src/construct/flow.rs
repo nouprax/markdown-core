@@ -12,15 +12,15 @@
 //!
 //! * [Blank line][crate::construct::blank_line]
 //! * [Code (indented)][crate::construct::code_indented]
-//! * [Heading (atx)][crate::construct::header_atx]
-//! * [Heading (setext)][crate::construct::header_setext]
+//! * [Heading (atx)][crate::construct::heading_atx]
+//! * [Heading (setext)][crate::construct::heading_setext]
 //! * [HTML (flow)][crate::construct::html_flow]
 //! * [Raw (flow)][crate::construct::raw_flow] (code (fenced), math (flow))
 //! * [Thematic break][crate::construct::thematic_break]
 
 use crate::choice::{self, Choice, Item, List};
 use crate::construct::{
-    blank_line, code_indented, content, header_atx, header_setext, html_flow, raw_flow, table,
+    blank_line, code_indented, content, heading_atx, heading_setext, html_flow, raw_flow, table,
     thematic_break,
 };
 use crate::event::Name;
@@ -46,12 +46,12 @@ pub const CHOICE: Choice = Choice::new(
             step: StateName::HtmlFlow(html_flow::Step::Start),
         },
         Item {
-            starts: header_atx::STARTS,
-            step: StateName::HeaderAtx(header_atx::Step::Start),
+            starts: heading_atx::STARTS,
+            step: StateName::HeadingAtx(heading_atx::Step::Start),
         },
         Item {
-            starts: header_setext::STARTS,
-            step: StateName::HeaderSetext(header_setext::Step::Start),
+            starts: heading_setext::STARTS,
+            step: StateName::HeadingSetext(heading_setext::Step::Start),
         },
         Item {
             starts: thematic_break::STARTS,

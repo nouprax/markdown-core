@@ -12,10 +12,10 @@
 //! As this construct occurs in flow, like all flow constructs, it must be
 //! followed by an eol (line ending) or eof (end of file).
 //!
-//! Blank lines are sometimes needed, such as to differentiate a [paragraph][prose]
+//! Blank lines are sometimes needed, such as to differentiate a [paragraph][paragraph]
 //! from a definition.
 //! In several cases, blank lines are not needed between flow constructs,
-//! such as between two [heading (atx)][header_atx]s.
+//! such as between two [heading (atx)][heading_atx]s.
 //! Sometimes, whether blank lines are present, changes the behavior of how
 //! HTML is rendered, such as whether blank lines are present inside or between
 //! [list items][list_item].

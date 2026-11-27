@@ -25,7 +25,7 @@
 //! before it.
 //! Escaped parens do not count in balancing.
 //!
-//! The destination is interpreted as the [string][plain] content type.
+//! The destination is interpreted as the [string][string] content type.
 //! That means that [character escapes][character_escape] and
 //! [character references][character_reference] are allowed.
 //!
@@ -138,7 +138,7 @@ fn start(tokenizer: &mut Tokenizer, options: Options) -> State {
                 Link {
                     previous: None,
                     next: None,
-                    content: Content::Plain,
+                    content: Content::String,
                 },
             );
             State::Redo(StateName::Destination(Step::Raw(options, 0)))
@@ -167,7 +167,7 @@ fn enclosed_before(tokenizer: &mut Tokenizer, names: Names) -> State {
             Link {
                 previous: None,
                 next: None,
-                content: Content::Plain,
+                content: Content::String,
             },
         );
         State::Redo(StateName::Destination(Step::Enclosed(names)))

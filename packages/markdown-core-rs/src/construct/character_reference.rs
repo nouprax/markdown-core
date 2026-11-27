@@ -1,4 +1,4 @@
-//! Character references occur in the [string][plain] and [text][] content types.
+//! Character references occur in the [string][string] and [text][] content types.
 //!
 //! ## Grammar
 //!

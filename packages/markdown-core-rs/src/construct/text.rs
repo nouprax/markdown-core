@@ -16,7 +16,7 @@
 //! * [GFM: Task list item check][crate::construct::task_list_item_check]
 //! * [Hard break (escape)][crate::construct::hard_break_escape]
 //! * [HTML (text)][crate::construct::html_text]
-//! * [Label start (image)][crate::construct::label_start_picture]
+//! * [Label start (image)][crate::construct::label_start_image]
 //! * [Label start (link)][crate::construct::label_start_link]
 //! * [Label end][crate::construct::label_end]
 //!
@@ -29,7 +29,7 @@ use crate::construct::partial_whitespace::resolve_whitespace;
 use crate::construct::{
     attention, autolink, autolink_literal, character_escape, character_reference, comment,
     hard_break_escape, html_text, label_end, label_start_footnote, label_start_link,
-    label_start_picture, partial_data, raw_text, task_list_item_check,
+    label_start_image, partial_data, raw_text, task_list_item_check,
 };
 use crate::resolve::Name as ResolveName;
 use crate::state::{Name as StateName, State};
@@ -42,8 +42,8 @@ use crate::tokenizer::Tokenizer;
 pub const CHOICE: Choice = Choice::new(
     &[
         Item {
-            starts: label_start_picture::STARTS,
-            step: StateName::LabelStartPicture(label_start_picture::Step::Start),
+            starts: label_start_image::STARTS,
+            step: StateName::LabelStartImage(label_start_image::Step::Start),
         },
         Item {
             starts: raw_text::STARTS,
