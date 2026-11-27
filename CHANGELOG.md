@@ -21,6 +21,15 @@ promised to remain compatible between releases.
   (`markdown_core_document_specimen_*`, `markdown_core_specimen_*`),
   Swift, Kotlin, ES, the wire format and the dump.
 
+- Pandoc's implicit heading references are removed: a heading declares no
+  reference label, so `[Heading]`, `[Heading][]` and `[text][Heading]` are
+  bracket text unless a link reference definition declares the label; link
+  to a heading by its anchor, `[text](#heading)`. The document's label
+  table lists `Reference` nodes only: C's
+  `markdown_core_document_reference_for` never returns a `Heading`, and
+  Swift's `reference(for:)`, Kotlin's `reference(label)` and ES's
+  `reference(label)` return a `Reference`.
+
 - A definition starts only with `:`; Pandoc's `~` marker is text. A lone
   `-` in an attribute container is an ordinary bare name, `{-}` giving the
   record `-="true"`, no longer the class `unnumbered`.

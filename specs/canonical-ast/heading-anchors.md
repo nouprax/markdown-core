@@ -1,4 +1,4 @@
-[Chapter] [Chapter][] [go][Chapter]{.jump k=1}
+[go](#chapter){.jump k=1} [back](#chapter-2)
 
 # Chapter
 
@@ -8,7 +8,7 @@
 
 # *Styled* &amp; `Code`
 
-[*Styled* &amp; `Code`]
+[*Styled* &amp; `Code`](#styled--code)
 
 [^note]: # Chapter
 
@@ -16,4 +16,4 @@
 
 # A\]B
 
-[A\]B]
+[A\]B](#ab)

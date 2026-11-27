@@ -69,12 +69,11 @@ public struct Document: Markup {
         record.footnoteLabels[Array(label.utf8)].map { Footnote(record: $0) }
     }
 
-    /// The node a ``Destination/reference(label:)`` naming `label`, a
+    /// The definition a ``Destination/reference(label:)`` naming `label`, a
     /// normalized label, resolves to, byte for byte: the first ``Reference``
-    /// in source order whose label equals it, or else the first ``Heading``
-    /// in source order whose text declares it; `nil` when none does.
-    public func reference(for label: String) -> (any Markup)? {
-        record.referenceLabels[Array(label.utf8)]?.markup
+    /// in source order whose label equals it; `nil` when none does.
+    public func reference(for label: String) -> Reference? {
+        record.referenceLabels[Array(label.utf8)].map { Reference(record: $0) }
     }
 
     /// Parses `source` and returns the whole tree as values.
@@ -125,7 +124,7 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     let footnotes: [MarkupRecord]
     let references: [MarkupRecord]
     let footnoteLabels: [[UInt8]: FootnoteRecord]
-    let referenceLabels: [[UInt8]: MarkupRecord]
+    let referenceLabels: [[UInt8]: ReferenceRecord]
 
     init(
         _ fields: InheritedFields,
@@ -134,7 +133,7 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
         content: [MarkupRecord],
         footnotes: [FootnoteRecord],
         references: [ReferenceRecord],
-        referenceLabels: [[UInt8]: MarkupRecord]
+        referenceLabels: [[UInt8]: ReferenceRecord]
     ) {
         let metadatas: [MarkupRecord] = metadata.map { [$0] } ?? []
         self.unit = unit

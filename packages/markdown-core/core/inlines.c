@@ -450,8 +450,7 @@ static void reduce_delimiter_range(markdown_core_inline_state *inline_state, del
 }
 
 /* A token's owned fields finish before scanning its successor, preserving
- * reference occurrence order. Heading declaration can suspend with this
- * event on the same stack and resume after its symbol table is complete. */
+ * reference occurrence order. */
 static void complete_inline_token(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
     delimiter *entry = delimiter_last(&inline_state->delims);
     if (!entry || entry->kind != DELIMITER_FIELD) {

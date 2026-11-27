@@ -794,8 +794,7 @@ static void put_definition_table(wire_buffer *buffer, const markdown_core_docume
 }
 
 /* The document's reference label table: a count, then each label that
- * resolves, in byte order, and the id of the Reference or Heading it
- * resolves to. */
+ * resolves, in byte order, and the id of the Reference it resolves to. */
 static void put_reference_labels(wire_buffer *buffer, const markdown_core_document *document) {
     size_t count = markdown_core_document_reference_label_count(document), index;
     put_count(buffer, count);

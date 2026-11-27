@@ -113,8 +113,8 @@ const equal: boolean = markupEquals(document, Document.parse("# typed"));
 const footnotes: readonly Footnote[] = document.footnotes;
 const footnote: Footnote | null = document.footnote("label");
 const references: readonly Reference[] = document.references;
-const target: Reference | Heading | null = document.reference("label");
-// @ts-expect-error a label names a Reference or a Heading, nothing else
+const target: Reference | null = document.reference("label");
+// @ts-expect-error a label names a Reference, nothing else
 const footnoteTarget: Footnote | null = document.reference("label");
 void [id, extent, scope, hit, equal, footnotes, footnote, references, target, footnoteTarget];
 void [runs];

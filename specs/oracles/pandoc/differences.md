@@ -43,7 +43,7 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 14 | `anchor-simple-lowercase`: Unicode lowercase conversion | Core uses Unicode 17 simple lowercase, converting `İ` to a single `i`. Pandoc's full lowercase produces `i` followed by U+0307 COMBINING DOT ABOVE, yielding a different anchor character sequence. |
 | 15 | `anchor-whitespace-scalars`: Unicode whitespace in anchors | Core converts Unicode White_Space such as U+0085 and U+2028 to hyphens. Pandoc deletes those two characters in this case, yielding `a-b-c` and `abc`, respectively. |
 | 16 | `anchor-inline-code-reservation`: reserving explicit code IDs | The same global reservation rule as item 12, with explicit `{#x}` attached to inline code. Core gives the earlier heading `x-1`; Pandoc keeps `x`. |
-| 17 | `implicit-reference-adjacency`: adjacency of reference brackets | Core retains CommonMark's adjacency requirement and parses `[Foo] [Foo][] [go][Foo]` as three separate heading links. Pandoc crosses the space to combine the first two bracket groups, leaving different text and link structure. |
+| 17 | `implicit-reference-adjacency`: adjacency of reference brackets | The same dropped syntax as item 44: `[Foo] [Foo][] [go][Foo]` names no definition, so Core keeps all three as bracket text. Pandoc resolves them to the heading and crosses the space to combine the first two bracket groups. |
 | 18 | `p5-heading-span-reservation`: reserving explicit Span IDs | The same rule as item 12, with the explicit ID from `[owner]{#taken}`. Core gives the earlier `# Taken` the anchor `taken-1`; Pandoc uses `taken`. |
 | 19 | `p7-tail-and-nesting`: edge whitespace in citation affixes | Core trims source whitespace at both ends of citation prefixes/suffixes. Pandoc retains the suffix's leading space before nested brackets. Nested content is still compared individually. |
 | 20 | `p7-tail-later-author`: another citation in an author-style tail | For `@a [@b [p. 7]]`, both sides now retain `@b` as a normal item of the outer Cite. Only affix whitespace differs: Core's suffix is `[p. 7]`, while Pandoc retains a leading space. |
@@ -70,11 +70,24 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 41 | `p9a-variants`: letter and Roman markers | The same rule as item 40: `a)`, `(A)`, `iv.` and `IV)` lists are paragraphs in Core. |
 | 42 | `p9a-default-and-disambiguation`: letters and `#` markers | The same rule as item 40, for letters, `#.` and `(#)`. |
 | 43 | `p9a-capital-period`: capital letter and `.` | The same rule as item 40; Pandoc's two-space rule for `A.` has no counterpart in Core. |
+| 44 | `implicit-header-references`: Pandoc's implicit heading references | Core has no implicit heading references: a heading declares no reference label, so `[First Chapter]` and `[go there][First Chapter]` stay bracket text unless a link reference definition declares the label. Pandoc's `implicit_header_references` links both to the heading. |
+| 45 | `implicit-authored-label`: authored markup in a heading label | The same rule as item 44, for `[*Foo*]` after `# *Foo*`: Core keeps the brackets as text around the emphasis. |
+| 46 | `implicit-forward-and-duplicates`: forward and duplicate heading labels | The same rule as item 44, for uses before the heading and a repeated heading. |
+| 47 | `implicit-occurrence-attributes`: attributes on a heading reference | The same rule as item 44: `[Foo][]{#own .jump}` is the text `[Foo]` and an empty Span holding the attributes in Core, a heading link with its own attributes in Pandoc. |
+| 48 | `implicit-reference-in-paragraph-definition-text`: a heading reference in definition-shaped text | The same rule as item 44, with `[foo]: <>` inside a paragraph, where it is no definition. |
+| 49 | `p5-implicit-heading-shortcut`: Span and heading shortcut precedence | The same rule as item 44: `[Ref]{.span}` is a Span on both sides, while `[Ref][]{.link}` and `[go][Ref]{.link}` are bracket text and Spans in Core and heading links in Pandoc. |
+| 50 | `p6-heading-reference`: a script-bearing heading reference | The same rule as item 44, for `[2^10^]` before `# 2^10^`. |
+| 51 | `p4-image-shortcut-heading-reference`: an image shortcut to a heading | The same rule as item 44: `![H]` is text in Core and an image whose source is `#h` in Pandoc. |
+| 52 | `p4-image-collapsed-heading-reference`: a collapsed image reference to a heading | The same rule as item 44, for `![H][]`. |
+| 53 | `p4-image-full-heading-reference`: a full image reference to a heading | The same rule as item 44, for `![alt][H]`. |
+| 54 | `p4-isolated-authored-heading-label`: an isolated authored heading label | The same rule as item 44, for `[*Foo*]` alone after `# *Foo*`. |
 
 The clearest repeated relationships are:
 
 - 6, 25, 26: the dropped numbered examples, across ordinary content, forward
   references, and headings.
+- 17, 44–54: the dropped implicit heading references, across shortcut, full,
+  collapsed and image forms.
 - 12, 16, 18, 31: one global explicit-ID reservation rule across four declaration
   sites.
 - 32–34: one compactness-information difference across nested blocks, code

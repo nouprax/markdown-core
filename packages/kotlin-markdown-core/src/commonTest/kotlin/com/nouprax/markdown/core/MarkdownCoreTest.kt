@@ -810,15 +810,15 @@ class RobustnessTest {
     }
 
     @Test
-    fun forwardReferencesResolveToTheLaterSectionTitleAfterNativeRelease() {
+    fun forwardReferencesResolveToTheLaterDefinitionAfterNativeRelease() {
         val anchor = "a".repeat(1024)
         val count = 5_000
-        val document = Document.parse("[Target]\n\n".repeat(count) + "# Target {#$anchor .heading k=1}\n")
+        val document = Document.parse("[Target]\n\n".repeat(count) + "[Target]: /t {#$anchor .ref k=1}\n")
         val links = document.content.take(count).map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
-        val declared = assertIs<Heading>(document.content[count])
+        val declared = assertIs<Reference>(document.content[count])
         assertEquals(anchor, declared.anchor)
-        assertTrue(document.references.isEmpty())
-        assertSame<Markup?>(declared, document.reference("target"))
+        assertEquals(listOf(declared), document.references)
+        assertSame(declared, document.reference("target"))
         for (link in links) {
             assertEquals(Destination.Reference("target"), link.dest)
             assertEquals(null, link.anchor)

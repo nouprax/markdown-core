@@ -31,13 +31,8 @@ A registered difference must reproduce; a new difference and a
 registered difference that disappears both fail an active gate.
 
 Seeded differential fuzzing compares only the shared language of its selected
-oracle. A document combining a heading with unresolved bracket text
-can activate implicit heading references, which cmark, cmark-gfm and remark do
-not implement. `scripts/correctness/fuzz-scope.mjs` conservatively classifies that
-composition with an independent CommonMark parse. It neither consults product
-output nor implements heading-label matching. Explicitly resolved references,
-headings without unresolved brackets, references without headings, and brackets
-inside code/HTML remain eligible for comparison. The same module draws the
+oracle; `scripts/correctness/fuzz-scope.mjs` classifies the rest with an
+independent CommonMark parse and never consults product output. It draws the
 remark boundary for a part-less text directive: remark-directive accepts a bare
 `:name`, while the dialect anchors the inline form on a bracketed label or an
 attribute container and keeps the colon as text otherwise. Recombination and
@@ -51,8 +46,6 @@ instead, since a substring names that shape. The scope tests run before every
 Out-of-scope and exact registered inputs are reported separately from actual
 comparisons; neither counts as an agreement, and zero comparisons fails the
 run. The ordinary parity gates keep their fail-closed comparison unchanged.
-The anchors fixtures retain the complete CI seed-1 witness, and the Pandoc
-corpus independently verifies its reduced heading-reference interaction.
 The `heading-anchor-unavailable` Remark boundary projects out only
 `Heading.anchor`, a fact mdast cannot express. Heading levels, content and
 attributes, and anchors on other kinds remain compared. This projection runs

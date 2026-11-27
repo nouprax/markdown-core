@@ -3,13 +3,13 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "b1ad15db53f028b8cad4b031ef84d5fa73689b5362b096632dd9ed1b3312b823"
+        "sha256": "4436f738644a2c2c2d4c3946325b4296c9cb34f197b8880964f152f7f5572bf4"
     },
     "features": [
         {
             "feature": "anchors",
             "specification": "docs/specs/dialect/anchors.md",
-            "sha256": "420d555b1a41c6b62b5b057126fdd5c6989d116ee4519c180de8a091d8a08086",
+            "sha256": "5fe293dd66aac2e8404c75ce2da0fc2706fdfc057499472e9fedba4dd4ab930c",
             "sections": [
                 {
                     "title": "Anchors",
@@ -42,23 +42,23 @@
                     }
                 },
                 {
-                    "title": "Implicit heading references",
+                    "title": "Linking to a heading",
                     "line": 68,
                     "level": 2,
-                    "sha256": "fd61397ac9a428ca5e8708e80975ce194ee52f99444229be3d21991b38bfb45a",
+                    "sha256": "2b79fe7705c74fd105ea784b3b8a9b09ab12a3ce4499e4ca9fab14dc83440c65",
                     "disposition": {
-                        "kind": "grammar",
-                        "certificates": ["heading-reference"]
+                        "kind": "context",
+                        "reason": "A link to a heading is an ordinary inline link whose destination is the anchor; links-and-images certificates cover that form."
                     }
                 },
                 {
                     "title": "Anchor ownership",
-                    "line": 90,
+                    "line": 74,
                     "level": 2,
                     "sha256": "ec1c2cbd1daffbd35360623fd3817a9c31adcba60fc983db7bf7369bdc64c7b9",
                     "disposition": {
                         "kind": "context",
-                        "reason": "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+                        "reason": "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by the explicit anchor sections and attribute-reference."
                     }
                 }
             ],
@@ -81,12 +81,6 @@
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": ["explicit-anchor", "attribute-override"]
-                },
-                {
-                    "id": "heading-reference",
-                    "scope": "paired-document-grammar",
-                    "identity": false,
-                    "facets": ["implicit-references", "forward-resolution"]
                 }
             ]
         },
@@ -1962,7 +1956,7 @@
         {
             "feature": "links-and-images",
             "specification": "docs/specs/dialect/links-and-images.md",
-            "sha256": "782ac542988d9e46678797df3ce3156e6566a1d88dcb72801a6525d009747756",
+            "sha256": "a9a53fa26ed42ca96d7d1c03f292d41dc9c08f2d50d66e9f20fb1c795d2dab49",
             "sections": [
                 {
                     "title": "Links and images",
@@ -1978,7 +1972,7 @@
                     "title": "Reference links",
                     "line": 24,
                     "level": 2,
-                    "sha256": "2e65950ee9e252beed11beca33642cb8e9a970fea4907b7a341f1751cefe85d9",
+                    "sha256": "bf9d2b591f8cb9e3cf7b7ce71026fb0b760c30b08a971e00a4c85937f4f17620",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [

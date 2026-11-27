@@ -1,66 +1,32 @@
 # Heading resolution
 
 The [anchors module](../specs/dialect/anchors.md) owns the language contract.
-Parsing establishes heading labels before reference lookup, then gives each
-heading its anchor after every explicit anchor is known. Consumers receive
-only the completed document.
+Parsing gives each heading its anchor after every explicit anchor is known.
+Consumers receive only the completed document.
 
 ## Declaration order and inline ownership
 
 Closing a heading registers it, so headings register in source order,
-including headings in footnote definitions. A heading is a leaf block, so closure order is source
-order. The parser keeps borrowed node pointers in that order; no final tree
-search or sorting is needed. Each heading whose text is a writable label keeps
-that label, normalized, and declares it in the parse's roster
-(`core/roster.h`) as a reference label, as each `Reference` declares its
-own. Reference parsing asks the roster only whether a label is declared, so
-it needs no heading-specific case. The published
-document resolves a `reference` destination: to the first `Reference` that
-declares the label or, when none does, to the first heading.
+including headings in footnote definitions. A heading is a leaf block, so
+closure order is source order. The parser keeps borrowed node pointers in that
+order; no final tree search or sorting is needed. A heading declares no
+reference label: `[Title]` is a reference only when a `Reference` declares
+`Title`, and the published document resolves a `reference` destination to the
+first `Reference` that declares its label.
 
-Each writable heading declares its label, duplicates included. Every
-declaration owns its label in the same allocation as its record.
-
-A heading label uses authored source, not projected display text. Its endpoint
-depends on whether the normal inline cursor actually claims trailing heading
-attributes. Merely finding a syntactically valid tail is insufficient: a code
-span, formula, HTML token, or comment may own its opening brace. Conversely,
-brackets inside an attached attribute value are not part of the heading label.
-
-Each heading starts the ordinary inline parser. It can finish and declare its
-label without reference lookup until it encounters a live unescaped bracket.
-That bracket makes the authored label unwritable under the inherited reference
-label grammar. The parser retains that same inline state, including its
-cursor and delimiter state, and resumes it after all writable heading labels
-have been declared. There is no second inline recognizer, reparsed prefix,
-placeholder AST, or later replacement of literal Text with Links.
-
-A consumed directive with an owned label is also a suspension boundary: that
-label has live brackets and may contain references of its own. The inline state
-retains a field-completion event on its delimiter stack, including when the
-token ends the heading.
-A directive without a label does not suspend declaration.
-
-Opaque tokens and attached attribute containers are consumed by their existing
-owners before this boundary is tested. On completion the same raw-label
-validator used by explicit references rejects brackets even when they occurred
-inside an opaque token. For example, `# Title {k="[Later]"}` can declare
-`Title`, while `# Title [Later]` cannot declare a heading label and may itself
-contain a forward reference. A valid declaration cannot depend on a reference
-lookup. This is the invariant that permits one declaration pass and one
-continuation pass, without a fixed-point resolver or general task scheduler.
-
-Ordinary blocks and owned inline fields then parse against the completed map.
-Each inline token's fields finish before the enclosing cursor advances. Fields
-use the same parser and report ordinary raw whitespace as a boundary entry
-on the enclosing delimiter stack, excluding entities and opaque tokens. The structural walk
-skips emitted inline trees, so every source buffer is parsed once. Field-local
-delimiters remain independent of those in the enclosing content.
-The [delimiter model](inline-delimiters.md) owns pairing and scope reduction.
-The heading's ordinary inline state is the sole owner of its temporary
-caches and delimiter/bracket stacks. Backtick caches allocate lazily, bounded
-by the input length and the inherited backtick limit; a pending heading does
-not retain a maximum-sized cache for source that never needs one.
+Before the document's blocks are walked, each settled heading parses its
+inline content once, in source order, with the ordinary inline parser. Its
+attached attribute tail is its own unless the inline cursor actually claims
+the opening brace: a code span, formula, HTML token, or comment may own it.
+Ordinary blocks and owned inline fields then parse against the completed
+reference map. Each inline token's fields finish before the enclosing cursor
+advances. Fields use the same parser and report ordinary raw whitespace as a
+boundary entry on the enclosing delimiter stack, excluding entities and opaque
+tokens. The structural walk skips emitted inline trees, so every source buffer
+is parsed once. Field-local delimiters remain independent of those in the
+enclosing content. The [delimiter model](inline-delimiters.md) owns pairing
+and scope reduction. Backtick caches allocate lazily, bounded by the input
+length and the inherited backtick limit.
 
 ## Final anchors
 
@@ -135,18 +101,15 @@ headings rather than discarded when a value is attached.
 
 The heading collection and finalization's anchor index borrow nodes and
 strings only until finalization completes; the roster holds its own copy of
-every label it records. Pending inline states own their temporary parser state.
-Each heading owns its computed anchor and its label, and a reference
+every label it records. Each heading owns its computed anchor, and a reference
 occurrence owns its label, so freeing a heading or a document invalidates no
 other node.
-Every failure joins the parser's terminal allocation-failure transaction and
-disposes pending inline states before their nodes. Parse-time indices are discarded
+Every failure joins the parser's terminal allocation-failure transaction. Parse-time indices are discarded
 before consolidation or an element's finish step can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor bytes, using the shared hash index's normal bounds. Memory is
-proportional to headings and unique reserved anchors, plus live inline state. Tests measure node/string/candidate work, rather than using
-timing to assert linearity. They include dense suffix reservations, nested live
-delimiters at suspension, long targets with thousands of references,
+proportional to headings and unique reserved anchors. Tests measure node/string/candidate work, rather than using
+timing to assert linearity. They include dense suffix reservations, long targets with thousands of references,
 source-order headings inside footnotes, and strict allocation-failure sweeps. Canonical fixtures and Swift, Kotlin, and ES tests
 verify that the same completed facts cross every binding boundary.

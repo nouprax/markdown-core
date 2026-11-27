@@ -65,13 +65,13 @@ Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
 opacity retain exact drift witnesses, subject to the provenance qualifications
 above. Inline-footnote composition
 is tested in the product fixtures, where the note owned by its citation and
-source scopes are observable. P3/P4 compositions agree for heading text,
-script-bearing heading references and Span precedence over implicit shortcuts;
-the later Span ID reservation retains its exact global-reservation difference.
+source scopes are observable. P3/P4 compositions agree for heading text; the
+later Span ID reservation retains its exact global-reservation difference.
 
-Seven isolated audit controls verify implicit image references, authored versus
-plain heading labels, connector/combining-mark retention, and successful script
-space escaping. The last control enables `all_symbols_escapable` solely as the
+Isolated audit controls verify connector/combining-mark retention and
+successful script space escaping; the implicit image references and authored
+heading labels among them are exact differences now that the dialect has no
+implicit heading references. The last control enables `all_symbols_escapable` solely as the
 Pandoc reader prerequisite for the adopted script escape. It does not adopt that
 extension's unrelated grammar into the product. The older `p6-escaped-space`
 compound case retains a different reader and mixes this configuration effect
@@ -83,13 +83,13 @@ necessarily differ from Pandoc.
 `link-and-image-attributes` agree; `pandoc-reference-attribute-merge` remains an
 exact deliberate difference, with an executable `combineAttr` canary.
 
-P3/P4 retire `gfm-auto-anchors` and `implicit-header-references`. Added agreements
-cover empty fallback, authored markup labels, forward and duplicate labels,
-explicit-definition priority, occurrence attributes, and a heading reference
-inside declaration-shaped paragraph text (the reduced CI seed-1 witness). Exact deliberate
-differences retain global explicit-anchor reservation (including inline code),
-Unicode simple lowercase, `White_Space`, permitted scalars without emoji aliases,
-and CommonMark reference adjacency. CLI canaries independently pin these Pandoc
+P3/P4 retire `gfm-auto-anchors`; an added agreement covers empty fallback. The
+dialect has no implicit heading references, so every case read with Pandoc's
+`implicit_header_references` (authored markup labels, forward and duplicate
+labels, occurrence attributes, adjacency, images) is an exact deliberate
+difference. Exact deliberate differences also retain global explicit-anchor
+reservation (including inline code), Unicode simple lowercase, `White_Space`
+and permitted scalars without emoji aliases. CLI canaries independently pin these Pandoc
 behaviors; the projections preserve both sides rather than erase differences.
 P11 implemented captions, simple, multiline and grid tables; they have since
 left the dialect, which keeps pipe tables only, and their cases left the

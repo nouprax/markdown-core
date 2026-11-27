@@ -268,7 +268,7 @@ bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_c
 
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
- * of the document's tables -- Footnotes, References, Headings -- in order
+ * of the document's tables -- Footnotes, References -- in order
  * of where they start, a tree (tree.h) whose focus is where an edit reads
  * from, each entry the object the document holds, where it starts and its
  * number, which says where in the tree it stands (`where`); and the labeled
@@ -277,7 +277,7 @@ bool markdown_core_publish_let_go(markdown_core_parser *parser, const markdown_c
  * first of the label's declarations in the roster, which keeps them in
  * order of where they start, that the tables hold (ast.c, THE LABEL'S NEXT
  * DEFINITION). */
-enum { MARKDOWN_CORE_DEFINITION_TABLES = 3, MARKDOWN_CORE_LABEL_TABLES = 2 };
+enum { MARKDOWN_CORE_DEFINITION_TABLES = 2, MARKDOWN_CORE_LABEL_TABLES = 2 };
 
 typedef struct markdown_core_listed {
     const struct markdown_core_node *node;
@@ -1022,8 +1022,7 @@ struct markdown_core_parser {
      * to the context query. */
     struct markdown_core_context_sink *sink;
     /* Every definition and explicit anchor the parse declared (roster.h):
-     * the block phase declares definitions as it reads them, the headings
-     * declare their labels before inline content is parsed, and completion
+     * the block phase declares definitions as it reads them, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_roster roster;
     /* The nodes that ask for names and the names they take (names.h). */
@@ -1161,8 +1160,8 @@ struct markdown_core_parser {
     size_t bracket_work;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
-     * definition, a link or a heading's implicit reference states is a slot
-     * of this pool's slabs, and every one it releases goes back here. */
+     * definition or a link states is a slot of this pool's slabs, and every
+     * one it releases goes back here. */
     markdown_core_revision *revision;
     markdown_core_node_pool *pool;
     /* The lines the block-start lookahead visited plus the prefix bytes each

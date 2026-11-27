@@ -28,7 +28,7 @@ extern "C" {
  *
  * and the spaces the dialect's elements declare (element.h,
  * markdown_core_space), numbered after it as the dialect is sealed: a link
- * reference definition's labels, say, which a heading's text declares too.
+ * reference definition's labels, say.
  * A space that `folds` holds its labels in the reference-label normal form
  * (markdown_core_roster_normal_label), any other its bytes as written.
  *

@@ -2,9 +2,9 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 177 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 756 documents, each measured once:
-in each of [two alphabets](#alphabets), 171 whole declared-language pairs, 6
+contains all 176 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 752 documents, each measured once:
+in each of [two alphabets](#alphabets), 170 whole declared-language pairs, 6
 local boundary pairs with complete hosts, and 12 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 127 sections and 35 registered elements. Its explicit

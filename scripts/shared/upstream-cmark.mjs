@@ -14,9 +14,6 @@
  * load-bearing and each rule is a claim about equivalence, not a convenience.
  */
 
-import { Buffer } from "node:buffer";
-import fs from "node:fs";
-
 /** cmark-gfm XML element -> canonical node kind. */
 const XML_KIND = {
     document: "Document",
@@ -549,44 +546,6 @@ export function applyUpstreamFootnoteModel(root, fired) {
 }
 
 /**
- * The engine's full case fold, read from its own fold data
- * (`core/case_fold.inc`): code point -> its fold's image.
- */
-let caseFolds;
-function caseFold() {
-    if (caseFolds) return caseFolds;
-    const data = fs.readFileSync(new URL("../../packages/markdown-core/core/case_fold.inc", import.meta.url), "utf8");
-    const numbers = (name) =>
-        new RegExp(`${name}\\[\\d+\\] = \\{([^}]*)\\}`, "u")
-            .exec(data)[1]
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean)
-            .map(Number);
-    const replacements = Buffer.from(numbers("cf_repl"));
-    caseFolds = new Map(
-        numbers("cf_table").map((entry) => {
-            const at = ((entry >>> 17) & 0xfff) * 2;
-            return [entry & 0x1ffff, replacements.subarray(at, at + (entry >>> 29)).toString("utf8")];
-        })
-    );
-    return caseFolds;
-}
-
-/**
- * A label under the reference-label normalization: runs of spaces, tabs and
- * line ends become one space, the ends are trimmed, and each character takes
- * its full case fold.
- */
-function normalizeLabel(label) {
-    const folds = caseFold();
-    return Array.from(label.replace(/[ \t\r\n]+/gu, " ").replace(/^ | $/gu, ""), (character) => {
-        const code = character.codePointAt(0);
-        return code < 0x80 ? character.toLowerCase() : (folds.get(code) ?? character);
-    }).join("");
-}
-
-/**
  * Registered delta `reference-definition-node`: upstream consumes a link
  * reference definition and copies it into every `Link` or `Embed` that
  * resolves to it, while this repository keeps the definition as a
@@ -600,53 +559,12 @@ function normalizeLabel(label) {
  * The label resolves as the document resolves it: to the first `Reference`
  * in source order with that label, whose url and title the occurrence takes,
  * with the definition's classes and records ahead of the occurrence's and its
- * anchor where the occurrence has none; or, when no `Reference` states it, to
- * the first `Heading` whose text declares it, whose `#anchor` the occurrence
- * takes with no title. A heading's text is the `source` of its own ranges
- * that its content spans, under the reference-label normalization.
+ * anchor where the occurrence has none.
  */
 export function resolveReferences(root, source, fired) {
-    // Lines end at LF, CR, or CRLF, as the parser's do.
-    const lines = Buffer.from(source, "utf8")
-        .toString("latin1")
-        .split(/\r\n|\r|\n/u)
-        .map((line) => Buffer.from(line, "latin1"));
-    const point = (text) => text.split(":").map(Number);
-    const before = ([a, b], [c, d]) => a < c || (a === c && b < d);
-    // The bytes from `start` to `end`, both points, inclusive.
-    const spanned = ([startLine, startColumn], [endLine, endColumn]) => {
-        const parts = [];
-        for (let line = startLine; line <= endLine; line++) {
-            const bytes = lines[line - 1] ?? Buffer.alloc(0);
-            const from = line === startLine ? startColumn - 1 : 0;
-            const to = line === endLine ? endColumn : bytes.length;
-            parts.push(bytes.subarray(from, to).toString("utf8"));
-        }
-        return parts.join("\n");
-    };
-    // A heading's text: the bytes of its own scope's ranges, which leave out
-    // container prefixes, from where its first child starts to where its
-    // last child ends.
-    const headingText = (heading) => {
-        const start = point(heading.children[0].tokens.scope.split("..")[0]);
-        const end = point(heading.children.at(-1).tokens.scope.split(",").at(-1).split("..")[1]);
-        return heading.tokens.scope
-            .split(",")
-            .map((range) => range.split("..").map(point))
-            .map(([from, to]) => [before(from, start) ? start : from, before(end, to) ? end : to])
-            .filter(([from, to]) => !before(to, from))
-            .map(([from, to]) => spanned(from, to))
-            .join("\n");
-    };
-    const fold = (label) => normalizeLabel(label);
     const definitions = new Map();
-    const headings = new Map();
     const survey = (node) => {
         if (node.kind === "Reference" && !definitions.has(node.fields.label)) definitions.set(node.fields.label, node);
-        if (node.kind === "Heading" && node.children.length > 0) {
-            const key = fold(headingText(node));
-            if (key && !headings.has(key)) headings.set(key, node);
-        }
         for (const child of node.children) survey(child);
     };
     survey(root);
@@ -654,7 +572,6 @@ export function resolveReferences(root, source, fired) {
         const destination = node.kind === "Link" || node.kind === "Embed" ? parseDestination(node.fields.dest) : null;
         if (destination?.kind === "reference") {
             const definition = definitions.get(destination.label);
-            const heading = definition ? undefined : headings.get(fold(destination.label));
             if (definition) {
                 const inner = (attributes) => attributes.slice(1, -1);
                 node.fields.dest = definition.fields.dest;
@@ -663,8 +580,6 @@ export function resolveReferences(root, source, fired) {
                     .filter(Boolean)
                     .join(" ")}}`;
                 if (node.fields.anchor === "null") node.fields.anchor = definition.fields.anchor;
-            } else if (heading) {
-                node.fields.dest = renderDestination(urlDestination(`#${heading.fields.anchor}`));
             }
             fired?.add("reference-definition-node");
         }

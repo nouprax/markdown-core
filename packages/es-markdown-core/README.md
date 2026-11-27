@@ -110,9 +110,8 @@ written, with its normalized `label`, its `url` destination and its `title`.
 A reference link or image `[text][r]`, `[r]` or `![alt][r]` has the
 destination `{ kind: "reference", label: "r" }` and a null title.
 `Document.references` lists every `Reference` in source order, and
-`document.reference(label)` returns the node a label names: the first
-`Reference` with that label, else the first `Heading` whose text declares it,
-else null.
+`document.reference(label)` returns the `Reference` a label names: the first
+one with that label, else null.
 
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
@@ -352,21 +351,17 @@ and remain usable after parsing finishes.
 
 Parsed headings receive automatic anchors: `# Hello World` declares
 `hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
-anchors anywhere in the document are reserved first. `[Hello World]`,
-`[Hello World][]`, and `[go][Hello World]` name the label `hello world`, which
-`document.reference` resolves to the heading, including before the heading; an
-explicit reference definition takes priority. Labels use authored heading
-text, so `# *Title*` is referenced by `[*Title*]`. Heading attributes stay on
-the heading, and generated targets add no scope.
+anchors anywhere in the document are reserved first, and `[go](#hello-world)`
+links to the heading. Heading attributes stay on the heading, and generated
+targets add no scope.
 
 ### Pandoc-derived syntax
 
 The always-on dialect includes inline code, heading, fenced code and link
-attributes; automatic anchors and implicit heading references; bracketed spans;
-superscript and subscript; bibliography citations; named and nameless fenced
-containers; fancy ordered lists and example lists; and definition lists. These 14
-feature groups use
-one immutable AST and the same behavior on every binding. The
-[dialect contract](../../docs/specs/dialect.md) specifies syntax, precedence and intentional differences
-from the pinned Pandoc reader. Citation numbering, example-list resolution,
-table coordinate expansion and rendering remain consumer responsibilities.
+attributes; automatic anchors; bracketed spans; superscript and subscript;
+bibliography citations; named and nameless fenced containers; and definition
+lists. These feature groups use one immutable AST and the same behavior on
+every binding. The [dialect contract](../../docs/specs/dialect.md) specifies
+syntax, precedence and intentional differences from the pinned Pandoc reader.
+Citation numbering, table coordinate expansion and rendering remain consumer
+responsibilities.

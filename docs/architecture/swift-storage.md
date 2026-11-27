@@ -49,8 +49,8 @@ A document stores its text unit and its definition tables: every footnote
 (definitions and inline notes) and every reference in source
 order, as records of the tree, and a map from each label's UTF-8 bytes to its
 first definition, built with the document. The reference map is copied from
-the engine's label table, so each resolving label names the `Reference` or
-`Heading` record the engine resolves it to; the binding normalizes no label.
+the engine's label table, so each resolving label names the `Reference`
+record the engine resolves it to; the binding normalizes no label.
 A label is never compared under Unicode equivalence. There is no lazy cache
 and no lock.
 

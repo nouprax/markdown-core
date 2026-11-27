@@ -973,9 +973,8 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_content(const mark
  * OUT_OF_BOUNDS for an index at or past the count. `_for` returns the node a
  * reference occurrence naming `label`, a normalized label, resolves to,
  * byte for byte, or NULL: the first `Reference` in source order whose label
- * equals it, or, when none does, the first `Heading` in source order whose
- * text declares it. The label table lists each label that resolves, in
- * byte order, with that node. */
+ * equals it. The label table lists each label that resolves, in byte order,
+ * with that node. */
 MARKDOWN_CORE_API size_t markdown_core_document_reference_count(const markdown_core_document *document);
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_reference_at(const markdown_core_document *document,
                                                                            size_t index,

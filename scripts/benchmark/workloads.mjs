@@ -875,7 +875,7 @@ function declarationsScript(document, letters) {
         script.buffer.subarray(Math.max(0, destination.start - 64), destination.start).toString("utf8")
     )?.[1];
     if (label) script.toggle(0, `[${label}]: /${w(2)}\n\n`);
-    /* A heading whose label collides with an existing one. */
+    /* A heading whose text, and so its anchor, repeats an existing one. */
     const heading = pick(sitesOf(document, "heading"), 0.5);
     if (heading) {
         const text = Buffer.from(document.text).subarray(heading.start, heading.end);
@@ -1110,10 +1110,9 @@ export function identityScripts() {
                 .expect("only")
         );
     }
-    /* The links name the heading's label, which the document resolves to
-     * the heading, so a new anchor changes only the heading and the
-     * Document. */
-    add("heading-anchor-targets", "# Target {#one}\n\nsee [a][Target] and [b][Target]\n", (s) =>
+    /* The links name the anchor raw, so a new anchor changes only the
+     * heading and the Document. */
+    add("heading-anchor-targets", "# Target {#one}\n\nsee [a](#one) and [b](#one)\n", (s) =>
         s.flush().edit(11, 14, "two").expect("changed", "Document", 0).expect("changed", "Heading", 0).expect("only")
     );
     {
@@ -1556,7 +1555,7 @@ export function hardScripts() {
             .remove(12, 14)
             .insert(12, "  ")
     );
-    /* Definitions: a reference, a footnote and a heading label added,
+    /* Definitions: a reference and a footnote added,
      * renamed and removed, with their uses before and after them.
      * An edit that changes which labels are declared reads again the blocks
      * that may name one (E-D2), not the plain paragraphs after them. */
@@ -1598,17 +1597,6 @@ export function hardScripts() {
             .within(0, 48)
             .remove(24, 36)
             .within(0, 36)
-    );
-    add("heading-label", "see [Title] and [x][Title]\n\n# Title\n\n# Other\n\nplain one\n\nplain two\n", (s) =>
-        s
-            .edit(30, 35, "Other")
-            .within(0, 37)
-            .edit(30, 35, "Title")
-            .within(0, 37)
-            .insert(28, "# Title\n\n")
-            .within(0, 37)
-            .remove(28, 37)
-            .within(0, 28)
     );
     /* The text of a heading with an automatic anchor that a link targets. */
     add("automatic-anchor", "# Title\n\nsee [x](#title)\n\n# Title\n\nplain one\n\nplain two\n", (s) =>

@@ -55,21 +55,15 @@ function pandocTableSegments(input) {
 }
 
 /**
- * cmark, cmark-gfm and remark do not implement implicit heading references.
- * Bound their recombination domain using an independent CommonMark parse,
- * never the product's output. A heading beside unresolved bracket text can
- * activate P4; this composition belongs to the anchors fixtures and Pandoc
- * oracle. This is conservative: it does not try to implement P4 label matching.
- * Resolved explicit references and brackets in opaque literals stay in scope.
  * Custom task prefixes and definition markers in base-language paragraphs
- * likewise belong to their Obsidian/Pandoc gates, not to these base oracles.
+ * belong to their Obsidian/Pandoc gates, not to these base oracles. Bound the
+ * recombination domain using an independent CommonMark parse, never the
+ * product's output.
  */
 export function outsideSharedFuzzScope(input) {
     if (input.includes("-") && pandocTableSegments(input)) return "pandoc-tables";
     if (!/[[:]/u.test(input)) return null;
     const pending = [commonmark.parse(input)];
-    let heading = false;
-    let unresolvedBracket = false;
     while (pending.length) {
         const node = pending.pop();
         // These extension envelopes belong to the Obsidian and Pandoc gates.
@@ -87,13 +81,6 @@ export function outsideSharedFuzzScope(input) {
                 return "definition-lists";
             }
         }
-        heading ||= node.type === "heading";
-        const literal = node.type === "text" ? node.value : node.type === "image" ? node.alt : null;
-        if (literal?.includes("[")) {
-            const raw = input.slice(node.position.start.offset, node.position.end.offset);
-            unresolvedBracket ||= raw.includes("[");
-        }
-        if (heading && unresolvedBracket) return "implicit-heading-references";
         for (const child of node.children ?? []) pending.push(child);
     }
     if (input.includes(":") && partlessTextDirective(input)) return "part-less-text-directives";

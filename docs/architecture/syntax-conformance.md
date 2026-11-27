@@ -70,7 +70,7 @@ Seeded differential fuzzing compares the supported shared-language domain using
 an independent classifier, never product output to decide eligibility. It
 reports out-of-scope and registered cases separately from real comparisons;
 zero comparisons fails. Regular parity gates keep their fail-closed policy.
-See the [oracle policy](../../specs/oracles/README.md) for heading-reference
+See the [oracle policy](../../specs/oracles/README.md) for scope
 classification and projection boundaries.
 
 ## Reviewing a language change

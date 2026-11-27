@@ -471,25 +471,25 @@ test("ownership: a definition crosses the boundary once, as its Reference, howev
     assert.equal(document.reference("a"), reference);
 });
 
-test("ownership: forward heading references name their heading without its attributes", () => {
+test("ownership: forward references name their definition without its attributes", () => {
     const count = 5_000;
-    const source = (size) => `${"[Target]\n\n".repeat(count)}# Target {#${"a".repeat(size)} .heading k=1}\n`;
+    const source = (size) => `${"[Target]\n\n".repeat(count)}[Target]: /t {#${"a".repeat(size)} .ref k=1}\n`;
     const size = 1024;
     const anchor = "a".repeat(size);
-    // The anchor crosses once, on the heading, whatever the number of
+    // The anchor crosses once, on the definition, whatever the number of
     // references.
     const growth = nativeMessage(source(size)).length - nativeMessage(source(1)).length;
     assert.ok(growth < 2 * (size - 1), `the message grew ${growth} bytes`);
     const document = Document.parse(source(size));
-    const head = document.content[count];
+    const definition = document.content[count];
     const links = document.content.slice(0, count).map((paragraph) => paragraph.content[0]);
-    assert.equal(head.anchor, anchor);
+    assert.equal(definition.anchor, anchor);
     assert.deepEqual(links[0].dest, { kind: "reference", label: "target" });
     assert.ok(links.every((link) => link.dest.kind === "reference" && link.dest.label === "target"));
     assert.ok(links.every((link) => link.anchor === null && link.title === null));
     assert.deepEqual(links[0].attributes, { classes: [], records: [] });
-    assert.deepEqual(document.references, []);
-    assert.equal(document.reference("target"), head);
+    assert.deepEqual(document.references, [definition]);
+    assert.equal(document.reference("target"), definition);
 });
 
 test("ast: an ordinary quote is a metadata-free callout", () => {
@@ -1357,7 +1357,7 @@ test("ast: ids up to 2^53 - 1 and definition tables decode exactly", () => {
 test("ast: References, reference destinations and the reference label table decode exactly", () => {
     // Destination: url(0) | cross(1) | reference(2). A Reference record is
     // its label, its destination and its title; the label table pairs each
-    // label that resolves with the id of its Reference or Heading.
+    // label that resolves with the id of its Reference.
     const bytes = new MessageWriter()
         .text("H", { id: 1 })
         .record("heading", { id: 2, anchor: "h" })
@@ -1391,10 +1391,7 @@ test("ast: References, reference destinations and the reference label table deco
         .root(4, {
             id: 10,
             references: [8, 9],
-            labels: [
-                ["h", 2],
-                ["r", 8]
-            ]
+            labels: [["r", 8]]
         })
         .document();
     const document = decoder(bytes).decode();
@@ -1417,7 +1414,8 @@ test("ast: References, reference destinations and the reference label table deco
     assert.deepEqual(first.attributes, { classes: ["c"], records: [] });
     assert.deepEqual(document.references, [first, second]);
     assert.equal(document.reference("r"), first);
-    assert.equal(document.reference("h"), head);
+    assert.equal(document.reference("h"), null);
+    assert.equal(head.kind, "heading");
     assert.equal(document.reference("missing"), null);
     assert.ok(!Object.keys(document).includes("references"));
     const dumped = document.dump("");
@@ -1441,7 +1439,7 @@ test("ast: References, reference destinations and the reference label table deco
     ]);
 });
 
-test("api: Document lists every Reference and resolves a label to the first one, else to a heading", () => {
+test("api: Document lists every Reference and resolves a label to the first one", () => {
     const source = "[x] [Head] [none]\n\n[X]: /first {.a}\n\n[x]: /second\n\n# Head\n\n[head]: /shadow\n";
     const document = Document.parse(source);
     const [block, first, second, head, shadow] = document.content;
@@ -1462,7 +1460,7 @@ test("api: Document lists every Reference and resolves a label to the first one,
     assert.deepEqual(link.dest, { kind: "reference", label: "x" });
     assert.deepEqual(link.attributes, { classes: [], records: [] });
     assert.deepEqual(first.attributes, { classes: ["a"], records: [] });
-    assert.equal(Document.parse("# Only\n\n[Only]\n").reference("only").kind, "heading");
+    assert.equal(Document.parse("# Only\n\n[Only]\n").reference("only"), null);
 });
 
 test("ast: every ordered delimiter survives decoding", () => {

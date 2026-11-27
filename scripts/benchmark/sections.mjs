@@ -12,9 +12,11 @@ export const sectionDispositions = {
         "Automatic anchors": context(
             "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
         ),
-        "Implicit heading references": grammar("heading-reference"),
+        "Linking to a heading": context(
+            "A link to a heading is an ordinary inline link whose destination is the anchor; links-and-images certificates cover that form."
+        ),
         "Anchor ownership": context(
-            "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+            "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by the explicit anchor sections and attribute-reference."
         )
     },
     attributes: {

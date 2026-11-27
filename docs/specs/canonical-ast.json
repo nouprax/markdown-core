@@ -822,7 +822,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embed and every Reference own the url branch; a reference Link or Embed owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal, or, when none is, the first Heading in document source order whose text declares it; the cross branch is the workspace address CrossLink and CrossEmbed produce.",
+            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embed and every Reference own the url branch; a reference Link or Embed owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal; the cross branch is the workspace address CrossLink and CrossEmbed produce.",
             "branches": {
                 "url": [
                     {

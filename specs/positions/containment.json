@@ -6,22 +6,7 @@
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:946",
-            "input": ":n[[Target]]\n\n> [!note] [Target]\n> body\n\n^[inline [Target]]\n\n[^f]: [Target]\n\n# Target\n",
-            "findings": [
-                {
-                    "nodePath": "0.2.0.0.0",
-                    "violation": "containment",
-                    "kind": "Footnote",
-                    "scope": "6:1..6:18",
-                    "parentKind": "Citation",
-                    "parentScope": "6:3..6:17",
-                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:1078",
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:639",
             "input": "# Shared\n\n^[a [declaration]{#shared}]\n\n:d[[decl]{#shared-1}]\n",
             "findings": [
                 {
@@ -99,7 +84,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:730",
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:732",
             "input": "[@a x\\ ] [\\ @a] ^[@a\\ ]^\n",
             "findings": [
                 {
@@ -114,7 +99,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:1198",
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:1200",
             "input": "![alt [@a;]](/u) :d[[@a;]] ^[[@a;]]\n",
             "findings": [
                 {

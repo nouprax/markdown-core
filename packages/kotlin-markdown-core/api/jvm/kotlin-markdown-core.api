@@ -240,7 +240,7 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public fun getRuns ()Ljava/util/List;
 	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
 	public final fun node (Lcom/nouprax/markdown/core/Position;Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
-	public final fun reference (Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
+	public final fun reference (Ljava/lang/String;)Lcom/nouprax/markdown/core/Reference;
 	public final fun scope (Lcom/nouprax/markdown/core/Markup;Ljava/lang/String;)Ljava/util/List;
 }
 

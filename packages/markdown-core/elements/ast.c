@@ -43,8 +43,7 @@ typedef struct dump_buffer {
     size_t line_count;
 } dump_buffer;
 
-/* Where a Footnote, Reference or Heading was written, for the
- * definition tables. */
+/* Where a Footnote or Reference was written, for the definition tables. */
 typedef struct {
     uint64_t start;
     const markdown_core_node *node;
@@ -75,9 +74,8 @@ static bool table_add(definition_table *table, const markdown_core_node *node, u
 }
 
 /* THE DEFINITION TABLES a publish fills, one per kind of node the
- * document finds by label. Every Heading enters its table; the ones whose
- * text declares a reference label are the labeled ones. */
-typedef enum { TABLE_FOOTNOTES, TABLE_REFERENCES, TABLE_HEADINGS, TABLE_COUNT } definition_kind;
+ * document finds by label. */
+typedef enum { TABLE_FOOTNOTES, TABLE_REFERENCES, TABLE_COUNT } definition_kind;
 
 /* Whether a definition has a label, and the label in `label`. */
 static bool definition_label(const markdown_core_node *node, markdown_core_chunk *label) {
@@ -85,11 +83,8 @@ static bool definition_label(const markdown_core_node *node, markdown_core_chunk
     case MARKDOWN_CORE_NODE_FOOTNOTE:
         *label = node->as.footnote->label.value;
         return node->as.footnote->label.has_value;
-    case MARKDOWN_CORE_NODE_REFERENCE:
-        *label = node->as.reference->label;
-        return label->len > 0;
     default:
-        *label = node->as.heading->label;
+        *label = node->as.reference->label;
         return label->len > 0;
     }
 }
@@ -289,7 +284,7 @@ static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DEFINITION)] = SHAPE_DEFINITION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_FOOTNOTES),
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_REFERENCE)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_REFERENCES),
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_HEADING)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_HEADINGS),
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_HEADING)] = SHAPE_CHILDREN,
 };
 
 static inline unsigned slot_of(const markdown_core_node *node) { return kind_slots[SHAPE_INDEX(node->kind)]; }
@@ -2198,18 +2193,12 @@ static inline void label_take(label_entry *entries, size_t *taken, markdown_core
 }
 
 /* The node each label a reference occurrence can name resolves to, in label
- * order: the first Reference declaring it, or, when none does, the first
- * Heading whose text declares it. The References in source order, then the
- * Headings in source order, sorted by label keeping that order among equal
- * labels, put each label's target first among its own. */
-static bool reference_targets(markdown_core_parser *parser, markdown_core_document_value *value,
-                              definition_table *headings) {
+ * order: the first Reference declaring it. The References in source order,
+ * sorted by label keeping that order among equal labels, put each label's
+ * target first among its own. */
+static bool reference_targets(markdown_core_document_value *value) {
     value->reference_targets = (markdown_core_node_table){0};
-    if (headings->count && !markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
-                                                               sizeof(*headings->values), definition_key)) {
-        return false;
-    }
-    const size_t total = value->references.all.count + headings->count;
+    const size_t total = value->references.all.count;
     if (!total) {
         return true;
     }
@@ -2224,10 +2213,6 @@ static bool reference_targets(markdown_core_parser *parser, markdown_core_docume
     for (size_t i = 0; i < value->references.all.count; i++) {
         const markdown_core_node *node = value->references.all.nodes[i];
         label_take(entries, &labels, node->as.reference->label, node, 0);
-    }
-    for (size_t i = 0; i < headings->count; i++) {
-        const markdown_core_node *node = headings->values[i].node;
-        label_take(entries, &labels, node->as.heading->label, node, 0);
     }
     const label_entry *sorted = label_order(entries, labels, total);
     size_t count = 0;
@@ -2256,15 +2241,14 @@ static bool reference_targets(markdown_core_parser *parser, markdown_core_docume
  * anywhere (blocks.c), so it reads no label table. */
 
 /* The label table of each definition table: the labeled Footnotes, the
- * reference targets, which References and
- * Headings declare. */
+ * reference targets, which References declare. */
 enum { LABELS_FOOTNOTES, LABELS_TARGETS };
 
-static const uint32_t table_labels[TABLE_COUNT] = {LABELS_FOOTNOTES, LABELS_TARGETS, LABELS_TARGETS};
+static const uint32_t table_labels[TABLE_COUNT] = {LABELS_FOOTNOTES, LABELS_TARGETS};
 /* The roster space of each definition table's labels, whose kind the
  * committed tables hold (`kinds`). */
-static const markdown_core_space *const table_spaces[TABLE_COUNT] = {
-    &MARKDOWN_CORE_FOOTNOTE_SPACE, &MARKDOWN_CORE_REFERENCE_SPACE, &MARKDOWN_CORE_REFERENCE_SPACE};
+static const markdown_core_space *const table_spaces[TABLE_COUNT] = {&MARKDOWN_CORE_FOOTNOTE_SPACE,
+                                                                     &MARKDOWN_CORE_REFERENCE_SPACE};
 
 typedef char committed_tables_fit[(int)TABLE_COUNT == (int)MARKDOWN_CORE_DEFINITION_TABLES &&
                                           (int)LABELS_TARGETS + 1 == (int)MARKDOWN_CORE_LABEL_TABLES
@@ -2385,18 +2369,11 @@ static uint32_t listed_place(const markdown_core_committed_tables *committed, ui
     return entry.start;
 }
 
-/* Whether `node`, a definition of label table `labels` that starts at
- * `start` of the text, before the back's, is its label's definition before
- * `entry`'s: a Reference before a Heading, and otherwise the one that
- * starts first, which an entry of the back never does. */
-static inline bool label_wins(const markdown_core_committed_tables *committed, uint32_t labels,
-                              const markdown_core_node *node, uint32_t start, const markdown_core_key_entry *entry) {
-    if (labels == LABELS_TARGETS) {
-        const bool reference = node->kind == MARKDOWN_CORE_NODE_REFERENCE;
-        if (reference != (((const markdown_core_node *)entry->value)->kind == MARKDOWN_CORE_NODE_REFERENCE)) {
-            return reference;
-        }
-    }
+/* Whether a definition that starts at `start` of the text, before the
+ * back's, is its label's definition before `entry`'s: the one that starts
+ * first, which an entry of the back never does. */
+static inline bool label_wins(const markdown_core_committed_tables *committed, uint32_t start,
+                              const markdown_core_key_entry *entry) {
     bool back;
     const uint32_t held = listed_place(committed, entry->extra, &back);
     return back || start < held;
@@ -2522,7 +2499,7 @@ static bool committed_label(markdown_core_committed_tables *committed, uint32_t 
     if (!entry) {
         return false;
     }
-    if (!made && label_wins(committed, labels, node, start, entry)) {
+    if (!made && label_wins(committed, start, entry)) {
         entry->value = node;
         entry->extra = id;
     }
@@ -2551,10 +2528,9 @@ static bool committed_keep(markdown_core_committed_tables *committed, uint32_t t
     return committed_label(committed, table, node, start, listed_at(tree, at)->id);
 }
 
-/* The label tables made again from the tables, each
- * label's definition the first of its table in order, and of the
- * References before the Headings, their keys copied anew. False when
- * storage could not be had. */
+/* The label tables made again from the tables, each label's definition the
+ * first of its table in order, their keys copied anew. False when storage
+ * could not be had. */
 static bool committed_relabel(markdown_core_committed_tables *committed) {
     for (uint32_t labels = 0; labels < MARKDOWN_CORE_LABEL_TABLES; labels++) {
         markdown_core_tree_free(&committed->labels[labels]);
@@ -2589,9 +2565,8 @@ static bool committed_settle(markdown_core_committed_tables *committed) {
  * that stand in order of where they start, those of the back too, the
  * front's first (roster.h), and the committed tables those of them that
  * are COMMITTED: the label's definition after one that goes is the first of
- * them its tables hold, of the References before the Headings. A definition
- * stands in the roster's part that its entry stands in, where it starts
- * in that part's terms. */
+ * them its table holds. A definition stands in the roster's part that its
+ * entry stands in, where it starts in that part's terms. */
 
 /* The entries of table `table`'s front from `from` up to `to`, but the one
  * of `kept`, which go as their labels move on. */
@@ -2812,17 +2787,12 @@ static void committed_check(markdown_core_committed_tables *committed) {
                     count++;
                     continue;
                 }
-                /* The label's definition comes first: of a table before,
-                 * or before it in its table. */
-                const markdown_core_node *first = held->value;
-                const bool before_table = labels == LABELS_TARGETS && first->kind == MARKDOWN_CORE_NODE_REFERENCE &&
-                                          node->kind != MARKDOWN_CORE_NODE_REFERENCE;
-                const bool same_table = listed_table(held->extra) == table;
+                /* The label's definition comes first: before it in its
+                 * table. */
                 const bool earlier =
-                    same_table &&
+                    listed_table(held->extra) == table &&
                     markdown_core_tree_rank(tree, committed->where[table].values[listed_index(held->extra)]) < i;
-                assert(before_table || earlier);
-                (void)before_table;
+                assert(earlier);
                 (void)earlier;
             }
         }
@@ -3055,7 +3025,7 @@ static void snapshot_labeled(const markdown_core_committed_tables *committed, co
         }
         const label_entry named = label_entry_of(label.data, (size_t)label.len, own->node, (uint32_t)own->start);
         const markdown_core_key_entry *held = labels_find(tree, &named, NULL);
-        if (!held || label_wins(committed, labels, own->node, named.extra, held)) {
+        if (!held || label_wins(committed, named.extra, held)) {
             entries[taken++] = named;
         }
     }
@@ -3067,26 +3037,22 @@ static void snapshot_labeled(const markdown_core_committed_tables *committed, co
     out->labeled_count = taken;
 }
 
-/* The own reference targets: the own References and Headings, in source
- * order in their tables, that are their labels' definitions before those
- * `tree` keeps committed, by label, into `nodes` and `places`, sorted in
- * `entries`, room for as many labels as both tables hold, into `out`. */
+/* The own reference targets: the own References, in source order in their
+ * table, that are their labels' definitions before those `tree` keeps
+ * committed, by label, into `nodes` and `places`, sorted in `entries`, room
+ * for as many labels as the table holds, into `out`. */
 static void snapshot_targets(const markdown_core_committed_tables *committed, const definition_table *references,
-                             const definition_table *headings, const markdown_core_tree *tree, label_entry *entries,
-                             const markdown_core_node **nodes, markdown_core_table_place *places,
-                             markdown_core_node_table *out) {
+                             const markdown_core_tree *tree, label_entry *entries, const markdown_core_node **nodes,
+                             markdown_core_table_place *places, markdown_core_node_table *out) {
     size_t labels = 0;
-    const definition_table *const tables[] = {references, headings};
-    for (size_t t = 0; t < 2; t++) {
-        for (size_t i = 0; i < tables[t]->count; i++) {
-            const definition_entry *own = &tables[t]->values[i];
-            markdown_core_chunk label;
-            if (definition_label(own->node, &label)) {
-                label_take(entries, &labels, label, own->node, (uint32_t)own->start);
-            }
+    for (size_t i = 0; i < references->count; i++) {
+        const definition_entry *own = &references->values[i];
+        markdown_core_chunk label;
+        if (definition_label(own->node, &label)) {
+            label_take(entries, &labels, label, own->node, (uint32_t)own->start);
         }
     }
-    const label_entry *sorted = label_order(entries, labels, references->count + headings->count);
+    const label_entry *sorted = label_order(entries, labels, references->count);
     size_t own = 0, added = 0;
     for (size_t i = 0; i < labels; i++) {
         if (i && label_same(&sorted[i], &sorted[i - 1])) {
@@ -3094,7 +3060,7 @@ static void snapshot_targets(const markdown_core_committed_tables *committed, co
         }
         size_t rank;
         const markdown_core_key_entry *held = labels_find(tree, &sorted[i], &rank);
-        if (held && !label_wins(committed, LABELS_TARGETS, sorted[i].value, sorted[i].extra, held)) {
+        if (held && !label_wins(committed, sorted[i].extra, held)) {
             continue;
         }
         nodes[own] = sorted[i].value;
@@ -3118,7 +3084,7 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
     }
     const size_t footnotes = tables[TABLE_FOOTNOTES].count;
     const size_t listed = footnotes + tables[TABLE_REFERENCES].count;
-    const size_t targets = tables[TABLE_REFERENCES].count + tables[TABLE_HEADINGS].count;
+    const size_t targets = tables[TABLE_REFERENCES].count;
     const size_t labels = targets > footnotes ? targets : footnotes;
     const size_t entry_bytes = labels * (2 * sizeof(label_entry) + sizeof(size_t));
     const size_t node_bytes = (listed + footnotes + targets) * sizeof(const markdown_core_node *);
@@ -3138,7 +3104,7 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
     const markdown_core_node **nodes = room_take(&at, node_bytes);
     markdown_core_table_place *places = room_take(&at, place_bytes);
     markdown_core_definitions *const all[] = {&value->footnotes, &value->references};
-    for (size_t table = 0; table < TABLE_HEADINGS; table++) {
+    for (size_t table = 0; table < TABLE_COUNT; table++) {
         const size_t count = tables[table].count;
         snapshot_starts(&tables[table], &committed->starts[table], nodes, places);
         all[table]->all = (markdown_core_node_table){count ? nodes : NULL, committed->starts[table].count + count,
@@ -3149,8 +3115,8 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
     snapshot_labeled(committed, &tables[TABLE_FOOTNOTES], LABELS_FOOTNOTES, &committed->labels[LABELS_FOOTNOTES],
                      entries, nodes, &value->footnotes);
     nodes += footnotes;
-    snapshot_targets(committed, &tables[TABLE_REFERENCES], &tables[TABLE_HEADINGS], &committed->labels[LABELS_TARGETS],
-                     entries, nodes, places, &value->reference_targets);
+    snapshot_targets(committed, &tables[TABLE_REFERENCES], &committed->labels[LABELS_TARGETS], entries, nodes, places,
+                     &value->reference_targets);
     value->committed = committed;
     return true;
 }
@@ -3206,7 +3172,7 @@ static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, mar
     const bool ok = table_seal(parser, &walk->tables[TABLE_FOOTNOTES], &value->footnotes) &&
                     table_nodes(parser, references, &value->references.all.nodes);
     value->references.all.count = value->references.all.own = ok ? references->count : 0;
-    return ok && reference_targets(parser, value, &walk->tables[TABLE_HEADINGS]);
+    return ok && reference_targets(value);
 }
 
 /* A SESSION'S DOCUMENT, the flush of a parse that takes edits: its publish
@@ -3236,7 +3202,7 @@ static bool commit_tables(markdown_core_parser *parser, const publish_walk *walk
         }
     }
     markdown_core_definitions *const all[] = {&value->footnotes, &value->references};
-    for (size_t table = 0; table < TABLE_HEADINGS; table++) {
+    for (size_t table = 0; table < TABLE_COUNT; table++) {
         all[table]->all = (markdown_core_node_table){NULL, committed->starts[table].count, 0, NULL};
     }
     value->reference_targets = (markdown_core_node_table){NULL, committed->labels[LABELS_TARGETS].count, 0, NULL};

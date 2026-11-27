@@ -65,27 +65,11 @@ For a collision, append `-N` with the smallest available positive integer.
 Leading digits are retained. `A.B` becomes `ab`; `:tada:` becomes `tada`, with
 no emoji expansion. Generated strings add no source position.
 
-## Implicit heading references
+## Linking to a heading
 
-Reference a heading by its authored text:
-
-```markdown
-# First chapter
-
-[First chapter] [First chapter][] [go there][First chapter]
-```
-
-All three links name the label `first chapter`, which resolves to the
-heading, whose anchor is `first-chapter`. References may appear before the
-heading. The heading label excludes its opening/closing marker and attached
-attributes, then follows ordinary reference-label normalization. Inline markup
-remains part of that label: `# *Foo*` is referenced by `[*Foo*]`, not `[Foo]`.
-
-An explicit link definition wins over a heading with the same normalized label.
-Repeated heading labels target the first heading in source order. Labels that
-cannot be expressed as reference labels contribute no implicit definition.
-Reference images can use these definitions too. A reference occurrence has
-only the attributes written on it.
+Link to a heading by its anchor: `[First chapter](#first-chapter)`. A
+bracketed heading text such as `[First chapter]` is no reference; only a
+link reference definition declares a label.
 
 ## Anchor ownership
 

@@ -17,7 +17,7 @@ public class Document internal constructor(
     /** Every link reference definition of the document, in source order. */
     public val references: kotlin.collections.List<Reference>,
     /** Each normalized label a reference occurrence resolves, with the node it resolves to. */
-    private val labels: Map<String, Markup>,
+    private val labels: Map<String, Reference>,
     override val id: MarkupID,
     override val extent: Extent,
     override val runs: kotlin.collections.List<Run>,
@@ -43,12 +43,11 @@ public class Document internal constructor(
     public fun footnote(label: String): Footnote? = footnoteLabels[label]
 
     /**
-     * The node a [Destination.Reference] naming [label], a normalized label,
-     * resolves to: the first [Reference] in source order whose label is
-     * [label], or, when none is, the first [Heading] in source order whose
-     * text declares it; null when neither does.
+     * The definition a [Destination.Reference] naming [label], a normalized
+     * label, resolves to: the first [Reference] in source order whose label
+     * is [label]; null when none is.
      */
-    public fun reference(label: String): Markup? = labels[label]
+    public fun reference(label: String): Reference? = labels[label]
 
     /**
      * The editor coordinates of [node]'s source ranges, one scope per run in

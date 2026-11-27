@@ -73,8 +73,8 @@
 //! * [gfm table][table]
 //! * [gfm task list item check][task_list_item_check]
 //!
-//! Before text is parsed, [heading][] settles the attribute tail and the
-//! reference label of each heading.
+//! Before text is parsed, [heading][] settles the attribute tail of each
+//! heading.
 //!
 //! There are also several small subroutines typically used in different places:
 //!

@@ -243,10 +243,8 @@ returned values after the native document is released.
 Parsed headings always have a nonempty anchor: an explicit identifier wins,
 otherwise the [anchors module](dialect/anchors.md) derives one from parsed
 content after reserving every emitted explicit anchor. Generated anchors add
-no source range. Writable authored heading labels also declare reference
-labels, including for forward references: a `reference` destination whose
-label no `Reference` states resolves to the first such `Heading`, whose
-anchor is the target. Explicit definitions win.
+no source range. A heading declares no reference label: a `reference`
+destination resolves only to a `Reference`.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and
@@ -280,9 +278,8 @@ between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
 resolution, and possibly empty. A reference `Link` or `Embed` owns the
 `reference` branch: the normalized label it names, which resolves to the
-first `Reference` in document source order whose label is equal, or, when
-none is, the first `Heading` in document source order whose text declares
-it. The `cross` branch is the workspace address of
+first `Reference` in document source order whose label is equal. The `cross`
+branch is the workspace address of
 the [cross links](dialect/cross-links.md) module and is stored by
 `CrossLink` and `CrossEmbed`. The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
@@ -337,8 +334,8 @@ without a `Paragraph`.
 source order, inline notes included, and `document.footnote(for: label)`
 returns the first footnote whose stored label equals the referent's.
 `document.reference(for: label)` returns the node a `reference` destination
-with that label resolves to: the first `Reference` whose label equals it, or,
-when none does, the first `Heading` whose text declares it. The C facade
+with that label resolves to: the first `Reference` whose label equals it. The
+C facade
 answers them through `markdown_core_document_footnote_count`, `_footnote_at`,
 `_footnote_for`, the reference equivalents, and
 `_reference_label_count` and `_reference_label_at`, which list each label that

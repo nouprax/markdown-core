@@ -47,10 +47,6 @@ typedef struct {
     int8_t fence_closed;
 } markdown_core_code;
 
-/* A heading's `label` is the normalized reference label its text declares,
- * the one a reference occurrence names when no Reference declares it, in
- * storage the node owns (markdown_core_node_pool_bytes); empty when its text
- * declares none. */
 /* A NODE'S NAME, which the names service computes (names.c, THE NAMES)
  * for a node whose attributes write no anchor: the `base` its text projects
  * to, which an edit that reads it from a seam keeps in two parts (buffer.h,
@@ -68,7 +64,6 @@ typedef struct markdown_core_name {
 typedef struct {
     int level;
     bool setext;
-    markdown_core_chunk label;
     markdown_core_name name;
 } markdown_core_heading;
 
@@ -212,9 +207,8 @@ typedef struct markdown_core_definitions {
  * Footnote and Reference definitions stay in the tree where they
  * were written; publishing the document records its definition tables here,
  * and the nodes reference occurrences resolve to, by label: for each label,
- * the first Reference declaring it, or, when none does, the first Heading
- * whose text declares it. A snapshot's document shares the committed parse's
- * tables, `committed`, and lists what it adds to them in room the parse
+ * the first Reference declaring it. A snapshot's document shares the
+ * committed parse's tables, `committed`, and lists what it adds to them in room the parse
  * keeps, so it borrows every table; NULL in any other, which owns them. */
 typedef struct {
     struct markdown_core_node *metadata;

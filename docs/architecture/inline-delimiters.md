@@ -30,12 +30,6 @@ Fields borrow their token owner; the AST owns the field trees. A field event is 
 the last entry when token scanning pauses. Completing it cannot change the
 parent stack because each field has its own inline state. No script cursor boundary or per-marker boundary snapshot is retained.
 
-A heading can suspend with a field event on its ordinary stack. Its label
-contains live brackets, so it cannot declare an implicit reference; its
-remaining content resumes once every writable heading has declared its label. Completing
-fields before scanning the next token preserves source order for references
-and inline footnotes. See [heading resolution](heading-resolution.md).
-
 ## Rule grammar and pairing
 
 Each element's element descriptor declares minimum/maximum consumed width,

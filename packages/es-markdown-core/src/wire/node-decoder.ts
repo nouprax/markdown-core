@@ -7,7 +7,6 @@ import type { DirectiveLabel } from "../markup/directive-label.js";
 import type { Citation } from "../markup/cite.js";
 import type { Document } from "../markup/document.js";
 import type { Footnote } from "../markup/footnote.js";
-import type { Heading } from "../markup/heading.js";
 import type { Reference } from "../markup/reference.js";
 import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
@@ -65,15 +64,15 @@ type DocumentMembers = "unit" | "footnotes" | "references" | "footnote" | "refer
 type MarkupValue = Markup extends infer Node ? (Node extends Document ? Omit<Document, DocumentMembers> : Node) : never;
 type Base<Kind extends Markup["kind"]> = MarkupBase<Kind>;
 /** A node a definition table or the reference label table names. */
-type Target = Footnote | Reference | Heading;
+type Target = Footnote | Reference;
 
 export class Decoder {
     private readonly view: DataView;
     private readonly utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
     private offset = 0;
     private readonly stack: Markup[] = [];
-    /** Every Footnote, Reference and Heading by id, for the
-     * definition tables and the reference label table. */
+    /** Every Footnote and Reference by id, for the definition tables and
+     * the reference label table. */
     private readonly definitions = new Map<number, Target>();
 
     /** `unit` is the text unit of the document the message decodes to. */
@@ -115,7 +114,7 @@ export class Decoder {
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
         const node = this.fields(kind, { kind, id, extent, runs, anchor, attributes }) as Markup;
-        if (node.kind === "footnote" || node.kind === "reference" || node.kind === "heading") {
+        if (node.kind === "footnote" || node.kind === "reference") {
             this.definitions.set(id, node);
         }
         return node;
@@ -369,9 +368,9 @@ export class Decoder {
     }
 
     /** The reference label table: each label that resolves, in byte order,
-     * with the Reference or Heading it resolves to. */
-    private labels(): ReadonlyMap<string, Reference | Heading> {
-        return new Map(this.list(() => [this.string(), this.definitions.get(this.id()) as Reference | Heading]));
+     * with the Reference it resolves to. */
+    private labels(): ReadonlyMap<string, Reference> {
+        return new Map(this.list(() => [this.string(), this.definitions.get(this.id()) as Reference]));
     }
 
     /**
@@ -383,7 +382,7 @@ export class Decoder {
         root: Omit<Document, DocumentMembers>,
         footnotes: Footnote[],
         references: Reference[],
-        labels: ReadonlyMap<string, Reference | Heading>
+        labels: ReadonlyMap<string, Reference>
     ): Document {
         const footnoteFor = firstByLabel(footnotes);
         const member = (value: unknown): PropertyDescriptor => ({ value, enumerable: false });
@@ -392,7 +391,7 @@ export class Decoder {
             footnotes: member(footnotes),
             references: member(references),
             footnote: member((label: string): Footnote | null => footnoteFor.get(label) ?? null),
-            reference: member((label: string): Reference | Heading | null => labels.get(label) ?? null),
+            reference: member((label: string): Reference | null => labels.get(label) ?? null),
             scope: member(function (this: Document, node: Markup, source: string) {
                 return scopeOf(this, node, source);
             }),

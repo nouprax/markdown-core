@@ -3011,28 +3011,19 @@ static const char *footnote_label_of(const markdown_core_node *note) {
     return note->as.footnote->label.has_value ? (const char *)note->as.footnote->label.value.data : NULL;
 }
 
-/* A REFERENCE OCCURRENCE A HEADING DECLARES names the heading's label, and
- * the document resolves the label to the heading; the heading owns its
- * computed anchor. */
-static void heading_reference_resolves_to_the_heading(test_batch_runner *runner) {
-    const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n\n# Untitled [x]\n";
+/* A BRACKET NAMING A HEADING'S TEXT is literal text: a heading declares no
+ * reference label. The heading owns its computed anchor. */
+static void heading_text_names_no_reference(test_batch_runner *runner) {
+    const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "heading reference document parses");
+    OK(runner, document != NULL, "heading document parses");
     if (!document) {
         return;
     }
     markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
     markdown_core_node *paragraph = child_at(document->root, 1);
-    markdown_core_node *links[] = {child_at(paragraph, 0), last_child_of(paragraph)};
-    for (int i = 0; i < 2; i++) {
-        markdown_core_destination destination = facade_destination(links[i]);
-        OK(runner,
-           destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE && destination.label.length == 16 &&
-               !memcmp(destination.label.data, "strasse and more", 16),
-           "occurrence %d names the case-folded label", i);
-        OK(runner, markdown_core_document_reference_for(document, destination.label) == heading,
-           "the label resolves to the heading");
-    }
+    OK(runner, paragraph->child_count == 1 && child_at(paragraph, 0)->kind == MARKDOWN_CORE_NODE_TEXT,
+       "the brackets stay text");
     const markdown_core_optional_string slug = anchor_of(heading);
     OK(runner,
        slug.has_value && slug.value.length == strlen("straße-and-more") &&
@@ -3040,8 +3031,7 @@ static void heading_reference_resolves_to_the_heading(test_batch_runner *runner)
        "the anchor is the slug");
     OK(runner, !heading->attributes.anchor.len && heading->as.heading->name.base.ptr == slug.value.data,
        "the heading's anchor is its base, which it owns");
-    INT_EQ(runner, markdown_core_document_reference_label_count(document), 1,
-           "only the label a heading's text declares resolves");
+    INT_EQ(runner, markdown_core_document_reference_label_count(document), 0, "no label resolves");
     markdown_core_document_free(document);
 }
 
@@ -7130,8 +7120,8 @@ static void heading_completion_invariants(test_batch_runner *runner) {
             inline_work work = {0};
             markdown_core_node *root =
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-            OK(runner, root != NULL, "repeated heading declarations parse");
-            INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
+            OK(runner, root != NULL, "repeated headings parse");
+            INT_EQ(runner, work.definitions, 0, "a heading declares no reference definition");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -7189,82 +7179,48 @@ static void heading_roster_invariants(test_batch_runner *runner) {
                 }
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
                    "roster work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
-                bool named = true;
-                for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
-                    markdown_core_node *node = last_child_of(root)->children[node_index];
-                    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
-                        markdown_core_link *link = node->as.link;
-                        named =
-                            named && !link->resource && link->label.len == 4 && !memcmp(link->label.data, "same", 4);
-                    }
-                }
-                OK(runner, named, "all reference spellings name the heading's label");
                 markdown_core_node_free(root);
             }
             markdown_core_strbuf_free(&source);
         }
     }
-    /* The cursor may have live delimiters, backtick lookahead, and attribute
-     * recognition state at the declaration boundary. It resumes exactly once. */
-    for (size_t count = 128; count <= 4096; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "# *`prefix` [Later]* {#same}\n\n");
-        }
-        markdown_core_strbuf_puts(&source, "# Later\n");
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "pending heading cursors retain their delimiter ownership");
-        if (root) {
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), count,
-                   "every live delimiter pair resolves once");
-            OK(runner, work.anchors + work.attributes + work.nonblank < 40 * (size_t)source.size,
-               "declaration parsing and finalization stay linear with pending cursors");
-            markdown_core_node_free(root);
-        }
-        markdown_core_strbuf_free(&source);
-    }
 }
 
-/* AN OCCURRENCE NAMES ITS TARGET BY LABEL: however long the heading's
- * anchor or a Reference's attributes, each occurrence holds the label alone,
- * and the attributes are the target's, never copied into it. */
+/* AN OCCURRENCE NAMES ITS TARGET BY LABEL: however long a Reference's
+ * attributes, each occurrence holds the label alone, and the attributes are
+ * the target's, never copied into it. */
 static void reference_occurrences_hold_the_label_alone(test_batch_runner *runner) {
     markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     const size_t count = 4096, length = 65536;
-    for (int definition = 0; definition < 2; definition++) {
-        markdown_core_strbuf_clear(&source);
-        markdown_core_strbuf_puts(&source, definition ? "# x\n\n[Target]: /u {id=" : "# Target {id=");
-        for (size_t i = 0; i < length; i++) {
-            markdown_core_strbuf_putc(&source, 'a');
-        }
-        markdown_core_strbuf_puts(&source, " .c k=1}\n\n");
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "[Target] ");
-        }
-        markdown_core_node *root = parse((char *)source.ptr);
-        OK(runner, root != NULL, "a long target parses");
-        if (!root) {
+    markdown_core_strbuf_puts(&source, "# x\n\n[Target]: /u {id=");
+    for (size_t i = 0; i < length; i++) {
+        markdown_core_strbuf_putc(&source, 'a');
+    }
+    markdown_core_strbuf_puts(&source, " .c k=1}\n\n");
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_strbuf_puts(&source, "[Target] ");
+    }
+    markdown_core_node *root = parse((char *)source.ptr);
+    OK(runner, root != NULL, "a long target parses");
+    if (!root) {
+        markdown_core_strbuf_free(&source);
+        return;
+    }
+    size_t references = 0;
+    bool alone = true;
+    for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
+        markdown_core_node *node = last_child_of(root)->children[node_index];
+        if (node->kind != MARKDOWN_CORE_NODE_LINK) {
             continue;
         }
-        size_t references = 0;
-        bool alone = true;
-        for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
-            markdown_core_node *node = last_child_of(root)->children[node_index];
-            if (node->kind != MARKDOWN_CORE_NODE_LINK) {
-                continue;
-            }
-            alone = alone && !node->as.link->resource && node->as.link->label.len == 6 &&
-                    !memcmp(node->as.link->label.data, "target", 6) && !node->attributes.anchor.len &&
-                    !node->attributes.class_count && !node->attributes.record_count;
-            references++;
-        }
-        INT_EQ(runner, references, count, "every occurrence resolves");
-        OK(runner, alone, "every occurrence holds the label and none of the target's attributes");
-        markdown_core_node_free(root);
+        alone = alone && !node->as.link->resource && node->as.link->label.len == 6 &&
+                !memcmp(node->as.link->label.data, "target", 6) && !node->attributes.anchor.len &&
+                !node->attributes.class_count && !node->attributes.record_count;
+        references++;
     }
+    INT_EQ(runner, references, count, "every occurrence resolves");
+    OK(runner, alone, "every occurrence holds the label and none of the target's attributes");
+    markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
 
@@ -7281,12 +7237,11 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         }
         markdown_core_strbuf_puts(&source, "]\n");
         markdown_core_node *root = parse((char *)source.ptr);
-        OK(runner, root != NULL, "heading labels respect the inherited raw-label length boundary");
+        OK(runner, root != NULL, "a heading of a label's length parses");
         if (root) {
-            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
-                   "declaration and occurrence use the same raw-label limit");
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), 0, "a bracket naming a heading's text is text");
             INT_EQ(runner, anchor_of(child_at(root, 0)).value.length, length,
-                   "label eligibility never limits generated heading anchors");
+                   "the label length never limits generated heading anchors");
         }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
@@ -10653,7 +10608,7 @@ static void session_edits_wide_list(test_batch_runner *runner) {
  * in turn either leaves the session as it was or fails it, and the session
  * then frees everything it holds. The edits type into a paragraph and a
  * nested item, open a fence, rename a definition, retitle a heading that
- * a reference names, write into a table and take most of a long text away,
+ * a link targets, write into a table and take most of a long text away,
  * which compacts it. After each refused edit, another edit either reads as
  * a parse of its text does or fails too. */
 static void session_edits_allocations(test_batch_runner *runner) {
@@ -10674,7 +10629,7 @@ static void session_edits_allocations(test_batch_runner *runner) {
         {"nested item", "- a\n  - b\n\n  c\n- d\n", {2, 6}, {2, 6}, "x"},
         {"fence", "one\n\ntwo\n\nthree\n", {1, 1}, {1, 1}, "```\n"},
         {"definition", "see [r]\n\n[r]: /u\n\nmid\n\n[r] again\n", {3, 2}, {3, 3}, "s"},
-        {"heading", "see [Title]\n\n# Title\n\nend [Title]\n", {3, 8}, {3, 8}, "s"},
+        {"heading", "see [x](#title)\n\n# Title\n\nend\n", {3, 8}, {3, 8}, "s"},
         {"table", "| a |\n|---|\n| b [r] |\n\n[r]: /u\n", {3, 3}, {3, 3}, "c"},
         {"compaction", (const char *)huge.ptr, {3, 1}, {481, 1}, ""},
     };
@@ -11810,11 +11765,11 @@ static bool tables_agree(const markdown_core_document *actual, const markdown_co
     return same;
 }
 
-/* THE LABELS OF ANOTHER TABLE: a reference definition and a heading of one
- * label, and a footnote beside them. An edit of many lines that
- * takes a definition hands its label to the next holder, which may be in
- * another table and past the edit: every table is in the new text's terms
- * when it does (ast.c, markdown_core_publish_splice). Each run of whole
+/* THE LABELS OF ANOTHER TABLE: reference definitions and a footnote of one
+ * label, with headings beside them. An edit of many lines that takes a
+ * definition hands its label to the next holder, which may be past the
+ * edit, while another table moves too: every table is in the new text's
+ * terms when it does (ast.c, markdown_core_publish_splice). Each run of whole
  * lines goes, or gives way to a line, in a session of its own. */
 static void session_edits_cross_tables(test_batch_runner *runner) {
     static const char *const texts[] = {
@@ -11874,9 +11829,9 @@ static void session_edits_cross_tables(test_batch_runner *runner) {
  * they are in the text, since the snapshot's inline roots resolve only
  * definitions before them and its tree differs from the parse's. The committed definitions sit in the committed tables
  * and the tail's are the snapshot's own: footnotes nested in an open
- * footnote, inline notes, labels written twice, a Reference and Headings
- * declaring one label in either order, the tail's labels between committed
- * ones and over a committed Heading's, and a heading in a
+ * footnote, inline notes, labels written twice, References beside headings
+ * of their label's text, the tail's labels between committed ones, and a
+ * heading in a
  * footnote that a later anchor renames, which moves the footnote and the
  * heading to objects of their own while their entries stay committed. */
 static void session_snapshot_tables(test_batch_runner *runner) {
@@ -12640,7 +12595,7 @@ int main(void) {
     block_content_storage_follows_writes(runner);
     node_slots_come_from_slabs_and_go_back_to_the_pool(runner);
     resource_slots_come_from_slabs_and_outlive_the_pool(runner);
-    heading_reference_resolves_to_the_heading(runner);
+    heading_text_names_no_reference(runner);
     class_runs_split_on_ascii_white_space(runner);
     unicode_classes_are_unicode_17(runner);
     utf8_decode_reads_every_scalar(runner);

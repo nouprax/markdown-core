@@ -52,9 +52,6 @@ internal object WireDecoder {
         private val footnotes = HashMap<Long, Footnote>()
         private val references = HashMap<Long, Reference>()
 
-        /** Every reference and heading built so far, by id, for the reference label table. */
-        private val resolvable = HashMap<Long, Markup>()
-
         fun decode(): Document {
             offset = STATUS_OFFSET
             if (u8() == FAILURE) throw failure()
@@ -80,7 +77,6 @@ internal object WireDecoder {
             val node = children.fields(kind, id, extent, runs, anchor, attributes)
             if (node is Footnote) footnotes[id.value] = node
             if (node is Reference) references[id.value] = node
-            if (node is Reference || node is Heading) resolvable[id.value] = node
             nodes.subList(children.start, nodes.size).clear()
             nodes += node
         }
@@ -467,8 +463,8 @@ internal object WireDecoder {
         private fun <T : Markup> table(definitions: Map<Long, T>): kotlin.collections.List<T> =
             list { definitions.getValue(int()) }
 
-        /** A `u32` count and that many labels, each with the `u64` id of the reference or heading it resolves to. */
-        private fun labels(): Map<String, Markup> = list { string() to resolvable.getValue(int()) }.toMap()
+        /** A `u32` count and that many labels, each with the `u64` id of the reference it resolves to. */
+        private fun labels(): Map<String, Reference> = list { string() to references.getValue(int()) }.toMap()
 
         // ---- Values ------------------------------------------------------------
 

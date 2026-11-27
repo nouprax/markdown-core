@@ -953,9 +953,8 @@ static bool lookup_of(const view *taken, size_t index, asking *lookup) {
 }
 
 /* Where the first definition of the lookup's label starts, as the expected
- * document's tables answer it, or INT64_MAX for none. For a reference label
- * that is its winner: the first Reference, or the first heading when no
- * Reference declares it. */
+ * document's tables answer it, or INT64_MAX for none: for a reference label,
+ * the first Reference. */
 static int64_t definition_start(const markdown_core_document *document, const view *taken, const asking *lookup) {
     const markdown_core_node *first = lookup->table == TABLE_FOOTNOTE
                                           ? markdown_core_document_footnote_for(document, lookup->label)
@@ -967,44 +966,21 @@ static int64_t definition_start(const markdown_core_document *document, const vi
 /* The places plan 5.5 lets a snapshot differ at, computed from the expected
  * document alone: for each node, the relations of its inline content a
  * snapshot may read otherwise. They are those of every inline root that names
- * a label whose first definition starts at or after the root, and, in turn,
- * of every root that names a label a heading among them declares. NULL when
- * memory ran out. */
+ * a label whose first definition starts at or after the root. NULL when memory
+ * ran out. */
 static uint32_t *free_relations(const markdown_core_document *document, const view *taken) {
     uint32_t *relations = (uint32_t *)calloc(taken->count, sizeof(*relations));
-    asking *lookups = (asking *)malloc(taken->count * sizeof(*lookups));
-    bool *done = (bool *)calloc(taken->count, sizeof(*done));
-    size_t count = 0, index;
-    bool grew = true;
-    if (!relations || !lookups || !done) {
-        free(relations);
-        free(lookups);
-        free(done);
+    size_t index;
+    if (!relations) {
         return NULL;
     }
     for (index = 0; index < taken->count; index++) {
-        if (lookup_of(taken, index, &lookups[count])) {
-            count++;
+        asking lookup;
+        if (lookup_of(taken, index, &lookup) &&
+            definition_start(document, taken, &lookup) >= taken->nodes[lookup.root].range.start) {
+            relations[lookup.root] |= (uint32_t)1 << lookup.relation;
         }
     }
-    while (grew) {
-        grew = false;
-        for (index = 0; index < count; index++) {
-            const asking *lookup = &lookups[index];
-            bool reads_otherwise = definition_start(document, taken, lookup) >= taken->nodes[lookup->root].range.start;
-            if (!reads_otherwise && lookup->table == TABLE_REFERENCE) {
-                size_t winner = view_find(taken, markdown_core_document_reference_for(document, lookup->label));
-                reads_otherwise = winner != SIZE_MAX && kind_is(taken, winner, "Heading") && relations[winner];
-            }
-            if (!done[index] && reads_otherwise) {
-                done[index] = true;
-                relations[lookup->root] |= (uint32_t)1 << lookup->relation;
-                grew = true;
-            }
-        }
-    }
-    free(lookups);
-    free(done);
     return relations;
 }
 

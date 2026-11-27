@@ -25,7 +25,7 @@ struct DocumentBuilder {
     private var relations: [Relations] = []
     private var records: [MarkupRecord?] = []
     /// The records the document's tables may name: every footnote and
-    /// reference, and every heading a label may resolve to.
+    /// reference.
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
 
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
@@ -48,7 +48,7 @@ struct DocumentBuilder {
         for index in queue.indices.reversed() {
             let built = record(from: queue[index], relations: relations[index])
             switch markdown_core_node_get_kind(queue[index]) {
-            case MARKDOWN_CORE_KIND_FOOTNOTE, MARKDOWN_CORE_KIND_REFERENCE, MARKDOWN_CORE_KIND_HEADING:
+            case MARKDOWN_CORE_KIND_FOOTNOTE, MARKDOWN_CORE_KIND_REFERENCE:
                 definitions[queue[index]] = built
             default: break
             }
@@ -173,17 +173,18 @@ struct DocumentBuilder {
     }
 
     /// Each label that resolves, keyed by its UTF-8 bytes, with the reference
-    /// or heading the document's label table names for it. The engine
-    /// normalizes and resolves labels; the binding only copies its answer.
-    private func referenceLabels() -> [[UInt8]: MarkupRecord] {
-        var labels: [[UInt8]: MarkupRecord] = [:]
+    /// the document's label table names for it. The engine normalizes and
+    /// resolves labels; the binding only copies its answer.
+    private func referenceLabels() -> [[UInt8]: ReferenceRecord] {
+        var labels: [[UInt8]: ReferenceRecord] = [:]
         for index in 0..<markdown_core_document_reference_label_count(document) {
             var label = markdown_core_string()
             var node: OpaquePointer?
             answered(markdown_core_document_reference_label_at(document, index, &label, &node))
-            // The table names only references and headings of the tree.
+            // The table names only references of the tree.
             // swift-format-ignore: NeverForceUnwrap
-            labels[Array(UnsafeBufferPointer(start: label.data, count: label.length))] = definitions[node!]!
+            labels[Array(UnsafeBufferPointer(start: label.data, count: label.length))] =
+                unsafeDowncast(definitions[node!]!, to: ReferenceRecord.self)
         }
         return labels
     }

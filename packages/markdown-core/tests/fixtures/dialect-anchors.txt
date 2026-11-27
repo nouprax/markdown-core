@@ -1,4 +1,4 @@
-# Heading anchors and implicit references
+# Heading anchors
 
 ```````````````````````````````` example
 # My Header
@@ -73,74 +73,6 @@ Document scope=1:1..15:18 anchor=null attributes={} children=8
 │   └── Text scope=13:3..13:14 anchor=null attributes={} literal="Ünïcode Ĝ" children=0
 └── Heading scope=15:1..15:18 anchor="spaced---words" attributes={} level=1 children=1
     └── Text scope=15:5..15:18 anchor=null attributes={} literal="spaced   words" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-# First chapter
-
-[First chapter] [First chapter][] [go there][First chapter]
-.
-Document scope=1:1..3:59 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:15 anchor="first-chapter" attributes={} level=1 children=1
-│   └── Text scope=1:3..1:15 anchor=null attributes={} literal="First chapter" children=0
-└── Paragraph scope=3:1..3:59 anchor=null attributes={} children=5
-    ├── Link scope=3:1..3:15 anchor=null attributes={} dest=reference("first chapter") title=null children=1
-    │   └── Text scope=3:2..3:14 anchor=null attributes={} literal="First chapter" children=0
-    ├── Text scope=3:16..3:16 anchor=null attributes={} literal=" " children=0
-    ├── Link scope=3:17..3:33 anchor=null attributes={} dest=reference("first chapter") title=null children=1
-    │   └── Text scope=3:18..3:30 anchor=null attributes={} literal="First chapter" children=0
-    ├── Text scope=3:34..3:34 anchor=null attributes={} literal=" " children=0
-    └── Link scope=3:35..3:59 anchor=null attributes={} dest=reference("first chapter") title=null children=1
-        └── Text scope=3:36..3:43 anchor=null attributes={} literal="go there" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-# First chapter
-
-[First chapter]
-
-[First chapter]: /explicit
-.
-Document scope=1:1..5:26 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:15 anchor="first-chapter" attributes={} level=1 children=1
-│   └── Text scope=1:3..1:15 anchor=null attributes={} literal="First chapter" children=0
-├── Paragraph scope=3:1..3:15 anchor=null attributes={} children=1
-│   └── Link scope=3:1..3:15 anchor=null attributes={} dest=reference("first chapter") title=null children=1
-│       └── Text scope=3:2..3:14 anchor=null attributes={} literal="First chapter" children=0
-└── Reference scope=5:1..5:26 anchor=null attributes={} label="first chapter" dest=url("/explicit") title=null children=0
-````````````````````````````````
-
-```````````````````````````````` example
-# *Foo*
-
-[*Foo*] [Foo]
-.
-Document scope=1:1..3:13 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:7 anchor="foo" attributes={} level=1 children=1
-│   └── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
-│       └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
-└── Paragraph scope=3:1..3:13 anchor=null attributes={} children=2
-    ├── Link scope=3:1..3:7 anchor=null attributes={} dest=reference("*foo*") title=null children=1
-    │   └── Emphasis scope=3:2..3:6 anchor=null attributes={} children=1
-    │       └── Text scope=3:3..3:5 anchor=null attributes={} literal="Foo" children=0
-    └── Text scope=3:8..3:13 anchor=null attributes={} literal=" [Foo]" children=0
-````````````````````````````````
-
-```````````````````````````````` example
-# Dup
-
-# Dup
-
-[Dup]
-.
-Document scope=1:1..5:5 anchor=null attributes={} children=3
-├── Heading scope=1:1..1:5 anchor="dup" attributes={} level=1 children=1
-│   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Dup" children=0
-├── Heading scope=3:1..3:5 anchor="dup-1" attributes={} level=1 children=1
-│   └── Text scope=3:3..3:5 anchor=null attributes={} literal="Dup" children=0
-└── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
-    └── Link scope=5:1..5:5 anchor=null attributes={} dest=reference("dup") title=null children=1
-        └── Text scope=5:2..5:4 anchor=null attributes={} literal="Dup" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -380,125 +312,6 @@ Document scope=1:1..5:3 anchor=null attributes={} children=2
     └── Text scope=5:3..5:3 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
 
-## source order including footnotes
-
-```````````````````````````````` example
-[^f]: # Dup
-
-# Dup
-
-[Dup] [^f]
-.
-Document scope=1:1..5:10 anchor=null attributes={} children=3
-├── Footnote scope=1:1..2:0 anchor=null attributes={} label="f" children=1
-│   └── Heading scope=1:7..1:11 anchor="dup" attributes={} level=1 children=1
-│       └── Text scope=1:9..1:11 anchor=null attributes={} literal="Dup" children=0
-├── Heading scope=3:1..3:5 anchor="dup-1" attributes={} level=1 children=1
-│   └── Text scope=3:3..3:5 anchor=null attributes={} literal="Dup" children=0
-└── Paragraph scope=5:1..5:10 anchor=null attributes={} children=3
-    ├── Link scope=5:1..5:5 anchor=null attributes={} dest=reference("dup") title=null children=1
-    │   └── Text scope=5:2..5:4 anchor=null attributes={} literal="Dup" children=0
-    ├── Text scope=5:6..5:6 anchor=null attributes={} literal=" " children=0
-    └── Cite scope=5:7..5:10 anchor=null attributes={} children=1
-        └── Citation scope=5:8..5:9 anchor=null attributes={} referent=footnote(label="f") children=0
-            ├── CitationPrefix children=0
-            └── CitationSuffix children=0
-````````````````````````````````
-
-## heading references inside a heading
-
-```````````````````````````````` example
-# [Next] and *more*
-
-# Next
-.
-Document scope=1:1..3:6 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:19 anchor="next-and-more" attributes={} level=1 children=3
-│   ├── Link scope=1:3..1:8 anchor=null attributes={} dest=reference("next") title=null children=1
-│   │   └── Text scope=1:4..1:7 anchor=null attributes={} literal="Next" children=0
-│   ├── Text scope=1:9..1:13 anchor=null attributes={} literal=" and " children=0
-│   └── Emphasis scope=1:14..1:19 anchor=null attributes={} children=1
-│       └── Text scope=1:15..1:18 anchor=null attributes={} literal="more" children=0
-└── Heading scope=3:1..3:6 anchor="next" attributes={} level=1 children=1
-    └── Text scope=3:3..3:6 anchor=null attributes={} literal="Next" children=0
-````````````````````````````````
-
-## source label preserves markup and entities
-
-```````````````````````````````` example
-# *Straße*
-
-[*STRASSE*] [Straße]
-
-# A &amp; B
-
-[A &amp; B] [A & B]
-.
-Document scope=1:1..7:19 anchor=null attributes={} children=4
-├── Heading scope=1:1..1:11 anchor="straße" attributes={} level=1 children=1
-│   └── Emphasis scope=1:3..1:11 anchor=null attributes={} children=1
-│       └── Text scope=1:4..1:10 anchor=null attributes={} literal="Straße" children=0
-├── Paragraph scope=3:1..3:21 anchor=null attributes={} children=2
-│   ├── Link scope=3:1..3:11 anchor=null attributes={} dest=reference("*strasse*") title=null children=1
-│   │   └── Emphasis scope=3:2..3:10 anchor=null attributes={} children=1
-│   │       └── Text scope=3:3..3:9 anchor=null attributes={} literal="STRASSE" children=0
-│   └── Text scope=3:12..3:21 anchor=null attributes={} literal=" [Straße]" children=0
-├── Heading scope=5:1..5:11 anchor="a--b" attributes={} level=1 children=1
-│   └── Text scope=5:3..5:11 anchor=null attributes={} literal="A & B" children=0
-└── Paragraph scope=7:1..7:19 anchor=null attributes={} children=2
-    ├── Link scope=7:1..7:11 anchor=null attributes={} dest=reference("a &amp; b") title=null children=1
-    │   └── Text scope=7:2..7:10 anchor=null attributes={} literal="A & B" children=0
-    └── Text scope=7:12..7:19 anchor=null attributes={} literal=" [A & B]" children=0
-````````````````````````````````
-
-## escaped and forbidden brackets
-
-```````````````````````````````` example
-# A\]B
-
-[A\]B] [go][A\]B]
-
-# C]D
-
-[C\]D]
-.
-Document scope=1:1..7:6 anchor=null attributes={} children=4
-├── Heading scope=1:1..1:6 anchor="ab" attributes={} level=1 children=1
-│   └── Text scope=1:3..1:6 anchor=null attributes={} literal="A]B" children=0
-├── Paragraph scope=3:1..3:17 anchor=null attributes={} children=3
-│   ├── Link scope=3:1..3:6 anchor=null attributes={} dest=reference("a\\]b") title=null children=1
-│   │   └── Text scope=3:2..3:5 anchor=null attributes={} literal="A]B" children=0
-│   ├── Text scope=3:7..3:7 anchor=null attributes={} literal=" " children=0
-│   └── Link scope=3:8..3:17 anchor=null attributes={} dest=reference("a\\]b") title=null children=1
-│       └── Text scope=3:9..3:10 anchor=null attributes={} literal="go" children=0
-├── Heading scope=5:1..5:5 anchor="cd" attributes={} level=1 children=1
-│   └── Text scope=5:3..5:5 anchor=null attributes={} literal="C]D" children=0
-└── Paragraph scope=7:1..7:6 anchor=null attributes={} children=1
-    └── Text scope=7:1..7:6 anchor=null attributes={} literal="[C]D]" children=0
-````````````````````````````````
-
-## heading attribute source excludes records
-
-```````````````````````````````` example
-[Title] [go][Title]
-
-# Title ## {#dest .c k="[Other]"}
-
-# Other
-.
-Document scope=1:1..5:7 anchor=null attributes={} children=3
-├── Paragraph scope=1:1..1:19 anchor=null attributes={} children=3
-│   ├── Link scope=1:1..1:7 anchor=null attributes={} dest=reference("title") title=null children=1
-│   │   └── Text scope=1:2..1:6 anchor=null attributes={} literal="Title" children=0
-│   ├── Text scope=1:8..1:8 anchor=null attributes={} literal=" " children=0
-│   └── Link scope=1:9..1:19 anchor=null attributes={} dest=reference("title") title=null children=1
-│       └── Text scope=1:10..1:11 anchor=null attributes={} literal="go" children=0
-├── Heading scope=3:1..3:33 anchor="dest" attributes={.c k="[Other]"} level=1 children=1
-│   └── Text scope=3:3..3:7 anchor=null attributes={} literal="Title" children=0
-└── Heading scope=5:1..5:7 anchor="other" attributes={} level=1 children=1
-    └── Text scope=5:3..5:7 anchor=null attributes={} literal="Other" children=0
-````````````````````````````````
-
 ## opaque body can cross a candidate attribute opener
 
 ```````````````````````````````` example
@@ -507,139 +320,13 @@ Document scope=1:1..5:7 anchor=null attributes={} children=3
 # `x{#false k=`}
 .
 Document scope=1:1..3:16 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=2
-│   ├── Link scope=1:1..1:16 anchor=null attributes={} dest=reference("`x{#false k=`}") title=null children=2
-│   │   ├── Code scope=1:2..1:14 anchor=null attributes={} literal="x{#false k=" children=0
-│   │   └── Text scope=1:15..1:15 anchor=null attributes={} literal="}" children=0
-│   └── Text scope=1:17..1:21 anchor=null attributes={} literal=" [`x]" children=0
+├── Paragraph scope=1:1..1:21 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
+│   ├── Code scope=1:2..1:14 anchor=null attributes={} literal="x{#false k=" children=0
+│   └── Text scope=1:15..1:21 anchor=null attributes={} literal="}] [`x]" children=0
 └── Heading scope=3:1..3:16 anchor="xfalse-k" attributes={} level=1 children=2
     ├── Code scope=3:3..3:15 anchor=null attributes={} literal="x{#false k=" children=0
     └── Text scope=3:16..3:16 anchor=null attributes={} literal="}" children=0
-````````````````````````````````
-
-## resume after opaque token before a reference
-
-```````````````````````````````` example
-# `x{#false k=`[Later]}
-
-# Later
-.
-Document scope=1:1..3:7 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:23 anchor="xfalse-klater" attributes={} level=1 children=3
-│   ├── Code scope=1:3..1:15 anchor=null attributes={} literal="x{#false k=" children=0
-│   ├── Link scope=1:16..1:22 anchor=null attributes={} dest=reference("later") title=null children=1
-│   │   └── Text scope=1:17..1:21 anchor=null attributes={} literal="Later" children=0
-│   └── Text scope=1:23..1:23 anchor=null attributes={} literal="}" children=0
-└── Heading scope=3:1..3:7 anchor="later" attributes={} level=1 children=1
-    └── Text scope=3:3..3:7 anchor=null attributes={} literal="Later" children=0
-````````````````````````````````
-
-## declaration opacity in reference occurrences
-
-```````````````````````````````` example
-# Ref
-
-`[Ref]` <a title="[Ref]"> $[Ref]$ %%[Ref]%% [[Ref]] [Ref]
-.
-Document scope=1:1..3:57 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:5 anchor="ref" attributes={} level=1 children=1
-│   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Ref" children=0
-└── Paragraph scope=3:1..3:57 anchor=null attributes={} children=11
-    ├── Code scope=3:1..3:7 anchor=null attributes={} literal="[Ref]" children=0
-    ├── Text scope=3:8..3:8 anchor=null attributes={} literal=" " children=0
-    ├── HTML scope=3:9..3:25 anchor=null attributes={} literal="<a title=\"[Ref]\">" children=0
-    ├── Text scope=3:26..3:26 anchor=null attributes={} literal=" " children=0
-    ├── Formula scope=3:27..3:33 anchor=null attributes={} mode=embedded literal="[Ref]" children=0
-    ├── Text scope=3:34..3:34 anchor=null attributes={} literal=" " children=0
-    ├── Comment scope=3:35..3:43 anchor=null attributes={} literal="[Ref]" children=0
-    ├── Text scope=3:44..3:44 anchor=null attributes={} literal=" " children=0
-    ├── CrossLink scope=3:45..3:51 anchor=null attributes={} dest=cross(path="Ref",anchor=null) label=null children=0
-    ├── Text scope=3:52..3:52 anchor=null attributes={} literal=" " children=0
-    └── Link scope=3:53..3:57 anchor=null attributes={} dest=reference("ref") title=null children=1
-        └── Text scope=3:54..3:56 anchor=null attributes={} literal="Ref" children=0
-````````````````````````````````
-
-## occurrence metadata
-
-```````````````````````````````` example
-[Ref]{#own .c k=1} [Ref][] [go][Ref]
-
-# Ref {#target .heading k=2}
-.
-Document scope=1:1..3:28 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:36 anchor=null attributes={} children=5
-│   ├── Span scope=1:1..1:18 anchor="own" attributes={.c k="1"} children=1
-│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="Ref" children=0
-│   ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
-│   ├── Link scope=1:20..1:26 anchor=null attributes={} dest=reference("ref") title=null children=1
-│   │   └── Text scope=1:21..1:23 anchor=null attributes={} literal="Ref" children=0
-│   ├── Text scope=1:27..1:27 anchor=null attributes={} literal=" " children=0
-│   └── Link scope=1:28..1:36 anchor=null attributes={} dest=reference("ref") title=null children=1
-│       └── Text scope=1:29..1:30 anchor=null attributes={} literal="go" children=0
-└── Heading scope=3:1..3:28 anchor="target" attributes={.heading k="2"} level=1 children=1
-    └── Text scope=3:3..3:5 anchor=null attributes={} literal="Ref" children=0
-````````````````````````````````
-
-## explicit definition takes precedence regardless of source order
-
-```````````````````````````````` example
-[Ref]
-
-# Ref
-
-[Ref]: /explicit "title" {#local .a}
-.
-Document scope=1:1..5:36 anchor=null attributes={} children=3
-├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("ref") title=null children=1
-│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="Ref" children=0
-├── Heading scope=3:1..3:5 anchor="ref" attributes={} level=1 children=1
-│   └── Text scope=3:3..3:5 anchor=null attributes={} literal="Ref" children=0
-└── Reference scope=5:1..5:36 anchor="local" attributes={.a} label="ref" dest=url("/explicit") title="title" children=0
-````````````````````````````````
-
-## normalized duplicate label targets first heading
-
-```````````````````````````````` example
-[A B]
-
-# A   B {#first}
-
-# a b {#second}
-.
-Document scope=1:1..5:15 anchor=null attributes={} children=3
-├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("a b") title=null children=1
-│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="A B" children=0
-├── Heading scope=3:1..3:16 anchor="first" attributes={} level=1 children=1
-│   └── Text scope=3:3..3:7 anchor=null attributes={} literal="A   B" children=0
-└── Heading scope=5:1..5:15 anchor="second" attributes={} level=1 children=1
-    └── Text scope=5:3..5:5 anchor=null attributes={} literal="a b" children=0
-````````````````````````````````
-
-## self reference and invalid nested link fallback
-
-```````````````````````````````` example
-# Self
-
-[Self [Self]](/outer) [Self](missing [Self]) [missing][Self]
-.
-Document scope=1:1..3:60 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:6 anchor="self" attributes={} level=1 children=1
-│   └── Text scope=1:3..1:6 anchor=null attributes={} literal="Self" children=0
-└── Paragraph scope=3:1..3:60 anchor=null attributes={} children=8
-    ├── Text scope=3:1..3:6 anchor=null attributes={} literal="[Self " children=0
-    ├── Link scope=3:7..3:12 anchor=null attributes={} dest=reference("self") title=null children=1
-    │   └── Text scope=3:8..3:11 anchor=null attributes={} literal="Self" children=0
-    ├── Text scope=3:13..3:22 anchor=null attributes={} literal="](/outer) " children=0
-    ├── Link scope=3:23..3:28 anchor=null attributes={} dest=reference("self") title=null children=1
-    │   └── Text scope=3:24..3:27 anchor=null attributes={} literal="Self" children=0
-    ├── Text scope=3:29..3:37 anchor=null attributes={} literal="(missing " children=0
-    ├── Link scope=3:38..3:43 anchor=null attributes={} dest=reference("self") title=null children=1
-    │   └── Text scope=3:39..3:42 anchor=null attributes={} literal="Self" children=0
-    ├── Text scope=3:44..3:45 anchor=null attributes={} literal=") " children=0
-    └── Link scope=3:46..3:60 anchor=null attributes={} dest=reference("self") title=null children=1
-        └── Text scope=3:47..3:53 anchor=null attributes={} literal="missing" children=0
 ````````````````````````````````
 
 ## reserve inline code before synthesis
@@ -838,40 +525,6 @@ Document scope=1:1..3:19 anchor=null attributes={} children=2
 └── Reference scope=3:1..3:19 anchor="x" attributes={} label="unused" dest=url("/url") title=null children=0
 ````````````````````````````````
 
-## a heading reference names the heading's label
-
-```````````````````````````````` example
-# Heading {#heading .a k=1}
-
-[Heading]
-.
-Document scope=1:1..3:9 anchor=null attributes={} children=2
-├── Heading scope=1:1..1:27 anchor="heading" attributes={.a k="1"} level=1 children=1
-│   └── Text scope=1:3..1:9 anchor=null attributes={} literal="Heading" children=0
-└── Paragraph scope=3:1..3:9 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:9 anchor=null attributes={} dest=reference("heading") title=null children=1
-        └── Text scope=3:2..3:8 anchor=null attributes={} literal="Heading" children=0
-````````````````````````````````
-
-## line ending normalization and Setext labels
-
-```````````````````````````````` example
-[a b]
-
-A
-B {#id}
-====
-.
-Document scope=1:1..5:4 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("a b") title=null children=1
-│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="a b" children=0
-└── Heading scope=3:1..5:4 anchor="id" attributes={} level=1 children=3
-    ├── Text scope=3:1..3:1 anchor=null attributes={} literal="A" children=0
-    ├── SoftBreak scope=3:2..4:0 anchor=null attributes={} children=0
-    └── Text scope=4:1..4:1 anchor=null attributes={} literal="B" children=0
-````````````````````````````````
-
 ## Leading and repeated interior whitespace
 
 ```````````````````````````````` example
@@ -902,27 +555,6 @@ Document scope=1:1..5:16 anchor=null attributes={} children=3
 └── Reference scope=5:1..5:16 anchor="x" attributes={} label="ref" dest=url("/url") title=null children=0
 ````````````````````````````````
 
-## Attributes on collapsed implicit references
-
-```````````````````````````````` example
-[Ref][]{#own .c k=1} [Ref][] [go][Ref]
-
-# Ref {#target .heading k=2}
-.
-Document scope=1:1..3:28 anchor=null attributes={} children=2
-├── Paragraph scope=1:1..1:38 anchor=null attributes={} children=5
-│   ├── Link scope=1:1..1:20 anchor="own" attributes={.c k="1"} dest=reference("ref") title=null children=1
-│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="Ref" children=0
-│   ├── Text scope=1:21..1:21 anchor=null attributes={} literal=" " children=0
-│   ├── Link scope=1:22..1:28 anchor=null attributes={} dest=reference("ref") title=null children=1
-│   │   └── Text scope=1:23..1:25 anchor=null attributes={} literal="Ref" children=0
-│   ├── Text scope=1:29..1:29 anchor=null attributes={} literal=" " children=0
-│   └── Link scope=1:30..1:38 anchor=null attributes={} dest=reference("ref") title=null children=1
-│       └── Text scope=1:31..1:32 anchor=null attributes={} literal="go" children=0
-└── Heading scope=3:1..3:28 anchor="target" attributes={.heading k="2"} level=1 children=1
-    └── Text scope=3:3..3:5 anchor=null attributes={} literal="Ref" children=0
-````````````````````````````````
-
 ## Reserve anchors in callout title fields
 
 ```````````````````````````````` example
@@ -939,76 +571,6 @@ Document scope=1:1..4:6 anchor=null attributes={} children=2
     │   └── Code scope=3:11..3:20 anchor="x" attributes={} literal="code" children=0
     └── Paragraph scope=4:3..4:6 anchor=null attributes={} children=1
         └── Text scope=4:3..4:6 anchor=null attributes={} literal="body" children=0
-````````````````````````````````
-
-## Heading references throughout owned fields
-
-```````````````````````````````` example
-:n[[Target]]
-
-> [!note] [Target]
-> body
-
-^[inline [Target]]
-
-[^f]: [Target]
-
-# Target
-.
-Document scope=1:1..10:8 anchor=null attributes={} children=5
-├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-│   └── Directive scope=1:1..1:12 anchor=null attributes={} name="n" children=0
-│       └── DirectiveLabel scope=1:3..1:12 anchor=null attributes={} children=1
-│           └── Link scope=1:4..1:11 anchor=null attributes={} dest=reference("target") title=null children=1
-│               └── Text scope=1:5..1:10 anchor=null attributes={} literal="Target" children=0
-├── Callout scope=3:1..4:6 anchor=null attributes={} variant="note" collapsed=null children=1
-│   ├── Title children=1
-│   │   └── Link scope=3:11..3:18 anchor=null attributes={} dest=reference("target") title=null children=1
-│   │       └── Text scope=3:12..3:17 anchor=null attributes={} literal="Target" children=0
-│   └── Paragraph scope=4:3..4:6 anchor=null attributes={} children=1
-│       └── Text scope=4:3..4:6 anchor=null attributes={} literal="body" children=0
-├── Paragraph scope=6:1..6:18 anchor=null attributes={} children=1
-│   └── Cite scope=6:1..6:18 anchor=null attributes={} children=1
-│       └── Citation scope=6:3..6:17 anchor=null attributes={} referent=footnote(note) children=0
-│           ├── Footnote scope=6:1..6:18 anchor=null attributes={} label=null children=2
-│           │   ├── Text scope=6:3..6:9 anchor=null attributes={} literal="inline " children=0
-│           │   └── Link scope=6:10..6:17 anchor=null attributes={} dest=reference("target") title=null children=1
-│           │       └── Text scope=6:11..6:16 anchor=null attributes={} literal="Target" children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-├── Footnote scope=8:1..9:0 anchor=null attributes={} label="f" children=1
-│   └── Paragraph scope=8:7..8:14 anchor=null attributes={} children=1
-│       └── Link scope=8:7..8:14 anchor=null attributes={} dest=reference("target") title=null children=1
-│           └── Text scope=8:8..8:13 anchor=null attributes={} literal="Target" children=0
-└── Heading scope=10:1..10:8 anchor="target" attributes={} level=1 children=1
-    └── Text scope=10:3..10:8 anchor=null attributes={} literal="Target" children=0
-````````````````````````````````
-
-## Implicit reference in declaration-shaped paragraph text (CI seed 1)
-
-```````````````````````````````` example
-### foo
-three---        with two lines.
-[foo]: <>
-****
-    <a
-*foo _bar* baz_seven-------
-.
-Document scope=1:1..6:27 anchor=null attributes={} children=5
-├── Heading scope=1:1..1:7 anchor="foo" attributes={} level=3 children=1
-│   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-├── Paragraph scope=2:1..3:9 anchor=null attributes={} children=4
-│   ├── Text scope=2:1..2:31 anchor=null attributes={} literal="three---        with two lines." children=0
-│   ├── SoftBreak scope=2:32..3:0 anchor=null attributes={} children=0
-│   ├── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("foo") title=null children=1
-│   │   └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
-│   └── Text scope=3:6..3:9 anchor=null attributes={} literal=": <>" children=0
-├── ThematicBreak scope=4:1..4:4 anchor=null attributes={} children=0
-├── CodeBlock scope=5:5..5:6 anchor=null attributes={} info=null language=null literal="<a\n" fenced=false closed=true children=0
-└── Paragraph scope=6:1..6:27 anchor=null attributes={} children=2
-    ├── Emphasis scope=6:1..6:10 anchor=null attributes={} children=1
-    │   └── Text scope=6:2..6:9 anchor=null attributes={} literal="foo _bar" children=0
-    └── Text scope=6:11..6:27 anchor=null attributes={} literal=" baz_seven-------" children=0
 ````````````````````````````````
 
 ## P5/P6 compositions
@@ -1031,9 +593,9 @@ Document scope=1:1..3:15 anchor=null attributes={} children=2
 
 # 2^10^
 
-[2^10^]
+[2^10^](#210)
 .
-Document scope=1:1..5:7 anchor=null attributes={} children=3
+Document scope=1:1..5:13 anchor=null attributes={} children=3
 ├── Heading scope=1:1..1:30 anchor="big-title-a-b-x" attributes={} level=1 children=5
 │   ├── Span scope=1:3..1:19 anchor=null attributes={.c} children=2
 │   │   ├── Text scope=1:4..1:7 anchor=null attributes={} literal="Big " children=0
@@ -1049,8 +611,8 @@ Document scope=1:1..5:7 anchor=null attributes={} children=3
 │   ├── Text scope=3:3..3:3 anchor=null attributes={} literal="2" children=0
 │   └── Superscript scope=3:4..3:7 anchor=null attributes={} children=1
 │       └── Text scope=3:5..3:6 anchor=null attributes={} literal="10" children=0
-└── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
-    └── Link scope=5:1..5:7 anchor=null attributes={} dest=reference("2^10^") title=null children=2
+└── Paragraph scope=5:1..5:13 anchor=null attributes={} children=1
+    └── Link scope=5:1..5:13 anchor=null attributes={} dest=url("#210") title=null children=2
         ├── Text scope=5:2..5:2 anchor=null attributes={} literal="2" children=0
         └── Superscript scope=5:3..5:6 anchor=null attributes={} children=1
             └── Text scope=5:4..5:5 anchor=null attributes={} literal="10" children=0
@@ -1067,12 +629,11 @@ Document scope=1:1..3:44 anchor=null attributes={} children=2
 └── Paragraph scope=3:1..3:44 anchor=null attributes={} children=5
     ├── Span scope=3:1..3:12 anchor=null attributes={.span} children=1
     │   └── Text scope=3:2..3:4 anchor=null attributes={} literal="Ref" children=0
-    ├── Text scope=3:13..3:13 anchor=null attributes={} literal=" " children=0
-    ├── Link scope=3:14..3:27 anchor=null attributes={.link} dest=reference("ref") title=null children=1
-    │   └── Text scope=3:15..3:17 anchor=null attributes={} literal="Ref" children=0
-    ├── Text scope=3:28..3:28 anchor=null attributes={} literal=" " children=0
-    └── Link scope=3:29..3:44 anchor=null attributes={.link} dest=reference("ref") title=null children=1
-        └── Text scope=3:30..3:31 anchor=null attributes={} literal="go" children=0
+    ├── Text scope=3:13..3:18 anchor=null attributes={} literal=" [Ref]" children=0
+    ├── Span scope=3:19..3:27 anchor=null attributes={.link} children=0
+    ├── Text scope=3:28..3:32 anchor=null attributes={} literal=" [go]" children=0
+    └── Span scope=3:33..3:44 anchor=null attributes={.link} children=1
+        └── Text scope=3:34..3:36 anchor=null attributes={} literal="Ref" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

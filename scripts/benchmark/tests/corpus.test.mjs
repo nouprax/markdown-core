@@ -50,8 +50,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 177);
-    assert.equal(full.length, 171);
+    assert.equal(grammarCertificates.length, 176);
+    assert.equal(full.length, 170);
     assert.equal(split.length, 6);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 756);
+    assert.equal(corpus.cases.length, 752);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 378);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 376);
         assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 177);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 176);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
@@ -610,8 +610,8 @@ test("section coverage requires explicit proof links before a ledger can be rege
     assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
     const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1 }));
     const all = ledger.features.flatMap((feature) => feature.sections);
-    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 122);
-    assert.equal(all.filter((section) => section.disposition.kind === "context").length, 5);
+    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 121);
+    assert.equal(all.filter((section) => section.disposition.kind === "context").length, 6);
     assert.deepEqual(
         new Set(all.flatMap((section) => section.disposition.certificates ?? [])),
         new Set(certificates.keys())

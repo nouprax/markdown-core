@@ -160,27 +160,23 @@ extension APISuite {
         #expect(literal.content.allSatisfy { $0 is Text })
     }
 
-    @Test("the document lists references in source order and resolves a label to a reference or a heading")
+    @Test("the document lists references in source order and resolves a label to the first one")
     func referenceTable() throws {
         let source =
             "[Target] [a] [Both]\n\n# Target {#chapter}\n\n# Both\n\n"
             + "[a]: /one\n[a]: /two \"t\"\n\n[unused]: /x\n\n[both]: /b\n"
         let document = try Document.parse(source)
-        let chapter = try #require(document.content[1] as? Heading)
         #expect(document.references.map(\.label) == ["a", "a", "unused", "both"])
         #expect(document.references.map(\.dest) == [.url("/one"), .url("/two"), .url("/x"), .url("/b")])
         #expect(document.references.map(\.id) == document.content.compactMap { ($0 as? Reference)?.id })
         // Duplicates remain; the first one in source order resolves.
-        let first = try #require(document.reference(for: "a") as? Reference)
-        #expect(first == document.references[0])
-        // A heading resolves a label no definition states.
-        let resolved = try #require(document.reference(for: "target") as? Heading)
-        #expect(resolved == chapter)
-        // A definition resolves before a heading of the same label.
-        #expect((document.reference(for: "both") as? Reference) == document.references[3])
-        #expect(document.reference(for: "unused")?.isEqual(document.references[2]) == true)
+        #expect(document.reference(for: "a") == document.references[0])
+        // A heading's text declares no label.
+        #expect(document.reference(for: "target") == nil)
+        #expect(document.reference(for: "both") == document.references[3])
+        #expect(document.reference(for: "unused") == document.references[2])
         // A label matches byte for byte: an unnormalized spelling is another label.
-        #expect(document.reference(for: "Target") == nil)
+        #expect(document.reference(for: "Both") == nil)
         #expect(document.reference(for: "missing") == nil)
         #expect(try Document.parse("text\n").references.isEmpty)
     }

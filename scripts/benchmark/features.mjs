@@ -29,7 +29,6 @@ const labelBounds = {
     "common-reference-collapsed": { key: 1000 },
     "common-reference-shortcut": { key: 1000 },
     "common-reference-duplicate": { key: 1000 },
-    "heading-reference": { key: 1000 },
     "heading-explicit-id": { key: 1000 },
     "block-id-paragraph": { key: 1000 },
     "block-id-list": { key: 1000, value: 1000 },
@@ -436,13 +435,6 @@ pair(
     ["# ", b, "\n\n[", k, "]: /target\n\n"]
 );
 // Repeated labels in these products are equality constraints on source fields.
-pair(
-    "heading-reference",
-    "anchors",
-    ["implicit-references", "forward-resolution"],
-    ["[", k, "]\n\n# ", k, "\n\n"],
-    ["[", k, "]\n\n[", k, "]: #", k, "\n\n"]
-);
 pair(
     "citation-group",
     "citations",

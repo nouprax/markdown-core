@@ -21,7 +21,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
 /* The space of reference labels (roster.h): a link reference definition's,
- * which a heading's text declares too, folded. */
+ * folded. */
 extern const markdown_core_space MARKDOWN_CORE_REFERENCE_SPACE;
 /* A link's bracket, opened by a `[` (bracket.h). */
 extern const markdown_core_bracket_shape MARKDOWN_CORE_LINK_BRACKET;

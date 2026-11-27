@@ -256,9 +256,9 @@ class WireDecoderTest {
     }
 
     @Test
-    fun theLabelTableNamesAReferenceOrASectionTitle() {
-        // A label resolves to the Heading its id names; an id naming any
-        // other kind is an invalid message.
+    fun theLabelTableNamesOnlyAReference() {
+        // A label resolves to the Reference its id names; an id naming any
+        // other kind, a heading's say, is an invalid message.
         fun document(id: Long) =
             decode(
                 MessageWriter()
@@ -266,16 +266,18 @@ class WireDecoderTest {
                     .record(NodeKind.HEADING)
                     .int(1)
                     .u32(1)
-                    .text("p")
-                    .record(NodeKind.PARAGRAPH)
-                    .u32(1)
-                    .root(2, labels = listOf("t" to id)),
+                    .record(NodeKind.REFERENCE)
+                    .string("t")
+                    .u8(0)
+                    .string("/t")
+                    .bool(false)
+                    .root(2, references = listOf(3), labels = listOf("t" to id)),
             )
-        val valid = document(2)
-        assertSame<Markup?>(valid.content[0], valid.reference("t"))
-        assertTrue(valid.references.isEmpty())
+        val valid = document(3)
+        assertSame(valid.references.single(), valid.reference("t"))
+        assertSame<Markup?>(valid.content[1], valid.reference("t"))
         assertNull(valid.reference("p"))
-        assertFailsWith<NoSuchElementException> { document(4) }
+        assertFailsWith<NoSuchElementException> { document(2) }
     }
 
     @Test

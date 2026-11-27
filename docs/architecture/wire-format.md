@@ -137,8 +137,8 @@ of that kind is invalid.
 The reference label table follows: a `u32` count and that many entries, each
 a label `String` and a `u64` id, one per normalized label a `reference`
 destination resolves, in byte order of the label. The id names the
-`Reference` or `Heading` the label resolves to, as `Destination` defines it;
-an id that names no node of one of those kinds is invalid. A reader answers
+`Reference` the label resolves to, as `Destination` defines it; an id that
+names no `Reference` is invalid. A reader answers
 a document's reference lookup from this table.
 
 Scopes are not on the wire. A binding computes them from the node's runs and

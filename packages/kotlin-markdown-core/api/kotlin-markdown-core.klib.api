@@ -843,7 +843,7 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun dump(kotlin/String): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(kotlin.String){}[0]
     final fun footnote(kotlin/String): com.nouprax.markdown.core/Footnote? // com.nouprax.markdown.core/Document.footnote|footnote(kotlin.String){}[0]
     final fun node(com.nouprax.markdown.core/Position, kotlin/String): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.Position;kotlin.String){}[0]
-    final fun reference(kotlin/String): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.reference|reference(kotlin.String){}[0]
+    final fun reference(kotlin/String): com.nouprax.markdown.core/Reference? // com.nouprax.markdown.core/Document.reference|reference(kotlin.String){}[0]
     final fun scope(com.nouprax.markdown.core/Markup, kotlin/String): kotlin.collections/List<com.nouprax.markdown.core/Scope> // com.nouprax.markdown.core/Document.scope|scope(com.nouprax.markdown.core.Markup;kotlin.String){}[0]
 
     final object Companion { // com.nouprax.markdown.core/Document.Companion|null[0]

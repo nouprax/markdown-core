@@ -4,7 +4,6 @@
 #include "heading_scanners.h"
 #include "citation.h"
 #include "heading.h"
-#include "link.h"
 #include "directive.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -14,20 +13,13 @@
 #include "ast_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { HEADING_CITATION, HEADING_LINK, HEADING_DIRECTIVE, HEADING_TOPIC, HEADING_ATTRIBUTES, HEADING_CROSS_LINK };
+enum { HEADING_CITATION, HEADING_DIRECTIVE, HEADING_TOPIC, HEADING_ATTRIBUTES, HEADING_CROSS_LINK };
 /* A heading whose inline content is parsed (markdown_core_headings_prepare). */
 enum { MARKDOWN_CORE_NODE__HEADING_PARSED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
-static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
-                                                             [HEADING_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
-                                                             [HEADING_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
-                                                             [HEADING_TOPIC] = &MARKDOWN_CORE_ELEMENT_TOPIC,
-                                                             [HEADING_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
-                                                             [HEADING_CROSS_LINK] = &MARKDOWN_CORE_ELEMENT_CROSS_LINK,
-                                                             NULL};
-/* The spaces this element files labels in, as `self->spaces` numbers them:
- * the link element's, a heading's text declaring a reference label. */
-enum { HEADING_REFERENCE };
-static const markdown_core_space *const HEADING_SPACES[] = {[HEADING_REFERENCE] = &MARKDOWN_CORE_REFERENCE_SPACE, NULL};
+static const markdown_core_element *const HEADING_PEERS[] = {
+    [HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,     [HEADING_DIRECTIVE] = &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
+    [HEADING_TOPIC] = &MARKDOWN_CORE_ELEMENT_TOPIC,           [HEADING_ATTRIBUTES] = &MARKDOWN_CORE_ELEMENT_ATTRIBUTES,
+    [HEADING_CROSS_LINK] = &MARKDOWN_CORE_ELEMENT_CROSS_LINK, NULL};
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
 typedef struct {
     markdown_core_node *node;
@@ -39,8 +31,7 @@ typedef struct {
     size_t count, capacity;
 } anchor_projection_stack;
 /* A heading closes and asks the names service for a name (names.h),
- * which it assigns as the parse ends; the heading declares its label as
- * its inline content is parsed (markdown_core_headings_prepare). */
+ * which it assigns as the parse ends. */
 static bool close_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *node, markdown_core_node *parent, markdown_core_reader *reader) {
     (void)parent;
@@ -53,70 +44,19 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
     return true;
 }
 
-/* Whether a line ends in the `size` bytes at `bytes`: read a window at a
- * time, so that the first line end stops the reading and no byte is read
- * past the window that holds it. */
-static bool heading_line_end(const unsigned char *bytes, bufsize_t size) {
-    for (bufsize_t at = 0; at < size; at += 256) {
-        const size_t window = (size_t)(size - at < 256 ? size - at : 256);
-        if (memchr(bytes + at, '\n', window) || memchr(bytes + at, '\r', window)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* Whether a line of the content `content`, of more bytes than a label may
- * hold, ends past those bytes and before the line endings that end it. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool heading_seams_past(const markdown_core_strbuf *content) {
-    bufsize_t end = content->size;
-    while (end > MAX_LINK_LABEL_LENGTH + 1 && markdown_core_is_line_end(markdown_core_strbuf_at(content, end - 1))) {
-        end--;
-    }
-    if (end <= MAX_LINK_LABEL_LENGTH + 1) {
-        return false;
-    }
-    const unsigned char *front, *back;
-    bufsize_t front_size, back_size;
-    markdown_core_strbuf_span(content, MAX_LINK_LABEL_LENGTH + 1, end, &front, &front_size, &back, &back_size);
-    return heading_line_end(front, front_size) || heading_line_end(back, back_size);
-}
-
-/* Whether the heading `node` declares nothing its text may name: the bytes
- * of its content before its last line, which alone may end with its
- * attributes, are more than a label may hold. That is, a line ends past
- * the bytes a label may hold and before the line endings that end the
- * content (heading_seams_past). Its inline content parses as a paragraph's
- * does, from its seams when an edit's reading leaps in it (blocks.c, THE
- * SEAMS). */
-static inline bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
+/* A heading's inline content parses as a paragraph's does, from its seams
+ * when an edit's reading leaps in it (blocks.c, THE SEAMS). */
+static bool heading_seams(const markdown_core_element_instance *self, const markdown_core_node *node) {
     (void)self;
-    return node->content.size > MAX_LINK_LABEL_LENGTH + 1 && heading_seams_past(&node->content);
-}
-
-static markdown_core_inline_state *prepare_heading(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, markdown_core_node *node);
-static void finish_heading(markdown_core_parser *parser, markdown_core_inline_state *parked);
-
-/* The heading's inline content parsed whole, as its preparation and finish
- * parse it, or as a paragraph's when it declares nothing (heading_seams). */
-static void heading_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *node) {
-    if (heading_seams(self, node)) {
-        markdown_core_parser_parse_root(parser, node);
-        return;
-    }
-    finish_heading(parser, prepare_heading(self, parser, node));
+    (void)node;
+    return true;
 }
 
 /* The inline content of every heading that settled since the last
- * completion: first, in source order, each one's inlines up to its
- * declaration dependency and the implicit reference it declares, then the
- * rest of their inlines. The entries the names service reads in source
- * order (names.h) before its `parsed` come before every later one, so only
- * the entries after them are put in order: those that closed since, and
- * those the last completion left because they had not settled. The inline
- * states the first pass leaves parked wait in the state's list, by entry. */
+ * completion, in source order. The entries the names service reads in
+ * source order (names.h) before its `parsed` come before every later one,
+ * so only the entries after them are put in order: those that closed since,
+ * and those the last completion left because they had not settled. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void headings_prepare(const markdown_core_element_instance *self,
                                                                  markdown_core_parser *parser);
 
@@ -128,45 +68,15 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     }
 }
 
-/* The inline state that waits for entry `at`, or NULL; taken from the list. */
-static markdown_core_inline_state *held_take(markdown_core_heading_state *state, size_t *next, size_t at) {
-    if (*next < state->held_count && state->held[*next].at == at) {
-        return state->held[(*next)++].state;
-    }
-    return NULL;
-}
-
 static void headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_heading_state *state = self->state;
+    (void)self;
     size_t first, count;
     if (!markdown_core_names_order(parser, &first, &count)) {
         return;
     }
     markdown_core_named *const span = markdown_core_names_span(parser, first, count);
-    state->held_count = 0;
     /* Anchors are numbered in source order, whatever order mapped inputs were
      * scheduled and headings closed in. */
-    for (size_t i = first; i < count && !parser->error; i++) {
-        markdown_core_node *node = (span ? span + (i - first) : markdown_core_names_at(parser, i))->node;
-        if (!(node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED) && markdown_core_parser_settled(parser, node) &&
-            !heading_seams(self, node)) {
-            parser->completing = node;
-            markdown_core_inline_state *parked = prepare_heading(self, parser, node);
-            if (!parked) {
-                continue;
-            }
-            markdown_core_heading_held *list =
-                markdown_core_reserve(state->held, &state->held_room, state->held_count + 1, sizeof(*list));
-            if (!list) {
-                finish_heading(NULL, parked);
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                break;
-            }
-            state->held = list;
-            list[state->held_count++] = (markdown_core_heading_held){i, parked};
-        }
-    }
-    size_t next = 0;
     for (size_t i = first; i < count && !parser->error; i++) {
         markdown_core_named *entry = span ? span + (i - first) : markdown_core_names_at(parser, i);
         markdown_core_node *node = entry->node;
@@ -174,19 +84,10 @@ static void headings_prepare(const markdown_core_element_instance *self, markdow
             continue;
         }
         parser->completing = node;
-        if (heading_seams(self, node)) {
-            markdown_core_parser_parse_root(parser, node);
-        } else {
-            finish_heading(parser, held_take(state, &next, i));
-        }
+        markdown_core_parser_parse_root(parser, node);
         node->flags |= MARKDOWN_CORE_NODE__HEADING_PARSED;
         markdown_core_names_read(entry, node->attributes.anchor.len != 0);
     }
-    /* A failed parse lets go the inline states it held for the headings. */
-    for (; next < state->held_count; next++) {
-        finish_heading(NULL, state->held[next].state);
-    }
-    state->held_count = 0;
     size_t parsed = first;
     while (parsed < count && ((span ? span + (parsed - first) : markdown_core_names_at(parser, parsed))->node->flags &
                               MARKDOWN_CORE_NODE__HEADING_PARSED)) {
@@ -198,14 +99,14 @@ static void headings_prepare(const markdown_core_element_instance *self, markdow
 /* A heading parsed again (element.h, markdown_core_finish_ops, `reparse`), a
  * candidate of a heading a streaming commit settled: the attributes its last
  * line ends with were taken as it closed, and the tokens that may give them
- * back read the same again, so they stay; the label its text declares,
- * whatever a lookup answers, stays declared. The name the
+ * back read the same again, so they stay. The name the
  * names computed for it stays while its attributes write no anchor; its
  * entry learns whether they do, and that the base of its name is to be
  * projected again (markdown_core_names_reread). */
 static void reparse_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *node) {
-    heading_parse(self, parser, node);
+    (void)self;
+    markdown_core_parser_parse_root(parser, node);
     markdown_core_names_reread(parser, node, node->attributes.anchor.len != 0);
 }
 
@@ -365,76 +266,10 @@ static bool heading_project(const markdown_core_element_instance *self, const ma
     return ok;
 }
 
-/* The heading's inline content parsed up to its declaration dependency, and
- * the label it declares: the inline state that waits for the rest, or NULL
- * when none is left (finish_heading). */
-static markdown_core_inline_state *prepare_heading(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, markdown_core_node *node) {
-    markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, node, true, &inline_state);
-    while (!parser->error && !inline_state.error) {
-        unsigned char c = markdown_core_inline_peek_char(&inline_state);
-        /* Attribute ownership and opaque tokens are decided by the same
-         * cursor as every inline. A live bracket makes this declaration
-         * unwritable as a reference label; only its remaining inlines depend
-         * on the document's completed symbol table. */
-        if ((inline_state.delims.last && delimiter_last(&inline_state.delims)->kind == DELIMITER_FIELD) ||
-            (inline_state.pos >= inline_state.opaque_end &&
-             (c == '[' || c == ']' ||
-              ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
-            markdown_core_inline_state *parked = markdown_core_alloc(1, sizeof(inline_state));
-            if (parked) {
-                *parked = inline_state;
-                return parked;
-            }
-            inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-            break;
-        }
-        if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
-            break;
-        }
-    }
-    if (!parser->error && !inline_state.error) {
-        if (self->peers[HEADING_CITATION]) {
-            markdown_core_citation_finish_run_tokens(self->peers[HEADING_CITATION], &inline_state);
-        }
-        const markdown_core_heading_run *run = markdown_core_run_state(&inline_state, self);
-        /* A heading whose text gave its tail back has the whole text. */
-        markdown_core_chunk label = {inline_state.input.data, node->cut_back ? run->label_end : inline_state.input.len,
-                                     0};
-        /* A heading whose text is writable as a reference label declares
-         * it, normalized: an occurrence naming it resolves to the heading
-         * when no Reference declares it. It declares it once: a heading
-         * parsed again has. */
-        markdown_core_chunk *declared = &node->as.heading->label;
-        if (!declared->len && self->peers[HEADING_LINK] && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
-            markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_parser_declare(parser, self->spaces[HEADING_REFERENCE], &label, node->place.start, declared);
-        }
-    }
-    /* The run is read to its end: it finishes as every run does. */
-    markdown_core_inline_finish_inlines(parser, &inline_state);
-    return NULL;
-}
-
-/* The rest of the inline content the preparation left `parked`, then let
- * go; with no parser, only let go, as a failed parse does. */
-static void finish_heading(markdown_core_parser *parser, markdown_core_inline_state *parked) {
-    if (!parked) {
-        return;
-    }
-    if (parser) {
-        markdown_core_inline_finish_inlines(parser, parked);
-    } else {
-        markdown_core_inline_clear_inlines(parked);
-    }
-    markdown_core_free(parked);
-}
-
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                          markdown_core_inline_state *inline_state, markdown_core_node *parent) {
+    (void)self;
     (void)parser;
-    markdown_core_heading_run *run = markdown_core_run_state(inline_state, self);
     /* An ATX heading's closing sequence ends its text: what may follow it
      * on the line another grammar has taken from the text already
      * (no-flush.md 10.13). */
@@ -449,7 +284,6 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
             markdown_core_chunk_rtrim(&inline_state->input);
         }
     }
-    run->label_end = inline_state->input.len;
 }
 
 /* THE PARTS OF A HEADING (parts.h): the attribute tail that ends its last
@@ -651,7 +485,7 @@ static const markdown_core_follow HEADING_FOLLOWS[] = {
 };
 
 /* (element.h, the finish's `measure`) The measure of the projection of a
- * long heading's children, which its seams keep, so that an edit that leaps
+ * heading's children, which its seams keep, so that an edit that leaps
  * in it knows how many bytes of its base the children it keeps project to
  * (names.c, THE NEW BASES). */
 static bool heading_measure(const markdown_core_element_instance *self, const markdown_core_node *root, uint32_t from,
@@ -713,15 +547,14 @@ static const markdown_core_name_ops HEADING_NAMES = {
     .project = heading_project,
 };
 
-/* What the preparation and the projections keep, let go with the parse. */
+/* What the projections keep, let go with the parse. */
 static void headings_release(const markdown_core_element_instance *self) {
     markdown_core_heading_state *state = self->state;
-    markdown_core_free(state->held);
     markdown_core_free(state->stack);
     if (state->scratch.ptr) {
         markdown_core_strbuf_free(&state->scratch);
     }
-    *state = (markdown_core_heading_state){.held = NULL};
+    *state = (markdown_core_heading_state){.stack = NULL};
 }
 
 /* The headings' inline content is parsed in the parse's preparation
@@ -736,10 +569,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .names = &HEADING_NAMES,
     .facets = MARKDOWN_CORE_HEADING_FACETS,
     .peers = HEADING_PEERS,
-    .spaces = HEADING_SPACES,
     .name = "heading",
     .state_size = sizeof(markdown_core_heading_state),
-    .run_state_size = sizeof(markdown_core_heading_run),
     .finish = &HEADING_FINISH,
     .content = &HEADING_CONTENT,
     .inlines = &HEADING_INLINES,
@@ -750,19 +581,16 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
 };
 
 /* A heading's record (markdown_core_record_ops): level 1 until its marker
- * says otherwise; the label it declares, in the pool's storage; its name,
- * whose base it may borrow and whose shown form is its own. A view copies
- * the label, drops the shown form and borrows the base. */
+ * says otherwise; its name, whose base it may borrow and whose shown form is
+ * its own. A view drops the shown form and borrows the base. */
 static void init_heading(markdown_core_node *node) {
     node->as.heading->level = 1;
     markdown_core_strbuf_init_zeroed(&node->as.heading->name.base);
 }
 
 static void free_heading(markdown_core_node_pool *pool, markdown_core_node *node) {
+    (void)pool;
     markdown_core_heading *heading = node->as.heading;
-    if (heading->label.len) {
-        markdown_core_node_pool_bytes_free(pool, heading->label.data);
-    }
     if (heading->name.shown) {
         markdown_core_free(heading->name.shown);
         heading->name.shown = NULL;
@@ -774,17 +602,15 @@ static void free_heading(markdown_core_node_pool *pool, markdown_core_node *node
 
 static bool view_heading(markdown_core_node_pool *pool, markdown_core_node *copy, const markdown_core_node *node,
                          bool failed) {
+    (void)pool;
     (void)node;
+    (void)failed;
     markdown_core_heading *heading = copy->as.heading;
-    bool copied = true;
-    if (heading->label.len && (failed || !(copied = markdown_core_node_label_copy(pool, &heading->label)))) {
-        heading->label = (markdown_core_chunk){0};
-    }
     heading->name.shown = NULL;
     if (markdown_core_strbuf_owns(&heading->name.base)) {
         markdown_core_strbuf_borrow(&heading->name.base);
     }
-    return copied;
+    return true;
 }
 
 static bool own_heading(markdown_core_node *copy, const markdown_core_node *node) {

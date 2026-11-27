@@ -45,7 +45,7 @@ pub fn parse(value: &str) -> (Vec<Event>, &[u8]) {
     );
     let mut result = tokenizer.flush(state, true);
     let mut events = tokenizer.events;
-    heading::settle(&mut events, &parse_state, &mut result.definitions);
+    heading::settle(&mut events, &parse_state);
 
     loop {
         parse_state.definitions.append(&mut result.definitions);

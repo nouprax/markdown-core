@@ -3,10 +3,6 @@
 # One per line: FIXTURE:EXAMPLE-LINE WHAT # reason. An entry that no
 # failure meets any more fails the run, so the list only shrinks.
 
-# `# @a` declares the label `@a` from the heading's text, so a sentinel in
-# the citation's key changes which references resolve.
-dialect-citations.txt:638 slot bib Citation # a heading's text declares a reference label
-
 # `[[a#^]]` keeps `^` as its anchor; a sentinel after it makes the anchor a
 # block identifier, whose value drops the `^`.
 dialect-cross-links.txt:224 slot anchor CrossLink # the anchor's value is normalized

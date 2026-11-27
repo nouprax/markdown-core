@@ -72,8 +72,7 @@ export type OrderedListDelimiter = "period" | "parenthesis";
  * produced -- decoded, not percent-encoded, normalized, or resolved, and
  * possibly empty. A reference link or image owns the `reference` branch, the
  * normalized label it names: the first `Reference` in document source order
- * whose label is equal, or, when none is, the first `Heading` in document
- * source order whose text declares it (`Document.reference`). The `cross`
+ * whose label is equal (`Document.reference`). The `cross`
  * branch is the workspace address a cross link produces.
  */
 export type Destination =

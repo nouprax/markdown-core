@@ -39,7 +39,7 @@ returns this structure; your application decides how to display it.
 | --- | --- |
 | Links, images, reference definitions, automatic URL links, image sizes | [Links and images](dialect/links-and-images.md) |
 | Internal links and embedded resources | [Cross links and embeds](dialect/cross-links.md) |
-| Heading targets and implicit references | [Anchors](dialect/anchors.md) |
+| Heading targets | [Anchors](dialect/anchors.md) |
 | Targets on other blocks | [Block identifiers](dialect/block-identifiers.md) |
 | Referenced and inline notes | [Footnotes](dialect/footnotes.md) |
 | Bibliography references and citation groups | [Citations](dialect/citations.md) |

@@ -1,7 +1,6 @@
 import type { Metadata } from "./metadata.js";
 import type { MarkupBase } from "./base.js";
 import type { Footnote } from "./footnote.js";
-import type { Heading } from "./heading.js";
 import type { Reference } from "./reference.js";
 import type { Markup } from "./markup.js";
 import type { Position, Scope, TextUnit } from "./values.js";
@@ -26,11 +25,10 @@ export interface Document extends MarkupBase<"document"> {
      * has no label and never matches. */
     readonly footnote: (label: string) => Footnote | null;
     /**
-     * The node the normalized `label` of a `reference` destination names: the
-     * first `Reference` whose label equals it, else the first `Heading` whose
-     * text declares it, else null.
+     * The `Reference` the normalized `label` of a `reference` destination
+     * names: the first one whose label equals it, else null.
      */
-    readonly reference: (label: string) => Reference | Heading | null;
+    readonly reference: (label: string) => Reference | null;
     /**
      * The scopes of `node`, one per run in source order, computed from its
      * runs and `source`, the text the document was parsed from, with columns
