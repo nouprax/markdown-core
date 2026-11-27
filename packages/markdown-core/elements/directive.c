@@ -67,8 +67,8 @@ static node_directive *get_directive(markdown_core_node *node) {
  * `12:30` text is not the `3` but the absence of a bracket part, which is
  * where the inline form is anchored (see match_colon_directive). */
 enum { NAME_END = 1 };
-static const uint8_t NAME_BYTES[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END,
-                                        [':'] = NAME_END};
+static const uint8_t NAME_BYTES[256] = {
+    MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END, [':'] = NAME_END};
 
 static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
                      bufsize_t *name_len) {
@@ -204,29 +204,6 @@ static int scan_directive_attributes(const markdown_core_element_instance *self,
     return 1;
 }
 
-static int parse_directive_suffix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                  unsigned char *data, bufsize_t len, bufsize_t pos, parsed_directive *parsed) {
-    if (!scan_name(data, len, pos, &parsed->name_start, &parsed->name_len)) {
-        return 0;
-    }
-
-    pos = parsed->name_start + parsed->name_len;
-
-    if (pos < len && data[pos] == '[') {
-        parsed->has_label = 1;
-        if (!scan_label(data, len, pos, &parsed->label_start, &parsed->label_len, &pos)) {
-            return 0;
-        }
-    }
-
-    if (pos < len && data[pos] == '{' && !scan_directive_attributes(self, parser, data, len, &pos, parsed)) {
-        return 0;
-    }
-
-    parsed->end = pos;
-    return 1;
-}
-
 static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_parser *parser,
                                            const unsigned char *label, bufsize_t label_len, bufsize_t start,
                                            bufsize_t end) {
@@ -359,45 +336,6 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
     return node;
 }
 
-static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    bufsize_t count = 0;
-    while (pos + count < len && data[pos + count] == ':') {
-        count++;
-    }
-    return count;
-}
-
-/* Nameless containers share the named container's ownership and closer. Only
- * the opener's attribute spelling differs; a class word is one literal class. */
-static int parse_nameless_suffix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 unsigned char *data, bufsize_t len, bufsize_t pos, parsed_directive *parsed) {
-    while (pos < len && markdown_core_is_space_or_tab(data[pos])) {
-        pos++;
-    }
-    if (pos < len && data[pos] == '{') {
-        if (!scan_directive_attributes(self, parser, data, len, &pos, parsed)) {
-            return 0;
-        }
-    } else {
-        bufsize_t start = pos;
-        while (pos < len && !markdown_core_is_whitespace(data[pos]) && data[pos] != ':' && data[pos] != '{' &&
-               data[pos] != '}') {
-            pos++;
-        }
-        if (pos == start) {
-            return 0;
-        }
-        parsed->attributes_start = start;
-        parsed->attributes_len = pos - start;
-    }
-    while (pos < len && markdown_core_is_space_or_tab(data[pos])) {
-        pos++;
-    }
-    pos += count_colons(data, len, pos);
-    parsed->end = pos;
-    return 1;
-}
-
 /* Where a nameless container's class word ends. */
 static bufsize_t class_word_end(const unsigned char *data, bufsize_t length) {
     bufsize_t end = 0;
@@ -439,60 +377,207 @@ static void S_report_block(const markdown_core_element_instance *self, markdown_
     markdown_core_field_opener(&to, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, true, first, suffix, &name, 1);
 }
 
-static bufsize_t scan_directive_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      const markdown_core_reader *reader, unsigned char *input, int len, int first,
-                                      int indent, parsed_directive *parsed) {
-    memset(parsed, 0, sizeof(*parsed));
-    if (indent >= 4) {
-        return 0;
-    }
-    bufsize_t colon_count = count_colons(input, (bufsize_t)len, first);
-    if (colon_count < 2) {
-        return 0;
-    }
-
-    bufsize_t suffix = first + colon_count;
-    bool nameless =
-        colon_count >= 3 && suffix < len && (markdown_core_is_space_or_tab(input[suffix]) || input[suffix] == '{');
-    int matched = nameless ? parse_nameless_suffix(self, parser, input, len, suffix, parsed)
-                           : parse_directive_suffix(self, parser, input, len, suffix, parsed);
-    if (matched && markdown_core_is_blank_to_line_end(input, parsed->end, len)) {
-        return colon_count;
-    }
-    S_report_block(self, parser, reader, input, len, first, suffix);
-    return 0;
-}
-
 /* What a block directive's start found: its opener's colons and what it
  * parsed of the line after them. */
 typedef struct {
-    bufsize_t colon_count;
+    bufsize_t colon_count, first;
+    int depth;
     parsed_directive parsed;
 } directive_found;
 MARKDOWN_CORE_BLOCK_FOUND_FITS(directive_found, directive_found_fits);
 
 enum { DIRECTIVE_OPEN, DIRECTIVE_BLOCKS };
 
-static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+/* THE OPENER (micromark's directive container, code by code): up to three
+ * spaces, two colons or more, then a name, a `[label]` and an attribute
+ * list, or, after three colons or more, a space or a `{`, an attribute list
+ * or a class word, spaces and colons; then nothing but spaces to the line's
+ * end. An opener that fails past its colons reports what it leaves open
+ * (S_report_block). */
+static inline directive_found *S_found(const markdown_core_tokenizer *tokenizer) {
+    return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, directive_found);
+}
+
+static inline bufsize_t S_offset(const markdown_core_tokenizer *tokenizer) {
+    return (bufsize_t)(tokenizer->position - tokenizer->base);
+}
+
+static markdown_core_state S_opener_failed(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    directive_found *found = S_found(tokenizer);
     markdown_core_reader *reader = turn->context->reader;
-    directive_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, directive_found);
-    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
-    /* An opener's colons come first: a line without two reads no further. */
-    found->colon_count =
-        reader->indent < 4 && markdown_core_reader_run(reader, first_nonspace, ':') >= 2
-            ? scan_directive_block(self, turn->parser, reader, (unsigned char *)markdown_core_reader_rest(reader, 0),
-                                   markdown_core_reader_length(reader), first_nonspace, reader->indent, &found->parsed)
-            : (memset(&found->parsed, 0, sizeof(found->parsed)), 0);
-    if (!found->colon_count) {
-        if (S_attributes(self)) {
-            S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
-        }
-        return markdown_core_nok(tokenizer);
+    S_report_block(self, turn->parser, reader, markdown_core_reader_rest(reader, 0),
+                   markdown_core_reader_length(reader), found->first, found->first + found->colon_count);
+    if (S_attributes(self)) {
+        S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
+    }
+    return markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_opener_end(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_opener_end);
+    }
+    if (!markdown_core_code_ending(code)) {
+        return S_opener_failed(tokenizer, code);
     }
     return markdown_core_block_found(tokenizer, DIRECTIVE_OPEN);
+}
+
+/* An attribute list at `{`, where the attribute grammar says it closes;
+ * then `next`. */
+static markdown_core_state S_opener_list(markdown_core_tokenizer *tokenizer, markdown_core_state next) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    markdown_core_reader *reader = turn->context->reader;
+    directive_found *found = S_found(tokenizer);
+    bufsize_t pos = S_offset(tokenizer);
+    if (!scan_directive_attributes(self, turn->parser, (unsigned char *)markdown_core_reader_rest(reader, 0),
+                                   markdown_core_reader_length(reader), &pos, &found->parsed)) {
+        return S_opener_failed(tokenizer, '{');
+    }
+    found->parsed.end = pos;
+    markdown_core_consume_to(tokenizer, tokenizer->base + (uint32_t)pos);
+    return next;
+}
+
+static markdown_core_state S_named_list(markdown_core_tokenizer *tokenizer, int code) {
+    S_found(tokenizer)->parsed.end = S_offset(tokenizer);
+    if (code == '{') {
+        return S_opener_list(tokenizer, markdown_core_state_of(S_opener_end));
+    }
+    return S_opener_end(tokenizer, code);
+}
+
+static markdown_core_state S_opener_label(markdown_core_tokenizer *tokenizer, int code);
+
+static markdown_core_state S_opener_escape(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_ending(code)) {
+        return S_opener_failed(tokenizer, code);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_opener_label);
+}
+
+/* micromark's factory-label.js counts the INNER brackets and fails at the
+ * 33rd, so 32 nested labels are a label and 33 are prose. */
+static markdown_core_state S_opener_label(markdown_core_tokenizer *tokenizer, int code) {
+    directive_found *found = S_found(tokenizer);
+    if (markdown_core_code_ending(code)) {
+        return S_opener_failed(tokenizer, code);
+    }
+    if (code == '\\') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_opener_escape);
+    }
+    if (code == '[' && ++found->depth > 33) {
+        return S_opener_failed(tokenizer, code);
+    }
+    if (code == ']' && --found->depth == 0) {
+        found->parsed.label_len = S_offset(tokenizer) - found->parsed.label_start;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_named_list);
+    }
+    markdown_core_consume(tokenizer);
+    return markdown_core_state_of(S_opener_label);
+}
+
+static markdown_core_state S_opener_name(markdown_core_tokenizer *tokenizer, int code) {
+    directive_found *found = S_found(tokenizer);
+    if (code >= 0 && code < 0x100 && !markdown_core_code_ending(code) && !NAME_BYTES[code]) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_opener_name);
+    }
+    found->parsed.name_len = S_offset(tokenizer) - found->parsed.name_start;
+    if (!found->parsed.name_len) {
+        return S_opener_failed(tokenizer, code);
+    }
+    if (code == '[') {
+        found->parsed.has_label = 1;
+        found->parsed.label_start = S_offset(tokenizer) + 1;
+        found->depth = 1;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_opener_label);
+    }
+    return S_named_list(tokenizer, code);
+}
+
+/* A nameless opener's tail: spaces, colons, then the line's end. */
+static markdown_core_state S_tail_colons(markdown_core_tokenizer *tokenizer, int code) {
+    if (code == ':') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_tail_colons);
+    }
+    S_found(tokenizer)->parsed.end = S_offset(tokenizer);
+    return S_opener_end(tokenizer, code);
+}
+
+static markdown_core_state S_tail_spaces(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_tail_spaces);
+    }
+    return S_tail_colons(tokenizer, code);
+}
+
+static markdown_core_state S_class_word(markdown_core_tokenizer *tokenizer, int code) {
+    directive_found *found = S_found(tokenizer);
+    if (!markdown_core_code_space(code) && !markdown_core_code_ending(code) && code != ':' && code != '{' &&
+        code != '}') {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_class_word);
+    }
+    found->parsed.attributes_len = S_offset(tokenizer) - found->parsed.attributes_start;
+    if (!found->parsed.attributes_len) {
+        return S_opener_failed(tokenizer, code);
+    }
+    return S_tail_spaces(tokenizer, code);
+}
+
+static markdown_core_state S_nameless(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_nameless);
+    }
+    if (code == '{') {
+        return S_opener_list(tokenizer, markdown_core_state_of(S_tail_spaces));
+    }
+    S_found(tokenizer)->parsed.attributes_start = S_offset(tokenizer);
+    return S_class_word(tokenizer, code);
+}
+
+static markdown_core_state S_colons(markdown_core_tokenizer *tokenizer, int code) {
+    directive_found *found = S_found(tokenizer);
+    if (code == ':') {
+        found->colon_count++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_colons);
+    }
+    if (found->colon_count < 2) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (found->colon_count >= 3 && (markdown_core_code_space(code) || code == '{')) {
+        return S_nameless(tokenizer, code);
+    }
+    found->parsed.name_start = S_offset(tokenizer);
+    return S_opener_name(tokenizer, code);
+}
+
+static markdown_core_state S_opener(markdown_core_tokenizer *tokenizer, int code) {
+    if (code != ':') {
+        return markdown_core_nok(tokenizer);
+    }
+    directive_found *found = S_found(tokenizer);
+    memset(found, 0, sizeof(*found));
+    found->first = S_offset(tokenizer);
+    return S_colons(tokenizer, code);
+}
+
+static markdown_core_state S_block_start(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_opener), MARKDOWN_CORE_TOKEN_SPACE, 3, code);
 }
 
 static void S_block_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
@@ -503,10 +588,9 @@ static void S_block_open(markdown_core_compiler *compiler, const markdown_core_t
     markdown_core_parser *parser = turn->parser;
     markdown_core_reader *reader = turn->context->reader;
     directive_found *found = MARKDOWN_CORE_BLOCK_FOUND(turn->start, directive_found);
-    bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
     node_directive *directive;
     markdown_core_node *node = markdown_core_parser_add_child(
-        parser, *turn->container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, (int)first_nonspace + 1);
+        parser, *turn->container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, (int)found->first + 1);
     if (!node) {
         goto done;
     }
@@ -535,50 +619,6 @@ done:
     if (S_attributes(self)) {
         S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
     }
-}
-
-/* The one closer rule of the directives module: a bare colon run at least as
- * long as the opener, at indentation zero to three, alone on its line. Shared
- * by the matcher that closes the container and the lookahead that only asks. */
-static int directive_closer_line(const node_directive *directive, markdown_core_parser *parser,
-                                 markdown_core_reader *reader) {
-    (void)parser;
-    if (reader->indent > 3) {
-        return 0;
-    }
-    /* The line is read only as far as it decides: the colons, and past them
-     * to the first byte that is no space. */
-    const bufsize_t first_nonspace = (bufsize_t)reader->nonspace;
-    const bufsize_t colon_count = markdown_core_reader_run(reader, first_nonspace, ':');
-    return colon_count >= (bufsize_t)directive->fence_length &&
-           markdown_core_reader_blank_from(reader, first_nonspace + colon_count);
-}
-
-static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_reader *reader, markdown_core_node *container) {
-    node_directive *directive = get_directive(container);
-
-    if (!directive || directive->fence_length == 2) {
-        return 0;
-    }
-
-    if (!directive_closer_line(directive, parser, reader)) {
-        return 1;
-    }
-    return MARKDOWN_CORE_TOKEN_PEND;
-}
-
-static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_reader *reader, markdown_core_node *container) {
-    node_directive *directive = get_directive(container);
-
-    if (!directive) {
-        return 0;
-    }
-
-    directive->consume_line = 0;
-
-    return directive_block_continues(self, parser, reader, container);
 }
 
 static const markdown_core_node_type containment_kinds[] = {
@@ -780,14 +820,59 @@ static const markdown_core_open_ops DIRECTIVE_OPENS = {
     .token_count = DIRECTIVE_BLOCKS,
 };
 
-/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`). */
-static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
+/* THE CONTINUATION (element.h, markdown_core_line_ops `continuation`): a
+ * line goes on with the block, but the closer, a bare colon run at least as
+ * long as the opener's at up to three spaces, alone on its line, which ends
+ * it. A block of two colons holds no line. */
+static markdown_core_state S_closer_end(markdown_core_tokenizer *tokenizer, int code) {
+    if (markdown_core_code_space(code)) {
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_closer_end);
+    }
+    return markdown_core_code_ending(code) ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_closer_colons(markdown_core_tokenizer *tokenizer, int code) {
+    uint32_t *words = markdown_core_frame_local(tokenizer);
+    if (code == ':') {
+        words[0]++;
+        markdown_core_consume(tokenizer);
+        return markdown_core_state_of(S_closer_colons);
+    }
+    const node_directive *directive = get_directive(markdown_core_block_turn_of(tokenizer)->node);
+    return words[0] >= (uint32_t)directive->fence_length ? S_closer_end(tokenizer, code) : markdown_core_nok(tokenizer);
+}
+
+static markdown_core_state S_closer(markdown_core_tokenizer *tokenizer, int code) {
+    return markdown_core_spaces(tokenizer, markdown_core_state_of(S_closer_colons), 0, 3, code);
+}
+
+static const markdown_core_construct DIRECTIVE_CLOSER = {.start = S_closer};
+
+static markdown_core_state S_closed(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
+    return markdown_core_block_continued(tokenizer, MARKDOWN_CORE_TOKEN_PEND);
+}
+
+static markdown_core_state S_goes(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return markdown_core_ok(tokenizer);
+}
+
+static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int code) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    return markdown_core_block_verdict(
-        tokenizer, turn->look ? directive_block_continues(self, turn->parser, turn->reader, turn->node)
-                              : directive_block_matches(self, turn->parser, turn->reader, turn->node));
+    node_directive *directive = get_directive(turn->node);
+    if (!directive) {
+        return markdown_core_nok(tokenizer);
+    }
+    if (!turn->look) {
+        directive->consume_line = 0;
+    }
+    if (directive->fence_length == 2) {
+        return markdown_core_nok(tokenizer);
+    }
+    return markdown_core_check(tokenizer, &DIRECTIVE_CLOSER, markdown_core_state_of(S_closed),
+                               markdown_core_state_of(S_goes), code);
 }
 
 static const markdown_core_line_ops DIRECTIVE_LINES = {
