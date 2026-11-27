@@ -1,0 +1,13 @@
+[dependencies]
+markdown = { path = "../", version = "1.0.0" }
+regex = { version = "1" }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+
+[package]
+description = "Markdown to AST"
+edition = "2018"
+license = "MIT"
+name = "mdast_util_to_markdown"
+version = "0.0.2"

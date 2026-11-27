@@ -1,0 +1,32 @@
+[package]
+name = "markdown-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+honggfuzz = "0.5"
+
+[dependencies.markdown]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "markdown_libfuzz"
+path = "fuzz_targets/markdown_libfuzz.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "markdown_honggfuzz"
+path = "fuzz_targets/markdown_honggfuzz.rs"
+test = false
+doc = false
