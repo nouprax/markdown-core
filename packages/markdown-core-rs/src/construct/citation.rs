@@ -9,11 +9,16 @@
 //! citation_key ::= ['-'] '@' (bare | '{' braced '}')
 //! bare ::= key_char *key_char *(joiner 1*key_char)
 //! joiner ::= ':' | '.' | '#' | '$' | '%' | '&' | '-' | '+' | '?' | '<' | '>' | '~' | '/'
-//! braced ::= 1*(brace_byte | '{' braced '}')
+//! braced ::= 1*(brace_byte | opaque | '{' braced '}')
 //! brace_byte ::= byte - (whitespace | '{' | '}')
+//! opaque ::= code_text | html_text | autolink
 //!
 //! ; Restriction: the first byte (`-` or `@`) is not after a key character.
+//! ; Restriction: an opaque span holds no whitespace.
 //! ```
+//!
+//! Braces in a code span, in HTML or in an autolink inside a braced key do not
+//! count: those spans are opaque, and the key keeps their bytes as they are.
 //!
 //! A key character is a letter, a number, or `_`, by Unicode category, as in
 //! Pandoc: a bare key has no delimiter after it, so the class of the next
@@ -39,6 +44,7 @@
 //! [text]: crate::construct::text
 
 use crate::choice::Starts;
+use crate::construct::{autolink, html_text, raw_text};
 use crate::event::{Event, Kind, Name, Point};
 use crate::state::{Name as StateName, State};
 use crate::tokenizer::{Label, LabelKind, Tokenizer};
@@ -214,15 +220,15 @@ fn joiner_after(tokenizer: &mut Tokenizer) -> State {
 /// ```markdown
 /// > | a @{b{c}} d
 ///         ^^^^
+/// > | a @{b`}`} d
+///         ^^^^
 /// ```
 fn braced(tokenizer: &mut Tokenizer, depth: usize) -> State {
     match tokenizer.current {
         None | Some(b'\t' | b'\n' | b'\r' | b' ') => State::Nok,
+        // An empty pair of braces holds no key.
+        Some(b'}') if tokenizer.previous == Some(b'{') => State::Nok,
         Some(b'}') if depth == 0 => {
-            let start = tokenizer.events.len() - 1;
-            if tokenizer.events[start].point.index == tokenizer.point.index {
-                return State::Nok;
-            }
             tokenizer.exit(Name::CitationKeyText);
             tokenizer.enter(Name::CitationBrace);
             tokenizer.consume();
@@ -230,17 +236,89 @@ fn braced(tokenizer: &mut Tokenizer, depth: usize) -> State {
             tokenizer.exit(Name::CitationKey);
             State::Ok
         }
-        Some(byte) => {
-            tokenizer.consume();
-            State::Next(StateName::Citation(Step::Braced {
-                depth: match byte {
-                    b'{' => depth + 1,
-                    b'}' => depth - 1,
-                    _ => depth,
-                },
-            }))
+        Some(byte @ (b'`' | b'<')) if !escaped(tokenizer) => {
+            let span = Span {
+                depth,
+                mark: tokenizer.events.len(),
+                from: tokenizer.point.index,
+            };
+            if byte == b'`' {
+                tokenizer.attempt(
+                    State::Next(StateName::Citation(Step::Opaque(span))),
+                    State::Next(StateName::Citation(Step::Byte { depth })),
+                );
+                State::Redo(StateName::RawText(raw_text::Step::Start))
+            } else {
+                tokenizer.attempt(
+                    State::Next(StateName::Citation(Step::Opaque(span))),
+                    State::Next(StateName::Citation(Step::Tag(span))),
+                );
+                State::Redo(StateName::HtmlText(html_text::Step::Start))
+            }
         }
+        Some(_) => State::Redo(StateName::Citation(Step::Byte { depth })),
     }
+}
+
+/// In a braced key, at a byte that is part of the key.
+///
+/// ```markdown
+/// > | a @{b{c}} d
+///         ^^^^
+/// ```
+fn byte(tokenizer: &mut Tokenizer, depth: usize) -> State {
+    let depth = match tokenizer.current {
+        Some(b'{') => depth + 1,
+        Some(b'}') => depth - 1,
+        _ => depth,
+    };
+    tokenizer.consume();
+    State::Next(StateName::Citation(Step::Braced { depth }))
+}
+
+/// In a braced key, at a `<` that starts no HTML: maybe an autolink.
+///
+/// ```markdown
+/// > | a @{b<c:d>} e
+///          ^
+/// ```
+fn tag(tokenizer: &mut Tokenizer, span: Span) -> State {
+    tokenizer.attempt(
+        State::Next(StateName::Citation(Step::Opaque(span))),
+        State::Next(StateName::Citation(Step::Byte { depth: span.depth })),
+    );
+    State::Redo(StateName::Autolink(autolink::Step::Start))
+}
+
+/// In a braced key, after an opaque span: it is key bytes, so its events
+/// go, and whitespace in it ends the key.
+///
+/// ```markdown
+/// > | a @{b`}`} d
+///             ^
+/// ```
+fn opaque(tokenizer: &mut Tokenizer, span: Span) -> State {
+    let bytes = &tokenizer.parse_state.bytes[span.from..tokenizer.point.index];
+    if bytes
+        .iter()
+        .any(|byte| matches!(byte, b'\t' | b'\n' | b'\r' | b' '))
+    {
+        return State::Nok;
+    }
+    tokenizer.events.truncate(span.mark);
+    State::Redo(StateName::Citation(Step::Braced { depth: span.depth }))
+}
+
+/// Whether the byte at the cursor follows an odd run of backslashes.
+fn escaped(tokenizer: &Tokenizer) -> bool {
+    let bytes = &tokenizer.parse_state.bytes[..tokenizer.point.index];
+    bytes
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\\')
+        .count()
+        % 2
+        == 1
 }
 
 /// After a bare key.
@@ -616,7 +694,19 @@ pub enum Step {
     Joiner,
     JoinerAfter,
     Braced { depth: usize },
+    Byte { depth: usize },
+    Tag(Span),
+    Opaque(Span),
     End,
+}
+
+/// An opaque span in a braced key: the depth of braces around it, the events
+/// before it, and its first byte.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Span {
+    depth: usize,
+    mark: usize,
+    from: usize,
 }
 
 impl From<Step> for StateName {
@@ -636,6 +726,9 @@ pub fn step(tokenizer: &mut Tokenizer, step: Step) -> State {
         Step::Joiner => joiner(tokenizer),
         Step::JoinerAfter => joiner_after(tokenizer),
         Step::Braced { depth } => braced(tokenizer, depth),
+        Step::Byte { depth } => byte(tokenizer, depth),
+        Step::Tag(span) => tag(tokenizer, span),
+        Step::Opaque(span) => opaque(tokenizer, span),
         Step::End => end(tokenizer),
     }
 }
