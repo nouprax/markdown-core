@@ -746,7 +746,7 @@ static bool rest_line_writes(const rest_search *search, const markdown_core_node
  * that it found one, which an edit that writes on or past the start of that
  * line may undo. Below the
  * root, the closer was one under the same prefixes (blocks.c,
- * markdown_core_parser_lookahead_end): an edit that writes a line's
+ * markdown_core_look): an edit that writes a line's
  * prefixes, or a line end, which the prefixes of a new line follow, may
  * undo it too. */
 static bool rest_shut(const rest_search *search) {

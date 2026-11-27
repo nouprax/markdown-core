@@ -83,7 +83,7 @@ static markdown_core_state S_closer_next(markdown_core_tokenizer *tokenizer, int
 
 static markdown_core_state S_closer_line(markdown_core_tokenizer *tokenizer, int code) {
     markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
-    markdown_core_reader *line = &parser->at.read;
+    markdown_core_reader *line = &parser->look->read;
     if (line->indent < 4 &&
         is_fence_line(markdown_core_reader_rest(line, 0), markdown_core_reader_length(line), line->nonspace)) {
         return parser->error ? markdown_core_nok(tokenizer) : markdown_core_ok(tokenizer);
@@ -97,10 +97,6 @@ static const markdown_core_construct COMMENT_CLOSER = {.start = S_closer_next};
 static markdown_core_state S_read(markdown_core_tokenizer *tokenizer, bool closed) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_parser *parser = turn->parser;
-    closed = closed && !parser->error;
-    markdown_core_parser_lookahead_opener(parser->look, markdown_core_self(tokenizer), closed);
-    markdown_core_parser_lookahead_end(parser->look);
-    turn->look = false;
     if (!closed || parser->error) {
         return markdown_core_nok(tokenizer);
     }
@@ -121,13 +117,15 @@ static markdown_core_state S_start(markdown_core_tokenizer *tokenizer, int code)
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_reader *reader = turn->context->reader;
     if (reader->indent >= 4 ||
-        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace) ||
-        !markdown_core_parser_lookahead_begin(turn->parser, turn->context->container,
-                                              MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+        !is_fence_line(markdown_core_reader_rest(reader, 0), markdown_core_reader_length(reader), reader->nonspace)) {
         return markdown_core_nok(tokenizer);
     }
-    return markdown_core_check(tokenizer, &COMMENT_CLOSER, markdown_core_state_of(S_closed),
-                               markdown_core_state_of(S_unclosed), code);
+    const markdown_core_look_ask ask = {.container = turn->context->container,
+                                        .kind = MARKDOWN_CORE_NODE_COMMENT_BLOCK,
+                                        .construct = &COMMENT_CLOSER,
+                                        .opener = markdown_core_self(tokenizer)};
+    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_closed), markdown_core_state_of(S_unclosed),
+                              code);
 }
 
 static void S_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {

@@ -105,8 +105,10 @@ typedef struct markdown_core_frame {
     size_t given, notes;
     bool check;
     uint32_t words[MARKDOWN_CORE_FRAME_WORDS];
-    /* Where the reading's cursor stood, and where its line starts in the
-     * data (the reading's `cursor`, `base`). */
+    /* The reading's cursor, where it stood, and where its line starts in
+     * the data (the reading's `cursor`, `base`): a look reads its lines
+     * with a cursor of its own, which the frame gives back. */
+    markdown_core_reader *cursor;
     markdown_core_reader_stand stand;
     uint32_t base;
 } markdown_core_frame;

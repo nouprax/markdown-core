@@ -323,7 +323,7 @@ typedef struct markdown_core_stream {
 /* WHERE A READING STANDS: every field of the parser a reading of lines
  * writes as it goes, one value, which what puts a reading back -- a
  * lookahead
- * (markdown_core_parser_lookahead_begin) and the cells' inputs (blocks.c,
+ * (markdown_core_look) and the cells' inputs (blocks.c,
  * S_parse_block_inputs) -- keeps and puts back whole. The fields with a
  * getter in markdown-core-element-api.h are documented there. */
 typedef struct markdown_core_parser_at {
@@ -355,7 +355,7 @@ typedef struct markdown_core_parser_at {
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
      * the `%%` block comment's closer -- can look ahead without consuming
-     * anything (see markdown_core_parser_lookahead_begin). NULL until the
+     * anything (see markdown_core_look). NULL until the
      * first line is processed; markdown_core_parser_input_ends answers true
      * for it once the input has run out. */
     const unsigned char *lookahead_cursor;
@@ -842,7 +842,7 @@ struct markdown_core_parser {
     /* The lines the block-start lookahead visited plus the prefix bytes each
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
-    /* The room of a lookahead (markdown_core_parser_lookahead_begin), one
+    /* The room of a lookahead (markdown_core_look), one
      * block with `lookahead_capacity` places in each of its parts: the root
      * path an opener's lookahead builds, the builders from the active
      * input's root to the block's parent, and after it the flags of the
@@ -851,7 +851,7 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_path;
     struct markdown_core_lookahead_container *lookahead_containers;
     size_t lookahead_capacity;
-    /* The lookahead open, if any (markdown_core_parser_lookahead_begin). */
+    /* The lookahead open, if any (markdown_core_look). */
     struct markdown_core_block_lookahead *look;
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
@@ -1390,10 +1390,12 @@ typedef struct markdown_core_lookahead_container {
  * are stepped over and counted, because no block start begins on one.
  *
  * The containers it matches are its PATH, the builders from the active
- * input's root to the block's parent, root first, `depth` of them. `begin`
- * saves the parser's line state, the flags of each container are kept as a
- * line first matches it, from `touched` on, and `end` restores them; nothing
- * else in the parser or the tree is touched. `begin` returns false only when
+ * input's root to the block's parent, root first, `depth` of them. The
+ * look reads its lines with a cursor of its own (`read`), the reading's
+ * cursor while it reads, which the check it is read in gives back with
+ * the rest of the reading's state; the flags of each container are kept as
+ * a line first matches it, from `touched` on, and `end` restores them;
+ * nothing else in the parser or the tree is touched. `begin` returns false only when
  * an allocation failed, and has then marked the parse lost. */
 typedef struct markdown_core_block_lookahead {
     markdown_core_parser *parser;
@@ -1404,18 +1406,23 @@ typedef struct markdown_core_block_lookahead {
     int depth, touched, from;
     int line;
     int run_start;
-    /* Where the reading stood as `begin` found it, which `end` puts back. */
-    markdown_core_parser_at saved;
+    /* The look's cursor, on the line it visits, and the turn whose reader
+     * it is while the look reads, with the reader the turn had. */
+    markdown_core_reader read;
+    struct markdown_core_block_turn *turn;
+    markdown_core_reader *back;
+    /* Where the reading goes on when the look found its line, and when
+     * it did not (markdown_core_look). */
+    markdown_core_state then[2];
     bool active;
     /* The reading met the end of the input. */
     bool ended;
-    /* The reading reads the next line alone, blank or not: a caller that
-     * asks only whether it is blank sets it after `begin`, and what it
-     * decided depends on no line past it. */
+    /* The reading reads the next line alone, blank or not (the ask's
+     * `once`): what it decided depends on no line past it. */
     bool once;
     /* The instance whose opener the reading is, when its element has stop
-     * lines (element.h, `stops`), and whether the reading found one: set
-     * by markdown_core_parser_lookahead_opener before the end. */
+     * lines (element.h, `stops`), and whether the reading found one: the
+     * ask's `opener`, and the look's success. */
     bool closed;
     const struct markdown_core_element_instance *opener;
     /* THE LOOK's state (blocks.c, markdown_core_look_next): the line
@@ -1433,17 +1440,6 @@ typedef struct markdown_core_block_lookahead {
     bool carried, taken, closing, resumed;
     int blanks;
 } markdown_core_block_lookahead;
-
-/* The reading is one of `owner`'s opener, which `closed` says whether it
- * found a stop line for (element.h, `stops`): one in the document's root
- * that found none notes its opener as it ends, and not what it read
- * (blocks.c, AN OPENER READ TO THE END). */
-static inline void markdown_core_parser_lookahead_opener(markdown_core_block_lookahead *lookahead,
-                                                         const struct markdown_core_element_instance *owner,
-                                                         bool closed) {
-    lookahead->opener = owner;
-    lookahead->closed = closed;
-}
 
 /* The container the lookahead's block would join: the last of its path. */
 static inline struct markdown_core_node *
@@ -1572,23 +1568,37 @@ static inline int markdown_core_reader_marks(const markdown_core_reader *reader,
                                                   offset);
 }
 
-/* The parser's lookahead (no two are open at once) begun for a block of
- * kind `child` in `parent_container`; NULL, with the parse failed, when
- * storage could not be had. */
-markdown_core_block_lookahead *markdown_core_parser_lookahead_begin(markdown_core_parser *parser,
-                                                                    struct markdown_core_node *parent_container,
-                                                                    markdown_core_node_type child);
-/* THE LOOK: an attempt of the document's reading, read inside a check:
- * the next non-blank line that carries the prefixes of the parser's
- * lookahead, which succeeds with the reader on it (reader.h): its bytes
- * through its line ending, its number, the offset past the prefixes, its
- * first non-space byte and its indentation after them; and the blank
- * lines stepped over before it in the lookahead's `blanks`. It fails when
- * the lookahead has ended. The reader is the parser's: the lookahead's end
- * puts it back on the line in hand. */
+/* WHAT A LOOK IS ASKED (markdown_core_look): the look of a block of kind
+ * `kind` in `container`, whose path is the open containers the block
+ * joins; the construct it reads, a check of the document's reading that
+ * steps the lines with markdown_core_look_next; whether it reads the next
+ * line alone (`once`); and the instance whose opener it is, when the
+ * element has stop lines (element.h, `stops`), the look's success the
+ * stop line found. */
+typedef struct markdown_core_look_ask {
+    struct markdown_core_node *container;
+    markdown_core_node_type kind;
+    const markdown_core_construct *construct;
+    bool once;
+    const struct markdown_core_element_instance *opener;
+} markdown_core_look_ask;
+
+/* THE LOOK, a check of the document's reading (no two are open at once):
+ * `ask`'s construct read on the lines after the line in hand, which goes
+ * on to `ok` when it succeeds and to `nok` when it fails or storage could
+ * not be had (the parse failed). The look's state is the parser's `look`,
+ * which `ok` and `nok` may read: the line the look stopped at and the
+ * blank lines before it. */
+markdown_core_state markdown_core_look(markdown_core_tokenizer *tokenizer, const markdown_core_look_ask *ask,
+                                       markdown_core_state ok, markdown_core_state nok, int code);
+/* THE LOOK'S NEXT LINE: an attempt inside a look, the next non-blank line
+ * that carries the look's prefixes, which succeeds with the look's cursor
+ * (the look's `read`) on it: its bytes through its line ending, its
+ * number, the offset past the prefixes, its first non-space byte and its
+ * indentation after them; and the blank lines stepped over before it in
+ * the look's `blanks`. It fails when the look has ended. */
 markdown_core_state markdown_core_look_next(markdown_core_tokenizer *tokenizer, markdown_core_state ok,
                                             markdown_core_state nok, int code);
-void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
 /* THE DEFINITION (labels.h): `node`, a definition, defines `label` in
  * `kind`'s space from `start` on, in the space's form, as the lookup above

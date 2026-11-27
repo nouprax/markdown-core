@@ -193,7 +193,7 @@ static inline void S_lines_slide(markdown_core_tree *lines, int64_t delta) {
  * reading, made empty when the memo did not hold it, or NULL with the parse
  * failed. The memo holds a window of lines, which grows to take the line in:
  * the lookaheads of a reading visit runs of lines, and one that begins past
- * the window starts it anew (markdown_core_parser_lookahead_begin), so the
+ * the window starts it anew (markdown_core_look), so the
  * window spans the lines of lookaheads that overlap. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_line_memo *S_memo_grow(markdown_core_parser *parser,
                                                                                 int line) {
@@ -8406,7 +8406,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_lookahead_start(
         .depth = depth,
         .touched = depth,
         .line = line,
-        .saved = parser->at,
         .active = true,
     };
 }
@@ -8422,9 +8421,8 @@ static markdown_core_node *S_joined(const markdown_core_parser *parser, markdown
     return container;
 }
 
-markdown_core_block_lookahead *markdown_core_parser_lookahead_begin(markdown_core_parser *parser,
-                                                                    markdown_core_node *parent_container,
-                                                                    markdown_core_node_type child) {
+static markdown_core_block_lookahead *
+S_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container, markdown_core_node_type child) {
     /* The containers the lookahead matches are the stack up to the one the
      * block joins. */
     markdown_core_node *parent = S_joined(parser, parent_container, child);
@@ -8488,11 +8486,11 @@ static markdown_core_state S_look_dropped(markdown_core_tokenizer *tokenizer, in
 static markdown_core_state S_look_visited(markdown_core_tokenizer *tokenizer, int code) {
     markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
     markdown_core_block_lookahead *lookahead = parser->look;
-    markdown_core_reader *const reader = &parser->at.read;
+    markdown_core_reader *const reader = &lookahead->read;
     const int this_line = lookahead->visit;
     /* The work of this visit is the prefix bytes it had to match itself:
      * what the resumed state did not already cover. */
-    parser->block_lookahead_work += (size_t)(parser->at.read.offset - lookahead->resumed_offset);
+    parser->block_lookahead_work += (size_t)(reader->offset - lookahead->resumed_offset);
     if (!lookahead->carried || lookahead->closing) {
         S_lookahead_close_run(lookahead, this_line, lookahead->start);
         lookahead->active = false;
@@ -8501,7 +8499,7 @@ static markdown_core_state S_look_visited(markdown_core_tokenizer *tokenizer, in
     if (!lookahead->taken) {
         markdown_core_reader_find(reader);
     }
-    const bool blank = lookahead->taken || parser->at.read.blank;
+    const bool blank = lookahead->taken || reader->blank;
 
     /* A lookahead an element callback ran may grow the memo and move it.
      * A line number, not the earlier borrow, survives that boundary. */
@@ -8514,9 +8512,9 @@ static markdown_core_state S_look_visited(markdown_core_tokenizer *tokenizer, in
      * closes its own, which ends where that one did. */
     entry->container = markdown_core_parser_lookahead_parent(lookahead);
     entry->depth = lookahead->depth - 1;
-    entry->offset = parser->at.read.offset;
-    entry->column = parser->at.read.column;
-    entry->split = parser->at.read.split;
+    entry->offset = reader->offset;
+    entry->column = reader->column;
+    entry->split = reader->split;
     entry->taken = lookahead->taken;
     entry->blank = blank;
 
@@ -8555,7 +8553,7 @@ static markdown_core_state S_look_container(markdown_core_tokenizer *tokenizer, 
         return S_look_visited(tokenizer, code);
     }
     markdown_core_node *container = lookahead->path[lookahead->index];
-    markdown_core_reader *const reader = &parser->at.read;
+    markdown_core_reader *const reader = &lookahead->read;
     markdown_core_reader_find(reader);
     const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, container)->structure;
     if (!structure || !structure->lines->continuation.start) {
@@ -8631,7 +8629,16 @@ static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int c
         }
         markdown_core_cursor_line(tokenizer, at);
     }
-    markdown_core_reader *const reader = &parser->at.read;
+    /* The look's cursor is the reading's while it reads, and the turn's
+     * reader (the check it is read in gives the reading's back). */
+    markdown_core_reader *const reader = &lookahead->read;
+    tokenizer->cursor = reader;
+    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
+    if (!lookahead->turn) {
+        lookahead->turn = turn;
+        lookahead->back = turn->reader;
+    }
+    turn->reader = reader;
     reader->line = input;
     reader->far = 0;
     lookahead->cursor = next;
@@ -8641,13 +8648,13 @@ static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int c
     lookahead->line_start = geometry->start;
     lookahead->line_end = geometry->end;
 
-    parser->at.read.offset = 0;
-    parser->at.read.column = 0;
-    parser->at.read.nonspace = 0;
-    parser->at.read.nonspace_column = 0;
-    parser->at.read.indent = 0;
-    parser->at.read.blank = false;
-    parser->at.read.split = false;
+    reader->offset = 0;
+    reader->column = 0;
+    reader->nonspace = 0;
+    reader->nonspace_column = 0;
+    reader->indent = 0;
+    reader->blank = false;
+    reader->split = false;
 
     markdown_core_line_memo *entry = S_memo(parser, this_line);
     if (!entry) {
@@ -8661,11 +8668,11 @@ static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int c
         if (entry->taken) {
             lookahead->taken = true;
         } else {
-            parser->at.read.offset = entry->offset;
-            parser->at.read.column = entry->column;
-            parser->at.read.split = entry->split;
-            parser->at.read.nonspace = parser->at.read.offset;
-            parser->at.read.nonspace_column = parser->at.read.column;
+            reader->offset = entry->offset;
+            reader->column = entry->column;
+            reader->split = entry->split;
+            reader->nonspace = reader->offset;
+            reader->nonspace_column = reader->column;
         }
     }
     /* The containers the line matches keep their flags as a line first
@@ -8678,7 +8685,7 @@ static markdown_core_state S_look_line(markdown_core_tokenizer *tokenizer, int c
     if (from < lookahead->touched) {
         lookahead->touched = from;
     }
-    lookahead->resumed_offset = parser->at.read.offset;
+    lookahead->resumed_offset = reader->offset;
     lookahead->index = from;
     lookahead->carried = true;
     lookahead->closing = false;
@@ -8735,7 +8742,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_
     } else {
         end++;
     }
-    markdown_core_parser_reach(parser, NULL, (size_t)lookahead->saved.read.start, end);
+    markdown_core_parser_reach(parser, NULL, (size_t)parser->at.read.start, end);
 }
 
 /* The reading of an opener in the document's root whose element has stop
@@ -8743,18 +8750,18 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_
  * found one (AN OPENER READ TO THE END). */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_opener(markdown_core_parser *parser,
                                                                const markdown_core_block_lookahead *lookahead) {
-    const size_t start = (size_t)lookahead->saved.read.start;
+    const size_t start = (size_t)parser->at.read.start;
     if (!lookahead->closed) {
         markdown_core_parser_reach_open(parser, lookahead->opener, start);
         return;
     }
     markdown_core_parser_reach_shut(parser, lookahead->opener, start);
-    if (lookahead->line > lookahead->saved.read.number + 1 && !lookahead->opener->element->edit->shuts) {
+    if (lookahead->line > parser->at.read.number + 1 && !lookahead->opener->element->edit->shuts) {
         S_reach_lookahead(parser, lookahead);
     }
 }
 
-void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead) {
+static void S_lookahead_end(markdown_core_block_lookahead *lookahead) {
     markdown_core_parser *parser = lookahead->parser;
     int i;
 
@@ -8768,22 +8775,24 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_containers[i].flags & mask));
     }
-    /* The reader is back on the line in hand, the reading's own; a block
-     * before the line it read depends on what the lookahead read (THE
-     * READER CLOSES). */
-    parser->at = lookahead->saved;
+    /* The turn reads the line in hand again, with the reading's own reader;
+     * a block before the line it read depends on what the lookahead read
+     * (THE READER CLOSES). */
+    if (lookahead->turn) {
+        lookahead->turn->reader = lookahead->back;
+        lookahead->turn->look = false;
+    }
     if (parser->at.read.read) {
         S_lookahead_seen(parser, lookahead);
     }
     /* A reading of the document past its own line (THE REACH), to the
      * end of the last line it read. */
     if (markdown_core_parser_reaches(parser) && lookahead->opener && lookahead->opener->element->edit &&
-        lookahead->opener->element->edit->stops && lookahead->depth == 1 &&
-        lookahead->saved.block_root == parser->root) {
+        lookahead->opener->element->edit->stops && lookahead->depth == 1 && parser->at.block_root == parser->root) {
         S_reach_opener(parser, lookahead);
     } else if (markdown_core_parser_reaches(parser) &&
-               (lookahead->line > lookahead->saved.read.number + 1 || lookahead->ended) &&
-               lookahead->saved.block_root == parser->root &&
+               (lookahead->line > parser->at.read.number + 1 || lookahead->ended) &&
+               parser->at.block_root == parser->root &&
                !(lookahead->closed && lookahead->opener && lookahead->opener->element->edit &&
                  lookahead->opener->element->edit->shuts)) {
         /* A reading below the root that found its closer decided no more
@@ -8795,6 +8804,39 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     }
     lookahead->active = false;
     lookahead->parser = NULL;
+}
+
+/* The look ends: where the reading goes on reads the look's state. */
+static markdown_core_state S_looked(markdown_core_tokenizer *tokenizer, int code, bool found) {
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    markdown_core_block_lookahead *lookahead = parser->look;
+    const markdown_core_state then = lookahead->then[!found];
+    lookahead->closed = found && !parser->error;
+    S_lookahead_end(lookahead);
+    return then.step(tokenizer, code);
+}
+
+static markdown_core_state S_look_found(markdown_core_tokenizer *tokenizer, int code) {
+    return S_looked(tokenizer, code, true);
+}
+
+static markdown_core_state S_look_lost(markdown_core_tokenizer *tokenizer, int code) {
+    return S_looked(tokenizer, code, false);
+}
+
+markdown_core_state markdown_core_look(markdown_core_tokenizer *tokenizer, const markdown_core_look_ask *ask,
+                                       markdown_core_state ok, markdown_core_state nok, int code) {
+    markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
+    markdown_core_block_lookahead *lookahead = S_lookahead_begin(parser, ask->container, ask->kind);
+    if (!lookahead) {
+        return nok.step(tokenizer, code);
+    }
+    lookahead->once = ask->once;
+    lookahead->opener = ask->opener;
+    lookahead->then[0] = ok;
+    lookahead->then[1] = nok;
+    return markdown_core_check(tokenizer, ask->construct, markdown_core_state_of(S_look_found),
+                               markdown_core_state_of(S_look_lost), code);
 }
 
 /* THE LINE'S VISIT (parser.h): whether a reading of input line `line` goes
@@ -8875,10 +8917,11 @@ markdown_core_state markdown_core_block_found(markdown_core_tokenizer *tokenizer
  * lines, to the block a lazy line goes to, or to the content, which opens
  * a paragraph for it. Every construct is an attempt, a frame of the one
  * reading, which reaches the line through the turn (`turn`, the first
- * member, all a construct sees). Its tokens are zero-width: the reader is
- * the column cursor, and the reading reads no byte. A start's tokens are
- * compiled as its attempt succeeds, since what the line reads next is read
- * in the block it opened. */
+ * member, all a construct sees). The reader is the reading's cursor: the
+ * position moves with it, so a start's and a continuation's tokens span
+ * the bytes they read, and the line's text is a FLOW token. A start's
+ * tokens are compiled as its attempt succeeds, since what the line reads
+ * next is read in the block it opened. */
 typedef struct {
     markdown_core_block_turn turn;
     block_start start;
@@ -9426,14 +9469,13 @@ static markdown_core_state S_rest_end(markdown_core_tokenizer *tokenizer, bool s
 static markdown_core_state S_rest_seen(markdown_core_tokenizer *tokenizer, int code, bool read) {
     markdown_core_parser *parser = S_walk_of(tokenizer)->turn.parser;
     S_rest *rest = &parser->walk->rest;
-    markdown_core_block_lookahead *lookahead = parser->look;
-    const int carried = lookahead->blanks                                     ? -1
-                        : !read                                               ? 0
-                        : lookahead->line == lookahead->saved.read.number + 2 ? 1
-                                                                              : -1;
-    markdown_core_parser_lookahead_end(lookahead);
     parser->stream->edit->quiet = false;
-    if (parser->error || carried != rest->want[rest->at]) {
+    if (parser->error) {
+        return S_rest_end(tokenizer, false);
+    }
+    const markdown_core_block_lookahead *lookahead = parser->look;
+    const int carried = lookahead->blanks ? -1 : !read ? 0 : lookahead->line == parser->at.read.number + 2 ? 1 : -1;
+    if (carried != rest->want[rest->at]) {
         return S_rest_end(tokenizer, false);
     }
     rest->at++;
@@ -9460,14 +9502,11 @@ static markdown_core_state S_rest_look(markdown_core_tokenizer *tokenizer, int c
         }
         return S_rest_end(tokenizer, S_stands_back(parser, rest));
     }
-    markdown_core_edit *edit = parser->stream->edit;
-    edit->quiet = true;
-    if (!markdown_core_parser_lookahead_begin(parser, rest->look[rest->at], rest->kind[rest->at])) {
-        edit->quiet = false;
-        return S_rest_end(tokenizer, false);
-    }
-    return markdown_core_check(tokenizer, &S_LOOK, markdown_core_state_of(S_rest_carried),
-                               markdown_core_state_of(S_rest_dropped), code);
+    parser->stream->edit->quiet = true;
+    const markdown_core_look_ask ask = {
+        .container = rest->look[rest->at], .kind = rest->kind[rest->at], .construct = &S_LOOK};
+    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_rest_carried),
+                              markdown_core_state_of(S_rest_dropped), code);
 }
 
 static markdown_core_state S_rest_start(markdown_core_tokenizer *tokenizer, int code) {

@@ -83,8 +83,6 @@ static const markdown_core_construct PARAGRAPH_BOUNDARY = {.start = S_names_next
 
 static markdown_core_state S_names_read(markdown_core_tokenizer *tokenizer, bool bounded) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_parser_lookahead_end(turn->parser->look);
-    turn->look = false;
     if (turn->parser->error) {
         return markdown_core_nok(tokenizer);
     }
@@ -119,14 +117,12 @@ static markdown_core_state S_content(markdown_core_tokenizer *tokenizer, int cod
     if (bounded) {
         return markdown_core_block_found(tokenizer, PARAGRAPH_NAMES);
     }
-    markdown_core_block_lookahead *lookahead =
-        markdown_core_parser_lookahead_begin(parser, found->parent, MARKDOWN_CORE_NODE_PARAGRAPH);
-    if (!lookahead) {
-        return markdown_core_nok(tokenizer);
-    }
-    lookahead->once = true;
-    return markdown_core_check(tokenizer, &PARAGRAPH_BOUNDARY, markdown_core_state_of(S_bounded),
-                               markdown_core_state_of(S_unbounded), code);
+    const markdown_core_look_ask ask = {.container = found->parent,
+                                        .kind = MARKDOWN_CORE_NODE_PARAGRAPH,
+                                        .construct = &PARAGRAPH_BOUNDARY,
+                                        .once = true};
+    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_bounded), markdown_core_state_of(S_unbounded),
+                              code);
 }
 
 static void S_paragraph_open(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {

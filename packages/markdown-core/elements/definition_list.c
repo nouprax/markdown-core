@@ -116,8 +116,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
 }
 
 /* THE TERM'S READING of the reader's line in `parent` its admission admits
- * begins: no reference definition, and its look begun, which reads whether
- * a definition marker line follows it, after one blank line at most
+ * begins: no reference definition. Its look (S_term) reads whether a
+ * definition marker line follows it, after one blank line at most
  * (S_term_line). */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool definition_term_reads(const markdown_core_element_instance *self,
                                                                       markdown_core_parser *parser,
@@ -134,7 +134,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool definition_term_reads(const mark
             return false;
         }
     }
-    return markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST) != NULL;
+    return true;
 }
 
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
@@ -236,7 +236,7 @@ static markdown_core_state S_term_line(markdown_core_tokenizer *tokenizer, int c
     (void)code;
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_parser *parser = turn->parser;
-    if (parser->look->blanks > 1 || !markdown_core_block_definition_marker(&parser->at.read)) {
+    if (parser->look->blanks > 1 || !markdown_core_block_definition_marker(&parser->look->read)) {
         return markdown_core_nok(tokenizer);
     }
     *MARKDOWN_CORE_BLOCK_FOUND(turn->start, bool) = parser->look->blanks == 0;
@@ -252,8 +252,6 @@ static const markdown_core_construct TERM_LOOK = {.start = S_term_next};
 
 static markdown_core_state S_term_read(markdown_core_tokenizer *tokenizer, bool matched) {
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_parser_lookahead_end(turn->parser->look);
-    turn->look = false;
     if (!matched || turn->parser->error) {
         return markdown_core_nok(tokenizer);
     }
@@ -281,8 +279,10 @@ static markdown_core_state S_term(markdown_core_tokenizer *tokenizer, int code) 
         parser->error) {
         return markdown_core_nok(tokenizer);
     }
-    return markdown_core_check(tokenizer, &TERM_LOOK, markdown_core_state_of(S_term_matched),
-                               markdown_core_state_of(S_term_unmatched), code);
+    const markdown_core_look_ask ask = {
+        .container = parent, .kind = MARKDOWN_CORE_NODE_DEFINITION_LIST, .construct = &TERM_LOOK};
+    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_term_matched),
+                              markdown_core_state_of(S_term_unmatched), code);
 }
 
 static void S_definition_list_term(markdown_core_compiler *compiler, const markdown_core_token *token, uint32_t index) {
@@ -415,8 +415,8 @@ static markdown_core_state S_body_line(markdown_core_tokenizer *tokenizer, int c
     const markdown_core_definition_list_work *work =
         ((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state;
     const markdown_core_parser *parser = markdown_core_block_turn_of(tokenizer)->parser;
-    return parser->at.read.indent >= work->body->as.definition_body->continuation ? markdown_core_ok(tokenizer)
-                                                                                  : markdown_core_nok(tokenizer);
+    return parser->look->read.indent >= work->body->as.definition_body->continuation ? markdown_core_ok(tokenizer)
+                                                                                     : markdown_core_nok(tokenizer);
 }
 
 static markdown_core_state S_body_next(markdown_core_tokenizer *tokenizer, int code) {
@@ -432,17 +432,13 @@ static markdown_core_state S_body_read(markdown_core_tokenizer *tokenizer, bool 
     markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
     markdown_core_parser *parser = turn->parser;
     markdown_core_node *body = work->body;
-    const int line = parser->look->line - 1;
-    markdown_core_parser_lookahead_end(parser->look);
     work->body = NULL;
     turn->node = body;
-    turn->reader = &parser->at.read;
     turn->joining = NULL;
-    turn->look = false;
     if (!continues || parser->error) {
         return markdown_core_nok(tokenizer);
     }
-    body->as.definition_body->continuation_line = line;
+    body->as.definition_body->continuation_line = parser->look->line - 1;
     return S_continued(tokenizer);
 }
 
@@ -469,13 +465,12 @@ static markdown_core_state S_continue(markdown_core_tokenizer *tokenizer, int co
         return S_continued(tokenizer);
     }
     markdown_core_parser *parser = turn->parser;
-    if (!markdown_core_parser_lookahead_begin(parser, markdown_core_parser_parent(parser, body),
-                                              MARKDOWN_CORE_NODE_PARAGRAPH)) {
-        return markdown_core_nok(tokenizer);
-    }
     work->body = body;
-    return markdown_core_check(tokenizer, &BODY_LOOK, markdown_core_state_of(S_body_continues),
-                               markdown_core_state_of(S_body_stops), code);
+    const markdown_core_look_ask ask = {.container = markdown_core_parser_parent(parser, body),
+                                        .kind = MARKDOWN_CORE_NODE_PARAGRAPH,
+                                        .construct = &BODY_LOOK};
+    return markdown_core_look(tokenizer, &ask, markdown_core_state_of(S_body_continues),
+                              markdown_core_state_of(S_body_stops), code);
 }
 
 static const markdown_core_line_ops DEFINITION_LIST_LINES = {

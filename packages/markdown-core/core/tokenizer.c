@@ -230,6 +230,7 @@ static bool S_push_frame(markdown_core_tokenizer *tokenizer, markdown_core_state
                                                              .given = tokenizer->note_count,
                                                              .notes = tokenizer->note_count,
                                                              .check = check,
+                                                             .cursor = tokenizer->cursor,
                                                              .base = tokenizer->base};
     if (tokenizer->cursor) {
         frames[tokenizer->frame_count - 1].stand = markdown_core_reader_stand_of(tokenizer->cursor);
@@ -268,6 +269,7 @@ static void S_restore(markdown_core_tokenizer *tokenizer, const markdown_core_fr
     tokenizer->rewound += tokenizer->position - frame->position;
     tokenizer->position = frame->position;
     tokenizer->base = frame->base;
+    tokenizer->cursor = frame->cursor;
     if (tokenizer->cursor) {
         markdown_core_reader_stand_back(tokenizer->cursor, &frame->stand);
     }
