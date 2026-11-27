@@ -8,6 +8,7 @@
 //!
 //! [`attempt`]: Tokenizer::attempt
 
+use crate::construct::list_item::Facts;
 use crate::event::{Event, Kind, Link, Name, Point, VOID_EVENTS};
 use crate::parser::ParseState;
 use crate::resolve::{call as call_resolve, Name as ResolveName};
@@ -51,6 +52,9 @@ pub struct ContainerState {
     pub size: usize,
     /// Whether the closing line was seen, after which the container ends.
     pub closed: bool,
+    /// How a list item's marker was read, which the next item at its level
+    /// reads its own marker by.
+    pub facts: Option<Facts>,
 }
 
 /// How to handle a byte.

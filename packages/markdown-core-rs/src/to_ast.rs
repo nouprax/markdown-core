@@ -9,6 +9,7 @@ use crate::ast::{
     Delimiter, Destination, Dimensions, Flavor, Kind, Mode, Node, Note, Placement, Record,
     Referent, Span, Status, Variant,
 };
+use crate::construct::list_item;
 use crate::event::{Block, Event, Inline, Kind as EventKind, Name, Role, Space};
 use crate::util::{
     character_reference::{decode as decode_character_reference, decode_at},
@@ -764,24 +765,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn list(&mut self, index: usize) -> Node {
-        let ordered = self.name(index) == Name::ListOrdered;
         let loose = list_loose(self.events, index, true);
         let mut items = vec![];
-        let mut value = None;
-        let mut marker = 0u8;
+        let mut first = None;
         for child in self.inside(index) {
             if self.name(child) != Name::ListItem {
                 continue;
             }
             if items.is_empty() {
-                if let Some(prefix) = self.child(child, Name::ListItemPrefix) {
-                    if let Some(found) = self.child(prefix, Name::ListItemValue) {
-                        value = self.text(found).parse::<u64>().ok();
-                    }
-                    if let Some(found) = self.child(prefix, Name::ListItemMarker) {
-                        marker = self.bytes[self.start(found)];
-                    }
-                }
+                first = Some(child);
             }
             items.push(self.list_item(child));
         }
@@ -790,19 +782,38 @@ impl<'a> Compiler<'a> {
             self.blank_tail(self.exits[index])
                 .unwrap_or_else(|| self.end(index)),
         );
-        let (flavor, start_value, variant, delimiter) = if ordered {
-            (
-                Flavor::Ordered,
-                Some(value.unwrap_or(1)),
-                Some(Variant::Decimal),
-                Some(if marker == b')' {
-                    Delimiter::Parenthesis { closed: false }
-                } else {
-                    Delimiter::Period
-                }),
-            )
-        } else {
-            (Flavor::Bullet, None, None, None)
+        let found = first.and_then(|child| list_item::facts(self.events, self.bytes, child));
+        let (flavor, start_value, variant, delimiter) = match found {
+            Some(list_item::Facts::Ordered { numeral, delimiter }) => {
+                let value = first
+                    .and_then(|child| self.child(child, Name::ListItemPrefix))
+                    .and_then(|prefix| {
+                        self.inside(prefix)
+                            .into_iter()
+                            .find(|&part| list_item::Numeral::from_name(self.name(part)).is_some())
+                    })
+                    .and_then(|part| list_item::number(numeral, self.text(part).as_bytes()));
+                (
+                    Flavor::Ordered,
+                    Some(value.map_or(1, u64::from)),
+                    Some(match numeral {
+                        list_item::Numeral::Decimal => Variant::Decimal,
+                        list_item::Numeral::Letter { lower } => {
+                            Variant::Alpha { lowercased: lower }
+                        }
+                        list_item::Numeral::Roman { lower } => Variant::Roman { lowercased: lower },
+                        list_item::Numeral::Auto => Variant::Default,
+                    }),
+                    Some(match delimiter {
+                        list_item::Delimiter::Period => Delimiter::Period,
+                        list_item::Delimiter::Parenthesis { closed } => {
+                            Delimiter::Parenthesis { closed }
+                        }
+                        list_item::Delimiter::Auto => Delimiter::Default,
+                    }),
+                )
+            }
+            _ => (Flavor::Bullet, None, None, None),
         };
         Node::new(
             Kind::List {

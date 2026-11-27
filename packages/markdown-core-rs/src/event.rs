@@ -3177,9 +3177,16 @@ pub enum Name {
     /// * **Context**:
     ///   [`ListItem`][Name::ListItem]
     /// * **Content model**:
+    ///   [`ListItemAuto`][Name::ListItemAuto],
+    ///   [`ListItemAutoDelimiter`][Name::ListItemAutoDelimiter],
+    ///   [`ListItemLetterLower`][Name::ListItemLetterLower],
+    ///   [`ListItemLetterUpper`][Name::ListItemLetterUpper],
     ///   [`ListItemMarker`][Name::ListItemMarker],
+    ///   [`ListItemRomanLower`][Name::ListItemRomanLower],
+    ///   [`ListItemRomanUpper`][Name::ListItemRomanUpper],
     ///   [`ListItemValue`][Name::ListItemValue],
-    ///   [`SpaceOrTab`][Name::SpaceOrTab]
+    ///   [`SpaceOrTab`][Name::SpaceOrTab],
+    ///   [`TaskListItemCheck`][Name::TaskListItemCheck]
     /// * **Construct**:
     ///   [`list item`][crate::construct::list_item]
     ///
@@ -3210,6 +3217,114 @@ pub enum Name {
     ///     ^
     /// ```
     ListItemValue,
+    /// List item (value read as the automatic marker).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | #. b
+    ///     ^
+    /// ```
+    ListItemAuto,
+    /// List item (delimiter of an automatic marker that starts a list).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | #. b
+    ///      ^
+    /// ```
+    ListItemAutoDelimiter,
+    /// List item (value read as a lowercase letter).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | a. b
+    ///     ^
+    /// ```
+    ListItemLetterLower,
+    /// List item (value read as an uppercase letter).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | A)  b
+    ///     ^
+    /// ```
+    ListItemLetterUpper,
+    /// List item (value read as a lowercase Roman numeral).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | iv. b
+    ///     ^^
+    /// ```
+    ListItemRomanLower,
+    /// List item (value read as an uppercase Roman numeral).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   [`ListItemPrefix`][Name::ListItemPrefix]
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    /// > | (IV) b
+    ///      ^^
+    /// ```
+    ListItemRomanUpper,
     /// List (ordered).
     ///
     /// ## Info
@@ -4225,6 +4340,12 @@ impl Name {
             | Name::ListItemMarker
             | Name::ListItemPrefix
             | Name::ListItemValue
+            | Name::ListItemAuto
+            | Name::ListItemAutoDelimiter
+            | Name::ListItemLetterLower
+            | Name::ListItemLetterUpper
+            | Name::ListItemRomanLower
+            | Name::ListItemRomanUpper
             | Name::BlockIdentifier
             | Name::BlockIdentifierTail
             | Name::FormulaFence
@@ -4263,7 +4384,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 95] = [
+pub const VOID_EVENTS: [Name; 101] = [
     Name::DefinitionBodyMarker,
     Name::AttributesMarker,
     Name::AttributeId,
@@ -4325,6 +4446,12 @@ pub const VOID_EVENTS: [Name; 95] = [
     Name::LineEnding,
     Name::ListItemMarker,
     Name::ListItemValue,
+    Name::ListItemAuto,
+    Name::ListItemAutoDelimiter,
+    Name::ListItemLetterLower,
+    Name::ListItemLetterUpper,
+    Name::ListItemRomanLower,
+    Name::ListItemRomanUpper,
     Name::BlockIdentifier,
     Name::BlockIdentifierTail,
     Name::FormulaSequence,
