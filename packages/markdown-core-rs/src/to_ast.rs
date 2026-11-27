@@ -85,10 +85,7 @@ struct Draft {
 
 /// Whether `name` is a container prefix of a continuation line.
 fn prefix(name: Name) -> bool {
-    matches!(
-        name,
-        Name::BlockQuotePrefix | Name::ListItemIndent | Name::FootnoteDefinitionIndent
-    )
+    matches!(name, Name::BlockQuotePrefix | Name::ContainerIndent)
 }
 
 /// Whether `name` is whitespace between blocks rather than content.

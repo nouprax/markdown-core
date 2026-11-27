@@ -126,8 +126,7 @@ pub fn subtokenize(
                             Name::Definition,
                             Name::LineEnding,
                             Name::SpaceOrTab,
-                            Name::ListItemIndent,
-                            Name::FootnoteDefinitionIndent,
+                            Name::ContainerIndent,
                         ],
                     );
 

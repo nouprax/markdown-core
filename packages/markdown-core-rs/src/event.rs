@@ -3743,12 +3743,28 @@ pub enum Name {
     ///     ^ ^ ^ ^
     /// ```
     SpaceOrTab,
-    /// The indentation a list item's continuation line consumes
-    /// (micromark `listItemIndent`).
-    ListItemIndent,
-    /// The indentation a footnote definition's continuation line consumes
-    /// (micromark `FootnoteDefinitionIndent`).
-    FootnoteDefinitionIndent,
+    /// The indentation a continuation line of a container consumes: a list
+    /// item, a footnote definition, or a definition body (micromark
+    /// `listItemIndent`).
+    ///
+    /// ## Info
+    ///
+    /// * **Context**:
+    ///   the container whose line it continues
+    /// * **Content model**:
+    ///   void
+    /// * **Construct**:
+    ///   [`list item`][crate::construct::list_item],
+    ///   [`footnote definition`][crate::construct::footnote_definition]
+    ///
+    /// ## Example
+    ///
+    /// ```markdown
+    ///   | * a
+    /// > |   b
+    ///     ^^
+    /// ```
+    ContainerIndent,
     /// Strong.
     ///
     /// ## Info
@@ -4118,8 +4134,7 @@ impl Name {
             | Name::ResourceTitle
             | Name::ResourceTitleMarker
             | Name::ResourceTitleText
-            | Name::ListItemIndent
-            | Name::FootnoteDefinitionIndent
+            | Name::ContainerIndent
             | Name::StrongSequence
             | Name::StrongText
             | Name::ThematicBreakSequence
@@ -4138,7 +4153,7 @@ impl Name {
 }
 
 /// List of void events, used to make sure everything is working well.
-pub const VOID_EVENTS: [Name; 96] = [
+pub const VOID_EVENTS: [Name; 95] = [
     Name::AttributesMarker,
     Name::AttributeId,
     Name::AttributeClass,
@@ -4231,8 +4246,7 @@ pub const VOID_EVENTS: [Name; 96] = [
     Name::ResourceMarker,
     Name::ResourceTitleMarker,
     Name::SpaceOrTab,
-    Name::ListItemIndent,
-    Name::FootnoteDefinitionIndent,
+    Name::ContainerIndent,
     Name::StrongSequence,
     Name::ThematicBreakSequence,
 ];

@@ -383,8 +383,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
                         previous.3 + 1,
                         &[
                             Name::SpaceOrTab,
-                            Name::ListItemIndent,
-                            Name::FootnoteDefinitionIndent,
+                            Name::ContainerIndent,
                             Name::LineEnding,
                             Name::BlankLineEnding,
                             Name::BlockQuotePrefix,
@@ -461,7 +460,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
 /// The indentation a continuation line consumes for the list item.
 fn indent(min: usize, max: usize) -> StateName {
     space_or_tab_with_options(SpaceOrTabOptions {
-        kind: Name::ListItemIndent,
+        kind: Name::ContainerIndent,
         min,
         max,
         content: None,

@@ -201,8 +201,7 @@ pub fn resolve(tokenizer: &mut Tokenizer) -> Option<Subresult> {
             enter - 1,
             &[
                 Name::SpaceOrTab,
-                Name::ListItemIndent,
-                Name::FootnoteDefinitionIndent,
+                Name::ContainerIndent,
                 Name::LineEnding,
                 Name::BlockQuotePrefix,
             ],

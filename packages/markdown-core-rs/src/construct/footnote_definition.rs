@@ -409,7 +409,7 @@ fn cont_filled(tokenizer: &mut Tokenizer) -> State {
 /// The indentation a continuation line consumes for the definition.
 fn indent(min: usize, max: usize) -> StateName {
     space_or_tab_with_options(SpaceOrTabOptions {
-        kind: Name::FootnoteDefinitionIndent,
+        kind: Name::ContainerIndent,
         min,
         max,
         content: None,
