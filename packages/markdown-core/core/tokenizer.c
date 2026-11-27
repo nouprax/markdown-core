@@ -94,14 +94,36 @@ uint32_t markdown_core_exit(markdown_core_tokenizer *tokenizer, uint16_t kind) {
     return token;
 }
 
-void markdown_core_give_back(markdown_core_tokenizer *tokenizer, uint32_t at) {
+markdown_core_stood markdown_core_stood_of(markdown_core_tokenizer *tokenizer) {
+    markdown_core_stood place = {.position = tokenizer->position,
+                                 .column = markdown_core_column(tokenizer),
+                                 .known = true,
+                                 .split = tokenizer->split};
+    if (tokenizer->cursor) {
+        place.stand = markdown_core_reader_stand_of(tokenizer->cursor);
+    }
+    return place;
+}
+
+void markdown_core_give_back(markdown_core_tokenizer *tokenizer, const markdown_core_stood *place) {
+    const uint32_t at = place->position;
     assert(!tokenizer->frame_count && at >= tokenizer->base && at <= tokenizer->position);
     /* What is read again is the engine's work, as what an attempt gives
      * back is. */
     tokenizer->rewound += tokenizer->position - at;
     tokenizer->position = at;
-    tokenizer->counted = tokenizer->split = false;
     markdown_core_reader *cursor = tokenizer->cursor;
+    if (place->known) {
+        /* Inside a tab, as much of it as was read stays read. */
+        tokenizer->column = place->column;
+        tokenizer->counted = true;
+        tokenizer->split = place->split;
+        if (cursor) {
+            markdown_core_reader_stand_back(cursor, &place->stand);
+        }
+        return;
+    }
+    tokenizer->counted = tokenizer->split = false;
     if (cursor) {
         cursor->offset = (bufsize_t)(at - tokenizer->base);
         cursor->column = (bufsize_t)markdown_core_column(tokenizer);
@@ -705,6 +727,7 @@ static void S_merge(markdown_core_tokenizer *tokenizer) {
 
 /* A reading begins: nothing of the last one is kept. */
 static void S_reset(markdown_core_tokenizer *tokenizer, const markdown_core_read *read) {
+    tokenizer->serial++;
     tokenizer->data = read->data;
     tokenizer->size = read->size;
     tokenizer->position = read->from;

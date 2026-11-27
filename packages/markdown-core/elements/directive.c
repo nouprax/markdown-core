@@ -39,10 +39,6 @@ typedef struct {
     /* Borrowed authored attributes: a braced envelope or one class word. */
     bufsize_t attributes_start;
     bufsize_t attributes_len;
-    /* What the attribute element recognized of a braced envelope, kept until
-     * it writes the value into the committed block, or the declined probe
-     * lets it go. */
-    markdown_core_attribute_parser attributes;
     bufsize_t end;
 } parsed_directive;
 
@@ -186,31 +182,6 @@ static void directive_opaque_free(markdown_core_node_pool *pool, markdown_core_n
     node->opaque = NULL;
 }
 
-/* Where the attribute block at `*pos` closes is the attribute grammar's to
- * say (services.h); a dialect without it has none. What it recognized stays
- * in `parsed`, which lets it go either way. */
-static int scan_directive_attributes(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     unsigned char *data, bufsize_t len, bufsize_t *pos, parsed_directive *parsed) {
-    const markdown_core_attribute_ops *attributes = S_attributes(self);
-    if (!attributes) {
-        return 0;
-    }
-    const markdown_core_element_instance *provider = self->needs[DIRECTIVE_ATTRIBUTES].instance;
-    attributes->release(provider, &parsed->attributes);
-    attributes->begin(provider, &parsed->attributes, data, len);
-    const bufsize_t end = attributes->end(provider, &parsed->attributes, *pos);
-    if (parsed->attributes.oom) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    if (!end) {
-        return 0;
-    }
-    parsed->attributes_start = *pos;
-    parsed->attributes_len = end - *pos;
-    *pos = end;
-    return 1;
-}
-
 static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_parser *parser,
                                            const unsigned char *label, bufsize_t label_len, bufsize_t start,
                                            bufsize_t end) {
@@ -270,17 +241,12 @@ static int apply_parsed_directive(const markdown_core_element_instance *self, ma
         const unsigned char *source = data + parsed->attributes_start;
         if (*source == '{') {
             /* The block's value is the attribute element's to write. */
-            bufsize_t end;
-            const bool written =
-                S_attributes(self)->parse(self->needs[DIRECTIVE_ATTRIBUTES].instance, &parsed->attributes,
-                                          parsed->attributes_start, &node->attributes, &end);
-            if (parsed->attributes.oom) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
-            if (!written) {
+            const markdown_core_element_instance *provider = self->needs[DIRECTIVE_ATTRIBUTES].instance;
+            if (!S_attributes(self)->parse(provider, data, parsed->attributes_start,
+                                           parsed->attributes_start + parsed->attributes_len, &node->attributes)) {
                 return 0;
             }
-            S_attributes(self)->fields(self->needs[DIRECTIVE_ATTRIBUTES].instance, &parsed->attributes, &fields);
+            S_attributes(self)->fields(provider, &fields);
         } else {
             if (!markdown_core_attributes_single_class(&node->attributes, source, parsed->attributes_len)) {
                 return 0;
@@ -389,6 +355,8 @@ static void S_report_block(const markdown_core_element_instance *self, markdown_
 typedef struct {
     bufsize_t colon_count, first;
     parsed_directive parsed;
+    /* Its attribute list follows its colons, not a name. */
+    bool nameless;
 } directive_found;
 MARKDOWN_CORE_BLOCK_FOUND_FITS(directive_found, directive_found_fits);
 
@@ -416,9 +384,6 @@ static markdown_core_state S_opener_failed(markdown_core_tokenizer *tokenizer, i
     markdown_core_reader *reader = turn->context->reader;
     S_report_block(self, turn->parser, reader, markdown_core_reader_rest(reader, 0),
                    markdown_core_reader_length(reader), found->first, found->first + found->colon_count);
-    if (S_attributes(self)) {
-        S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
-    }
     return markdown_core_nok(tokenizer);
 }
 
@@ -433,27 +398,40 @@ static markdown_core_state S_opener_end(markdown_core_tokenizer *tokenizer, int 
     return markdown_core_block_found(tokenizer, DIRECTIVE_OPEN);
 }
 
-/* An attribute list at `{`, where the attribute grammar says it closes;
- * then `next`. */
-static markdown_core_state S_opener_list(markdown_core_tokenizer *tokenizer, markdown_core_state next) {
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    markdown_core_reader *reader = turn->context->reader;
+static markdown_core_state S_tail_spaces(markdown_core_tokenizer *tokenizer, int code);
+
+/* An attribute list at `{` (ATTRIBUTES_LINE), then spaces to the line's
+ * end; after a name, or after colons alone (`nameless`). */
+static markdown_core_state S_opener_listed(markdown_core_tokenizer *tokenizer, int code) {
     directive_found *found = S_found(tokenizer);
-    bufsize_t pos = S_offset(tokenizer);
-    if (!scan_directive_attributes(self, turn->parser, (unsigned char *)markdown_core_reader_rest(reader, 0),
-                                   markdown_core_reader_length(reader), &pos, &found->parsed)) {
-        return S_opener_failed(tokenizer, '{');
+    found->parsed.attributes_len = S_offset(tokenizer) - found->parsed.attributes_start;
+    found->parsed.end = S_offset(tokenizer);
+    return found->nameless ? S_tail_spaces(tokenizer, code) : S_opener_end(tokenizer, code);
+}
+
+static markdown_core_state S_opener_unlisted(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_opener_failed(tokenizer, '{');
+}
+
+static markdown_core_state S_opener_list(markdown_core_tokenizer *tokenizer, int code, bool nameless) {
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    directive_found *found = S_found(tokenizer);
+    const markdown_core_attribute_ops *attributes = S_attributes(self);
+    if (!attributes) {
+        return S_opener_failed(tokenizer, code);
     }
-    found->parsed.end = pos;
-    markdown_core_consume_to(tokenizer, tokenizer->base + (uint32_t)pos);
-    return next;
+    found->nameless = nameless;
+    found->parsed.attributes_start = S_offset(tokenizer);
+    return markdown_core_attempt(tokenizer, attributes->list(self->needs[DIRECTIVE_ATTRIBUTES].instance, true),
+                                 markdown_core_state_of(S_opener_listed), markdown_core_state_of(S_opener_unlisted),
+                                 code);
 }
 
 static markdown_core_state S_named_list(markdown_core_tokenizer *tokenizer, int code) {
     S_found(tokenizer)->parsed.end = S_offset(tokenizer);
     if (code == '{') {
-        return S_opener_list(tokenizer, markdown_core_state_of(S_opener_end));
+        return S_opener_list(tokenizer, code, false);
     }
     return S_opener_end(tokenizer, code);
 }
@@ -522,7 +500,7 @@ static markdown_core_state S_nameless(markdown_core_tokenizer *tokenizer, int co
         return markdown_core_state_of(S_nameless);
     }
     if (code == '{') {
-        return S_opener_list(tokenizer, markdown_core_state_of(S_tail_spaces));
+        return S_opener_list(tokenizer, code, true);
     }
     S_found(tokenizer)->parsed.attributes_start = S_offset(tokenizer);
     return S_class_word(tokenizer, code);
@@ -594,10 +572,7 @@ static void S_block_open(markdown_core_compiler *compiler, const markdown_core_t
     *turn->container = node;
     turn->opened = true;
 
-done:
-    if (S_attributes(self)) {
-        S_attributes(self)->release(self->needs[DIRECTIVE_ATTRIBUTES].instance, &found->parsed.attributes);
-    }
+done:;
 }
 
 static const markdown_core_node_type containment_kinds[] = {
@@ -720,16 +695,32 @@ static markdown_core_state S_text_labeled(markdown_core_tokenizer *tokenizer, in
     return S_text_done(tokenizer);
 }
 
-/* No label: an attribute block makes it one. */
+/* No label: an attribute block that closes makes it one, a construct of
+ * its own after the directive's token. */
+static markdown_core_state S_text_listed(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    return S_text_done(tokenizer);
+}
+
+static markdown_core_state S_text_unlisted(markdown_core_tokenizer *tokenizer, int code) {
+    (void)code;
+    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
+    S_attributes(self)->give(self->needs[DIRECTIVE_ATTRIBUTES].instance, tokenizer, (bufsize_t)tokenizer->position,
+                             MARKDOWN_CORE_KIND_DIRECTIVE);
+    S_give_name(tokenizer, (bufsize_t)words[TEXT_COLON], (bufsize_t)words[TEXT_NAME_END]);
+    return markdown_core_nok(tokenizer);
+}
+
 static markdown_core_state S_text_bare(markdown_core_tokenizer *tokenizer, int code) {
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     const markdown_core_attribute_ops *attributes = S_attributes(self);
     uint32_t *words = markdown_core_frame_local(tokenizer);
     words[TEXT_LABEL] = 0;
-    if (attributes && code == '{' &&
-        attributes->block(self->needs[DIRECTIVE_ATTRIBUTES].instance, tokenizer, (bufsize_t)tokenizer->position,
-                          MARKDOWN_CORE_KIND_DIRECTIVE)) {
-        return S_text_done(tokenizer);
+    if (attributes && code == '{') {
+        return markdown_core_check(tokenizer, attributes->list(self->needs[DIRECTIVE_ATTRIBUTES].instance, false),
+                                   markdown_core_state_of(S_text_listed), markdown_core_state_of(S_text_unlisted),
+                                   code);
     }
     S_give_name(tokenizer, (bufsize_t)words[TEXT_COLON], (bufsize_t)words[TEXT_NAME_END]);
     return markdown_core_nok(tokenizer);

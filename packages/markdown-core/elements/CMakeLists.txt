@@ -56,8 +56,7 @@ set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
 set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    set_source_files_properties(
-        PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
+    set_source_files_properties(PROPERTIES COMPILE_FLAGS "-Wno-unused-variable")
 endif()
 
 if(MARKDOWN_CORE_SHARED)

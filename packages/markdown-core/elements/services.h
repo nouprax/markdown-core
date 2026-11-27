@@ -100,64 +100,70 @@ static inline void markdown_core_word_space_note(markdown_core_need need, markdo
 }
 
 /* AN ATTRIBUTE BLOCK, `{#id .class key=value}`: the attribute element's
- * recognizer and decoder, which the elements whose constructs take a block
- * after them ask.
+ * grammar, which the elements whose constructs take a block after them ask.
  *
- * A RECOGNIZER belongs to one immutable input extent, the `length` bytes at
- * `data`. It walks forward from each candidate brace it is asked about and
- * memoises, by position, what it passes (its `ends`, the provider's), so
- * overlapping candidates cannot scan that extent again. One zeroed but for
- * its extent recognizes only; `begin` lends it the parse's workspace, into
- * which `parse` decodes values, and `release` lets it go either way,
- * adding what it read to the parse's work. Allocation failure is sticky in
- * `oom` and never becomes a grammar fallback. `ran_out`: a quote's
- * lookahead met the extent's end with no closer, so what the walks answered
- * may change once the input goes on. */
+ * A RECOGNIZER is what the block's construct reads with (its context): the
+ * memo of the reading it reads, by position, of what its walks passed (its
+ * `ends`, `count` of them from `base`), which the next reading clears, so
+ * overlapping candidates cannot scan the bytes again. Where its last walk
+ * ended is `end`, 0 when the block did not close. One over `length` bytes
+ * at `data` reads alone (markdown_core_attributes_end), with a tokenizer of
+ * its own (`own`), its readings of the same bytes sharing its memo. Its
+ * `scratch` is the workspace values are decoded into, which totals the
+ * work. Allocation failure is sticky in `oom`. `ran_out`: a walk of the
+ * memo met the end of the bytes, so what the walks answered may change
+ * once the input goes on. */
 struct markdown_core_attribute_suffix;
 struct markdown_core_attribute_scratch;
+struct markdown_core_attribute_own;
 struct markdown_core_field;
 typedef struct markdown_core_attribute_parser {
     const unsigned char *data;
     bufsize_t length;
     struct markdown_core_attribute_suffix *ends;
+    bufsize_t base, count, room;
+    /* The reading the memo is of. */
+    const void *reading;
+    const unsigned char *bytes;
+    uint32_t size, serial;
+    bufsize_t end;
     struct markdown_core_attribute_scratch *scratch;
+    struct markdown_core_attribute_own *own;
     size_t work;
     int oom;
     int ran_out;
 } markdown_core_attribute_parser;
 
-/* `end`: one past the `}` of the block whose `{` is at `start`, or 0 when
- * none closes there; recognition only.
- * `parse`: the block at `start` decoded into `value`, which the caller gives
- * empty, and `end` past it: success transfers the value's allocations, and
- * failure leaves both as they were.
- * `block`: where a block at `start` of the reading's bytes of a construct
- * of kind `owner` closes, one past its `}`, or 0; the block's value is the
- * attribute element's to write, on the node the construct makes.
+/* `list`: the block's construct, handed the `{`: ATTRIBUTES_LINE when
+ * `line`, which a line's end fails, else ATTRIBUTES_TEXT, whose members
+ * may be one line ending apart. It makes no tokens.
+ * `parse`: the block that closes at `end`, its `{` at `start` of `data`,
+ * decoded into `value`, which the caller gives empty: success transfers
+ * the value's allocations, and failure, which is allocation's, leaves it as
+ * it was.
+ * `fields`: the members the last `parse` read, as the fields of the node
+ * `to` names, the parsed bytes' offsets placed as it places them.
+ * `give`: the block at `start` of an inline reading that did not close, of
+ * a construct of kind `owner`, given up with the members it read; asked
+ * once for that block.
  * `report`: the blocks a block of kind `owner` opens and does not close on
  * its line `line`, at or after `from`, before `end`, kept on `to`'s node;
  * whether there is one.
- * `fields`: the members the last `parse` of `p` read, as the fields of
- * the node `to` names, the parsed bytes' offsets placed as it places them.
  * `open`: a block that does not close, the block's `{` at `start` of the
  * `size` bytes at `data`, kept on `to`'s node with the members it read
  * (attributes.h, markdown_core_attributes_open), a line's; false when it
  * is no block whatever follows. */
 typedef struct markdown_core_attribute_ops {
-    void (*begin)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p,
-                  const unsigned char *data, bufsize_t size);
-    void (*release)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p);
-    bufsize_t (*end)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start);
-    bool (*parse)(const markdown_core_element_instance *self, markdown_core_attribute_parser *p, bufsize_t start,
-                  markdown_core_attributes *value, bufsize_t *end);
-    bufsize_t (*block)(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer, bufsize_t start,
-                       markdown_core_node_kind owner);
+    const markdown_core_construct *(*list)(const markdown_core_element_instance *self, bool line);
+    bool (*parse)(const markdown_core_element_instance *self, const unsigned char *data, bufsize_t start, bufsize_t end,
+                  markdown_core_attributes *value);
+    void (*fields)(const markdown_core_element_instance *self, const markdown_core_field_to *to);
+    void (*give)(const markdown_core_element_instance *self, markdown_core_tokenizer *tokenizer, bufsize_t start,
+                 markdown_core_node_kind owner);
     bool (*report)(const markdown_core_element_instance *self, const markdown_core_field_to *to,
                    markdown_core_node_kind owner, const unsigned char *line, bufsize_t from, bufsize_t end);
     bool (*open)(const markdown_core_element_instance *self, const markdown_core_field_to *to,
                  markdown_core_node_kind owner, const unsigned char *data, bufsize_t size, bufsize_t start);
-    void (*fields)(const markdown_core_element_instance *self, const markdown_core_attribute_parser *p,
-                   const markdown_core_field_to *to);
 } markdown_core_attribute_ops;
 
 #define MARKDOWN_CORE_SERVICE_ATTRIBUTES "attributes"

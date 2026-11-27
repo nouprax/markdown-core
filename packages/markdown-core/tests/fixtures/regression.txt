@@ -1199,3 +1199,19 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
     │           └── Text scope=1:9..1:9 anchor=null attributes={} literal="b" children=0
     └── TableBody children=0
 ````````````````````````````````
+
+An HTML block that starts inside a tab a list item's indentation took part
+of keeps the rest of the tab: the start gives the line back to where it
+stood, inside the tab.
+
+```````````````````````````````` example
+- x
+→<div>
+.
+Document scope=1:1..2:6 anchor=null attributes={} children=1
+└── List scope=1:1..2:6 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=1:1..2:6 anchor=null attributes={} marker=null children=2
+        ├── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
+        │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="x" children=0
+        └── HTMLBlock scope=2:2..2:6 anchor=null attributes={} literal="  <div>\n" children=0
+````````````````````````````````

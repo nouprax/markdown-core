@@ -258,6 +258,9 @@ struct markdown_core_tokenizer {
     void *context;
     markdown_core_reader *cursor;
     uint32_t base;
+    /* Which reading this is: one more at every begin, so what a construct
+     * keeps of a reading (its memo) knows the tokenizer read another. */
+    uint32_t serial;
     /* THE COLUMNS of a block reading (`columns`): the column of the place,
      * counted from the line's start at `base`, each scalar and each column
      * of a tab one, known while `counted` (a move over a span leaves it to
@@ -317,10 +320,21 @@ void markdown_core_cursor_move(markdown_core_tokenizer *tokenizer);
 /* The cursor follows the reading: what a construct read code by code, the
  * cursor stands past, when the reading is past it. */
 void markdown_core_cursor_follow(markdown_core_tokenizer *tokenizer);
-/* The reading goes back to `at` on the cursor's line, at no tab's inside,
- * outside any attempt: what was read from there on is to be read again, as
- * a resolver makes what a construct read text. */
-void markdown_core_give_back(markdown_core_tokenizer *tokenizer, uint32_t at);
+/* WHERE A READING STOOD, in full: its position, its column and whether it
+ * stood inside a tab, and its cursor's stand; `known` false for a place
+ * known only by its position, at no tab's inside. */
+typedef struct {
+    uint32_t position, column;
+    bool known, split;
+    markdown_core_reader_stand stand;
+} markdown_core_stood;
+
+/* Where the reading stands now, outside any attempt. */
+markdown_core_stood markdown_core_stood_of(markdown_core_tokenizer *tokenizer);
+/* The reading goes back to `place` on the cursor's line, outside any
+ * attempt: what was read from there on is to be read again, as a resolver
+ * makes what a construct read text. */
+void markdown_core_give_back(markdown_core_tokenizer *tokenizer, const markdown_core_stood *place);
 /* The column of the place, from the line's start. */
 uint32_t markdown_core_column(markdown_core_tokenizer *tokenizer);
 

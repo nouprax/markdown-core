@@ -9019,6 +9019,9 @@ typedef struct {
     const markdown_core_block_construct *const *starts;
     size_t count, at;
     const markdown_core_block_construct *tried, *found;
+    /* Where the round's starts began, which a start that gives the line
+     * back from there goes back to, inside a tab as it stood. */
+    markdown_core_stood round;
 } S_walk;
 
 /* THE DOCUMENT'S READING: one for the parser's reading of the text, begun
@@ -9271,7 +9274,10 @@ static markdown_core_state S_started(markdown_core_tokenizer *tokenizer, int cod
     walk->turn.gives = UINT32_MAX;
     S_walk_compile(tokenizer);
     if (walk->turn.gives != UINT32_MAX) {
-        markdown_core_give_back(tokenizer, walk->turn.gives);
+        const markdown_core_stood place = walk->turn.gives == walk->round.position
+                                              ? walk->round
+                                              : (markdown_core_stood){.position = walk->turn.gives};
+        markdown_core_give_back(tokenizer, &place);
     }
     S_reader_close(parser);
     if (parser->error) {
@@ -9348,6 +9354,7 @@ static markdown_core_state S_open_round(markdown_core_tokenizer *tokenizer, int 
     walk->count = (size_t)(dialect->start_offsets[key + 1] - dialect->start_offsets[key]);
     walk->at = 0;
     walk->found = NULL;
+    walk->round = markdown_core_stood_of(tokenizer);
     return S_next_start(tokenizer, code);
 }
 

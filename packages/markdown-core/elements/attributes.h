@@ -49,20 +49,25 @@ struct markdown_core_attribute_suffix {
 
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
 void markdown_core_attribute_scratch_free(markdown_core_attribute_scratch *scratch);
-/* Recognition only: no values are decoded until the owner commits. Zero
- * denotes a malformed candidate. The memo is shared for the whole extent. */
+/* THE BLOCK'S CONSTRUCT READ ALONE over the parser's bytes (services.h):
+ * one past the `}` of the block whose `{` is at `start`, or 0 when none
+ * closes there. Recognition only; the queries of one parser share its memo.
+ * Allocation failure is sticky in parser->oom and never becomes a grammar
+ * fallback. */
 bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *parser, bufsize_t start);
-/* First complete container ending at `end`, outside escaped punctuation.
- * The caller selects the permitted line/extent. Returns -1 on failure. */
-bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *parser, bufsize_t start, bufsize_t end);
-/* The caller supplies an empty result. Success transfers its allocations and
- * advances end; failure leaves both outputs untouched. Allocation failure is
- * sticky in parser->oom and never becomes a grammar fallback. */
+/* The block at `start` read alone and decoded: the caller supplies an
+ * empty result. Success transfers its allocations and advances end; failure
+ * leaves both outputs untouched. */
 int markdown_core_attributes_parse(markdown_core_attribute_parser *parser, bufsize_t start,
                                    markdown_core_attributes *result, bufsize_t *end);
-/* The members the last parse read, as fields where `to` has them go
- * (markdown_core_field_to), in the parsed bytes' offsets. */
-void markdown_core_attributes_fields(const markdown_core_attribute_parser *parser, const markdown_core_field_to *to);
+/* The block recognized from `start` to `end` of `data` decoded into the
+ * workspace `w` and laid out as `result`: false only when storage could not
+ * be had. */
+bool markdown_core_attributes_decode(markdown_core_attribute_scratch *w, const unsigned char *data, bufsize_t start,
+                                     bufsize_t end, markdown_core_attributes *result);
+/* The members the last decode into `w` read, as fields where `to` has them
+ * go (markdown_core_field_to), in the decoded bytes' offsets. */
+void markdown_core_attributes_fields(const markdown_core_attribute_scratch *w, const markdown_core_field_to *to);
 
 /* The workspace a recognizer of the parse borrows: the attribute element's
  * (`scratch`). */

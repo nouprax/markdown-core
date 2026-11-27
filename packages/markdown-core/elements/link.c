@@ -48,27 +48,11 @@ typedef struct S_read {
  * and what the element's states read, as the element's readings run one
  * at a time, each to its end. */
 typedef struct {
-    markdown_core_attribute_parser held;
     S_read read;
 } S_state;
 
 static inline S_read *S_read_of(const markdown_core_tokenizer *tokenizer) {
     return &((S_state *)((const markdown_core_element_instance *)markdown_core_self(tokenizer))->state)->read;
-}
-
-/* The held recognizer let go, which only the grammar that began it held. */
-static void S_release(const markdown_core_element_instance *self) {
-    markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
-    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
-    if (need.ops) {
-        ((const markdown_core_attribute_ops *)need.ops)->release(need.instance, held);
-    }
-    *held = (markdown_core_attribute_parser){0};
-}
-
-static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    (void)parser;
-    S_release(self);
 }
 
 /* Reads the link reference definition at the front of `input`, its bytes
@@ -153,12 +137,10 @@ bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data,
 static bool destination_excludes(unsigned char c) { return c <= 0x20 || c == 0x7F; }
 
 /* What a definition's attribute tail is read with: the attribute grammar
- * (services.h, markdown_core_attribute_ops), its provider and the
- * recognizer over the definition's text. */
+ * (services.h, markdown_core_attribute_ops) and its provider. */
 typedef struct {
     const markdown_core_attribute_ops *ops;
     const markdown_core_element_instance *self;
-    markdown_core_attribute_parser *p;
 } S_tails;
 
 /* A link reference definition at the front of `input`: its length, 0 when
@@ -224,7 +206,7 @@ static void S_reference_fields(markdown_core_parser *parser, markdown_core_node 
     }
     markdown_core_field_many(&to, spots, count);
     if (definition->listed && tails->ops) {
-        tails->ops->fields(tails->self, tails->p, &to);
+        tails->ops->fields(tails->self, &to);
     }
 }
 
@@ -250,7 +232,7 @@ enum { LINK_ITEM_REFERENCE, LINK_BLOCKS };
  * which outlives an attempt that fails, as the reports of a definition
  * given up need. The frame's words: a raw destination's open parentheses,
  * a title's closing byte, and where a whitespace or a tail began. */
-enum { WORD_DEPTH, WORD_CLOSE = 0, WORD_FROM = 1 };
+enum { WORD_DEPTH, WORD_CLOSE = 0, WORD_FROM = 1, WORD_END = 2 };
 
 static inline S_item_found *S_found_of(const markdown_core_tokenizer *tokenizer) {
     return MARKDOWN_CORE_BLOCK_FOUND(markdown_core_block_turn_of(tokenizer)->start, S_item_found);
@@ -337,16 +319,19 @@ static markdown_core_state S_list_read(markdown_core_tokenizer *tokenizer, int c
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
     reference_definition *definition = &S_found_of(tokenizer)->definition;
-    bufsize_t end = 0;
+    const uint32_t *words = markdown_core_frame_local(tokenizer);
     markdown_core_attributes_free(&definition->value);
-    definition->listed =
-        ((const markdown_core_attribute_ops *)need.ops)
-            ->parse(need.instance, &((S_state *)self->state)->held,
-                    (bufsize_t)markdown_core_frame_local(tokenizer)[WORD_FROM], &definition->value, &end);
+    definition->listed = ((const markdown_core_attribute_ops *)need.ops)
+                             ->parse(need.instance, tokenizer->data, (bufsize_t)words[WORD_FROM],
+                                     (bufsize_t)words[WORD_END], &definition->value);
+    if (!definition->listed) {
+        tokenizer->events.failed = true;
+    }
     return definition->listed ? markdown_core_ok(tokenizer) : markdown_core_nok(tokenizer);
 }
 
 static markdown_core_state S_list_after(markdown_core_tokenizer *tokenizer, int code) {
+    markdown_core_frame_local(tokenizer)[WORD_END] = tokenizer->position;
     return markdown_core_attempt(tokenizer, &LINK_END, markdown_core_state_of(S_list_read),
                                  markdown_core_state_of(S_no), code);
 }
@@ -365,14 +350,9 @@ static markdown_core_state S_list_open(markdown_core_tokenizer *tokenizer, int c
     if (definition->brace < 0) {
         definition->brace = (bufsize_t)at;
     }
-    const bufsize_t end = ((const markdown_core_attribute_ops *)need.ops)
-                              ->end(need.instance, &((S_state *)self->state)->held, (bufsize_t)at);
-    if (!end) {
-        return markdown_core_nok(tokenizer);
-    }
     markdown_core_frame_local(tokenizer)[WORD_FROM] = at;
-    markdown_core_consume_to(tokenizer, (uint32_t)end);
-    return markdown_core_state_of(S_list_after);
+    return markdown_core_attempt(tokenizer, ((const markdown_core_attribute_ops *)need.ops)->list(need.instance, false),
+                                 markdown_core_state_of(S_list_after), markdown_core_state_of(S_no), code);
 }
 
 static markdown_core_state S_list_start(markdown_core_tokenizer *tokenizer, int code) {
@@ -639,22 +619,12 @@ static markdown_core_state S_definition(markdown_core_tokenizer *tokenizer, int 
 
 static const markdown_core_construct LINK_DEFINITION = {.start = S_definition};
 
-/* Storage the attribute grammar could not have fails the parse. */
-static void S_held_check(markdown_core_tokenizer *tokenizer) {
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    if (self->needs[LINK_ATTRIBUTES].ops && ((S_state *)self->state)->held.oom) {
-        markdown_core_parser_fail(markdown_core_block_turn_of(tokenizer)->parser,
-                                  MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-}
-
 /* THE FRONT CUT'S ITEM: the definition read, its length is the cut's; a
  * reading that measures makes none. */
 static markdown_core_state S_item_read(markdown_core_tokenizer *tokenizer, int code) {
     (void)code;
     markdown_core_cut *cut = markdown_core_block_turn_of(tokenizer)->cut;
     reference_definition *definition = &S_found_of(tokenizer)->definition;
-    S_held_check(tokenizer);
     definition->wide |= !definition->title.data &&
                         (definition->opener == '"' || definition->opener == '\'' || definition->opener == '(');
     cut->wide = definition->wide;
@@ -673,34 +643,17 @@ static markdown_core_state S_item_lost(markdown_core_tokenizer *tokenizer, int c
     const markdown_core_element_instance *self = markdown_core_self(tokenizer);
     markdown_core_cut *cut = turn->cut;
     reference_definition *definition = &S_found_of(tokenizer)->definition;
-    S_held_check(tokenizer);
     markdown_core_attributes_free(&definition->value);
     cut->wide = definition->wide;
     cut->length = 0;
     if (!cut->measure) {
         S_report_unread(turn->parser, cut->block, &cut->rest, cut->at, definition);
         S_report_tail(self, turn->parser, cut->block, &cut->rest, cut->at, definition);
-        S_release(self);
     }
     return markdown_core_nok(tokenizer);
 }
 
 static markdown_core_state S_item(markdown_core_tokenizer *tokenizer, int code) {
-    markdown_core_block_turn *turn = markdown_core_block_turn_of(tokenizer);
-    const markdown_core_element_instance *self = markdown_core_self(tokenizer);
-    markdown_core_parser *parser = turn->parser;
-    markdown_core_cut *cut = turn->cut;
-    /* A cut's first item begins a text: the recognizer of the last is let
-     * go, and the next reads this one. */
-    const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
-    markdown_core_attribute_parser *held = &((S_state *)self->state)->held;
-    if (need.ops && (cut->at == 0 || held->data != cut->text.data || held->length != cut->text.len)) {
-        ((const markdown_core_attribute_ops *)need.ops)->release(need.instance, held);
-        ((const markdown_core_attribute_ops *)need.ops)->begin(need.instance, held, cut->text.data, cut->text.len);
-        if (held->oom) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-    }
     reference_definition *definition = &S_found_of(tokenizer)->definition;
     *definition = (reference_definition){.brace = -1};
     return markdown_core_attempt(tokenizer, &LINK_DEFINITION, markdown_core_state_of(S_item_read),
@@ -732,7 +685,7 @@ static void S_item_make(markdown_core_compiler *compiler, const markdown_core_to
     const bufsize_t before = cut->at, length = cut->length;
     reference_definition *definition = &MARKDOWN_CORE_BLOCK_FOUND(turn->start, S_item_found)->definition;
     const markdown_core_need need = self->needs[LINK_ATTRIBUTES];
-    const S_tails tails = {need.ops, need.instance, &((S_state *)self->state)->held};
+    const S_tails tails = {need.ops, need.instance};
     /* The destination and title are cleaned here, the way a direct link's
      * are, so a Reference and a direct link state the same values. */
     int lost = 0;
@@ -772,9 +725,6 @@ static void S_item_make(markdown_core_compiler *compiler, const markdown_core_to
             markdown_core_parser_declare(parser, self->spaces[LINK_REFERENCE], &definition->label, start,
                                          &reference->as.reference->label, reference);
         }
-    }
-    if (length == input->len) {
-        S_release(self);
     }
 }
 
@@ -1430,7 +1380,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .needs = LINK_NEEDS,
     .spaces = LINK_SPACES,
     .state_size = sizeof(S_state),
-    .dispose_parser = dispose_parser,
     .run_state_size = sizeof(S_asked),
     .opens = &LINK_OPENS,
     .name = "link",

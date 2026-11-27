@@ -7046,6 +7046,12 @@ static void attribute_values_are_one_allocation(test_batch_runner *runner) {
         for (size_t capacity = 8; capacity < 16 * count; capacity += capacity / 2) {
             growth++;
         }
+        /* The recognizer's memo window doubles from 64 positions to the
+         * extent, and its reading's tokenizer takes its few blocks once. */
+        for (size_t room = 64; room < (size_t)source.size; room *= 2) {
+            growth++;
+        }
+        growth += 4;
         markdown_core_attribute_scratch scratch = {0};
         markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size, .scratch = &scratch};
         markdown_core_attributes first = {0}, second = {0};
@@ -9003,15 +9009,21 @@ static void directive_recognition_survives_construction(test_batch_runner *runne
         markdown_core_strbuf_puts(&source, "\nbody\n:::\n");
         markdown_core_attribute_scratch scratch = {0};
         markdown_core_attribute_parser recognized = {.data = source.ptr, .length = source.size, .scratch = &scratch};
+        markdown_core_attribute_parser probe = {.data = source.ptr, .length = source.size};
         markdown_core_attributes value = {0};
         bufsize_t end;
-        OK(runner, markdown_core_attributes_end(&recognized, 4) != 0, "the envelope is recognized");
-        OK(runner, markdown_core_attributes_parse(&recognized, 4, &value, &end), "the same memo decodes the value");
+        OK(runner, markdown_core_attributes_end(&probe, 4) != 0, "the envelope is recognized");
+        OK(runner, markdown_core_attributes_end(&probe, 4) == markdown_core_attributes_end(&probe, 4),
+           "the probe's memo answers again as it did");
+        markdown_core_attribute_parser_free(&probe);
+        OK(runner, markdown_core_attributes_parse(&recognized, 4, &value, &end), "one reading decodes the value");
         inline_work work = {0};
         markdown_core_node *root =
             markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "the block owns the decoded attributes");
-        INT_EQ(runner, work.attributes, recognized.work,
+        /* The block's reading reads the list once, as the construct read
+         * alone does, and decodes what it read. */
+        INT_EQ(runner, work.attributes, scratch.work + recognized.work,
                "construction reuses recognition instead of scanning the attribute extent again");
         markdown_core_node_free(root);
         markdown_core_attributes_free(&value);
